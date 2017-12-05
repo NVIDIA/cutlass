@@ -43,12 +43,6 @@ else
     TRANSPOSE := nn
 endif
 
-ifdef deepbench
-	BENCHMARK_DEEPBENCH := $(deepbench)
-else
-	BENCHMARK_DEEPBENCH := 0
-endif
-
 # If defined, GEMMs only compiled with specified alignment restrictions on A and B
 # matrices. Otherwise, kernels are compiled for all feasible alignment options, and
 # the appropriate kernel is selected.
@@ -70,14 +64,12 @@ INC += -I$(BASE_DIR)
 
 LIBS += -lcublas
 
-
 #-------------------------------------------------------------------------------
 # Preprocessor definitions
 #-------------------------------------------------------------------------------
 
 ifeq (nt, $(TRANSPOSE))
 	DEFINES += -DTRANSPOSE_B
-
 else ifeq (tn, $(TRANSPOSE))
 	DEFINES += -DTRANSPOSE_A
 
@@ -93,17 +85,16 @@ NVCCFLAGS += -std=c++11
 # Dependency Lists
 #-------------------------------------------------------------------------------
 
-DEPS := 			$(call rwildcard, $(BASE_DIR),*.h) \
-					$(call rwildcard, $(BASE_DIR)cgl,*.h) \
-					$(BASE_DIR)common.mk \
-					$(TEST_DIR)Makefile
+DEPS := $(call rwildcard, $(BASE_DIR),*.h) \
+        $(call rwildcard, $(BASE_DIR)cgl,*.h) \
+        $(BASE_DIR)common.mk \
+        $(TEST_DIR)Makefile
 
 
-ALL := 				sgemm \
-	 				dgemm \
-	 				hgemm \
-	 				igemm
-
+ALL :=  sgemm \
+        dgemm \
+        hgemm \
+        igemm
 
 
 #-------------------------------------------------------------------------------
@@ -135,16 +126,9 @@ all : $(ALL)
 
 sgemm: bin/sgemm_$(TRANSPOSE)_$(BIN_SUFFIX)
 
-sgemm_testbench: bin/sgemm_testbench_$(BIN_SUFFIX)
-
 bin/sgemm_$(TRANSPOSE)_$(BIN_SUFFIX) : gemm.cu $(DEPS)
 	mkdir -p bin
 	$(NVCC) -DTEST_SGEMM $(DEFINES) $(SM_TARGETS) -o $@ gemm.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
-
-bin/sgemm_testbench_$(BIN_SUFFIX) : gemm_testbench.cu $(DEPS)
-	mkdir -p bin
-	$(NVCC) -DTEST_SGEMM $(DEFINES) $(SM_TARGETS) -D BENCHMARK_DEEPBENCH=$(BENCHMARK_DEEPBENCH) -o $@ gemm_testbench.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
-
 
 #-------------------------------------------------------------------------------
 # make dgemm
@@ -152,16 +136,9 @@ bin/sgemm_testbench_$(BIN_SUFFIX) : gemm_testbench.cu $(DEPS)
 
 dgemm: bin/dgemm_$(TRANSPOSE)_$(BIN_SUFFIX)
 
-dgemm_testbench: bin/dgemm_testbench_$(BIN_SUFFIX)
-
 bin/dgemm_$(TRANSPOSE)_$(BIN_SUFFIX) : gemm.cu $(DEPS)
 	mkdir -p bin
 	$(NVCC) -DTEST_DGEMM $(DEFINES) $(SM_TARGETS) -o $@ gemm.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
-
-bin/dgemm_testbench_$(BIN_SUFFIX) : gemm_testbench.cu $(DEPS)
-	mkdir -p bin
-	$(NVCC) -DTEST_DGEMM $(DEFINES) $(SM_TARGETS) -D BENCHMARK_DEEPBENCH=$(BENCHMARK_DEEPBENCH) -o $@ gemm_testbench.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
-
 
 #-------------------------------------------------------------------------------
 # make hgemm
@@ -169,15 +146,9 @@ bin/dgemm_testbench_$(BIN_SUFFIX) : gemm_testbench.cu $(DEPS)
 
 hgemm: bin/hgemm_$(TRANSPOSE)_$(BIN_SUFFIX)
 
-hgemm_testbench: bin/hgemm_testbench_$(BIN_SUFFIX)
-
 bin/hgemm_$(TRANSPOSE)_$(BIN_SUFFIX) : gemm.cu $(DEPS)
 	mkdir -p bin
 	$(NVCC) -DTEST_HGEMM $(DEFINES) $(SM_TARGETS) -o $@ gemm.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
-
-bin/hgemm_testbench_$(BIN_SUFFIX) : gemm_testbench.cu $(DEPS)
-	mkdir -p bin
-	$(NVCC) -DTEST_HGEMM $(DEFINES) $(SM_TARGETS) -D BENCHMARK_DEEPBENCH=$(BENCHMARK_DEEPBENCH) -o $@ gemm_testbench.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
 
 #-------------------------------------------------------------------------------
 # make igemm
@@ -189,25 +160,13 @@ bin/igemm_$(TRANSPOSE)_$(BIN_SUFFIX) : gemm.cu $(DEPS)
 	mkdir -p bin
 	$(NVCC) -DTEST_IGEMM $(DEFINES) $(SM_TARGETS) -o $@ gemm.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
 
-igemm_testbench: bin/igemm_testbench_$(BIN_SUFFIX)
-
-bin/igemm_testbench_$(BIN_SUFFIX) : gemm_testbench.cu $(DEPS)
-	mkdir -p bin
-	$(NVCC) -DTEST_IGEMM $(DEFINES) $(SM_TARGETS) -D BENCHMARK_DEEPBENCH=$(BENCHMARK_DEEPBENCH) -o $@ gemm_testbench.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
-
-
 #-------------------------------------------------------------------------------
 # make wgemm
 #-------------------------------------------------------------------------------
 
 wgemm: bin/wgemm_$(TRANSPOSE)_$(BIN_SUFFIX)
 
-wgemm_testbench: bin/wgemm_testbench_$(BIN_SUFFIX)
-
 bin/wgemm_$(TRANSPOSE)_$(BIN_SUFFIX) : gemm.cu $(DEPS)
 	mkdir -p bin
 	$(NVCC) -DTEST_WGEMM -DWMMA $(DEFINES) $(SM_TARGETS) -o $@ gemm.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
 
-bin/wgemm_testbench_$(BIN_SUFFIX) : gemm_testbench.cu $(DEPS)
-	mkdir -p bin
-	$(NVCC) -DTEST_WGEMM -DWMMA $(DEFINES) $(SM_TARGETS) -D BENCHMARK_DEEPBENCH=$(BENCHMARK_DEEPBENCH) -o $@ gemm_testbench.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
