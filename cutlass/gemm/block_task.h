@@ -160,7 +160,7 @@ struct block_task
         UseDoubleScratchTiles = block_task_policy_t::UseDoubleScratchTiles,
 
         /// Extent of block-wide A|B tiles in dp_vector_t along the K-axis
-        BlockDpVectorsK = divide_assert<BlockItemsK,  DpVectorItems>::value,
+        BlockDpVectorsK = divide_assert<BlockItemsK, DpVectorItems>::value,
 
         /// Number of dp_vector_t along M-axis that can be read in a single LDS from the shared A-tile (up to 128b if more than one value_t)
         LdsVectorDpVectorsA = __NV_STD_MIN(
@@ -595,7 +595,6 @@ struct block_task
             accumulator.multiply_accumulate(thread_tile_a, thread_tile_b);
         }
     }
-
 
 
     //-------------------------------------------------------------------------
