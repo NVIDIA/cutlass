@@ -25,7 +25,7 @@ in CUDA C++"](https://devblogs.nvidia.com/parallelforall/cutlass-linear-algebra-
 
 # Performance
 
-![ALT](/media/cutlass-performance-plot.png "Relative performance of CUTLASS and cuBLAS for large matrices")
+<p align="center"><img src=/media/cutlass-performance-plot.png></p>
 
 CUTLASS primitives are very efficient.  When used to construct device-wide GEMM kernels, 
 they exhibit performance comparable to cuBLAS for scalar GEMM 
