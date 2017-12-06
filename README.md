@@ -1,3 +1,5 @@
+![ALT](/media/fig-09-complete-hierarchy.svg "Complete CUDA GEMM decomposition")
+
 # Introduction
 
 CUTLASS is a CUDA C++ template library for implementing matrix-multiply
