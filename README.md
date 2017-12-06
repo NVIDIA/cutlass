@@ -5,7 +5,7 @@
 CUTLASS is a collection of CUDA C++ template abstractions for implementing 
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA. 
 It incorporates strategies for hierarchical decomposition and data movement similar 
-to those used to implement cuBLAS.  CUTLASS decomposes these “moving parts” into 
+to those used to implement cuBLAS.  CUTLASS decomposes these "moving parts" into 
 reusable, modular software components abstracted by C++ template classes.  These
 thread-wide, warp-wide, block-wide, and device-wide primitives can be specialized 
 and tuned via custom tiling sizes, data types, and other algorithmic policy. The 
@@ -19,6 +19,13 @@ point (FP16), single-precision floating point (FP32), and double-precision float
 point (FP64) types.  Furthermore, CUTLASS demonstrates CUDA's WMMA API for targeting
 the programmable, high-throughput _Tensor Cores_ provided by NVIDIA's Volta architecture 
 and beyond.
+
+![ALT](/media/fig-09-complete-hierarchy.png "Relative performance of CUTLASS and cuBLAS for large matrices")
+
+CUTLASS is very efficient, with performance comparable to cuBLAS for scalar GEMM 
+computations. The above figure shows CUTLASS performance relative to cuBLAS 
+compiled with CUDA 9.0 running on an NVIDIA Tesla V100 GPU for large matrix 
+dimensions (M=10240, N=K=4096). 
 
 For more exposition, see our Parallel Forall blog post ["CUTLASS: Fast Linear Algebra 
 in CUDA C++"](https://devblogs.nvidia.com/parallelforall/cutlass-linear-algebra-cuda). 
