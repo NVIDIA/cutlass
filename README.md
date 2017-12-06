@@ -8,9 +8,9 @@ It incorporates the same strategies for data movement and hierarchical decomposi
 that are used to implement cuBLAS.  CUTLASS decomposes these “moving parts” into 
 reusable, modular software components abstracted by C++ template classes.  These
 thread-wide, warp-wide, block-wide, and device-wide primitives can be specialized 
-and tuned via custom tiling sizes, data types, and other algorithmic policy.  
-The resulting flexibility simplifies their use as building blocks within custom 
-kernels and applications.
+and tuned via custom tiling sizes, data types, and other algorithmic policy. The 
+resulting flexibility simplifies their use as building blocks within custom kernels 
+and applications.
 
 To support a wide variety of applications, CUTLASS provides extensive support for
 mixed-precision computations, providing specialized data-movement and 
