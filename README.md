@@ -20,6 +20,9 @@ point (FP64) types.  Furthermore, CUTLASS demonstrates CUDA's WMMA API for targe
 the programmable, high-throughput _Tensor Cores_ provided by NVIDIA's Volta architecture 
 and beyond.
 
+For more exposition, see our Parallel Forall blog post ["CUTLASS: Fast Linear Algebra 
+in CUDA C++"](https://devblogs.nvidia.com/parallelforall/cutlass-linear-algebra-cuda). 
+
 # Project Structure
 
 CUTLASS is arranged as a header-only library with several example test programs
@@ -56,7 +59,7 @@ transposititions.  Be sure to specify your target architecture.
 
      <s|d|h|i|w>gemm_<nn|nt|tn|tt>
            [--help]
-           [--schmoo || --m=<height> --n=<width> --k=<depth>]
+           [--schmoo=<#schmoo-samples> || --m=<height> --n=<width> --k=<depth>]
            [--i=<timing iterations>]
            [--device=<device-id>]
            [--alpha=<alpha> --beta=<beta>]
