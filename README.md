@@ -2,13 +2,20 @@
 
 # Introduction
 
-CUTLASS is a CUDA C++ template library for implementing matrix-multiply
-procedures that may be instantiated in CUDA device kernels. CUTLASS applies
-object-oriented and generic programming techniques to maximize flexibility of
-the resulting code and facilitate composition with caller-supplied functionality.
-CUDA C++ templates are used to specify policy decisions such as block sizes,
-data types of input and accumulator operands, and element-wise operations applied
-to the results of matrix multiply.
+CUTLASS is a collection of templated CUDA C++ abstractions for implementing 
+high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA. 
+It incorporates the same stragies for data movemement and hierarchical decomposition 
+that are used to implement cuBLAS.  CUTLASS decomposes these “moving parts” into 
+reusabe, modular software components abstracted by C++ template classes.  These
+thread-wide, warp-wide, block-wide, and device-wide abstractions can be specialized 
+by custom tiling sizes, data types, and other algorithmic policy.  This flexibility
+allows them to be used as building blocks within custom kernels and applications.
+
+To support a wide variety of applications, CUTLASS provides extensive support for
+mixed-precision computations, providing specialized data-movement and 
+multiply-accumulate abstractions for 8-bit integer, half-precision floating 
+point (FP16), single-precision floating point (FP32), and double-precision floating 
+point (FP64) types.
 
 # Project Structure
 
