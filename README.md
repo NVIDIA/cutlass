@@ -16,7 +16,9 @@ To support a wide variety of applications, CUTLASS provides extensive support fo
 mixed-precision computations, providing specialized data-movement and 
 multiply-accumulate abstractions for 8-bit integer, half-precision floating 
 point (FP16), single-precision floating point (FP32), and double-precision floating 
-point (FP64) types.
+point (FP64) types.  Furthermore, CUTLASS demonstrates CUDA's WMMA API for targeting
+the programmable, high-throughput _Tensor Cores_ provided by NVIDIA's Volta architecture 
+and beyond.
 
 # Project Structure
 
