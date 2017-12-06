@@ -1,4 +1,4 @@
-![ALT](/media/fig-09-complete-hierarchy.svg "Complete CUDA GEMM decomposition")
+![ALT](/media/fig-09-complete-hierarchy.png "Complete CUDA GEMM decomposition")
 
 # Introduction
 
