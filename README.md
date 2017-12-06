@@ -20,7 +20,7 @@ point (FP64) types.  Furthermore, CUTLASS demonstrates CUDA's WMMA API for targe
 the programmable, high-throughput _Tensor Cores_ provided by NVIDIA's Volta architecture 
 and beyond.
 
-![ALT](/media/fig-09-complete-hierarchy.png "Relative performance of CUTLASS and cuBLAS for large matrices")
+![ALT](/media/cutlass-performance-plot.png "Relative performance of CUTLASS and cuBLAS for large matrices")
 
 CUTLASS is very efficient, with performance comparable to cuBLAS for scalar GEMM 
 computations. The above figure shows CUTLASS performance relative to cuBLAS 
