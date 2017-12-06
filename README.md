@@ -20,15 +20,17 @@ point (FP64) types.  Furthermore, CUTLASS demonstrates CUDA's WMMA API for targe
 the programmable, high-throughput _Tensor Cores_ provided by NVIDIA's Volta architecture 
 and beyond.
 
+For more exposition, see our Parallel Forall blog post ["CUTLASS: Fast Linear Algebra 
+in CUDA C++"](https://devblogs.nvidia.com/parallelforall/cutlass-linear-algebra-cuda). 
+
+# Performance
+
 ![ALT](/media/cutlass-performance-plot.png "Relative performance of CUTLASS and cuBLAS for large matrices")
 
 CUTLASS is very efficient, with performance comparable to cuBLAS for scalar GEMM 
 computations. The above figure shows CUTLASS performance relative to cuBLAS 
-compiled with CUDA 9.0 running on an NVIDIA Tesla V100 GPU for large matrix 
-dimensions (M=10240, N=K=4096). 
-
-For more exposition, see our Parallel Forall blog post ["CUTLASS: Fast Linear Algebra 
-in CUDA C++"](https://devblogs.nvidia.com/parallelforall/cutlass-linear-algebra-cuda). 
+for large matrix dimensions (M=10240, N=K=4096) running on an NVIDIA Tesla V100 GPU 
+when compiled with CUDA 9.0. 
 
 # Project Structure
 
