@@ -41,51 +41,64 @@ endif
 
 ifeq (70, $(findstring 70, $(SM_ARCH)))
     SM_TARGETS 	+= -gencode=arch=compute_70,code=\"sm_70,compute_70\"
+    CLANG_SM_TARGETS += --cuda-gpu-arch=sm_70
 endif
 ifeq (62, $(findstring 62, $(SM_ARCH)))
     SM_TARGETS 	+= -gencode=arch=compute_62,code=\"sm_62,compute_62\"
+    CLANG_SM_TARGETS += --cuda-gpu-arch=sm_62
 endif
 ifeq (61, $(findstring 61, $(SM_ARCH)))
     SM_TARGETS 	+= -gencode=arch=compute_61,code=\"sm_61,compute_61\"
+    CLANG_SM_TARGETS += --cuda-gpu-arch=sm_61
 endif
 ifeq (60, $(findstring 60, $(SM_ARCH)))
     SM_TARGETS 	+= -gencode=arch=compute_60,code=\"sm_60,compute_60\"
+    CLANG_SM_TARGETS += --cuda-gpu-arch=sm_60
 endif
 ifeq (52, $(findstring 52, $(SM_ARCH)))
     SM_TARGETS 	+= -gencode=arch=compute_52,code=\"sm_52,compute_52\"
+    CLANG_SM_TARGETS += --cuda-gpu-arch=sm_52
 endif
 ifeq (37, $(findstring 37, $(SM_ARCH)))
     SM_TARGETS 	+= -gencode=arch=compute_37,code=\"sm_37,compute_37\"
+    CLANG_SM_TARGETS += --cuda-gpu-arch=sm_37
 endif
 ifeq (35, $(findstring 35, $(SM_ARCH)))
     SM_TARGETS 	+= -gencode=arch=compute_35,code=\"sm_35,compute_35\"
+    CLANG_SM_TARGETS += --cuda-gpu-arch=sm_35
 endif
 ifeq (30, $(findstring 30, $(SM_ARCH)))
     SM_TARGETS 	+= -gencode=arch=compute_30,code=\"sm_30,compute_30\"
+    CLANG_SM_TARGETS += --cuda-gpu-arch=sm_30
 endif
 ifeq (21, $(findstring 21, $(SM_ARCH)))
     SM_TARGETS 	+= -gencode=arch=compute_20,code=\"sm_21,compute_20\"
+    CLANG_SM_TARGETS += --cuda-gpu-arch=sm_21
 endif
 ifeq (20, $(findstring 20, $(SM_ARCH)))
     SM_TARGETS 	+= -gencode=arch=compute_20,code=\"sm_20,compute_20\"
+    CLANG_SM_TARGETS += --cuda-gpu-arch=sm_20
 endif
 
 
 # [verbose=<0|1>] Verbose toolchain output from nvcc option
 ifeq ($(verbose), 1)
 	NVCCFLAGS += -v
+	CLANG_CFLAGS += -v
 endif
 
 
 # [keep=<0|1>] Keep intermediate compilation artifacts option
 ifeq ($(keep), 1)
 	NVCCFLAGS += -keep
+	CLANG_CFLAGS += --save-temps
 endif
 
 
 # [debug=<0|1>] Generate debug mode code
 ifeq ($(debug), 1)
 	NVCCFLAGS += -G
+	CLANG_CFLAGS += --cuda-noopt-device-debug
 endif
 
 
@@ -107,7 +120,7 @@ OSUPPER := $(shell uname -s 2>/dev/null | tr [:lower:] [:upper:])
 
 # Default flags: verbose kernel properties (regs, smem, cmem, etc.); runtimes for compilation phases
 NVCCFLAGS += -O3 -Xptxas -v
-
+CLANG_CFLAGS += -O3 -Xcuda-ptxas -v
 ifeq (WIN_NT, $(findstring WIN_NT, $(OSUPPER)))
     # For MSVC
 
@@ -139,9 +152,25 @@ else
 
 endif
 
+# compiler=clang Enables compilation with clang. 
 
-# Suffix to append to each binary
-BIN_SUFFIX := sm$(SM_ARCH)_$(NVCC_VERSION)
+ifeq ($(compiler), clang)
+	BIN_SUFFIX := sm$(SM_ARCH)_clang_$(NVCC_VERSION)
+	# Clangs needs few extra flags to point it to CUDA SDK
+	# and link the binaries with CUDA runtime.
+	CUDA_BASE=$(realpath $(join $(dir $(shell which nvcc)), ..))
+	CLANG_CFLAGS += --cuda-path=$(CUDA_BASE)
+	LIBINC += -L$(CUDA_BASE)/lib64 -Wl,-rpath=$(CUDA_BASE)/lib64
+	LIBS   += -lcudart
+
+	# Replace NVCC and its options with clang++.
+	NVCC = clang++
+	NVCCFLAGS = $(CLANG_CFLAGS)
+	SM_TARGETS = $(CLANG_SM_TARGETS)
+else
+	# Suffix to append to each binary
+	BIN_SUFFIX := sm$(SM_ARCH)_nvcc_$(NVCC_VERSION)
+endif
 
 
 #-------------------------------------------------------------------------------
@@ -149,5 +178,3 @@ BIN_SUFFIX := sm$(SM_ARCH)_$(NVCC_VERSION)
 #-------------------------------------------------------------------------------
 
 rwildcard=$(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2) $(filter $(subst *,%,$2),$d))
-
-
