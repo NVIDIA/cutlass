@@ -155,7 +155,8 @@ endif
 # compiler=clang Enables compilation with clang. 
 
 ifeq ($(compiler), clang)
-	BIN_SUFFIX := sm$(SM_ARCH)_clang_$(NVCC_VERSION)
+	# NVCC_VERSION is used as the proxy for the CUDA version.
+	BIN_SUFFIX := sm$(SM_ARCH)_clang_cuda_$(NVCC_VERSION)
 	# Clangs needs few extra flags to point it to CUDA SDK
 	# and link the binaries with CUDA runtime.
 	CUDA_BASE=$(realpath $(join $(dir $(shell which nvcc)), ..))
