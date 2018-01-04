@@ -44,26 +44,20 @@ namespace cutlass {
  * Formats and prints the given message to stdout
  */
 #if !defined(CUDA_LOG)
-    #if defined(__clang__) && defined(__CUDA__)
-static __device__ void cuda_log_location() {
-    printf("[block (%d,%d,%d), thread (%d,%d,%d)]: ", blockIdx.x, blockIdx.y,
-           blockIdx.z, threadIdx.x, threadIdx.y, threadIdx.z);
-}
-static __host__ void cuda_log_location() {}
-        #define CUDA_LOG(format, ...)                                          \
-            do {                                                               \
-                cuda_log_location();                                           \
-                printf(format, __VA_ARGS__);                                   \
-            } while (0)
-    #else // NVCC
-        #if !defined(__CUDA_ARCH__)
-            #define CUDA_LOG(format, ...) printf(format, __VA_ARGS__)
-        #else
-            #define CUDA_LOG(format, ...)                                      \
-                printf("[block (%d,%d,%d), thread (%d,%d,%d)]: " format,       \
-                       blockIdx.x, blockIdx.y, blockIdx.z, threadIdx.x,        \
-                       threadIdx.y, threadIdx.z, __VA_ARGS__);
-        #endif
+    #if !defined(__CUDA_ARCH__)
+        #define CUDA_LOG(format, ...) printf(format, __VA_ARGS__)
+    #else
+inline __host__ __device__ unsigned get_threadidx_x() { return threadIdx.x; }
+inline __host__ __device__ unsigned get_threadidx_y() { return threadIdx.y; }
+inline __host__ __device__ unsigned get_threadidx_z() { return threadIdx.z; }
+inline __host__ __device__ unsigned get_blockidx_x() { return blockIdx.x; }
+inline __host__ __device__ unsigned get_blockidx_y() { return blockIdx.y; }
+inline __host__ __device__ unsigned get_blockidx_z() { return blockIdx.z; }
+    #define CUDA_LOG(format, ...)                                              \
+            printf("[block (%d,%d,%d), thread (%d,%d,%d)]: " format,           \
+                   get_blockidx_x(), get_blockidx_y(), get_blockidx_z(),       \
+                   get_threadidx_x(), get_threadidx_y(), get_threadidx_z(),    \
+                   __VA_ARGS__);
     #endif
 #endif
 
