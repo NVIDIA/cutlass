@@ -53,7 +53,7 @@ inline __host__ __device__ unsigned get_threadidx_z() { return threadIdx.z; }
 inline __host__ __device__ unsigned get_blockidx_x() { return blockIdx.x; }
 inline __host__ __device__ unsigned get_blockidx_y() { return blockIdx.y; }
 inline __host__ __device__ unsigned get_blockidx_z() { return blockIdx.z; }
-    #define CUDA_LOG(format, ...)                                              \
+        #define CUDA_LOG(format, ...)                                          \
             printf("[block (%d,%d,%d), thread (%d,%d,%d)]: " format,           \
                    get_blockidx_x(), get_blockidx_y(), get_blockidx_z(),       \
                    get_threadidx_x(), get_threadidx_y(), get_threadidx_z(),    \
