@@ -484,7 +484,8 @@ struct block_task
      *   - Applies the scalar multipliers and addends to the accumulators
      *   - Write the result to the output matrix
      */
-    inline __device__ void epilogue()
+    __forceinline__ __device__
+    void epilogue()
     {
         // Wait for predecessor thread block(s) to produce block-wide tile of
         // exclsuive partial-sums
@@ -551,7 +552,7 @@ struct block_task
      * Consume a tile of A and B each
      */
     template <bool DoGlobalPrefetch>
-    inline __device__
+    __forceinline__ __device__
     void consume_tile()
     {
         // Unroll BlockDpVectorsK iterations of outer-product accumulations
@@ -612,7 +613,7 @@ struct block_task
     /**
      * Compute GEMM
      */
-    inline __device__
+    __forceinline__ __device__
     void run()
     {
         // Quit if the thread block is fully out-of-bounds
