@@ -97,7 +97,7 @@ public:
         _d_data(NULL),
         _device_id(0)
     {
-        _h_data.resize(_m * _n, 0);
+        _h_data.resize(_m * _n, value_t{});
         CUDA_PERROR_EXIT(cudaMalloc((void ** )&_d_data, sizeof(value_t) * _m * _n));
         CUDA_PERROR_EXIT(cudaGetDevice(&_device_id));
     }
@@ -277,7 +277,7 @@ public:
         {
             for (int i = 0; i < _m; i++)
             {
-                _h_data[i + j * _m] = (value_t) generator();
+                _h_data[i + j * _m] = (host_value_t) generator();
             }
         }
     }

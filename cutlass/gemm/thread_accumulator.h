@@ -453,12 +453,17 @@ public:
 
         // Simply traverse the accumulator tile in column-major order
         #pragma unroll
-        for (int x = 0; x < ThreadTilePairsX; ++x)
+        for (int x = 0; x < ThreadTilePairsX; x += 2)
         {
             #pragma unroll
             for (int y = 0; y < ThreadTilePairsY; ++y)
             {
                 mad_xy_even(pairs_tile_a, pairs_tile_b, x, y);
+            }
+            #pragma unroll
+            for (int y = 0; y < ThreadTilePairsY; ++y)
+            {
+                mad_xy_odd(pairs_tile_a, pairs_tile_b, x + 1, y);
             }
         }
     }
