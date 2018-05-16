@@ -27,7 +27,7 @@ primitives for loading data, computing predicate masks, streaming data at each l
 the GEMM hierarchy, and updating the output matrix.
 
 CUTLASS 1.0 is described in the [Doxygen documentation](https://github.com/NVIDIA/cutlass/docs)
-and our talk at the GPU Technology Conference 2018 (login required).
+and our talk at the [GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf) (login required).
 
 # Performance
 
@@ -162,6 +162,8 @@ Program usage:
     --append=<true|false*>                            If true, appends output to existing CSV file. If false, overwrites.
     --alpha=<alpha>                                   Value for alpha to be used in GEMM experiments
     --beta=<beta>                                     Value for beta to be used in GEMM experiments
+    --dist=<distribution>                             Describes the random distribution of each of the input matrix operands.
+    --execution_mode=<mode>                           Specifies execution mode: profile, verify, single
     --output=<filename.csv>                           Writes summary of profiling to specified .csv file
     --iterations=<timing iterations>                  maximum number of iterations to execute when profiling
     --m=<height>[:max height[:step]]                  Height of GEMM problem (number of rows of C). May specify a range with optional step size.
@@ -169,8 +171,9 @@ Program usage:
     --k=<depth>[:max depth[:step]]                    Size of inner dimension of A and B. May specify a range with optional step size.
     --kernels=<{s|d|h|i|wmma}gemm_{nn,nt,tn,tt}>      Select GEMM datatype and layout to use for tests
     --peak=<bool>                                     If true, only reports peak performance per kernel after profiling specified problem space.
+    --save_workspace={*never,incorrect,always}        Specifies when to save the GEMM inputs and results to the filesystem.
     --seed=<seed>                                     Random seed used by the random number generator in initializing input matrices.
-    --tags=<column:tag,...>                           Inserts leading columns in output table and uniform values for each column. Useful for generating pivot tables.
+    --tags=<column:tag,...>                           Inserts leading columns in output table and uniform values for each column.
 
 
   Example usage:
