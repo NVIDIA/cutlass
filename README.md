@@ -26,7 +26,7 @@ post. We have decomposed the structure of the GEMM computation into deeper, stru
 primitives for loading data, computing predicate masks, streaming data at each level of
 the GEMM hierarchy, and updating the output matrix.
 
-CUTLASS 1.0 is described in the [Doxygen documentation](https://github.com/NVIDIA/cutlass/docs)
+CUTLASS 1.0 is described in the [Doxygen documentation](https://nvidia.github.io/cutlass)
 and our talk at the [GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
 
 # Performance
@@ -169,7 +169,7 @@ Program usage:
     --m=<height>[:max height[:step]]                  Height of GEMM problem (number of rows of C). May specify a range with optional step size.
     --n=<width>[:max width[:step]]                    Width of GEMM problem (number of columns of C). May specify a range with optional step size.
     --k=<depth>[:max depth[:step]]                    Size of inner dimension of A and B. May specify a range with optional step size.
-    --kernels=<{s|d|h|i|wmma}gemm_{nn,nt,tn,tt}>      Select GEMM datatype and layout to use for tests
+    --kernels=<{s|d|h|i|wmma}_gemm_{nn,nt,tn,tt}>     Select GEMM datatype and layout to use for tests
     --peak=<bool>                                     If true, only reports peak performance per kernel after profiling specified problem space.
     --save_workspace={*never,incorrect,always}        Specifies when to save the GEMM inputs and results to the filesystem.
     --seed=<seed>                                     Random seed used by the random number generator in initializing input matrices.
