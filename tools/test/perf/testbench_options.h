@@ -546,7 +546,7 @@ struct TestbenchOptions {
         << "  --k=<depth>[:max depth[:step]]                "
         << "    Size of inner dimension of A and B. May specify a range with optional step size.\n"
 
-        << "  --kernels=<{s|d|h|i|wmma}gemm_{nn,nt,tn,tt}>  "
+        << "  --kernels=<{s|d|h|i|wmma}_gemm_{nn,nt,tn,tt}> "
         << "    Select GEMM datatype and layout to use for tests\n"
 
         << "  --peak=<bool>                                 "
