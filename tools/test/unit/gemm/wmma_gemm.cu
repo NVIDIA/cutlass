@@ -63,6 +63,7 @@ TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_nt) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
 TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_nt) { 
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::MatrixLayout::kRowMajor, 
@@ -76,9 +77,11 @@ TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_nt) {
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
 TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_nt) { 
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::MatrixLayout::kRowMajor, 
@@ -91,6 +94,7 @@ TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_nt) {
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -124,6 +128,7 @@ TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_nn) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
 TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_nn) { 
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::MatrixLayout::kColumnMajor, 
@@ -137,9 +142,11 @@ TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_nn) {
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
 TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_nn) { 
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::MatrixLayout::kColumnMajor, 
@@ -152,6 +159,7 @@ TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_nn) {
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -185,6 +193,7 @@ TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_tt) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
 TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_tt) { 
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
                                         cutlass::MatrixLayout::kRowMajor, 
@@ -198,9 +207,11 @@ TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_tt) {
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
 TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_tt) { 
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
                                         cutlass::MatrixLayout::kRowMajor, 
@@ -213,6 +224,7 @@ TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_tt) {
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -246,6 +258,7 @@ TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_tn) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
 TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_tn) { 
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
                                         cutlass::MatrixLayout::kColumnMajor, 
@@ -259,9 +272,11 @@ TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_tn) {
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
 TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_tn) { 
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
                                         cutlass::MatrixLayout::kColumnMajor, 
@@ -274,6 +289,7 @@ TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_tn) {
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

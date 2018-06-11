@@ -87,7 +87,9 @@ struct IgemmConfig
           /// The number of scalars per LDS for D.
           1,
           /// The number of stages in shared memory.
-          2> {};
+          2,
+          /// Enable the code path that deals with the residue in epilogue.
+          true> {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -125,17 +127,19 @@ struct IgemmConfig<OutputTile_, int8_t, AccumulatorsPerThread_>
           /// The number of scalars per LDS for D.
           4,
           /// The number of stages in shared memory.
-          2> {};
+          2,
+          /// Enable the code path that deals with the residue in epilogue.
+          true> {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <enum MatrixLayout::Kind kLayout_, typename GemmConfig_>
+template <enum MatrixLayout::Kind kLayout_, typename GemmConfig_, typename Index_>
 struct IgemmTileTraitsHelperA : public GemmTileTraitsHelperA<kLayout_, GemmConfig_> {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename GemmConfig_>
-struct IgemmTileTraitsHelperA<MatrixLayout::kColumnMajor, GemmConfig_>
+template <typename GemmConfig_, typename Index_>
+struct IgemmTileTraitsHelperA<MatrixLayout::kColumnMajor, GemmConfig_, Index_>
     : public GemmTileTraitsHelperA<MatrixLayout::kColumnMajor, GemmConfig_> {
   /// The base config.
   typedef GemmTileTraitsHelperA<MatrixLayout::kColumnMajor, GemmConfig_> Base;
@@ -144,7 +148,7 @@ struct IgemmTileTraitsHelperA<MatrixLayout::kColumnMajor, GemmConfig_>
   static int const kScalarsPerStsA = 16;
 
   /// The traits class to build the iterator to load data from global memory for A^N.
-  typedef IgemmContiguousGlobalTileTraits<
+  typedef IgemmGlobalTileTraits<
       GemmOperand::kA,
       // The layout.
       MatrixLayout::kColumnMajor,
@@ -155,8 +159,11 @@ struct IgemmTileTraitsHelperA<MatrixLayout::kColumnMajor, GemmConfig_>
       // The threads are distributed as warps x 32 (the traits may reorganize).
       Shape<1, ShapeCount<typename GemmConfig_::Warps>::kCount, GemmConfig_::kWarpSize>,
       // The number of scalars per LDG (LDG.32 or LDG.128, etc).
-      4>
+      GemmConfig_::kScalarsPerLdgA>
       GlobalTileTraits;
+
+  // The iterator.
+  typedef GemmGlobalIteratorAb<GlobalTileTraits, Index_> GlobalLoadIterator;
 
   /// The traits class to build the iterator to store data to shared memory for A^N.
   typedef GemmSharedStoreTileAbTraits<
@@ -173,13 +180,149 @@ struct IgemmTileTraitsHelperA<MatrixLayout::kColumnMajor, GemmConfig_>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <enum MatrixLayout::Kind kLayout_, typename GemmConfig_>
+template <typename GemmConfig_, typename Index_>
+struct IgemmTileTraitsHelperA<MatrixLayout::kRowMajor, GemmConfig_, Index_> {
+  /// The layout.
+  static MatrixLayout::Kind const kLayout = MatrixLayout::kRowMajor;
+
+  /// The input scalar.
+  typedef int8_t Scalar;
+  /// The scalar stored in shared memory.
+  typedef int8_t MultiplyAddScalar;
+
+  /// The number of scalars per LDG/STS/LDS for A.
+  static int const kScalarsPerStsA = 16;
+
+  /// The traits class to build the iterator to load data from global memory for A^T.
+  typedef IgemmGlobalTileTraits<
+      GemmOperand::kA,
+      // The layout.
+      MatrixLayout::kRowMajor,
+      // The pointer is float const.
+      int8_t const,
+      // The tile has size NxK in GEMM's terminology.
+      Shape<1, GemmConfig_::OutputTile::kW, GemmConfig_::OutputTile::kD>,
+      // The threads are distributed as warps x 32 (the traits may reorganize).
+      Shape<1, ShapeCount<typename GemmConfig_::Warps>::kCount, GemmConfig_::kWarpSize>,
+      // The number of scalars per LDG (LDG.32 or LDG.128, etc).
+      GemmConfig_::kScalarsPerLdgA>
+      GlobalTileTraits;
+
+  // The iterator.
+  typedef IgemmGlobalIteratorAb<GlobalTileTraits, Index_> GlobalLoadIterator;
+
+  /// The traits class to build the iterator to store data to shared memory for A^N.
+  typedef GemmSharedStoreWithSkewTileAbTraits<
+      // The pointer is int8.
+      int8_t,
+      // The tile has size KxN in GEMM's terminology.
+      Shape<GemmConfig_::kStages, GemmConfig_::OutputTile::kD / 4, GemmConfig_::OutputTile::kW * 4>,
+      // The threads are distributed as (threads / K) x K (the traits may reorganize).
+      typename GlobalTileTraits::Threads,
+      // The number of scalars per STS.
+      kScalarsPerStsA,
+      // The skew to avoid bank conflicts added in the tile W dimension.
+      16>
+      SharedStoreTileTraits;
+
+  /// The traits class to build the iterator to load from shared memory for A^N.
+  typedef GemmSharedLoadTileATraits<
+      // The pointer is float const.
+      int8_t const,
+      // The output tile size.
+      typename GemmConfig_::OutputTile,
+      // The number of warps.
+      typename GemmConfig_::Warps,
+      // The number of threads per warp.
+      typename GemmConfig_::MultiplyAdd::ThreadsPerWarp,
+      // The shape of the FMA instruction.
+      typename GemmConfig_::InstructionShape,
+      // The number of stages.
+      GemmConfig_::kStages,
+      // The number of scalars per LDS.
+      16,
+      // The skew.
+      SharedStoreTileTraits::kSkew>
+      SharedLoadTileTraits;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <enum MatrixLayout::Kind kLayout_, typename GemmConfig_, typename Index_>
 struct IgemmTileTraitsHelperB : public GemmTileTraitsHelperB<kLayout_, GemmConfig_> {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename GemmConfig_>
-struct IgemmTileTraitsHelperB<MatrixLayout::kRowMajor, GemmConfig_>
+template <typename GemmConfig_, typename Index_>
+struct IgemmTileTraitsHelperB<MatrixLayout::kColumnMajor, GemmConfig_, Index_> {
+  /// The layout.
+  static MatrixLayout::Kind const kLayout = MatrixLayout::kColumnMajor;
+
+  /// The input scalar.
+  typedef int8_t Scalar;
+  /// The scalar stored in shared memory.
+  typedef int8_t MultiplyAddScalar;
+
+  /// The number of scalars per LDG/STS/LDS for B.
+  static int const kScalarsPerStsB = 16;
+
+  /// The traits class to build the iterator to load data from global memory for B^T.
+  typedef IgemmGlobalTileTraits<
+      GemmOperand::kB,
+      // The layout.
+      MatrixLayout::kColumnMajor,
+      // The pointer is float const.
+      int8_t const,
+      // The tile has size NxK in GEMM's terminology.
+      Shape<1, GemmConfig_::OutputTile::kH, GemmConfig_::OutputTile::kD>,
+      // The threads are distributed as warps x 32 (the traits may reorganize).
+      Shape<1, ShapeCount<typename GemmConfig_::Warps>::kCount, GemmConfig_::kWarpSize>,
+      // The number of scalars per LDG (LDG.32 or LDG.128, etc).
+      GemmConfig_::kScalarsPerLdgB>
+      GlobalTileTraits;
+
+  // The iterator.
+  typedef IgemmGlobalIteratorAb<GlobalTileTraits, Index_> GlobalLoadIterator;
+
+  /// The traits class to build the iterator to store data to shared memory for B^N.
+  typedef GemmSharedStoreWithSkewTileAbTraits<
+      // The pointer is int8.
+      int8_t,
+      // The tile has size KxN in GEMM's terminology.
+      Shape<GemmConfig_::kStages, GemmConfig_::OutputTile::kD / 4, GemmConfig_::OutputTile::kH * 4>,
+      // The threads are distributed as (threads / K) x K (the traits may reorganize).
+      typename GlobalTileTraits::Threads,
+      // The number of scalars per STS.
+      kScalarsPerStsB,
+      // The skew to avoid bank conflicts added in the tile W dimension.
+      16>
+      SharedStoreTileTraits;
+
+  /// The traits class to build the iterator to load from shared memory for B^N.
+  typedef GemmSharedLoadTileBTraits<
+      // The pointer is float const.
+      int8_t const,
+      // The output tile size.
+      typename GemmConfig_::OutputTile,
+      // The number of warps.
+      typename GemmConfig_::Warps,
+      // The number of threads per warp.
+      typename GemmConfig_::MultiplyAdd::ThreadsPerWarp,
+      // The shape of the FMA instruction.
+      typename GemmConfig_::InstructionShape,
+      // The number of stages.
+      GemmConfig_::kStages,
+      // The number of scalars per LDS.
+      16,
+      // The skew.
+      SharedStoreTileTraits::kSkew>
+      SharedLoadTileTraits;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename GemmConfig_, typename Index_>
+struct IgemmTileTraitsHelperB<MatrixLayout::kRowMajor, GemmConfig_, Index_>
     : public GemmTileTraitsHelperB<MatrixLayout::kRowMajor, GemmConfig_> {
   /// The base config.
   typedef GemmTileTraitsHelperB<MatrixLayout::kRowMajor, GemmConfig_> Base;
@@ -188,7 +331,7 @@ struct IgemmTileTraitsHelperB<MatrixLayout::kRowMajor, GemmConfig_>
   static int const kScalarsPerStsB = 16;
 
   /// The traits class to build the iterator to load data from global memory for B^T.
-  typedef IgemmContiguousGlobalTileTraits<
+  typedef IgemmGlobalTileTraits<
       GemmOperand::kB,
       // The layout.
       MatrixLayout::kRowMajor,
@@ -199,8 +342,11 @@ struct IgemmTileTraitsHelperB<MatrixLayout::kRowMajor, GemmConfig_>
       // The threads are distributed as warps x 32 (the traits may reorganize).
       Shape<1, ShapeCount<typename GemmConfig_::Warps>::kCount, GemmConfig_::kWarpSize>,
       // The number of scalars per LDG (LDG.32 or LDG.128, etc).
-      4>
+      GemmConfig_::kScalarsPerLdgB>
       GlobalTileTraits;
+
+  // The iterator.
+  typedef GemmGlobalIteratorAb<GlobalTileTraits, Index_> GlobalLoadIterator;
 
   /// The traits class to build the iterator to store data to shared memory for B^N.
   typedef GemmSharedStoreTileAbTraits<
@@ -266,13 +412,13 @@ struct IgemmTraitsHelper {
   /// The IGEMM config.
   typedef IgemmConfig<OutputTile_, ScalarD_, AccumulatorsPerThread_> GemmConfig;
   /// The GEMM config for A.
-  typedef IgemmTileTraitsHelperA<kLayoutA_, GemmConfig> GemmTileTraitsHelperA;
+  typedef IgemmTileTraitsHelperA<kLayoutA_, GemmConfig, Index_> GemmTileTraitsHelperA;
   /// The GEMM config for B.
-  typedef IgemmTileTraitsHelperB<kLayoutB_, GemmConfig> GemmTileTraitsHelperB;
+  typedef IgemmTileTraitsHelperB<kLayoutB_, GemmConfig, Index_> GemmTileTraitsHelperB;
 
   /// The iterator to load A from global memory.
-  typedef GemmGlobalIteratorAb<typename GemmTileTraitsHelperA::GlobalTileTraits, Index_>
-      GlobalLoadIteratorA;
+  typedef typename GemmTileTraitsHelperA::GlobalLoadIterator GlobalLoadIteratorA;
+
   /// The default transformer for A.
   typedef typename IgemmTransformerA<GemmTileTraitsHelperA::kLayout,
                                      GlobalLoadIteratorA>::Transformer GlobalTransformerA;
@@ -287,8 +433,8 @@ struct IgemmTraitsHelper {
       GlobalLoadStreamA;
 
   /// The iterator to load B from global memory.
-  typedef GemmGlobalIteratorAb<typename GemmTileTraitsHelperB::GlobalTileTraits, Index_>
-      GlobalLoadIteratorB;
+  typedef typename GemmTileTraitsHelperB::GlobalLoadIterator GlobalLoadIteratorB;
+
   // The default transformer for B.
   typedef typename IgemmTransformerB<GemmTileTraitsHelperB::kLayout,
                                      GlobalLoadIteratorB>::Transformer GlobalTransformerB;

@@ -44,6 +44,8 @@
 
 namespace cutlass {
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <cutlass::GemmOperand::Kind kOperand_,
           cutlass::MatrixLayout::Kind kLayout_,
           typename Scalar_,
@@ -52,6 +54,8 @@ struct WmmaMatrix;
 }
 
 namespace test {
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T>
 struct GemmTestbedTraits : public cutlass::TypeTraits<T> {};
@@ -67,6 +71,8 @@ struct GemmTestbedTraits<cutlass::WmmaMatrix<kOperand_, kLayout_, Scalar_, WmmaS
   static inline double remove_negative_zero(double x) { return x == -0.0 ? 0.0 : x; }
   static inline double to_print(double x) { return x; }
 };
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename AType, typename BType, typename CType, typename Accumulator, typename Scalar>
 struct GemmTestbed {
@@ -219,11 +225,11 @@ struct GemmTestbed {
 
     typedef cutlass::Coord<cutlass::HostTensor<T>::Rank> Coord_t;
 
+    size_t matrix_stride = layout == CUBLAS_OP_N ? columns * ldm : rows * ldm;
+    // TODO: Remove that (int) cast.
     Coord_t stride = cutlass::make_Coord(
-        rows * columns, layout == CUBLAS_OP_N ? 1 : ldm, layout == CUBLAS_OP_N ? ldm : 1, 1);
-
+        (int)matrix_stride, layout == CUBLAS_OP_N ? 1 : ldm, layout == CUBLAS_OP_N ? ldm : 1, 1);
     Coord_t size = cutlass::make_Coord(1, rows, columns, 1);
-
     tensor.reset(stride, size);
   }
 
@@ -231,11 +237,13 @@ struct GemmTestbed {
   // Methods
   //
 
-  /// Constructs a workspace for verifying GEMM, assumes
-  /// dense packing.
+  /// Constructs a workspace for verifying GEMM.
   GemmTestbed(int M_,
               int N_,
               int K_,
+              int lda,
+              int ldb,
+              int ldc,
               cublasOperation_t layout_a,
               cublasOperation_t layout_b,
               Scalar alpha_ = Scalar(1),
@@ -243,33 +251,6 @@ struct GemmTestbed {
               cublasGemmAlgo_t algorithm_ = CUBLAS_GEMM_DEFAULT,
               cublasOperation_t layout_c = CUBLAS_OP_N)
       : layout_A(layout_a), layout_B(layout_b), alpha(alpha_), beta(beta_), algorithm(algorithm_) {
-    status = cublasCreate(&handle);
-    if (status != CUBLAS_STATUS_SUCCESS) {
-      throw cutlass::cuda_exception("Failed to create CUBLAS handle");
-    }
-
-    resize(A, M_, K_, layout_a);
-    resize(B, K_, N_, layout_b);
-    resize(C_initial, M_, N_, layout_c);
-    resize(ref_host, M_, N_, layout_c);
-    resize(ref_cublas, M_, N_, layout_c);
-    resize(computed, M_, N_, layout_c);
-  }
-
-  /// Constructs a workspace for verifying GEMM with arbitrary strides
-  GemmTestbed(int M_,
-              int N_,
-              int K_,
-              int ldc,
-              cublasOperation_t layout_a,
-              int lda,
-              cublasOperation_t layout_b,
-              int ldb,
-              Scalar alpha_ = Scalar(1),
-              Scalar beta_ = Scalar(0),
-              cublasGemmAlgo_t algorithm_ = CUBLAS_GEMM_DEFAULT,
-              cublasOperation_t layout_c = CUBLAS_OP_N)
-      : alpha(alpha_), beta(beta_), algorithm(algorithm_) {
     status = cublasCreate(&handle);
     if (status != CUBLAS_STATUS_SUCCESS) {
       throw cutlass::cuda_exception("Failed to create CUBLAS handle");
@@ -515,6 +496,8 @@ struct GemmTestbed {
 
 }  // namespace test
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 namespace cutlass {
 inline cublasOperation_t convert(cutlass::MatrixLayout::Kind layout) {
   switch (layout) {
@@ -527,4 +510,6 @@ inline cublasOperation_t convert(cutlass::MatrixLayout::Kind layout) {
   }
   return CUBLAS_OP_N;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 }

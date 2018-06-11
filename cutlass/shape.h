@@ -150,9 +150,13 @@ struct ShapeMin {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Shape_>
+template <typename Shape_, int kElementsPerAccess>
 struct ShapeStrides {
-  typedef Shape<Shape_::kH * Shape_::kW * Shape_::kC, Shape_::kW * Shape_::kC, Shape_::kC, 1> Shape;
+  typedef Shape<Shape_::kH * Shape_::kW * Shape_::kC,
+                Shape_::kW * Shape_::kC,
+                Shape_::kC,
+                kElementsPerAccess>
+      Shape;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

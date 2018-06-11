@@ -32,7 +32,7 @@
 
 TEST(Sgemm_64x128x8, sgemm_64x128x64_4x8_accumulators_nt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<8, 128, 64>,
                                      cutlass::gemm::LinearScaling<float>,
                                      cutlass::Shape<8, 8, 4> >

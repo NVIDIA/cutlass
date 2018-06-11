@@ -40,7 +40,7 @@ namespace gemm {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Gemm_>
-__global__ void gemm_kernel(typename Gemm_::Params params) {
+__global__ /*__launch_bounds__(Gemm_::kThreads)*/ void gemm_kernel(typename Gemm_::Params params) {
   // Declare shared memory.
   __shared__ typename Gemm_::SharedStorage shared_storage;
 
@@ -193,6 +193,71 @@ struct Gemm {
   CUTLASS_DEVICE Gemm(Params const& params_, SharedStorage& shared_storage_)
       : params(params_), shared_storage(shared_storage_) {}
 
+  /// Consume a single iteration of the loop.
+  template <bool kIsLastIteration>
+  CUTLASS_DEVICE void consume_tile(typename Traits::GlobalLoadStream& global_stream,
+                                   typename Traits::SharedLoadStream& shared_load_stream,
+                                   typename Traits::MultiplyAdd::Accumulators& accumulators,
+                                   Index outer_k) {
+    // If that's the last "load iteration" update the predicates.
+    if (!kIsLastIteration) {
+      global_stream.move_to_residue<false>(outer_k);
+    }
+
+    // Load data for the next iteration of the main loop.
+    if (!kIsLastIteration) {
+      global_stream.copy();
+    }
+
+    // The unrolling steps for the main loop.
+    int const kUnrollingSteps =
+        Traits::MultiplyAdd::AccumulatorsPerWarp::kD / Traits::MultiplyAdd::InstructionShape::kD;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int step = 0; step < kUnrollingSteps - 1; ++step) {
+      // Trigger the copy from shared memory for the next A/B values.
+      shared_load_stream.copy(step + 1);
+      // Make sure the values are available for the current iteration to do the multiply-add.
+      shared_load_stream.commit(step);
+
+      // Do the math on the fragments of the current iteration.
+      typename Traits::MultiplyAdd multiply_add;
+      multiply_add.multiply_add(shared_load_stream.fragment_a(step),
+                                shared_load_stream.fragment_b(step),
+                                accumulators,
+                                accumulators);
+    }
+
+    // Make sure the data from shared memory has been entirely consumed.
+    Traits::shared_load_fence(true);
+
+    // Commit the data in shared memory for A/B.
+    if (!kIsLastIteration) {
+      global_stream.commit();
+    }
+
+    // Make sure the data is in shared memory.
+    Traits::shared_store_fence(true);
+
+    // Trigger the loads for the next iteration (if needed).
+    if (!kIsLastIteration) {
+      // Move to the next stage for the load (if it makes sense).
+      shared_load_stream.inc_stage();
+      // Trigger the copy from shared memory for the next loop iteration.
+      shared_load_stream.copy(0);
+    }
+
+    // Make sure the values are available for the current iteration to do the multiply-add.
+    shared_load_stream.commit(kUnrollingSteps - 1);
+
+    // Do the math on the fragments of the current iteration.
+    typename Traits::MultiplyAdd multiply_add;
+    multiply_add.multiply_add(shared_load_stream.fragment_a(kUnrollingSteps - 1),
+                              shared_load_stream.fragment_b(kUnrollingSteps - 1),
+                              accumulators,
+                              accumulators);
+  }
+
   /// Do the GEMM.
   CUTLASS_DEVICE void multiply_add() {
     // Swizzle the IDs of the block (to enable better cache behavior).
@@ -212,16 +277,11 @@ struct Gemm {
     // Create the accumulator clear.
     ClearAccumulators clear(shared_storage.main_loop.clear);
 
-    /// Define the mainloop iteration size
-    typedef typename Traits::MultiplyAdd MultiplyAdd;
-
     // By how much we unroll the main loop.
-    Index const kUnroll = static_cast<Index>(MultiplyAdd::AccumulatorsPerWarp::kD);
+    Index const kUnroll = static_cast<Index>(Traits::OutputTile::kD);
 
     // If we do not have enough steps in the main loop, trigger the residue code.
-    if (params.k < kUnroll) {
-      global_stream.residue(params.k, true);
-    }
+    global_stream.move_to_residue<true>(params.k);
 
     // Fetch the fragments for A and B from global memory.
     global_stream.copy();
@@ -232,9 +292,12 @@ struct Gemm {
     // Make sure the data is in shared memory.
     Traits::shared_store_fence(false);
 
+    // Rollback to the beginning of the GEMM-K dimension. It may have no impact.
+    global_stream.rollback();
+
     // The unrolling steps for the main loop.
     int const kUnrollingSteps =
-        MultiplyAdd::AccumulatorsPerWarp::kD / MultiplyAdd::InstructionShape::kD;
+        Traits::MultiplyAdd::AccumulatorsPerWarp::kD / Traits::MultiplyAdd::InstructionShape::kD;
 
     // Make sure we have at least 2 unrolling steps or our pipeling is not going to work.
     static_assert(kUnrollingSteps >= 2, "The pipelining assumes at least two steps");
@@ -246,59 +309,21 @@ struct Gemm {
     shared_load_stream.copy(0);
 
     // Allocate the accumulators.
-    typename MultiplyAdd::Accumulators accumulators;
+    typename Traits::MultiplyAdd::Accumulators accumulators;
     // Clear the accumulators.
     clear.clear(accumulators);
 
+    // The loop index.
+    Index outer_k = params.k - kUnroll;
+
     // Enter the main loop and iterate.
-    typedef typename Traits::Index Index;
-    for (Index outer_k = params.k - kUnroll; outer_k > -kUnroll; outer_k -= kUnroll) {
-      // If that's the last "load iteration" update the predicates.
-      int const is_residue = outer_k <= kUnroll;
-      if (is_residue) {
-        global_stream.residue(outer_k);
-      }
+    for (; outer_k > 0; outer_k -= kUnroll) {
+      consume_tile<false>(global_stream, shared_load_stream, accumulators, outer_k);
+    }
 
-      // Load data for the next iteration of the main loop.
-      global_stream.copy();
-
-      CUTLASS_PRAGMA_UNROLL
-      for (int step = 0; step < kUnrollingSteps - 1; ++step) {
-        // Trigger the copy from shared memory for the next A/B values.
-        shared_load_stream.copy(step + 1);
-        // Make sure the values are available for the current iteration to do the multiply-add.
-        shared_load_stream.commit(step);
-
-        // Do the math on the fragments of the current iteration.
-        MultiplyAdd multiply_add;
-        multiply_add.multiply_add(shared_load_stream.fragment_a(step),
-                                  shared_load_stream.fragment_b(step),
-                                  accumulators,
-                                  accumulators);
-      }
-
-      // Make sure the data from shared memory has been entirely consumed.
-      Traits::shared_load_fence(true);
-
-      // Commit the data in shared memory for A/B.
-      global_stream.commit();
-
-      // Make sure the data is in shared memory.
-      Traits::shared_store_fence(true);
-
-      // Move to the next stage for the load (if it makes sense).
-      shared_load_stream.inc_stage();
-      // Trigger the copy from shared memory for the next loop iteration.
-      shared_load_stream.copy(0);
-      // Make sure the values are available for the current iteration to do the multiply-add.
-      shared_load_stream.commit(kUnrollingSteps - 1);
-
-      // Do the math on the fragments of the current iteration.
-      MultiplyAdd multiply_add;
-      multiply_add.multiply_add(shared_load_stream.fragment_a(kUnrollingSteps - 1),
-                                shared_load_stream.fragment_b(kUnrollingSteps - 1),
-                                accumulators,
-                                accumulators);
+    // Residual loop.
+    for (; outer_k > -kUnroll; outer_k -= kUnroll) {
+      consume_tile<true>(global_stream, shared_load_stream, accumulators, outer_k);
     }
 
     // Epilogue.

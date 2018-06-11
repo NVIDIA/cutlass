@@ -47,19 +47,19 @@ template <GemmOperand::Kind kOperand_,
           typename Tile_,
           typename Threads_,
           int kAccessSize_>
-struct IgemmContiguousGlobalTileTraits : public GemmGlobalTileTraits<
-                                             // Which GEMM operand?
-                                             kOperand_,
-                                             // The layout.
-                                             kLayout_,
-                                             // The scalar.
-                                             Scalar_,
-                                             // The tile.
-                                             Tile_,
-                                             // The threads.
-                                             Threads_,
-                                             // The number of scalars per LDG/STG.
-                                             kAccessSize_> {
+struct IgemmGlobalTileTraits : public GemmGlobalTileTraits<
+                                   // Which GEMM operand?
+                                   kOperand_,
+                                   // The layout.
+                                   kLayout_,
+                                   // The scalar.
+                                   Scalar_,
+                                   // The tile.
+                                   Tile_,
+                                   // The threads.
+                                   Threads_,
+                                   // The number of scalars per LDG/STG.
+                                   kAccessSize_> {
   /// The base class.
   typedef GemmGlobalTileTraits<kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_> Base;
   /// The threads.
@@ -87,6 +87,72 @@ struct IgemmContiguousGlobalTileTraits : public GemmGlobalTileTraits<
  public:
   /// The threads strides.
   typedef Shape<1, 4, Base::Tile::kC> ThreadsDelta;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Deprecated. Please use IgemmGlobalTileTraits instead.
+
+template <GemmOperand::Kind kOperand_,
+          MatrixLayout::Kind kLayout_,
+          typename Scalar_,
+          typename Tile_,
+          typename Threads_,
+          int kAccessSize_>
+struct IgemmContiguousGlobalTileTraits
+    : public IgemmGlobalTileTraits<kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_> {};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename TileTraits_, typename Index_ = int>
+struct IgemmGlobalIteratorAb : public GemmGlobalIteratorAb<TileTraits_, Index_> {
+  /// The base class.
+  typedef GemmGlobalIteratorAb<TileTraits_, Index_> Base;
+  /// The functor to compute the thread offset.
+  typedef typename TileTraits_::ThreadOffset ThreadOffset;
+
+  /// Constructor.
+  CUTLASS_DEVICE IgemmGlobalIteratorAb(typename Base::Params const& _params,
+                                       const Coord<3>& bounds,
+                                       const Coord<3>& block,
+                                       ThreadOffset thread_offset_func = ThreadOffset())
+      : Base(_params, bounds, block, thread_offset_func), in_residue_(false), mask_(0xffffffff) {
+    // The number of elements read in a single iteration.
+    int const kBlock = TileTraits_::Tile::kW * TileTraits_::kAccessSize;
+    // The residue.
+    int const kResidue = (int)(bounds[1] % kBlock);
+
+    // Compute the number of elements that are valid.
+    int const left = kResidue - Base::thread_offset[2];
+    if (left > 0 && left < 4) {
+      mask_ = (1u << (8 * left)) - 1u;
+    }
+  }
+
+  /// The accessor.
+  CUTLASS_DEVICE void get(typename Base::AccessType& value, int d, int h, int w, int c) const {
+    Base::get(value, d, h, w, c);
+    if (in_residue_) {
+      reinterpret_cast<uint32_t&>(value) &= mask_;
+    }
+  }
+
+  /// Move to residue portion.
+  CUTLASS_DEVICE void move_to_residue(typename Base::Index k) {
+    Base::move_to_residue(k);
+    in_residue_ = true;
+  }
+
+  /// Move back to the beginning of the first tile.
+  CUTLASS_DEVICE void rollback() {
+    Base::rollback();
+    in_residue_ = false;
+  }
+
+  /// Are we in the residue?
+  bool in_residue_;
+  /// The mask to clean up the values.
+  uint32_t mask_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

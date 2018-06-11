@@ -45,14 +45,12 @@ CUTLASS_HOST_DEVICE void iterator_load(InputIterator &iterator, Fragment &fragme
       for (int w = 0; w < InputIterator::Iterations::kW; ++w) {
         for (int c = 0; c < InputIterator::Iterations::kC; ++c) {
           if (iterator.valid(d, h, w, c)) {
-            int const offset =
-                ComputeOffsetFromStrides<typename InputIterator::ImmediateOffsetStrides>::get(
-                    0, 0, w, c);
-            Load<typename Fragment::Element, InputIterator::Tile::kC, InputIterator::kMemorySpace>::
-                load(reinterpret_cast<typename InputIterator::AccessType &>(
-                         frag_iterator.at(d, h, w, c)),
-                     iterator.data(),
-                     offset);
+            iterator.get(reinterpret_cast<typename InputIterator::AccessType &>(
+                             frag_iterator.at(d, h, w, c)),
+                         d,
+                         h,
+                         w,
+                         c);
           }
         }
         if (w < InputIterator::Iterations::kW - 1) {
@@ -196,17 +194,12 @@ CUTLASS_HOST_DEVICE void iterator_store(OutputIterator &iterator, Fragment &frag
     for (int h = 0; h < OutputIterator::Iterations::kH; ++h) {
       for (int w = 0; w < OutputIterator::Iterations::kW; ++w) {
         if (iterator.valid(d, h, w, 0)) {
-          int const offset =
-              ComputeOffsetFromStrides<typename OutputIterator::ImmediateOffsetStrides>::get(
-                  d, h, w, 0);
-
-          Store<typename Fragment::Element,
-                OutputIterator::Tile::kC,
-                OutputIterator::kMemorySpace>::
-              store(reinterpret_cast<typename OutputIterator::AccessType &>(
-                        frag_iterator.at(d, h, w, 0)),
-                    iterator.data(),
-                    offset);
+          iterator.set(reinterpret_cast<typename OutputIterator::AccessType const &>(
+                           frag_iterator.at(d, h, w, 0)),
+                       d,
+                       h,
+                       w,
+                       0);
         }
         if (w < OutputIterator::Iterations::kW - 1) {
           iterator.inc_w();

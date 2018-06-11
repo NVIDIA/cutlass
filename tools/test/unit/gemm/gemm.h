@@ -24,12 +24,18 @@
 **************************************************************************************************/
 
 #include <cutlass/cutlass.h>
+#include <tools/test/unit/gemm/gemm_testbed.h>
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename GemmTraits_>
 static void run_gemm(
     int m,
     int n,
     int k,
+    int lda,
+    int ldb,
+    int ldc,
     typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type alpha =
         typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1),
     typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
@@ -51,6 +57,9 @@ static void run_gemm(
       testbed(m,
               n,
               k,
+              lda,
+              ldb,
+              ldc,
               cutlass::convert(GemmTraits_::kLayoutA),
               cutlass::convert(GemmTraits_::kLayoutB),
               alpha,
@@ -88,3 +97,22 @@ static void run_gemm(
     ASSERT_TRUE(testbed.verify_with_host());
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename GemmTraits_>
+static void run_gemm(
+    int m,
+    int n,
+    int k,
+    typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type alpha =
+        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1),
+    typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
+        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0)) {
+  int lda = GemmTraits_::kLayoutA == cutlass::MatrixLayout::kColumnMajor ? m : k;
+  int ldb = GemmTraits_::kLayoutB == cutlass::MatrixLayout::kColumnMajor ? k : n;
+
+  run_gemm<GemmTraits_>(m, n, k, lda, ldb, m, alpha, beta);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////

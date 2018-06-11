@@ -147,8 +147,11 @@ struct HgemmTileTraitsHelperA<MatrixLayout::kRowMajor, GemmConfig_>
       GemmConfig_::kScalarsPerLdgA>
       GlobalTileTraits;
 
+  /// The skew.
+  static int const kSkewA = 128 / sizeof(half) / GlobalTileTraits::Threads::kW / 2;
+
   /// The traits class to build the iterator to store data to shared memory for A^T.
-  typedef GemmSharedStoreWithSkewTileAbTraits<
+  typedef GemmSharedStoreWithSkewTileAbTraits <
       // The pointer.
       half,
       // The tile has size KxM in GEMM's terminology.
@@ -160,8 +163,8 @@ struct HgemmTileTraitsHelperA<MatrixLayout::kRowMajor, GemmConfig_>
       // The number of scalars per STS (STS.32 or STS.128, etc).
       2,
       // The skew to avoid bank conflicts added in the tile W dimension.
-      128 / sizeof(half) / GlobalTileTraits::Threads::kW / 2>
-      SharedStoreTileTraits;
+      kSkewA<GemmConfig_::kScalarsPerLdsA ? GemmConfig_::kScalarsPerLdsA : kSkewA>
+          SharedStoreTileTraits;
 
   /// The traits class to build the iterator to load from shared memory for A^T.
   typedef GemmSharedLoadTileATraits<
@@ -212,8 +215,11 @@ struct HgemmTileTraitsHelperB<MatrixLayout::kColumnMajor, GemmConfig_>
       GemmConfig_::kScalarsPerLdgB>
       GlobalTileTraits;
 
+  /// The skew for B.
+  static int const kSkewB = 128 / sizeof(half) / GlobalTileTraits::Threads::kW / 2;
+
   /// The traits class to build the iterator to store data to shared memory for B^N.
-  typedef GemmSharedStoreWithSkewTileAbTraits<
+  typedef GemmSharedStoreWithSkewTileAbTraits <
       // The pointer.
       half,
       // The tile has size KxN in GEMM's terminology.
@@ -225,8 +231,8 @@ struct HgemmTileTraitsHelperB<MatrixLayout::kColumnMajor, GemmConfig_>
       // The number of scalars per STS (STS.32 or STS.128, etc).
       2,
       // The skew to avoid bank conflicts added in the tile W dimension.
-      128 / sizeof(half) / GlobalTileTraits::Threads::kW / 2>
-      SharedStoreTileTraits;
+      kSkewB<GemmConfig_::kScalarsPerLdsB ? GemmConfig_::kScalarsPerLdsB : kSkewB>
+          SharedStoreTileTraits;
 
   /// The traits class to build the iterator to load from shared memory for B^N.
   typedef GemmSharedLoadTileBTraits<
@@ -261,7 +267,7 @@ template <
     /// The functor to do the math in the epilogue.
     typename EpilogueFunctor_,
     /// The number of accumulators per thread.
-    typename AccumulatorsPerThread_ = Shape<32, 8, 8>,
+    typename AccumulatorsPerThread_ = Shape<8, 8, 16>,
     /// The number of halfs loaded in one LDG for A.
     int kScalarsPerLdgA_ = 2,
     /// The number of halfs loaded in one LDG for B.
