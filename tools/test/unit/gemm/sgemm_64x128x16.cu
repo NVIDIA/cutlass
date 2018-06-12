@@ -22,52 +22,22 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-
-/*! \file
-    \brief Basic include for CUTLASS macros
-*/
-
-#pragma once
+#include <cutlass_unit_test.h>
+#include <cutlass/gemm/gemm.h>
+#include <cutlass/gemm/sgemm_traits.h>
+#include <tools/test/unit/gemm/gemm_testbed.h>
+#include <tools/test/unit/gemm/gemm.h>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#define CUTLASS_MAJOR 1
-#define CUTLASS_MINOR 0
-#define CUTLASS_PATCH 1
-#define CUTLASS_VERSION ((CUTLASS_MAJOR)*100 + (CUTLASS_MINOR)*10 + CUTLASS_PATCH)
-
-#ifdef __NVCC__
-#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
-#define CUTLASS_DEVICE __forceinline__ __device__
-#elif defined(__CUDACC_RTC__)
-#define CUTLASS_HOST_DEVICE __forceinline__ __device__
-#define CUTLASS_DEVICE __forceinline__ __device__
-#else
-#define CUTLASS_HOST_DEVICE
-// CUTLASS_DEVICE is an error if not compiling device code
-#endif
-
-// CUTLASS_PRAGMA_UNROLL inserts a CUTLASS_PRAGMA_UNROLL if supported by the compiler
-#if defined(__CUDA_ARCH__)
-#if defined(_MSC_VER)
-#define CUTLASS_PRAGMA_UNROLL __pragma("unroll")
-#define CUTLASS_PRAGMA_NO_UNROLL __pragma("unroll 1")
-#else
-#define CUTLASS_PRAGMA_UNROLL _Pragma("unroll")
-#define CUTLASS_PRAGMA_NO_UNROLL _Pragma("unroll 1")
-#endif
-#else
-#define CUTLASS_PRAGMA_UNROLL
-#define CUTLASS_PRAGMA_NO_UNROLL
-#endif
-
-#define CUTLASS_ASSERT(x) assert(x)
-
-namespace cutlass {
-
-/// NVIDIA GPU Warp size
-static const int kWarpSize = 32;
-
-}  // namespace cutlass
+TEST(Sgemm_64x128x16, sgemm_64x128x64_4x8_accumulators_nt) {
+  typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 128, 64>,
+                                     cutlass::gemm::LinearScaling<float>,
+                                     cutlass::Shape<8, 8, 4> >
+      SgemmTraits;
+  run_gemm<SgemmTraits>(64, 128, 64);
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

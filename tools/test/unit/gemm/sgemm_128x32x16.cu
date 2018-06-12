@@ -30,344 +30,265 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x81x1_nt) {
+TEST(Sgemm_128x32x16, sgemm_128x32x1_nt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 81, 1);
+  run_gemm<SgemmTraits>(128, 32, 1);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x112x8_nt) {
+TEST(Sgemm_128x32x16, sgemm_128x32x16_nt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 112, 8);
+  run_gemm<SgemmTraits>(128, 32, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x112x9_nt) {
+TEST(Sgemm_128x32x16, sgemm_128x32x17_nt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 112, 9);
+  run_gemm<SgemmTraits>(128, 32, 17);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x73x16_nt) {
+TEST(Sgemm_128x32x16, sgemm_128x32x32_nt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 73, 16);
+  run_gemm<SgemmTraits>(128, 32, 32);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_97x112x64_nt) {
+TEST(Sgemm_128x32x16, sgemm_256x32x16_nt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(97, 112, 64);
+  run_gemm<SgemmTraits>(256, 32, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_256x112x16_nt) {
+TEST(Sgemm_128x32x16, sgemm_128x64x16_nt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(256, 112, 16);
+  run_gemm<SgemmTraits>(128, 64, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x240x16_nt) {
+TEST(Sgemm_128x32x16, sgemm_256x64x16_nt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 240, 16);
+  run_gemm<SgemmTraits>(256, 64, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_256x240x16_nt) {
-  typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
-      SgemmTraits;
-  run_gemm<SgemmTraits>(256, 240, 16);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(Sgemm_128x128x8, sgemm_128x112x1_nn) {
+TEST(Sgemm_128x32x16, sgemm_128x32x1_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 112, 1);
+  run_gemm<SgemmTraits>(128, 32, 1);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_79x112x8_nn) {
+TEST(Sgemm_128x32x16, sgemm_128x32x16_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(79, 112, 8);
+  run_gemm<SgemmTraits>(128, 32, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x81x9_nn) {
+TEST(Sgemm_128x32x16, sgemm_128x32x17_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 81, 9);
+  run_gemm<SgemmTraits>(128, 32, 17);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x112x16_nn) {
+TEST(Sgemm_128x32x16, sgemm_128x32x32_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 112, 16);
+  run_gemm<SgemmTraits>(128, 32, 32);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x73x64_nn) {
+TEST(Sgemm_128x32x16, sgemm_256x32x16_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 73, 64);
+  run_gemm<SgemmTraits>(256, 32, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_256x112x16_nn) {
+TEST(Sgemm_128x32x16, sgemm_128x64x16_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(256, 112, 16);
+  run_gemm<SgemmTraits>(128, 64, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x256x16_nn) {
+TEST(Sgemm_128x32x16, sgemm_256x64x16_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 256, 16);
+  run_gemm<SgemmTraits>(256, 64, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_256x256x16_nn) {
-  typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
-      SgemmTraits;
-  run_gemm<SgemmTraits>(256, 256, 16);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(Sgemm_128x128x8, sgemm_128x128x1_tn) {
+TEST(Sgemm_128x32x16, sgemm_128x32x1_tn) {
     typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-    cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<8, 128, 128> > SgemmTraits;
+    cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<16, 128, 128> > SgemmTraits;
     run_gemm<SgemmTraits>(128, 128, 1);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_127x112x8_tn) {
+TEST(Sgemm_128x32x16, sgemm_128x32x16_tn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(127, 112, 8);
+  run_gemm<SgemmTraits>(128, 32, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_21x112x9_tn) {
+TEST(Sgemm_128x32x16, sgemm_128x32x17_tn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(21, 112, 9);
+  run_gemm<SgemmTraits>(128, 32, 17);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x73x16_tn) {
+TEST(Sgemm_128x32x16, sgemm_128x32x32_tn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 73, 16);
+  run_gemm<SgemmTraits>(128, 32, 32);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x81x64_tn) {
+TEST(Sgemm_128x32x16, sgemm_256x32x16_tn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 81, 64);
+  run_gemm<SgemmTraits>(256, 32, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_256x112x16_tn) {
+TEST(Sgemm_128x32x16, sgemm_128x64x16_tn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(256, 112, 16);
+  run_gemm<SgemmTraits>(128, 64, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_47x256x16_tn) {
+TEST(Sgemm_128x32x16, sgemm_256x64x16_tn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
                                      cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
+                                     cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(47, 256, 16);
+  run_gemm<SgemmTraits>(256, 64, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_211x256x16_tn) {
-  typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::Shape<8, 128, 128> >
-      SgemmTraits;
-  run_gemm<SgemmTraits>(211, 256, 16);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(Sgemm_128x128x8, sgemm_128x128x1_tt) {
+TEST(Sgemm_128x32x16, sgemm_128x32x1_tt) {
     typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-    cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> > SgemmTraits;
+    cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 128, 128> > SgemmTraits;
     run_gemm<SgemmTraits>(128, 128, 1);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_109x112x8_tt) {
+TEST(Sgemm_128x32x16, sgemm_128x32x16_tt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(109, 112, 8);
+  run_gemm<SgemmTraits>(128, 32, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x112x9_tt) {
+TEST(Sgemm_128x32x16, sgemm_128x32x17_tt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 112, 9);
+  run_gemm<SgemmTraits>(128, 32, 17);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x112x16_tt) {
+TEST(Sgemm_128x32x16, sgemm_128x32x32_tt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 112, 16);
+  run_gemm<SgemmTraits>(128, 32, 32);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_123x112x64_tt) {
+TEST(Sgemm_128x32x16, sgemm_256x32x16_tt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(123, 112, 64);
+  run_gemm<SgemmTraits>(256, 32, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_256x112x16_tt) {
+TEST(Sgemm_128x32x16, sgemm_128x64x16_tt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(256, 112, 16);
+  run_gemm<SgemmTraits>(128, 64, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(Sgemm_128x128x8, sgemm_128x256x16_tt) {
+TEST(Sgemm_128x32x16, sgemm_256x64x16_tt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
+                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 32, 128> >
       SgemmTraits;
-  run_gemm<SgemmTraits>(128, 256, 16);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(Sgemm_128x128x8, sgemm_256x256x16_tt) {
-  typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
-      SgemmTraits;
-  run_gemm<SgemmTraits>(256, 256, 16);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(Sgemm_128x128x8, sgemm_120x112x64_ldg4_nt) {
-  // Load 4 floats per LDG for A/B.
-  typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::Shape<8, 128, 128>,
-                                     cutlass::gemm::LinearScaling<float>,
-                                     cutlass::Shape<8, 8, 8>,
-                                     4, 4>
-      SgemmTraits;
-  run_gemm<SgemmTraits>(120, 112, 64);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(Sgemm_128x128x8, sgemm_128x128x16_alpha2_nt) {
-  typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
-      SgemmTraits;
-  run_gemm<SgemmTraits>(128, 128, 16, 2.f, 0.f);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(Sgemm_128x128x8, sgemm_128x112x16_beta1_nt) {
-  typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
-      SgemmTraits;
-  run_gemm<SgemmTraits>(128, 112, 16, 1.f, 1.f);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(Sgemm_128x128x8, sgemm_128x112x16_alpha2_beta1_nt) {
-  typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
-      SgemmTraits;
-  run_gemm<SgemmTraits>(128, 112, 16, 2.f, 1.f);
+  run_gemm<SgemmTraits>(256, 64, 16);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

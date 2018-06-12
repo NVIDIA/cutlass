@@ -40,6 +40,8 @@ struct ClearAccumulators {
   struct SharedStorage {};
 
   /// Ctor.
+  CUTLASS_DEVICE ClearAccumulators() {}
+  /// Ctor.
   CUTLASS_DEVICE ClearAccumulators(SharedStorage& shared_storage) {}
 
   /// Clear the fragment.

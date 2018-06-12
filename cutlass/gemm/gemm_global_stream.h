@@ -84,8 +84,9 @@ struct GlobalLoadStreamBase {
     typename StoreIterator::Params store_iterator;
 
     /// Setup the params.
-    CUTLASS_HOST_DEVICE int initialize(Pointer pointer, Index ld) {
-      int error_code = load_iterator.initialize(pointer, ld);
+    template <typename GemmDesc_>
+    CUTLASS_HOST_DEVICE int initialize(GemmDesc_ const& desc, Pointer pointer, Index ld) {
+      int error_code = load_iterator.initialize(desc, pointer, ld);
       if (error_code) {
         return error_code;
       }
@@ -128,6 +129,9 @@ struct GlobalLoadStreamBase {
     store_iterator.inc_stage();
   }
 
+  /// Move to the beginning of the residue code. That's a new code path in CUTLASS 1.0.1.
+  CUTLASS_DEVICE void move_to_residue(Index k) { load_iterator.move_to_residue(k); }
+
   /// Execute the residue code.
   CUTLASS_DEVICE void residue(Index k, bool skip_clear = false) {
     load_iterator.residue(k);
@@ -135,6 +139,9 @@ struct GlobalLoadStreamBase {
       fetched_fragment.clear();
     }
   }
+
+  /// Rollback to the beginning of the GEMM-k dimension.
+  CUTLASS_DEVICE void rollback() { load_iterator.rollback(); }
 
   /// The iterator.
   LoadIterator load_iterator;

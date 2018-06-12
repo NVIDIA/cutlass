@@ -106,6 +106,29 @@ struct Load<double, 2, Memory_, true, 16> {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if defined(__CUDACC_VERSION_MAJOR) && __CUDACC_VERSION_MAJOR < 10
+// WAR bug in NVCC where the upper and lower half of the register end up being the same
+template <MemorySpace::Kind Memory_>
+struct Load<half, 8, Memory_, true, 16> {
+  /// The output type.
+  typedef typename Vectorize<half, 8>::Type AccessType;
+
+  /// The store function.
+  static CUTLASS_DEVICE void load(AccessType& dst, half const* pointer, int offset) {
+    int2 tmp = reinterpret_cast<int2 const*>(&pointer[offset])[0];
+    dst.registers[0] = tmp.x;
+    dst.registers[1] = tmp.y;
+
+    tmp = reinterpret_cast<int2 const*>(&pointer[offset + 4])[0];
+    dst.registers[2] = tmp.x;
+    dst.registers[3] = tmp.y;
+  }
+};
+
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <typename Scalar_, int Lanes_, MemorySpace::Kind Memory_>
 struct Load<Scalar_, Lanes_, Memory_, true, 16> {
   /// The output type.

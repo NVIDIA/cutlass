@@ -74,7 +74,9 @@ template <
     /// The number of scalars per LDS for D.
     int kScalarsPerLdsD_,
     /// The number of stages in shared memory to do single/double/triple-buffering.
-    int kStages_>
+    int kStages_,
+    /// Do we do the residue in the prologue?
+    bool kResidueInPrologue_ = false>
 
 struct GemmConfig {
   //
@@ -129,6 +131,9 @@ struct GemmConfig {
 
   /// The number of stages in shared memory to implement double, triple, more-buffering.
   static int const kStages = kStages_;
+
+  /// Do we do the residue in the prologue?
+  static bool const kResidueInPrologue = kResidueInPrologue_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -229,8 +234,12 @@ struct GemmTileTraitsHelperA<MatrixLayout::kRowMajor, GemmConfig_> {
 
   /// The number of scalars in 4B.
   static int const kScalarsIn4B = sizeof(MultiplyAddScalar) > 4 ? 1 : 4 / sizeof(MultiplyAddScalar);
+  /// The skew for A.
+  static int const kSkewA = 128 / sizeof(MultiplyAddScalar) / GemmConfig_::kScalarsPerStsA /
+                            GlobalTileTraits::Threads::kW * kScalarsIn4B;
+
   /// The traits class to build the iterator to store data to shared memory for A^T.
-  typedef GemmSharedStoreWithSkewTileAbTraits<
+  typedef GemmSharedStoreWithSkewTileAbTraits <
       // The pointer is float.
       MultiplyAddScalar,
       // The tile has size KxM in GEMM's terminology.
@@ -242,9 +251,8 @@ struct GemmTileTraitsHelperA<MatrixLayout::kRowMajor, GemmConfig_> {
       // The number of scalars per STS.
       GemmConfig_::kScalarsPerStsA,
       // The skew to avoid bank conflicts added in the tile W dimension.
-      128 / sizeof(MultiplyAddScalar) / GemmConfig_::kScalarsPerStsA /
-          GlobalTileTraits::Threads::kW * kScalarsIn4B>
-      SharedStoreTileTraits;
+      kSkewA<GemmConfig_::kScalarsPerLdsA ? GemmConfig_::kScalarsPerLdsA : kSkewA>
+          SharedStoreTileTraits;
 
   /// The traits class to build the iterator to load from shared memory for A^T.
   typedef GemmSharedLoadTileATraits<
@@ -302,8 +310,12 @@ struct GemmTileTraitsHelperB<MatrixLayout::kColumnMajor, GemmConfig_> {
 
   /// The number of scalars in 4B.
   static int const kScalarsIn4B = sizeof(MultiplyAddScalar) > 4 ? 1 : 4 / sizeof(MultiplyAddScalar);
+  /// The skew for B.
+  static int const kSkewB = 128 / sizeof(MultiplyAddScalar) / GemmConfig_::kScalarsPerStsB /
+                            GlobalTileTraits::Threads::kW * kScalarsIn4B;
+
   /// The traits class to build the iterator to store data to shared memory for B^N.
-  typedef GemmSharedStoreWithSkewTileAbTraits<
+  typedef GemmSharedStoreWithSkewTileAbTraits <
       // The pointer is float.
       MultiplyAddScalar,
       // The tile has size KxN in GEMM's terminology.
@@ -315,9 +327,8 @@ struct GemmTileTraitsHelperB<MatrixLayout::kColumnMajor, GemmConfig_> {
       // The number of scalars per STS.
       GemmConfig_::kScalarsPerStsB,
       // The skew to avoid bank conflicts added in the tile W dimension.
-      128 / sizeof(MultiplyAddScalar) / GemmConfig_::kScalarsPerStsB /
-          GlobalTileTraits::Threads::kW * kScalarsIn4B>
-      SharedStoreTileTraits;
+      kSkewB<GemmConfig_::kScalarsPerLdsB ? GemmConfig_::kScalarsPerLdsB : kSkewB>
+          SharedStoreTileTraits;
 
   /// The traits class to build the iterator to load from shared memory for B^N.
   typedef GemmSharedLoadTileBTraits<
@@ -405,6 +416,60 @@ struct GemmTileTraitsHelperB<MatrixLayout::kRowMajor, GemmConfig_> {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <typename GemmTraits_, bool kResidueInPrologue_ = GemmTraits_::kResidueInPrologue>
+struct GemmResidue {
+  /// Move to residue portion.
+  template <bool kIsPrologue>
+  static CUTLASS_DEVICE void move_to_residue(typename GemmTraits_::GlobalLoadStreamA& stream_a,
+                                             typename GemmTraits_::GlobalLoadStreamB& stream_b,
+                                             typename GemmTraits_::Index k) {
+    // The new code path in CUTLASS 1.0.1: We treat the residue in the prologue so we can have
+    // complete main loops after that. It helps simplify the logic in the main loop.
+    if (kIsPrologue) {
+      stream_a.move_to_residue(k);
+      stream_b.move_to_residue(k);
+    }
+  }
+
+  /// Rollback to beginning of first tile and initialize predicates.
+  static CUTLASS_DEVICE void rollback(typename GemmTraits_::GlobalLoadStreamA& stream_a,
+                                      typename GemmTraits_::GlobalLoadStreamB& stream_b) {
+    stream_a.rollback();
+    stream_b.rollback();
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename GemmTraits_>
+struct GemmResidue<GemmTraits_, false> {
+  /// Move to residue portion.
+  template <bool kIsPrologue>
+  static CUTLASS_DEVICE void move_to_residue(typename GemmTraits_::GlobalLoadStreamA& stream_a,
+                                             typename GemmTraits_::GlobalLoadStreamB& stream_b,
+                                             typename GemmTraits_::Index k) {
+    // The index.
+    typedef typename GemmTraits_::Index Index;
+    // By how much we unroll the main loop.
+    Index const kUnroll = static_cast<Index>(GemmTraits_::OutputTile::kD);
+
+    // Call the residue code. That's the same path as CUTLASS 1.0.0.
+    if (kIsPrologue && k < kUnroll) {
+      stream_a.residue(k, true);
+      stream_b.residue(k, true);
+    } else if (k <= kUnroll) {
+      stream_a.residue(k, false);
+      stream_b.residue(k, false);
+    }
+  }
+
+  /// Rollback to beginning of first tile and initialize predicates.
+  static CUTLASS_DEVICE void rollback(typename GemmTraits_::GlobalLoadStreamA& stream_a,
+                                      typename GemmTraits_::GlobalLoadStreamB& stream_b) {}
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <
     /// The GEMM configuration.
     typename GemmConfig_,
@@ -426,10 +491,24 @@ template <
     typename ClearAccumulators_ = ClearAccumulators<typename GemmConfig_::Accumulators::Scalar> >
 
 struct GemmTraits {
+  /// This class.
+  typedef GemmTraits<GemmConfig_,
+                     GlobalLoadStreamA_,
+                     GlobalLoadStreamB_,
+                     SharedLoadStreamA_,
+                     SharedLoadStreamB_,
+                     Epilogue_,
+                     BlockSwizzle_,
+                     Index_,
+                     ClearAccumulators_>
+      This_;
+
   /// The configuration.
   typedef GemmConfig_ GemmConfig;
   /// The output tile.
   typedef typename GemmConfig::OutputTile OutputTile;
+  /// Is the residue treated in the prologue?
+  static bool const kResidueInPrologue = GemmConfig::kResidueInPrologue;
 
   /// The stream to load A from global memory to shared memory.
   typedef GlobalLoadStreamA_ GlobalLoadStreamA;
@@ -449,18 +528,6 @@ struct GemmTraits {
   typedef SharedLoadStreamA_ SharedLoadStreamA;
   /// The iterator for B to load from shared memory.
   typedef SharedLoadStreamB_ SharedLoadStreamB;
-
-  /// The shared storage for A.
-  typedef typename GlobalLoadStreamA::SharedStoreStorage SharedStoreStorageA;
-  // Btw, make sure we did not messed up with the size of the storage.
-  static_assert(sizeof(SharedStoreStorageA) == sizeof(typename SharedLoadStreamA::SharedStorage),
-                "");
-
-  /// The shared storage for B.
-  typedef typename GlobalLoadStreamB::SharedStoreStorage SharedStoreStorageB;
-  // Btw, make sure we did not messed up with the size of the storage.
-  static_assert(sizeof(SharedStoreStorageB) == sizeof(typename SharedLoadStreamB::SharedStorage),
-                "");
 
   /// The multiply-add functor.
   typedef typename GemmConfig::MultiplyAdd MultiplyAdd;
@@ -502,14 +569,15 @@ struct GemmTraits {
 
       // Initialize the iterator for A.
       int error_code =
-          global_stream_a.initialize(reinterpret_cast<ScalarA const*>(desc.d_a), desc.lda);
+          global_stream_a.initialize(desc, reinterpret_cast<ScalarA const*>(desc.d_a), desc.lda);
 
       if (error_code) {
         return error_code;
       }
 
       // Initialize the iterator for B.
-      error_code = global_stream_b.initialize(reinterpret_cast<ScalarB const*>(desc.d_b), desc.ldb);
+      error_code =
+          global_stream_b.initialize(desc, reinterpret_cast<ScalarB const*>(desc.d_b), desc.ldb);
 
       if (error_code) {
         return error_code;
@@ -574,11 +642,14 @@ struct GemmTraits {
       stream_b.commit();
     }
 
-    /// Execute the residue code.
-    CUTLASS_DEVICE void residue(Index k, bool skip_clear = false) {
-      stream_a.residue(k, skip_clear);
-      stream_b.residue(k, skip_clear);
+    /// Move to residue portion.
+    template <bool kIsPrologue>
+    CUTLASS_DEVICE void move_to_residue(Index k) {
+      GemmResidue<This_>::move_to_residue<kIsPrologue>(stream_a, stream_b, k);
     }
+
+    /// Rollback to beginning of first tile and initialize predicates.
+    CUTLASS_DEVICE void rollback() { GemmResidue<This_>::rollback(stream_a, stream_b); }
 
     /// The stream for A.
     GlobalLoadStreamA stream_a;

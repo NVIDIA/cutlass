@@ -104,8 +104,7 @@ struct GemmSharedStoreWithSkewTileAbTraits {
   typedef Shape<0, ShapeCount<Tile>::kWc, Threads::kH * kAccessSize> ImmediateOffsetStrides;
 
   struct ThreadOffset {
-    CUTLASS_HOST_DEVICE
-    Coord<4> operator()() const {
+    CUTLASS_HOST_DEVICE Coord<4> operator()() const {
       int offset = ComputeThreadOffsetFromStrides<Threads, ThreadsStrides>::get();
       return make_Coord(0, 0, offset, 0);
     }
@@ -164,22 +163,25 @@ struct GemmSharedLoadTileATraits {
   typedef Shape<1, 1, TileWithoutSkew::kW / kWarps / kThreadsPerWarp /* / kScalarsPerLds*/>
       Iterations;
   /// The strides in each dimension between different loads/stores.
-  typedef Shape<TileWithSkew::kW, 0, kWarps * kThreadsPerWarp * kAccessSize, 0> Delta;
-  /// The strides in each dimension between different loads/stores.
-  typedef Shape<TileWithSkew::kW, 0, kWarps * kThreadsPerWarp * kAccessSize, 0>
+  typedef Shape<TileWithSkew::kW * Warps::kD, 0, kWarps * kThreadsPerWarp * kAccessSize, 0>
       ImmediateOffsetStrides;
+  typedef Shape<TileWithSkew::kW * Warps::kD, 0, kWarps * kThreadsPerWarp * kAccessSize, 0> Delta;
 
   /// Computes the thread offset in (H, W) based on thread ID
   struct ThreadOffset {
-    CUTLASS_HOST_DEVICE
-    Coord<4> operator()() const {
+    CUTLASS_HOST_DEVICE Coord<4> operator()() const {
       // Extract the warp.
-      int const warp = threadIdx.x / kWarpSize % Warps::kW;
-      // Compute the row offset for each thread
-      int const lane = (threadIdx.x & 0x0e) / 2;
+      int const warp = threadIdx.x / kWarpSize;
+      // Extract the slice.
+      int const slice = warp / (Warps::kH * Warps::kW);
+      // Compute the row offset for each warp.
+      int const warp_row = warp % Warps::kW;
+      // Compute the row offset for each thread.
+      int const lane_row = (threadIdx.x & 0x0e) / 2;
       // The offset.
-      int const offset = (warp * ThreadsPerWarp::kW + lane) * kAccessSize;
-
+      int const offset =
+          slice * Tile::kW * Tile::kC + (warp_row * ThreadsPerWarp::kW + lane_row) * kAccessSize;
+      // Embed the offset in a 4D coordinate vector.
       return make_Coord(0, 0, offset, 0);
     }
   };
@@ -231,23 +233,27 @@ struct GemmSharedLoadTileBTraits {
   /// The number of iterations needed to load/store the tile.
   typedef Shape<1, 1, TileWithoutSkew::kW / kWarps / kThreadsPerWarp /* / kAccessSize*/> Iterations;
   /// The strides in each dimension between different loads/stores.
-  typedef Shape<TileWithSkew::kW, 0, kWarps * kThreadsPerWarp * kAccessSize, 0> Delta;
-  /// The strides in each dimension between different loads/stores.
-  typedef Shape<TileWithSkew::kW, 0, kWarps * kThreadsPerWarp * kAccessSize, 0>
+  typedef Shape<TileWithSkew::kW * Warps::kD, 0, kWarps * kThreadsPerWarp * kAccessSize, 0>
       ImmediateOffsetStrides;
+  typedef Shape<TileWithSkew::kW * Warps::kD, 0, kWarps * kThreadsPerWarp * kAccessSize, 0> Delta;
 
   /// Computes the thread offset in (H, W) based on thread ID
   struct ThreadOffset {
-    CUTLASS_HOST_DEVICE
-    Coord<4> operator()() const {
-      // The position of the warp.
-      int const warp = threadIdx.x / (Warps::kW * kWarpSize);
-
-      // Compute the column offset for each thread
-      int const lane = (threadIdx.x & 0x10) / 8 + (threadIdx.x & 0x01);
+    CUTLASS_HOST_DEVICE Coord<4> operator()() const {
+      // Extract the warp.
+      int const warp = threadIdx.x / kWarpSize;
+      // Extract the slice.
+      int const slice = warp / (Warps::kH * Warps::kW);
+      // The warp in the slice.
+      int const warp_in_slice = warp % (Warps::kH * Warps::kW);
+      // Compute the row offset for each warp.
+      int const warp_col = warp_in_slice / Warps::kW;
+      // Compute the row offset for each thread.
+      int const lane_col = (threadIdx.x & 0x10) / 8 + (threadIdx.x & 0x01);
       // The offset.
-      int const offset = (warp * ThreadsPerWarp::kH + lane) * kAccessSize;
-
+      int const offset =
+          slice * Tile::kW * Tile::kC + (warp_col * ThreadsPerWarp::kH + lane_col) * kAccessSize;
+      // Embed the offset in a 4D coordinate.
       return make_Coord(0, 0, offset, 0);
     }
   };
@@ -297,28 +303,26 @@ struct GemmSharedStoreTileDTraits {
 
   /// Computes the thread offset in (H, W) based on thread ID
   struct ThreadOffset {
-    CUTLASS_HOST_DEVICE
-    Coord<4> operator()() const {
-      // We issue STS.128 in the epilogue to store the accumulators to shared memory. When we use
-      // STS.128, we have to guarantee that threads in groups of 8 do not have bank conflicts (i.e
-      // they write to different banks).
+    CUTLASS_HOST_DEVICE Coord<4> operator()() const {
+      // The warp.
+      int const warp = threadIdx.x / kWarpSize;
+
+      // The position of the warp in the 2D tile.
+      int const warp_row = warp % Warps::kW;
+      int const warp_col = warp / Warps::kW;
+
+      // We assume that the elements are distributed in a warps as 4 columns of 8 elements. The
+      // columns are stored in threads col0=[0, 2, 4, 6, 8, 10, 12, 14], col1=[1, 3, 5, 7, .., 15],
+      // col2=[16, 18, 20, ..., 30] and col3=[17, 19, ..., 31].
+      int hi_halfwarp_offset = ((threadIdx.x >> 4) & 0x1) * OutputTile::kW;
+      int lo_halfwarp_offset = ((threadIdx.x >> 1) & 0x7) + ThreadsPerWarp::kW * warp_row;
 
       // Odd threads go to the second half of shared memory.
       int const row = threadIdx.x & 0x01;
-
-      int const warp_id = (threadIdx.x >> 5);
-
-      int const warp_row = (warp_id % Warps::kW);
-      int const warp_col = (warp_id / Warps::kW);
-
-      int hi_halfwarp_offset = OutputTile::kW * ((threadIdx.x >> 4) & 1);
-      int lo_halfwarp_offset = (((threadIdx.x >> 1) & 0x7) + warp_row * ThreadsPerWarp::kW);
-
-      int col = kAccessSize * lo_halfwarp_offset +
-                warp_col * (ThreadsPerWarp::kH / 2) * OutputTile::kW + hi_halfwarp_offset;
-
-      int offset = row * kScalarsPerRow + col;
-      return make_Coord(0, 0, offset, 0);
+      int col = warp_col * (ThreadsPerWarp::kH / 2) * OutputTile::kW +
+                lo_halfwarp_offset * kAccessSize + hi_halfwarp_offset;
+      // Embed the offset in a 4D coords.
+      return make_Coord(0, 0, row * kScalarsPerRow + col, 0);
     }
   };
 };
@@ -357,32 +361,39 @@ struct GemmSharedLoadTileDTraits {
   /// The number of scalars per row. We build a tile with 2 rows (to avoid bank conflicts).
   static int const kScalarsPerRow = kThreads / 2 * kScalarsPerThread + kSkew;
 
-  /// The tile.
+  /// The tile. We have 2 rows of scalars. We use those two rows to make sure we do not have bank
+  /// conflicts in the epilogue.
   typedef Shape<1, 2, kScalarsPerRow / kAccessSize, kAccessSize> Tile;
 
   // Compute the number of iterations per warp in the Tile::kH dimension.
   static int const kIterationsInHPerWarp = kTileH_ / ShapeCount<Warps>::kCount;
 
-  // As shown above, the shared memory tile is composed of 2 rows and each rows is made of
+  // As explained above, the shared memory tile is composed of 2 rows and each rows is made of
   // kScalarsPerRow. A warp is expected to read from the 1st row, then move to the 2nd row and go
   // back to the 1st row. To model that scheme we define the Iterations shape as Shape<X, 2, ...>.
   // However, in some cases, we have only 1 iteration per warp. In that case, we must define the
-  // shape as Shape<1, 1, ...>. The following code does that.
+  // shape as Shape<1, 1, ...>. The following code does that except that we hijack the kH dimension
+  // to keep the number of elements to reduce for split-K.
   static int const kIterationsH = kIterationsInHPerWarp == 1 ? 1 : 2;
   // As soon as we know kIterationsH, it is trivial to compute kIterationsD:
   static int const kIterationsD = kIterationsInHPerWarp / kIterationsH;
 
+  // If we have split-K enabled, we have to jump over the elements from the "odd/even" column of
+  // threads to grab the other elements.
+  static int const kSplitK = OutputTile::kW * ThreadsPerWarp::kH / 2 * Warps::kH;
+
   /// The number of iterations needed to store the tile.
-  typedef Shape<kIterationsD, kIterationsH, OutputTile::kW / kWarpSize / kAccessSize> Iterations;
+  typedef Shape<kIterationsD, kIterationsH, OutputTile::kW / kWarpSize / kAccessSize, Warps::kD>
+      Iterations;
   /// The strides in each dimension between different loads/stores.
-  typedef Shape<OutputTile::kW, kScalarsPerRow, kWarpSize * kAccessSize> Delta;
+  typedef Shape<OutputTile::kW, kScalarsPerRow, kWarpSize * kAccessSize, kSplitK>
+      ImmediateOffsetStrides;
   /// The strides in each dimension between different loads/stores.
-  typedef Shape<OutputTile::kW, kScalarsPerRow, kWarpSize * kAccessSize> ImmediateOffsetStrides;
+  typedef Shape<OutputTile::kW, kScalarsPerRow, kWarpSize * kAccessSize, kSplitK> Delta;
 
   /// Computes the thread offset in (H, W) based on thread ID
   struct ThreadOffset {
-    CUTLASS_HOST_DEVICE
-    Coord<4> operator()() const {
+    CUTLASS_HOST_DEVICE Coord<4> operator()() const {
       // Each warp works on a different column.
       int const h = threadIdx.x / kWarpSize;
       // Compute the row.

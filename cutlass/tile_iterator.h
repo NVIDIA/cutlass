@@ -73,7 +73,11 @@ struct IteratorFragment {
 * @brief A template defining \ref tile_traits_concept
 * @concept{tile_traits_concept}
 */
-template <typename Tile_, typename Delta_, typename Iterations_, typename ThreadOffset_>
+template <typename Tile_,
+          typename Delta_,
+          typename Iterations_,
+          typename ThreadOffset_,
+          int kAccessSize>
 struct TileTraits {
   /// Shape of the tile
   typedef Tile_ Tile;
@@ -501,6 +505,13 @@ struct TileLoadIterator : public TileIteratorBase<Traits_,
   CUTLASS_HOST_DEVICE
   Scalar const *data() const { return params.pointer; }
 
+  /// The accessor.
+  CUTLASS_DEVICE void get(AccessType &value, int d, int h, int w, int c) const {
+    int const imm =
+        ComputeOffsetFromStrides<typename Base::ImmediateOffsetStrides>::get(d, h, w, c);
+    Load<Scalar, Base::kAccessSize, kMemorySpace>::load(value, params.pointer, imm);
+  }
+
   /// Increment in the D dimension
   CUTLASS_HOST_DEVICE void inc_d() { params.pointer += params.inc_d; }
 
@@ -827,6 +838,13 @@ struct TileStoreIterator : public TileIteratorBase<Traits_,
         stage = stage + 1;
       }
     }
+  }
+
+  /// The accessor.
+  CUTLASS_DEVICE void set(AccessType const &value, int d, int h, int w, int c) {
+    int const imm =
+        ComputeOffsetFromStrides<typename Base::ImmediateOffsetStrides>::get(d, h, w, c);
+    Store<Scalar, Base::kAccessSize, kMemorySpace>::store(value, params.pointer, imm);
   }
 
  public:

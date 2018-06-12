@@ -25,7 +25,6 @@
 #include <cutlass_unit_test.h>
 #include <cutlass/gemm/gemm.h>
 #include <cutlass/gemm/igemm_traits.h>
-#include <tools/test/unit/gemm/gemm_testbed.h>
 #include <tools/test/unit/gemm/gemm.h>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -299,7 +299,7 @@ typedef integral_constant<bool, true> true_type;
 /// The type used as a compile-time boolean with false value.
 typedef integral_constant<bool, false> false_type;
 
-#if (!defined(_MSC_VER) && (__cplusplus < 201402L)) || (defined(_MSC_VER) && (_MSC_VER < 1900))
+#if (!defined(_MSC_VER) && (__cplusplus <= 201402L)) || (defined(_MSC_VER) && (_MSC_VER < 1900))
 
 /// std::bool_constant
 template <bool V>

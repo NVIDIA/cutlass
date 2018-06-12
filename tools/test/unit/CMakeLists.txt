@@ -47,6 +47,7 @@ set(CUTLASS_UNIT_TEST_SOURCES
   core/tile_iterator.cu
   gemm/dgemm.cu
   gemm/hgemm_128x128x8.cu
+  gemm/hgemm_128x128x16.cu
   gemm/hgemm_128x32x8.cu
   gemm/hgemm_128x64x8.cu
   gemm/igemm_128x128x32.cu
@@ -54,12 +55,19 @@ set(CUTLASS_UNIT_TEST_SOURCES
   gemm/igemm_128x32x32.cu
   gemm/igemm_128x128x32_float.cu
   gemm/igemm_128x128x32_int8.cu
+  gemm/igemm_32x32x128.cu
   gemm/sgemm_128x128x8.cu
+  gemm/sgemm_128x128x16.cu
   gemm/sgemm_128x64x8.cu
+  gemm/sgemm_128x64x16.cu
   gemm/sgemm_128x32x8.cu
+  gemm/sgemm_128x32x16.cu
   gemm/sgemm_64x128x8.cu
+  gemm/sgemm_64x128x16.cu
   gemm/sgemm_64x64x8.cu
+  gemm/sgemm_64x64x16.cu
   gemm/sgemm_64x32x8.cu
+  gemm/sgemm_64x32x16.cu
   gemm/wmma_gemm.cu
 )
 

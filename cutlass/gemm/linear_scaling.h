@@ -1,4 +1,3 @@
-
 /***************************************************************************************************
  * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
  *
@@ -61,17 +60,17 @@ struct LinearScaling {
   CUTLASS_DEVICE LinearScaling(Params const& params) : alpha(params.alpha), beta(params.beta) {}
 
   /// Evaluate the functor.
-  template <typename Fragment_>
-  CUTLASS_DEVICE void evaluate(Fragment_ const& accum, Fragment_& output) {
+  template <typename FragmentA_, typename FragmentB_>
+  CUTLASS_DEVICE void evaluate(FragmentA_ const& accum, FragmentB_& output) {
     FragmentMultiplyAdd mad;
     mad.multiply(alpha, accum, output);
   }
 
   /// Evaluate the functor.
-  template <typename Fragment_>
-  CUTLASS_DEVICE void evaluate(Fragment_ const& accum, Fragment_ const& old, Fragment_& output) {
+  template <typename FragmentA_, typename FragmentB_>
+  CUTLASS_DEVICE void evaluate(FragmentA_ const& accum, FragmentB_ const& old, FragmentB_& output) {
     FragmentMultiplyAdd mad;
-    Fragment_ tmp;
+    FragmentB_ tmp;
     mad.multiply(beta, old, tmp);
     mad.multiply_add(alpha, accum, tmp, output);
   }

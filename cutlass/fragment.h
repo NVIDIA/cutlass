@@ -184,7 +184,7 @@ struct FragmentIterator {
   /// The shape of the the fragment.
   typedef typename ShapeMul<Iterations, Shape<1, 1, 1, kElementsPerAccess> >::Shape FragmentShape;
   /// The linear strides for iterations.
-  typedef typename ShapeStrides<FragmentShape>::Shape Strides;
+  typedef typename ShapeStrides<FragmentShape, kElementsPerAccess>::Shape Strides;
 
   /// Ctor.
   template <typename OtherFragment_>
@@ -242,7 +242,7 @@ struct FragmentConstIterator {
   /// The shape of the the fragment.
   typedef typename ShapeMul<Iterations, Shape<1, 1, 1, kElementsPerAccess> >::Shape FragmentShape;
   /// The linear strides for iterations.
-  typedef typename ShapeStrides<FragmentShape>::Shape IterationsStrides;
+  typedef typename ShapeStrides<FragmentShape, kElementsPerAccess>::Shape IterationsStrides;
 
   /// Ctor.
   template <typename OtherFragment_>

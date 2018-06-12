@@ -164,6 +164,13 @@ struct WmmaGemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
     this->params.predicate_offset -= (h + pred_offset);
   }
 
+  /// The accessor.
+  CUTLASS_DEVICE void get(typename Base::AccessType& value, int d, int h, int w, int c) const {
+    int const imm =
+        ComputeOffsetFromStrides<typename Base::ImmediateOffsetStrides>::get(0, 0, w, c);
+    Load<Scalar, TileTraits_::kAccessSize, MemorySpace::kGlobal>::load(value, params.pointer, imm);
+  }
+
   /// Increment the pointer in the C dimension.
   CUTLASS_DEVICE void inc_c() {}
   /// Increment the pointer in the W dimension.
@@ -181,17 +188,18 @@ struct WmmaGemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
     params.predicate_offset -= params.predicate_inc_advance;
   }
 
+  /// The accessor.
+  CUTLASS_DEVICE void set(typename Base::AccessType const& value, int d, int h, int w, int c) {
+    int const imm =
+        ComputeOffsetFromStrides<typename Base::ImmediateOffsetStrides>::get(d, h, w, 0);
+    Store<Scalar, TileTraits_::kAccessSize, MemorySpace::kGlobal>::store(
+        value, params.pointer, imm);
+  }
+
   /// Test the predicate.
   CUTLASS_DEVICE bool valid(int d, int h, int w, int c) const {
     return predicates.at(w) && params.predicate_offset > 0;
   }
-
-  /// Returns the raw pointer
-  CUTLASS_HOST_DEVICE
-  Pointer data() { return params.pointer; }
-
-  CUTLASS_HOST_DEVICE
-  Pointer const data() const { return params.pointer; }
 
   /// The predicates for the row.
   cutlass::PredicateVector<Base::Iterations::kW> predicates;

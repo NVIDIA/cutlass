@@ -49,21 +49,29 @@ struct FragmentMultiplyAdd {
   CUTLASS_DEVICE FragmentMultiplyAdd() {}
 
   /// Multiply : d = a*b.
-  template <typename Fragment_>
-  CUTLASS_DEVICE void multiply(Scalar_ a, Fragment_ const& b, Fragment_& d) {
-    for (int j = 0; j < Fragment_::kElements; ++j) {
-      d[j] = a * b[j];
+  template <typename FragmentB_, typename FragmentCd_>
+  CUTLASS_DEVICE void multiply(Scalar_ a, FragmentB_ const& b, FragmentCd_& d) {
+    int const kReduction = FragmentB_::kElements / FragmentCd_::kElements;
+    for (int j = 0; j < FragmentCd_::kElements; ++j) {
+      d[j] = a * b[j * kReduction + 0];
+      for (int k = 1; k < kReduction; ++k) {
+        d[j] += a * b[j * kReduction + k];
+      }
     }
   }
 
   /// Multiply : d = a*b + c.
-  template <typename Fragment_>
+  template <typename FragmentB_, typename FragmentCd_>
   CUTLASS_DEVICE void multiply_add(Scalar_ a,
-                                   Fragment_ const& b,
-                                   Fragment_ const& c,
-                                   Fragment_& d) {
-    for (int j = 0; j < Fragment_::kElements; ++j) {
-      d[j] = a * b[j] + c[j];
+                                   FragmentB_ const& b,
+                                   FragmentCd_ const& c,
+                                   FragmentCd_& d) {
+    int const kReduction = FragmentB_::kElements / FragmentCd_::kElements;
+    for (int j = 0; j < FragmentCd_::kElements; ++j) {
+      d[j] = a * b[j * kReduction + 0] + c[j];
+      for (int k = 1; k < kReduction; ++k) {
+        d[j] += a * b[j * kReduction + k];
+      }
     }
   }
 };
@@ -74,7 +82,7 @@ struct FragmentMultiplyAdd {
 template <>
 struct FragmentMultiplyAdd<half> {
   /// The shape of the instruction.
-  typedef Shape<1, 1, 1, 1> InstructionShape;
+  typedef Shape<1, 1, 2, 1> InstructionShape;
   /// The type for A.
   typedef half ScalarA;
   /// The type for B.
@@ -86,38 +94,48 @@ struct FragmentMultiplyAdd<half> {
   CUTLASS_DEVICE FragmentMultiplyAdd() {}
 
   /// Multiply : d = a*b.
-  template <typename Fragment_>
-  CUTLASS_DEVICE void multiply(half a, Fragment_ const& b, Fragment_& d) {
+  template <typename FragmentB_, typename FragmentCd_>
+  CUTLASS_DEVICE void multiply(half a, FragmentB_ const& b, FragmentCd_& d) {
 #if defined(__CUDACC__) && __CUDA_ARCH__ >= 530
+
+    // Assemble a half2 from a.
+    __half2 const a_half2 = __half2half2(a);
     // The input.
     __half2 const* b_half2 = reinterpret_cast<__half2 const*>(&b[0]);
     // The output.
     __half2* d_half2 = reinterpret_cast<__half2*>(&d[0]);
 
-    // Assemble a half2 from a.
-    __half2 const a_half2 = __half2half2(a);
-
-    for (int i = 0; i < Fragment_::kElements / 2; ++i) {
-      d_half2[i] = __hmul2(a_half2, b_half2[i]);
+    int const kReduction = FragmentB_::kElements / FragmentCd_::kElements;
+    for (int j = 0; j < FragmentCd_::kElements / 2; ++j) {
+      d_half2[j] = __hmul2(a_half2, b_half2[j * kReduction + 0]);
+      for (int k = 1; k < kReduction; ++k) {
+        d_half2[j] = __hfma2(a_half2, b_half2[j * kReduction + k], d_half2[j]);
+      }
     }
 #endif
   }
 
   /// Multiply : d = a*b + c.
-  template <typename Fragment_>
-  CUTLASS_DEVICE void multiply_add(half a, Fragment_ const& b, Fragment_ const& c, Fragment_& d) {
+  template <typename FragmentB_, typename FragmentCd_>
+  CUTLASS_DEVICE void multiply_add(half a,
+                                   FragmentB_ const& b,
+                                   FragmentCd_ const& c,
+                                   FragmentCd_& d) {
 #if defined(__CUDACC__) && __CUDA_ARCH__ >= 530
+    // Assemble a half2 from a.
+    __half2 const a_half2 = __half2half2(a);
     // The inputs.
     __half2 const* b_half2 = reinterpret_cast<__half2 const*>(&b[0]);
     __half2 const* c_half2 = reinterpret_cast<__half2 const*>(&c[0]);
     // The output.
     __half2* d_half2 = reinterpret_cast<__half2*>(&d[0]);
 
-    // Assemble a half2 from a.
-    __half2 const a_half2 = __half2half2(a);
-
-    for (int i = 0; i < Fragment_::kElements / 2; ++i) {
-      d_half2[i] = __hfma2(a_half2, b_half2[i], c_half2[i]);
+    int const kReduction = (FragmentB_::kElements / FragmentCd_::kElements);
+    for (int j = 0; j < FragmentCd_::kElements / 2; ++j) {
+      d_half2[j] = __hfma2(a_half2, b_half2[j * kReduction + 0], c_half2[j]);
+      for (int k = 1; k < kReduction; ++k) {
+        d_half2[j] = __hfma2(a_half2, b_half2[j * kReduction + k], d_half2[j]);
+      }
     }
 #endif
   }

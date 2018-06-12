@@ -104,6 +104,64 @@ TEST(Dgemm_128x128x8, dgemm_512x256x64_nt) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+//Sliced-K configuration
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_64x32x16, dgemm_64x32x16_nt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 32, 64> > GemmTraits;
+  run_gemm<GemmTraits>(64, 32, 16);
+}
+
+TEST(Dgemm_64x32x16, dgemm_256x128x64_nt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 32, 64> > GemmTraits;
+  run_gemm<GemmTraits>(256, 128, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_64x64x16, dgemm_64x64x16_nt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 64, 64> > GemmTraits;
+  run_gemm<GemmTraits>(64, 64, 16);
+}
+
+TEST(Dgemm_64x64x16, dgemm_256x128x64_nt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 64, 64> > GemmTraits;
+  run_gemm<GemmTraits>(256, 128, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_128x32x16, dgemm_128x32x8_nt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 32, 128> > GemmTraits;
+  run_gemm<GemmTraits>(128, 32, 16);
+}
+
+TEST(Dgemm_128x32x16, dgemm_256x64x64_nt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 32, 128> > GemmTraits;
+  run_gemm<GemmTraits>(256, 64, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 //
 // DGEMM Column-Column
 //
@@ -178,6 +236,64 @@ TEST(Dgemm_128x128x8, dgemm_512x256x64_nn) {
                                      cutlass::MatrixLayout::kColumnMajor,
                                      cutlass::Shape<8, 128, 128> > GemmTraits;
   run_gemm<GemmTraits>(512, 256, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Sliced-K configuration
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_64x32x16, dgemm_64x32x16_nn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 32, 64> > GemmTraits;
+  run_gemm<GemmTraits>(64, 32, 16);
+}
+
+TEST(Dgemm_64x32x16, dgemm_256x128x64_nn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 32, 64> > GemmTraits;
+  run_gemm<GemmTraits>(256, 128, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_64x64x16, dgemm_64x64x16_nn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 64, 64> > GemmTraits;
+  run_gemm<GemmTraits>(64, 64, 16);
+}
+
+TEST(Dgemm_64x64x16, dgemm_256x128x64_nn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 64, 64> > GemmTraits;
+  run_gemm<GemmTraits>(256, 128, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_128x32x16, dgemm_128x32x16_nn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 32, 128> > GemmTraits;
+  run_gemm<GemmTraits>(128, 32, 16);
+}
+
+TEST(Dgemm_128x32x16, dgemm_256x64x64_nn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 32, 128> > GemmTraits;
+  run_gemm<GemmTraits>(256, 64, 64);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -260,6 +376,64 @@ TEST(Dgemm_128x128x8, dgemm_512x256x64_tn) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Sliced-K configuration
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_64x32x16, dgemm_64x32x16_tn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 32, 64> > GemmTraits;
+  run_gemm<GemmTraits>(64, 32, 16);
+}
+
+TEST(Dgemm_64x32x16, dgemm_256x128x64_tn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 32, 64> > GemmTraits;
+  run_gemm<GemmTraits>(256, 128, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_64x64x16, dgemm_64x64x16_tn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 64, 64> > GemmTraits;
+  run_gemm<GemmTraits>(64, 64, 16);
+}
+
+TEST(Dgemm_64x64x16, dgemm_256x128x64_tn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 64, 64> > GemmTraits;
+  run_gemm<GemmTraits>(256, 128, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_128x32x16, dgemm_128x32x8_tn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 32, 128> > GemmTraits;
+  run_gemm<GemmTraits>(128, 32, 16);
+}
+
+TEST(Dgemm_128x32x16, dgemm_256x64x64_tn) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kColumnMajor,
+                                     cutlass::Shape<16, 32, 128> > GemmTraits;
+  run_gemm<GemmTraits>(256, 64, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 //
 // DGEMM Row-Row
 //
@@ -337,4 +511,63 @@ TEST(Dgemm_128x128x8, dgemm_512x256x64_tt) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Sliced-K configuration
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_64x32x16, dgemm_64x32x16_tt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 32, 64> > GemmTraits;
+  run_gemm<GemmTraits>(64, 32, 16);
+}
+
+TEST(Dgemm_64x32x16, dgemm_256x128x64_tt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 32, 64> > GemmTraits;
+  run_gemm<GemmTraits>(256, 128, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_64x64x16, dgemm_64x64x16_tt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 64, 64> > GemmTraits;
+  run_gemm<GemmTraits>(64, 64, 16);
+}
+
+TEST(Dgemm_64x64x16, dgemm_256x128x64_tt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 64, 64> > GemmTraits;
+  run_gemm<GemmTraits>(256, 128, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Dgemm_128x32x16, dgemm_128x32x8_tt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 32, 128> > GemmTraits;
+  run_gemm<GemmTraits>(128, 32, 16);
+}
+
+TEST(Dgemm_128x32x16, dgemm_256x64x64_tt) {
+
+  typedef cutlass::gemm::DgemmTraits<cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::MatrixLayout::kRowMajor,
+                                     cutlass::Shape<16, 32, 128> > GemmTraits;
+  run_gemm<GemmTraits>(256, 64, 64);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 

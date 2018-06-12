@@ -109,6 +109,9 @@ class HostTensor : public HostTensorView<T> {
 
     host_.clear();
     host_.resize(_capacity);
+    for (size_t i = 0; i < _capacity; ++i) {
+      host_[i] = T((int)0xdeadbeef);
+    }
     device_.reset(_device_memory, _capacity);
 
     Base::reset(TensorRef_t(host_.data(), _stride), _size);

@@ -26,9 +26,26 @@
     \brief CUTLASS Unit Tests
 */
 
+#include <cuda_runtime_api.h>
 #include <gtest/gtest.h>
 
+void set_gtest_flag() {
+  // Default flags can be overwritten by --gtest_filter from commandline
+  cudaDeviceProp deviceProperties;
+  cudaGetDeviceProperties(&deviceProperties, 0);
+
+  int deviceMajorMinor = deviceProperties.major * 10 + deviceProperties.minor;
+
+  if (deviceMajorMinor < 53)
+    ::testing::GTEST_FLAG(filter) = "-*Igemm*:*Hgemm*:*mma*";
+  else if (deviceMajorMinor < 61)
+    ::testing::GTEST_FLAG(filter) = "-*Igemm*:*mma*";
+  else if (deviceMajorMinor < 70)
+    ::testing::GTEST_FLAG(filter) = "-*mma*";
+}
+
 int main(int argc, char* arg[]) {
+  set_gtest_flag();
   ::testing::InitGoogleTest(&argc, arg);
   return RUN_ALL_TESTS();
 }

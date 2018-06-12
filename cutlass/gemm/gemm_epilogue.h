@@ -117,6 +117,7 @@ struct GemmEpilogue {
   CUTLASS_DEVICE void epilogue_with_or_without_beta(Coord<3> const& block,
                                                     Accumulators& accumulators) {
 
+    // The problem size.
     Coord<3> const bounds = cutlass::make_Coord(0, n, m);
 
     // The functor.
@@ -153,6 +154,18 @@ struct GemmEpilogue {
       GlobalStoreIteratorD global_store_iterator(
           params.iterator_d, bounds, block, pointer_offset, predicate_offset);
 
+      // The transformer to transform before storing to shared memory.
+      SharedStoreTransformerD shared_store_transformer;
+      typename SharedStoreTransformerD::OutputFragment shared_store_transformed_d;
+
+      // The iterator to store to shared memory.
+      SharedStoreIteratorD shared_store_iterator(params.shared_store_iterator_d,
+                                                 shared_storage.shared_stream.store);
+
+      // The iterator to load from shared memory. TODO: Use a stream.
+      SharedLoadIteratorD shared_load_iterator(params.shared_load_iterator_d,
+                                               shared_storage.shared_stream.load);
+
       CUTLASS_PRAGMA_UNROLL
       for (int w = 0; w < Iterations::kW; ++w) {
         // Load the C matrix into fragment.
@@ -166,20 +179,13 @@ struct GemmEpilogue {
         // Copy the accumulators to shared memory.
         int const offset = (h * Iterations::kW + w) * SharedStoreIteratorD::Fragment::kElements;
 
-        SharedStoreTransformerD shared_store_transformer;
-        typename SharedStoreTransformerD::OutputFragment shared_store_transformed_d;
         shared_store_transformer.transform(accumulators, offset, shared_store_transformed_d);
-
-        SharedStoreIteratorD shared_store_iterator(params.shared_store_iterator_d,
-                                                   shared_storage.shared_stream.store);
         shared_iterator_store(shared_store_iterator, shared_store_transformed_d);
 
         // Make sure the data is in shared memory.
         shared_store_fence();
 
         // Copy the accumulators back to registers from shared memory.
-        SharedLoadIteratorD shared_load_iterator(params.shared_load_iterator_d,
-                                                 shared_storage.shared_stream.load);
         typename SharedLoadIteratorD::Fragment fetched_d;
         shared_iterator_load(shared_load_iterator, fetched_d);
 
