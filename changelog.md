@@ -1,6 +1,6 @@
 # NVIDIA CUTLASS Changelog
 
-## 1.0.1 (2018-06-11)
+## [1.0.1](https://github.com/NVIDIA/cutlass/releases/tag/v1.0.1) (2018-06-11)
 
   * Intra-threadblock reduction added for small threadblock tile sizes
     * sgemm_64x128x16, sgemm_128x128x16, sgemm_128x64x16, sgemm_128x32x16, sgemm_64x64x16, sgemm_64x32x16
