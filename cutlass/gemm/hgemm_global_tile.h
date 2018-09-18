@@ -29,10 +29,10 @@
 */
 #pragma once
 
-#include <cutlass/coord.h>
-#include <cutlass/gemm/gemm_global_tile.h>
-#include <cutlass/matrix_traits.h>
-#include <cutlass/reshape_tile.h>
+#include "cutlass/coord.h"
+#include "cutlass/gemm/gemm_global_tile.h"
+#include "cutlass/matrix_traits.h"
+#include "cutlass/reshape_tile.h"
 
 namespace cutlass {
 namespace gemm {
@@ -63,14 +63,14 @@ struct HgemmCrosswiseGlobalTileTraits : public GemmGlobalTileTraits<
   /// The threads.
   typedef typename Base::Threads Threads;
   /// The threads strides.
-  typedef Shape<1, 2, Base::Tile::kC> ThreadsDelta;
+  typedef Shape<1, 2, Base::VectorizedTile::kC> ThreadsDelta;
   /// The strides in each dimension between different loads/stores.
   typedef Shape<Base::Threads::kH * 2, 1, Base::Threads::kW, Base::kAccessSize> Delta;
   /// The number of iterations needed to load/store the tile.
-  typedef Shape<Base::Tile::kH / Base::Threads::kH / 2,
+  typedef Shape<Base::VectorizedTile::kH / Base::Threads::kH / 2,
                 2,
-                Base::Tile::kW / Base::Threads::kW,
-                Base::Tile::kC / Base::kAccessSize>
+                Base::VectorizedTile::kW / Base::Threads::kW,
+                Base::VectorizedTile::kC / Base::kAccessSize>
       Iterations;
   /// Computes the thread offset in (H, W) based on thread ID
   struct ThreadOffset {

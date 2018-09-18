@@ -29,9 +29,10 @@
 */
 #pragma once
 
-#include <cutlass/convert.h>
-#include <cutlass/gemm/gemm_global_tile.h>
-#include <cutlass/iterator_access.h>
+#include "cutlass/coord.h"
+#include "cutlass/convert.h"
+#include "cutlass/gemm/gemm_global_tile.h"
+#include "cutlass/tile_allocation.h"
 
 namespace cutlass {
 namespace gemm {
@@ -39,6 +40,8 @@ namespace gemm {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
+    /// Identifies multiplicand
+    GemmOperand::Kind Operand,
     /// The load iterator.
     typename LoadIterator_,
     /// The store iterator to copy to shared memory.
@@ -46,7 +49,9 @@ template <
     /// The transformer to be applied after the data has been copied from global memory.
     typename Transformer_>
 
-struct GlobalLoadStreamBase {
+struct GlobalLoadStream {
+  /// Indicates the type of GEMM operand
+  static GemmOperand::Kind const kOperand = Operand;
   /// The load iterator.
   typedef LoadIterator_ LoadIterator;
   /// The transformer.
@@ -75,6 +80,15 @@ struct GlobalLoadStreamBase {
   typedef typename LoadIterator::Pointer Pointer;
   /// The index.
   typedef typename LoadIterator::Index Index;
+  /// The tile
+  typedef typename LoadIterator::Tile Tile;
+
+  /// Shared memory allocation for the tile
+  typedef TileAllocation<typename StoreIterator::Scalar, typename StoreIterator::Tile>
+      ThreadblockTileStorage;
+
+  /// Tensor reference to threadblock tile
+  typedef typename ThreadblockTileStorage::TensorRef ThreadblockTileRef;
 
   /// The params.
   struct Params {
@@ -82,55 +96,72 @@ struct GlobalLoadStreamBase {
     typename LoadIterator::Params load_iterator;
     // The store iterator.
     typename StoreIterator::Params store_iterator;
+    // Offset to residue.
+    Index offset_to_residue;
 
     /// Setup the params.
-    template <typename GemmDesc_>
-    CUTLASS_HOST_DEVICE int initialize(GemmDesc_ const& desc, Pointer pointer, Index ld) {
-      int error_code = load_iterator.initialize(desc, pointer, ld);
+    CUTLASS_HOST_DEVICE int initialize(Pointer pointer,
+                                       long long batch_stride,
+                                       Index ldm,
+                                       Index _offset_to_residue) {
+
+      offset_to_residue = _offset_to_residue;
+      int error_code = load_iterator.initialize(pointer, batch_stride, ldm);
       if (error_code) {
         return error_code;
       }
-
       return store_iterator.initialize();
     }
   };
 
-  /// The amount of storage in shared memory needed to store the tile.
-  typedef typename StoreIterator::SharedStorage SharedStoreStorage;
+  /// Contains private storage in shared memory needed by the objects within this class. Note,
+  /// this is *NOT* the shared memory allocation for the GEMM threadblock tile. That necessarily
+  /// exists outside this class, as it is also needed by the warp-level shared=>RF stream.
+  struct SharedStorage {};
 
-  /// The storage in shared memory needed by that stream.
-  union SharedStorage {
-    // The load iterator.
-    typename LoadIterator::SharedStorage load_iterator;
-    // The store iterator.
-    SharedStoreStorage store_iterator;
-  };
+  //
+  // Static member functions
+  //
+
+  /// Maps a coordinate in the GEMM's (K, N, M) coordinate system to global memory
+  CUTLASS_DEVICE static Coord<3> project_coordinate(Coord<3> const& coord, Index d_offset = 0) {
+    bool const kKstrided =
+        GemmMultiplicandTraits<typename LoadIterator::Tile, kOperand, kLayout>::kKstrided;
+    Coord<3> tile_coord = ProjectOperand<kOperand, kKstrided>::project(coord);
+    return make_Coord(
+        tile_coord[0] + d_offset, tile_coord[1], tile_coord[2] / LoadIterator::Tile::kC);
+  }
 
   /// Ctor.
-  CUTLASS_DEVICE GlobalLoadStreamBase(Params const& params,
-                                      SharedStorage& shared_storage,
-                                      Coord<3> const bounds,
-                                      Coord<3> const& block)
-      : load_iterator(params.load_iterator, bounds, block),
+  CUTLASS_DEVICE GlobalLoadStream(
+      Params const& _params,
+      SharedStorage& shared_storage,
+      ThreadblockTileRef const& threadblock_tile_ref,
+      Coord<3> const bounds,
+      Coord<3> const& _threadblock_offset)
+      : params(_params),
+        multiplicand_bounds(project_coordinate(bounds, 1)),
+        threadblock_offset(project_coordinate(_threadblock_offset)),
+        load_iterator(params.load_iterator,
+          project_coordinate(bounds, 1), /*multiplicant_bounds*/
+          project_coordinate(_threadblock_offset) /*threablock_offset*/),
         transformer(),
-        store_iterator(params.store_iterator, shared_storage.store_iterator)
-
+        store_iterator(params.store_iterator, threadblock_tile_ref.data())
   {
+    load_iterator.initialize_predicates(multiplicand_bounds, threadblock_offset);
     fetched_fragment.clear();
   }
 
+
   /// Load the data from shared memory to the fetch fragment.
-  CUTLASS_DEVICE void copy() { iterator_load(load_iterator, fetched_fragment); }
+  CUTLASS_DEVICE void copy() { load_iterator.load_post_increment(fetched_fragment); }
 
   /// Commit the data.
   CUTLASS_DEVICE void commit() {
     transformer.transform(fetched_fragment, transformed_fragment);
-    iterator_store(store_iterator, transformed_fragment);
+    store_iterator.store_post_increment(transformed_fragment);
     store_iterator.inc_stage();
   }
-
-  /// Move to the beginning of the residue code. That's a new code path in CUTLASS 1.0.1.
-  CUTLASS_DEVICE void move_to_residue(Index k) { load_iterator.move_to_residue(k); }
 
   /// Execute the residue code.
   CUTLASS_DEVICE void residue(Index k, bool skip_clear = false) {
@@ -140,9 +171,43 @@ struct GlobalLoadStreamBase {
     }
   }
 
-  /// Rollback to the beginning of the GEMM-k dimension.
-  CUTLASS_DEVICE void rollback() { load_iterator.rollback(); }
+  /// Move to the residue portion.
+  CUTLASS_DEVICE void move_to_residue(Index k, Index kTileK) {
+    Index kResidue = k % kTileK;
+    if (kResidue) {
+      residue(kResidue);
+    }
+    load_iterator.add_pointer_offset(params.offset_to_residue * load_iterator.stride_advance());
+  }
 
+  /// Rollback to the beginning of the first tile
+  CUTLASS_DEVICE void rollback(void) {
+    load_iterator.initialize_predicates(multiplicand_bounds, threadblock_offset);
+
+    int const kBlock = kOperand == GemmOperand::kA
+                           ? (kLayout == MatrixLayout::kColumnMajor ? Tile::kH : Tile::kW)
+                           : (kLayout == MatrixLayout::kRowMajor ? Tile::kH : Tile::kW);
+
+    load_iterator.add_pointer_offset(-(params.offset_to_residue + kBlock) *
+                                     load_iterator.stride_advance());
+  }
+
+  /// Adds a Coord<3> to the underlying global load iterator
+  CUTLASS_DEVICE GlobalLoadStream &operator+=(Coord<3> const &offset) {
+    load_iterator += offset;
+    return *this;
+  }
+
+  //
+  // Data members
+  //
+
+  /// Parameters
+  Params params;
+  /// Multiplicand bounds
+  Coord<3> multiplicand_bounds;
+  /// Threadblock offset
+  Coord<3> threadblock_offset;
   /// The iterator.
   LoadIterator load_iterator;
   /// The fragment to fetch from shared memory.
@@ -153,28 +218,6 @@ struct GlobalLoadStreamBase {
   TransformedFragment transformed_fragment;
   /// The store iterator.
   StoreIterator store_iterator;
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <
-    /// The load iterator.
-    typename LoadIterator_,
-    /// The store iterator to copy to shared memory.
-    typename StoreIterator_,
-    /// The transformer to be applied after the data has been copied from global memory.
-    typename Transformer_ = Copy<typename LoadIterator_::Fragment> >
-
-struct GlobalLoadStream : public GlobalLoadStreamBase<LoadIterator_, StoreIterator_, Transformer_> {
-  /// The base class.
-  typedef GlobalLoadStreamBase<LoadIterator_, StoreIterator_, Transformer_> Base;
-
-  /// Ctor.
-  CUTLASS_DEVICE GlobalLoadStream(typename Base::Params const& params,
-                                  typename Base::SharedStorage& shared_storage,
-                                  Coord<3> const& bounds,
-                                  Coord<3> const& block)
-      : Base(params, shared_storage, bounds, block) {}
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

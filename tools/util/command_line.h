@@ -108,7 +108,7 @@ struct CommandLine {
   }
 
   /**
-   * Returns the commandline parameter for a given index (not including flags)
+   * Returns the boolean value specified for a given commandline parameter --<flag>=<bool>
    */
   void get_cmd_line_argument(const char* arg_name, bool& val, bool _default = true) const {
     val = _default;
@@ -156,27 +156,7 @@ struct CommandLine {
       for (int i = 0; i < keys.size(); ++i) {
         if (keys[i] == string(arg_name)) {
           string val_string(values[i]);
-          istringstream str_stream(val_string);
-          string::size_type old_pos = 0;
-          string::size_type new_pos = 0;
-
-          // Iterate <sep>-delimited values
-          value_t val;
-          while ((new_pos = val_string.find(sep, old_pos)) != string::npos) {
-            if (new_pos != old_pos) {
-              str_stream.width(new_pos - old_pos);
-              str_stream >> val;
-              vals.push_back(val);
-            }
-
-            // skip over delimiter
-            str_stream.ignore(1);
-            old_pos = new_pos + 1;
-          }
-
-          // Read last value
-          str_stream >> val;
-          vals.push_back(val);
+          seperate_string(val_string, vals, sep);
         }
       }
     }
@@ -184,7 +164,7 @@ struct CommandLine {
 
   /**
    * Returns the values specified for a given commandline parameter
-   * --<flag>=<key:value>,<key:value>*
+   * --<flag>=<value>,<value_start:value_end>*
    */
   void get_cmd_line_argument_pairs(const char* arg_name,
                                    std::vector<std::pair<std::string, std::string> >& tokens,
@@ -195,6 +175,26 @@ struct CommandLine {
       get_cmd_line_argument(arg_name, value);
 
       tokenize(tokens, value, delim, sep);
+    }
+  }
+
+  /**
+   * Returns a list of ranges specified for a given commandline parameter
+   * --<flag>=<key:value>,<key:value>*
+   */
+  void get_cmd_line_argument_ranges(const char* arg_name,
+                                    std::vector<std::vector<std::string> >& vals,
+                                    char delim = ',',
+                                    char sep = ':') const {
+    std::vector<std::string> ranges;
+    get_cmd_line_arguments(arg_name, ranges, delim);
+
+    for (std::vector<std::string>::const_iterator range = ranges.begin();
+      range != ranges.end(); ++range) {
+
+      std::vector<std::string> range_vals;
+      seperate_string(*range, range_vals, sep);
+      vals.push_back(range_vals);
     }
   }
 
@@ -248,6 +248,33 @@ struct CommandLine {
     for (token_iterator tok = token_pairs.begin(); tok != token_pairs.end(); ++tok) {
       tokens.push_back(tok->first);
     }
+  }
+
+  template <typename value_t>
+  static void seperate_string(std::string const& str,
+                              std::vector<value_t>& vals,
+                              char sep = ',') {
+    std::istringstream str_stream(str);
+    std::string::size_type old_pos = 0;
+    std::string::size_type new_pos = 0;
+
+    // Iterate <sep>-delimited values
+    value_t val;
+    while ((new_pos = str.find(sep, old_pos)) != std::string::npos) {
+      if (new_pos != old_pos) {
+        str_stream.width(new_pos - old_pos);
+        str_stream >> val;
+        vals.push_back(val);
+      }
+
+      // skip over delimiter
+      str_stream.ignore(1);
+      old_pos = new_pos + 1;
+    }
+
+    // Read last value
+    str_stream >> val;
+    vals.push_back(val);
   }
 };
 

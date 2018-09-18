@@ -22,16 +22,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-#include <cutlass_unit_test.h>
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/sgemm_traits.h>
-#include <tools/test/unit/gemm/gemm_testbed.h>
-#include <tools/test/unit/gemm/gemm.h>
+#include "cutlass_unit_test.h"
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/sgemm_traits.h"
+#include "tools/test/unit/gemm/gemm_testbed.h"
+#include "tools/test/unit/gemm/run_gemm.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(Sgemm_64x128x16, sgemm_64x128x64_4x8_accumulators_nt) {
-  typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+  typedef cutlass::gemm::SgemmLBTraits<cutlass::MatrixLayout::kColumnMajor,
                                      cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<16, 128, 64>,
                                      cutlass::gemm::LinearScaling<float>,

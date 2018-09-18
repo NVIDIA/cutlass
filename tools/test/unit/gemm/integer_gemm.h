@@ -23,57 +23,54 @@
 *
 **************************************************************************************************/
 
-#include <cutlass/cutlass.h>
-#include <tools/test/unit/gemm/gemm_testbed.h>
+#include "cutlass/cutlass.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Helper Function to get the number of elements in the scalar.
+template <typename T>
+unsigned getElementsPerScalar() { return 1; }
+
+template<>
+unsigned getElementsPerScalar<cutlass::Vector<cutlass::int4_t, 8> >() { return 8; }
+
+template<>
+unsigned getElementsPerScalar<cutlass::Vector<cutlass::uint4_t, 8> >() { return 8; }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Function to run GEMM for integer operands
 template <typename GemmTraits_>
-static void run_gemm(
-    int m,
-    int n,
-    int k,
-    int lda,
-    int ldb,
-    int ldc,
-    typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type alpha =
-        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1),
-    typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
-        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0)) {
+static void run_integer_gemm(int m, int n, int k, int alpha = 1, int beta = 1) {
   typedef cutlass::gemm::Gemm<GemmTraits_> Gemm;
   typename Gemm::Params params;
 
-  test::GemmTestbed<
-      typename test::GemmTestbedTraits<
-          typename GemmTraits_::GemmConfig::ScalarA>::host_type,  // AType
-      typename test::GemmTestbedTraits<
-          typename GemmTraits_::GemmConfig::ScalarB>::host_type,  // BType
-      typename test::GemmTestbedTraits<
-          typename GemmTraits_::Epilogue::ScalarC>::host_type,  // CType
-      typename test::GemmTestbedTraits<
-          typename GemmTraits_::Epilogue::Accumulators::Element>::host_type,  // Accumulator
-      typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type  // Scalar
-      >
+  unsigned const elementsPerScalar =
+      getElementsPerScalar<typename GemmTraits_::GemmConfig::ScalarA>();
+
+  test::GemmTestbed<typename GemmTraits_::GemmConfig::ScalarA, // AType
+                    typename GemmTraits_::GemmConfig::ScalarB, // BType
+                    int, // CType
+                    int, // Accumulator
+                    int // Scalar
+                    >
       testbed(m,
               n,
-              k,
-              lda,
-              ldb,
-              ldc,
-              cutlass::convert(GemmTraits_::kLayoutA),
-              cutlass::convert(GemmTraits_::kLayoutB),
+              k / elementsPerScalar,
+              test::convert(GemmTraits_::kLayoutA),
+              test::convert(GemmTraits_::kLayoutB),
               alpha,
               beta);
 
-  testbed.initialize();
+  // Initializes the input vectors for computation FIXME
+  testbed.initialize_integer();
 
-  if (testbed.has_cublas_support()) {
-    EXPECT_TRUE(testbed.verify_host_with_cublas());
-  }
+  // Compute the reference result on the host (CPU)
+  testbed.compute_host();
 
   params.initialize(testbed.M(),
                     testbed.N(),
-                    testbed.K(),
+                    testbed.K() * elementsPerScalar,
                     testbed.alpha,
                     testbed.ptr_A(),
                     testbed.lda(),
@@ -91,28 +88,8 @@ static void run_gemm(
   ASSERT_EQ(result, cudaSuccess) << "\nCUDA kernel launch error: " << cudaGetErrorString(result)
                                  << "\n";
 
-  if (testbed.has_cublas_support()) {
-    ASSERT_TRUE(testbed.verify_with_cublas());
-  } else {
-    ASSERT_TRUE(testbed.verify_with_host());
-  }
+  testbed.computed.sync_host();
+
+  // Check the results
+  ASSERT_TRUE(testbed.computed.bit_equals(testbed.ref_host));
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename GemmTraits_>
-static void run_gemm(
-    int m,
-    int n,
-    int k,
-    typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type alpha =
-        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1),
-    typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
-        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0)) {
-  int lda = GemmTraits_::kLayoutA == cutlass::MatrixLayout::kColumnMajor ? m : k;
-  int ldb = GemmTraits_::kLayoutB == cutlass::MatrixLayout::kColumnMajor ? k : n;
-
-  run_gemm<GemmTraits_>(m, n, k, lda, ldb, m, alpha, beta);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////

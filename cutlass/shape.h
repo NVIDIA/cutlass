@@ -27,7 +27,7 @@
 */
 #pragma once
 
-#include <cutlass/cutlass.h>
+#include "cutlass/cutlass.h"
 
 namespace cutlass {
 
@@ -129,6 +129,17 @@ struct ShapeDiv {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename A_, typename B_>
+struct ShapeDivCeiling {
+  typedef Shape<(A_::kD + B_::kD - 1) / B_::kD,
+                (A_::kH + B_::kH - 1) / B_::kH,
+                (A_::kW + B_::kW - 1) / B_::kW,
+                (A_::kC + B_::kC - 1) / B_::kC>
+      Shape;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename A_, typename B_>
 struct ShapeMax {
   typedef Shape<(A_::kD > B_::kD ? A_::kD : B_::kD),
                 (A_::kH > B_::kH ? A_::kH : B_::kH),
@@ -150,12 +161,12 @@ struct ShapeMin {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Shape_, int kElementsPerAccess>
+template <typename Shape_, int elementsPerAccess>
 struct ShapeStrides {
   typedef Shape<Shape_::kH * Shape_::kW * Shape_::kC,
                 Shape_::kW * Shape_::kC,
                 Shape_::kC,
-                kElementsPerAccess>
+                elementsPerAccess>
       Shape;
 };
 
@@ -167,7 +178,7 @@ struct ShapeStrides {
 */
 template <typename Shape_>
 struct ComputeOffsetFromShape {
-  static CUTLASS_DEVICE int get(int d, int h, int w, int c) {
+  static CUTLASS_HOST_DEVICE int get(int d, int h, int w, int c) {
     // clang-format off
     return d * Shape_::kH * Shape_::kW * Shape_::kC +
            h * Shape_::kW * Shape_::kC +
@@ -180,68 +191,14 @@ struct ComputeOffsetFromShape {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
-* @brief Compute the offset for the given coordinates in a cube with a depth of 1
-* @tparam kSh Elements in the H dimension
-* @tparam kSw Elements in the W dimension
-* @tparam kSc Separation between two elements in "elements"
-*/
-template <int kSh_, int kSw_, int kSc_>
-struct ComputeOffsetFromShape<Shape<1, kSh_, kSw_, kSc_> > {
-  static CUTLASS_DEVICE int get(int d, int h, int w, int c) {
-    return h * kSw_ * kSc_ + w * kSc_ + c;
-  }
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/**
-* @brief Compute the offset for the given coordinates in a cube with one channel and a depth of 1
-* @tparam kSh Elements in the H dimension
-* @tparam kSw Elements in the W dimension
-*/
-template <int kSh_, int kSw_>
-struct ComputeOffsetFromShape<Shape<1, kSh_, kSw_, 1> > {
-  static CUTLASS_DEVICE int get(int d, int h, int w, int c) { return h * kSw_ + w; }
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/**
 * @brief Compute the offset for the given coordinates in a cube
 * @tparam A \ref layout_concept where each dimension of the cube specifies the corresponding stride.
 */
 template <typename Strides_>
 struct ComputeOffsetFromStrides {
-  static CUTLASS_DEVICE int get(int d, int h, int w, int c) {
+  static CUTLASS_HOST_DEVICE int get(int d, int h, int w, int c) {
     return d * Strides_::kD + h * Strides_::kH + w * Strides_::kW + c * Strides_::kC;
   }
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/**
-* @brief Compute the offset for the given coordinates in a cube with a depth of 1
-* @tparam S_h Stride in the H dimension in scalars
-* @tparam S_w Stride in the W dimension in scalars
-* @tparam S_c Stride between two scalars.
-*/
-template <int S_h_, int S_w_, int S_c_>
-struct ComputeOffsetFromStrides<Shape<1, S_h_, S_w_, S_c_> > {
-  static CUTLASS_DEVICE int get(int d, int h, int w, int c) {
-    return h * S_h_ + w * S_w_ + c * S_c_;
-  }
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/**
-* @brief Compute the offset for the given coordinates in a cube with one channel and a depth of 1
-* @tparam S_h Stride in the H dimension in scalars
-* @tparam S_w Stride in the W dimension in scalars
-*/
-template <int S_h_, int S_w_>
-struct ComputeOffsetFromStrides<Shape<1, S_h_, S_w_, 1> > {
-  static CUTLASS_DEVICE int get(int d, int h, int w, int c) { return h * S_h_ + w * S_w_; }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

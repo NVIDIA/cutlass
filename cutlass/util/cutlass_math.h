@@ -30,7 +30,7 @@
  * \brief Math utilities
  */
 
-#include <cutlass/util/platform.h>
+#include "cutlass/util/platform.h"
 
 namespace cutlass {
 
@@ -127,5 +127,39 @@ CUTLASS_HOST_DEVICE value_t lcm(value_t a, value_t b) {
 
   return temp ? (a / temp * b) : 0;
 }
+
+/**
+ * log2 computation, what's the
+ * difference between the below codes and
+ * log2_up/down codes?
+ */
+template <typename value_t>
+CUTLASS_HOST_DEVICE value_t clz(value_t x) {
+  for (int i = 31; i >= 0; --i) {
+    if ((1 << i) & x) return 31 - i;
+  }
+  return 32;
+}
+
+template <typename value_t>
+CUTLASS_HOST_DEVICE value_t find_log2(value_t x) {
+  int a = 31 - clz(x);
+  a += (x & (x - 1)) != 0;  // Round up, add 1 if not a power of 2.
+  return a;
+}
+
+/******************************************************************************
+ * Min/Max
+ ******************************************************************************/
+
+template <int A, int B>
+struct Min {
+  static int const kValue = (A < B) ? A : B;
+};
+
+template <int A, int B>
+struct Max {
+  static int const kValue = (A > B) ? A : B;
+};
 
 }  // namespace cutlass

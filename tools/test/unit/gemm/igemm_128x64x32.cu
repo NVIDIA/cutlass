@@ -22,11 +22,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-#include <cutlass_unit_test.h>
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/igemm_traits.h>
-#include <tools/test/unit/gemm/gemm_testbed.h>
-#include <tools/test/unit/gemm/gemm.h>
+#include "cutlass_unit_test.h"
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/igemm_traits.h"
+#include "tools/test/unit/gemm/gemm_testbed.h"
+#include "tools/test/unit/gemm/run_gemm.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -187,6 +187,15 @@ TEST(Igemm_128x64x32, igemm_256x128x64_nn) {
       IgemmTraits;
   run_gemm<IgemmTraits>(256, 128, 64);
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// FIXME: This test fails in cuBLAS. I don't know why!!!
+// TEST(Igemm_128x64x32, igemm_128x64x1_tn) {
+//     typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
+//     cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<32, 64, 128> > IgemmTraits;
+//     run_gemm<IgemmTraits>(128, 64, 1);
+// }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -27,7 +27,7 @@
 */
 #pragma once
 
-#include <cutlass/fragment.h>
+#include "cutlass/fragment.h"
 
 namespace cutlass {
 namespace gemm {
@@ -35,20 +35,23 @@ namespace gemm {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Template performing matrix multiply-add operation within a thread
-template <typename AccumulatorsPerThread_,
+template <typename ThreadGemmShape_,
           typename ThreadsPerWarp_,
           typename ScalarA_,
           typename ScalarB_,
-          typename ScalarC_>
+          typename ScalarC_,
+          MatrixLayout::Kind kLayout_ = MatrixLayout::kColumnMajor>
 struct ThreadMultiplyAdd {
   /// The shape of the instruction.
   typedef Shape<1, 1, 1, 1> InstructionShape;
-  /// The number of accumulators per thread.
-  typedef AccumulatorsPerThread_ AccumulatorsPerThread;
+  /// The shape of a thread-leveel matrix multiply accumulate.
+  typedef ThreadGemmShape_ ThreadGemmShape;
+  /// Aliased to "AccumulatorsPerThread" for compatibility. Expect to be renamed in CUTLASS v2.0
+  typedef ThreadGemmShape AccumulatorsPerThread;
   /// The number of threads per warp.
   typedef ThreadsPerWarp_ ThreadsPerWarp;
   /// The number of accumulators per warp.
-  typedef typename ShapeMul<AccumulatorsPerThread, ThreadsPerWarp>::Shape AccumulatorsPerWarp;
+  typedef typename ShapeMul<ThreadGemmShape, ThreadsPerWarp>::Shape AccumulatorsPerWarp;
   /// The type for A.
   typedef ScalarA_ ScalarA;
   /// The fragment for A.
@@ -70,9 +73,18 @@ struct ThreadMultiplyAdd {
                                    FragmentB const& b,
                                    Accumulators const& c,
                                    Accumulators& d) {
-    for (int j = 0; j < AccumulatorsPerThread::kH; ++j) {
-      for (int i = 0; i < AccumulatorsPerThread::kW; ++i) {
-        d[j * AccumulatorsPerThread::kW + i] = a[i] * b[j] + c[j * AccumulatorsPerThread::kW + i];
+    if(kLayout_ == MatrixLayout::kColumnMajor) {
+      for (int j = 0; j < AccumulatorsPerThread::kH; ++j) {
+        for (int i = 0; i < AccumulatorsPerThread::kW; ++i) {
+          d[j * AccumulatorsPerThread::kW + i] = a[i] * b[j] + c[j * AccumulatorsPerThread::kW + i];
+        }
+      }
+    }
+    else {
+      for(int i = 0; i < AccumulatorsPerThread::kW; ++i) {
+        for(int j = 0; j < AccumulatorsPerThread::kH; ++j) {
+          d[i * AccumulatorsPerThread::kH + j] = a[i] * b[j] + c[i * AccumulatorsPerThread::kH + j];
+        }
       }
     }
   }

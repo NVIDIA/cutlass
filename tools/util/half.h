@@ -107,6 +107,33 @@ class half_t {
   uint16_t& raw() { return x; }
   uint16_t raw() const { return x; }
 
+  //
+  // Stream interactions
+  //
+
+  /// put to stream - half_t-precision types bitcast as unsigned shorts if base is hexadecimal
+  friend std::ostream& operator<<(std::ostream& out, cutlass::half_t const& h) {
+    if (out.flags() & std::ios::hex) {
+      return out << h.x;
+    } else {
+      return out << float(h);
+    }
+  }
+
+  /// read from stream - half_t-precision types parsed as unsigned shorts if base is hexadecimal
+  friend std::istream& operator>>(std::istream& in, cutlass::half_t& h) {
+    if (in.flags() & std::ios::hex) {
+      unsigned short u = 0;
+      in >> u;
+      h = cutlass::half_t::bitcast(u);
+    } else {
+      float f = 0;
+      in >> f;
+      h = cutlass::half_t(f);
+    }
+    return in;
+  }
+
  public:
   /// data
   unsigned short x;
@@ -166,9 +193,6 @@ cutlass::half_t operator+(float, cutlass::half_t const&);
 cutlass::half_t operator-(float, cutlass::half_t const&);
 cutlass::half_t operator*(float, cutlass::half_t const&);
 cutlass::half_t operator/(float, cutlass::half_t const&);
-
-std::ostream& operator<<(std::ostream&, cutlass::half_t const&);  /// writes a half_t
-std::istream& operator>>(std::istream&, cutlass::half_t&);        /// reads a half_t
 
 #ifdef BOOST_LEXICAL_CAST_INCLUDED
 namespace boost {
@@ -714,30 +738,3 @@ inline cutlass::half_t sqrt(cutlass::half_t const& h) {
   return cutlass::half_t(std::sqrt(float(h)));
 }
 }  // namespace std
-
-//
-// Stream interactions
-//
-
-/// put to stream - half_t-precision types bitcast as unsigned shorts if base is hexadecimal
-inline std::ostream& operator<<(std::ostream& out, cutlass::half_t const& h) {
-  if (out.flags() & std::ios::hex) {
-    return out << h.x;
-  } else {
-    return out << float(h);
-  }
-}
-
-/// read from stream - half_t-precision types parsed as unsigned shorts if base is hexadecimal
-inline std::istream& operator>>(std::istream& in, cutlass::half_t& h) {
-  if (in.flags() & std::ios::hex) {
-    unsigned short u = 0;
-    in >> u;
-    h = cutlass::half_t::bitcast(u);
-  } else {
-    float f = 0;
-    in >> f;
-    h = cutlass::half_t(f);
-  }
-  return in;
-}

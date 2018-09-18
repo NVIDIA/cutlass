@@ -28,7 +28,8 @@
 */
 #pragma once
 
-#include <cutlass/gemm/gemm_shared_tile.h>
+#include "cutlass/tensor_ref.h"
+#include "cutlass/gemm/gemm_shared_tile.h"
 
 namespace cutlass {
 namespace gemm {
@@ -56,6 +57,11 @@ struct SharedLoadStream {
                 "");
   /// The output fragment.
   typedef TransformedFragment Fragment;
+  /// Scalar data type
+  typedef typename Iterator::Scalar Scalar;
+
+  /// Reference type to a tensor
+  typedef TensorRef<Scalar, 4> TensorRef;
 
   /// The params.
   struct Params {
@@ -73,29 +79,38 @@ struct SharedLoadStream {
   CUTLASS_DEVICE SharedLoadStream() {}
 
   /// Ctor.
-  CUTLASS_DEVICE SharedLoadStream(Params const &params, SharedStorage &shared_storage) {
-    this->initialize(params, shared_storage);
+  CUTLASS_DEVICE SharedLoadStream(Params const &params, TensorRef const &ref) {
+    this->initialize(params, ref);
   }
 
   /// Initialize the stream.
-  CUTLASS_DEVICE void initialize(Params const &params, SharedStorage &shared_storage) {
+  CUTLASS_DEVICE void initialize(Params const &params, TensorRef const &ref) {
     // The iterator.
-    iterator = Iterator(params.iterator, shared_storage);
+    iterator = Iterator(params.iterator, ref.data());
     // The transformer.
     transformer = Transformer();
   }
 
   /// Load the data from shared memory to the fetch fragment.
-  CUTLASS_DEVICE void copy(FetchedFragment &fetched) { shared_iterator_load(iterator, fetched); }
+  CUTLASS_DEVICE void copy() { iterator.load_post_increment(fetched[0]); }
 
   /// Load the data from shared memory to the fetch fragment.
-  CUTLASS_DEVICE void copy(int d, FetchedFragment &fetched) {
-    shared_iterator_load(iterator, fetched, d);
-  }
+  CUTLASS_DEVICE void copy(int step) { iterator.load(fetched[step % 2], step); }
 
   /// Commit the data.
-  CUTLASS_DEVICE void commit(FetchedFragment &fetched, TransformedFragment &transformed) {
-    transformer.transform(fetched, transformed);
+  CUTLASS_DEVICE void commit() { transformer.transform(fetched[0], transformed[0]); }
+
+  /// Commit the data.
+  CUTLASS_DEVICE void commit(int step) {
+    transformer.transform(fetched[step % 2], transformed[step % 2]);
+  }
+
+  /// Returns the fragment for the given step
+  CUTLASS_DEVICE TransformedFragment &fragment(int step = 0) { return transformed[step % 2]; }
+
+  /// Returns the fragment for the given step
+  CUTLASS_DEVICE TransformedFragment const &fragment(int step = 0) const {
+    return transformed[step % 2];
   }
 
   /// Increment the stage.
@@ -103,8 +118,12 @@ struct SharedLoadStream {
 
   /// The iterator.
   Iterator iterator;
+  /// Fetched fragment
+  FetchedFragment fetched[2];
   /// The transformer.
   Transformer transformer;
+  /// Transformed fragment
+  TransformedFragment transformed[2];
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

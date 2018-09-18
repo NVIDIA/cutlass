@@ -37,14 +37,23 @@ link_libraries(
 set(CUTLASS_UNIT_TEST_HEADERS
   cutlass_unit_test.h
   core/layout_verification.h
+  gemm/run_gemm.h
+  gemm/gemm_testbed.h
 )
 
 set(CUTLASS_UNIT_TEST_SOURCES
   cutlass_unit_test.cpp
+  core/tensor_ref.cu
+  core/tensor_view.cu
+  util/unique_ptr.cu
   util/host_tensor.cu
+  util/complex.cu
+  util/tensor_foreach.cu
+  util/tensor_elementwise.cu
   core/layout_verification.cu
   core/predicate_vector.cu
   core/tile_iterator.cu
+  core/zip_tile_iterator.cu
   gemm/dgemm.cu
   gemm/hgemm_128x128x8.cu
   gemm/hgemm_128x128x16.cu
@@ -68,7 +77,19 @@ set(CUTLASS_UNIT_TEST_SOURCES
   gemm/sgemm_64x64x16.cu
   gemm/sgemm_64x32x8.cu
   gemm/sgemm_64x32x16.cu
+  gemm/fp16_sgemm_fp32_128x128x16.cu
+  gemm/fp16_sgemm_fp16_128x128x16.cu
   gemm/wmma_gemm.cu
+  gemm/wmma_binary_gemm.cu
+  gemm/wmma_integer_gemm.cu
+  gemm/sgemm_threadblock_swizzle_nn.cu
+  gemm/sgemm_threadblock_swizzle_nt.cu
+  gemm/sgemm_threadblock_swizzle_tn.cu
+  gemm/sgemm_threadblock_swizzle_tt.cu
+  gemm/batched_strided_sgemm_128x128x8.cu
+  gemm/batched_strided_dgemm_128x128x8.cu
+  gemm/batched_strided_hgemm_128x128x8.cu
+  gemm/epilogue_functor.cu
 )
 
 if (CUTLASS_NVRTC_ENABLE)
@@ -101,4 +122,6 @@ if (CUTLASS_NVRTC_ENABLE)
   endif()
 endif()
 
-CUDA_ADD_CUBLAS_TO_TARGET(cutlass_unit_test)
+target_link_libraries(cutlass_unit_test ${CUBLAS_LIBRARY})
+
+

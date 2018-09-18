@@ -1,10 +1,10 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 1.0
+# CUTLASS 1.1
 
-_CUTLASS 1.0.1 - June 2018_
+_CUTLASS 1.1.0 - September 2018_
 
-CUTLASS 1.0 is a collection of CUDA C++ template abstractions for implementing
+CUTLASS 1.1 is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
 It incorporates strategies for hierarchical decomposition and data movement similar
 to those used to implement cuBLAS.  CUTLASS decomposes these "moving parts" into
@@ -22,14 +22,27 @@ point (FP64) types.  Furthermore, CUTLASS demonstrates CUDA's WMMA API for targe
 the programmable, high-throughput _Tensor Cores_ provided by NVIDIA's Volta architecture
 and beyond.
 
-CUTLASS 1.0 has changed substantially from our preview release described in
-the [CUTLASS Parallel For All](https://devblogs.nvidia.com/parallelforall/cutlass-linear-algebra-cuda)
-post. We have decomposed the structure of the GEMM computation into deeper, structured
-primitives for loading data, computing predicate masks, streaming data at each level of
-the GEMM hierarchy, and updating the output matrix.
+CUTLASS 1.1 is described in the [CUTLASS Documentation](CUTLASS.md) and the accompanying
+[Doxygen documentation](https://nvidia.github.io/cutlass).
+We describe the structure of an efficient GEMM in our talk at the
+[GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
 
-CUTLASS 1.0 is described in the [Doxygen documentation](https://nvidia.github.io/cutlass)
-and our talk at the [GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
+# What's New in CUTLASS 1.1
+
+* [CUTLASS Documentation](CUTLASS.md)
+* [Examples](examples/)
+  * Basic GEMM, tensor views, CUTLASS utilities, batched GEMM, WMMA GEMM
+* Turing Features
+  * [WMMA GEMM targeting TensorCores](tools/test/unit/gemm/wmma_integer_gemm.cu) - INT8, INT4, INT1
+* [Batched Strided GEMM](tools/test/unit/gemm/batched_strided_sgemm_128x128x8.cu)
+* [Threadblock rasterization strategies](tools/test/unit/gemm/sgemm_threadblock_swizzle_nt.cu)
+  * Improved performance for adverse problem sizes and data layouts
+* Extended CUTLASS Core comonents
+  * Tensor views support arbitrary matrix and tensor layouts
+  * Zip iterators for structuring multiple data streams
+* Enhanced CUTLASS utilities
+  * [Reference implementations](tools/util/reference) for tensor operations in [host](tools/util/reference/host) and [device](tools/util/reference/device) code
+  * Added `HostMatrix<>` for simplified matrix creation
 
 # Performance
 
@@ -39,11 +52,11 @@ CUTLASS primitives are very efficient.  When used to construct device-wide GEMM 
 they exhibit performance comparable to cuBLAS for scalar GEMM
 computations. The above figure shows CUTLASS performance relative to cuBLAS
 for large matrix dimensions (M=10240, N=K=4096) running on an NVIDIA Titan V GPU
-when compiled with CUDA 9.2.
+when compiled with CUDA 10.0.
 
 # Compatibility
 
-CUTLASS requires CUDA 9 and performs best with [CUDA 9.2 Toolkit](ttps://developer.nvidia.com/cuda-toolkit) or later.
+CUTLASS requires CUDA 9 but performs best with [CUDA 10.0 Toolkit](ttps://developer.nvidia.com/cuda-toolkit) or later.
 
 |**Operating System** | **Compiler** |
 |-----------------|----------|
@@ -63,7 +76,7 @@ any Maxwell-, Pascal-, or Volta-architecture NVIDIA GPU.
 |NVIDIA Tesla P100|
 |NVIDIA Tesla V100|
 |NVIDIA TitanV|
-
+|NVIDIA GeForce RTX 2080 TI, 2080, 2070|
 
 # Building CUTLASS
 
@@ -79,7 +92,7 @@ $ git submodule update --init --recursive
 ```
 
 CUTLASS can be build with CMake starting version 3.10. By default CUTLASS will build kernels
-for CUDA architecture versions 5.0, 6.0, 6.1 and 7.0. To reduce compile time you can specify
+for CUDA architecture versions 5.0, 6.0, 6.1, 7.0 and 7.5. To reduce compile time you can specify
 the architectures to build CUTLASS for by changing the CMake configuration setting
 `CUTLASS_NVCC_ARCHS`.
 
@@ -107,12 +120,11 @@ $ ./tools/test/unit/cutlass_unit_test
 ...
 ...
 [----------] Global test environment tear-down
-[==========] 481 tests from 24 test cases ran. (5954 ms total)
-[  PASSED  ] 481 tests.
+[==========] 946 tests from 57 test cases ran. (10812 ms total)
+[  PASSED  ] 946 tests.
 ```
 
 All tests should pass, though the exact number of tests may vary over time.
-
 
 # Project Structure
 
@@ -128,27 +140,40 @@ templates in the cutlass/gemm directory.
 
 ```
 cutlass/
-    gemm/
-    util/
-    <core API components>
+  gemm/
+  util/
+  <core API components>
 ```
 
 Several tools and test programs are also distributed with the CUTLASS library. They are
 contained in the following directories.
 
 ```
+examples/
+  00_basic_gemm/
+  01_tensor_view/
+  02_cutlass_utilities/
+  03_batched_gemm/
+  04_tile_iterator/
+  05_wmma_gemm/
 tools/
-    test/
-        unit/
-            core/
-            gemm/
-        perf/
-    util/
-        <utilities>
+  test/
+    unit/
+      core/
+      gemm/
+    perf/
+  util/
+    reference/
+      device/
+      host/
+    <utilities>
 ```
 
 The `test/unit/` directory consist of unit tests implemented with Google Test that demonstrate
 basic usage of Core API components and complete tests of the CUTLASS GEMM computations.
+
+The `tools/util` directory contains CUTLASS utilities including reference implementations of GEMM and
+several element-wise tensor operations.
 
 # Performance Profiling
 

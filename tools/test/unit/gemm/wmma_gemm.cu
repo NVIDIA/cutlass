@@ -22,20 +22,81 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-#include <cutlass/wmma_matrix.h>
+#include "cutlass/wmma_matrix.h"
 #if defined(CUTLASS_USE_WMMA_API)
 
-#include <cutlass_unit_test.h>
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/wmma_gemm_traits.h>
-#include <tools/test/unit/gemm/gemm_testbed.h>
-#include <tools/test/unit/gemm/gemm.h>
+#include "cutlass_unit_test.h"
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/wmma_gemm_traits.h"
+#include "tools/test/unit/gemm/gemm_testbed.h"
+#include "tools/test/unit/gemm/run_gemm.h"
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// FP16 accumulation
+//
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(WmmaGemm_16x16x32_f16, wmma_gemm_16x16x16_nn) {
+  typedef cutlass::gemm::WmmaGemmTraits<
+    cutlass::MatrixLayout::kColumnMajor,
+    cutlass::MatrixLayout::kColumnMajor,
+    cutlass::Shape<32, 16, 16>,
+    half,
+    half,
+    half,
+    cutlass::gemm::LinearScaling<half>,
+    half
+  >
+  WmmaGemmTraits;
+
+  run_gemm<WmmaGemmTraits>(16, 16, 16);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(WmmaGemm_16x16x32_f16, wmma_gemm_16x16x32_nn) {
+
+  typedef cutlass::gemm::WmmaGemmTraits<
+    cutlass::MatrixLayout::kColumnMajor,
+    cutlass::MatrixLayout::kColumnMajor,
+    cutlass::Shape<32, 16, 16>,
+    half,
+    half,
+    half,
+    cutlass::gemm::LinearScaling<half>,
+    half
+  >
+      WmmaGemmTraits;
+  run_gemm<WmmaGemmTraits>(16, 16, 32);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(WmmaGemm_128x128x32_f16, wmma_16x16x16_gemm_256x256x128_nn) {
+  typedef cutlass::gemm::WmmaGemmTraits<
+    cutlass::MatrixLayout::kColumnMajor,
+    cutlass::MatrixLayout::kColumnMajor,
+    cutlass::Shape<32, 128, 128>,
+    half,
+    half,
+    half,
+    cutlass::gemm::LinearScaling<half>,
+    half
+  >
+    WmmaGemmTraits;
+  run_gemm<WmmaGemmTraits>(256, 256, 128);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// FP32 accumulation
+//
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x16_nt) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                        cutlass::MatrixLayout::kRowMajor, 
+                                        cutlass::MatrixLayout::kRowMajor,
                                         cutlass::Shape<32, 16, 16> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(16, 16, 16);
@@ -45,7 +106,7 @@ TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x16_nt) {
 
 TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x32_nt) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                        cutlass::MatrixLayout::kRowMajor, 
+                                        cutlass::MatrixLayout::kRowMajor,
                                         cutlass::Shape<32, 16, 16> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(16, 16, 32);
@@ -53,9 +114,9 @@ TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x32_nt) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_nt) { 
+TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_nt) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                        cutlass::MatrixLayout::kRowMajor, 
+                                        cutlass::MatrixLayout::kRowMajor,
                                         cutlass::Shape<32, 128, 128> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
@@ -64,10 +125,12 @@ TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_nt) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
-TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_nt) { 
+TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_nt) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                        cutlass::MatrixLayout::kRowMajor, 
+                                        cutlass::MatrixLayout::kRowMajor,
                                         cutlass::Shape<32, 128, 128>,
+                                        half,
+                                        half,
                                         float,
                                         cutlass::gemm::LinearScaling<float>,
                                         float,
@@ -82,10 +145,12 @@ TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_nt) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
-TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_nt) { 
+TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_nt) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                        cutlass::MatrixLayout::kRowMajor, 
+                                        cutlass::MatrixLayout::kRowMajor,
                                         cutlass::Shape<32, 128, 128>,
+                                        half,
+                                        half,
                                         float,
                                         cutlass::gemm::LinearScaling<float>,
                                         float,
@@ -100,7 +165,7 @@ TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_nt) {
 
 TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x16_nn) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                        cutlass::MatrixLayout::kColumnMajor, 
+                                        cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::Shape<32, 16, 16> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(16, 16, 16);
@@ -110,7 +175,7 @@ TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x16_nn) {
 
 TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x32_nn) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                        cutlass::MatrixLayout::kColumnMajor, 
+                                        cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::Shape<32, 16, 16> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(16, 16, 32);
@@ -118,9 +183,9 @@ TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x32_nn) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_nn) { 
+TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_nn) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                        cutlass::MatrixLayout::kColumnMajor, 
+                                        cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::Shape<32, 128, 128> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
@@ -129,10 +194,12 @@ TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_nn) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
-TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_nn) { 
+TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_nn) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                        cutlass::MatrixLayout::kColumnMajor, 
+                                        cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::Shape<32, 128, 128>,
+                                        half,
+                                        half,
                                         float,
                                         cutlass::gemm::LinearScaling<float>,
                                         float,
@@ -147,10 +214,12 @@ TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_nn) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
-TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_nn) { 
+TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_nn) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                        cutlass::MatrixLayout::kColumnMajor, 
+                                        cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::Shape<32, 128, 128>,
+                                        half,
+                                        half,
                                         float,
                                         cutlass::gemm::LinearScaling<float>,
                                         float,
@@ -165,7 +234,7 @@ TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_nn) {
 
 TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x16_tt) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                        cutlass::MatrixLayout::kRowMajor, 
+                                        cutlass::MatrixLayout::kRowMajor,
                                         cutlass::Shape<32, 16, 16> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(16, 16, 16);
@@ -175,7 +244,7 @@ TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x16_tt) {
 
 TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x32_tt) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                        cutlass::MatrixLayout::kRowMajor, 
+                                        cutlass::MatrixLayout::kRowMajor,
                                         cutlass::Shape<32, 16, 16> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(16, 16, 32);
@@ -183,9 +252,9 @@ TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x32_tt) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_tt) { 
+TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_tt) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                        cutlass::MatrixLayout::kRowMajor, 
+                                        cutlass::MatrixLayout::kRowMajor,
                                         cutlass::Shape<32, 128, 128> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
@@ -194,10 +263,12 @@ TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_tt) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
-TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_tt) { 
+TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_tt) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                        cutlass::MatrixLayout::kRowMajor, 
+                                        cutlass::MatrixLayout::kRowMajor,
                                         cutlass::Shape<32, 128, 128>,
+                                        half,
+                                        half,
                                         float,
                                         cutlass::gemm::LinearScaling<float>,
                                         float,
@@ -212,10 +283,12 @@ TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_tt) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
-TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_tt) { 
+TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_tt) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                        cutlass::MatrixLayout::kRowMajor, 
+                                        cutlass::MatrixLayout::kRowMajor,
                                         cutlass::Shape<32, 128, 128>,
+                                        half,
+                                        half,
                                         float,
                                         cutlass::gemm::LinearScaling<float>,
                                         float,
@@ -230,7 +303,7 @@ TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_tt) {
 
 TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x16_tn) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                        cutlass::MatrixLayout::kColumnMajor, 
+                                        cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::Shape<32, 16, 16> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(16, 16, 16);
@@ -240,7 +313,7 @@ TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x16_tn) {
 
 TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x32_tn) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                        cutlass::MatrixLayout::kColumnMajor, 
+                                        cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::Shape<32, 16, 16> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(16, 16, 32);
@@ -248,9 +321,9 @@ TEST(WmmaGemm_16x16x32, wmma_gemm_16x16x32_tn) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_tn) { 
+TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_tn) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                        cutlass::MatrixLayout::kColumnMajor, 
+                                        cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::Shape<32, 128, 128> >
       WmmaGemmTraits;
   run_gemm<WmmaGemmTraits>(256, 256, 128);
@@ -259,10 +332,12 @@ TEST(WmmaGemm_128x128x32, wmma_16x16x16_gemm_256x256x128_tn) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
-TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_tn) { 
+TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_tn) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                        cutlass::MatrixLayout::kColumnMajor, 
+                                        cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::Shape<32, 128, 128>,
+                                        half,
+                                        half,
                                         float,
                                         cutlass::gemm::LinearScaling<float>,
                                         float,
@@ -277,10 +352,12 @@ TEST(WmmaGemm_128x128x32, wmma_8x32x16_gemm_256x256x128_tn) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(CUDA_VERSION) && CUDA_VERSION >= 9100
-TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_tn) { 
+TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_tn) {
   typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                        cutlass::MatrixLayout::kColumnMajor, 
+                                        cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::Shape<32, 128, 128>,
+                                        half,
+                                        half,
                                         float,
                                         cutlass::gemm::LinearScaling<float>,
                                         float,

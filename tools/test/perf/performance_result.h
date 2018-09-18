@@ -25,25 +25,39 @@
 
 #pragma once
 
-#include <cutlass/matrix_traits.h>
-#include <tools/util/command_line.h>
+#include "cutlass/matrix_traits.h"
+#include "tools/util/command_line.h"
+#include "tools/test/perf/provider.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace perf {
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Outcome of test
 struct Disposition {
-  enum Kind { Unknown = 0, NotRun, Passed, Incorrect, Failed, NotVerified, Invalid };
+  enum Kind {
+    Unknown = 0,
+    NotRun,
+    Passed,
+    Incorrect,
+    Failed,
+    NotVerified,
+    Invalid
+  };
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-}  // namespace perf
-
-inline std::ostream &operator<<(std::ostream &out, perf::Disposition::Kind value) {
-  char const *str[] = {
-      "unknown", "not_run", "passed", "incorrect", "failed", "not_verified", "invalid"};
+inline std::ostream &operator<<(std::ostream &out, Disposition::Kind value) {
+  char const *str[] = {"unknown",
+                       "not_run",
+                       "passed",
+                       "incorrect",
+                       "failed",
+                       "not_verified",
+                       "invalid"};
   if (value >= perf::Disposition::Unknown && value < perf::Disposition::Invalid) {
     out << str[value];
   } else {
@@ -59,10 +73,6 @@ inline std::ostream &operator<<(std::ostream &out, cutlass::MatrixLayout::Kind l
   out << (layout == cutlass::MatrixLayout::kColumnMajor ? "column" : "row");
   return out;
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace perf {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -86,7 +96,7 @@ struct GemmProblem {
   //
 
   /// Static method to print GemmProblem headers
-  static std::string header() { return "M, N, K, Layout_A, Layout_B, Beta"; }
+  static std::string header() { return "M,N,K,Layout_A,Layout_B,Beta"; }
 
   //
   // Methods
@@ -129,34 +139,27 @@ struct GemmProblem {
   }
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-}  // namespace perf
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Prints a problem to an output stream
-inline std::ostream &operator<<(std::ostream &out, perf::GemmProblem const &problem) {
-  out << problem.m << ", " << problem.n << ", " << problem.k << ", " << problem.layout_A << ", "
-      << problem.layout_B << ", " << problem.beta;
+inline std::ostream &operator<<(std::ostream &out, GemmProblem const &problem) {
+  out << problem.m << "," << problem.n << "," << problem.k << "," << problem.layout_A << ","
+      << problem.layout_B << "," << problem.beta;
 
   return out;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-namespace perf {
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Result object
+template <typename Problem>
 struct PerformanceResult {
+  /// Provider of GEMM implementation
+  Provider::Kind provider;
 
   /// Name of kernel
   std::string kernel_name;
 
   /// Problem size
-  GemmProblem problem;
+  Problem problem;
 
   /// Outcome of test
   Disposition::Kind disposition;
@@ -166,40 +169,45 @@ struct PerformanceResult {
 
   /// Throughput in units of GFLOPs
   double gflops;
+
   //
   // Methods
   //
 
-  PerformanceResult(
-                    std::string const &_kernel_name = "",
-                    GemmProblem const &_problem = GemmProblem(),
-                    Disposition::Kind _disposition = Disposition::NotRun,
-                    double _runtime = 0,
-                    double _gflops = 0)
-      :
-        kernel_name(_kernel_name),
-        problem(_problem),
-        disposition(_disposition),
-        runtime(_runtime),
-        gflops(_gflops) {}
+  PerformanceResult(Provider::Kind _provider = Provider::Cutlass
+                    , std::string const &_kernel_name = ""
+                    , Problem const &_problem = Problem()
+                    , Disposition::Kind _disposition = Disposition::NotRun
+                    , double _runtime = 0
+                    , double _gflops = 0
+  ):
+    provider(_provider)
+    , kernel_name(_kernel_name)
+    , problem(_problem)
+    , disposition(_disposition)
+    , runtime(_runtime)
+    , gflops(_gflops)
+  {}
 
   /// Displays headers
   static std::string header() {
-    return std::string("Kernel, ") + GemmProblem::header() +
-           ", Disposition, Runtime, GFLOPs";
+    std::stringstream ss;
+    
+    ss << "Provider,Kernel," <<  Problem::header();
+    ss << ",Disposition,Runtime,GFLOPs";
+    return ss.str();
   }
 
   /// Prints human-readable results
   std::ostream &pretty_print(std::ostream &out) const {
-
     out << "Kernel: \033[1m" << kernel_name << "\033[0m\n"
+        << "    provider: " << provider << "\n"
         << "    problem: ";
 
     std::stringstream disposition_str;
     if (disposition == Disposition::Passed) {
       disposition_str << "\033[1m";
-    }
-    else {
+    } else {
       disposition_str << "\033[1;31m";
     }
     disposition_str << disposition << "\033[0m";
@@ -215,15 +223,16 @@ struct PerformanceResult {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-}  // namespace perf
-
 /// Outputs result
-inline std::ostream &operator<<(std::ostream &out, perf::PerformanceResult const &result) {
+template <typename Problem>
+inline std::ostream &operator<<(std::ostream &out, PerformanceResult<Problem> const &result) {
 
-  out << result.kernel_name << ", " << result.problem << ", "
-      << result.disposition << ", " << result.runtime << ", " << result.gflops;
+  out << result.provider << "," << result.kernel_name << "," << result.problem << ","
+      << result.disposition << "," << result.runtime << "," << result.gflops;
 
   return out;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+}  // namespace perf

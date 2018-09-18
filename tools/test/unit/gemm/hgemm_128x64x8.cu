@@ -22,11 +22,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-#include <cutlass_unit_test.h>
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/hgemm_traits.h>
-#include <tools/test/unit/gemm/gemm_testbed.h>
-#include <tools/test/unit/gemm/gemm.h>
+#include "cutlass_unit_test.h"
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/hgemm_traits.h"
+#include "tools/test/unit/gemm/gemm_testbed.h"
+#include "tools/test/unit/gemm/run_gemm.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

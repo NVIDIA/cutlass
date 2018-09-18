@@ -32,30 +32,39 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <algorithm>
 
 #include <cublas_v2.h>
 
-#include <cutlass/matrix_traits.h>
-#include <cutlass/util/platform.h>
+#include "cutlass/matrix_traits.h"
+#include "cutlass/util/platform.h"
+#include "cutlass/gemm/gemm_coord.h"
 
-#include <tools/util/host_tensor.h>
-#include <tools/util/tensor_view_io.h>
-#include <tools/util/type_traits.h>
+#include "tools/util/host_matrix.h"
+#include "tools/util/host_matrix_view.h"
+#include "tools/util/tensor_view_io.h"
+#include "tools/util/type_traits.h"
+
+#include "tools/util/reference/host/gemm.h"
+#include "tools/util/reference/host/tensor_elementwise.h"
+
+//////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <cutlass::GemmOperand::Kind kOperand_,
           cutlass::MatrixLayout::Kind kLayout_,
           typename Scalar_,
           typename WmmaShape_>
 struct WmmaMatrix;
-}
+
+}  // namespace cutlass
+
+//////////////////////////////////////////////////////////////////////////////////////////
 
 namespace test {
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T>
 struct GemmTestbedTraits : public cutlass::TypeTraits<T> {};
@@ -66,14 +75,39 @@ template <cutlass::GemmOperand::Kind kOperand_,
           typename WmmaShape_>
 struct GemmTestbedTraits<cutlass::WmmaMatrix<kOperand_, kLayout_, Scalar_, WmmaShape_> > {
   static cudaDataType_t const cublas_type = cutlass::TypeTraits<Scalar_>::cublas_type;
-  typedef Scalar_ host_type;
-  typedef Scalar_ device_type;
+  typedef typename cutlass::TypeTraits<Scalar_>::host_type host_type;
+  typedef typename cutlass::TypeTraits<Scalar_>::device_type device_type;
   static inline double remove_negative_zero(double x) { return x == -0.0 ? 0.0 : x; }
   static inline double to_print(double x) { return x; }
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
+inline cublasOperation_t convert(cutlass::MatrixLayout::Kind layout) {
+  switch (layout) {
+    case cutlass::MatrixLayout::kRowMajor:
+      return CUBLAS_OP_T;
+    case cutlass::MatrixLayout::kColumnMajor:
+      return CUBLAS_OP_N;
+    default:
+      break;
+  }
+  return CUBLAS_OP_N;
+}
 
+inline cutlass::MatrixLayout::Kind convert(cublasOperation_t transform) {
+  switch (transform) {
+    case CUBLAS_OP_T:
+      return cutlass::MatrixLayout::kRowMajor;
+    case CUBLAS_OP_N:
+      return cutlass::MatrixLayout::kColumnMajor;
+    default:
+      break;
+  }
+  return cutlass::MatrixLayout::kColumnMajor;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////
+
+/// Testbed for evaluating real-valued GEMMs
 template <typename AType, typename BType, typename CType, typename Accumulator, typename Scalar>
 struct GemmTestbed {
   //
@@ -81,13 +115,13 @@ struct GemmTestbed {
   //
 
   /// Host tensor for operand A
-  typedef cutlass::HostTensor<AType> HostTensorA;
+  typedef cutlass::HostMatrix<AType> HostMatrixA;
 
   /// Host tensor for operand B
-  typedef cutlass::HostTensor<BType> HostTensorB;
+  typedef cutlass::HostMatrix<BType> HostMatrixB;
 
   /// Host tensor for operand C
-  typedef cutlass::HostTensor<CType> HostTensorC;
+  typedef cutlass::HostMatrix<CType> HostMatrixC;
 
   /// Functor to print errors
   struct PrintErrors {
@@ -98,18 +132,18 @@ struct GemmTestbed {
     std::ostream& out;
 
     /// Reference tensor view
-    cutlass::HostTensorView<CType> const& reference;
+    HostMatrixC const& reference;
 
     /// Computed tensor view
-    cutlass::HostTensorView<CType> const& experimental;
+    HostMatrixC const& experimental;
 
     /// Errors greater than or this amount result in printing
     integer_t ulps_threshold;
 
     ///
     PrintErrors(std::ostream& _out,
-                cutlass::HostTensorView<CType> const& _reference,
-                cutlass::HostTensorView<CType> const& _experimental,
+                HostMatrixC const& _reference,
+                HostMatrixC const& _experimental,
                 integer_t _ulps_threshold = 1)
         : out(_out),
           reference(_reference),
@@ -117,7 +151,7 @@ struct GemmTestbed {
           ulps_threshold(_ulps_threshold) {}
 
     /// Compares one element
-    void operator()(CType const& element, typename HostTensorC::Coord_t coord) {
+    void operator()(CType const& element, typename HostMatrixC::TensorCoord coord) {
       CType exp = experimental.at(coord);
       CType ref = reference.at(coord);
 
@@ -165,6 +199,20 @@ struct GemmTestbed {
     bool only_ones;
   };
 
+  template <typename T>
+  struct RandomBitGenerator {
+    RandomBitGenerator(int seed = -1) { srand(seed); }
+
+    T operator()() {
+      uint32_t val = 0;
+      for (int i = 0; i < 32; i++) {
+        val |= rand() % 2;
+        val <<= 1;
+      }
+      return T(val);
+    }
+  };
+
   //
   // Data members
   //
@@ -178,29 +226,32 @@ struct GemmTestbed {
   /// cuBLAS GEMM algorithm selector
   cublasGemmAlgo_t algorithm;
 
+  /// Problem size as a GemmCoord
+  cutlass::gemm::GemmCoord problem_size;
+
   /// A matrix operand
-  HostTensorA A;
+  HostMatrixA A;
 
   /// Layout of A matrix
   cublasOperation_t layout_A;
 
   /// B matrix operand
-  HostTensorB B;
+  HostMatrixB B;
 
   /// Layout of B matrix
   cublasOperation_t layout_B;
 
   /// C matrix operand
-  HostTensorC C_initial;
+  HostMatrixC C_initial;
 
   /// Reference result computed on the host
-  cutlass::HostTensor<CType, false> ref_host;
+  HostMatrixC ref_host;
 
   /// Reference result computed with cublas
-  HostTensorC ref_cublas;
+  HostMatrixC ref_cublas;
 
   /// Computed result
-  HostTensorC computed;
+  HostMatrixC computed;
 
   /// Linear scalaring factor
   Scalar alpha;
@@ -208,36 +259,105 @@ struct GemmTestbed {
   /// Linear scaling factor
   Scalar beta;
 
+  /// batch count
+  int batch_count;
+
+  /// distance between A[i] and A[i+1] for strided batched gemm
+  long long int batch_stride_A;
+
+  /// distance between B[i] and B[i+1] for strided batched gemm
+  long long int batch_stride_B;
+
+  /// distance between C[i] and C[i+1] for strided batched gemm
+  long long int batch_stride_C;
+
   //
   // Static helpers
   //
 
   /// Helper to resize a matrix with a given size and layout
-  template <typename T, bool DeviceBacked>
-  static void resize(cutlass::HostTensor<T, DeviceBacked>& tensor,
+  template <typename T>
+  static void resize(cutlass::HostMatrix<T>& tensor,
                      int rows,
                      int columns,
                      cublasOperation_t layout,
                      int ldm = 0) {
-    if (!ldm) {
-      ldm = (layout == CUBLAS_OP_N ? rows : columns);
-    }
 
-    typedef cutlass::Coord<cutlass::HostTensor<T>::Rank> Coord_t;
-
-    size_t matrix_stride = layout == CUBLAS_OP_N ? columns * ldm : rows * ldm;
-    // TODO: Remove that (int) cast.
-    Coord_t stride = cutlass::make_Coord(
-        (int)matrix_stride, layout == CUBLAS_OP_N ? 1 : ldm, layout == CUBLAS_OP_N ? ldm : 1, 1);
-    Coord_t size = cutlass::make_Coord(1, rows, columns, 1);
-    tensor.reset(stride, size);
+    tensor.resize(cutlass::make_Coord(rows, columns), convert(layout), ldm);
   }
 
   //
   // Methods
   //
 
-  /// Constructs a workspace for verifying GEMM.
+  /// Constructs a workspace for verifying GEMM, assumes
+  /// dense packing.
+  GemmTestbed(int M_,
+              int N_,
+              int K_,
+              cublasOperation_t layout_a,
+              cublasOperation_t layout_b,
+              Scalar alpha_ = Scalar(1),
+              Scalar beta_ = Scalar(0),
+              cublasGemmAlgo_t algorithm_ = CUBLAS_GEMM_DEFAULT,
+              cublasOperation_t layout_c = CUBLAS_OP_N)
+      : problem_size(K_, N_, M_, 1),
+        layout_A(layout_a),
+        layout_B(layout_b),
+        alpha(alpha_),
+        beta(beta_),
+        algorithm(algorithm_),
+        batch_count(1),
+        batch_stride_A(static_cast<long long int>(0)),
+        batch_stride_B(static_cast<long long int>(0)),
+        batch_stride_C(static_cast<long long int>(0)) {
+    status = cublasCreate(&handle);
+    if (status != CUBLAS_STATUS_SUCCESS) {
+      throw cutlass::cuda_exception("Failed to create CUBLAS handle");
+    }
+
+    resize(A, M_, K_, layout_a);
+    resize(B, K_, N_, layout_b);
+    resize(C_initial, M_, N_, layout_c);
+    resize(ref_host, M_, N_, layout_c);
+    resize(ref_cublas, M_, N_, layout_c);
+    resize(computed, M_, N_, layout_c);
+  }
+
+  /// Constructs a workspace for verifying GEMM, assumes
+  /// dense packing.
+  GemmTestbed(cublasHandle_t handle_,
+              int M_,
+              int N_,
+              int K_,
+              cublasOperation_t layout_a,
+              cublasOperation_t layout_b,
+              Scalar alpha_ = Scalar(1),
+              Scalar beta_ = Scalar(0),
+              cublasGemmAlgo_t algorithm_ = CUBLAS_GEMM_DEFAULT,
+              cublasOperation_t layout_c = CUBLAS_OP_N)
+      : status(CUBLAS_STATUS_SUCCESS),
+        handle(handle_),
+        problem_size(K_, N_, M_, 1),
+        layout_A(layout_a),
+        layout_B(layout_b),
+        alpha(alpha_),
+        beta(beta_),
+        algorithm(algorithm_),
+        batch_count(1),
+        batch_stride_A(static_cast<long long int>(0)),
+        batch_stride_B(static_cast<long long int>(0)),
+        batch_stride_C(static_cast<long long int>(0)) {
+
+    resize(A, M_, K_ * batch_count, layout_a);
+    resize(B, K_ * batch_count, N_, layout_b);
+    resize(C_initial, M_, N_ * batch_count, layout_c);
+    resize(ref_host, M_, N_ * batch_count, layout_c);
+    resize(ref_cublas, M_, N_ * batch_count, layout_c);
+    resize(computed, M_, N_ * batch_count, layout_c);
+  }
+
+  /// Constructs a workspace for verifying GEMM with arbitrary strides
   GemmTestbed(int M_,
               int N_,
               int K_,
@@ -250,7 +370,16 @@ struct GemmTestbed {
               Scalar beta_ = Scalar(0),
               cublasGemmAlgo_t algorithm_ = CUBLAS_GEMM_DEFAULT,
               cublasOperation_t layout_c = CUBLAS_OP_N)
-      : layout_A(layout_a), layout_B(layout_b), alpha(alpha_), beta(beta_), algorithm(algorithm_) {
+      : problem_size(K_, N_, M_, 1),
+        layout_A(layout_a),
+        layout_B(layout_b),
+        alpha(alpha_),
+        beta(beta_),
+        algorithm(algorithm_),
+        batch_count(1),
+        batch_stride_A(static_cast<long long int>(0)),
+        batch_stride_B(static_cast<long long int>(0)),
+        batch_stride_C(static_cast<long long int>(0)) {
     status = cublasCreate(&handle);
     if (status != CUBLAS_STATUS_SUCCESS) {
       throw cutlass::cuda_exception("Failed to create CUBLAS handle");
@@ -264,39 +393,119 @@ struct GemmTestbed {
     resize(computed, M_, N_, layout_c, ldc);
   }
 
-  ~GemmTestbed() { status = cublasDestroy(handle); }
+  /// Constructs a workspace for verifying GEMM with arbitrary strides
+  GemmTestbed(cublasHandle_t handle_,
+              int M_,
+              int N_,
+              int K_,
+              int ldc,
+              cublasOperation_t layout_a,
+              int lda,
+              cublasOperation_t layout_b,
+              int ldb,
+              Scalar alpha_ = Scalar(1),
+              Scalar beta_ = Scalar(0),
+              cublasGemmAlgo_t algorithm_ = CUBLAS_GEMM_DEFAULT,
+              cublasOperation_t layout_c = CUBLAS_OP_N)
+      : status(CUBLAS_STATUS_SUCCESS),
+        handle(handle_),
+        problem_size(K_, N_, M_, 1),
+        alpha(alpha_),
+        beta(beta_),
+        algorithm(algorithm_),
+        batch_count(1),
+        batch_stride_A(static_cast<long long int>(0)),
+        batch_stride_B(static_cast<long long int>(0)),
+        batch_stride_C(static_cast<long long int>(0)) {
+
+    resize(A, M_, K_ * batch_count, layout_a);
+    resize(B, K_ * batch_count, N_, layout_b);
+    resize(C_initial, M_, N_ * batch_count, layout_c);
+    resize(ref_host, M_, N_ * batch_count, layout_c);
+    resize(ref_cublas, M_, N_ * batch_count, layout_c);
+    resize(computed, M_, N_ * batch_count, layout_c);
+  }
+
+  /// Constructs a workspace for verifying strided batched GEMM, assumes
+  /// dense packing.
+  /// batches are "concated" along K for matrix A and matrix B, and along N for matrix C
+  /// a full implementation of strided batched GEMM should handle other corner cases
+  GemmTestbed(int M_,
+              int N_,
+              int K_,
+              int batch_count_,
+              cublasOperation_t layout_a,
+              cublasOperation_t layout_b,
+              Scalar alpha_ = Scalar(1),
+              Scalar beta_ = Scalar(0),
+              cublasGemmAlgo_t algorithm_ = CUBLAS_GEMM_DEFAULT,
+              cublasOperation_t layout_c = CUBLAS_OP_N)
+      : problem_size(K_, N_, M_, batch_count_),
+        layout_A(layout_a),
+        layout_B(layout_b),
+        alpha(alpha_),
+        beta(beta_),
+        algorithm(algorithm_),
+        batch_count(batch_count_) {
+
+    status = cublasCreate(&handle);
+    if (status != CUBLAS_STATUS_SUCCESS) {
+      throw cutlass::cuda_exception("Failed to create CUBLAS handle");
+    }
+
+    resize(A, M_, K_ * batch_count, layout_a);
+    resize(B, K_ * batch_count, N_, layout_b);
+    resize(C_initial, M_, N_ * batch_count, layout_c);
+    resize(ref_host, M_, N_ * batch_count, layout_c);
+    resize(ref_cublas, M_, N_ * batch_count, layout_c);
+    resize(computed, M_, N_ * batch_count, layout_c);
+
+    batch_stride_A = (layout_a == CUBLAS_OP_N) ? M_ * K_ : K_;
+    batch_stride_B = (layout_b == CUBLAS_OP_N) ? K_ : K_ * N_;
+    batch_stride_C = M_ * N_;
+  }
+
+  /// Destructs the GEMM testbed
+  ~GemmTestbed() {
+    if (status != CUBLAS_STATUS_NOT_INITIALIZED) {
+      status = cublasDestroy(handle);
+    }
+  }
 
   /// Returns true if the last CUBLAS call returned successfully
   bool good() const { return status == CUBLAS_STATUS_SUCCESS; }
 
   /// Returns a pointer to the A operand
-  typename HostTensorA::DeviceType* ptr_A() const { return A.device_data(); }
+  typename HostMatrixA::DeviceType* ptr_A() const { return A.device_data(); }
 
   /// Stride of A matrix
-  int lda() const { return std::max(A.stride(HostTensorA::Dim_H), A.stride(HostTensorA::Dim_W)); }
+  int lda() const { return A.leading_dim(); }
 
   /// Returns a pointer to the B operand
-  typename HostTensorB::DeviceType* ptr_B() const { return B.device_data(); }
+  typename HostMatrixB::DeviceType* ptr_B() const { return B.device_data(); }
 
   /// Stride of B matrix
-  int ldb() const { return std::max(B.stride(HostTensorB::Dim_H), B.stride(HostTensorB::Dim_W)); }
+  int ldb() const { return B.leading_dim(); }
 
   /// Returns a pointer to the initial state of the result tensor in device memory
-  typename HostTensorC::DeviceType* ptr_C_initial() const { return C_initial.device_data(); }
+  typename HostMatrixC::DeviceType* ptr_C_initial() const { return C_initial.device_data(); }
 
   /// Returns a pointer to the result tensor in device memory
-  typename HostTensorC::DeviceType* ptr_computed() const { return computed.device_data(); }
+  typename HostMatrixC::DeviceType* ptr_computed() const { return computed.device_data(); }
 
   /// Returns a pointer to the result tensor in device memory
-  typename HostTensorC::DeviceType* ptr_cublas() const { return ref_cublas.device_data(); }
+  typename HostMatrixC::DeviceType* ptr_cublas() const { return ref_cublas.device_data(); }
 
   /// Stride of C matrix
   int ldc() const {
-    return std::max(C_initial.stride(HostTensorC::Dim_H), C_initial.stride(HostTensorC::Dim_W));
+    //return std::max(C_initial.stride(HostTensorC::Dim_H), C_initial.stride(HostTensorC::Dim_W));
+    return C_initial.leading_dim();
   }
 
   /// Returns the number of flops implied by the computation (1 multiply-accumulate = 2 flops)
-  uint64_t flops() const { return uint64_t(M()) * uint64_t(N()) * uint64_t(K()) * 2ULL; }
+  uint64_t flops() const {
+    return uint64_t(batch_count) * uint64_t(M()) * uint64_t(N()) * uint64_t(K()) * 2ULL;
+  }
 
   /// Computes the speed of the computation in GFLOPs/s
   double GFLOPs_per_sec(double runtime_ms) const { return double(flops()) / runtime_ms / 1.0e6; }
@@ -307,52 +516,150 @@ struct GemmTestbed {
   /// Matrix layout of B
   cublasOperation_t layout_b() const { return layout_B; }
 
-  /// Number of rows of problem
-  int M() const { return C_initial.size(HostTensorC::Dim_H); }
+  /// Number of rows of problem, per batch; assumptions made here that we concat C by adding columns
+  int M() const {
+    return problem_size.m();
+  }
 
-  /// Number of columns of problem
-  int N() const { return C_initial.size(HostTensorC::Dim_W); }
+  /// Number of columns of problem, per batch; assumptions made here that we concat C by adding
+  /// columns
+  int N() const {
+    return problem_size.n();
+  }
 
-  /// Number of columns of problem
-  int K() const { return A.size(HostTensorA::Dim_W); }
+  /// Number of columns of problem, per batch; assumptions made here that we concat A by adding
+  /// columns
+  int K() const {
+    return problem_size.k();
+  }
+
+  /// Number of batches
+  int get_batch_count() const {
+    return problem_size.batch();
+  }
+
+  ///
+  long long int get_batch_stride_A() const { return batch_stride_A; }
+
+  ///
+  long long int get_batch_stride_B() const { return batch_stride_B; }
+
+  ///
+  long long int get_batch_stride_C() const { return batch_stride_C; }
+
+  ///
 
   /// Initializes data, randomly
   void initialize(int seed = -1) {
-    A.fill_random(RandomGenerator<AType>(seed));
-    B.fill_random(RandomGenerator<BType>(seed + 11));
-    C_initial.fill_random(RandomGenerator<CType>(seed + 13));
+
+    // Initialize the source matrix with a uniform distribution
+    cutlass::Distribution dist;
+    dist.set_uniform(-8, 8);
+
+    cutlass::reference::host::TensorInitialize(A.host_view(), seed, dist);
+    cutlass::reference::host::TensorInitialize(B.host_view(), seed + 11, dist);
+    cutlass::reference::host::TensorInitialize(C_initial.host_view(), seed + 13, dist);
+
+    A.sync_device();
+    B.sync_device();
+    C_initial.sync_device();
+  }
+
+  /// Initializes binary data
+  void initialize_binary(int seed = -1) {
+    //A.fill_random(RandomBitGenerator<AType>(seed));
+    //B.fill_random(RandomBitGenerator<BType>(seed + 11));
+    //C_initial.fill_random(RandomGenerator<CType>(seed + 13));
+    A.fill_sequential();
+    B.fill_sequential();
+    C_initial.fill(0);
+  }
+
+  /// Initializes integer data (sequential for now)
+  void initialize_integer(int seed =-1) {
+    A.fill_sequential();
+    B.fill_sequential();
+    C_initial.fill(0);
   }
 
   /// Computes the matrix product on the host
   void compute_host() {
     ref_host.fill(C_initial);
-    ref_host.template gemm<AType, BType, Accumulator, Scalar>(A, B, alpha, beta);
+
+    cutlass::reference::host::Gemm(problem_size, alpha, A.host_ref(), B.host_ref(), beta, ref_host.host_ref(), Accumulator(0));
   }
 
   /// Excutes an equivalent GEMM using cuBLAS
   bool execute_cublas() {
-    status = cublasGemmEx(handle,
-                          layout_a(),
-                          layout_b(),
-                          M(),
-                          N(),
-                          K(),
-                          &alpha,
-                          ptr_A(),
-                          cutlass::TypeTraits<AType>::cublas_type,
-                          lda(),
-                          ptr_B(),
-                          cutlass::TypeTraits<BType>::cublas_type,
-                          ldb(),
-                          &beta,
-                          ref_cublas.device_data(),
-                          cutlass::TypeTraits<CType>::cublas_type,
-                          ldc(),
-                          cutlass::TypeTraits<Accumulator>::cublas_type,
-                          algorithm);
+    if (batch_count == 1) {
+      status = cublasGemmEx(handle,
+                            layout_a(),
+                            layout_b(),
+                            M(),
+                            N(),
+                            K(),
+                            &alpha,
+                            ptr_A(),
+                            cutlass::TypeTraits<AType>::cublas_type,
+                            lda(),
+                            ptr_B(),
+                            cutlass::TypeTraits<BType>::cublas_type,
+                            ldb(),
+                            &beta,
+                            ref_cublas.device_data(),
+                            cutlass::TypeTraits<CType>::cublas_type,
+                            ldc(),
+                            cutlass::TypeTraits<Accumulator>::cublas_type,
+                            algorithm);
 
-    return status == CUBLAS_STATUS_SUCCESS;
+      return status == CUBLAS_STATUS_SUCCESS;
+    } else {
+      // call strided batched gemm
+      status = cublasGemmStridedBatchedTemplate(handle,
+                                                layout_a(),
+                                                layout_b(),
+                                                M(),
+                                                N(),
+                                                K(),
+                                                &alpha,
+                                                ptr_A(),
+                                                lda(),
+                                                batch_stride_A,
+                                                ptr_B(),
+                                                ldb(),
+                                                batch_stride_B,
+                                                &beta,
+                                                ref_cublas.device_data(),
+                                                ldc(),
+                                                batch_stride_C,
+                                                batch_count);
+
+      return status == CUBLAS_STATUS_SUCCESS;
+    }
   }
+
+  /// Helper function to use cublasGemmStridedBatched
+  cublasStatus_t cublasGemmStridedBatchedTemplate(cublasHandle_t handle,
+                                                  cublasOperation_t transa,
+                                                  cublasOperation_t transb,
+                                                  int M,
+                                                  int N,
+                                                  int K,
+                                                  const Scalar *alpha,
+                                                  const typename HostMatrixA::DeviceType *ptr_A,
+                                                  int lda,
+                                                  long long int stride_A,
+                                                  const typename HostMatrixB::DeviceType *ptr_B,
+                                                  int ldb,
+                                                  long long int stride_B,
+                                                  const Scalar *beta,
+                                                  typename HostMatrixC::DeviceType *ptr_C,
+                                                  int ldc,
+                                                  long long int stride_C,
+                                                  int batchCount) {
+    return CUBLAS_STATUS_NOT_SUPPORTED;
+  }
+
 
   /// Computes the matrix product using cuBLAS
   void compute_cublas() {
@@ -374,8 +681,11 @@ struct GemmTestbed {
        << (layout_b() == CUBLAS_OP_N ? "n" : "t") << "_" << typeid(AType).name() << "_"
        << typeid(BType).name() << "_" << typeid(CType).name() << "_" << typeid(Accumulator).name()
        << "_" << typeid(Scalar).name() << "_" << M() << "x" << N() << "x" << K();
-
-    return ss.str();
+    //make sure there is no space in the ss
+    std::string thisString = ss.str();
+    std::replace(thisString.begin(), thisString.end(), ' ', '_');
+    std::replace(thisString.begin(), thisString.end(), ':', '_');
+    return thisString;
   }
 
   /// Writes the workspace to an ostream
@@ -389,8 +699,8 @@ struct GemmTestbed {
 
   /// Outputs each mismatching element
   std::ostream& write_errors(std::ostream& out,
-                             cutlass::HostTensorView<CType> const& experimental,
-                             cutlass::HostTensorView<CType> const& ref) const {
+                             HostMatrixC const& experimental,
+                             HostMatrixC const& ref) const {
     PrintErrors printer(out, ref, experimental);
 
     computed.visit(printer);
@@ -419,8 +729,8 @@ struct GemmTestbed {
   }
 
   /// Saves the workspace to files
-  void save_workspace(cutlass::HostTensorView<CType> const& experimental,
-                      cutlass::HostTensorView<CType> const& ref) {
+  void save_workspace(HostMatrixC const& experimental,
+                      HostMatrixC const& ref) {
     std::string name = workspace_name();
 
     std::string results_name = name + "_results.txt";
@@ -452,6 +762,7 @@ struct GemmTestbed {
 
     ref_cublas.sync_host();
     computed.sync_host();
+
 
     bool passed = computed.bit_equals(ref_cublas);
 
@@ -494,22 +805,116 @@ struct GemmTestbed {
   bool has_cublas_support() const { return cutlass::platform::is_same<Accumulator, Scalar>::value; }
 };
 
+//
+//specialization for cublasGemmStridedBatchedTemplate
+template<> inline cublasStatus_t GemmTestbed<float, float, float, float, float>::cublasGemmStridedBatchedTemplate(cublasHandle_t handle,
+                                                                                                    cublasOperation_t transa,
+                                                                                                    cublasOperation_t transb,
+                                                                                                    int M,
+                                                                                                    int N,
+                                                                                                    int K,
+                                                                                                    const float *alpha,
+                                                                                                    const float *ptr_A,
+                                                                                                    int lda,
+                                                                                                    long long int stride_A,
+                                                                                                    const float *ptr_B,
+                                                                                                    int ldb,
+                                                                                                    long long int stride_B,
+                                                                                                    const float *beta,
+                                                                                                    float *ptr_C,
+                                                                                                    int ldc,
+                                                                                                    long long int stride_C,
+                                                                                                    int batchCount) {
+  return cublasSgemmStridedBatched(handle,
+    transa,
+    transb,
+    M, N, K,
+    alpha,
+    ptr_A,
+    lda,
+    stride_A,
+    ptr_B,
+    ldb,
+    stride_B,
+    beta,
+    ptr_C,
+    ldc,
+    stride_C,
+    batchCount);
+}
+
+template<> inline cublasStatus_t GemmTestbed<double, double, double, double, double>::cublasGemmStridedBatchedTemplate(cublasHandle_t handle,
+                                                                                                                cublasOperation_t transa,
+                                                                                                                cublasOperation_t transb,
+                                                                                                                int M,
+                                                                                                                int N,
+                                                                                                                int K,
+                                                                                                                const double *alpha,
+                                                                                                                const double *ptr_A,
+                                                                                                                int lda,
+                                                                                                                long long int stride_A,
+                                                                                                                const double *ptr_B,
+                                                                                                                int ldb,
+                                                                                                                long long int stride_B,
+                                                                                                                const double *beta,
+                                                                                                                double *ptr_C,
+                                                                                                                int ldc,
+                                                                                                                long long int stride_C,
+                                                                                                                int batchCount) {
+  return cublasDgemmStridedBatched(handle,
+    transa,
+    transb,
+    M, N, K,
+    alpha,
+    ptr_A,
+    lda,
+    stride_A,
+    ptr_B,
+    ldb,
+    stride_B,
+    beta,
+    ptr_C,
+    ldc,
+    stride_C,
+    batchCount);
+}
+
+template<> inline cublasStatus_t GemmTestbed<cutlass::half_t, cutlass::half_t, cutlass::half_t, cutlass::half_t, cutlass::half_t>::cublasGemmStridedBatchedTemplate(cublasHandle_t handle,
+                                                                                                      cublasOperation_t transa,
+                                                                                                      cublasOperation_t transb,
+                                                                                                      int M,
+                                                                                                      int N,
+                                                                                                      int K,
+                                                                                                      const cutlass::half_t *alpha,
+                                                                                                      const half *ptr_A,
+                                                                                                      int lda,
+                                                                                                      long long int stride_A,
+                                                                                                      const half *ptr_B,
+                                                                                                      int ldb,
+                                                                                                      long long int stride_B,
+                                                                                                      const cutlass::half_t *beta,
+                                                                                                      half *ptr_C,
+                                                                                                      int ldc,
+                                                                                                      long long int stride_C,
+                                                                                                      int batchCount) {
+  half temp_alpha = alpha->operator half();
+  half temp_beta = beta->operator half();
+  return cublasHgemmStridedBatched(handle,
+    transa,
+    transb,
+    M, N, K,
+    &temp_alpha,
+    ptr_A,
+    lda,
+    stride_A,
+    ptr_B,
+    ldb,
+    stride_B,
+    &temp_beta,
+    ptr_C,
+    ldc,
+    stride_C,
+    batchCount);
+}
+
 }  // namespace test
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace cutlass {
-inline cublasOperation_t convert(cutlass::MatrixLayout::Kind layout) {
-  switch (layout) {
-    case cutlass::MatrixLayout::kRowMajor:
-      return CUBLAS_OP_T;
-    case cutlass::MatrixLayout::kColumnMajor:
-      return CUBLAS_OP_N;
-    default:
-      break;
-  }
-  return CUBLAS_OP_N;
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-}

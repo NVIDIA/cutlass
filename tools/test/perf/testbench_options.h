@@ -25,8 +25,16 @@
 
 #pragma once
 
+#include <cuda_runtime.h>
+#include <cublas_v2.h>
+
 #include <stdint.h>
-#include <tools/util/command_line.h>
+#include <stdexcept>
+
+#include "cutlass/cutlass.h"
+#include "tools/util/command_line.h"
+#include "tools/util/distribution.h"
+#include "tools/test/perf/provider.h"
 
 namespace perf {
 
@@ -34,14 +42,73 @@ namespace perf {
 
 /// Range of problem sizes
 struct Range {
+
+  enum Operator {
+    Add,
+    Multiply
+  };
+
+  //
+  // Data members
+  //
+
   int start;
   int end;
   int increment;
+  Operator increment_op;
 
-  Range(int _start = 0) : start(_start), end(_start), increment(1) {}
+  //
+  // Methods
+  //
 
-  Range(int _start, int _end, int _increment = 1)
-      : start(_start), end(_end), increment(_increment) {}
+  Range(int _start = 0) : start(_start), end(_start), increment(1), increment_op(Add) {}
+
+  Range(int _start, int _end, int _increment = 1, Operator _op = Add)
+      : start(_start), end(_end), increment(_increment), increment_op(_op) {}
+
+  /// Returns the next item in series
+  int next(int val) const {
+    switch (increment_op) {
+      case Add: val += increment; break;
+      case Multiply: val *= increment; break;
+      default: val = end; break;
+    }
+    return val;
+  }
+
+  void import_from_strings(const std::vector<std::string>& values) {
+    if (values.size() > 0) {
+      std::stringstream ss;
+      ss << values.at(0);
+      ss >> start;
+    }
+
+    if (values.size() > 1) {
+      std::stringstream ss;
+      ss << values.at(1);
+      ss >> end;
+    } else {
+      end = start;
+    }
+
+    if (values.size() > 2 && !values.at(2).empty()) {
+      std::stringstream ss;
+
+      char first = values.at(2).at(0);
+      if (first == '*' || first == '+') {
+        ss << values.at(2).substr(1);
+        switch (first) {
+        case '*': increment_op = Multiply; break;
+        case '+': increment_op = Add; break;
+        default: break;
+        }
+      }
+      else {
+        ss << values.at(2);
+      }
+      ss >> increment;
+    }
+  }
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -77,25 +144,7 @@ struct GemmProblemRange {
       std::vector<std::string> values;
       args.get_cmd_line_arguments(arg.c_str(), values, ':');
 
-      if (values.size() > 0) {
-        std::stringstream ss;
-        ss << values.at(0);
-        ss >> range.start;
-      }
-
-      if (values.size() > 1) {
-        std::stringstream ss;
-        ss << values.at(1);
-        ss >> range.end;
-      } else {
-        range.end = range.start;
-      }
-
-      if (values.size() > 2) {
-        std::stringstream ss;
-        ss << values.at(2);
-        ss >> range.increment;
-      }
+      range.import_from_strings(values);
     } else {
       range = _default;
     }
@@ -111,105 +160,6 @@ struct GemmProblemRange {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Distribution type
-struct Distribution {
-  /// Variant types
-  enum Kind { Invalid, Uniform, Gaussian, Linear, Identity };
-
-  /// Distribution state
-  union {
-    /// Uniform distribution
-    struct {
-      double min;
-      double max;
-    } uniform;
-
-    /// Gaussian distribution
-    struct {
-      double mean;
-      double stddev;
-    } gaussian;
-
-    /// Elements are linear combination of row and column index
-    struct {
-      double offset;
-      double delta_row;
-      double delta_column;
-    } linear;
-  };
-
-  /// Active variant kind
-  Kind kind;
-
-  /// Random values are cast to integer after scaling by this power of two
-  int int_scale;
-
-  //
-  // Methods
-  //
-
-  Distribution() : kind(Invalid), int_scale(0) {}
-
-  /// Configures distribution as uniform random
-  Distribution &set_uniform(double _min, double _max, int _int_scale = 0) {
-    kind = Uniform;
-    uniform.min = _min;
-    uniform.max = _max;
-    int_scale = _int_scale;
-    return *this;
-  }
-
-  /// Configures distribution as Gaussian distribution
-  Distribution &set_gaussian(double _mean, double _stddev, int _int_scale = 0) {
-    kind = Gaussian;
-    gaussian.mean = _mean;
-    gaussian.stddev = _stddev;
-    int_scale = _int_scale;
-    return *this;
-  }
-
-
-  /// Sets identity
-  Distribution &set_identity() {
-    kind = Identity;
-    return *this;
-  }
-};
-
-}  // namespace perf
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Prints a Distribution to ostream
-inline std::ostream &operator<<(std::ostream &out, perf::Distribution const &dist) {
-  switch (dist.kind) {
-    case perf::Distribution::Uniform:
-      out << "uniorm, min: " << dist.uniform.min << ", max: " << dist.uniform.max;
-      break;
-    case perf::Distribution::Gaussian:
-      out << "gaussian, mean: " << dist.gaussian.mean << ", stddev: " << dist.gaussian.stddev;
-      break;
-    case perf::Distribution::Linear:
-      out << "linear, mean: " << dist.linear.offset << ", delta_row: " << dist.linear.delta_row
-          << ", delta_column: " << dist.linear.delta_column;
-      break;
-    case perf::Distribution::Identity:
-      break;
-    default:
-      out << "unknown";
-  }
-
-  out << ", int_scale: " << dist.int_scale;
-
-  return out;
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace perf {
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Defines a vector of string pairs
 typedef std::vector<std::pair<std::string, std::string> > KeyValueVector;
 
@@ -219,13 +169,13 @@ typedef KeyValueVector::const_iterator KeyValueIterator;
 /// Structure captures the initial configuration of matrices
 struct InitialDistribution {
   /// Distribution of A matrix operand
-  Distribution dist_A;
+  cutlass::Distribution dist_A;
 
   /// Distribution of B matrix operand
-  Distribution dist_B;
+  cutlass::Distribution dist_B;
 
-  /// Distribution of C matrix operand
-  Distribution dist_C;
+  /// cutlass::Distribution of C matrix operand
+  cutlass::Distribution dist_C;
 
   /// Seed for random number generation
   int64_t seed;
@@ -237,15 +187,15 @@ struct InitialDistribution {
   /// Gets the initial distribution
   static void get_distribution(cutlass::CommandLine const &args,
                                std::string const &arg,
-                               Distribution &dist) {
+                               cutlass::Distribution &dist) {
     struct {
       const char *label;
-      Distribution::Kind kind;
-    } distribution_kinds[] = {{"uniform", Distribution::Uniform},
-                              {"gaussian", Distribution::Gaussian},
-                              {"linear", Distribution::Linear},
-                              {"identity", Distribution::Identity},
-                              {0, Distribution::Invalid}};
+      cutlass::Distribution::Kind kind;
+    } distribution_kinds[] = {{"uniform", cutlass::Distribution::Uniform},
+                              {"gaussian", cutlass::Distribution::Gaussian},
+                              {"linear", cutlass::Distribution::Linear},
+                              {"identity", cutlass::Distribution::Identity},
+                              {0, cutlass::Distribution::Invalid}};
 
     struct {
       char const *label;
@@ -276,13 +226,17 @@ struct InitialDistribution {
 
     // Subsequent key-value pairs update the named field of the distribution struct.
     for (; it != values.end(); ++it) {
-
       // Integer scaling factor - if < 0, no integer rounding is performed.
       if (it->first == "scale" && !it->second.empty()) {
         std::stringstream ss;
         ss << it->second;
         ss >> dist.int_scale;
+        continue;  // next token
+      }
 
+      // Casts as integer without scaling
+      if (it->first == "integer") {
+        dist.int_scale = 0;
         continue;  // next token
       }
 
@@ -326,12 +280,12 @@ struct InitialDistribution {
     args.get_cmd_line_argument("seed", seed, seed);
 
     // Update all distributions at once
-    Distribution dist_all;
+    cutlass::Distribution dist_all;
     if (args.check_cmd_line_flag("dist")) {
-       get_distribution(args, "dist", dist_all);
-       dist_A = dist_all;
-       dist_B = dist_all;
-       dist_C = dist_all;
+      get_distribution(args, "dist", dist_all);
+      dist_A = dist_all;
+      dist_B = dist_all;
+      dist_C = dist_all;
     }
 
     get_distribution(args, "dist_A", dist_A);
@@ -344,19 +298,18 @@ struct InitialDistribution {
 
 /// Defines how to execute the benchmarks
 struct ExecutionMode {
-  enum Kind {
-    Profile,
-    Verify,
-    Single,
-    Invalid
-  };
+  enum Kind { Profile, Verify, Single, Invalid };
 
   static std::string to_string(Kind kind) {
     switch (kind) {
-      case Profile: return "profile";
-      case Verify: return "verify";
-      case Single: return "single";
-      default: return "invalid";
+      case Profile:
+        return "profile";
+      case Verify:
+        return "verify";
+      case Single:
+        return "single";
+      default:
+        return "invalid";
     }
   }
 
@@ -370,18 +323,18 @@ struct ExecutionMode {
 
 /// Indicates when the workspace is saved
 struct WorkspaceSaveMode {
-  enum Kind {
-    Never,
-    Incorrect,
-    Always
-  };
+  enum Kind { Never, Incorrect, Always };
 
   static std::string to_string(Kind kind) {
     switch (kind) {
-      case Never: return "never";
-      case Incorrect: return "incorrect";
-      case Always: return "always";
-      default: return "incorrect";
+      case Never:
+        return "never";
+      case Incorrect:
+        return "incorrect";
+      case Always:
+        return "always";
+      default:
+        return "incorrect";
     }
   }
 
@@ -397,7 +350,6 @@ struct WorkspaceSaveMode {
 
 /// Class holding testbench command line options
 struct TestbenchOptions {
-
   //
   // Data members
   //
@@ -408,17 +360,23 @@ struct TestbenchOptions {
   // Path to output file name
   std::string output_filename;
 
+  // Path to input file name
+  std::string threshold_filename;
+
   /// If true, output is appended
   bool append;
 
   /// Number of iterations
   int iterations;
-
+  
   /// Defines how to run the benchmark
   ExecutionMode::Kind execution_mode;
 
   /// Indicates when the workspace is saved
   WorkspaceSaveMode::Kind save_workspace_mode;
+
+  /// Properties of CUDA device
+  cudaDeviceProp device_properties;
 
   /// Enabled kernel names
   std::vector<std::string> kernels;
@@ -432,11 +390,20 @@ struct TestbenchOptions {
   /// Range of problem sizes
   GemmProblemRange problem_range;
 
+  /// If true, kernels are not executed, and no sleep waits are inserted
+  bool dry_run;
+
   /// Tags to describe the profiler output
   KeyValueVector pivot_tags;
 
   /// If enabled, only the peak performance for a given kernel is reported
   bool peak_performance;
+
+  /// Performance Degradatiom Margin before flagging as test failure
+  double perf_margin;
+
+  /// Cool-down period
+  int sleep_time;
 
   //
   // Methods
@@ -447,26 +414,47 @@ struct TestbenchOptions {
       : initial_distribution(args),
         execution_mode(ExecutionMode::Profile),
         save_workspace_mode(WorkspaceSaveMode::Never),
-        problem_range(args) {
+        problem_range(args),
+        dry_run(false),
+        sleep_time(1) {
+
+    // Set the CUDA device and/or specify clock rate
+    configure_cuda_device(args);
 
     // fetch command line arguments
     args.get_cmd_line_argument("iterations", iterations, 25);
     args.get_cmd_line_argument("append", append, false);
     args.get_cmd_line_argument("output", output_filename);
+    args.get_cmd_line_argument("threshold", threshold_filename);
     args.get_cmd_line_argument("alpha", alpha, 1.0);
     args.get_cmd_line_argument("beta", beta, 0.0);
     args.get_cmd_line_argument("peak", peak_performance, false);
     args.get_cmd_line_argument_pairs("tags", pivot_tags);
+    args.get_cmd_line_argument("perf-margin", perf_margin, 0.97);
+    args.get_cmd_line_argument("dry-run", dry_run, false);
+    args.get_cmd_line_argument("sleep-time", sleep_time, 1);
 
-    if (args.check_cmd_line_flag("execution_mode")) {
+    if (args.check_cmd_line_flag("execution-mode")) {
       std::string str;
-      args.get_cmd_line_argument("execution_mode", str);
+      args.get_cmd_line_argument("execution-mode", str);
       execution_mode = ExecutionMode::from_string(str);
     }
 
-    if (args.check_cmd_line_flag("save_workspace")) {
+    if (args.check_cmd_line_flag("save-workspace")) {
       std::string str;
-      args.get_cmd_line_argument("save_workspace", str);
+      args.get_cmd_line_argument("save-workspace", str);
+      save_workspace_mode = WorkspaceSaveMode::from_string(str);
+    }
+
+    if (args.check_cmd_line_flag("execution-mode")) {
+      std::string str;
+      args.get_cmd_line_argument("execution-mode", str);
+      execution_mode = ExecutionMode::from_string(str);
+    }
+
+    if (args.check_cmd_line_flag("save-workspace")) {
+      std::string str;
+      args.get_cmd_line_argument("save-workspace", str);
       save_workspace_mode = WorkspaceSaveMode::from_string(str);
     }
 
@@ -474,13 +462,50 @@ struct TestbenchOptions {
     if (args.check_cmd_line_flag("kernels")) {
       args.get_cmd_line_arguments("kernels", kernels, ',');
     } else {
-      char const *gemms[] = {"sgemm", "dgemm", "hgemm", "igemm", "wmma_gemm", 0};
+      char const *gemms[] = {
+        "sgemm",
+        "dgemm",
+        "hgemm",
+        "igemm",
+        "wmma_gemm",
+        "wmma_gemm_f16",
+        "wmma_binary_gemm",
+        "wmma_integer_gemm",
+        0
+      };
       char const *layouts[] = {"nn", "nt", "tn", "tt", 0};
       for (int i = 0; gemms[i]; ++i) {
         for (int j = 0; layouts[j]; ++j) {
+          if ((std::string(gemms[i]).compare("wmma_binary_gemm") == 0 ||
+               std::string(gemms[i]).compare("wmma_integer_gemm") == 0)
+               && std::string(layouts[j]).compare("tn") != 0) {
+            continue;
+          }
           kernels.push_back(std::string(gemms[i]) + "_" + layouts[j]);
         }
       }
+
+    }
+  }
+
+  void configure_cuda_device(cutlass::CommandLine const &args) {
+    int device_id = 0;
+    args.get_cmd_line_argument("device", device_id, 0);
+
+    cudaError_t result;
+    result = cudaGetDeviceProperties(&device_properties, device_id);
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed for given device.");
+    }
+    result = cudaSetDevice(device_id);
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaSetDevice() failed for given device.");
+    }
+
+    // Get the clock rate (specified in cmd line in MHz)
+    if (args.check_cmd_line_flag("clock")) {
+      args.get_cmd_line_argument("clock", device_properties.clockRate);
+      device_properties.clockRate *= 1000;
     }
   }
 
@@ -501,15 +526,31 @@ struct TestbenchOptions {
   /// be saved to the file system.
   bool save_workspace(bool correct) const {
     if (save_workspace_mode == WorkspaceSaveMode::Always ||
-      (save_workspace_mode == WorkspaceSaveMode::Incorrect && !correct)) {
+        (save_workspace_mode == WorkspaceSaveMode::Incorrect && !correct)) {
       return true;
     }
     return false;
   }
 
+  /// Returns true if the selected device can satisfy the given compute capability
+  bool compute_capability(int major, int minor) const {
+    return (device_properties.major > major ||
+      (device_properties.major == major && device_properties.minor >= minor));
+  }
+
+  /// Requires an exact match of compute capability
+  bool compute_capability_exact(int major, int minor) const {
+    return major == device_properties.major && minor == device_properties.minor;
+  }
+
+  /// Prints version
+  static void version(std::ostream &out) {
+    out << "CUTLASS " << CUTLASS_MAJOR << "." << CUTLASS_MINOR << "." << CUTLASS_PATCH
+        << " built on " << __DATE__ << " at " << __TIME__;
+  }
+
   /// Prints the usage statement
   static void usage(std::ostream &out) {
-
     out << "cutlass_perf_test [options]\n\n"
 
         << "  --help\n"
@@ -523,14 +564,26 @@ struct TestbenchOptions {
         << "  --beta=<beta>                                 "
         << "    Value for beta to be used in GEMM experiments\n"
 
-        << "  --dist_{A,B,C}=<distribution>                 "
+        << "  --device=<int>                                "
+        << "    Specifies the CUDA device to use. Default is device 0.\n"
+
+        << "  --clock=<MHz>                                 "
+        << "    Specifies the SM clock rate in MHz.\n"
+
+        << "  --dist-{A,B,C}=<distribution>                 "
         << "    Describes the random distribution of each of the input matrix operands.\n"
 
-        << "  --execution_mode=<mode>                       "
+        << "  --dry-run=<bool>                              "
+        << "    If true, kernels are not executed and sleep is not inserted.\n"
+
+        << "  --execution-mode=<mode>                       "
         << "    Specifies execution mode: profile, verify, single\n"
 
         << "  --output=<filename.csv>                       "
         << "    Writes summary of profiling to specified .csv file\n"
+
+        << "  --threshold=<filename.csv>                    "
+        << "    Reads previous output summary and re-executes the same configurations.\n"
 
         << "  --iterations=<timing iterations>              "
         << "    maximum number of iterations to execute when profiling\n"
@@ -546,14 +599,19 @@ struct TestbenchOptions {
         << "  --k=<depth>[:max depth[:step]]                "
         << "    Size of inner dimension of A and B. May specify a range with optional step size.\n"
 
-        << "  --kernels={s|d|h|i|wmma_}gemm_{nn,nt,tn,tt}   "
+        << "  --kernels=<{s|d|h|i|wmma_|wmma_binary_|wmma_integer_}gemm_{nn,nt,tn,tt}>\n"
+        << "                                                "
         << "    Select GEMM datatype and layout to use for tests\n"
 
         << "  --peak=<bool>                                 "
         << "    If true, only reports peak performance per kernel after profiling specified "
            "problem space.\n"
 
-        << "  --save_workspace={*never,incorrect,always}    "
+        << "  --perf-margin=<perf-margin>                   "
+        << "    Allowable performance degradation before flagging test as failure (e.g. 3% slowdown"
+           " = 0.97).\n"
+
+        << "  --save-workspace={*never,incorrect,always}    "
         << "    Specifies when to save the GEMM inputs and results to the filesystem.\n"
 
         << "  --seed=<seed>                                 "
@@ -563,8 +621,17 @@ struct TestbenchOptions {
         << "    Inserts leading columns in output table and uniform values for each column. Useful "
            "for generating pivot tables.\n"
 
-        << "\n\n"
+        << "  --sleep-time=<second>                         "
+        << "    Sleep period between profiling kernels to cool down the device.\n"
 
+        << "  --version                                     "
+        << "    ";
+
+    version(out);
+
+    out << "\n\n";
+
+    out << "\n\n"
         << "Example usage:\n\n"
 
         << "# Runs one problem size for all kernels\n"

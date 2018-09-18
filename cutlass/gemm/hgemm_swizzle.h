@@ -29,7 +29,7 @@
 #pragma once
 
 #include <cuda_fp16.h>
-#include <cutlass/fragment.h>
+#include "cutlass/fragment.h"
 
 namespace cutlass {
 namespace gemm {

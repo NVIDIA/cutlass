@@ -47,7 +47,9 @@
 // CUTLASS_DEVICE is an error if not compiling device code
 #endif
 
-// CUTLASS_PRAGMA_UNROLL inserts a CUTLASS_PRAGMA_UNROLL if supported by the compiler
+#define CUTLASS_ASSERT(x) assert(x)
+
+// CUTLASS_PRAGMA_(UNROLL|NO_UNROLL) optimization directives for the CUDA compiler.
 #if defined(__CUDA_ARCH__)
 #if defined(_MSC_VER)
 #define CUTLASS_PRAGMA_UNROLL __pragma("unroll")
@@ -61,7 +63,22 @@
 #define CUTLASS_PRAGMA_NO_UNROLL
 #endif
 
-#define CUTLASS_ASSERT(x) assert(x)
+#define CUTLASS_GEMM_LOOP CUTLASS_PRAGMA_NO_UNROLL
+
+// A small helper class to dump a type at compile time
+// Usage:: DumpType<Class>::Class
+template <typename T>
+struct DebugType {};
+
+template <typename T>
+void DebugTypeFunc(T const& t) {
+  T::t;
+}
+
+// A small helper class to dump a compile time constant at compile time
+// Usage: DumpValue<Class::kConstant>::kConstant
+template <int Value>
+struct DebugValue {};
 
 namespace cutlass {
 

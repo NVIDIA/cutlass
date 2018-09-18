@@ -29,16 +29,18 @@
 #include <stdexcept>
 #include <utility>
 
-#if defined(WIN32)
+#include "cutlass/util/platform.h"
+#if defined(CUTLASS_OS_WINDOWS)
 #include <Windows.h>
 #else
 // needed for sleep
 #include <unistd.h>
 #endif
 
-#include <tools/test/perf/gemm/gemm_perf_testbed.h>
-#include <tools/test/perf/testbench_options.h>
-#include <tools/test/perf/testbench_output.h>
+#include "tools/test/perf/gemm/gemm_perf_testbed.h"
+#include "tools/test/perf/testbench_configs.h"
+#include "tools/test/perf/testbench_options.h"
+#include "tools/test/perf/testbench_output.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -63,16 +65,22 @@ class GemmProfiler {
   //
 
   /// Reference to TestbenchOutput instance
-  TestbenchOutput &output;
+  TestbenchOutput<GemmProblem> &output;
 
   /// Reference to options object
   TestbenchOptions const &options;
+
+  // Reference to config object
+  Config const &config;
 
   /// Performance test environment
   PerfTestbed testbed;
 
   /// Kernel name
   std::string kernel_name;
+
+  /// Cutlass algorithm
+  std::string cutlass_algo;
 
   /// Timing events
   cudaEvent_t events[2];
@@ -93,14 +101,17 @@ class GemmProfiler {
   //
 
   /// Constructs performance testebed
-  GemmProfiler(TestbenchOutput &_output,
+  GemmProfiler(TestbenchOutput<GemmProblem> &_output,
                std::string const &_kernel_name,
-               TestbenchOptions const &_options)
+               std::string const &_cutlass_algo,
+               TestbenchOptions const &_options,
+               Config const &_config)
       : output(_output),
         options(_options),
+        config(_config),
         kernel_name(_kernel_name),
+        cutlass_algo(_cutlass_algo),
         testbed(_options.initial_distribution) {
-
     for (int i = 0; i < 2; ++i) {
       cudaError_t result = cudaEventCreate(&events[i]);
       if (result != cudaSuccess) {
@@ -112,32 +123,45 @@ class GemmProfiler {
   ~GemmProfiler() {}
 
   /// Writes the workspace to text files
-  void write_problem(std::string const &kernel_name) {
+  void write_problem(Provider::Kind provider, std::string const &kernel_name) {
+    std::stringstream base_filename;
 
-      std::stringstream base_filename;
+    base_filename << provider << "_" << kernel_name << "_" << testbed.M() << "x" << testbed.N()
+                  << "x" << testbed.K();
 
-      base_filename
-        << kernel_name << "_"
-        << testbed.M() << "x" << testbed.N() << "x" << testbed.K();
+    std::string results_name = base_filename.str() + "_results.txt";
+    std::string errors_name = base_filename.str() + "_errors.txt";
 
-      std::string results_name = base_filename.str() + "_results.txt";
-      std::string errors_name = base_filename.str() + "_errors.txt";
-
-      std::ofstream results(results_name.c_str());
-      std::ofstream errors(errors_name.c_str());
-      testbed.write_problem(results, errors);
+    std::ofstream results(results_name.c_str());
+    std::ofstream errors(errors_name.c_str());
+    testbed.write_problem(results, errors);
   }
 
   /// Profiles Cutlass
   template <typename CutlassDispatch>
-  PerformanceResult execute_cutlass(GemmProblem const &problem, cublasGemmAlgo_t algorithm) {
-    PerformanceResult result(kernel_name, problem);
+  PerformanceResult<GemmProblem> execute_cutlass(GemmProblem const &problem,
+                                                 cublasGemmAlgo_t algorithm) {
+    PerformanceResult<GemmProblem> result(
+      Provider::Cutlass
+      , kernel_name
+      , problem
+    );
 
-    testbed.compute_reference(algorithm);
-
-    if (cudaDeviceSynchronize() != cudaSuccess) {
-      result.disposition = Disposition::NotVerified;
+    if (options.dry_run) {
+      result.disposition = Disposition::NotRun;
       return result;
+    }
+
+    if (CutlassDispatch::kRunCuBLAS) {
+      testbed.compute_reference(algorithm);
+
+      if (cudaDeviceSynchronize() != cudaSuccess) {
+        result.disposition = Disposition::NotVerified;
+        return result;
+      }
+    }
+    else {
+      result.disposition = Disposition::Passed;
     }
 
     CutlassDispatch dispatch(testbed.M(),
@@ -161,14 +185,16 @@ class GemmProfiler {
       return result;
     }
 
-    if (testbed.verify_with_reference()) {
-      result.disposition = Disposition::Passed;
-    } else {
-      result.disposition = Disposition::Incorrect;
+    if (CutlassDispatch::kRunCuBLAS) {
+      if (testbed.verify_with_reference()) {
+        result.disposition = Disposition::Passed;
+      } else {
+        result.disposition = Disposition::Incorrect;
+      }
     }
 
     if (options.save_workspace(result.disposition == Disposition::Passed)) {
-      write_problem(kernel_name);
+      write_problem(Provider::Cutlass, kernel_name);
     }
 
     if (cudaDeviceSynchronize() != cudaSuccess) {
@@ -212,30 +238,38 @@ class GemmProfiler {
     result.gflops = testbed.GFLOPs_per_sec(result.runtime);
 
     if (result.disposition != Disposition::Passed) {
-      std::cout << kernel_name << " failed with disposition: " << result.disposition;
+      std::cout << "[\033[1;31mFAILED\033[0m]: " << kernel_name
+                << " failed with disposition: " << result.disposition << "\n";
     }
 
     return result;
   }
 
+  template <typename T, typename F>
+  bool contains(T const &container, F const &val) {
+    return std::find(container.begin(), container.end(), val) != container.end();
+  }
+
   /// Executes all kernels for this problem size
   template <typename CutlassDispatch>
-  std::vector<PerformanceResult> execute(GemmProblem const &problem) {
+  std::vector<PerformanceResult<GemmProblem> > execute(GemmProblem const &problem) {
 
     // New problem size
     output.begin_problem();
 
-    cublasGemmAlgo_t algorithm =
-        (CutlassDispatch::kThreadMultiplyAdd ? CUBLAS_GEMM_DEFAULT : CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+    bool const tensor_op = !(CutlassDispatch::kThreadMultiplyAdd);
+    cublasGemmAlgo_t algorithm = tensor_op ?
+      CUBLAS_GEMM_DEFAULT_TENSOR_OP : CUBLAS_GEMM_DEFAULT;
 
     testbed.resize(problem);
 
-    std::vector<PerformanceResult> results;
+    std::vector<PerformanceResult<GemmProblem> > results;
 
-    results.push_back(execute_cutlass<CutlassDispatch>(problem, algorithm));
-
+      results.push_back(execute_cutlass<CutlassDispatch>(problem, algorithm));
     // cool-down period
-    pause(2);
+    if (!options.dry_run) {
+      pause(options.sleep_time);
+    }
 
     return results;
   }
@@ -243,25 +277,20 @@ class GemmProfiler {
   /// Runs the test and collects performance for all results
   template <typename CutlassDispatch>
   void schmoo(Range const &M, Range const &N, Range const &K) {
-    for (int m = M.start; m <= M.end; m += M.increment) {
-      for (int n = N.start; n <= N.end; n += N.increment) {
-        for (int k = K.start; k <= K.end; k += K.increment) {
+    for (int m = M.start; m <= M.end; m = M.next(m)) {
+      for (int n = N.start; n <= N.end; n = N.next(n)) {
+        for (int k = K.start; k <= K.end; k = K.next(k)) {
 
-          // Avoid evaluating problem if problem size does not satisfy alignment
-          if (!CutlassDispatch::is_problem_aligned(m, n, k)) {
-            continue;
-          }
-
-          std::vector<PerformanceResult> results =
+          std::vector<PerformanceResult<GemmProblem> > results =
               execute<CutlassDispatch>(GemmProblem(m,
                                                    n,
                                                    k,
                                                    CutlassDispatch::kLayoutA,
                                                    CutlassDispatch::kLayoutB,
-                                                   options.alpha,
-                                                   options.beta));
+                                                   config.alpha,
+                                                   config.beta));
 
-          for (std::vector<PerformanceResult>::const_iterator it = results.begin();
+          for (std::vector<PerformanceResult<GemmProblem> >::const_iterator it = results.begin();
                it != results.end();
                ++it) {
             output.append(*it);
@@ -274,46 +303,53 @@ class GemmProfiler {
   /// Runs the test over the problem space and reports only the best performance
   template <typename CutlassDispatch>
   void peak(Range const &M, Range const &N, Range const &K) {
+    typedef std::map<Provider::Kind, PerformanceResult<GemmProblem> > ProviderPerformanceMap;
 
-    PerformanceResult max_perf;
-    bool first_result = true;
+    ProviderPerformanceMap max_perf;
 
-    for (int m = M.start; m <= M.end; m += M.increment) {
-      for (int n = N.start; n <= N.end; n += N.increment) {
-        for (int k = K.start; k <= K.end; k += K.increment) {
-
-          // Avoid evaluating problem if problem size does not satisfy alignment
-          if (!CutlassDispatch::is_problem_aligned(m, n, k)) {
-            continue;
-          }
-
-          std::vector<PerformanceResult> results =
+    for (int m = M.start; m <= M.end; m += M.next(m)) {
+      for (int n = N.start; n <= N.end; n += N.next(n)) {
+        for (int k = K.start; k <= K.end; k += K.next(k)) {
+          std::vector<PerformanceResult<GemmProblem> > results =
               execute<CutlassDispatch>(GemmProblem(m,
                                                    n,
                                                    k,
                                                    CutlassDispatch::kLayoutA,
                                                    CutlassDispatch::kLayoutB,
-                                                   options.alpha,
-                                                   options.beta));
+                                                   config.alpha,
+                                                   config.beta));
 
-          for (std::vector<PerformanceResult>::const_iterator it = results.begin();
+          for (std::vector<PerformanceResult<GemmProblem> >::const_iterator it = results.begin();
                it != results.end();
                ++it) {
-
             /// Writes the output without appending it
             output.pretty_print(*it);
 
-            /// Updates maximum performing kernel
-            if (first_result || max_perf.gflops > it->gflops) {
-              max_perf = *it;
+            if (it->disposition == Disposition::Passed) {
+              /// Updates maximum performing kernel
+              ProviderPerformanceMap::iterator max_perf_it = max_perf.find(it->provider);
+
+              if (max_perf_it == max_perf.end()) {
+                max_perf.insert(std::make_pair(it->provider, *it));
+              } else if (max_perf_it->second.gflops < it->gflops) {
+                max_perf_it->second = *it;
+              }
             }
-            first_result = false;
           }
         }
       }
     }
 
-    output.append(max_perf);
+    Provider::Kind providers[] = {
+      Provider::Cutlass,
+      Provider::Invalid
+    };
+    for (int i = 0; providers[i] != Provider::Invalid; ++i) {
+      ProviderPerformanceMap::const_iterator it = max_perf.find(providers[i]);
+      if (it != max_perf.end()) {
+        output.append(it->second);
+      }
+    }
   }
 };
 
@@ -321,17 +357,19 @@ class GemmProfiler {
 
 /// Dispatches to GEMM performance profiler
 template <typename Dispatch, typename GemmProfiler>
-int profile_gemm(TestbenchOutput &output,
+int profile_gemm(TestbenchOutput<GemmProblem> &output,
                  std::string const &kernel,
-                 TestbenchOptions const &options) {
-  if (options.kernel_enabled(kernel)) {
-    GemmProfiler perf(output, kernel, options);
+                 TestbenchOptions const &options,
+                 Config const &config,
+                 std::string const &cutlass_algo = "") {
+  if (config.kernel_enabled(kernel)) {
+    GemmProfiler perf(output, kernel, cutlass_algo, options, config);
     if (options.peak_performance) {
       perf.template peak<Dispatch>(
-          options.problem_range.M, options.problem_range.N, options.problem_range.K);
+          config.problem_range.M, config.problem_range.N, config.problem_range.K);
     } else {
       perf.template schmoo<Dispatch>(
-          options.problem_range.M, options.problem_range.N, options.problem_range.K);
+          config.problem_range.M, config.problem_range.N, config.problem_range.K);
     }
   }
 

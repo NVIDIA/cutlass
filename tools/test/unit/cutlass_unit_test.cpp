@@ -29,19 +29,65 @@
 #include <cuda_runtime_api.h>
 #include <gtest/gtest.h>
 
+/// Sets flags for Unit test
 void set_gtest_flag() {
   // Default flags can be overwritten by --gtest_filter from commandline
+  cudaError_t err;
+
+  int cudaDeviceId;
+  err = cudaGetDevice(&cudaDeviceId);
+  if (cudaSuccess != err) {
+    std::cerr << "*** Error: Could not detect active GPU device ID"
+              << " [" << cudaGetErrorString(err) << "]" << std::endl;
+    exit(1);
+  }
+
   cudaDeviceProp deviceProperties;
-  cudaGetDeviceProperties(&deviceProperties, 0);
+  err = cudaGetDeviceProperties(&deviceProperties, cudaDeviceId);
+  if (cudaSuccess != err) {
+    std::cerr << "*** Error: Could not get device properties for GPU " << cudaDeviceId << " ["
+              << cudaGetErrorString(err) << "]" << std::endl;
+    exit(1);
+  }
 
   int deviceMajorMinor = deviceProperties.major * 10 + deviceProperties.minor;
 
-  if (deviceMajorMinor < 53)
-    ::testing::GTEST_FLAG(filter) = "-*Igemm*:*Hgemm*:*mma*";
-  else if (deviceMajorMinor < 61)
-    ::testing::GTEST_FLAG(filter) = "-*Igemm*:*mma*";
-  else if (deviceMajorMinor < 70)
-    ::testing::GTEST_FLAG(filter) = "-*mma*";
+  // Defines text filters for each GEMM kernel based on minimum supported compute capability
+  struct {
+
+    /// Unit test filter string
+    char const *filter;
+
+    /// Minimum compute capability for the kernels in the named test
+    int compute_capability;
+
+    /// If true, the tests are enabled strictly for one compute capability
+    bool experimental;
+  } test_filters[] = {
+    { "Sgemm*",                    50, false },
+    { "Dgemm*",                    60, false },
+    { "Fp16_sgemm*",               60, false },
+    { "Hgemm*",                    60, false },
+    { "Igemm*",                    61, false },
+    { "WmmaGemm*",                 70, false },
+    { "WmmaInt8*",                 72, false },
+    { "WmmaInt4*",                 75, true  },
+    { "WmmaBinary*",               75, true  },
+    { 0, 0, false }
+  };
+
+  // Set negative test filters
+  std::stringstream ss;
+  ss << "-";
+  for (int i = 0, j = 0; test_filters[i].filter; ++i) {
+    if (deviceMajorMinor < test_filters[i].compute_capability ||
+        (test_filters[i].experimental && deviceMajorMinor != test_filters[i].compute_capability)) {
+
+      ss << (j++ ? ":" : "") << test_filters[i].filter;
+    }
+  }
+
+  ::testing::GTEST_FLAG(filter) = ss.str();
 }
 
 int main(int argc, char* arg[]) {

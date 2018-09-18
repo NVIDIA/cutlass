@@ -23,54 +23,49 @@
  *
  **************************************************************************************************/
 
-/** \file
-    \brief CUTLASS Performance Tests
-*/
+#pragma once
 
-#include <tools/test/perf/testbench_options.h>
-#include <tools/test/perf/testbench_output.h>
+#include <iosfwd>
 
-//
-// Profiling entry points defined in corresponding .cu files
-//
 namespace perf {
 
-int profile_sgemm(TestbenchOutput &output, TestbenchOptions const &options);
-int profile_dgemm(TestbenchOutput &output, TestbenchOptions const &options);
-int profile_hgemm(TestbenchOutput &output, TestbenchOptions const &options);
-int profile_igemm(TestbenchOutput &output, TestbenchOptions const &options);
-int profile_wmma_gemm(TestbenchOutput &output, TestbenchOptions const &options);
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Implementation under test
+struct Provider {
+  enum Kind {
+    Unknown = 0,
+    Cutlass,
+    Invalid
+  };
+
+  static Provider::Kind from_string(std::string const &str) {
+    if (str == "cutlass" || str == "Cutlass") {
+      return Cutlass;
+    }
+    else {
+      return Invalid;
+    }
+  }
+};
+
+/// Prints provider
+inline std::ostream &operator<<(std::ostream &out, Provider::Kind provider) {
+  char const *str[] = {
+    "unknown",
+    "Cutlass",
+    "invalid"
+  };
+  if (provider >= perf::Provider::Unknown && provider < perf::Provider::Invalid) {
+    out << str[provider];
+  } else {
+    out << str[perf::Provider::Invalid];
+  }
+  return out;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace perf
 
-//
-// Executes profiling functionality
-//
 
-/// Entry point to CUTLASS performance test
-int main(int argc, const char **argv) {
-  cutlass::CommandLine args(argc, argv);
-  perf::TestbenchOptions options(args);
-
-  if (args.check_cmd_line_flag("help")) {
-    perf::TestbenchOptions::usage(std::cout);
-    return 0;
-  }
-
-  perf::TestbenchOutput output(options);
-
-  int (*profile_gemm[])(perf::TestbenchOutput &, perf::TestbenchOptions const &) = {
-      perf::profile_sgemm,
-      perf::profile_dgemm,
-      perf::profile_hgemm,
-      perf::profile_igemm,
-      perf::profile_wmma_gemm,
-      0};
-
-  int result = 0;
-  for (int i = 0; !result && profile_gemm[i]; ++i) {
-    result = (profile_gemm[i])(output, options);
-  }
-
-  return result;
-}

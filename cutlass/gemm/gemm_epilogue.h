@@ -29,23 +29,12 @@
 */
 #pragma once
 
-#include <cutlass/convert.h>
-#include <cutlass/coord.h>
-#include <cutlass/fragment.h>
+#include "cutlass/convert.h"
+#include "cutlass/coord.h"
+#include "cutlass/fragment.h"
 
 namespace cutlass {
 namespace gemm {
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename T>
-CUTLASS_DEVICE bool is_zero(T x) {
-  return x == T(0);
-}
-
-#if !defined(__CUDACC_RTC__) || defined(CUTLASS_NVRTC_HAS_FP16)
-CUTLASS_DEVICE bool is_zero(half x) { return reinterpret_cast<int16_t&>(x) == int16_t(0); }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -85,9 +74,7 @@ struct GemmEpilogue {
   /// The shared store transformer for D.
   typedef typename Traits::SharedStoreTransformerD SharedStoreTransformerD;
   /// The iterator to load D in shared memory.
-  typedef typename Traits::SharedLoadIteratorD SharedLoadIteratorD;
-  /// The shared load transformer for D.
-  typedef Copy<typename SharedLoadIteratorD::Fragment> SharedLoadTransformerD;
+  typedef typename Traits::SharedLoadStreamD SharedLoadStreamD;
 
   /// The index.
   typedef typename Traits::Index Index;
@@ -100,33 +87,28 @@ struct GemmEpilogue {
   /// Ctor.
   CUTLASS_DEVICE GemmEpilogue(Params const& params_,
                               SharedStorage& shared_storage_,
-                              Index m_,
-                              Index n_)
-      : params(params_), shared_storage(shared_storage_), m(m_), n(n_) {}
+                              Coord<3> const& _problem_size)
+      : params(params_), shared_storage(shared_storage_), problem_size(_problem_size), functor(params_.functor) {}
 
   /// Execute the epilogue.
-  CUTLASS_DEVICE void epilogue(Coord<3> const& block, Accumulators& accumulators) {
-    if (is_zero(params.functor.beta)) {
-      epilogue_with_or_without_beta<true>(block, accumulators);
+  CUTLASS_DEVICE void epilogue(Accumulators& accumulators,
+                               Coord<3> const& block = make_Coord(0, 0, 0),
+                               int batch_id = 0) {
+    if (functor.source_required()) {
+      epilogue_with_or_without_beta<true>(accumulators, block, batch_id);
     } else {
-      epilogue_with_or_without_beta<false>(block, accumulators);
+      epilogue_with_or_without_beta<false>(accumulators, block, batch_id);
     }
   }
 
-  template <bool kBetaIsZero_>
-  CUTLASS_DEVICE void epilogue_with_or_without_beta(Coord<3> const& block,
-                                                    Accumulators& accumulators) {
-
-    // The problem size.
-    Coord<3> const bounds = cutlass::make_Coord(0, n, m);
-
-    // The functor.
-    Functor functor(params.functor);
+  template <bool kSourceRequired>
+  CUTLASS_DEVICE void epilogue_with_or_without_beta(Accumulators& accumulators,
+                                                    Coord<3> const& block,
+                                                    int batch_id) {
     // The C fragment.
     typename GlobalLoadIteratorC::Fragment fragment_c;
     // The transformed C fragment.
     typename GlobalTransformerC::OutputFragment transformed_c;
-
     CUTLASS_PRAGMA_UNROLL
     for (int h = 0; h < Iterations::kH; ++h) {
       // Compute pointer and predicate offsets for C and D global iterators.
@@ -136,6 +118,7 @@ struct GemmEpilogue {
                Iterations::kW +
            params.stride_h) *
           h;
+
       int const predicate_offset =
           ((params.iterator_d.predicate_inc_h * (GlobalStoreIteratorD::Iterations::kH - 1) +
             params.iterator_d.predicate_inc_advance) *
@@ -145,32 +128,40 @@ struct GemmEpilogue {
 
       // The iterator to load the elements of the C matrix.
       GlobalLoadIteratorC global_load_iterator(
-          params.iterator_c, bounds, block, pointer_offset, predicate_offset);
+          params.iterator_c, problem_size, block, pointer_offset, predicate_offset);
+
+      // update C pointer offset based on batch_id and batch_stride_offset
+      //global_load_iterator.add_pointer_offset(batch_id * params.batch_stride_offset_c);
+      global_load_iterator += make_Coord(batch_id, 0, 0);
+
       // The transformer for C.
       GlobalTransformerC transformer_c;
       // The transformer for D.
       GlobalTransformerD transformer_d;
       // The iterator to store into the D matrix.
       GlobalStoreIteratorD global_store_iterator(
-          params.iterator_d, bounds, block, pointer_offset, predicate_offset);
+          params.iterator_d, problem_size, block, pointer_offset, predicate_offset);
 
-      // The transformer to transform before storing to shared memory.
+      // update D pointer offset based on batch_id and batch_stride_offset
+      //global_store_iterator.add_pointer_offset(batch_id * params.batch_stride_offset_d);
+      global_store_iterator += make_Coord(batch_id, 0, 0);
+
       SharedStoreTransformerD shared_store_transformer;
       typename SharedStoreTransformerD::OutputFragment shared_store_transformed_d;
 
-      // The iterator to store to shared memory.
-      SharedStoreIteratorD shared_store_iterator(params.shared_store_iterator_d,
-                                                 shared_storage.shared_stream.store);
+      SharedStoreIteratorD shared_store_iterator(
+          params.shared_store_iterator_d,
+          reinterpret_cast<typename SharedStoreIteratorD::Scalar*>(shared_storage.data()));
 
-      // The iterator to load from shared memory. TODO: Use a stream.
-      SharedLoadIteratorD shared_load_iterator(params.shared_load_iterator_d,
-                                               shared_storage.shared_stream.load);
+      SharedLoadStreamD shared_load_stream(
+          params.shared_load_stream_d,
+          reinterpret_cast<typename SharedLoadStreamD::Scalar*>(shared_storage.data()));
 
       CUTLASS_PRAGMA_UNROLL
       for (int w = 0; w < Iterations::kW; ++w) {
         // Load the C matrix into fragment.
-        if (!kBetaIsZero_) {
-          iterator_load(global_load_iterator, fragment_c);
+        if (kSourceRequired) {
+          global_load_iterator.load_post_increment(fragment_c);
         }
 
         // Make sure we can write to shared memory.
@@ -180,33 +171,33 @@ struct GemmEpilogue {
         int const offset = (h * Iterations::kW + w) * SharedStoreIteratorD::Fragment::kElements;
 
         shared_store_transformer.transform(accumulators, offset, shared_store_transformed_d);
-        shared_iterator_store(shared_store_iterator, shared_store_transformed_d);
+        shared_store_iterator.store_post_increment(shared_store_transformed_d);
 
         // Make sure the data is in shared memory.
         shared_store_fence();
 
         // Copy the accumulators back to registers from shared memory.
-        typename SharedLoadIteratorD::Fragment fetched_d;
-        shared_iterator_load(shared_load_iterator, fetched_d);
+        shared_load_stream.copy();
+        shared_load_stream.commit();
 
         // Do the math.
         typename GlobalTransformerD::InputFragment fragment_d;
 
-        if (kBetaIsZero_) {
-          functor.evaluate(fetched_d, fragment_d);
-        } else {
+        if (kSourceRequired) {
           // Transform C fragment.
           transformer_c.transform(fragment_c, transformed_c);
           // Do the math.
-          functor.evaluate(fetched_d, transformed_c, fragment_d);
+          functor.evaluate(shared_load_stream.fragment(), transformed_c, fragment_d);
+        } else {
+          functor.evaluate(shared_load_stream.fragment(), fragment_d);
         }
 
         // Transform D fragment.
-        typename GlobalTransformerD::OutputFragment transformed_d;
-        transformer_d.transform(fragment_d, transformed_d);
+        typename GlobalTransformerD::OutputFragment global_transformed_d;
+        transformer_d.transform(fragment_d, global_transformed_d);
 
         // Copy the results to global memory.
-        iterator_store(global_store_iterator, transformed_d);
+        global_store_iterator.store_post_increment(global_transformed_d);
       }
     }
   }
@@ -222,7 +213,9 @@ struct GemmEpilogue {
   /// The shared storage.
   SharedStorage& shared_storage;
   /// The dimensions of the GEMM.
-  Index m, n;
+  Coord<3> problem_size;
+  // The functor.
+  Functor functor;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

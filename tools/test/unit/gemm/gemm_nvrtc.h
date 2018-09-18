@@ -25,10 +25,10 @@
 
 #define NVRTC_GET_TYPE_NAME 1
 
-#include <cutlass/cutlass.h>
+#include "cutlass/cutlass.h"
 
 #include <nvrtc.h>
-#include <tools/nvrtc/cutlass/nvrtc/environment.h>
+#include "tools/nvrtc/cutlass/nvrtc/environment.h"
 #include <string>
 
 static inline bool check_nvrtc_error(nvrtcResult error) {
@@ -76,13 +76,13 @@ static __host__ void run_gemm_nvrtc(
   nvrtcResult result_nvrtc;
   nvrtcProgram program;
   static char const *src =
-      "#include <cutlass/gemm/gemm.h>\n"
-      "#include <cutlass/gemm/sgemm_traits.h>\n"
-      "#include <cutlass/gemm/dgemm_traits.h>\n"
-      "#include <cutlass/gemm/igemm_traits.h>\n"
+      "#include "cutlass/gemm/gemm.h"\n"
+      "#include "cutlass/gemm/sgemm_traits.h"\n"
+      "#include "cutlass/gemm/dgemm_traits.h"\n"
+      "#include "cutlass/gemm/igemm_traits.h"\n"
 #if defined(CUTLASS_NVRTC_HAS_FP16)
-      "#include <cutlass/gemm/hgemm_traits.h>\n"
-      "#include <cutlass/gemm/wmma_gemm_traits.h>\n"
+      "#include "cutlass/gemm/hgemm_traits.h"\n"
+      "#include "cutlass/gemm/wmma_gemm_traits.h"\n"
 #endif
       ;
 

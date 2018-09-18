@@ -27,15 +27,16 @@
 
 #include <fstream>
 
-#include <tools/test/perf/performance_result.h>
-#include <tools/test/perf/testbench_options.h>
-#include <tools/util/command_line.h>
+#include "tools/test/perf/performance_result.h"
+#include "tools/test/perf/testbench_options.h"
+#include "tools/util/command_line.h"
 
 namespace perf {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Wraps an output stream and constructs a comma-separated value table of results
+template <typename Problem>
 class TestbenchOutput {
  public:
   /// Options to test environment
@@ -51,7 +52,7 @@ class TestbenchOutput {
   bool buffer_csv_output;
 
   /// Vector holding performance results
-  std::vector<PerformanceResult> buffered_perf_results;
+  std::vector<PerformanceResult<Problem> > buffered_perf_results;
 
  private:
   /// Opens the output file and updates output_ptr
@@ -74,11 +75,11 @@ class TestbenchOutput {
     // pivot tags
     for (KeyValueIterator tag_it = options.pivot_tags.begin(); tag_it != options.pivot_tags.end();
          ++tag_it) {
-      ss << tag_it->first << ", ";
+      ss << tag_it->first << ",";
     }
 
     // performance result header
-    ss << PerformanceResult::header();
+    ss << PerformanceResult<Problem>::header();
 
     return ss.str();
   }
@@ -95,14 +96,23 @@ class TestbenchOutput {
 
   /// Writes output to CSV
   ~TestbenchOutput() {
-    std::cout << std::endl;
-    if (buffer_csv_output) {
-      out() << "\n\n" << header() << std::endl;
-      for (std::vector<PerformanceResult>::const_iterator it = buffered_perf_results.begin();
-           it != buffered_perf_results.end();
-           ++it) {
-        write_csv(*it);
+    if (buffered_perf_results.size() != 0) {
+      std::cout << std::endl;
+      if (buffer_csv_output) {
+        out() << "\n\n" << header() << std::endl;
+        for (typename std::vector<PerformanceResult<Problem> >::const_iterator it =
+                 buffered_perf_results.begin();
+             it != buffered_perf_results.end();
+             ++it) {
+          write_csv(*it);
+        }
       }
+        std::cout << "\n[\033[1;32mPASSED\033[0m]";
+        if (!options.threshold_filename.empty()) {
+          std::cout << " - Performance Test Successful" << std::endl;
+        } else {
+          std::cout << std::endl;
+        }
     }
   }
 
@@ -122,11 +132,11 @@ class TestbenchOutput {
   }
 
   /// Writes a performance result to CSV output
-  TestbenchOutput &write_csv(PerformanceResult const &result) {
+  TestbenchOutput &write_csv(PerformanceResult<Problem> const &result) {
     // pivot tags
     for (KeyValueIterator tag_it = options.pivot_tags.begin(); tag_it != options.pivot_tags.end();
          ++tag_it) {
-      out() << tag_it->second << ", ";
+      out() << tag_it->second << ",";
     }
 
     out() << result << std::endl;
@@ -134,24 +144,26 @@ class TestbenchOutput {
   }
 
   /// Prints the output without appending it for CSV writing
-  TestbenchOutput &pretty_print(PerformanceResult const &result) {
+  TestbenchOutput &pretty_print(PerformanceResult<Problem> const &result) {
     result.pretty_print(std::cout) << std::endl;
 
     return *this;
   }
 
   /// Emits the result as output
-  TestbenchOutput &append(PerformanceResult const &result) {
+  TestbenchOutput &append(PerformanceResult<Problem> const &result) {
     if (buffer_csv_output) {
       buffered_perf_results.push_back(result);
     } else {
       write_csv(result);
+      buffered_perf_results.push_back(result);
     }
 
     pretty_print(result);
 
     return *this;
   }
+
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

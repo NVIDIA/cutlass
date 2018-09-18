@@ -27,7 +27,7 @@
 */
 #pragma once
 
-#include <cutlass/gemm/gemm_operand.h>
+#include "cutlass/gemm/gemm_operand.h"
 
 namespace cutlass {
 namespace gemm {

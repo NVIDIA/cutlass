@@ -28,17 +28,14 @@
 */
 #pragma once
 
-#include <cutlass/wmma_matrix.h>
+#include "cutlass/wmma_matrix.h"
 #ifdef CUTLASS_USE_WMMA_API
 
-#include <cutlass/gemm/gemm_operand.h>
-#include <cutlass/reshape_tile.h>
+#include "cutlass/gemm/gemm_operand.h"
+#include "cutlass/reshape_tile.h"
 
 namespace cutlass {
 namespace gemm {
-
-template <class>
-struct Debug {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

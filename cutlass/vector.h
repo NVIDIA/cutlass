@@ -31,7 +31,8 @@
 #include <cuda_fp16.h>
 #endif
 
-#include <cutlass/util/platform.h>
+#include "cutlass/util/numeric_types.h"
+#include "cutlass/util/platform.h"
 
 namespace cutlass {
 
@@ -80,12 +81,42 @@ union Vector {
   uint32_t registers[kRegisters];
 
   /// Accessor to the ith lane.
-  CUTLASS_DEVICE Scalar const& operator[](uint32_t i) const { return scalars[i]; }
+  CUTLASS_HOST_DEVICE Scalar const& operator[](uint32_t i) const { return scalars[i]; }
   /// Accessor to the ith lane.
-  CUTLASS_DEVICE Scalar& operator[](uint32_t i) { return scalars[i]; }
+  CUTLASS_HOST_DEVICE Scalar& operator[](uint32_t i) { return scalars[i]; }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <>
+union Vector<half, 1> {
+  /// The scalar type.
+  typedef half Scalar;
+
+  /// The number of elements in the vector.
+  enum { kLanes = 1 };
+  /// The size of the vector.
+  enum { kVectorSize = kLanes * (int)sizeof(Scalar) };
+  /// The number of registers needed to store the vector.
+  enum { kRegisters = kVectorSize < 4 ? 1 : kVectorSize / 4 };
+
+  // Make sure that the vector type makes sense.
+  static_assert(kVectorSize <= 16, "Vector type is too large");
+
+  /// The aligned storage to make sure we have good alignment.
+  AlignedStruct<kVectorSize> aligned_;
+  /// The associated array of scalars.
+  uint16_t scalars[kLanes];
+
+  /// Accessor to the ith lane.
+  CUTLASS_HOST_DEVICE Scalar const& operator[](uint32_t i) const {
+    return reinterpret_cast<Scalar const&>(scalars[i]);
+  }
+  /// Accessor to the ith lane.
+  CUTLASS_HOST_DEVICE Scalar& operator[](uint32_t i) {
+      return reinterpret_cast<Scalar&>(scalars[i]);
+  }
+};
 
 #if !defined(__CUDACC_RTC__) || defined(CUTLASS_NVRTC_HAS_FP16)
 
@@ -112,19 +143,124 @@ union Vector<half, kLanes_> {
   uint32_t registers[kRegisters];
 
   /// Accessor to the ith lane.
-  CUTLASS_DEVICE Scalar const& operator[](uint32_t i) const {
+  CUTLASS_HOST_DEVICE Scalar const& operator[](uint32_t i) const {
     return reinterpret_cast<Scalar const&>(scalars[i]);
   }
   /// Accessor to the ith lane.
-  CUTLASS_DEVICE Scalar& operator[](uint32_t i) { return reinterpret_cast<Scalar&>(scalars[i]); }
+  CUTLASS_HOST_DEVICE Scalar& operator[](uint32_t i) {
+      return reinterpret_cast<Scalar&>(scalars[i]);
+  }
 };
 
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Vector definition for 1-bit binary datatype
+template <int kLanes_>
+union Vector<bin1_t, kLanes_> {
+  /// The scalar type.
+  typedef bin1_t Scalar;
+
+  /// The number of elements in the vector.
+  enum { kLanes = kLanes_ };
+  /// The size of the vector.
+  enum { kVectorSize = kLanes / 8 };
+  /// The number of registers needed to store the vector.
+  enum { kRegisters = kVectorSize < 4 ? 1 : kVectorSize / 4 };
+
+  static_assert((kLanes >= 8) && !(kLanes % 8),
+                "May only construct vectors of bin1_t that are multiples of 8 bits.");
+
+  /// The aligned storage to make sure we have good alignment.
+  AlignedStruct<kVectorSize> aligned_;
+  /// The data in registers.
+  uint32_t registers[kRegisters];
+
+  /// Default Constructor
+  CUTLASS_HOST_DEVICE
+  Vector() {}
+  /// Constructor to convert from uint32_t type
+  CUTLASS_HOST_DEVICE Vector(uint32_t value) { registers[0] = value; }
+  /// Accessor to the ith lane.
+  CUTLASS_HOST_DEVICE bool operator[](uint32_t i) const {
+    return ( (registers[i / 32] & (1 << (i % 32))) != 0 );
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Vector definition for 4-bit signed integer datatype
+template <int kLanes_>
+union Vector<int4_t, kLanes_> {
+  /// The scalar type.
+  typedef int4_t Scalar;
+
+  /// The number of elements in the vector.
+  enum { kLanes = kLanes_ };
+  /// The size of the vector.
+  enum { kVectorSize = kLanes / 2 };
+  /// The number of registers needed to store the vector.
+  enum { kRegisters = kVectorSize < 4 ? 1 : kVectorSize / 4 };
+
+  static_assert((kLanes >= 2) && !(kLanes % 2),
+   "May only construct vectors of int4_t that are multiples of 8 bits.");
+
+  /// The aligned storage to make sure we have good alignment.
+  AlignedStruct<kVectorSize> aligned_;
+  /// The data in registers.
+  uint32_t registers[kRegisters];
+
+  /// Default Constructor
+  CUTLASS_HOST_DEVICE
+  Vector() {}
+  /// Constructor to convert from uint32_t type
+  CUTLASS_HOST_DEVICE Vector(uint32_t value) { registers[0] = value; }
+  /// Accessor to the ith lane.
+  CUTLASS_HOST_DEVICE int operator[](uint32_t i) const {
+    return (registers[i / 8] >> (i % 8 * 4) & 0x0f)
+              - 16 * (registers[i / 8] >> (i % 8 * 4 + 3) & 0x01);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Vector definition for 4-bit unsigned integer datatype
+template <int kLanes_>
+union Vector<uint4_t, kLanes_> {
+  /// The scalar type.
+  typedef uint4_t Scalar;
+
+  /// The number of elements in the vector.
+  enum { kLanes = kLanes_ };
+  /// The size of the vector.
+  enum { kVectorSize = kLanes / 2 };
+  /// The number of registers needed to store the vector.
+  enum { kRegisters = kVectorSize < 4 ? 1 : kVectorSize / 4 };
+
+  static_assert((kLanes >= 2) && !(kLanes % 2),
+    "May only construct vectors of uint4_t that are multiples of 8 bits.");
+
+  /// The aligned storage to make sure we have good alignment.
+  AlignedStruct<kVectorSize> aligned_;
+  /// The data in registers.
+  uint32_t registers[kRegisters];
+
+  /// Default Constructor
+  CUTLASS_HOST_DEVICE
+  Vector() {}
+  /// Constructor to convert from uint32_t type
+  CUTLASS_HOST_DEVICE Vector(uint32_t value) { registers[0] = value; }
+  /// Accessor to the ith lane.
+  CUTLASS_HOST_DEVICE int operator[](uint32_t i) const {
+    return registers[i / 8] >> (i % 8 * 4) & 0x0f;
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <typename Scalar_>
-CUTLASS_DEVICE void make_zero(Scalar_& x) {
+CUTLASS_HOST_DEVICE void make_zero(Scalar_& x) {
   x = Scalar_(0);
 }
 
@@ -137,15 +273,29 @@ struct Vectorize {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Element_>
-struct Vectorize<Element_, 1> {
-  typedef Element_ Type;
+template <int kLanes_>
+struct Vectorize<Vector<bin1_t, 32>, kLanes_> {
+  typedef Vector<bin1_t, kLanes_ * 32> Type;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <int kLanes_>
+struct Vectorize<Vector<int4_t, 8>, kLanes_> {
+  typedef Vector<int4_t, kLanes_ * 8> Type;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <int kLanes_>
+struct Vectorize<Vector<uint4_t, 8>, kLanes_> {
+  typedef Vector<uint4_t, kLanes_ * 8> Type;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Scalar_, int kLanes_>
-CUTLASS_DEVICE void make_zero(Vector<Scalar_, kLanes_>& vec) {
+CUTLASS_HOST_DEVICE void make_zero(Vector<Scalar_, kLanes_>& vec) {
   for (int i = 0; i < Vector<Scalar_, kLanes_>::kRegisters; ++i) {
     vec.registers[i] = 0;
   }

@@ -33,12 +33,52 @@
 #include <stdint.h>
 
 #include "half.h"
+#include "cutlass/vector.h"
+#include "cutlass/util/complex.h"
 
 namespace cutlass {
 struct half_t;
 
 template <typename T>
-struct TypeTraits;
+struct TypeTraits {
+  typedef T host_type;
+  typedef T device_type;
+  static inline T remove_negative_zero(T x) { return x; }
+  static inline T to_print(T x) { return x; }
+};
+
+template <>
+struct TypeTraits<Vector<bin1_t, 32> > {
+  static cudaDataType_t const cublas_type = CUDA_R_32I;
+  typedef Vector<bin1_t, 32> host_type;
+  typedef Vector<bin1_t, 32> device_type;
+  typedef uint32_t integer_type;
+  typedef uint32_t unsigned_type;
+  static inline uint32_t remove_negative_zero(uint32_t x) { return x; }
+  static inline uint32_t to_print(uint32_t x) { return x; }
+};
+
+template <>
+struct TypeTraits< Vector<int4_t, 8> > {
+  static cudaDataType_t const cublas_type = CUDA_R_32I;
+  typedef Vector<int4_t, 8> host_type;
+  typedef Vector<int4_t, 8> device_type;
+  typedef uint32_t integer_type;
+  typedef uint32_t unsigned_type;
+  static inline uint32_t remove_negative_zero(uint32_t x) { return x; }
+  static inline uint32_t to_print(uint32_t x) { return x; }
+};
+
+template <>
+struct TypeTraits< Vector<uint4_t, 8> > {
+  static cudaDataType_t const cublas_type = CUDA_R_32I;
+  typedef Vector<uint4_t, 8> host_type;
+  typedef Vector<uint4_t, 8> device_type;
+  typedef uint32_t integer_type;
+  typedef uint32_t unsigned_type;
+  static inline uint32_t remove_negative_zero(uint32_t x) { return x; }
+  static inline uint32_t to_print(uint32_t x) { return x; }
+};
 
 template <>
 struct TypeTraits<int8_t> {
@@ -158,4 +198,73 @@ struct TypeTraits<double> {
   static inline double remove_negative_zero(double x) { return x == -0.0 ? 0.0 : x; }
   static inline double to_print(double x) { return x; }
 };
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Complex types
+//
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <>
+struct TypeTraits<platform::complex<half> > {
+  static cudaDataType_t const cublas_type = CUDA_C_16F;
+  typedef platform::complex<half_t> host_type;
+  typedef platform::complex<half> device_type;
+  typedef int16_t integer_type;
+  typedef uint16_t unsigned_type;
+};
+
+template <>
+struct TypeTraits<platform::complex<half_t> > {
+  static cudaDataType_t const cublas_type = CUDA_C_16F;
+  typedef platform::complex<half_t> host_type;
+  typedef platform::complex<half> device_type;
+  typedef int16_t integer_type;
+  typedef uint16_t unsigned_type;
+  static inline platform::complex<half_t> remove_negative_zero(platform::complex<half_t> x) {
+    return platform::complex<half_t>(
+      real(x) == -0.f ? half_t(0) : real(x),
+      imag(x) == -0.f ? half_t(0) : imag(x)
+    );
+  }
+  static inline platform::complex<half_t> to_print(platform::complex<half_t> x) { return x; }
+};
+
+template <>
+struct TypeTraits<platform::complex<float> > {
+
+  static cudaDataType_t const cublas_type = CUDA_C_32F;
+  typedef platform::complex<float> host_type;
+  typedef platform::complex<float> device_type;
+  typedef int64_t integer_type;
+  typedef uint64_t unsigned_type;
+
+  static inline platform::complex<float> remove_negative_zero(platform::complex<float> x) {
+    return platform::complex<float>(
+      real(x) == -0.f ? 0.f : real(x),
+      imag(x) == -0.f ? 0.f : imag(x)
+    );
+  }
+
+  static inline platform::complex<float> to_print(platform::complex<float> x) { return x; }
+};
+
+template <>
+struct TypeTraits<platform::complex<double> > {
+  static cudaDataType_t const cublas_type = CUDA_C_64F;
+  typedef platform::complex<double> host_type;
+  typedef platform::complex<double> device_type;
+  struct integer_type { int64_t real, imag; };
+  struct unsigned_type { uint64_t real, imag; };
+  static inline platform::complex<double> remove_negative_zero(platform::complex<double> x) {
+    return platform::complex<double>(
+      real(x) == -0.0 ? 0.0 : real(x),
+      imag(x) == -0.0 ? 0.0 : imag(x)
+    );
+  }
+  static inline platform::complex<double> to_print(platform::complex<double> x) { return x; }
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 }  // namespace cutlass

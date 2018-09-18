@@ -22,27 +22,51 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/*! \file
-    \brief Defies functors for mapping blockIdx to partitions of the GEMM computation.
-
-    Currently, we only implement an identity mapping.
-*/
 #pragma once
 
-namespace cutlass {
-namespace gemm {
+#include <stdexcept>
+#include "cutlass/cutlass.h"
+#include "tools/util/reference/device/kernel/tensor_foreach.h"
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
+namespace cutlass  {
+namespace reference {
+namespace device {
 
-struct IdentityBlockSwizzle {
-  /// Ctor.
-  CUTLASS_DEVICE IdentityBlockSwizzle() {}
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
-  /// Swizzle the block index.
-  CUTLASS_DEVICE dim3 swizzle() { return blockIdx; }
+/// Launches a kernel for each element in a tensor's index space.
+template <typename Func, int Rank, typename Params>
+struct TensorForEach {
+
+  /// Constructor performs the operation.
+  TensorForEach(Coord<Rank> size, Params params = Params(), int grid_size = 0, int block_size = 0) {
+
+    if (!grid_size || !block_size) {
+
+      // if grid_size or block_size are zero, query occupancy using the CUDA Occupancy API
+      cudaError_t result = cudaOccupancyMaxPotentialBlockSize(
+        &grid_size,
+        &block_size,
+        reinterpret_cast<void const *>(kernel::TensorForEach<Func, Rank, Params>));
+
+      if (result != cudaSuccess) {
+        throw std::runtime_error("Failed to query occupancy.");
+      }
+
+      // Limit block size. This has the effect of increasing the number of items processed by a
+      // single thread and reduces the impact of initialization overhead.
+      block_size = (block_size < 128 ? block_size : 128);
+    }
+
+    dim3 grid(grid_size, 1, 1);
+    dim3 block(block_size, 1, 1);
+
+    kernel::TensorForEach<Func, Rank, Params><<< grid, block >>>(size, params);
+  }
 };
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
-}  // namespace gemm
-}  // namespace cutlass
+} // namespace device
+} // namespace reference
+} // namesace cutlass

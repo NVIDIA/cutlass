@@ -22,9 +22,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-#include <cutlass_unit_test.h>
+#include "cutlass_unit_test.h"
 #include <algorithm>
-#include <tools/test/unit/core/layout_verification.h>
+#include "tools/test/unit/core/layout_verification.h"
 
 
 namespace test {

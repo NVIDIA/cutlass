@@ -1,3 +1,4 @@
+
 /***************************************************************************************************
  * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
  *
@@ -27,18 +28,31 @@
 */
 #pragma once
 
-#include <cutlass/fragment_multiply_add.h>
+#include "cutlass/fragment_multiply_add.h"
 
 namespace cutlass {
 namespace gemm {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <typename T>
+CUTLASS_DEVICE bool is_zero(T x) {
+  return x == T(0);
+}
+
+#if !defined(__CUDACC_RTC__) || defined(CUTLASS_NVRTC_HAS_FP16)
+CUTLASS_DEVICE bool is_zero(half x) { return reinterpret_cast<int16_t&>(x) == int16_t(0); }
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Functor to compute linear combination of fragments
-template <typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd<Scalar_> >
+template <typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd<Scalar_, Scalar_> >
 struct LinearScaling {
   // The scalar.
   typedef Scalar_ Scalar;
+  // The accumulator Type
+  typedef typename FragmentMultiplyAdd_::ScalarAccum ScalarAccum;
   // The adapater.
   typedef FragmentMultiplyAdd_ FragmentMultiplyAdd;
 
@@ -46,6 +60,21 @@ struct LinearScaling {
   struct Params {
     /// The alpha/beta scaling params.
     Scalar alpha, beta;
+
+    //
+    // Methods
+    //
+
+    // Constructor
+    CUTLASS_HOST_DEVICE
+    Params(Scalar _alpha = 0, Scalar _beta = 0) : alpha(_alpha), beta(_beta) {}
+
+    /// Initialize the parameters
+    CUTLASS_HOST_DEVICE int initialize(Scalar _alpha, Scalar _beta) {
+      alpha = _alpha;
+      beta = _beta;
+      return 0;
+    }
 
     /// Initialize the parameters.
     template <typename GemmDesc_>
@@ -56,14 +85,53 @@ struct LinearScaling {
     }
   };
 
+  //
+  // Data members
+  //
+
+  Params params;
+
+  //
+  // Methods
+  //
+
   /// Ctor.
-  CUTLASS_DEVICE LinearScaling(Params const& params) : alpha(params.alpha), beta(params.beta) {}
+  CUTLASS_DEVICE LinearScaling() { }
+
+  /// Ctor.
+  CUTLASS_DEVICE LinearScaling(Params const& _params) : params(_params) {}
+
+  /// Method to determine whether the source accumulator matrix C is ever needed. This method
+  /// may always safely return true, though better performance is possible if the source accumulator
+  /// matrix is never loaded unnecessarily.
+  CUTLASS_DEVICE
+  bool source_required() const {
+    return !is_zero(params.beta);
+  }
 
   /// Evaluate the functor.
   template <typename FragmentA_, typename FragmentB_>
   CUTLASS_DEVICE void evaluate(FragmentA_ const& accum, FragmentB_& output) {
     FragmentMultiplyAdd mad;
-    mad.multiply(alpha, accum, output);
+    mad.multiply(params.alpha, accum, output);
+
+  }
+
+  /// Evaluate the functor, without using fragment in the API
+  template <typename ScalarAccum, typename ScalarOutput, int size>
+  CUTLASS_DEVICE void evaluate(ScalarAccum const *accum, ScalarOutput *output) {
+    Fragment<ScalarAccum, size> FragAccum;
+    Fragment<ScalarOutput, size> FragOutput;
+#pragma unroll
+    for (int i = 0; i < size; i++) {
+      FragAccum[i] = accum[i];
+      FragOutput[i] = output[i];
+    }
+    evaluate(FragAccum, FragOutput);
+#pragma unroll
+    for (int i = 0; i < size; i++) {
+      output[i] = FragOutput[i];
+    }
   }
 
   /// Evaluate the functor.
@@ -71,12 +139,28 @@ struct LinearScaling {
   CUTLASS_DEVICE void evaluate(FragmentA_ const& accum, FragmentB_ const& old, FragmentB_& output) {
     FragmentMultiplyAdd mad;
     FragmentB_ tmp;
-    mad.multiply(beta, old, tmp);
-    mad.multiply_add(alpha, accum, tmp, output);
+    mad.multiply(params.beta, old, tmp);
+    mad.multiply_add(params.alpha, accum, tmp, output);
   }
 
-  /// The alpha/beta scaling factors.
-  Scalar alpha, beta;
+  /// Evaluate the functor, without using fragment in the API
+  template <typename ScalarAccum, typename ScalarOutput, int size>
+  CUTLASS_DEVICE void evaluate(ScalarAccum const *accum, ScalarOutput const *old, ScalarOutput *output) {
+    Fragment<ScalarAccum, size> FragAccum;
+    Fragment<ScalarOutput, size> FragOutput;
+    Fragment<ScalarOutput, size> FragOld;
+#pragma unroll
+    for (int i = 0; i < size; i++) {
+      FragAccum[i] = accum[i];
+      FragOutput[i] = output[i];
+      FragOld[i] = old[i];
+    }
+    evaluate(FragAccum, FragOld, FragOutput);
+#pragma unroll
+    for (int i = 0; i < size; i++) {
+      output[i] = FragOutput[i];
+    }
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

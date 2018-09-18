@@ -29,12 +29,12 @@
 #include <iostream>
 #include <vector>
 
-#include <cutlass/tensor_view.h>
+#include "cutlass/tensor_view.h"
 
-#include <tools/util/half.h>
-#include <tools/util/host_tensor_view.h>
-#include <tools/util/tensor_view_io.h>
-#include <tools/util/type_traits.h>
+#include "tools/util/half.h"
+#include "tools/util/host_tensor_view.h"
+#include "tools/util/tensor_view_io.h"
+#include "tools/util/type_traits.h"
 
 namespace test {
 
@@ -274,6 +274,8 @@ class VerifyLayout {
     SourceBits* data = reinterpret_cast<SourceBits*>(source.ref().data());
     for (int index = 0; index < count; ++index) {
       SourceBits element = hash(layout(index));
+
+      // std::cout << "  " << index << ": 0x" << std::hex << element << std::dec << std::endl;
 
       data[index] = element;
     }

@@ -28,20 +28,23 @@
 #pragma once
 
 #if defined(__CUDACC__) && (!defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 700)
-
-// Dependent header files should use the following macro to guard all code using
-// nvcuda::wmma:: to enable compilation for CUDA Compute Capabilities < sm_70.
-// Earlier shader models not support Tensor Cores.
 #define CUTLASS_USE_WMMA_API
+
+#if defined(__CUDACC__) && (__CUDACC_VER_MAJOR__ >= 10) && (!defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 750)
+#define CUTLASS_USE_SUBBYTE_WMMA
+#endif
 
 #include "stdio.h"
 
+#if __CUDACC_VER_MAJOR__ >= 10
+#include <mma.h>
+#else
 #include <crt/mma.h>
-#include <cutlass/fragment.h>
-#include <cutlass/load_store.h>
-#include <cutlass/matrix_traits.h>
-#include <cutlass/shape.h>
-#include <cutlass/vector.h>
+#endif
+#include "cutlass/fragment.h"
+#include "cutlass/matrix_traits.h"
+#include "cutlass/shape.h"
+#include "cutlass/vector.h"
 
 namespace cutlass {
 
@@ -58,6 +61,34 @@ template <>
 struct WmmaLayout<MatrixLayout::kRowMajor> {
   typedef nvcuda::wmma::row_major Layout;
 };
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Statically maps cutlass types to nvcuda::wmma datatypes
+template <typename Type_>
+struct WmmaDataType{
+  typedef Type_ Type;
+};
+
+#ifdef CUTLASS_USE_SUBBYTE_WMMA
+/// Statically maps cutlass::Vector<bin1_t, 32> to nvcuda::wmma::experimental::precision::b1
+template<>
+struct WmmaDataType<Vector<bin1_t, 32> > {
+  typedef nvcuda::wmma::experimental::precision::b1 Type;
+};
+
+/// Statically maps cutlass::Vector<int4_t, 8> to nvcuda::wmma::experimental::precision::s4
+template<>
+struct WmmaDataType<Vector<int4_t, 8> > {
+  typedef nvcuda::wmma::experimental::precision::s4 Type;
+};
+
+/// Statically maps cutlass::Vector<uint4_t, 8> to nvcuda::wmma::experimental::precision::u4
+template<>
+struct WmmaDataType<Vector<uint4_t, 8> > {
+  typedef nvcuda::wmma::experimental::precision::u4 Type;
+};
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -81,7 +112,7 @@ struct WmmaMatrix<GemmOperand::kA, kLayout_, Scalar_, WmmaShape_>
           WmmaShape_::kH,
           WmmaShape_::kD,
           /// The scalar.
-          Scalar_,
+          typename WmmaDataType<Scalar_>::Type,
           /// The layout.
           typename WmmaLayout<kLayout_>::Layout> {
   /// This type.
@@ -117,7 +148,7 @@ struct WmmaMatrix<GemmOperand::kB, kLayout_, Scalar_, WmmaShape_>
           WmmaShape_::kH,
           WmmaShape_::kD,
           /// The scalar.
-          Scalar_,
+          typename WmmaDataType<Scalar_>::Type,
           /// The layout.
           typename WmmaLayout<kLayout_>::Layout> {
   /// This type.
@@ -188,6 +219,18 @@ struct WmmaMatrix<GemmOperand::kC, kLayout_, Scalar_, WmmaShape_>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-}  // namespace cutlass
+// WmmaMatrix cannot be used in a Union and thus in cannot be used in our Vector implementation.
+// The only use of WmmaMatrix in in combination with Vectorize has kLanes == 1. Due to this it is
+// safe to keep the Vector->Scalar conversion for WmmaMatrix.
+template <GemmOperand::Kind kOperand_,
+          MatrixLayout::Kind kLayout_,
+          typename Scalar_,
+          typename WmmaShape_>
+struct Vectorize<WmmaMatrix<kOperand_, kLayout_, Scalar_, WmmaShape_>, 1> {
+  typedef WmmaMatrix<kOperand_, kLayout_, Scalar_, WmmaShape_> Type;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+}
 
 #endif  // defined CUTLASS_USE_WMMA_API

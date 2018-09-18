@@ -27,18 +27,18 @@
 */
 #pragma once
 
-#include <cutlass/convert.h>
-#include <cutlass/reshape_tile.h>
+#include "cutlass/convert.h"
+#include "cutlass/reshape_tile.h"
 
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/gemm_epilogue.h>
-#include <cutlass/gemm/gemm_epilogue_traits.h>
-#include <cutlass/gemm/gemm_global_tile.h>
-#include <cutlass/gemm/gemm_shared_tile.h>
-#include <cutlass/gemm/gemm_traits.h>
-#include <cutlass/gemm/hgemm_global_tile.h>
-#include <cutlass/gemm/hgemm_multiply_add.h>
-#include <cutlass/gemm/hgemm_swizzle.h>
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/gemm_epilogue.h"
+#include "cutlass/gemm/gemm_epilogue_traits.h"
+#include "cutlass/gemm/gemm_global_tile.h"
+#include "cutlass/gemm/gemm_shared_tile.h"
+#include "cutlass/gemm/gemm_traits.h"
+#include "cutlass/gemm/hgemm_global_tile.h"
+#include "cutlass/gemm/hgemm_multiply_add.h"
+#include "cutlass/gemm/hgemm_swizzle.h"
 
 namespace cutlass {
 namespace gemm {
@@ -48,46 +48,52 @@ namespace gemm {
 template <
     /// The tile size for the GEMM KxNxM.
     typename OutputTile_,
-    /// The number of accumulators per thread.
-    typename AccumulatorsPerThread_,
+    /// Tile size for thread-level GEMM (K-by-N-by-M)
+    typename ThreadGemmShape_,
     /// The number of scalars per LDG for A.
     int kScalarsPerLdgA_ = 2,
     /// The number of scalars per LDG for B.
     int kScalarsPerLdgB_ = 2>
-struct HgemmConfig
-    : public GemmConfig<
-          /// The scalar type for A.
-          half,
-          /// The scalar type for B.
-          half,
-          /// The scalar type for C.
-          half,
-          /// The scalar type for D.
-          half,
-          /// The tile size for the GEMM KxNxM.
-          OutputTile_,
-          /// The functor to do the math in the main loop.
-          ThreadMultiplyAdd<AccumulatorsPerThread_, Shape<1, 4, 8>, half, half, half>,
-          /// The number of scalars per LDG for A.
-          kScalarsPerLdgA_,
-          /// The number of scalars per STS for A.
-          kScalarsPerLdgA_,
-          /// The number of scalars per LDS for A.
-          8,
-          /// The number of scalars per LDG for B.
-          kScalarsPerLdgB_,
-          /// The number of scalars per STS for B.
-          kScalarsPerLdgB_,
-          /// The number of scalars per LDS for B.
-          8,
-          /// The number of scalars per LDG for C and STG for D.
-          2,
-          /// The number of scalars per STS for D.
-          8,
-          /// The number of scalars per LDS for D.
-          2,
-          /// The number of stages in shared memory.
-          2> {};
+struct HgemmConfig : public GemmConfig<
+                         /// The scalar type for A.
+                         half,
+                         /// The scalar type for B.
+                         half,
+                         /// The scalar type for C.
+                         half,
+                         /// The scalar type for D.
+                         half,
+                         /// The tile size for the GEMM KxNxM.
+                         OutputTile_,
+                         /// The functor to do the math in the main loop.
+                         ThreadMultiplyAdd<ThreadGemmShape_, Shape<1, 4, 8>, half, half, half>,
+                         /// The number of scalars per LDG for A.
+                         kScalarsPerLdgA_,
+                         /// The number of scalars per STS for A.
+                         kScalarsPerLdgA_,
+                         /// The number of scalars per LDS for A.
+                         8,
+                         /// The number of scalars per LDG for B.
+                         kScalarsPerLdgB_,
+                         /// The number of scalars per STS for B.
+                         kScalarsPerLdgB_,
+                         /// The number of scalars per LDS for B.
+                         8,
+                         /// The number of scalars per LDG for C and STG for D.
+                         2,
+                         /// The number of scalars per STS for D.
+                         8,
+                         /// The number of scalars per LDS for D.
+                         2,
+                         /// The number of stages in shared memory.
+                         2,
+                         /// kResidueSeparate
+                         false,
+                         /// kResidueInPrologue
+                         true,
+                         /// kLaunchBounds
+                         false
+                         > {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -147,7 +153,6 @@ struct HgemmTileTraitsHelperA<MatrixLayout::kRowMajor, GemmConfig_>
       GemmConfig_::kScalarsPerLdgA>
       GlobalTileTraits;
 
-  /// The skew.
   static int const kSkewA = 128 / sizeof(half) / GlobalTileTraits::Threads::kW / 2;
 
   /// The traits class to build the iterator to store data to shared memory for A^T.
@@ -215,7 +220,6 @@ struct HgemmTileTraitsHelperB<MatrixLayout::kColumnMajor, GemmConfig_>
       GemmConfig_::kScalarsPerLdgB>
       GlobalTileTraits;
 
-  /// The skew for B.
   static int const kSkewB = 128 / sizeof(half) / GlobalTileTraits::Threads::kW / 2;
 
   /// The traits class to build the iterator to store data to shared memory for B^N.
@@ -266,8 +270,8 @@ template <
     typename OutputTile_,
     /// The functor to do the math in the epilogue.
     typename EpilogueFunctor_,
-    /// The number of accumulators per thread.
-    typename AccumulatorsPerThread_ = Shape<8, 8, 16>,
+    /// Tile size for thread-level GEMM (K-by-N-by-M)
+    typename ThreadGemmShape_,
     /// The number of halfs loaded in one LDG for A.
     int kScalarsPerLdgA_ = 2,
     /// The number of halfs loaded in one LDG for B.
@@ -276,8 +280,7 @@ template <
     typename Index_ = int>
 struct HgemmTraitsHelper {
   /// The HGEMM config.
-  typedef HgemmConfig<OutputTile_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_>
-      GemmConfig;
+  typedef HgemmConfig<OutputTile_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_> GemmConfig;
   /// The GEMM config for A.
   typedef HgemmTileTraitsHelperA<kLayoutA_, GemmConfig> GemmTileTraitsHelperA;
   /// The GEMM config for B.
@@ -296,7 +299,10 @@ struct HgemmTraitsHelper {
                             MemorySpace::kShared>
       SharedStoreIteratorA;
   /// The stream to load A from global memory to shared memory.
-  typedef GlobalLoadStream<GlobalLoadIteratorA, SharedStoreIteratorA, GlobalTransformerA>
+  typedef GlobalLoadStream<GemmOperand::kA,
+                              GlobalLoadIteratorA,
+                              SharedStoreIteratorA,
+                              GlobalTransformerA>
       GlobalLoadStreamA;
 
   /// The iterator to load B from global memory.
@@ -312,7 +318,10 @@ struct HgemmTraitsHelper {
                             MemorySpace::kShared>
       SharedStoreIteratorB;
   /// The stream to load B from global memory to shared memory.
-  typedef GlobalLoadStream<GlobalLoadIteratorB, SharedStoreIteratorB, GlobalTransformerB>
+  typedef GlobalLoadStream<GemmOperand::kB,
+                              GlobalLoadIteratorB,
+                              SharedStoreIteratorB,
+                              GlobalTransformerB>
       GlobalLoadStreamB;
 
   /// The iterator to load A from shared memory
@@ -354,8 +363,8 @@ template <
     typename OutputTile_ = Shape<8, 128, 128>,
     /// The functor to do the math in the epilogue.
     typename EpilogueFunctor_ = LinearScaling<half>,
-    /// The number of accumulators per thread.
-    typename AccumulatorsPerThread_ = Shape<8, 8, 16>,
+    /// Tile size for warp-level GEMM (K-by-N-by-M)
+    typename ThreadGemmShape_ = Shape<8, 8, 16>,
     /// The number of halfs loaded in one LDG for A.
     int kScalarsPerLdgA_ = 2,
     /// The number of halfs loaded in one LDG for B.
@@ -367,7 +376,7 @@ template <
                                          kLayoutB_,
                                          OutputTile_,
                                          EpilogueFunctor_,
-                                         AccumulatorsPerThread_,
+                                         ThreadGemmShape_,
                                          kScalarsPerLdgA_,
                                          kScalarsPerLdgB_,
                                          Index_> >
