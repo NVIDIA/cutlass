@@ -73,6 +73,8 @@ $(function() {
 </div><!-- top -->
 <div class="header">
   <div class="summary">
+<a href="#nested-classes">Classes</a> &#124;
+<a href="#namespaces">Namespaces</a> &#124;
 <a href="#func-members">Functions</a>  </div>
   <div class="headertitle">
 <div class="title">core_io.h File Reference</div>  </div>
@@ -83,51 +85,56 @@ $(function() {
 <a href="#details">More...</a></p>
 <div class="textblock"><code>#include &lt;iosfwd&gt;</code><br />
 <code>#include &lt;typeinfo&gt;</code><br />
-<code>#include &lt;<a class="el" href="coord_8h_source.html">cutlass/coord.h</a>&gt;</code><br />
+<code>#include &quot;<a class="el" href="coord_8h_source.html">cutlass/coord.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="vector_8h_source.html">cutlass/vector.h</a>&quot;</code><br />
 </div>
 <p><a href="core__io_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ScalarIO.html">cutlass::ScalarIO&lt; T &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Helper to enable formatted printing of CUTLASS scalar types to an ostream.  <a href="structcutlass_1_1ScalarIO.html#details">More...</a><br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="namespaces"></a>
+Namespaces</h2></td></tr>
+<tr class="memitem:namespacecutlass"><td class="memItemLeft" align="right" valign="top"> &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacecutlass.html">cutlass</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="func-members"></a>
 Functions</h2></td></tr>
-<tr class="memitem:a4a0d84a2a19a11549b87a2328d58690d"><td class="memTemplParams" colspan="2">template&lt;int Rank&gt; </td></tr>
-<tr class="memitem:a4a0d84a2a19a11549b87a2328d58690d"><td class="memTemplItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="core__io_8h.html#a4a0d84a2a19a11549b87a2328d58690d">operator&lt;&lt;</a> (std::ostream &amp;out, <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank &gt; const &amp;coord)</td></tr>
-<tr class="separator:a4a0d84a2a19a11549b87a2328d58690d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:afe231b125bbb1e9aa51307a8abdf9a60"><td class="memTemplParams" colspan="2">template&lt;int Rank&gt; </td></tr>
+<tr class="memitem:afe231b125bbb1e9aa51307a8abdf9a60"><td class="memTemplItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#afe231b125bbb1e9aa51307a8abdf9a60">cutlass::operator&lt;&lt;</a> (std::ostream &amp;out, Coord&lt; Rank &gt; const &amp;coord)</td></tr>
+<tr class="separator:afe231b125bbb1e9aa51307a8abdf9a60"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a30ddfc5e90b9103840cb30c9f9b96b49"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
+<tr class="memitem:a30ddfc5e90b9103840cb30c9f9b96b49"><td class="memTemplItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a30ddfc5e90b9103840cb30c9f9b96b49">cutlass::operator&lt;&lt;</a> (std::ostream &amp;out, ScalarIO&lt; T &gt; const &amp;scalar)</td></tr>
+<tr class="memdesc:a30ddfc5e90b9103840cb30c9f9b96b49"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default printing to ostream.  <a href="namespacecutlass.html#a30ddfc5e90b9103840cb30c9f9b96b49">More...</a><br /></td></tr>
+<tr class="separator:a30ddfc5e90b9103840cb30c9f9b96b49"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a36690681ed19dc7e398fcdafdbfe9975"><td class="memTemplParams" colspan="2">template&lt;&gt; </td></tr>
+<tr class="memitem:a36690681ed19dc7e398fcdafdbfe9975"><td class="memTemplItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a36690681ed19dc7e398fcdafdbfe9975">cutlass::operator&lt;&lt;</a> (std::ostream &amp;out, ScalarIO&lt; int8_t &gt; const &amp;scalar)</td></tr>
+<tr class="memdesc:a36690681ed19dc7e398fcdafdbfe9975"><td class="mdescLeft">&#160;</td><td class="mdescRight">Printing to ostream of int8_t as integer rather than character.  <a href="namespacecutlass.html#a36690681ed19dc7e398fcdafdbfe9975">More...</a><br /></td></tr>
+<tr class="separator:a36690681ed19dc7e398fcdafdbfe9975"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1a35d6b9b984a9c143957db733a93f51"><td class="memTemplParams" colspan="2">template&lt;&gt; </td></tr>
+<tr class="memitem:a1a35d6b9b984a9c143957db733a93f51"><td class="memTemplItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a1a35d6b9b984a9c143957db733a93f51">cutlass::operator&lt;&lt;</a> (std::ostream &amp;out, ScalarIO&lt; uint8_t &gt; const &amp;scalar)</td></tr>
+<tr class="memdesc:a1a35d6b9b984a9c143957db733a93f51"><td class="mdescLeft">&#160;</td><td class="mdescRight">Printing to ostream of uint8_t as integer rather than character.  <a href="namespacecutlass.html#a1a35d6b9b984a9c143957db733a93f51">More...</a><br /></td></tr>
+<tr class="separator:a1a35d6b9b984a9c143957db733a93f51"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2fd306c63f71877f9231a7e1265752cf"><td class="memTemplParams" colspan="2">template&lt;&gt; </td></tr>
+<tr class="memitem:a2fd306c63f71877f9231a7e1265752cf"><td class="memTemplItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a2fd306c63f71877f9231a7e1265752cf">cutlass::operator&lt;&lt;</a> (std::ostream &amp;out, ScalarIO&lt; <a class="el" href="unioncutlass_1_1Vector.html">cutlass::Vector</a>&lt; <a class="el" href="structcutlass_1_1bin1__t.html">cutlass::bin1_t</a>, 32 &gt; &gt; const &amp;scalar)</td></tr>
+<tr class="memdesc:a2fd306c63f71877f9231a7e1265752cf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Printing to ostream of vector of 1b elements.  <a href="namespacecutlass.html#a2fd306c63f71877f9231a7e1265752cf">More...</a><br /></td></tr>
+<tr class="separator:a2fd306c63f71877f9231a7e1265752cf"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aecf2cd62eee939946b7173a110ecf76e"><td class="memTemplParams" colspan="2">template&lt;&gt; </td></tr>
+<tr class="memitem:aecf2cd62eee939946b7173a110ecf76e"><td class="memTemplItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#aecf2cd62eee939946b7173a110ecf76e">cutlass::operator&lt;&lt;</a> (std::ostream &amp;out, ScalarIO&lt; <a class="el" href="unioncutlass_1_1Vector.html">cutlass::Vector</a>&lt; <a class="el" href="structcutlass_1_1int4__t.html">cutlass::int4_t</a>, 8 &gt; &gt; const &amp;scalar)</td></tr>
+<tr class="memdesc:aecf2cd62eee939946b7173a110ecf76e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Printing to ostream of vector of 4b signed integer elements.  <a href="namespacecutlass.html#aecf2cd62eee939946b7173a110ecf76e">More...</a><br /></td></tr>
+<tr class="separator:aecf2cd62eee939946b7173a110ecf76e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a3ceda5ed2d923222662a37e8f355c9b8"><td class="memTemplParams" colspan="2">template&lt;&gt; </td></tr>
+<tr class="memitem:a3ceda5ed2d923222662a37e8f355c9b8"><td class="memTemplItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a3ceda5ed2d923222662a37e8f355c9b8">cutlass::operator&lt;&lt;</a> (std::ostream &amp;out, ScalarIO&lt; <a class="el" href="unioncutlass_1_1Vector.html">cutlass::Vector</a>&lt; <a class="el" href="structcutlass_1_1uint4__t.html">cutlass::uint4_t</a>, 8 &gt; &gt; const &amp;scalar)</td></tr>
+<tr class="memdesc:a3ceda5ed2d923222662a37e8f355c9b8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Printing to ostream of vector of 4b unsigned integer elements.  <a href="namespacecutlass.html#a3ceda5ed2d923222662a37e8f355c9b8">More...</a><br /></td></tr>
+<tr class="separator:a3ceda5ed2d923222662a37e8f355c9b8"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
-<h2 class="groupheader">Function Documentation</h2>
-<a id="a4a0d84a2a19a11549b87a2328d58690d"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a4a0d84a2a19a11549b87a2328d58690d">&#9670;&nbsp;</a></span>operator&lt;&lt;()</h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;int Rank&gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">std::ostream&amp; operator&lt;&lt; </td>
-          <td>(</td>
-          <td class="paramtype">std::ostream &amp;&#160;</td>
-          <td class="paramname"><em>out</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank &gt; const &amp;&#160;</td>
-          <td class="paramname"><em>coord</em>&#160;</td>
-        </tr>
-        <tr>
-          <td></td>
-          <td>)</td>
-          <td></td><td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

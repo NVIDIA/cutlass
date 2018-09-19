@@ -75,12 +75,11 @@ $(function() {
 : <a class="el" href="structcutlass_1_1platform_1_1alignment__of_1_1pad.html#abc729cc51d5c90b1d7b0df3092d47cd4">cutlass::platform::alignment_of&lt; value_t &gt;::pad</a>
 </li>
 <li>valid()
-: <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a01571b2fc566793fd50a10fa82441951">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
-, <a class="el" href="structcutlass_1_1FragmentIterator.html#ab18f8ea676b45831f939715212167a99">cutlass::FragmentIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#ac4d2c293f9312b673ea29bf79b2882fd">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#a6594acc213fc8d4289c6c73631f60120">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#a468f8f503777e4a2b0089ee2bd6c471a">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase.html#af78a2bf3e7507dc7f50343a3c209f770">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+: <a class="el" href="structcutlass_1_1FragmentConstIterator.html#ac4d601998a84a3eac23e3b7a7c8a935b">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
+, <a class="el" href="structcutlass_1_1FragmentIterator.html#a8608dd815ed4906d8c82c41a10df23e2">cutlass::FragmentIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#a6ebdbdce88f040fffd3eb60622c6d7e0">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#ab224a0a6ab8ce7fc4e76b06fb7679fa0">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ac811886f3412861928040546282b6973">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
 </li>
 <li>value
 : <a class="el" href="structcutlass_1_1divide__assert.html#a20e8b8a803c6b5cfe636724760442e33ab924a64662c2eb917b1dd4ca31fdd2dc">cutlass::divide_assert&lt; Dividend, Divisor &gt;</a>
@@ -102,21 +101,29 @@ $(function() {
 , <a class="el" href="structcutlass_1_1platform_1_1alignment__of_3_01ulonglong4_01_4.html#a2568c1ab218cab6505bd20e3c2c420ffa54f6e1afec0ed30b18ab79fd6faf81b5">cutlass::platform::alignment_of&lt; ulonglong4 &gt;</a>
 , <a class="el" href="structcutlass_1_1platform_1_1integral__constant.html#a9bbaca83ae76941edb9b75b2741d3ad9">cutlass::platform::integral_constant&lt; value_t, V &gt;</a>
 , <a class="el" href="structcutlass_1_1platform_1_1is__base__of__helper.html#ac7e3ab73057682cc2eb6ed74c33e5eff">cutlass::platform::is_base_of_helper&lt; BaseT, DerivedT &gt;</a>
+, <a class="el" href="structcutlass_1_1ScalarIO.html#a76d2822161aef20f85c3798b855ca9dd">cutlass::ScalarIO&lt; T &gt;</a>
 , <a class="el" href="structcutlass_1_1sqrt__est.html#abe44577e3d8f34fc07bb9ecf89b25b11a2e73d046302be2504f50c08d788e9964">cutlass::sqrt_est&lt; N &gt;</a>
 </li>
 <li>value_type
-: <a class="el" href="structcutlass_1_1platform_1_1integral__constant.html#ab2ed0b3506818139f1f96639742e79fd">cutlass::platform::integral_constant&lt; value_t, V &gt;</a>
+: <a class="el" href="classcutlass_1_1platform_1_1complex.html#aa7c319b0c67f8ffeee3d1bb4b83ea0d6">cutlass::platform::complex&lt; T &gt;</a>
+, <a class="el" href="structcutlass_1_1platform_1_1integral__constant.html#ab2ed0b3506818139f1f96639742e79fd">cutlass::platform::integral_constant&lt; value_t, V &gt;</a>
 </li>
-<li>Vector
-: <a class="el" href="structcutlass_1_1VectorTraits.html#a4ac6196c07e0d3ba8a03cd72a05026a2">cutlass::VectorTraits&lt; T &gt;</a>
+<li>Vector()
+: <a class="el" href="unioncutlass_1_1Vector_3_01bin1__t_00_01kLanes___01_4.html#a1310cf2e92e260cf55cfda1cb2cb7280">cutlass::Vector&lt; bin1_t, kLanes_ &gt;</a>
+, <a class="el" href="unioncutlass_1_1Vector_3_01int4__t_00_01kLanes___01_4.html#a5feb070268f85bd73c3095eaf2d0e2bb">cutlass::Vector&lt; int4_t, kLanes_ &gt;</a>
+, <a class="el" href="unioncutlass_1_1Vector_3_01uint4__t_00_01kLanes___01_4.html#a48e193a0b636934ea553c6e60ffef563">cutlass::Vector&lt; uint4_t, kLanes_ &gt;</a>
+, <a class="el" href="structcutlass_1_1VectorTraits.html#a4ac6196c07e0d3ba8a03cd72a05026a2">cutlass::VectorTraits&lt; T &gt;</a>
 , <a class="el" href="structcutlass_1_1VectorTraits_3_01Vector_3_01T_00_01Lanes_01_4_01_4.html#a12b9084c48d2d829730f907485dfb5e5">cutlass::VectorTraits&lt; Vector&lt; T, Lanes &gt; &gt;</a>
 , <a class="el" href="structcutlass_1_1VectorTraits_3_01Vector_3_01T_00_01Lanes_01_4_01const_01_4.html#aff21f15596731eacf8c587811bb4ccdb">cutlass::VectorTraits&lt; Vector&lt; T, Lanes &gt; const &gt;</a>
+</li>
+<li>VectorizedTile
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a6cb3196f1fe3958d1656ba8b493c82ac">cutlass::gemm::GemmGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;</a>
 </li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:15 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

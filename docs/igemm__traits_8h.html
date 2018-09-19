@@ -82,34 +82,38 @@ $(function() {
 
 <p>Defies structural properties of mixed-precision integer GEMM. Multiplicands are assumed to be packed 8bit integers, accumulators are assumed to be 32b signed integers, and output formats vary.  
 <a href="#details">More...</a></p>
-<div class="textblock"><code>#include &lt;<a class="el" href="convert_8h_source.html">cutlass/convert.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm_8h_source.html">cutlass/gemm/gemm.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__epilogue_8h_source.html">cutlass/gemm/gemm_epilogue.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__epilogue__traits_8h_source.html">cutlass/gemm/gemm_epilogue_traits.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__global__tile_8h_source.html">cutlass/gemm/gemm_global_tile.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__shared__tile_8h_source.html">cutlass/gemm/gemm_shared_tile.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__traits_8h_source.html">cutlass/gemm/gemm_traits.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="igemm__epilogue_8h_source.html">cutlass/gemm/igemm_epilogue.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="igemm__global__tile_8h_source.html">cutlass/gemm/igemm_global_tile.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="igemm__multiply__add_8h_source.html">cutlass/gemm/igemm_multiply_add.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="igemm__swizzle_8h_source.html">cutlass/gemm/igemm_swizzle.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="reshape__tile_8h_source.html">cutlass/reshape_tile.h</a>&gt;</code><br />
+<div class="textblock"><code>#include &quot;<a class="el" href="convert_8h_source.html">cutlass/convert.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm_8h_source.html">cutlass/gemm/gemm.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__epilogue_8h_source.html">cutlass/gemm/gemm_epilogue.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__epilogue__traits_8h_source.html">cutlass/gemm/gemm_epilogue_traits.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__global__tile_8h_source.html">cutlass/gemm/gemm_global_tile.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__shared__tile_8h_source.html">cutlass/gemm/gemm_shared_tile.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__traits_8h_source.html">cutlass/gemm/gemm_traits.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="igemm__epilogue_8h_source.html">cutlass/gemm/igemm_epilogue.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="igemm__global__tile_8h_source.html">cutlass/gemm/igemm_global_tile.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="igemm__multiply__add_8h_source.html">cutlass/gemm/igemm_multiply_add.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="igemm__swizzle_8h_source.html">cutlass/gemm/igemm_swizzle.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="reshape__tile_8h_source.html">cutlass/reshape_tile.h</a>&quot;</code><br />
 </div>
 <p><a href="igemm__traits_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
 Classes</h2></td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmConfig.html">cutlass::gemm::IgemmConfig&lt; OutputTile_, ScalarD_, AccumulatorsPerThread_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmConfig.html">cutlass::gemm::IgemmConfig&lt; OutputTile_, ScalarD_, ThreadGemmShape_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmConfig_3_01OutputTile___00_01int8__t_00_01AccumulatorsPerThread___01_4.html">cutlass::gemm::IgemmConfig&lt; OutputTile_, int8_t, AccumulatorsPerThread_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmConfig_3_01OutputTile___00_01int8__t_00_01ThreadGemmShape___01_4.html">cutlass::gemm::IgemmConfig&lt; OutputTile_, int8_t, ThreadGemmShape_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTileTraitsHelperA.html">cutlass::gemm::IgemmTileTraitsHelperA&lt; kLayout_, GemmConfig_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTileTraitsHelperA.html">cutlass::gemm::IgemmTileTraitsHelperA&lt; kLayout_, GemmConfig_, Index_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTileTraitsHelperA_3_01MatrixLayout_1_1kColumnMajor_00_01GemmConfig___01_4.html">cutlass::gemm::IgemmTileTraitsHelperA&lt; MatrixLayout::kColumnMajor, GemmConfig_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTileTraitsHelperA_3_01MatrixLayout_1_1kColumnMajor_00_01GemmConfig___00_01Index___01_4.html">cutlass::gemm::IgemmTileTraitsHelperA&lt; MatrixLayout::kColumnMajor, GemmConfig_, Index_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTileTraitsHelperB.html">cutlass::gemm::IgemmTileTraitsHelperB&lt; kLayout_, GemmConfig_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___00_01Index___01_4.html">cutlass::gemm::IgemmTileTraitsHelperA&lt; MatrixLayout::kRowMajor, GemmConfig_, Index_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTileTraitsHelperB_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html">cutlass::gemm::IgemmTileTraitsHelperB&lt; MatrixLayout::kRowMajor, GemmConfig_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTileTraitsHelperB.html">cutlass::gemm::IgemmTileTraitsHelperB&lt; kLayout_, GemmConfig_, Index_ &gt;</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTileTraitsHelperB_3_01MatrixLayout_1_1kColumnMajor_00_01GemmConfig___00_01Index___01_4.html">cutlass::gemm::IgemmTileTraitsHelperB&lt; MatrixLayout::kColumnMajor, GemmConfig_, Index_ &gt;</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTileTraitsHelperB_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___00_01Index___01_4.html">cutlass::gemm::IgemmTileTraitsHelperB&lt; MatrixLayout::kRowMajor, GemmConfig_, Index_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTransformerA.html">cutlass::gemm::IgemmTransformerA&lt; kLayout_, Iterator_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -123,13 +127,13 @@ Classes</h2></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTransformerB_3_01MatrixLayout_1_1kRowMajor_00_01Iterator___01_4.html">cutlass::gemm::IgemmTransformerB&lt; MatrixLayout::kRowMajor, Iterator_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTraitsHelper.html">cutlass::gemm::IgemmTraitsHelper&lt; kLayoutA_, kLayoutB_, OutputTile_, ScalarD_, EpilogueFunctor_, AccumulatorsPerThread_, Index_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTraitsHelper.html">cutlass::gemm::IgemmTraitsHelper&lt; kLayoutA_, kLayoutB_, OutputTile_, ScalarD_, EpilogueFunctor_, ThreadGemmShape_, Index_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmEpilogueScalar.html">cutlass::gemm::IgemmEpilogueScalar&lt; ScalarD_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmEpilogueScalar_3_01int_01_4.html">cutlass::gemm::IgemmEpilogueScalar&lt; int &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTraits.html">cutlass::gemm::IgemmTraits&lt; kLayoutA_, kLayoutB_, OutputTile_, ScalarD_, EpilogueFunctor_, AccumulatorsPerThread_, Index_, Helper_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IgemmTraits.html">cutlass::gemm::IgemmTraits&lt; kLayoutA_, kLayoutB_, OutputTile_, ScalarD_, EpilogueFunctor_, ThreadGemmShape_, Index_, Helper_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="namespaces"></a>
@@ -142,7 +146,7 @@ Namespaces</h2></td></tr>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

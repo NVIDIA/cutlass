@@ -1,6 +1,5 @@
 var searchData=
 [
-  ['identity_5fblock_5fswizzle_2eh',['identity_block_swizzle.h',['../identity__block__swizzle_8h.html',1,'']]],
   ['igemm_5fepilogue_2eh',['igemm_epilogue.h',['../igemm__epilogue_8h.html',1,'']]],
   ['igemm_5fglobal_5ftile_2eh',['igemm_global_tile.h',['../igemm__global__tile_8h.html',1,'']]],
   ['igemm_5fmultiply_5fadd_2eh',['igemm_multiply_add.h',['../igemm__multiply__add_8h.html',1,'']]],

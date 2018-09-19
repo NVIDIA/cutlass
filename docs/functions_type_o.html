@@ -72,7 +72,7 @@ $(function() {
 
 <h3><a id="index_o"></a>- o -</h3><ul>
 <li>Offset_t
-: <a class="el" href="classcutlass_1_1TensorView.html#a215946fb080a5253815feb1f639c8f6f">cutlass::TensorView&lt; T &gt;</a>
+: <a class="el" href="classcutlass_1_1TensorView.html#a408d9a8026115bdaf70a37c86dc720b1">cutlass::TensorView&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
 </li>
 <li>OutputFragment
 : <a class="el" href="structcutlass_1_1Convert_3_01Fragment_3_01InputScalar___00_01kScalars___01_4_00_01Fragment_3_01Ofca5985d18bcb54bc1f49355f3cee121.html#a8ef69ab595489e142911e8e240fb405a">cutlass::Convert&lt; Fragment&lt; InputScalar_, kScalars_ &gt;, Fragment&lt; OutputScalar_, kScalars_ &gt; &gt;</a>
@@ -81,11 +81,12 @@ $(function() {
 , <a class="el" href="structcutlass_1_1gemm_1_1IgemmFloatToInt8Converter.html#a3d89bfc0d94cd695cbe4a61859e5e553">cutlass::gemm::IgemmFloatToInt8Converter&lt; kElements_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1IgemmInt8ToFloatConverter.html#a66ac385a1cd771b95f70ee36cd74e8f7">cutlass::gemm::IgemmInt8ToFloatConverter&lt; kElements_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1IgemmSwizzle.html#ac0a4e31e95f8e0c77ae087284bb02ff8">cutlass::gemm::IgemmSwizzle&lt; GlobalIterator_ &gt;</a>
+, <a class="el" href="structcutlass_1_1ZipConvert.html#ae0276951ad92b253de673c63ec88c584">cutlass::ZipConvert&lt; First_, Second_ &gt;</a>
 </li>
 <li>OutputTile
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a53450f4d7444d6a4c0d2353496c0a4fd">cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9dd9c3efc3dfd9b5c6acd12236697399">cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a92a135fac401d43a8d2f14982d90274b">cutlass::gemm::GemmEpilogue&lt; GemmEpilogueTraits_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#aed1bd9df5ff579ba3e36ae5ba781c075">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#af4d17d3774382fc0ba63d329bd12772c">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraitsHelper.html#ac30a062bed1a65e45961c4f301b69101">cutlass::gemm::GemmEpilogueTraitsHelper&lt; GemmConfig_, EpilogueFunctor_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#acb16feebdcad5bbebe9d4d3383c37899">cutlass::gemm::GemmSharedLoadTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreTileDTraits.html#ad52b81080731ee1f0d3c2c7eaba6f60d">cutlass::gemm::GemmSharedStoreTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kScalarsPerSts_, kSkew_ &gt;</a>
@@ -95,7 +96,7 @@ $(function() {
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:15 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

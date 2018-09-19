@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=9"/>
 <meta name="generator" content="Doxygen 1.8.14"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Cutlass: cutlass::Coord&lt; N_ &gt; Struct Template Reference</title>
+<title>Cutlass: cutlass::Coord&lt; Rank_, Index_ &gt; Struct Template Reference</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -73,12 +73,13 @@ $(function() {
 </div><!-- top -->
 <div class="header">
   <div class="summary">
+<a href="#pub-types">Public Types</a> &#124;
 <a href="#pub-methods">Public Member Functions</a> &#124;
 <a href="#pub-attribs">Public Attributes</a> &#124;
 <a href="#pub-static-attribs">Static Public Attributes</a> &#124;
 <a href="structcutlass_1_1Coord-members.html">List of all members</a>  </div>
   <div class="headertitle">
-<div class="title">cutlass::Coord&lt; N_ &gt; Struct Template Reference</div>  </div>
+<div class="title">cutlass::Coord&lt; Rank_, Index_ &gt; Struct Template Reference</div>  </div>
 </div><!--header-->
 <div class="contents">
 
@@ -87,106 +88,151 @@ $(function() {
 
 <p><code>#include &lt;<a class="el" href="coord_8h_source.html">coord.h</a>&gt;</code></p>
 <table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-types"></a>
+Public Types</h2></td></tr>
+<tr class="memitem:a7c73966e94b4f45854f16e33683bc02c"><td class="memItemLeft" align="right" valign="top">typedef Index_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a></td></tr>
+<tr class="memdesc:a7c73966e94b4f45854f16e33683bc02c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Index type used to store elements.  <a href="#a7c73966e94b4f45854f16e33683bc02c">More...</a><br /></td></tr>
+<tr class="separator:a7c73966e94b4f45854f16e33683bc02c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:a9cbfff91f0b0d0a149534c97e3d6e69b"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a9cbfff91f0b0d0a149534c97e3d6e69b">Coord</a> (int value=0)</td></tr>
-<tr class="memdesc:a9cbfff91f0b0d0a149534c97e3d6e69b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default ctor initializes uniformly.  <a href="#a9cbfff91f0b0d0a149534c97e3d6e69b">More...</a><br /></td></tr>
-<tr class="separator:a9cbfff91f0b0d0a149534c97e3d6e69b"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a53a3d88a884f6cb7fda8aedfe2cec2c5"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a53a3d88a884f6cb7fda8aedfe2cec2c5">Coord</a> (int _idx[])</td></tr>
-<tr class="memdesc:a53a3d88a884f6cb7fda8aedfe2cec2c5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs from an array of integers.  <a href="#a53a3d88a884f6cb7fda8aedfe2cec2c5">More...</a><br /></td></tr>
-<tr class="separator:a53a3d88a884f6cb7fda8aedfe2cec2c5"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a3dfc4ce4191097b6c3268696f2a45ef5"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a3dfc4ce4191097b6c3268696f2a45ef5">operator+</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b) const</td></tr>
-<tr class="memdesc:a3dfc4ce4191097b6c3268696f2a45ef5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Element-wise addition.  <a href="#a3dfc4ce4191097b6c3268696f2a45ef5">More...</a><br /></td></tr>
-<tr class="separator:a3dfc4ce4191097b6c3268696f2a45ef5"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:acc510511ffb52bed7f6a52f14b99750d"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#acc510511ffb52bed7f6a52f14b99750d">operator-</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b) const</td></tr>
-<tr class="memdesc:acc510511ffb52bed7f6a52f14b99750d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Element-wise subtraction.  <a href="#acc510511ffb52bed7f6a52f14b99750d">More...</a><br /></td></tr>
-<tr class="separator:acc510511ffb52bed7f6a52f14b99750d"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8e4f7df55a75d040cf50cf9984c04c8a"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a8e4f7df55a75d040cf50cf9984c04c8a">operator*</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b) const</td></tr>
-<tr class="memdesc:a8e4f7df55a75d040cf50cf9984c04c8a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Element-wise multiplication.  <a href="#a8e4f7df55a75d040cf50cf9984c04c8a">More...</a><br /></td></tr>
-<tr class="separator:a8e4f7df55a75d040cf50cf9984c04c8a"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a87f485be079fa68bcf576da4d56f0ece"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a87f485be079fa68bcf576da4d56f0ece">operator/</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b) const</td></tr>
-<tr class="memdesc:a87f485be079fa68bcf576da4d56f0ece"><td class="mdescLeft">&#160;</td><td class="mdescRight">Element-wise division.  <a href="#a87f485be079fa68bcf576da4d56f0ece">More...</a><br /></td></tr>
-<tr class="separator:a87f485be079fa68bcf576da4d56f0ece"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aeb209486943fa9d42911325b16e49e09"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#aeb209486943fa9d42911325b16e49e09">operator+=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b)</td></tr>
-<tr class="memdesc:aeb209486943fa9d42911325b16e49e09"><td class="mdescLeft">&#160;</td><td class="mdescRight">In-place addition.  <a href="#aeb209486943fa9d42911325b16e49e09">More...</a><br /></td></tr>
-<tr class="separator:aeb209486943fa9d42911325b16e49e09"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac1795ec2a5890d8a39840567a4bea88e"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ac1795ec2a5890d8a39840567a4bea88e">operator-=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b)</td></tr>
-<tr class="memdesc:ac1795ec2a5890d8a39840567a4bea88e"><td class="mdescLeft">&#160;</td><td class="mdescRight">In-place subtraction.  <a href="#ac1795ec2a5890d8a39840567a4bea88e">More...</a><br /></td></tr>
-<tr class="separator:ac1795ec2a5890d8a39840567a4bea88e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a282b6cc9ac8b2f72720c252791155aad"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a282b6cc9ac8b2f72720c252791155aad">operator*=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b)</td></tr>
-<tr class="memdesc:a282b6cc9ac8b2f72720c252791155aad"><td class="mdescLeft">&#160;</td><td class="mdescRight">In-place multiplication.  <a href="#a282b6cc9ac8b2f72720c252791155aad">More...</a><br /></td></tr>
-<tr class="separator:a282b6cc9ac8b2f72720c252791155aad"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:abe91e59962ef0d73aec9c14824f64ecc"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#abe91e59962ef0d73aec9c14824f64ecc">operator/=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b)</td></tr>
-<tr class="memdesc:abe91e59962ef0d73aec9c14824f64ecc"><td class="mdescLeft">&#160;</td><td class="mdescRight">In-place division.  <a href="#abe91e59962ef0d73aec9c14824f64ecc">More...</a><br /></td></tr>
-<tr class="separator:abe91e59962ef0d73aec9c14824f64ecc"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ab7fc89de3ccd7096ab275fb5dd40104c"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ab7fc89de3ccd7096ab275fb5dd40104c">operator[]</a> (int dim)</td></tr>
-<tr class="memdesc:ab7fc89de3ccd7096ab275fb5dd40104c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Member access operator.  <a href="#ab7fc89de3ccd7096ab275fb5dd40104c">More...</a><br /></td></tr>
-<tr class="separator:ab7fc89de3ccd7096ab275fb5dd40104c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a6eeab0a1686ee25389e1bd017c5f03ae"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int const  &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a6eeab0a1686ee25389e1bd017c5f03ae">operator[]</a> (int dim) const</td></tr>
-<tr class="memdesc:a6eeab0a1686ee25389e1bd017c5f03ae"><td class="mdescLeft">&#160;</td><td class="mdescRight">Member access operator.  <a href="#a6eeab0a1686ee25389e1bd017c5f03ae">More...</a><br /></td></tr>
-<tr class="separator:a6eeab0a1686ee25389e1bd017c5f03ae"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad4b3704d14057c043f972827671115cf"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
-<tr class="memitem:ad4b3704d14057c043f972827671115cf"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> T&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ad4b3704d14057c043f972827671115cf">dot</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b, T sum) const</td></tr>
-<tr class="memdesc:ad4b3704d14057c043f972827671115cf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Computes the dot product of two <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> instances.  <a href="#ad4b3704d14057c043f972827671115cf">More...</a><br /></td></tr>
-<tr class="separator:ad4b3704d14057c043f972827671115cf"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ae023c0c664c22a978e9b9ce5e063aae4"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
-<tr class="memitem:ae023c0c664c22a978e9b9ce5e063aae4"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> T&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ae023c0c664c22a978e9b9ce5e063aae4">dot</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b) const</td></tr>
-<tr class="memdesc:ae023c0c664c22a978e9b9ce5e063aae4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Computes the dot product of two <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> instances.  <a href="#ae023c0c664c22a978e9b9ce5e063aae4">More...</a><br /></td></tr>
-<tr class="separator:ae023c0c664c22a978e9b9ce5e063aae4"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad10b59430927a354fcd874d2d32f1bd8"><td class="memTemplParams" colspan="2">template&lt;int Dim&gt; </td></tr>
-<tr class="memitem:ad10b59430927a354fcd874d2d32f1bd8"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ad10b59430927a354fcd874d2d32f1bd8">at</a> ()</td></tr>
-<tr class="memdesc:ad10b59430927a354fcd874d2d32f1bd8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the index of a given <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> element.  <a href="#ad10b59430927a354fcd874d2d32f1bd8">More...</a><br /></td></tr>
-<tr class="separator:ad10b59430927a354fcd874d2d32f1bd8"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ab511a16210d1b94449f5bc6476f6a266"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ab511a16210d1b94449f5bc6476f6a266">at</a> (int dim)</td></tr>
-<tr class="memdesc:ab511a16210d1b94449f5bc6476f6a266"><td class="mdescLeft">&#160;</td><td class="mdescRight">Access via index; may limit unrolling potential.  <a href="#ab511a16210d1b94449f5bc6476f6a266">More...</a><br /></td></tr>
-<tr class="separator:ab511a16210d1b94449f5bc6476f6a266"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af9cc7ab2088544d1240ac51c4c6e685d"><td class="memTemplParams" colspan="2">template&lt;int Dim&gt; </td></tr>
-<tr class="memitem:af9cc7ab2088544d1240ac51c4c6e685d"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int const  &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#af9cc7ab2088544d1240ac51c4c6e685d">at</a> () const</td></tr>
-<tr class="memdesc:af9cc7ab2088544d1240ac51c4c6e685d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the index of a given <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> element.  <a href="#af9cc7ab2088544d1240ac51c4c6e685d">More...</a><br /></td></tr>
-<tr class="separator:af9cc7ab2088544d1240ac51c4c6e685d"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aed4f4d1c7c0749fe72736d7a1213b6e9"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int const  &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#aed4f4d1c7c0749fe72736d7a1213b6e9">at</a> (int dim) const</td></tr>
-<tr class="memdesc:aed4f4d1c7c0749fe72736d7a1213b6e9"><td class="mdescLeft">&#160;</td><td class="mdescRight">Access via index; may limit unrolling potential.  <a href="#aed4f4d1c7c0749fe72736d7a1213b6e9">More...</a><br /></td></tr>
-<tr class="separator:aed4f4d1c7c0749fe72736d7a1213b6e9"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:acfa94aabd0c9a71ee994ca479d5f515f"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#acfa94aabd0c9a71ee994ca479d5f515f">operator==</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a> &gt; const &amp;b) const</td></tr>
-<tr class="memdesc:acfa94aabd0c9a71ee994ca479d5f515f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Determines if two Coord&lt;&gt; objects are equal.  <a href="#acfa94aabd0c9a71ee994ca479d5f515f">More...</a><br /></td></tr>
-<tr class="separator:acfa94aabd0c9a71ee994ca479d5f515f"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a7fb46873e8f3cf38212703d35bd36995"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a7fb46873e8f3cf38212703d35bd36995">operator!=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a> &gt; const &amp;b) const</td></tr>
-<tr class="memdesc:a7fb46873e8f3cf38212703d35bd36995"><td class="mdescLeft">&#160;</td><td class="mdescRight">Not equal.  <a href="#a7fb46873e8f3cf38212703d35bd36995">More...</a><br /></td></tr>
-<tr class="separator:a7fb46873e8f3cf38212703d35bd36995"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a482ada6da62f427987c22098796fcf7e"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a482ada6da62f427987c22098796fcf7e">clamp</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a> &gt; const &amp;max, <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a> &gt; const &amp;min=<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a> &gt;())</td></tr>
-<tr class="memdesc:a482ada6da62f427987c22098796fcf7e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Clamps a coordinate to a range specified by maximum and minimum values.  <a href="#a482ada6da62f427987c22098796fcf7e">More...</a><br /></td></tr>
-<tr class="separator:a482ada6da62f427987c22098796fcf7e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a40429a9154f7a142ad7e9eb35282d196"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a40429a9154f7a142ad7e9eb35282d196">count</a> () const</td></tr>
-<tr class="memdesc:a40429a9154f7a142ad7e9eb35282d196"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns the product of all elements.  <a href="#a40429a9154f7a142ad7e9eb35282d196">More...</a><br /></td></tr>
-<tr class="separator:a40429a9154f7a142ad7e9eb35282d196"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a422aa7e2d2bf5dd3a60f65427bc0d7c0"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a422aa7e2d2bf5dd3a60f65427bc0d7c0">Coord</a> (<a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> value=0)</td></tr>
+<tr class="memdesc:a422aa7e2d2bf5dd3a60f65427bc0d7c0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default ctor initializes uniformly.  <a href="#a422aa7e2d2bf5dd3a60f65427bc0d7c0">More...</a><br /></td></tr>
+<tr class="separator:a422aa7e2d2bf5dd3a60f65427bc0d7c0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a63ad1225ab2c51a68add731e994526b4"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a63ad1225ab2c51a68add731e994526b4">Coord</a> (<a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> _idx[])</td></tr>
+<tr class="memdesc:a63ad1225ab2c51a68add731e994526b4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs from an array of integers.  <a href="#a63ad1225ab2c51a68add731e994526b4">More...</a><br /></td></tr>
+<tr class="separator:a63ad1225ab2c51a68add731e994526b4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6110e4cfd090561696a81a8a4068a573"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a6110e4cfd090561696a81a8a4068a573">Coord</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;coord)</td></tr>
+<tr class="memdesc:a6110e4cfd090561696a81a8a4068a573"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs from an array of integers.  <a href="#a6110e4cfd090561696a81a8a4068a573">More...</a><br /></td></tr>
+<tr class="separator:a6110e4cfd090561696a81a8a4068a573"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac8f7a9b0835efc34fd28894b2b45342c"><td class="memTemplParams" colspan="2">template&lt;int Slice&gt; </td></tr>
+<tr class="memitem:ac8f7a9b0835efc34fd28894b2b45342c"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Slice &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ac8f7a9b0835efc34fd28894b2b45342c">slice</a> (int start=0, <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> identity=0) const</td></tr>
+<tr class="separator:ac8f7a9b0835efc34fd28894b2b45342c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1781b3c5a2d653b0c1718ec3154ae48f"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a1781b3c5a2d653b0c1718ec3154ae48f">operator bool</a> () const</td></tr>
+<tr class="memdesc:a1781b3c5a2d653b0c1718ec3154ae48f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns true if <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> is non-zero.  <a href="#a1781b3c5a2d653b0c1718ec3154ae48f">More...</a><br /></td></tr>
+<tr class="separator:a1781b3c5a2d653b0c1718ec3154ae48f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a232095edae2f74c01a3c8abf68166e02"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a232095edae2f74c01a3c8abf68166e02">operator!</a> () const</td></tr>
+<tr class="memdesc:a232095edae2f74c01a3c8abf68166e02"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns true if <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> is uniformly zero.  <a href="#a232095edae2f74c01a3c8abf68166e02">More...</a><br /></td></tr>
+<tr class="separator:a232095edae2f74c01a3c8abf68166e02"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab37672637771a70910df9aa1a0cffddc"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ab37672637771a70910df9aa1a0cffddc">operator+</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b) const</td></tr>
+<tr class="memdesc:ab37672637771a70910df9aa1a0cffddc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Element-wise addition.  <a href="#ab37672637771a70910df9aa1a0cffddc">More...</a><br /></td></tr>
+<tr class="separator:ab37672637771a70910df9aa1a0cffddc"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6b876f61a85a4a4ef3763b6742bfaa6b"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a6b876f61a85a4a4ef3763b6742bfaa6b">operator-</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b) const</td></tr>
+<tr class="memdesc:a6b876f61a85a4a4ef3763b6742bfaa6b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Element-wise subtraction.  <a href="#a6b876f61a85a4a4ef3763b6742bfaa6b">More...</a><br /></td></tr>
+<tr class="separator:a6b876f61a85a4a4ef3763b6742bfaa6b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2e94c093f82908ff3dba4f23b5d10033"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a2e94c093f82908ff3dba4f23b5d10033">operator*</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b) const</td></tr>
+<tr class="memdesc:a2e94c093f82908ff3dba4f23b5d10033"><td class="mdescLeft">&#160;</td><td class="mdescRight">Element-wise multiplication.  <a href="#a2e94c093f82908ff3dba4f23b5d10033">More...</a><br /></td></tr>
+<tr class="separator:a2e94c093f82908ff3dba4f23b5d10033"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9bb07631f09efc80219413ac8309f568"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a9bb07631f09efc80219413ac8309f568">operator/</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b) const</td></tr>
+<tr class="memdesc:a9bb07631f09efc80219413ac8309f568"><td class="mdescLeft">&#160;</td><td class="mdescRight">Element-wise division.  <a href="#a9bb07631f09efc80219413ac8309f568">More...</a><br /></td></tr>
+<tr class="separator:a9bb07631f09efc80219413ac8309f568"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae4f2cb12b84411118cb93e7c4cb88b20"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ae4f2cb12b84411118cb93e7c4cb88b20">operator+=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b)</td></tr>
+<tr class="memdesc:ae4f2cb12b84411118cb93e7c4cb88b20"><td class="mdescLeft">&#160;</td><td class="mdescRight">In-place addition.  <a href="#ae4f2cb12b84411118cb93e7c4cb88b20">More...</a><br /></td></tr>
+<tr class="separator:ae4f2cb12b84411118cb93e7c4cb88b20"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a304334cbcad636d7b058fdc6310f0e6b"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a304334cbcad636d7b058fdc6310f0e6b">operator-=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b)</td></tr>
+<tr class="memdesc:a304334cbcad636d7b058fdc6310f0e6b"><td class="mdescLeft">&#160;</td><td class="mdescRight">In-place subtraction.  <a href="#a304334cbcad636d7b058fdc6310f0e6b">More...</a><br /></td></tr>
+<tr class="separator:a304334cbcad636d7b058fdc6310f0e6b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad4303b578b72b5cb2a0198375290e168"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ad4303b578b72b5cb2a0198375290e168">operator*=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b)</td></tr>
+<tr class="memdesc:ad4303b578b72b5cb2a0198375290e168"><td class="mdescLeft">&#160;</td><td class="mdescRight">In-place multiplication.  <a href="#ad4303b578b72b5cb2a0198375290e168">More...</a><br /></td></tr>
+<tr class="separator:ad4303b578b72b5cb2a0198375290e168"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac87199c4c9a4e20aac4eb6e3b9a68f28"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ac87199c4c9a4e20aac4eb6e3b9a68f28">operator/=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b)</td></tr>
+<tr class="memdesc:ac87199c4c9a4e20aac4eb6e3b9a68f28"><td class="mdescLeft">&#160;</td><td class="mdescRight">In-place division.  <a href="#ac87199c4c9a4e20aac4eb6e3b9a68f28">More...</a><br /></td></tr>
+<tr class="separator:ac87199c4c9a4e20aac4eb6e3b9a68f28"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6e0967541a1d74edeb93897ea6069e24"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a6e0967541a1d74edeb93897ea6069e24">operator[]</a> (int dim)</td></tr>
+<tr class="memdesc:a6e0967541a1d74edeb93897ea6069e24"><td class="mdescLeft">&#160;</td><td class="mdescRight">Member access operator.  <a href="#a6e0967541a1d74edeb93897ea6069e24">More...</a><br /></td></tr>
+<tr class="separator:a6e0967541a1d74edeb93897ea6069e24"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a882e7ac07bbd6983659ef2e574b46454"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> const  &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a882e7ac07bbd6983659ef2e574b46454">operator[]</a> (int dim) const</td></tr>
+<tr class="memdesc:a882e7ac07bbd6983659ef2e574b46454"><td class="mdescLeft">&#160;</td><td class="mdescRight">Member access operator.  <a href="#a882e7ac07bbd6983659ef2e574b46454">More...</a><br /></td></tr>
+<tr class="separator:a882e7ac07bbd6983659ef2e574b46454"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac8ec94703830ab2c62ee055533ea2184"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
+<tr class="memitem:ac8ec94703830ab2c62ee055533ea2184"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> T&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ac8ec94703830ab2c62ee055533ea2184">dot</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b, T sum) const</td></tr>
+<tr class="memdesc:ac8ec94703830ab2c62ee055533ea2184"><td class="mdescLeft">&#160;</td><td class="mdescRight">Computes the dot product of two <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> instances.  <a href="#ac8ec94703830ab2c62ee055533ea2184">More...</a><br /></td></tr>
+<tr class="separator:ac8ec94703830ab2c62ee055533ea2184"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0acc37908acb6b879c37f54ff7ffc93d"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
+<tr class="memitem:a0acc37908acb6b879c37f54ff7ffc93d"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> T&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a0acc37908acb6b879c37f54ff7ffc93d">dot</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a> const &amp;b) const</td></tr>
+<tr class="memdesc:a0acc37908acb6b879c37f54ff7ffc93d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Computes the dot product of two <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> instances.  <a href="#a0acc37908acb6b879c37f54ff7ffc93d">More...</a><br /></td></tr>
+<tr class="separator:a0acc37908acb6b879c37f54ff7ffc93d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9eff24a3b74b68d11839b92324613c93"><td class="memTemplParams" colspan="2">template&lt;int Dim&gt; </td></tr>
+<tr class="memitem:a9eff24a3b74b68d11839b92324613c93"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a9eff24a3b74b68d11839b92324613c93">at</a> ()</td></tr>
+<tr class="memdesc:a9eff24a3b74b68d11839b92324613c93"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the index of a given <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> element.  <a href="#a9eff24a3b74b68d11839b92324613c93">More...</a><br /></td></tr>
+<tr class="separator:a9eff24a3b74b68d11839b92324613c93"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa253bf69fc819876a7c7770305f1a694"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#aa253bf69fc819876a7c7770305f1a694">at</a> (int dim)</td></tr>
+<tr class="memdesc:aa253bf69fc819876a7c7770305f1a694"><td class="mdescLeft">&#160;</td><td class="mdescRight">Access via index; may limit unrolling potential.  <a href="#aa253bf69fc819876a7c7770305f1a694">More...</a><br /></td></tr>
+<tr class="separator:aa253bf69fc819876a7c7770305f1a694"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a177adcc2d0fb5e72ebcb523edd24e6fe"><td class="memTemplParams" colspan="2">template&lt;int Dim&gt; </td></tr>
+<tr class="memitem:a177adcc2d0fb5e72ebcb523edd24e6fe"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> const  &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a177adcc2d0fb5e72ebcb523edd24e6fe">at</a> () const</td></tr>
+<tr class="memdesc:a177adcc2d0fb5e72ebcb523edd24e6fe"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the index of a given <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> element.  <a href="#a177adcc2d0fb5e72ebcb523edd24e6fe">More...</a><br /></td></tr>
+<tr class="separator:a177adcc2d0fb5e72ebcb523edd24e6fe"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9b47b1521820c898b03868627c3f8e46"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> const  &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a9b47b1521820c898b03868627c3f8e46">at</a> (int dim) const</td></tr>
+<tr class="memdesc:a9b47b1521820c898b03868627c3f8e46"><td class="mdescLeft">&#160;</td><td class="mdescRight">Access via index; may limit unrolling potential.  <a href="#a9b47b1521820c898b03868627c3f8e46">More...</a><br /></td></tr>
+<tr class="separator:a9b47b1521820c898b03868627c3f8e46"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7f919aeb2a895bc040599971400dec8d"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a7f919aeb2a895bc040599971400dec8d">operator==</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;b) const</td></tr>
+<tr class="memdesc:a7f919aeb2a895bc040599971400dec8d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Determines if two Coord&lt;&gt; objects are equal.  <a href="#a7f919aeb2a895bc040599971400dec8d">More...</a><br /></td></tr>
+<tr class="separator:a7f919aeb2a895bc040599971400dec8d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a353d847675e5ba2402c407dcd4ae4de3"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a353d847675e5ba2402c407dcd4ae4de3">operator!=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;b) const</td></tr>
+<tr class="memdesc:a353d847675e5ba2402c407dcd4ae4de3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Not equal.  <a href="#a353d847675e5ba2402c407dcd4ae4de3">More...</a><br /></td></tr>
+<tr class="separator:a353d847675e5ba2402c407dcd4ae4de3"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a404a3b4e00f59cac71d41fb1bbba38ba"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a404a3b4e00f59cac71d41fb1bbba38ba">clamp</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;max, <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;min=<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt;())</td></tr>
+<tr class="memdesc:a404a3b4e00f59cac71d41fb1bbba38ba"><td class="mdescLeft">&#160;</td><td class="mdescRight">Clamps a coordinate to a range specified by maximum and minimum values.  <a href="#a404a3b4e00f59cac71d41fb1bbba38ba">More...</a><br /></td></tr>
+<tr class="separator:a404a3b4e00f59cac71d41fb1bbba38ba"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac0ac5f2aa2cbea3887d126645025e017"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#ac0ac5f2aa2cbea3887d126645025e017">count</a> () const</td></tr>
+<tr class="memdesc:ac0ac5f2aa2cbea3887d126645025e017"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns the product of all elements.  <a href="#ac0ac5f2aa2cbea3887d126645025e017">More...</a><br /></td></tr>
+<tr class="separator:ac0ac5f2aa2cbea3887d126645025e017"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a148851df63840ac63e23b2f170bd1308"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a148851df63840ac63e23b2f170bd1308">operator&lt;</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;b) const</td></tr>
+<tr class="memdesc:a148851df63840ac63e23b2f170bd1308"><td class="mdescLeft">&#160;</td><td class="mdescRight">Less than operator.  <a href="#a148851df63840ac63e23b2f170bd1308">More...</a><br /></td></tr>
+<tr class="separator:a148851df63840ac63e23b2f170bd1308"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9dc9f063be329d475f040afd449d304c"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a9dc9f063be329d475f040afd449d304c">operator&lt;=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;b) const</td></tr>
+<tr class="memdesc:a9dc9f063be329d475f040afd449d304c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Less than or equals operator.  <a href="#a9dc9f063be329d475f040afd449d304c">More...</a><br /></td></tr>
+<tr class="separator:a9dc9f063be329d475f040afd449d304c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
-<tr class="memitem:a50de265129f1db7bdf2f0aefbc6a46bc"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a50de265129f1db7bdf2f0aefbc6a46bc">idx</a> [<a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a>]</td></tr>
-<tr class="memdesc:a50de265129f1db7bdf2f0aefbc6a46bc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Indices.  <a href="#a50de265129f1db7bdf2f0aefbc6a46bc">More...</a><br /></td></tr>
-<tr class="separator:a50de265129f1db7bdf2f0aefbc6a46bc"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a872e1e0d9cc255fa438c04daaf10ad68"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a872e1e0d9cc255fa438c04daaf10ad68">idx</a> [<a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a>]</td></tr>
+<tr class="memdesc:a872e1e0d9cc255fa438c04daaf10ad68"><td class="mdescLeft">&#160;</td><td class="mdescRight">Indices.  <a href="#a872e1e0d9cc255fa438c04daaf10ad68">More...</a><br /></td></tr>
+<tr class="separator:a872e1e0d9cc255fa438c04daaf10ad68"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-attribs"></a>
 Static Public Attributes</h2></td></tr>
-<tr class="memitem:a3f2f5a9d7ef2063456c4d9f7e57e71ca"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a> = N_</td></tr>
-<tr class="separator:a3f2f5a9d7ef2063456c4d9f7e57e71ca"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a23e1b9a7f5fa8fd4afeadfb85de7c5c3"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> = Rank_</td></tr>
+<tr class="memdesc:a23e1b9a7f5fa8fd4afeadfb85de7c5c3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Number of elements in <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a>.  <a href="#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">More...</a><br /></td></tr>
+<tr class="separator:a23e1b9a7f5fa8fd4afeadfb85de7c5c3"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:acfd416eafec51e47b42b8b713ba76030"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html#acfd416eafec51e47b42b8b713ba76030">N</a> = Rank_</td></tr>
+<tr class="memdesc:acfd416eafec51e47b42b8b713ba76030"><td class="mdescLeft">&#160;</td><td class="mdescRight">Number of elements in <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a>, aliased for compatibility.  <a href="#acfd416eafec51e47b42b8b713ba76030">More...</a><br /></td></tr>
+<tr class="separator:acfd416eafec51e47b42b8b713ba76030"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
-<h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
-<a id="a9cbfff91f0b0d0a149534c97e3d6e69b"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a9cbfff91f0b0d0a149534c97e3d6e69b">&#9670;&nbsp;</a></span>Coord() <span class="overload">[1/2]</span></h2>
+<h2 class="groupheader">Member Typedef Documentation</h2>
+<a id="a7c73966e94b4f45854f16e33683bc02c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7c73966e94b4f45854f16e33683bc02c">&#9670;&nbsp;</a></span>Index</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef Index_ <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::<a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="a422aa7e2d2bf5dd3a60f65427bc0d7c0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a422aa7e2d2bf5dd3a60f65427bc0d7c0">&#9670;&nbsp;</a></span>Coord() <span class="overload">[1/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::<a class="el" href="structcutlass_1_1Coord.html">Coord</a> </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::<a class="el" href="structcutlass_1_1Coord.html">Coord</a> </td>
           <td>(</td>
-          <td class="paramtype">int&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a>&#160;</td>
           <td class="paramname"><em>value</em> = <code>0</code></td><td>)</td>
           <td></td>
         </tr>
@@ -200,21 +246,21 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="a53a3d88a884f6cb7fda8aedfe2cec2c5"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a53a3d88a884f6cb7fda8aedfe2cec2c5">&#9670;&nbsp;</a></span>Coord() <span class="overload">[2/2]</span></h2>
+<a id="a63ad1225ab2c51a68add731e994526b4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a63ad1225ab2c51a68add731e994526b4">&#9670;&nbsp;</a></span>Coord() <span class="overload">[2/3]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::<a class="el" href="structcutlass_1_1Coord.html">Coord</a> </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::<a class="el" href="structcutlass_1_1Coord.html">Coord</a> </td>
           <td>(</td>
-          <td class="paramtype">int&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a>&#160;</td>
           <td class="paramname"><em>_idx</em>[]</td><td>)</td>
           <td></td>
         </tr>
@@ -228,14 +274,42 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
+<a id="a6110e4cfd090561696a81a8a4068a573"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6110e4cfd090561696a81a8a4068a573">&#9670;&nbsp;</a></span>Coord() <span class="overload">[3/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;int Rank_, typename Index_ = int&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::<a class="el" href="structcutlass_1_1Coord.html">Coord</a> </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>coord</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="ad10b59430927a354fcd874d2d32f1bd8"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ad10b59430927a354fcd874d2d32f1bd8">&#9670;&nbsp;</a></span>at() <span class="overload">[1/4]</span></h2>
+<a id="a9eff24a3b74b68d11839b92324613c93"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9eff24a3b74b68d11839b92324613c93">&#9670;&nbsp;</a></span>at() <span class="overload">[1/4]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <div class="memtemplate">
 template&lt;int Dim&gt; </div>
 <table class="mlabels">
@@ -243,7 +317,7 @@ template&lt;int Dim&gt; </div>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::at </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::at </td>
           <td>(</td>
           <td class="paramname"></td><td>)</td>
           <td></td>
@@ -258,19 +332,19 @@ template&lt;int Dim&gt; </div>
 
 </div>
 </div>
-<a id="ab511a16210d1b94449f5bc6476f6a266"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab511a16210d1b94449f5bc6476f6a266">&#9670;&nbsp;</a></span>at() <span class="overload">[2/4]</span></h2>
+<a id="aa253bf69fc819876a7c7770305f1a694"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa253bf69fc819876a7c7770305f1a694">&#9670;&nbsp;</a></span>at() <span class="overload">[2/4]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::at </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::at </td>
           <td>(</td>
           <td class="paramtype">int&#160;</td>
           <td class="paramname"><em>dim</em></td><td>)</td>
@@ -286,13 +360,13 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="af9cc7ab2088544d1240ac51c4c6e685d"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#af9cc7ab2088544d1240ac51c4c6e685d">&#9670;&nbsp;</a></span>at() <span class="overload">[3/4]</span></h2>
+<a id="a177adcc2d0fb5e72ebcb523edd24e6fe"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a177adcc2d0fb5e72ebcb523edd24e6fe">&#9670;&nbsp;</a></span>at() <span class="overload">[3/4]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <div class="memtemplate">
 template&lt;int Dim&gt; </div>
 <table class="mlabels">
@@ -300,7 +374,7 @@ template&lt;int Dim&gt; </div>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int const&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::at </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> const&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::at </td>
           <td>(</td>
           <td class="paramname"></td><td>)</td>
           <td> const</td>
@@ -315,19 +389,19 @@ template&lt;int Dim&gt; </div>
 
 </div>
 </div>
-<a id="aed4f4d1c7c0749fe72736d7a1213b6e9"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aed4f4d1c7c0749fe72736d7a1213b6e9">&#9670;&nbsp;</a></span>at() <span class="overload">[4/4]</span></h2>
+<a id="a9b47b1521820c898b03868627c3f8e46"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9b47b1521820c898b03868627c3f8e46">&#9670;&nbsp;</a></span>at() <span class="overload">[4/4]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int const&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::at </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> const&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::at </td>
           <td>(</td>
           <td class="paramtype">int&#160;</td>
           <td class="paramname"><em>dim</em></td><td>)</td>
@@ -343,28 +417,28 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="a482ada6da62f427987c22098796fcf7e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a482ada6da62f427987c22098796fcf7e">&#9670;&nbsp;</a></span>clamp()</h2>
+<a id="a404a3b4e00f59cac71d41fb1bbba38ba"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a404a3b4e00f59cac71d41fb1bbba38ba">&#9670;&nbsp;</a></span>clamp()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::clamp </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::clamp </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a> &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;&#160;</td>
           <td class="paramname"><em>max</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a> &gt; const &amp;&#160;</td>
-          <td class="paramname"><em>min</em> = <code><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt;<a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a>&gt;()</code>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>min</em> = <code><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt;<a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a>&gt;()</code>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -381,19 +455,19 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="a40429a9154f7a142ad7e9eb35282d196"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a40429a9154f7a142ad7e9eb35282d196">&#9670;&nbsp;</a></span>count()</h2>
+<a id="ac0ac5f2aa2cbea3887d126645025e017"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac0ac5f2aa2cbea3887d126645025e017">&#9670;&nbsp;</a></span>count()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::count </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::count </td>
           <td>(</td>
           <td class="paramname"></td><td>)</td>
           <td> const</td>
@@ -408,13 +482,13 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="ad4b3704d14057c043f972827671115cf"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ad4b3704d14057c043f972827671115cf">&#9670;&nbsp;</a></span>dot() <span class="overload">[1/2]</span></h2>
+<a id="ac8ec94703830ab2c62ee055533ea2184"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac8ec94703830ab2c62ee055533ea2184">&#9670;&nbsp;</a></span>dot() <span class="overload">[1/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <div class="memtemplate">
 template&lt;typename T &gt; </div>
 <table class="mlabels">
@@ -422,9 +496,9 @@ template&lt;typename T &gt; </div>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> T <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::dot </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> T <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::dot </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; N_ &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Rank_, Index_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em>, </td>
         </tr>
         <tr>
@@ -448,13 +522,13 @@ template&lt;typename T &gt; </div>
 
 </div>
 </div>
-<a id="ae023c0c664c22a978e9b9ce5e063aae4"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae023c0c664c22a978e9b9ce5e063aae4">&#9670;&nbsp;</a></span>dot() <span class="overload">[2/2]</span></h2>
+<a id="a0acc37908acb6b879c37f54ff7ffc93d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0acc37908acb6b879c37f54ff7ffc93d">&#9670;&nbsp;</a></span>dot() <span class="overload">[2/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <div class="memtemplate">
 template&lt;typename T &gt; </div>
 <table class="mlabels">
@@ -462,9 +536,9 @@ template&lt;typename T &gt; </div>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> T <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::dot </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> T <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::dot </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; N_ &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Rank_, Index_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td> const</td>
         </tr>
@@ -478,21 +552,75 @@ template&lt;typename T &gt; </div>
 
 </div>
 </div>
-<a id="a7fb46873e8f3cf38212703d35bd36995"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a7fb46873e8f3cf38212703d35bd36995">&#9670;&nbsp;</a></span>operator!=()</h2>
+<a id="a1781b3c5a2d653b0c1718ec3154ae48f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1781b3c5a2d653b0c1718ec3154ae48f">&#9670;&nbsp;</a></span>operator bool()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator!= </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator bool </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a> &gt; const &amp;&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a232095edae2f74c01a3c8abf68166e02"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a232095edae2f74c01a3c8abf68166e02">&#9670;&nbsp;</a></span>operator!()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;int Rank_, typename Index_ = int&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator! </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a353d847675e5ba2402c407dcd4ae4de3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a353d847675e5ba2402c407dcd4ae4de3">&#9670;&nbsp;</a></span>operator!=()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;int Rank_, typename Index_ = int&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::<a class="el" href="structcutlass_1_1Coord.html#a232095edae2f74c01a3c8abf68166e02">operator!</a>= </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td> const</td>
         </tr>
@@ -506,21 +634,21 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="a8e4f7df55a75d040cf50cf9984c04c8a"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a8e4f7df55a75d040cf50cf9984c04c8a">&#9670;&nbsp;</a></span>operator*()</h2>
+<a id="a2e94c093f82908ff3dba4f23b5d10033"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2e94c093f82908ff3dba4f23b5d10033">&#9670;&nbsp;</a></span>operator*()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator* </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator* </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; N_ &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Rank_, Index_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td> const</td>
         </tr>
@@ -534,21 +662,21 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="a282b6cc9ac8b2f72720c252791155aad"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a282b6cc9ac8b2f72720c252791155aad">&#9670;&nbsp;</a></span>operator*=()</h2>
+<a id="ad4303b578b72b5cb2a0198375290e168"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad4303b578b72b5cb2a0198375290e168">&#9670;&nbsp;</a></span>operator*=()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator*= </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator*= </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; N_ &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Rank_, Index_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td></td>
         </tr>
@@ -562,21 +690,21 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="a3dfc4ce4191097b6c3268696f2a45ef5"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a3dfc4ce4191097b6c3268696f2a45ef5">&#9670;&nbsp;</a></span>operator+()</h2>
+<a id="ab37672637771a70910df9aa1a0cffddc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab37672637771a70910df9aa1a0cffddc">&#9670;&nbsp;</a></span>operator+()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator+ </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator+ </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; N_ &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Rank_, Index_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td> const</td>
         </tr>
@@ -590,21 +718,21 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="aeb209486943fa9d42911325b16e49e09"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aeb209486943fa9d42911325b16e49e09">&#9670;&nbsp;</a></span>operator+=()</h2>
+<a id="ae4f2cb12b84411118cb93e7c4cb88b20"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae4f2cb12b84411118cb93e7c4cb88b20">&#9670;&nbsp;</a></span>operator+=()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator+= </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator+= </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; N_ &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Rank_, Index_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td></td>
         </tr>
@@ -618,21 +746,21 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="acc510511ffb52bed7f6a52f14b99750d"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#acc510511ffb52bed7f6a52f14b99750d">&#9670;&nbsp;</a></span>operator-()</h2>
+<a id="a6b876f61a85a4a4ef3763b6742bfaa6b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6b876f61a85a4a4ef3763b6742bfaa6b">&#9670;&nbsp;</a></span>operator-()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator- </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator- </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; N_ &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Rank_, Index_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td> const</td>
         </tr>
@@ -646,21 +774,21 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="ac1795ec2a5890d8a39840567a4bea88e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ac1795ec2a5890d8a39840567a4bea88e">&#9670;&nbsp;</a></span>operator-=()</h2>
+<a id="a304334cbcad636d7b058fdc6310f0e6b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a304334cbcad636d7b058fdc6310f0e6b">&#9670;&nbsp;</a></span>operator-=()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator-= </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator-= </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; N_ &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Rank_, Index_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td></td>
         </tr>
@@ -674,21 +802,21 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="a87f485be079fa68bcf576da4d56f0ece"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a87f485be079fa68bcf576da4d56f0ece">&#9670;&nbsp;</a></span>operator/()</h2>
+<a id="a9bb07631f09efc80219413ac8309f568"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9bb07631f09efc80219413ac8309f568">&#9670;&nbsp;</a></span>operator/()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator/ </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator/ </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; N_ &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Rank_, Index_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td> const</td>
         </tr>
@@ -702,21 +830,21 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="abe91e59962ef0d73aec9c14824f64ecc"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#abe91e59962ef0d73aec9c14824f64ecc">&#9670;&nbsp;</a></span>operator/=()</h2>
+<a id="ac87199c4c9a4e20aac4eb6e3b9a68f28"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac87199c4c9a4e20aac4eb6e3b9a68f28">&#9670;&nbsp;</a></span>operator/=()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator/= </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator/= </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; N_ &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; Rank_, Index_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td></td>
         </tr>
@@ -730,21 +858,21 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="acfa94aabd0c9a71ee994ca479d5f515f"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#acfa94aabd0c9a71ee994ca479d5f515f">&#9670;&nbsp;</a></span>operator==()</h2>
+<a id="a148851df63840ac63e23b2f170bd1308"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a148851df63840ac63e23b2f170bd1308">&#9670;&nbsp;</a></span>operator&lt;()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator== </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator&lt; </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a> &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;&#160;</td>
           <td class="paramname"><em>b</em></td><td>)</td>
           <td> const</td>
         </tr>
@@ -758,19 +886,75 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="ab7fc89de3ccd7096ab275fb5dd40104c"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab7fc89de3ccd7096ab275fb5dd40104c">&#9670;&nbsp;</a></span>operator[]() <span class="overload">[1/2]</span></h2>
+<a id="a9dc9f063be329d475f040afd449d304c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9dc9f063be329d475f040afd449d304c">&#9670;&nbsp;</a></span>operator&lt;=()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator[] </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator&lt;= </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>b</em></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a7f919aeb2a895bc040599971400dec8d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7f919aeb2a895bc040599971400dec8d">&#9670;&nbsp;</a></span>operator==()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;int Rank_, typename Index_ = int&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator== </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a> &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>b</em></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a6e0967541a1d74edeb93897ea6069e24"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6e0967541a1d74edeb93897ea6069e24">&#9670;&nbsp;</a></span>operator[]() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;int Rank_, typename Index_ = int&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a>&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator[] </td>
           <td>(</td>
           <td class="paramtype">int&#160;</td>
           <td class="paramname"><em>dim</em></td><td>)</td>
@@ -786,19 +970,19 @@ template&lt;int N_&gt; </div>
 
 </div>
 </div>
-<a id="a6eeab0a1686ee25389e1bd017c5f03ae"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a6eeab0a1686ee25389e1bd017c5f03ae">&#9670;&nbsp;</a></span>operator[]() <span class="overload">[2/2]</span></h2>
+<a id="a882e7ac07bbd6983659ef2e574b46454"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a882e7ac07bbd6983659ef2e574b46454">&#9670;&nbsp;</a></span>operator[]() <span class="overload">[2/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int const&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::operator[] </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> const&amp; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::operator[] </td>
           <td>(</td>
           <td class="paramtype">int&#160;</td>
           <td class="paramname"><em>dim</em></td><td>)</td>
@@ -811,39 +995,104 @@ template&lt;int N_&gt; </div>
   </tr>
 </table>
 </div><div class="memdoc">
+
+</div>
+</div>
+<a id="ac8f7a9b0835efc34fd28894b2b45342c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac8f7a9b0835efc34fd28894b2b45342c">&#9670;&nbsp;</a></span>slice()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;int Rank_, typename Index_ = int&gt; </div>
+<div class="memtemplate">
+template&lt;int Slice&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt;Slice&gt; <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::slice </td>
+          <td>(</td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>start</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a>&#160;</td>
+          <td class="paramname"><em>identity</em> = <code>0</code>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<p>Returns a slice of the <a class="el" href="structcutlass_1_1Coord.html" title="Statically-sized array specifying Coords within a tensor. ">Coord</a> which may be larger or smaller in rank than this. </p>
 
 </div>
 </div>
 <h2 class="groupheader">Member Data Documentation</h2>
-<a id="a50de265129f1db7bdf2f0aefbc6a46bc"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a50de265129f1db7bdf2f0aefbc6a46bc">&#9670;&nbsp;</a></span>idx</h2>
+<a id="a872e1e0d9cc255fa438c04daaf10ad68"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a872e1e0d9cc255fa438c04daaf10ad68">&#9670;&nbsp;</a></span>idx</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">int <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::idx[<a class="el" href="structcutlass_1_1Coord.html#a3f2f5a9d7ef2063456c4d9f7e57e71ca">N</a>]</td>
+          <td class="memname"><a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">Index</a> <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::idx[<a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">kRank</a>]</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a3f2f5a9d7ef2063456c4d9f7e57e71ca"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a3f2f5a9d7ef2063456c4d9f7e57e71ca">&#9670;&nbsp;</a></span>N</h2>
+<a id="a23e1b9a7f5fa8fd4afeadfb85de7c5c3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">&#9670;&nbsp;</a></span>kRank</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;int N_&gt; </div>
+template&lt;int Rank_, typename Index_ = int&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; N_ &gt;::N = N_</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::kRank = Rank_</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="acfd416eafec51e47b42b8b713ba76030"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acfd416eafec51e47b42b8b713ba76030">&#9670;&nbsp;</a></span>N</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;int Rank_, typename Index_ = int&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord</a>&lt; Rank_, Index_ &gt;::N = Rank_</td>
         </tr>
       </table>
   </td>
@@ -861,7 +1110,7 @@ template&lt;int N_&gt; </div>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

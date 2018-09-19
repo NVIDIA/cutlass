@@ -83,7 +83,8 @@ $(function() {
 
 <p>A Coord is a coordinate of arbitrary rank into a tensor or matrix.  
 <a href="#details">More...</a></p>
-<div class="textblock"><code>#include &lt;<a class="el" href="cutlass_8h_source.html">cutlass/cutlass.h</a>&gt;</code><br />
+<div class="textblock"><code>#include &quot;<a class="el" href="cutlass_8h_source.html">cutlass/cutlass.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="platform_8h_source.html">cutlass/util/platform.h</a>&quot;</code><br />
 </div>
 <p><a href="coord_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
@@ -92,7 +93,7 @@ Classes</h2></td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Identity.html">cutlass::Identity</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Describes identity elements.  <a href="structcutlass_1_1Identity.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord&lt; N_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Coord.html">cutlass::Coord&lt; Rank_, Index_ &gt;</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Statically-sized array specifying Coords within a tensor.  <a href="structcutlass_1_1Coord.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
@@ -115,23 +116,14 @@ Functions</h2></td></tr>
 <tr class="memitem:a9410b1f5956d3aaf4584e65d047428fc"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> Coord&lt; 4 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a9410b1f5956d3aaf4584e65d047428fc">cutlass::make_Coord</a> (int _0, int _1, int _2, int _3)</td></tr>
 <tr class="memdesc:a9410b1f5956d3aaf4584e65d047428fc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Helper to make a 4-element coordinate.  <a href="namespacecutlass.html#a9410b1f5956d3aaf4584e65d047428fc">More...</a><br /></td></tr>
 <tr class="separator:a9410b1f5956d3aaf4584e65d047428fc"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a7d2ab683e29b47d245e183ad5aeb962e"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> Coord&lt; 2 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a7d2ab683e29b47d245e183ad5aeb962e">cutlass::get_Coord_hw</a> (Coord&lt; 3 &gt; const &amp;coord)</td></tr>
-<tr class="memdesc:a7d2ab683e29b47d245e183ad5aeb962e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Getter.  <a href="namespacecutlass.html#a7d2ab683e29b47d245e183ad5aeb962e">More...</a><br /></td></tr>
-<tr class="separator:a7d2ab683e29b47d245e183ad5aeb962e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a082e7a2e4acc2879468243f5732ccf0b"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> Coord&lt; 2 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a082e7a2e4acc2879468243f5732ccf0b">cutlass::get_Coord_hw</a> (Coord&lt; 4 &gt; const &amp;coord)</td></tr>
-<tr class="memdesc:a082e7a2e4acc2879468243f5732ccf0b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Getter.  <a href="namespacecutlass.html#a082e7a2e4acc2879468243f5732ccf0b">More...</a><br /></td></tr>
-<tr class="separator:a082e7a2e4acc2879468243f5732ccf0b"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a71f3e2a12b9e98be1fba082610fa9d4f"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> Coord&lt; 3 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a71f3e2a12b9e98be1fba082610fa9d4f">cutlass::get_Coord_hwc</a> (Coord&lt; 4 &gt; const &amp;coord)</td></tr>
-<tr class="memdesc:a71f3e2a12b9e98be1fba082610fa9d4f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Getter.  <a href="namespacecutlass.html#a71f3e2a12b9e98be1fba082610fa9d4f">More...</a><br /></td></tr>
-<tr class="separator:a71f3e2a12b9e98be1fba082610fa9d4f"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a4680709eeeb679ef0219938f85f7394e"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> Coord&lt; 3 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a4680709eeeb679ef0219938f85f7394e">cutlass::get_Coord_dhw</a> (Coord&lt; 4 &gt; const &amp;coord)</td></tr>
-<tr class="memdesc:a4680709eeeb679ef0219938f85f7394e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Getter.  <a href="namespacecutlass.html#a4680709eeeb679ef0219938f85f7394e">More...</a><br /></td></tr>
-<tr class="separator:a4680709eeeb679ef0219938f85f7394e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a90028a415a05ce09073860e5c761aa6f"><td class="memTemplParams" colspan="2">template&lt;typename Shape_ &gt; </td></tr>
+<tr class="memitem:a90028a415a05ce09073860e5c761aa6f"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> Coord&lt; 3 &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a90028a415a05ce09073860e5c761aa6f">cutlass::make_Coord_from_shape</a> ()</td></tr>
+<tr class="separator:a90028a415a05ce09073860e5c761aa6f"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

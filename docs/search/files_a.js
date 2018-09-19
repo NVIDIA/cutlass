@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['sgemm_5ftraits_2eh',['sgemm_traits.h',['../sgemm__traits_8h.html',1,'']]],
-  ['shape_2eh',['shape.h',['../shape_8h.html',1,'']]]
+  ['platform_2eh',['platform.h',['../platform_8h.html',1,'']]],
+  ['predicate_5fvector_2eh',['predicate_vector.h',['../predicate__vector_8h.html',1,'']]]
 ];

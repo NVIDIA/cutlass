@@ -90,7 +90,7 @@ Inheritance diagram for cutlass::gemm::GemmGlobalTileTraits&lt; kOperand_, kLayo
   <img src="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.png" usemap="#cutlass::gemm::GemmGlobalTileTraits_3C_20kOperand_5F_2C_20kLayout_5F_2C_20Scalar_5F_2C_20Tile_5F_2C_20Threads_5F_2C_20kAccessSize_5F_20_3E_map" alt=""/>
   <map id="cutlass::gemm::GemmGlobalTileTraits_3C_20kOperand_5F_2C_20kLayout_5F_2C_20Scalar_5F_2C_20Tile_5F_2C_20Threads_5F_2C_20kAccessSize_5F_20_3E_map" name="cutlass::gemm::GemmGlobalTileTraits_3C_20kOperand_5F_2C_20kLayout_5F_2C_20Scalar_5F_2C_20Tile_5F_2C_20Threads_5F_2C_20kAccessSize_5F_20_3E_map">
 <area href="structcutlass_1_1gemm_1_1HgemmCrosswiseGlobalTileTraits.html" alt="cutlass::gemm::HgemmCrosswiseGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;" shape="rect" coords="0,56,667,80"/>
-<area href="structcutlass_1_1gemm_1_1IgemmContiguousGlobalTileTraits.html" alt="cutlass::gemm::IgemmContiguousGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;" shape="rect" coords="677,56,1344,80"/>
+<area href="structcutlass_1_1gemm_1_1IgemmGlobalTileTraits.html" alt="cutlass::gemm::IgemmGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;" shape="rect" coords="677,56,1344,80"/>
 </map>
  </div></div>
 <table class="memberdecls">
@@ -108,25 +108,28 @@ Public Types</h2></td></tr>
 <tr class="memitem:a3ff6f630b6b317ace1cf6e13fdf3a0cd"><td class="memItemLeft" align="right" valign="top">typedef Scalar_ *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a3ff6f630b6b317ace1cf6e13fdf3a0cd">Pointer</a></td></tr>
 <tr class="memdesc:a3ff6f630b6b317ace1cf6e13fdf3a0cd"><td class="mdescLeft">&#160;</td><td class="mdescRight">The pointer.  <a href="#a3ff6f630b6b317ace1cf6e13fdf3a0cd">More...</a><br /></td></tr>
 <tr class="separator:a3ff6f630b6b317ace1cf6e13fdf3a0cd"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aebbf8834d0d88f0e5b3e1926db5e6758"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1ReshapeTile.html">ReshapeTile</a>&lt; Tile_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aebbf8834d0d88f0e5b3e1926db5e6758">Tile</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aebbf8834d0d88f0e5b3e1926db5e6758">Tile</a></td></tr>
-<tr class="memdesc:aebbf8834d0d88f0e5b3e1926db5e6758"><td class="mdescLeft">&#160;</td><td class="mdescRight">The tile shape.  <a href="#aebbf8834d0d88f0e5b3e1926db5e6758">More...</a><br /></td></tr>
-<tr class="separator:aebbf8834d0d88f0e5b3e1926db5e6758"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a29bd05960cc541bb67098f5483c84cf6"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1ReshapeThreads.html">ReshapeThreads</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aebbf8834d0d88f0e5b3e1926db5e6758">Tile</a>, Threads_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a29bd05960cc541bb67098f5483c84cf6">Threads</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a29bd05960cc541bb67098f5483c84cf6">Threads</a></td></tr>
-<tr class="memdesc:a29bd05960cc541bb67098f5483c84cf6"><td class="mdescLeft">&#160;</td><td class="mdescRight">The threads shape.  <a href="#a29bd05960cc541bb67098f5483c84cf6">More...</a><br /></td></tr>
-<tr class="separator:a29bd05960cc541bb67098f5483c84cf6"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a65f9ccd630dde0c9db5358cfc951583d"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 1, 1, Tile::kC &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a65f9ccd630dde0c9db5358cfc951583d">ThreadsDelta</a></td></tr>
-<tr class="memdesc:a65f9ccd630dde0c9db5358cfc951583d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The relative offset between two elements in the H/W dimension in adjacent threads.  <a href="#a65f9ccd630dde0c9db5358cfc951583d">More...</a><br /></td></tr>
-<tr class="separator:a65f9ccd630dde0c9db5358cfc951583d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a52ba72984ea8ce84eda28d07c6c8ec19"><td class="memItemLeft" align="right" valign="top">typedef Tile_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a52ba72984ea8ce84eda28d07c6c8ec19">Tile</a></td></tr>
+<tr class="memdesc:a52ba72984ea8ce84eda28d07c6c8ec19"><td class="mdescLeft">&#160;</td><td class="mdescRight">The tile shape.  <a href="#a52ba72984ea8ce84eda28d07c6c8ec19">More...</a><br /></td></tr>
+<tr class="separator:a52ba72984ea8ce84eda28d07c6c8ec19"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6cb3196f1fe3958d1656ba8b493c82ac"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1ReshapeTile.html">ReshapeTile</a>&lt; Tile_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a52ba72984ea8ce84eda28d07c6c8ec19">Tile</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a6cb3196f1fe3958d1656ba8b493c82ac">VectorizedTile</a></td></tr>
+<tr class="memdesc:a6cb3196f1fe3958d1656ba8b493c82ac"><td class="mdescLeft">&#160;</td><td class="mdescRight">The vectorized tile shape.  <a href="#a6cb3196f1fe3958d1656ba8b493c82ac">More...</a><br /></td></tr>
+<tr class="separator:a6cb3196f1fe3958d1656ba8b493c82ac"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aae7128f5522383c857d2639031b64c30"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1ReshapeThreads.html">ReshapeThreads</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a6cb3196f1fe3958d1656ba8b493c82ac">VectorizedTile</a>, Threads_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aae7128f5522383c857d2639031b64c30">Threads</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aae7128f5522383c857d2639031b64c30">Threads</a></td></tr>
+<tr class="memdesc:aae7128f5522383c857d2639031b64c30"><td class="mdescLeft">&#160;</td><td class="mdescRight">The threads shape.  <a href="#aae7128f5522383c857d2639031b64c30">More...</a><br /></td></tr>
+<tr class="separator:aae7128f5522383c857d2639031b64c30"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a428750e54eabd15b2a3f7ac2a96af0a9"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 1, 1, VectorizedTile::kC &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a428750e54eabd15b2a3f7ac2a96af0a9">ThreadsDelta</a></td></tr>
+<tr class="memdesc:a428750e54eabd15b2a3f7ac2a96af0a9"><td class="mdescLeft">&#160;</td><td class="mdescRight">The relative offset between two elements in the H/W dimension in adjacent threads.  <a href="#a428750e54eabd15b2a3f7ac2a96af0a9">More...</a><br /></td></tr>
+<tr class="separator:a428750e54eabd15b2a3f7ac2a96af0a9"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a07bb48f99000256f04f00564a4371c2f"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 0, Threads::kH, Threads::kW *<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aa001e09b246fdd8259cbda6a500cad5f">kAccessSize</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a07bb48f99000256f04f00564a4371c2f">Delta</a></td></tr>
 <tr class="memdesc:a07bb48f99000256f04f00564a4371c2f"><td class="mdescLeft">&#160;</td><td class="mdescRight">The strides in each dimension between different loads/stores.  <a href="#a07bb48f99000256f04f00564a4371c2f">More...</a><br /></td></tr>
 <tr class="separator:a07bb48f99000256f04f00564a4371c2f"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:abc47717230ddde3edc88d2770f6841bf"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 0, 0, Threads::kW *<a class="el" href="structcutlass_1_1Shape.html#a78836a20250ff24c25a6622ad818b421">ThreadsDelta::kW</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aa001e09b246fdd8259cbda6a500cad5f">kAccessSize</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#abc47717230ddde3edc88d2770f6841bf">ImmediateOffsetStrides</a></td></tr>
 <tr class="memdesc:abc47717230ddde3edc88d2770f6841bf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Strides for immediate offset computation.  <a href="#abc47717230ddde3edc88d2770f6841bf">More...</a><br /></td></tr>
 <tr class="separator:abc47717230ddde3edc88d2770f6841bf"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aaf6410f99d7f995792d0ac34efd3a82f"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 1, Tile::kH/Threads::kH, Tile::kW/Threads::kW, Tile::kC/<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aa001e09b246fdd8259cbda6a500cad5f">kAccessSize</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aaf6410f99d7f995792d0ac34efd3a82f">Iterations</a></td></tr>
-<tr class="memdesc:aaf6410f99d7f995792d0ac34efd3a82f"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of iterations needed to load/store the tile.  <a href="#aaf6410f99d7f995792d0ac34efd3a82f">More...</a><br /></td></tr>
-<tr class="separator:aaf6410f99d7f995792d0ac34efd3a82f"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a21a3524edaf002b5e5878df3c7eae7e7"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html">GemmMultiplicandTraits</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aebbf8834d0d88f0e5b3e1926db5e6758">Tile</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#ae0bca976b7cfba8561db4cccc16e99e1">kOperand</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a74bc07cb021a73513ab2fbacd572be90">kLayout</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a21a3524edaf002b5e5878df3c7eae7e7">MultiplicandTraits</a></td></tr>
+<tr class="memitem:a893cb2cc67676b44c1f3ad5908a4ab0c"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 1, VectorizedTile::kH/Threads::kH, VectorizedTile::kW/Threads::kW, VectorizedTile::kC/<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aa001e09b246fdd8259cbda6a500cad5f">kAccessSize</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a893cb2cc67676b44c1f3ad5908a4ab0c">Iterations</a></td></tr>
+<tr class="memdesc:a893cb2cc67676b44c1f3ad5908a4ab0c"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of iterations needed to load/store the tile.  <a href="#a893cb2cc67676b44c1f3ad5908a4ab0c">More...</a><br /></td></tr>
+<tr class="separator:a893cb2cc67676b44c1f3ad5908a4ab0c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a21a3524edaf002b5e5878df3c7eae7e7"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html">GemmMultiplicandTraits</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a52ba72984ea8ce84eda28d07c6c8ec19">Tile</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#ae0bca976b7cfba8561db4cccc16e99e1">kOperand</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a74bc07cb021a73513ab2fbacd572be90">kLayout</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a21a3524edaf002b5e5878df3c7eae7e7">MultiplicandTraits</a></td></tr>
 <tr class="separator:a21a3524edaf002b5e5878df3c7eae7e7"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-attribs"></a>
@@ -177,8 +180,8 @@ template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename S
 
 </div>
 </div>
-<a id="aaf6410f99d7f995792d0ac34efd3a82f"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aaf6410f99d7f995792d0ac34efd3a82f">&#9670;&nbsp;</a></span>Iterations</h2>
+<a id="a893cb2cc67676b44c1f3ad5908a4ab0c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a893cb2cc67676b44c1f3ad5908a4ab0c">&#9670;&nbsp;</a></span>Iterations</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -186,7 +189,7 @@ template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename S
 template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename Scalar_, typename Tile_, typename Threads_, int kAccessSize_&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;1, Tile::kH / Threads::kH, Tile::kW / Threads::kW, Tile::kC / <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aa001e09b246fdd8259cbda6a500cad5f">kAccessSize</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aaf6410f99d7f995792d0ac34efd3a82f">Iterations</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;1, VectorizedTile::kH / Threads::kH, VectorizedTile::kW / Threads::kW, VectorizedTile::kC / <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aa001e09b246fdd8259cbda6a500cad5f">kAccessSize</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a893cb2cc67676b44c1f3ad5908a4ab0c">Iterations</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -202,7 +205,7 @@ template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename S
 template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename Scalar_, typename Tile_, typename Threads_, int kAccessSize_&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html">GemmMultiplicandTraits</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aebbf8834d0d88f0e5b3e1926db5e6758">Tile</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#ae0bca976b7cfba8561db4cccc16e99e1">kOperand</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a74bc07cb021a73513ab2fbacd572be90">kLayout</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a21a3524edaf002b5e5878df3c7eae7e7">MultiplicandTraits</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html">GemmMultiplicandTraits</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a52ba72984ea8ce84eda28d07c6c8ec19">Tile</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#ae0bca976b7cfba8561db4cccc16e99e1">kOperand</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a74bc07cb021a73513ab2fbacd572be90">kLayout</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a21a3524edaf002b5e5878df3c7eae7e7">MultiplicandTraits</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -241,8 +244,8 @@ template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename S
 
 </div>
 </div>
-<a id="a29bd05960cc541bb67098f5483c84cf6"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a29bd05960cc541bb67098f5483c84cf6">&#9670;&nbsp;</a></span>Threads</h2>
+<a id="aae7128f5522383c857d2639031b64c30"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aae7128f5522383c857d2639031b64c30">&#9670;&nbsp;</a></span>Threads</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -250,15 +253,15 @@ template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename S
 template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename Scalar_, typename Tile_, typename Threads_, int kAccessSize_&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1ReshapeThreads.html">ReshapeThreads</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aebbf8834d0d88f0e5b3e1926db5e6758">Tile</a>, Threads_&gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a29bd05960cc541bb67098f5483c84cf6">Threads</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a29bd05960cc541bb67098f5483c84cf6">Threads</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1ReshapeThreads.html">ReshapeThreads</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a6cb3196f1fe3958d1656ba8b493c82ac">VectorizedTile</a>, Threads_&gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aae7128f5522383c857d2639031b64c30">Threads</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aae7128f5522383c857d2639031b64c30">Threads</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a65f9ccd630dde0c9db5358cfc951583d"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a65f9ccd630dde0c9db5358cfc951583d">&#9670;&nbsp;</a></span>ThreadsDelta</h2>
+<a id="a428750e54eabd15b2a3f7ac2a96af0a9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a428750e54eabd15b2a3f7ac2a96af0a9">&#9670;&nbsp;</a></span>ThreadsDelta</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -266,15 +269,15 @@ template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename S
 template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename Scalar_, typename Tile_, typename Threads_, int kAccessSize_&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;1, 1, Tile::kC&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a65f9ccd630dde0c9db5358cfc951583d">ThreadsDelta</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;1, 1, VectorizedTile::kC&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a428750e54eabd15b2a3f7ac2a96af0a9">ThreadsDelta</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="aebbf8834d0d88f0e5b3e1926db5e6758"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aebbf8834d0d88f0e5b3e1926db5e6758">&#9670;&nbsp;</a></span>Tile</h2>
+<a id="a52ba72984ea8ce84eda28d07c6c8ec19"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a52ba72984ea8ce84eda28d07c6c8ec19">&#9670;&nbsp;</a></span>Tile</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -282,7 +285,23 @@ template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename S
 template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename Scalar_, typename Tile_, typename Threads_, int kAccessSize_&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1ReshapeTile.html">ReshapeTile</a>&lt;Tile_, kAccessSize_&gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aebbf8834d0d88f0e5b3e1926db5e6758">Tile</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aebbf8834d0d88f0e5b3e1926db5e6758">Tile</a></td>
+          <td class="memname">typedef Tile_ <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a52ba72984ea8ce84eda28d07c6c8ec19">Tile</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a6cb3196f1fe3958d1656ba8b493c82ac"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6cb3196f1fe3958d1656ba8b493c82ac">&#9670;&nbsp;</a></span>VectorizedTile</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename Scalar_, typename Tile_, typename Threads_, int kAccessSize_&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1ReshapeTile.html">ReshapeTile</a>&lt;Tile_, kAccessSize_&gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a52ba72984ea8ce84eda28d07c6c8ec19">Tile</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">cutlass::gemm::GemmGlobalTileTraits</a>&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a6cb3196f1fe3958d1656ba8b493c82ac">VectorizedTile</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -392,7 +411,7 @@ template&lt;GemmOperand::Kind kOperand_, MatrixLayout::Kind kLayout_, typename S
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:14 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:52 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

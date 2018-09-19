@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=9"/>
 <meta name="generator" content="Doxygen 1.8.14"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Cutlass: cutlass::gemm::HgemmTraitsHelper&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt; Struct Template Reference</title>
+<title>Cutlass: cutlass::gemm::HgemmTraitsHelper&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt; Struct Template Reference</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -76,7 +76,7 @@ $(function() {
 <a href="#pub-types">Public Types</a> &#124;
 <a href="structcutlass_1_1gemm_1_1HgemmTraitsHelper-members.html">List of all members</a>  </div>
   <div class="headertitle">
-<div class="title">cutlass::gemm::HgemmTraitsHelper&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt; Struct Template Reference</div>  </div>
+<div class="title">cutlass::gemm::HgemmTraitsHelper&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt; Struct Template Reference</div>  </div>
 </div><!--header-->
 <div class="contents">
 
@@ -84,362 +84,362 @@ $(function() {
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-types"></a>
 Public Types</h2></td></tr>
-<tr class="memitem:a1597c776238f35bcb1acc0a8f8f9c118"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmConfig.html">HgemmConfig</a>&lt; OutputTile_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_ &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1597c776238f35bcb1acc0a8f8f9c118">GemmConfig</a></td></tr>
-<tr class="memdesc:a1597c776238f35bcb1acc0a8f8f9c118"><td class="mdescLeft">&#160;</td><td class="mdescRight">The HGEMM config.  <a href="#a1597c776238f35bcb1acc0a8f8f9c118">More...</a><br /></td></tr>
-<tr class="separator:a1597c776238f35bcb1acc0a8f8f9c118"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a5557c86a530f5d20a35d3fa620adf417"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTileTraitsHelperA.html">HgemmTileTraitsHelperA</a>&lt; kLayoutA_, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1597c776238f35bcb1acc0a8f8f9c118">GemmConfig</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a5557c86a530f5d20a35d3fa620adf417">GemmTileTraitsHelperA</a></td></tr>
-<tr class="memdesc:a5557c86a530f5d20a35d3fa620adf417"><td class="mdescLeft">&#160;</td><td class="mdescRight">The GEMM config for A.  <a href="#a5557c86a530f5d20a35d3fa620adf417">More...</a><br /></td></tr>
-<tr class="separator:a5557c86a530f5d20a35d3fa620adf417"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8768c2b03bea0c3601c47dde2bc7ca89"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTileTraitsHelperB.html">HgemmTileTraitsHelperB</a>&lt; kLayoutB_, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1597c776238f35bcb1acc0a8f8f9c118">GemmConfig</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8768c2b03bea0c3601c47dde2bc7ca89">GemmTileTraitsHelperB</a></td></tr>
-<tr class="memdesc:a8768c2b03bea0c3601c47dde2bc7ca89"><td class="mdescLeft">&#160;</td><td class="mdescRight">The GEMM config for B.  <a href="#a8768c2b03bea0c3601c47dde2bc7ca89">More...</a><br /></td></tr>
-<tr class="separator:a8768c2b03bea0c3601c47dde2bc7ca89"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ab8a3def34300afb5745453d0b33204aa"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html">GemmGlobalIteratorAb</a>&lt; typename GemmTileTraitsHelperA::GlobalTileTraits, Index_ &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ab8a3def34300afb5745453d0b33204aa">GlobalLoadIteratorA</a></td></tr>
-<tr class="memdesc:ab8a3def34300afb5745453d0b33204aa"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to load A from global memory.  <a href="#ab8a3def34300afb5745453d0b33204aa">More...</a><br /></td></tr>
-<tr class="separator:ab8a3def34300afb5745453d0b33204aa"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a3fb86b6d3e353df6b752510d64c5e647"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTransformerA.html">HgemmTransformerA</a>&lt; GemmTileTraitsHelperA::kLayout, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ab8a3def34300afb5745453d0b33204aa">GlobalLoadIteratorA</a> &gt;::Transformer&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a3fb86b6d3e353df6b752510d64c5e647">GlobalTransformerA</a></td></tr>
-<tr class="memdesc:a3fb86b6d3e353df6b752510d64c5e647"><td class="mdescLeft">&#160;</td><td class="mdescRight">The default transformer for A.  <a href="#a3fb86b6d3e353df6b752510d64c5e647">More...</a><br /></td></tr>
-<tr class="separator:a3fb86b6d3e353df6b752510d64c5e647"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a7f022d423d42d4081cefa7eb26b4d5b4"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileStoreIterator.html">TileStoreIterator</a>&lt; typename GemmTileTraitsHelperA::SharedStoreTileTraits, typename GemmTileTraitsHelperA::SharedStoreTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a7f022d423d42d4081cefa7eb26b4d5b4">SharedStoreIteratorA</a></td></tr>
-<tr class="memdesc:a7f022d423d42d4081cefa7eb26b4d5b4"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to store A to shared memory.  <a href="#a7f022d423d42d4081cefa7eb26b4d5b4">More...</a><br /></td></tr>
-<tr class="separator:a7f022d423d42d4081cefa7eb26b4d5b4"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a2aaece6093100c71c4d587994200e3bb"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">GlobalLoadStream</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ab8a3def34300afb5745453d0b33204aa">GlobalLoadIteratorA</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a7f022d423d42d4081cefa7eb26b4d5b4">SharedStoreIteratorA</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a3fb86b6d3e353df6b752510d64c5e647">GlobalTransformerA</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a2aaece6093100c71c4d587994200e3bb">GlobalLoadStreamA</a></td></tr>
-<tr class="memdesc:a2aaece6093100c71c4d587994200e3bb"><td class="mdescLeft">&#160;</td><td class="mdescRight">The stream to load A from global memory to shared memory.  <a href="#a2aaece6093100c71c4d587994200e3bb">More...</a><br /></td></tr>
-<tr class="separator:a2aaece6093100c71c4d587994200e3bb"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a95559f28cab076da723e4cb24351116e"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html">GemmGlobalIteratorAb</a>&lt; typename GemmTileTraitsHelperB::GlobalTileTraits, Index_ &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a95559f28cab076da723e4cb24351116e">GlobalLoadIteratorB</a></td></tr>
-<tr class="memdesc:a95559f28cab076da723e4cb24351116e"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to load B from global memory.  <a href="#a95559f28cab076da723e4cb24351116e">More...</a><br /></td></tr>
-<tr class="separator:a95559f28cab076da723e4cb24351116e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a7b4de712868095200a338802c1fbb3de"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTransformerB.html">HgemmTransformerB</a>&lt; GemmTileTraitsHelperB::kLayout, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a95559f28cab076da723e4cb24351116e">GlobalLoadIteratorB</a> &gt;::Transformer&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a7b4de712868095200a338802c1fbb3de">GlobalTransformerB</a></td></tr>
-<tr class="separator:a7b4de712868095200a338802c1fbb3de"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:abe3383e7338c08841fd8f0bfb1090448"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileStoreIterator.html">TileStoreIterator</a>&lt; typename GemmTileTraitsHelperB::SharedStoreTileTraits, typename GemmTileTraitsHelperB::SharedStoreTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#abe3383e7338c08841fd8f0bfb1090448">SharedStoreIteratorB</a></td></tr>
-<tr class="memdesc:abe3383e7338c08841fd8f0bfb1090448"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to store B to shared memory.  <a href="#abe3383e7338c08841fd8f0bfb1090448">More...</a><br /></td></tr>
-<tr class="separator:abe3383e7338c08841fd8f0bfb1090448"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:abaf5f16ab0b215b406766ecadab29394"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">GlobalLoadStream</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a95559f28cab076da723e4cb24351116e">GlobalLoadIteratorB</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#abe3383e7338c08841fd8f0bfb1090448">SharedStoreIteratorB</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a7b4de712868095200a338802c1fbb3de">GlobalTransformerB</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#abaf5f16ab0b215b406766ecadab29394">GlobalLoadStreamB</a></td></tr>
-<tr class="memdesc:abaf5f16ab0b215b406766ecadab29394"><td class="mdescLeft">&#160;</td><td class="mdescRight">The stream to load B from global memory to shared memory.  <a href="#abaf5f16ab0b215b406766ecadab29394">More...</a><br /></td></tr>
-<tr class="separator:abaf5f16ab0b215b406766ecadab29394"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a1bbb198a50b5f01a0502df44bb678620"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileLoadIterator.html">TileLoadIterator</a>&lt; typename GemmTileTraitsHelperA::SharedLoadTileTraits, typename GemmTileTraitsHelperA::SharedLoadTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1bbb198a50b5f01a0502df44bb678620">SharedLoadIteratorA</a></td></tr>
-<tr class="memdesc:a1bbb198a50b5f01a0502df44bb678620"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to load A from shared memory.  <a href="#a1bbb198a50b5f01a0502df44bb678620">More...</a><br /></td></tr>
-<tr class="separator:a1bbb198a50b5f01a0502df44bb678620"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a21c860cc877df13d22dd30eeb5e2b06b"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">SharedLoadStream</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1bbb198a50b5f01a0502df44bb678620">SharedLoadIteratorA</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a21c860cc877df13d22dd30eeb5e2b06b">SharedLoadStreamA</a></td></tr>
-<tr class="memdesc:a21c860cc877df13d22dd30eeb5e2b06b"><td class="mdescLeft">&#160;</td><td class="mdescRight">The stream to load A from shared memory.  <a href="#a21c860cc877df13d22dd30eeb5e2b06b">More...</a><br /></td></tr>
-<tr class="separator:a21c860cc877df13d22dd30eeb5e2b06b"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8d09409973094ca2a17633776a64a303"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileLoadIterator.html">TileLoadIterator</a>&lt; typename GemmTileTraitsHelperB::SharedLoadTileTraits, typename GemmTileTraitsHelperB::SharedLoadTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8d09409973094ca2a17633776a64a303">SharedLoadIteratorB</a></td></tr>
-<tr class="memdesc:a8d09409973094ca2a17633776a64a303"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to load B from shared memory.  <a href="#a8d09409973094ca2a17633776a64a303">More...</a><br /></td></tr>
-<tr class="separator:a8d09409973094ca2a17633776a64a303"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac5eeca1e91f0e0d4dd48d432d5213215"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">SharedLoadStream</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8d09409973094ca2a17633776a64a303">SharedLoadIteratorB</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ac5eeca1e91f0e0d4dd48d432d5213215">SharedLoadStreamB</a></td></tr>
-<tr class="memdesc:ac5eeca1e91f0e0d4dd48d432d5213215"><td class="mdescLeft">&#160;</td><td class="mdescRight">The stream to load B from shared memory.  <a href="#ac5eeca1e91f0e0d4dd48d432d5213215">More...</a><br /></td></tr>
-<tr class="separator:ac5eeca1e91f0e0d4dd48d432d5213215"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ae9facf63912d98e597883bf7efb56cc8"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a8669096ddbb8c810fb8d2313d62e6ee7">GemmConfig::MultiplyAdd</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ae9facf63912d98e597883bf7efb56cc8">MultiplyAdd</a></td></tr>
-<tr class="memdesc:ae9facf63912d98e597883bf7efb56cc8"><td class="mdescLeft">&#160;</td><td class="mdescRight">The functor to do the multiply-add in the main loop.  <a href="#ae9facf63912d98e597883bf7efb56cc8">More...</a><br /></td></tr>
-<tr class="separator:ae9facf63912d98e597883bf7efb56cc8"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aba2366bec386c74df47dfd0426b07041"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aba2366bec386c74df47dfd0426b07041">ClearAccumulators</a>&lt; typename <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd.html#a1af758cb98c33060462a2706856b0a01">MultiplyAdd::ScalarC</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aba2366bec386c74df47dfd0426b07041">ClearAccumulators</a></td></tr>
-<tr class="memdesc:aba2366bec386c74df47dfd0426b07041"><td class="mdescLeft">&#160;</td><td class="mdescRight">The object to clear accumulators.  <a href="#aba2366bec386c74df47dfd0426b07041">More...</a><br /></td></tr>
-<tr class="separator:aba2366bec386c74df47dfd0426b07041"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a4a0f361b5c47d0ab5f3308cd3b3b6ef6"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1SimplifiedGemmEpilogueTraits.html">SimplifiedGemmEpilogueTraits</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1597c776238f35bcb1acc0a8f8f9c118">GemmConfig</a>, EpilogueFunctor_, Index_ &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a4a0f361b5c47d0ab5f3308cd3b3b6ef6">GemmEpilogueTraits</a></td></tr>
-<tr class="memdesc:a4a0f361b5c47d0ab5f3308cd3b3b6ef6"><td class="mdescLeft">&#160;</td><td class="mdescRight">The traits class for the epilogue.  <a href="#a4a0f361b5c47d0ab5f3308cd3b3b6ef6">More...</a><br /></td></tr>
-<tr class="separator:a4a0f361b5c47d0ab5f3308cd3b3b6ef6"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a234ae6065d5ab56135e10119d3ad2d98"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">GemmEpilogue</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a4a0f361b5c47d0ab5f3308cd3b3b6ef6">GemmEpilogueTraits</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a234ae6065d5ab56135e10119d3ad2d98">Epilogue</a></td></tr>
-<tr class="memdesc:a234ae6065d5ab56135e10119d3ad2d98"><td class="mdescLeft">&#160;</td><td class="mdescRight">The epilogue.  <a href="#a234ae6065d5ab56135e10119d3ad2d98">More...</a><br /></td></tr>
-<tr class="separator:a234ae6065d5ab56135e10119d3ad2d98"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0cb18b7857c88f600c6977a1bdb3f4e4"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmConfig.html">HgemmConfig</a>&lt; OutputTile_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_ &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a0cb18b7857c88f600c6977a1bdb3f4e4">GemmConfig</a></td></tr>
+<tr class="memdesc:a0cb18b7857c88f600c6977a1bdb3f4e4"><td class="mdescLeft">&#160;</td><td class="mdescRight">The HGEMM config.  <a href="#a0cb18b7857c88f600c6977a1bdb3f4e4">More...</a><br /></td></tr>
+<tr class="separator:a0cb18b7857c88f600c6977a1bdb3f4e4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4f3afb4b1f37a2c43a1935a3000b2a02"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTileTraitsHelperA.html">HgemmTileTraitsHelperA</a>&lt; kLayoutA_, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a0cb18b7857c88f600c6977a1bdb3f4e4">GemmConfig</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a4f3afb4b1f37a2c43a1935a3000b2a02">GemmTileTraitsHelperA</a></td></tr>
+<tr class="memdesc:a4f3afb4b1f37a2c43a1935a3000b2a02"><td class="mdescLeft">&#160;</td><td class="mdescRight">The GEMM config for A.  <a href="#a4f3afb4b1f37a2c43a1935a3000b2a02">More...</a><br /></td></tr>
+<tr class="separator:a4f3afb4b1f37a2c43a1935a3000b2a02"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ada910ee63493bc3c70f7395127268a1d"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTileTraitsHelperB.html">HgemmTileTraitsHelperB</a>&lt; kLayoutB_, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a0cb18b7857c88f600c6977a1bdb3f4e4">GemmConfig</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ada910ee63493bc3c70f7395127268a1d">GemmTileTraitsHelperB</a></td></tr>
+<tr class="memdesc:ada910ee63493bc3c70f7395127268a1d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The GEMM config for B.  <a href="#ada910ee63493bc3c70f7395127268a1d">More...</a><br /></td></tr>
+<tr class="separator:ada910ee63493bc3c70f7395127268a1d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac6eac542d9d994509f931804b8b85ff5"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html">GemmGlobalIteratorAb</a>&lt; typename GemmTileTraitsHelperA::GlobalTileTraits, Index_ &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ac6eac542d9d994509f931804b8b85ff5">GlobalLoadIteratorA</a></td></tr>
+<tr class="memdesc:ac6eac542d9d994509f931804b8b85ff5"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to load A from global memory.  <a href="#ac6eac542d9d994509f931804b8b85ff5">More...</a><br /></td></tr>
+<tr class="separator:ac6eac542d9d994509f931804b8b85ff5"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae324b03601b97a22f2ac6db077280c60"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTransformerA.html">HgemmTransformerA</a>&lt; GemmTileTraitsHelperA::kLayout, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ac6eac542d9d994509f931804b8b85ff5">GlobalLoadIteratorA</a> &gt;::Transformer&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ae324b03601b97a22f2ac6db077280c60">GlobalTransformerA</a></td></tr>
+<tr class="memdesc:ae324b03601b97a22f2ac6db077280c60"><td class="mdescLeft">&#160;</td><td class="mdescRight">The default transformer for A.  <a href="#ae324b03601b97a22f2ac6db077280c60">More...</a><br /></td></tr>
+<tr class="separator:ae324b03601b97a22f2ac6db077280c60"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a366c89f8ecfbf0aef894cfb6fae25be9"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileStoreIterator.html">TileStoreIterator</a>&lt; typename GemmTileTraitsHelperA::SharedStoreTileTraits, typename GemmTileTraitsHelperA::SharedStoreTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a366c89f8ecfbf0aef894cfb6fae25be9">SharedStoreIteratorA</a></td></tr>
+<tr class="memdesc:a366c89f8ecfbf0aef894cfb6fae25be9"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to store A to shared memory.  <a href="#a366c89f8ecfbf0aef894cfb6fae25be9">More...</a><br /></td></tr>
+<tr class="separator:a366c89f8ecfbf0aef894cfb6fae25be9"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a80e36b583ccd9aa9b37d52faa090cbca"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">GlobalLoadStream</a>&lt; <a class="el" href="structcutlass_1_1GemmOperand.html#ab209ea3de198efabe8e8707dfe8e0a0cac2b9fe9e3679a059d1a6c946b2a2c31a">GemmOperand::kA</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ac6eac542d9d994509f931804b8b85ff5">GlobalLoadIteratorA</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a366c89f8ecfbf0aef894cfb6fae25be9">SharedStoreIteratorA</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ae324b03601b97a22f2ac6db077280c60">GlobalTransformerA</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a80e36b583ccd9aa9b37d52faa090cbca">GlobalLoadStreamA</a></td></tr>
+<tr class="memdesc:a80e36b583ccd9aa9b37d52faa090cbca"><td class="mdescLeft">&#160;</td><td class="mdescRight">The stream to load A from global memory to shared memory.  <a href="#a80e36b583ccd9aa9b37d52faa090cbca">More...</a><br /></td></tr>
+<tr class="separator:a80e36b583ccd9aa9b37d52faa090cbca"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa190538ab678c82e379db4038af665ee"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html">GemmGlobalIteratorAb</a>&lt; typename GemmTileTraitsHelperB::GlobalTileTraits, Index_ &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aa190538ab678c82e379db4038af665ee">GlobalLoadIteratorB</a></td></tr>
+<tr class="memdesc:aa190538ab678c82e379db4038af665ee"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to load B from global memory.  <a href="#aa190538ab678c82e379db4038af665ee">More...</a><br /></td></tr>
+<tr class="separator:aa190538ab678c82e379db4038af665ee"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2ca7dcd4b5157db9b9c2f92740e44184"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTransformerB.html">HgemmTransformerB</a>&lt; GemmTileTraitsHelperB::kLayout, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aa190538ab678c82e379db4038af665ee">GlobalLoadIteratorB</a> &gt;::Transformer&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a2ca7dcd4b5157db9b9c2f92740e44184">GlobalTransformerB</a></td></tr>
+<tr class="separator:a2ca7dcd4b5157db9b9c2f92740e44184"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a463dddee069606fd4ecf7c386ff23fce"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileStoreIterator.html">TileStoreIterator</a>&lt; typename GemmTileTraitsHelperB::SharedStoreTileTraits, typename GemmTileTraitsHelperB::SharedStoreTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a463dddee069606fd4ecf7c386ff23fce">SharedStoreIteratorB</a></td></tr>
+<tr class="memdesc:a463dddee069606fd4ecf7c386ff23fce"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to store B to shared memory.  <a href="#a463dddee069606fd4ecf7c386ff23fce">More...</a><br /></td></tr>
+<tr class="separator:a463dddee069606fd4ecf7c386ff23fce"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2c46c11f5fddb865645f555547c823ba"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">GlobalLoadStream</a>&lt; <a class="el" href="structcutlass_1_1GemmOperand.html#ab209ea3de198efabe8e8707dfe8e0a0caad0876342d150cef7da6ae149d5e99f9">GemmOperand::kB</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aa190538ab678c82e379db4038af665ee">GlobalLoadIteratorB</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a463dddee069606fd4ecf7c386ff23fce">SharedStoreIteratorB</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a2ca7dcd4b5157db9b9c2f92740e44184">GlobalTransformerB</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a2c46c11f5fddb865645f555547c823ba">GlobalLoadStreamB</a></td></tr>
+<tr class="memdesc:a2c46c11f5fddb865645f555547c823ba"><td class="mdescLeft">&#160;</td><td class="mdescRight">The stream to load B from global memory to shared memory.  <a href="#a2c46c11f5fddb865645f555547c823ba">More...</a><br /></td></tr>
+<tr class="separator:a2c46c11f5fddb865645f555547c823ba"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8978603203221020113ec79e3f2c0d64"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileLoadIterator.html">TileLoadIterator</a>&lt; typename GemmTileTraitsHelperA::SharedLoadTileTraits, typename GemmTileTraitsHelperA::SharedLoadTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8978603203221020113ec79e3f2c0d64">SharedLoadIteratorA</a></td></tr>
+<tr class="memdesc:a8978603203221020113ec79e3f2c0d64"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to load A from shared memory.  <a href="#a8978603203221020113ec79e3f2c0d64">More...</a><br /></td></tr>
+<tr class="separator:a8978603203221020113ec79e3f2c0d64"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aaa35c4d2a90f137f50c9ccd24d5c4f5c"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">SharedLoadStream</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8978603203221020113ec79e3f2c0d64">SharedLoadIteratorA</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aaa35c4d2a90f137f50c9ccd24d5c4f5c">SharedLoadStreamA</a></td></tr>
+<tr class="memdesc:aaa35c4d2a90f137f50c9ccd24d5c4f5c"><td class="mdescLeft">&#160;</td><td class="mdescRight">The stream to load A from shared memory.  <a href="#aaa35c4d2a90f137f50c9ccd24d5c4f5c">More...</a><br /></td></tr>
+<tr class="separator:aaa35c4d2a90f137f50c9ccd24d5c4f5c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a14b4720b7522684a98b653d70353233a"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileLoadIterator.html">TileLoadIterator</a>&lt; typename GemmTileTraitsHelperB::SharedLoadTileTraits, typename GemmTileTraitsHelperB::SharedLoadTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a14b4720b7522684a98b653d70353233a">SharedLoadIteratorB</a></td></tr>
+<tr class="memdesc:a14b4720b7522684a98b653d70353233a"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to load B from shared memory.  <a href="#a14b4720b7522684a98b653d70353233a">More...</a><br /></td></tr>
+<tr class="separator:a14b4720b7522684a98b653d70353233a"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1d458fe1e416ddc4565f2b802592268b"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">SharedLoadStream</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a14b4720b7522684a98b653d70353233a">SharedLoadIteratorB</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1d458fe1e416ddc4565f2b802592268b">SharedLoadStreamB</a></td></tr>
+<tr class="memdesc:a1d458fe1e416ddc4565f2b802592268b"><td class="mdescLeft">&#160;</td><td class="mdescRight">The stream to load B from shared memory.  <a href="#a1d458fe1e416ddc4565f2b802592268b">More...</a><br /></td></tr>
+<tr class="separator:a1d458fe1e416ddc4565f2b802592268b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae82826fde376748cf67ff2e1bcaa8cef"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aedb95febe4a0b2943e233c95c36a22cd">GemmConfig::MultiplyAdd</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ae82826fde376748cf67ff2e1bcaa8cef">MultiplyAdd</a></td></tr>
+<tr class="memdesc:ae82826fde376748cf67ff2e1bcaa8cef"><td class="mdescLeft">&#160;</td><td class="mdescRight">The functor to do the multiply-add in the main loop.  <a href="#ae82826fde376748cf67ff2e1bcaa8cef">More...</a><br /></td></tr>
+<tr class="separator:ae82826fde376748cf67ff2e1bcaa8cef"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8574faffd18e4aa8420a4e32e07b62d6"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8574faffd18e4aa8420a4e32e07b62d6">ClearAccumulators</a>&lt; typename <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd.html#af41778b170d940d10bd53f13d34912b1">MultiplyAdd::ScalarC</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8574faffd18e4aa8420a4e32e07b62d6">ClearAccumulators</a></td></tr>
+<tr class="memdesc:a8574faffd18e4aa8420a4e32e07b62d6"><td class="mdescLeft">&#160;</td><td class="mdescRight">The object to clear accumulators.  <a href="#a8574faffd18e4aa8420a4e32e07b62d6">More...</a><br /></td></tr>
+<tr class="separator:a8574faffd18e4aa8420a4e32e07b62d6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aeb825b6575955a714ff24df2e142c047"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1SimplifiedGemmEpilogueTraits.html">SimplifiedGemmEpilogueTraits</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a0cb18b7857c88f600c6977a1bdb3f4e4">GemmConfig</a>, EpilogueFunctor_, Index_ &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aeb825b6575955a714ff24df2e142c047">GemmEpilogueTraits</a></td></tr>
+<tr class="memdesc:aeb825b6575955a714ff24df2e142c047"><td class="mdescLeft">&#160;</td><td class="mdescRight">The traits class for the epilogue.  <a href="#aeb825b6575955a714ff24df2e142c047">More...</a><br /></td></tr>
+<tr class="separator:aeb825b6575955a714ff24df2e142c047"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ada2812153440cf1e678ca4c795a6e8ae"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">GemmEpilogue</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aeb825b6575955a714ff24df2e142c047">GemmEpilogueTraits</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ada2812153440cf1e678ca4c795a6e8ae">Epilogue</a></td></tr>
+<tr class="memdesc:ada2812153440cf1e678ca4c795a6e8ae"><td class="mdescLeft">&#160;</td><td class="mdescRight">The epilogue.  <a href="#ada2812153440cf1e678ca4c795a6e8ae">More...</a><br /></td></tr>
+<tr class="separator:ada2812153440cf1e678ca4c795a6e8ae"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Typedef Documentation</h2>
-<a id="aba2366bec386c74df47dfd0426b07041"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aba2366bec386c74df47dfd0426b07041">&#9670;&nbsp;</a></span>ClearAccumulators</h2>
+<a id="a8574faffd18e4aa8420a4e32e07b62d6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8574faffd18e4aa8420a4e32e07b62d6">&#9670;&nbsp;</a></span>ClearAccumulators</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aba2366bec386c74df47dfd0426b07041">ClearAccumulators</a>&lt;typename <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd.html#a1af758cb98c33060462a2706856b0a01">MultiplyAdd::ScalarC</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aba2366bec386c74df47dfd0426b07041">ClearAccumulators</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8574faffd18e4aa8420a4e32e07b62d6">ClearAccumulators</a>&lt;typename <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd.html#af41778b170d940d10bd53f13d34912b1">MultiplyAdd::ScalarC</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8574faffd18e4aa8420a4e32e07b62d6">ClearAccumulators</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a234ae6065d5ab56135e10119d3ad2d98"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a234ae6065d5ab56135e10119d3ad2d98">&#9670;&nbsp;</a></span>Epilogue</h2>
+<a id="ada2812153440cf1e678ca4c795a6e8ae"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ada2812153440cf1e678ca4c795a6e8ae">&#9670;&nbsp;</a></span>Epilogue</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">GemmEpilogue</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a4a0f361b5c47d0ab5f3308cd3b3b6ef6">GemmEpilogueTraits</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a234ae6065d5ab56135e10119d3ad2d98">Epilogue</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">GemmEpilogue</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aeb825b6575955a714ff24df2e142c047">GemmEpilogueTraits</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ada2812153440cf1e678ca4c795a6e8ae">Epilogue</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a1597c776238f35bcb1acc0a8f8f9c118"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a1597c776238f35bcb1acc0a8f8f9c118">&#9670;&nbsp;</a></span>GemmConfig</h2>
+<a id="a0cb18b7857c88f600c6977a1bdb3f4e4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0cb18b7857c88f600c6977a1bdb3f4e4">&#9670;&nbsp;</a></span>GemmConfig</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmConfig.html">HgemmConfig</a>&lt;OutputTile_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1597c776238f35bcb1acc0a8f8f9c118">GemmConfig</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmConfig.html">HgemmConfig</a>&lt;OutputTile_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a0cb18b7857c88f600c6977a1bdb3f4e4">GemmConfig</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a4a0f361b5c47d0ab5f3308cd3b3b6ef6"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a4a0f361b5c47d0ab5f3308cd3b3b6ef6">&#9670;&nbsp;</a></span>GemmEpilogueTraits</h2>
+<a id="aeb825b6575955a714ff24df2e142c047"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aeb825b6575955a714ff24df2e142c047">&#9670;&nbsp;</a></span>GemmEpilogueTraits</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1SimplifiedGemmEpilogueTraits.html">SimplifiedGemmEpilogueTraits</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1597c776238f35bcb1acc0a8f8f9c118">GemmConfig</a>, EpilogueFunctor_, Index_&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a4a0f361b5c47d0ab5f3308cd3b3b6ef6">GemmEpilogueTraits</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1SimplifiedGemmEpilogueTraits.html">SimplifiedGemmEpilogueTraits</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a0cb18b7857c88f600c6977a1bdb3f4e4">GemmConfig</a>, EpilogueFunctor_, Index_&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aeb825b6575955a714ff24df2e142c047">GemmEpilogueTraits</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a5557c86a530f5d20a35d3fa620adf417"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a5557c86a530f5d20a35d3fa620adf417">&#9670;&nbsp;</a></span>GemmTileTraitsHelperA</h2>
+<a id="a4f3afb4b1f37a2c43a1935a3000b2a02"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4f3afb4b1f37a2c43a1935a3000b2a02">&#9670;&nbsp;</a></span>GemmTileTraitsHelperA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTileTraitsHelperA.html">HgemmTileTraitsHelperA</a>&lt;kLayoutA_, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1597c776238f35bcb1acc0a8f8f9c118">GemmConfig</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a5557c86a530f5d20a35d3fa620adf417">GemmTileTraitsHelperA</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTileTraitsHelperA.html">HgemmTileTraitsHelperA</a>&lt;kLayoutA_, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a0cb18b7857c88f600c6977a1bdb3f4e4">GemmConfig</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a4f3afb4b1f37a2c43a1935a3000b2a02">GemmTileTraitsHelperA</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a8768c2b03bea0c3601c47dde2bc7ca89"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a8768c2b03bea0c3601c47dde2bc7ca89">&#9670;&nbsp;</a></span>GemmTileTraitsHelperB</h2>
+<a id="ada910ee63493bc3c70f7395127268a1d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ada910ee63493bc3c70f7395127268a1d">&#9670;&nbsp;</a></span>GemmTileTraitsHelperB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTileTraitsHelperB.html">HgemmTileTraitsHelperB</a>&lt;kLayoutB_, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1597c776238f35bcb1acc0a8f8f9c118">GemmConfig</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8768c2b03bea0c3601c47dde2bc7ca89">GemmTileTraitsHelperB</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTileTraitsHelperB.html">HgemmTileTraitsHelperB</a>&lt;kLayoutB_, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a0cb18b7857c88f600c6977a1bdb3f4e4">GemmConfig</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ada910ee63493bc3c70f7395127268a1d">GemmTileTraitsHelperB</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="ab8a3def34300afb5745453d0b33204aa"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab8a3def34300afb5745453d0b33204aa">&#9670;&nbsp;</a></span>GlobalLoadIteratorA</h2>
+<a id="ac6eac542d9d994509f931804b8b85ff5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac6eac542d9d994509f931804b8b85ff5">&#9670;&nbsp;</a></span>GlobalLoadIteratorA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html">GemmGlobalIteratorAb</a>&lt;typename GemmTileTraitsHelperA::GlobalTileTraits, Index_&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ab8a3def34300afb5745453d0b33204aa">GlobalLoadIteratorA</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html">GemmGlobalIteratorAb</a>&lt;typename GemmTileTraitsHelperA::GlobalTileTraits, Index_&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ac6eac542d9d994509f931804b8b85ff5">GlobalLoadIteratorA</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a95559f28cab076da723e4cb24351116e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a95559f28cab076da723e4cb24351116e">&#9670;&nbsp;</a></span>GlobalLoadIteratorB</h2>
+<a id="aa190538ab678c82e379db4038af665ee"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa190538ab678c82e379db4038af665ee">&#9670;&nbsp;</a></span>GlobalLoadIteratorB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html">GemmGlobalIteratorAb</a>&lt;typename GemmTileTraitsHelperB::GlobalTileTraits, Index_&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a95559f28cab076da723e4cb24351116e">GlobalLoadIteratorB</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html">GemmGlobalIteratorAb</a>&lt;typename GemmTileTraitsHelperB::GlobalTileTraits, Index_&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aa190538ab678c82e379db4038af665ee">GlobalLoadIteratorB</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a2aaece6093100c71c4d587994200e3bb"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a2aaece6093100c71c4d587994200e3bb">&#9670;&nbsp;</a></span>GlobalLoadStreamA</h2>
+<a id="a80e36b583ccd9aa9b37d52faa090cbca"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a80e36b583ccd9aa9b37d52faa090cbca">&#9670;&nbsp;</a></span>GlobalLoadStreamA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">GlobalLoadStream</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ab8a3def34300afb5745453d0b33204aa">GlobalLoadIteratorA</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a7f022d423d42d4081cefa7eb26b4d5b4">SharedStoreIteratorA</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a3fb86b6d3e353df6b752510d64c5e647">GlobalTransformerA</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a2aaece6093100c71c4d587994200e3bb">GlobalLoadStreamA</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">GlobalLoadStream</a>&lt;<a class="el" href="structcutlass_1_1GemmOperand.html#ab209ea3de198efabe8e8707dfe8e0a0cac2b9fe9e3679a059d1a6c946b2a2c31a">GemmOperand::kA</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ac6eac542d9d994509f931804b8b85ff5">GlobalLoadIteratorA</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a366c89f8ecfbf0aef894cfb6fae25be9">SharedStoreIteratorA</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ae324b03601b97a22f2ac6db077280c60">GlobalTransformerA</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a80e36b583ccd9aa9b37d52faa090cbca">GlobalLoadStreamA</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="abaf5f16ab0b215b406766ecadab29394"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#abaf5f16ab0b215b406766ecadab29394">&#9670;&nbsp;</a></span>GlobalLoadStreamB</h2>
+<a id="a2c46c11f5fddb865645f555547c823ba"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2c46c11f5fddb865645f555547c823ba">&#9670;&nbsp;</a></span>GlobalLoadStreamB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">GlobalLoadStream</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a95559f28cab076da723e4cb24351116e">GlobalLoadIteratorB</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#abe3383e7338c08841fd8f0bfb1090448">SharedStoreIteratorB</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a7b4de712868095200a338802c1fbb3de">GlobalTransformerB</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#abaf5f16ab0b215b406766ecadab29394">GlobalLoadStreamB</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">GlobalLoadStream</a>&lt;<a class="el" href="structcutlass_1_1GemmOperand.html#ab209ea3de198efabe8e8707dfe8e0a0caad0876342d150cef7da6ae149d5e99f9">GemmOperand::kB</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aa190538ab678c82e379db4038af665ee">GlobalLoadIteratorB</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a463dddee069606fd4ecf7c386ff23fce">SharedStoreIteratorB</a>, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a2ca7dcd4b5157db9b9c2f92740e44184">GlobalTransformerB</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a2c46c11f5fddb865645f555547c823ba">GlobalLoadStreamB</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a3fb86b6d3e353df6b752510d64c5e647"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a3fb86b6d3e353df6b752510d64c5e647">&#9670;&nbsp;</a></span>GlobalTransformerA</h2>
+<a id="ae324b03601b97a22f2ac6db077280c60"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae324b03601b97a22f2ac6db077280c60">&#9670;&nbsp;</a></span>GlobalTransformerA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTransformerA.html">HgemmTransformerA</a>&lt;GemmTileTraitsHelperA::kLayout, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ab8a3def34300afb5745453d0b33204aa">GlobalLoadIteratorA</a>&gt;::Transformer <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a3fb86b6d3e353df6b752510d64c5e647">GlobalTransformerA</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTransformerA.html">HgemmTransformerA</a>&lt;GemmTileTraitsHelperA::kLayout, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ac6eac542d9d994509f931804b8b85ff5">GlobalLoadIteratorA</a>&gt;::Transformer <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ae324b03601b97a22f2ac6db077280c60">GlobalTransformerA</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a7b4de712868095200a338802c1fbb3de"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a7b4de712868095200a338802c1fbb3de">&#9670;&nbsp;</a></span>GlobalTransformerB</h2>
+<a id="a2ca7dcd4b5157db9b9c2f92740e44184"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2ca7dcd4b5157db9b9c2f92740e44184">&#9670;&nbsp;</a></span>GlobalTransformerB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTransformerB.html">HgemmTransformerB</a>&lt;GemmTileTraitsHelperB::kLayout, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a95559f28cab076da723e4cb24351116e">GlobalLoadIteratorB</a>&gt;::Transformer <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a7b4de712868095200a338802c1fbb3de">GlobalTransformerB</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1HgemmTransformerB.html">HgemmTransformerB</a>&lt;GemmTileTraitsHelperB::kLayout, <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aa190538ab678c82e379db4038af665ee">GlobalLoadIteratorB</a>&gt;::Transformer <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a2ca7dcd4b5157db9b9c2f92740e44184">GlobalTransformerB</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="ae9facf63912d98e597883bf7efb56cc8"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae9facf63912d98e597883bf7efb56cc8">&#9670;&nbsp;</a></span>MultiplyAdd</h2>
+<a id="ae82826fde376748cf67ff2e1bcaa8cef"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae82826fde376748cf67ff2e1bcaa8cef">&#9670;&nbsp;</a></span>MultiplyAdd</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a8669096ddbb8c810fb8d2313d62e6ee7">GemmConfig::MultiplyAdd</a> <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ae9facf63912d98e597883bf7efb56cc8">MultiplyAdd</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aedb95febe4a0b2943e233c95c36a22cd">GemmConfig::MultiplyAdd</a> <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ae82826fde376748cf67ff2e1bcaa8cef">MultiplyAdd</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a1bbb198a50b5f01a0502df44bb678620"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a1bbb198a50b5f01a0502df44bb678620">&#9670;&nbsp;</a></span>SharedLoadIteratorA</h2>
+<a id="a8978603203221020113ec79e3f2c0d64"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8978603203221020113ec79e3f2c0d64">&#9670;&nbsp;</a></span>SharedLoadIteratorA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1TileLoadIterator.html">TileLoadIterator</a>&lt;typename GemmTileTraitsHelperA::SharedLoadTileTraits, typename GemmTileTraitsHelperA::SharedLoadTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1bbb198a50b5f01a0502df44bb678620">SharedLoadIteratorA</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1TileLoadIterator.html">TileLoadIterator</a>&lt;typename GemmTileTraitsHelperA::SharedLoadTileTraits, typename GemmTileTraitsHelperA::SharedLoadTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8978603203221020113ec79e3f2c0d64">SharedLoadIteratorA</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a8d09409973094ca2a17633776a64a303"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a8d09409973094ca2a17633776a64a303">&#9670;&nbsp;</a></span>SharedLoadIteratorB</h2>
+<a id="a14b4720b7522684a98b653d70353233a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a14b4720b7522684a98b653d70353233a">&#9670;&nbsp;</a></span>SharedLoadIteratorB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1TileLoadIterator.html">TileLoadIterator</a>&lt;typename GemmTileTraitsHelperB::SharedLoadTileTraits, typename GemmTileTraitsHelperB::SharedLoadTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8d09409973094ca2a17633776a64a303">SharedLoadIteratorB</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1TileLoadIterator.html">TileLoadIterator</a>&lt;typename GemmTileTraitsHelperB::SharedLoadTileTraits, typename GemmTileTraitsHelperB::SharedLoadTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a14b4720b7522684a98b653d70353233a">SharedLoadIteratorB</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a21c860cc877df13d22dd30eeb5e2b06b"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a21c860cc877df13d22dd30eeb5e2b06b">&#9670;&nbsp;</a></span>SharedLoadStreamA</h2>
+<a id="aaa35c4d2a90f137f50c9ccd24d5c4f5c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aaa35c4d2a90f137f50c9ccd24d5c4f5c">&#9670;&nbsp;</a></span>SharedLoadStreamA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">SharedLoadStream</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1bbb198a50b5f01a0502df44bb678620">SharedLoadIteratorA</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a21c860cc877df13d22dd30eeb5e2b06b">SharedLoadStreamA</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">SharedLoadStream</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8978603203221020113ec79e3f2c0d64">SharedLoadIteratorA</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#aaa35c4d2a90f137f50c9ccd24d5c4f5c">SharedLoadStreamA</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="ac5eeca1e91f0e0d4dd48d432d5213215"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ac5eeca1e91f0e0d4dd48d432d5213215">&#9670;&nbsp;</a></span>SharedLoadStreamB</h2>
+<a id="a1d458fe1e416ddc4565f2b802592268b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1d458fe1e416ddc4565f2b802592268b">&#9670;&nbsp;</a></span>SharedLoadStreamB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">SharedLoadStream</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a8d09409973094ca2a17633776a64a303">SharedLoadIteratorB</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#ac5eeca1e91f0e0d4dd48d432d5213215">SharedLoadStreamB</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">SharedLoadStream</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a14b4720b7522684a98b653d70353233a">SharedLoadIteratorB</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a1d458fe1e416ddc4565f2b802592268b">SharedLoadStreamB</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a7f022d423d42d4081cefa7eb26b4d5b4"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a7f022d423d42d4081cefa7eb26b4d5b4">&#9670;&nbsp;</a></span>SharedStoreIteratorA</h2>
+<a id="a366c89f8ecfbf0aef894cfb6fae25be9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a366c89f8ecfbf0aef894cfb6fae25be9">&#9670;&nbsp;</a></span>SharedStoreIteratorA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1TileStoreIterator.html">TileStoreIterator</a>&lt;typename GemmTileTraitsHelperA::SharedStoreTileTraits, typename GemmTileTraitsHelperA::SharedStoreTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a7f022d423d42d4081cefa7eb26b4d5b4">SharedStoreIteratorA</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1TileStoreIterator.html">TileStoreIterator</a>&lt;typename GemmTileTraitsHelperA::SharedStoreTileTraits, typename GemmTileTraitsHelperA::SharedStoreTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a366c89f8ecfbf0aef894cfb6fae25be9">SharedStoreIteratorA</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="abe3383e7338c08841fd8f0bfb1090448"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#abe3383e7338c08841fd8f0bfb1090448">&#9670;&nbsp;</a></span>SharedStoreIteratorB</h2>
+<a id="a463dddee069606fd4ecf7c386ff23fce"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a463dddee069606fd4ecf7c386ff23fce">&#9670;&nbsp;</a></span>SharedStoreIteratorB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename AccumulatorsPerThread_  = Shape&lt;32, 8, 8&gt;, int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
+template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename OutputTile_ , typename EpilogueFunctor_ , typename ThreadGemmShape_ , int kScalarsPerLdgA_ = 2, int kScalarsPerLdgB_ = 2, typename Index_  = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1TileStoreIterator.html">TileStoreIterator</a>&lt;typename GemmTileTraitsHelperB::SharedStoreTileTraits, typename GemmTileTraitsHelperB::SharedStoreTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#abe3383e7338c08841fd8f0bfb1090448">SharedStoreIteratorB</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1TileStoreIterator.html">TileStoreIterator</a>&lt;typename GemmTileTraitsHelperB::SharedStoreTileTraits, typename GemmTileTraitsHelperB::SharedStoreTileTraits::Scalar, <a class="el" href="structcutlass_1_1IteratorAdvance.html#a9ad9c2302ddffa148d47cdcf6c738ddaacfe756fca665eb1bbf389850915c1b81">IteratorAdvance::kH</a>, <a class="el" href="structcutlass_1_1MemorySpace.html#a1e031ec41668015a8fe4ba2c1145d03ca2804339b2be64ff68ae3042073aaa7cc">MemorySpace::kShared</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html">cutlass::gemm::HgemmTraitsHelper</a>&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1HgemmTraitsHelper.html#a463dddee069606fd4ecf7c386ff23fce">SharedStoreIteratorB</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -452,7 +452,7 @@ template&lt;MatrixLayout::Kind kLayoutA_, MatrixLayout::Kind kLayoutB_, typename
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:14 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:52 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -71,31 +71,40 @@ $(function() {
 &#160;
 
 <h3><a id="index_t"></a>- t -</h3><ul>
+<li>tensor_stride
+: <a class="el" href="structcutlass_1_1TensorRefBatchStrided.html#a27a1e93508bb9c602028cabc3431815f">cutlass::TensorRefBatchStrided&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
+</li>
 <li>thread_offset
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#a1864c5556529afdc8445021cad780b04">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#a56601dc34e8f9a070db5dc48c37d55a0">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#ab3057dad7a4decb5594c66aa328f8066">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a7726cdd4fe056c59bb04adb9e5504457">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a350f5beea87d811f43c55519bc0b9035">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a7808588ce0b12017379dcbe1ba9c511f">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a00a33d258b9d60c8f9d4bfc48e2c6825">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
 </li>
-<li>transformed_a
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html#a883b28ca237b1ec076856232cfee0c6f">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedLoadStream</a>
+<li>threadblock_offset
+: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a563961c326d2e55f5b8682a30b64a24a">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
 </li>
-<li>transformed_b
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html#a9369a5f819d2a42997491e0df96f47ef">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedLoadStream</a>
+<li>threadblock_tile
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1MainLoopSharedStorage.html#af8f0050e818b788402526857afc7c919">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::MainLoopSharedStorage</a>
+</li>
+<li>transformed
+: <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a7583af38ca0fb446882b28c0e2dcae88">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
 </li>
 <li>transformed_fragment
-: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamBase.html#afa97cb1cfebca0d6977b1c8318bedddf">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7d7042e60aaab0dd00772b239e1f1db1">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileLoadStream.html#ac61d45d91faf9d060509cf1e5c34fe01">cutlass::TileLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreStream.html#aeb5be2edcc35c7876abe5234663f9c48">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;</a>
 </li>
 <li>transformer
-: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamBase.html#a868f82ee87aba37b05721fe8210221c9">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#ab68ba57fe69430c557379b3457faebc4">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#af846390ad0e5b80ccb4e8b95c5fe64a7">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileLoadStream.html#a54399d7a42c1330ef0e756949483c552">cutlass::TileLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreStream.html#a61d57147150bffda0c1662d6131a3934">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;</a>
 </li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:15 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['wmmagemmglobaliteratorcd',['WmmaGemmGlobalIteratorCd',['../structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#a505f124fa3f47c6d57b7275e81be6dd3',1,'cutlass::gemm::WmmaGemmGlobalIteratorCd::WmmaGemmGlobalIteratorCd()'],['../structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#aa5c14e2a799249fe8bba14aa1dbe69dc',1,'cutlass::gemm::WmmaGemmGlobalIteratorCd::WmmaGemmGlobalIteratorCd(Params const &amp;params, const Coord&lt; 3 &gt; &amp;bounds, const Coord&lt; 3 &gt; &amp;block, int const pointer_offset=0, int const pred_offset=0, ThreadOffset thread_offset_func=ThreadOffset())']]]
+  ['unique_5fptr',['unique_ptr',['../classcutlass_1_1platform_1_1unique__ptr.html#aa8a370bc7e4c2d99eb85e7fea27b3179',1,'cutlass::platform::unique_ptr::unique_ptr()'],['../classcutlass_1_1platform_1_1unique__ptr.html#a14c8bf5a5deefe4a6602ccd5c5af364c',1,'cutlass::platform::unique_ptr::unique_ptr(pointer p)']]]
 ];

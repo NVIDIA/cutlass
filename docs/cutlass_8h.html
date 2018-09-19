@@ -73,8 +73,10 @@ $(function() {
 </div><!-- top -->
 <div class="header">
   <div class="summary">
+<a href="#nested-classes">Classes</a> &#124;
 <a href="#namespaces">Namespaces</a> &#124;
-<a href="#define-members">Macros</a>  </div>
+<a href="#define-members">Macros</a> &#124;
+<a href="#func-members">Functions</a>  </div>
   <div class="headertitle">
 <div class="title">cutlass.h File Reference</div>  </div>
 </div><!--header-->
@@ -85,6 +87,13 @@ $(function() {
 
 <p><a href="cutlass_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structDebugType.html">DebugType&lt; T &gt;</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structDebugValue.html">DebugValue&lt; Value &gt;</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="namespaces"></a>
 Namespaces</h2></td></tr>
 <tr class="memitem:namespacecutlass"><td class="memItemLeft" align="right" valign="top"> &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacecutlass.html">cutlass</a></td></tr>
@@ -96,18 +105,26 @@ Macros</h2></td></tr>
 <tr class="separator:a8ff3cda9323810c1c504793a0206d4b8"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ad114a1ab01f73833ea00020ffb7bcea7"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#ad114a1ab01f73833ea00020ffb7bcea7">CUTLASS_MINOR</a>&#160;&#160;&#160;0</td></tr>
 <tr class="separator:ad114a1ab01f73833ea00020ffb7bcea7"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a1d4e5818a594bbfc472e54978955cb8b"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#a1d4e5818a594bbfc472e54978955cb8b">CUTLASS_PATCH</a>&#160;&#160;&#160;0</td></tr>
+<tr class="memitem:a1d4e5818a594bbfc472e54978955cb8b"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#a1d4e5818a594bbfc472e54978955cb8b">CUTLASS_PATCH</a>&#160;&#160;&#160;1</td></tr>
 <tr class="separator:a1d4e5818a594bbfc472e54978955cb8b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aa3040eddf073214969f9445bfa925039"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#aa3040eddf073214969f9445bfa925039">CUTLASS_VERSION</a>&#160;&#160;&#160;((<a class="el" href="cutlass_8h.html#a8ff3cda9323810c1c504793a0206d4b8">CUTLASS_MAJOR</a>)*100 + (<a class="el" href="cutlass_8h.html#ad114a1ab01f73833ea00020ffb7bcea7">CUTLASS_MINOR</a>)*10 + <a class="el" href="cutlass_8h.html#a1d4e5818a594bbfc472e54978955cb8b">CUTLASS_PATCH</a>)</td></tr>
 <tr class="separator:aa3040eddf073214969f9445bfa925039"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a28c2443a142676d3d71effdae1a986b1"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a></td></tr>
 <tr class="separator:a28c2443a142676d3d71effdae1a986b1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0159b8e4cd578881a1ccfd0921516af7"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#a0159b8e4cd578881a1ccfd0921516af7">CUTLASS_ASSERT</a>(x)&#160;&#160;&#160;assert(x)</td></tr>
+<tr class="separator:a0159b8e4cd578881a1ccfd0921516af7"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4b1c9f25ab6eaa25e1f2258dd63e6ce4"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#a4b1c9f25ab6eaa25e1f2258dd63e6ce4">CUTLASS_PRAGMA_UNROLL</a></td></tr>
 <tr class="separator:a4b1c9f25ab6eaa25e1f2258dd63e6ce4"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:adb3bc73d74b4a4bf13099d5696db3352"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#adb3bc73d74b4a4bf13099d5696db3352">CUTLASS_PRAGMA_NO_UNROLL</a></td></tr>
 <tr class="separator:adb3bc73d74b4a4bf13099d5696db3352"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a0159b8e4cd578881a1ccfd0921516af7"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#a0159b8e4cd578881a1ccfd0921516af7">CUTLASS_ASSERT</a>(x)&#160;&#160;&#160;assert(x)</td></tr>
-<tr class="separator:a0159b8e4cd578881a1ccfd0921516af7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8e18ced39c05ab3304bb4fcdc0cc9f71"><td class="memItemLeft" align="right" valign="top">#define&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#a8e18ced39c05ab3304bb4fcdc0cc9f71">CUTLASS_GEMM_LOOP</a>&#160;&#160;&#160;<a class="el" href="cutlass_8h.html#adb3bc73d74b4a4bf13099d5696db3352">CUTLASS_PRAGMA_NO_UNROLL</a></td></tr>
+<tr class="separator:a8e18ced39c05ab3304bb4fcdc0cc9f71"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:ab7e23b523490567225b20e2c72649f20"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
+<tr class="memitem:ab7e23b523490567225b20e2c72649f20"><td class="memTemplItemLeft" align="right" valign="top">void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="cutlass_8h.html#ab7e23b523490567225b20e2c72649f20">DebugTypeFunc</a> (T const &amp;t)</td></tr>
+<tr class="separator:ab7e23b523490567225b20e2c72649f20"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Macro Definition Documentation</h2>
 <a id="a0159b8e4cd578881a1ccfd0921516af7"></a>
@@ -122,6 +139,20 @@ Macros</h2></td></tr>
           <td class="paramtype">&#160;</td>
           <td class="paramname">x</td><td>)</td>
           <td>&#160;&#160;&#160;assert(x)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a8e18ced39c05ab3304bb4fcdc0cc9f71"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8e18ced39c05ab3304bb4fcdc0cc9f71">&#9670;&nbsp;</a></span>CUTLASS_GEMM_LOOP</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">#define CUTLASS_GEMM_LOOP&#160;&#160;&#160;<a class="el" href="cutlass_8h.html#adb3bc73d74b4a4bf13099d5696db3352">CUTLASS_PRAGMA_NO_UNROLL</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -177,7 +208,7 @@ Macros</h2></td></tr>
 <div class="memproto">
       <table class="memname">
         <tr>
-          <td class="memname">#define CUTLASS_PATCH&#160;&#160;&#160;0</td>
+          <td class="memname">#define CUTLASS_PATCH&#160;&#160;&#160;1</td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -226,10 +257,31 @@ Macros</h2></td></tr>
 
 </div>
 </div>
+<h2 class="groupheader">Function Documentation</h2>
+<a id="ab7e23b523490567225b20e2c72649f20"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab7e23b523490567225b20e2c72649f20">&#9670;&nbsp;</a></span>DebugTypeFunc()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">void DebugTypeFunc </td>
+          <td>(</td>
+          <td class="paramtype">T const &amp;&#160;</td>
+          <td class="paramname"><em>t</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

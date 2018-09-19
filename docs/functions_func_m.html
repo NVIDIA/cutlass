@@ -71,23 +71,38 @@ $(function() {
 &#160;
 
 <h3><a id="index_m"></a>- m -</h3><ul>
+<li>m()
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmCoord.html#a9167769a2b915eb92fb4ca37b9212793">cutlass::gemm::GemmCoord</a>
+</li>
+<li>map()
+: <a class="el" href="classcutlass_1_1TensorRef.html#a07dfe328d4a8316e79e9acde50582360">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="classcutlass_1_1TensorRef_3_01Storage___00_01Rank___00_01MapFunc___00_011_00_01Index___00_01LongIndex___01_4.html#a215f63b5a1b3799654c5670ef108fcfb">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, 1, Index_, LongIndex_ &gt;</a>
+</li>
+<li>MatrixCoord()
+: <a class="el" href="structcutlass_1_1MatrixCoord.html#a36a8a680a466b55325eb0c0cb9fc29c6">cutlass::MatrixCoord</a>
+</li>
+<li>move_to_residue()
+: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#ac269a9280a55d3988ca60f571bdf7f29">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#ab94c0c95d6d4e019563ba8a142f9d410">cutlass::gemm::GlobalLoadStreamPair&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;</a>
+</li>
 <li>multiply()
-: <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd.html#a522301fbe3e276cb5ef9fbe75bb2ab50">cutlass::gemm::FragmentMultiplyAdd&lt; Scalar_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd_3_01half_01_4.html#ae62d61ec068ac958753d0a2f5a99d8e2">cutlass::gemm::FragmentMultiplyAdd&lt; half &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd.html#a934c0d74c70fc87796ecb5cde50fd516">cutlass::gemm::FragmentMultiplyAdd&lt; ScalarAlphaBeta_, ScalarAccum_, fragMul2 &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd_3_01half_00_01half_00_01true_01_4.html#a6bed70e7074931419e9441688aee00ea">cutlass::gemm::FragmentMultiplyAdd&lt; half, half, true &gt;</a>
 </li>
 <li>multiply_add()
-: <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd.html#a34bbf209967fef6181d3d46dd27fa0c0">cutlass::gemm::FragmentMultiplyAdd&lt; Scalar_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd_3_01half_01_4.html#a89c8b663af69f13c2a02cb464b5172a5">cutlass::gemm::FragmentMultiplyAdd&lt; half &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd.html#aafa37c2e1ffd2f7d7031c24c732157d8">cutlass::gemm::FragmentMultiplyAdd&lt; ScalarAlphaBeta_, ScalarAccum_, fragMul2 &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd_3_01half_00_01half_00_01true_01_4.html#a92edee5611d25b60cdab6a1c8e32141f">cutlass::gemm::FragmentMultiplyAdd&lt; half, half, true &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1Gemm.html#a2e844037d2527b842de3590cb783a49f">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd.html#a5dcf66c8126ec8adf8e66d4bf5b2f347">cutlass::gemm::ThreadMultiplyAdd&lt; AccumulatorsPerThread_, ThreadsPerWarp_, ScalarA_, ScalarB_, ScalarC_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd_3_01AccumulatorsPerThread___00_01ThreadsPerWarp___00_01half_00_01half_00_01half_01_4.html#a66486d38349fa20eb065ae9542eb43aa">cutlass::gemm::ThreadMultiplyAdd&lt; AccumulatorsPerThread_, ThreadsPerWarp_, half, half, half &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd_3_01AccumulatorsPerThread___00_01ThreadsPerWarp___00_f5353db950bbf0023472029cac4814b6.html#ad22dd143c304c22c2630aedbfd3459af">cutlass::gemm::ThreadMultiplyAdd&lt; AccumulatorsPerThread_, ThreadsPerWarp_, int8_t, int8_t, int &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd.html#a7989d48e4c2e16b7804b813630f347cb">cutlass::gemm::ThreadMultiplyAdd&lt; ThreadGemmShape_, ThreadsPerWarp_, ScalarA_, ScalarB_, ScalarC_, kLayout_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd_3_01ThreadGemmShape___00_01ThreadsPerWarp___00_01half_00_01half_00_01float_01_4.html#ae0ea662652907b60140598dad777c5ab">cutlass::gemm::ThreadMultiplyAdd&lt; ThreadGemmShape_, ThreadsPerWarp_, half, half, float &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd_3_01ThreadGemmShape___00_01ThreadsPerWarp___00_01half_00_01half_00_01half_01_4.html#aaf8ea4aaf393488f03ba7fb7af264940">cutlass::gemm::ThreadMultiplyAdd&lt; ThreadGemmShape_, ThreadsPerWarp_, half, half, half &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd_3_01ThreadGemmShape___00_01ThreadsPerWarp___00_01int8__t_00_01int8__t_00_01int_01_4.html#ad9d8e47e8896d8d4eab538aa78b56e47">cutlass::gemm::ThreadMultiplyAdd&lt; ThreadGemmShape_, ThreadsPerWarp_, int8_t, int8_t, int &gt;</a>
 </li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:15 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>
