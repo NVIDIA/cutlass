@@ -34,7 +34,6 @@ TEST(Sgemm_strided_batched_128x128x8, sgemm_256x384x64x3_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                      cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<8, 128, 128> >
       SgemmTraits;
-  //think about using run_gemm directly
   run_batched_strided_gemm<SgemmTraits>(256/*m*/, 384/*n*/, 64/*k*/, 3 /*batch_size*/);
 }
 
@@ -44,7 +43,6 @@ TEST(Sgemm_strided_batched_128x128x8, sgemm_128x384x192x2_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
     cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<8, 128, 128> >
     SgemmTraits;
-  //think about using run_gemm directly
   run_batched_strided_gemm<SgemmTraits>(128/*m*/, 384/*n*/, 192/*k*/, 2 /*batch_size*/);
 }
 
@@ -54,7 +52,6 @@ TEST(Sgemm_strided_batched_128x128x8, sgemm_127x384x192x2_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
     cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<8, 128, 128> >
     SgemmTraits;
-  //think about using run_gemm directly
   run_batched_strided_gemm<SgemmTraits>(127/*m*/, 384/*n*/, 192/*k*/, 2 /*batch_size*/);
 }
 
@@ -64,7 +61,6 @@ TEST(Sgemm_strided_batched_128x128x8, sgemm_127x388x190x2_nn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
     cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<8, 128, 128> >
     SgemmTraits;
-  //think about using run_gemm directly
   run_batched_strided_gemm<SgemmTraits>(127/*m*/, 388/*n*/, 190/*k*/, 2 /*batch_size*/);
 }
 
@@ -74,7 +70,6 @@ TEST(Sgemm_strided_batched_128x128x8, sgemm_256x384x64x3_nt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
     SgemmTraits;
-  //think about using run_gemm directly
   run_batched_strided_gemm<SgemmTraits>(256/*m*/, 384/*n*/, 64/*k*/, 3 /*batch_size*/);
 }
 
@@ -84,7 +79,6 @@ TEST(Sgemm_strided_batched_128x128x8, sgemm_128x384x192x2_nt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
     SgemmTraits;
-  //think about using run_gemm directly
   run_batched_strided_gemm<SgemmTraits>(128/*m*/, 384/*n*/, 192/*k*/, 2 /*batch_size*/);
 }
 
@@ -96,7 +90,6 @@ TEST(Sgemm_strided_batched_128x128x8, sgemm_256x384x64x3_tn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
     cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<8, 128, 128> >
     SgemmTraits;
-  //think about using run_gemm directly
   run_batched_strided_gemm<SgemmTraits>(256/*m*/, 384/*n*/, 64/*k*/, 3 /*batch_size*/);
 }
 
@@ -106,7 +99,6 @@ TEST(Sgemm_strided_batched_128x128x8, sgemm_128x384x192x2_tn) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
     cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<8, 128, 128> >
     SgemmTraits;
-  //think about using run_gemm directly
   run_batched_strided_gemm<SgemmTraits>(128/*m*/, 384/*n*/, 192/*k*/, 2 /*batch_size*/);
 }
 
@@ -118,7 +110,6 @@ TEST(Sgemm_strided_batched_128x128x8, sgemm_256x384x64x3_tt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
     SgemmTraits;
-  //think about using run_gemm directly
   run_batched_strided_gemm<SgemmTraits>(256/*m*/, 384/*n*/, 64/*k*/, 3 /*batch_size*/);
 }
 
@@ -128,8 +119,8 @@ TEST(Sgemm_strided_batched_128x128x8, sgemm_128x384x192x2_tt) {
   typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<8, 128, 128> >
     SgemmTraits;
-  //think about using run_gemm directly
   run_batched_strided_gemm<SgemmTraits>(128/*m*/, 384/*n*/, 192/*k*/, 2 /*batch_size*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+

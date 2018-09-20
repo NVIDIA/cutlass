@@ -3,7 +3,7 @@
 
 ## 1.1.0 (2018-09-19)
   * Turing Features
-    * WMMA GEMM targeting TensorCores - INT8, INT4, INT1
+    * WMMA GEMM targeting TensorCores - INT8, INT4, 1-bit
   * Batched Strided GEMM
   * Threadblock rasterization strategies
     * Improved performance for adverse problem sizes and data layouts

@@ -32,8 +32,8 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #define CUTLASS_MAJOR 1
-#define CUTLASS_MINOR 0
-#define CUTLASS_PATCH 1
+#define CUTLASS_MINOR 1
+#define CUTLASS_PATCH 0
 #define CUTLASS_VERSION ((CUTLASS_MAJOR)*100 + (CUTLASS_MINOR)*10 + CUTLASS_PATCH)
 
 #ifdef __NVCC__

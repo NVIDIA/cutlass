@@ -33,7 +33,7 @@ We describe the structure of an efficient GEMM in our talk at the
 * [Examples](examples/)
   * Basic GEMM, tensor views, CUTLASS utilities, batched GEMM, WMMA GEMM
 * Turing Features
-  * [WMMA GEMM targeting TensorCores](tools/test/unit/gemm/wmma_integer_gemm.cu) - INT8, INT4, INT1
+  * [WMMA GEMM targeting TensorCores](tools/test/unit/gemm/wmma_integer_gemm.cu) - INT8, INT4, 1-bit
 * [Batched Strided GEMM](tools/test/unit/gemm/batched_strided_sgemm_128x128x8.cu)
 * [Threadblock rasterization strategies](tools/test/unit/gemm/sgemm_threadblock_swizzle_nt.cu)
   * Improved performance for adverse problem sizes and data layouts
