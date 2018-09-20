@@ -23,24 +23,31 @@
  *
  **************************************************************************************************/
 
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/igemm_traits.h>
-#include <tools/test/perf/gemm/gemm_perf_testbed.h>
-#include <tools/test/perf/gemm/gemm_profiler.h>
-#include <tools/test/perf/gemm/cutlass_dispatch.h>
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/igemm_traits.h"
+#include "tools/test/perf/cutlass_perf_test.h"
+#include "tools/test/perf/gemm/gemm_perf_testbed.h"
+#include "tools/test/perf/gemm/gemm_profiler.h"
+#include "tools/test/perf/gemm/cutlass_dispatch.h"
+
+#pragma warning( disable : 4503)
 
 namespace perf {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int profile_igemm(TestbenchOutput &output, TestbenchOptions const &options) {
+int profile_igemm(TestbenchOutput<GemmProblem> &output, TestbenchOptions const &options, Config const &config) {
 
   typedef perf::GemmProfiler<int8_t, int8_t, int, int, int> GemmProfiler;
 
+  // compute capability check
+  if (!options.compute_capability(6, 1)) {
+    return 0;
+  }
+
   int results = 0;
-  
-  if (!results) {
-    
+
+  {
     typedef cutlass::gemm::IgemmTraits<
       cutlass::MatrixLayout::kColumnMajor,
       cutlass::MatrixLayout::kRowMajor
@@ -48,11 +55,10 @@ int profile_igemm(TestbenchOutput &output, TestbenchOptions const &options) {
 
     typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
 
-    profile_gemm<Dispatch, GemmProfiler>(output, "igemm_nt", options);
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "igemm_nt", options, config);
   }
 
-  if (!results) {
-    
+  {
     typedef cutlass::gemm::IgemmTraits<
       cutlass::MatrixLayout::kColumnMajor,
       cutlass::MatrixLayout::kColumnMajor
@@ -60,11 +66,10 @@ int profile_igemm(TestbenchOutput &output, TestbenchOptions const &options) {
 
     typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
 
-    profile_gemm<Dispatch, GemmProfiler>(output, "igemm_nn", options);
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "igemm_nn", options, config);
   }
 
-  if (!results) {
-    
+  {
     typedef cutlass::gemm::IgemmTraits<
       cutlass::MatrixLayout::kRowMajor,
       cutlass::MatrixLayout::kColumnMajor
@@ -72,11 +77,10 @@ int profile_igemm(TestbenchOutput &output, TestbenchOptions const &options) {
 
     typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
 
-    profile_gemm<Dispatch, GemmProfiler>(output, "igemm_tn", options);
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "igemm_tn", options, config);
   }
 
-  if (!results) {
-    
+  {
     typedef cutlass::gemm::IgemmTraits<
       cutlass::MatrixLayout::kRowMajor,
       cutlass::MatrixLayout::kRowMajor
@@ -84,11 +88,61 @@ int profile_igemm(TestbenchOutput &output, TestbenchOptions const &options) {
 
     typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
 
-    profile_gemm<Dispatch, GemmProfiler>(output, "igemm_tt", options);
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "igemm_tt", options, config);
+  }
+
+  {
+    typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+            cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<128, 32, 32>, int,
+            cutlass::gemm::LinearScaling<int>, cutlass::Shape<32, 8, 4> > GemmTraits;
+
+    typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "igemm_32x32x128_nn",
+            options, config);
+  }
+
+  {
+    typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
+            cutlass::MatrixLayout::kRowMajor, cutlass::Shape<128, 32, 32>, int,
+            cutlass::gemm::LinearScaling<int>, cutlass::Shape<32, 8, 4> > GemmTraits;
+
+    typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "igemm_32x32x128_nt",
+            options, config);
+  }
+
+  {
+    typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
+            cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<128, 32, 32>, int,
+            cutlass::gemm::LinearScaling<int>, cutlass::Shape<32, 8, 4> > GemmTraits;
+
+    typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "igemm_32x32x128_tn",
+            options, config);
+  }
+
+  {
+    typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
+            cutlass::MatrixLayout::kRowMajor, cutlass::Shape<128, 32, 32>, int,
+            cutlass::gemm::LinearScaling<int>, cutlass::Shape<32, 8, 4> > GemmTraits;
+
+    typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
+
+    results = profile_gemm<Dispatch, GemmProfiler>(output, "igemm_32x32x128_tt",
+            options, config);
   }
 
   return results;
 }
+
+struct IgemmRegistrar {
+  IgemmRegistrar() { RegisterGemmProfileFunc(profile_igemm); }
+};
+
+volatile IgemmRegistrar _IgemmRegistrar;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

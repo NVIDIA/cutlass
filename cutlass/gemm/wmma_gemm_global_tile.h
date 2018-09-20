@@ -27,7 +27,7 @@
 */
 #pragma once
 
-#include <cutlass/gemm/gemm_global_tile.h>
+#include "cutlass/gemm/gemm_global_tile.h"
 
 namespace cutlass {
 namespace gemm {
@@ -68,22 +68,13 @@ struct WmmaGemmGlobalIteratorCdTraits : public GemmGlobalTileTraits<GemmOperand:
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename TileTraits_, typename Index_ = int>
-struct WmmaGemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
-                                                          typename TileTraits_::Scalar,
-                                                          IteratorAdvance::kH,
-                                                          MemorySpace::kGlobal,
-                                                          Index_> {
+struct WmmaGemmGlobalIteratorCd : public GemmGlobalIteratorCd<TileTraits_, Index_> {
   /// This class.
   typedef WmmaGemmGlobalIteratorCd<TileTraits_, Index_> This_;
   /// The traits.
   typedef TileTraits_ Traits;
   /// The base class.
-  typedef TileIteratorBase<Traits,
-                           typename TileTraits_::Scalar,
-                           IteratorAdvance::kH,
-                           MemorySpace::kGlobal,
-                           Index_>
-      Base;
+  typedef GemmGlobalIteratorCd<Traits, Index_> Base;
   /// Override the strides in each dimension between different loads/stores.
   typedef Shape<0, 0, Base::Delta::kW, Base::Delta::kC> ImmediateOffsetStrides;
   /// The layout.
@@ -99,46 +90,35 @@ struct WmmaGemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
   typedef Index_ Index;
   /// The thread offset functor.
   typedef typename TileTraits_::ThreadOffset ThreadOffset;
+  /// Base parameters.
+  typedef typename Base::Params BaseParams;
 
   /// The params.
-  struct Params {
-    /// The pointer.
-    Pointer pointer;
-    /// The stride in the H dimension to setup the thread in the block.
-    Index stride_h;
-    /// The strides to increment the pointer.
-    Index inc_h, inc_advance;
-    /// The column offset to compute the predicate for the columns.
-    Index predicate_offset;
-    /// The strides to increment the predicate offset.
-    Index predicate_inc_h, predicate_inc_advance;
-
+  struct Params : public BaseParams {
     /// Setup the params.
-    CUTLASS_HOST_DEVICE int initialize(
-        Pointer pointer, Index ld, Index n, Index epilogue_stride_w, Index epilogue_delta_w) {
+    CUTLASS_HOST_DEVICE int initialize(Pointer pointer,
+                                       long long batch_stride,
+                                       Index ldm,
+                                       Index n,
+                                       Index epilogue_stride_w,
+                                       Index epilogue_delta_w) {
       // The pointer.
-      this->pointer = pointer;
+      BaseParams::pointer = pointer;
+      // Stride between GEMMs
+      BaseParams::stride_d = batch_stride;
       // Setup the base stride. One "group of threads" per column.
-      stride_h = ld;
+      BaseParams::stride_h = ldm;
       // Each thread output 1 column per iteration. .
-      inc_h = ld * TileTraits_::Threads::kH;
-      inc_advance = inc_h + epilogue_stride_w;
+      BaseParams::inc_h = ldm * TileTraits_::Threads::kH;
+      BaseParams::inc_advance = BaseParams::inc_h + epilogue_stride_w;
 
-      predicate_offset = n;
-      predicate_inc_h = TileTraits_::Threads::kH;
-      predicate_inc_advance = predicate_inc_h + epilogue_delta_w;
+      BaseParams::predicate_offset = n;
+      BaseParams::predicate_inc_h = TileTraits_::Threads::kH;
+      BaseParams::predicate_inc_advance = BaseParams::predicate_inc_h + epilogue_delta_w;
 
-      // It worked.
       return 0;
     }
   };
-
-  Params params;
-
-  Coord<4> thread_offset;
-
-  /// Ctor.
-  CUTLASS_DEVICE WmmaGemmGlobalIteratorCd() {}
 
   /// Ctor.
   CUTLASS_DEVICE WmmaGemmGlobalIteratorCd(Params const& params,
@@ -148,61 +128,37 @@ struct WmmaGemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
                                           int const pred_offset = 0,
                                           ThreadOffset thread_offset_func = ThreadOffset())
 
-      : params(params) {
-    thread_offset = thread_offset_func();
-    // Each warp works on a different column of the tile.
-    int const h = thread_offset[1] + block[1];
-    // Each lane writes a different element.
-    int const w = thread_offset[2] + block[2];
-    // Setup the pointer.
-    this->params.pointer += ((h * params.stride_h + w) + pointer_offset);
+      : Base(params, bounds, block, pointer_offset, pred_offset, thread_offset_func) {}
 
-    // Prepare the vector of predicates.
-    for (int i = 0; i < Base::Iterations::kW; ++i) {
-      predicates.set(i, w + i * Base::Delta::kW < bounds[2]);
-    }
-    this->params.predicate_offset -= (h + pred_offset);
+  /// Loads a single fragment element from memory
+  CUTLASS_DEVICE void load_element(
+      typename Base::AccessType& value, int d, int h, int w, int c) const {
+    Base::load_element(value, d, h, w, c);
   }
 
-  /// The accessor.
-  CUTLASS_DEVICE void get(typename Base::AccessType& value, int d, int h, int w, int c) const {
-    int const imm =
-        ComputeOffsetFromStrides<typename Base::ImmediateOffsetStrides>::get(0, 0, w, c);
-    Load<Scalar, TileTraits_::kAccessSize, MemorySpace::kGlobal>::load(value, params.pointer, imm);
-  }
-
-  /// Increment the pointer in the C dimension.
-  CUTLASS_DEVICE void inc_c() {}
-  /// Increment the pointer in the W dimension.
-  CUTLASS_DEVICE void inc_w() {}
-  /// Increment the pointer in the H dimension.
-  CUTLASS_DEVICE void inc_h() {
-    params.pointer += params.inc_h;
-    params.predicate_offset -= params.predicate_inc_h;
-  }
-  /// Increment the pointer in the D dimension.
-  CUTLASS_DEVICE void inc_d() {}
-  /// Increment the pointer to move to the next iteration.
-  CUTLASS_DEVICE void inc_advance() {
-    params.pointer += params.inc_advance;
-    params.predicate_offset -= params.predicate_inc_advance;
-  }
-
-  /// The accessor.
-  CUTLASS_DEVICE void set(typename Base::AccessType const& value, int d, int h, int w, int c) {
-    int const imm =
+  /// Stores a single fragment element into memory
+  CUTLASS_DEVICE void store_element(
+      typename Base::AccessType const& value, int d, int h, int w, int c) {
+    int const offset =
         ComputeOffsetFromStrides<typename Base::ImmediateOffsetStrides>::get(d, h, w, 0);
-    Store<Scalar, TileTraits_::kAccessSize, MemorySpace::kGlobal>::store(
-        value, params.pointer, imm);
+    Store<Scalar,
+          Base::kAccessSize,
+          Base::kMemorySpace,
+          Base::kFragmentElementType,
+          typename Base::FragmentElement,
+          Base::Tile::kW>::store(value, Base::params.pointer, offset);
   }
 
-  /// Test the predicate.
-  CUTLASS_DEVICE bool valid(int d, int h, int w, int c) const {
-    return predicates.at(w) && params.predicate_offset > 0;
+ public:
+  template <typename Fragment>
+  CUTLASS_DEVICE void load_post_increment(Fragment& fragment) {
+    Base::load_post_increment(fragment);
   }
 
-  /// The predicates for the row.
-  cutlass::PredicateVector<Base::Iterations::kW> predicates;
+  template <typename Fragment>
+  CUTLASS_DEVICE void store_post_increment(Fragment& fragment) {
+    Base::store_post_increment(fragment);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -31,16 +31,17 @@
 #include <cuda.h>
 #endif
 
-#include <cutlass/coord.h>
-#include <cutlass/util/platform.h>
-
+#include "cutlass/coord.h"
+#include "cutlass/util/platform.h"
 namespace cutlass {
 namespace gemm {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// GEMM kernel with launch bounds specified
 template <typename Gemm_>
-__global__ /*__launch_bounds__(Gemm_::kThreads)*/ void gemm_kernel(typename Gemm_::Params params) {
+__global__  __launch_bounds__(Gemm_::kThreads)
+void gemm_kernel(typename Gemm_::Params params) {
   // Declare shared memory.
   __shared__ typename Gemm_::SharedStorage shared_storage;
 
@@ -52,28 +53,37 @@ __global__ /*__launch_bounds__(Gemm_::kThreads)*/ void gemm_kernel(typename Gemm
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Scalar_, typename Index_ = int>
-struct GemmDesc {
-  /// The dimensions of the GEMM.
-  Index_ m, n, k;
-  /// The alpha/beta scaling values.
-  Scalar_ alpha, beta;
-  /// The source matrix A.
-  void const* d_a;
-  /// The stride for A.
-  Index_ lda;
-  /// The source matrix B.
-  void const* d_b;
-  /// The stride for B.
-  Index_ ldb;
-  /// The source matrix C.
-  void const* d_c;
-  /// The stride for C.
-  Index_ ldc;
-  /// The destination matrix D.
-  void* d_d;
-  /// The stride for D.
-  Index_ ldd;
+/// GEMM kernel without launch bounds specified
+template <typename Gemm_>
+__global__ /* __launch_bounds__(Gemm_::kThreads) */
+void gemm_kernel_nolb(typename Gemm_::Params params) {
+  // Declare shared memory.
+  __shared__ typename Gemm_::SharedStorage shared_storage;
+
+  // Construct the GEMM object.
+  Gemm_ gemm(params, shared_storage);
+  // Run GEMM.
+  gemm.multiply_add();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for launching the GEMM kernel with or without launch bounds
+template <typename Gemm, bool WithLaunchBounds>
+struct Launch {
+  Launch(typename Gemm::Params params, dim3 grid, dim3 block, cudaStream_t stream = 0) {
+    gemm_kernel<Gemm><<< grid, block, 0, stream >>>(params);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for launching the GEMM kernel with or without launch bounds
+template <typename Gemm>
+struct Launch<Gemm, false> {
+  Launch(typename Gemm::Params params, dim3 grid, dim3 block, cudaStream_t stream = 0) {
+    gemm_kernel_nolb<Gemm><<< grid, block, 0, stream >>>(params);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -100,86 +110,52 @@ struct Gemm {
   /// The index.
   typedef typename Traits::Index Index;
 
+  /// Define the mainloop iteration size
+  typedef typename Traits::MultiplyAdd MultiplyAdd;
+
   /// The number of threads.
   static int const kThreads = Traits::GemmConfig::kThreads;
 
-  /// The params.
-  struct Params : public Traits::Params {
-    CUTLASS_HOST_DEVICE int initialize(Index m,
-                                       Index n,
-                                       Index k,
-                                       ScalarEpilogue alpha,
-                                       ScalarA const* d_a,
-                                       Index lda,
-                                       ScalarB const* d_b,
-                                       Index ldb,
-                                       ScalarEpilogue beta,
-                                       ScalarC const* d_c,
-                                       Index ldc,
-                                       ScalarD* d_d,
-                                       Index ldd) {
-      GemmDesc<ScalarEpilogue, Index> desc;
-      desc.m = m;
-      desc.n = n;
-      desc.k = k;
-      desc.alpha = alpha;
-      desc.beta = beta;
-      desc.d_a = reinterpret_cast<void const*>(d_a);
-      desc.lda = lda;
-      desc.d_b = reinterpret_cast<void const*>(d_b);
-      desc.ldb = ldb;
-      desc.d_c = reinterpret_cast<void const*>(d_c);
-      desc.ldc = ldc;
-      desc.d_d = reinterpret_cast<void*>(d_d);
-      desc.ldd = ldd;
-      return Traits::Params::initialize(desc);
-    }
-  };
+  // Number of warp-level multiply-accumulate steps executed by each warp.
+  static Index const kWarpGemmSteps =
+      Traits::GemmConfig::AccumulatorsPerWarp::kD / MultiplyAdd::InstructionShape::kD;
 
+  // Make sure we have at least 2 unrolling steps or our pipeling is not going to work.
+  static_assert(kWarpGemmSteps >= 2, "The pipelining assumes at least two steps");
+
+  /// Use the params object defined in traits
+  typedef typename Traits::Params Params;
+
+//
+// Static function members
+//
+
+/// Support for NVRTC
 #if !defined(__CUDACC_RTC__)
   /// Launch the kernel.
   static __host__ cudaError_t launch(Params const& params,
                                      cudaStream_t stream = cudaStreamDefault) {
-    // Setup the grid.
-    dim3 grid;
-    grid.x = (params.m + Traits::OutputTile::kW - 1) / Traits::OutputTile::kW;
-    grid.y = (params.n + Traits::OutputTile::kH - 1) / Traits::OutputTile::kH;
-
-    // The number of threads.
-    dim3 block;
-    block.x = kThreads;
 
     // Launch the kernel.
-    void const* params_ = reinterpret_cast<void const*>(&params);
+    Launch<This_, GemmTraits_::GemmConfig::kLaunchBounds>(
+      params, params.grid, params.block, stream);
 
-    return cudaLaunchKernel(reinterpret_cast<void*>(&gemm_kernel<This_>),
-                            grid,
-                            block,
-                            const_cast<void**>(&params_),
-                            0,
-                            stream);
+    return cudaGetLastError();
   }
 
   /// Launch the kernel.
   static __host__ cudaError_t launch(CUfunction kernel,
                                      Params const& params,
                                      CUstream stream = CU_STREAM_LEGACY) {
-    // Setup the grid.
-    dim3 grid;
-    grid.x = (params.m + Traits::OutputTile::kW - 1) / Traits::OutputTile::kW;
-    grid.y = (params.n + Traits::OutputTile::kH - 1) / Traits::OutputTile::kH;
-
-    // The number of threads.
-    dim3 block;
-    block.x = kThreads;
 
     // Launch the kernel.
     void* params_[] = {const_cast<void*>(reinterpret_cast<void const*>(&params))};
 
-    // return cudaLaunchKernel(reinterpret_cast<void*>(&gemm_kernel<This_>), grid, block,
-    //  const_cast<void**>(&params_), 0, stream);
     CUresult result = cuLaunchKernel(
-        kernel, grid.x, grid.y, grid.z, block.x, block.y, block.z, 0, stream, params_, 0);
+        kernel,
+        params.grid.x, params.grid.y, params.grid.z,
+        params.block.x, params.block.y, params.block.z,
+        0, stream, params_, 0);
 
     if (result != CUDA_SUCCESS) {
       return cudaErrorLaunchFailure;
@@ -189,39 +165,41 @@ struct Gemm {
 
 #endif
 
+  //
+  // Methods
+  //
+
   /// Ctor.
   CUTLASS_DEVICE Gemm(Params const& params_, SharedStorage& shared_storage_)
       : params(params_), shared_storage(shared_storage_) {}
 
-  /// Consume a single iteration of the loop.
-  template <bool kIsLastIteration>
-  CUTLASS_DEVICE void consume_tile(typename Traits::GlobalLoadStream& global_stream,
-                                   typename Traits::SharedLoadStream& shared_load_stream,
-                                   typename Traits::MultiplyAdd::Accumulators& accumulators,
+  /// Computes a warp-level GEMM on data held in shared memory
+  template <bool Residue, bool LastIteration>
+  CUTLASS_DEVICE void consume_tile(typename Traits::GlobalLoadStream& global_to_shared_stream,
+                                   typename Traits::SharedStream& shared_load_stream,
+                                   typename MultiplyAdd::Accumulators& accumulators,
                                    Index outer_k) {
-    // If that's the last "load iteration" update the predicates.
-    if (!kIsLastIteration) {
-      global_stream.move_to_residue<false>(outer_k);
+    // If residue portion and not calculating residue in prolog, update residue predicates now.
+    if (Residue && outer_k <= Traits::OutputTile::kD) {
+      global_to_shared_stream.residue(outer_k);
     }
 
-    // Load data for the next iteration of the main loop.
-    if (!kIsLastIteration) {
-      global_stream.copy();
+    // Load data for the next iteration of the main loop (unless it's the last iteration).
+    if (!LastIteration) {
+      global_to_shared_stream.copy();
     }
-
-    // The unrolling steps for the main loop.
-    int const kUnrollingSteps =
-        Traits::MultiplyAdd::AccumulatorsPerWarp::kD / Traits::MultiplyAdd::InstructionShape::kD;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int step = 0; step < kUnrollingSteps - 1; ++step) {
+    for (int step = 0; step < kWarpGemmSteps - 1; ++step) {
       // Trigger the copy from shared memory for the next A/B values.
       shared_load_stream.copy(step + 1);
+
       // Make sure the values are available for the current iteration to do the multiply-add.
       shared_load_stream.commit(step);
 
+      MultiplyAdd multiply_add;
+
       // Do the math on the fragments of the current iteration.
-      typename Traits::MultiplyAdd multiply_add;
       multiply_add.multiply_add(shared_load_stream.fragment_a(step),
                                 shared_load_stream.fragment_b(step),
                                 accumulators,
@@ -232,28 +210,25 @@ struct Gemm {
     Traits::shared_load_fence(true);
 
     // Commit the data in shared memory for A/B.
-    if (!kIsLastIteration) {
-      global_stream.commit();
+    if (!LastIteration) {
+      global_to_shared_stream.commit();
     }
-
     // Make sure the data is in shared memory.
     Traits::shared_store_fence(true);
 
-    // Trigger the loads for the next iteration (if needed).
-    if (!kIsLastIteration) {
+    if (!LastIteration) {
       // Move to the next stage for the load (if it makes sense).
       shared_load_stream.inc_stage();
       // Trigger the copy from shared memory for the next loop iteration.
       shared_load_stream.copy(0);
     }
-
     // Make sure the values are available for the current iteration to do the multiply-add.
-    shared_load_stream.commit(kUnrollingSteps - 1);
+    shared_load_stream.commit(kWarpGemmSteps - 1);
 
     // Do the math on the fragments of the current iteration.
-    typename Traits::MultiplyAdd multiply_add;
-    multiply_add.multiply_add(shared_load_stream.fragment_a(kUnrollingSteps - 1),
-                              shared_load_stream.fragment_b(kUnrollingSteps - 1),
+    MultiplyAdd multiply_add;
+    multiply_add.multiply_add(shared_load_stream.fragment_a(kWarpGemmSteps - 1),
+                              shared_load_stream.fragment_b(kWarpGemmSteps - 1),
                               accumulators,
                               accumulators);
   }
@@ -262,75 +237,111 @@ struct Gemm {
   CUTLASS_DEVICE void multiply_add() {
     // Swizzle the IDs of the block (to enable better cache behavior).
     typename Traits::BlockSwizzle block_swizzle;
-    dim3 block = block_swizzle.swizzle();
-
-    // Scale the id.
-    block.x *= Traits::OutputTile::kW;
-    block.y *= Traits::OutputTile::kH;
+    Coord<3> threadblock_offset =
+        block_swizzle.get_threadblock_offset(make_Coord_from_shape<Traits::OutputTile>());
 
     // We may want to use shared memory to clear the registers.
     typedef typename Traits::ClearAccumulators ClearAccumulators;
 
     // The streams to read A/B from global memory to shared memory.
-    typename Traits::GlobalLoadStream global_stream(params, shared_storage, block);
+    typename Traits::GlobalLoadStream global_to_shared_stream(
+        params.global_to_shared_stream,
+        shared_storage.main_loop.global_to_shared_stream,
+        shared_storage.main_loop.threadblock_tile.reference(),
+        params.problem_size.knm(),
+        threadblock_offset);
+
+    // update A and B pointer offset based on batch_id and batch_stride_offset
+    //global_to_shared_stream.add_pointer_offset(block_swizzle.get_batch_id(), params.batch_stride_A, params.batch_stride_B);
+    global_to_shared_stream += make_Coord(block_swizzle.get_batch_id(), 0, 0);
 
     // Create the accumulator clear.
-    ClearAccumulators clear(shared_storage.main_loop.clear);
+    ClearAccumulators clear;
 
-    // By how much we unroll the main loop.
-    Index const kUnroll = static_cast<Index>(Traits::OutputTile::kD);
-
-    // If we do not have enough steps in the main loop, trigger the residue code.
-    global_stream.move_to_residue<true>(params.k);
+    // Deal with residue in prolog.
+    global_to_shared_stream.move_to_residue(params.problem_size[0], Traits::OutputTile::kD);
 
     // Fetch the fragments for A and B from global memory.
-    global_stream.copy();
+    global_to_shared_stream.copy();
 
     // Copy the elements to shared memory (after transformation if needed).
-    global_stream.commit();
+    global_to_shared_stream.commit();
 
     // Make sure the data is in shared memory.
     Traits::shared_store_fence(false);
 
-    // Rollback to the beginning of the GEMM-K dimension. It may have no impact.
-    global_stream.rollback();
-
-    // The unrolling steps for the main loop.
-    int const kUnrollingSteps =
-        Traits::MultiplyAdd::AccumulatorsPerWarp::kD / Traits::MultiplyAdd::InstructionShape::kD;
-
-    // Make sure we have at least 2 unrolling steps or our pipeling is not going to work.
-    static_assert(kUnrollingSteps >= 2, "The pipelining assumes at least two steps");
+    // Rollback to the beginning of the first tile (if residue exists).
+    global_to_shared_stream.rollback(params.problem_size[0] % Traits::OutputTile::kD);
 
     // The stream of data from shared memory to fragments.
-    typename Traits::SharedLoadStream shared_load_stream(params, shared_storage);
+    typename Traits::SharedStream shared_load_stream(
+        params.shared_stream,
+        shared_storage.main_loop.threadblock_tile.reference());
 
     // Trigger the copy from shared memory for the 1st stream.
     shared_load_stream.copy(0);
 
     // Allocate the accumulators.
-    typename Traits::MultiplyAdd::Accumulators accumulators;
+    typename MultiplyAdd::Accumulators accumulators;
+
     // Clear the accumulators.
     clear.clear(accumulators);
 
-    // The loop index.
-    Index outer_k = params.k - kUnroll;
+    // Initial index
+    Index outer_k = params.problem_size[0] - Traits::OutputTile::kD;
 
-    // Enter the main loop and iterate.
-    for (; outer_k > 0; outer_k -= kUnroll) {
-      consume_tile<false>(global_stream, shared_load_stream, accumulators, outer_k);
-    }
+    // Check if we are computing residue in prolog or not.
+    if (Traits::GemmConfig::kResidueInProlog) {
 
-    // Residual loop.
-    for (; outer_k > -kUnroll; outer_k -= kUnroll) {
-      consume_tile<true>(global_stream, shared_load_stream, accumulators, outer_k);
+      // Execute all mainloop iterations but the last one.
+
+      CUTLASS_GEMM_LOOP
+      for (; outer_k > 0; outer_k -= Traits::OutputTile::kD) {
+        consume_tile<false, false>(
+            global_to_shared_stream, shared_load_stream, accumulators, outer_k);
+
+      }
+
+      // Don't load data for the last "residue" portion since we've already computed the residue.
+      CUTLASS_GEMM_LOOP
+      for (; outer_k > -Traits::OutputTile::kD; outer_k -= Traits::OutputTile::kD) {
+        consume_tile<false, true>(
+            global_to_shared_stream, shared_load_stream, accumulators, outer_k);
+
+      }
+    } else {
+      // When kResidueSeparate = true, execute all mainloop iterations but the last two without any
+      // consideration for K-residue or predicate updates. This improves the steady state of some
+      // kernels.
+      if (Traits::GemmConfig::kResidueSeparate) {
+
+        CUTLASS_GEMM_LOOP
+        for (; outer_k > Traits::OutputTile::kD; outer_k -= Traits::OutputTile::kD) {
+          consume_tile<false, false>(
+              global_to_shared_stream, shared_load_stream, accumulators, outer_k);
+
+        }
+      }
+
+      // Execute remaining tiles with K-residue predicate updates enabled.
+
+      CUTLASS_GEMM_LOOP
+      for (; outer_k > -Traits::OutputTile::kD; outer_k -= Traits::OutputTile::kD) {
+        consume_tile<true, false>(
+            global_to_shared_stream, shared_load_stream, accumulators, outer_k);
+
+      }
     }
 
     // Epilogue.
     typedef typename Traits::Epilogue Epilogue;
-    Epilogue epilogue(params.epilogue, shared_storage.epilogue, params.m, params.n);
-    epilogue.epilogue(cutlass::make_Coord(0, block.y, block.x), accumulators);
+    Epilogue epilogue(params.epilogue, shared_storage.epilogue, params.problem_size.knm());
+    epilogue.epilogue(accumulators, threadblock_offset, block_swizzle.get_batch_id());
   }
+
+  //
+  // Data members
+  //
 
   /// The params.
   Params const& params;

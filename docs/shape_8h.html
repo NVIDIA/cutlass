@@ -82,7 +82,7 @@ $(function() {
 
 <p>Defines Shape implementing the Layout concept for representing a 4D hypercube of objects.  
 <a href="#details">More...</a></p>
-<div class="textblock"><code>#include &lt;<a class="el" href="cutlass_8h_source.html">cutlass/cutlass.h</a>&gt;</code><br />
+<div class="textblock"><code>#include &quot;<a class="el" href="cutlass_8h_source.html">cutlass/cutlass.h</a>&quot;</code><br />
 </div>
 <p><a href="shape_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
@@ -104,29 +104,19 @@ Classes</h2></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ShapeDiv.html">cutlass::ShapeDiv&lt; A_, B_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ShapeDivCeiling.html">cutlass::ShapeDivCeiling&lt; A_, B_ &gt;</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ShapeMax.html">cutlass::ShapeMax&lt; A_, B_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ShapeMin.html">cutlass::ShapeMin&lt; A_, B_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ShapeStrides.html">cutlass::ShapeStrides&lt; Shape_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ShapeStrides.html">cutlass::ShapeStrides&lt; Shape_, elementsPerAccess &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ComputeOffsetFromShape.html">cutlass::ComputeOffsetFromShape&lt; Shape_ &gt;</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the offset for the given coordinates in a cube.  <a href="structcutlass_1_1ComputeOffsetFromShape.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ComputeOffsetFromShape_3_01Shape_3_011_00_01kSh___00_01kSw___00_01kSc___01_4_01_4.html">cutlass::ComputeOffsetFromShape&lt; Shape&lt; 1, kSh_, kSw_, kSc_ &gt; &gt;</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the offset for the given coordinates in a cube with a depth of 1.  <a href="structcutlass_1_1ComputeOffsetFromShape_3_01Shape_3_011_00_01kSh___00_01kSw___00_01kSc___01_4_01_4.html#details">More...</a><br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ComputeOffsetFromShape_3_01Shape_3_011_00_01kSh___00_01kSw___00_011_01_4_01_4.html">cutlass::ComputeOffsetFromShape&lt; Shape&lt; 1, kSh_, kSw_, 1 &gt; &gt;</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the offset for the given coordinates in a cube with one channel and a depth of 1.  <a href="structcutlass_1_1ComputeOffsetFromShape_3_01Shape_3_011_00_01kSh___00_01kSw___00_011_01_4_01_4.html#details">More...</a><br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ComputeOffsetFromStrides.html">cutlass::ComputeOffsetFromStrides&lt; Strides_ &gt;</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the offset for the given coordinates in a cube.  <a href="structcutlass_1_1ComputeOffsetFromStrides.html#details">More...</a><br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ComputeOffsetFromStrides_3_01Shape_3_011_00_01S__h___00_01S__w___00_01S__c___01_4_01_4.html">cutlass::ComputeOffsetFromStrides&lt; Shape&lt; 1, S_h_, S_w_, S_c_ &gt; &gt;</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the offset for the given coordinates in a cube with a depth of 1.  <a href="structcutlass_1_1ComputeOffsetFromStrides_3_01Shape_3_011_00_01S__h___00_01S__w___00_01S__c___01_4_01_4.html#details">More...</a><br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ComputeOffsetFromStrides_3_01Shape_3_011_00_01S__h___00_01S__w___00_011_01_4_01_4.html">cutlass::ComputeOffsetFromStrides&lt; Shape&lt; 1, S_h_, S_w_, 1 &gt; &gt;</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compute the offset for the given coordinates in a cube with one channel and a depth of 1.  <a href="structcutlass_1_1ComputeOffsetFromStrides_3_01Shape_3_011_00_01S__h___00_01S__w___00_011_01_4_01_4.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1ComputeThreadOffsetFromStrides.html">cutlass::ComputeThreadOffsetFromStrides&lt; Threads_, Strides_ &gt;</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Decompose threadId.x into coordinate of a cube whose dimensions are specified by Threads_. Afterwards compute the offset of those coordinates using Strides_.  <a href="structcutlass_1_1ComputeThreadOffsetFromStrides.html#details">More...</a><br /></td></tr>
@@ -146,7 +136,7 @@ Namespaces</h2></td></tr>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

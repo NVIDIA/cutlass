@@ -88,6 +88,11 @@ $(function() {
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
+<tr class="memitem:ae515cd98a75ff3eafffcc69692d6301a"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html#ae515cd98a75ff3eafffcc69692d6301a">Params</a> (<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a> _alpha=0, <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a> _beta=0)</td></tr>
+<tr class="separator:ae515cd98a75ff3eafffcc69692d6301a"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad4089906220d4656ba075fb9afd1012c"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html#ad4089906220d4656ba075fb9afd1012c">initialize</a> (<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a> _alpha, <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a> _beta)</td></tr>
+<tr class="memdesc:ad4089906220d4656ba075fb9afd1012c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initialize the parameters.  <a href="#ad4089906220d4656ba075fb9afd1012c">More...</a><br /></td></tr>
+<tr class="separator:ad4089906220d4656ba075fb9afd1012c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4946e45e10661307f562b27bad5cb72d"><td class="memTemplParams" colspan="2">template&lt;typename GemmDesc_ &gt; </td></tr>
 <tr class="memitem:a4946e45e10661307f562b27bad5cb72d"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html#a4946e45e10661307f562b27bad5cb72d">initialize</a> (GemmDesc_ const &amp;desc)</td></tr>
 <tr class="memdesc:a4946e45e10661307f562b27bad5cb72d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initialize the parameters.  <a href="#a4946e45e10661307f562b27bad5cb72d">More...</a><br /></td></tr>
@@ -101,14 +106,91 @@ Public Attributes</h2></td></tr>
 <tr class="memitem:a0e455ad2e4eba67259867f9123ca817b"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html#a0e455ad2e4eba67259867f9123ca817b">beta</a></td></tr>
 <tr class="separator:a0e455ad2e4eba67259867f9123ca817b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
-<h2 class="groupheader">Member Function Documentation</h2>
-<a id="a4946e45e10661307f562b27bad5cb72d"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a4946e45e10661307f562b27bad5cb72d">&#9670;&nbsp;</a></span>initialize()</h2>
+<h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="ae515cd98a75ff3eafffcc69692d6301a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae515cd98a75ff3eafffcc69692d6301a">&#9670;&nbsp;</a></span>Params()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_&gt;&gt; </div>
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::Params::Params </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a>&#160;</td>
+          <td class="paramname"><em>_alpha</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a>&#160;</td>
+          <td class="paramname"><em>_beta</em> = <code>0</code>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<h2 class="groupheader">Member Function Documentation</h2>
+<a id="ad4089906220d4656ba075fb9afd1012c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad4089906220d4656ba075fb9afd1012c">&#9670;&nbsp;</a></span>initialize() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::Params::initialize </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a>&#160;</td>
+          <td class="paramname"><em>_alpha</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a>&#160;</td>
+          <td class="paramname"><em>_beta</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a4946e45e10661307f562b27bad5cb72d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4946e45e10661307f562b27bad5cb72d">&#9670;&nbsp;</a></span>initialize() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
 <div class="memtemplate">
 template&lt;typename GemmDesc_ &gt; </div>
 <table class="mlabels">
@@ -139,7 +221,7 @@ template&lt;typename GemmDesc_ &gt; </div>
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_&gt;&gt; </div>
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a> <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::Params::alpha</td>
@@ -155,7 +237,7 @@ template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAd
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_&gt;&gt; </div>
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a> <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::Params::beta</td>
@@ -171,7 +253,7 @@ template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAd
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:14 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

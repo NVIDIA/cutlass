@@ -73,70 +73,83 @@ $(function() {
 <h3><a id="index_s"></a>- s -</h3><ul>
 <li>scalars
 : <a class="el" href="unioncutlass_1_1Vector.html#a091080b4e9db9e89734f44ceb985d78f">cutlass::Vector&lt; Scalar_, kLanes_ &gt;</a>
+, <a class="el" href="unioncutlass_1_1Vector_3_01half_00_011_01_4.html#a81709dacea12d6bd3bb328a3f0a519b0">cutlass::Vector&lt; half, 1 &gt;</a>
 , <a class="el" href="unioncutlass_1_1Vector_3_01half_00_01kLanes___01_4.html#ab4a119a4813f80aa10c25e32f8b115f3">cutlass::Vector&lt; half, kLanes_ &gt;</a>
 </li>
-<li>shared
-: <a class="el" href="unioncutlass_1_1gemm_1_1GemmTraits_1_1StreamSharedStorage.html#afabd328b106d45b156200f73942d211e">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::StreamSharedStorage&lt; GlobalLoadStream_, SharedLoadStream_ &gt;</a>
+<li>second
+: <a class="el" href="structcutlass_1_1ZipConvert.html#ad0daa6c3b89db0a058958a6eba72c6b9">cutlass::ZipConvert&lt; First_, Second_ &gt;</a>
+, <a class="el" href="structcutlass_1_1ZipFragment.html#a1812254d5fd77cd6dfdf7d7f2e81130c">cutlass::ZipFragment&lt; First_, Second_ &gt;</a>
+, <a class="el" href="structcutlass_1_1ZipTensorRef.html#ad981b056cc96709a23e6d51dba4cd451">cutlass::ZipTensorRef&lt; First_, Second_ &gt;</a>
+, <a class="el" href="structcutlass_1_1ZipTileAllocation.html#a94abc7e74632b14718fd2d5b78cceafc">cutlass::ZipTileAllocation&lt; First_, Second_ &gt;</a>
+, <a class="el" href="structcutlass_1_1ZipTileIterator_1_1Params.html#a6eb742dc39b1d776cf5d62719835fe26">cutlass::ZipTileIterator&lt; First_, Second_ &gt;::Params</a>
+, <a class="el" href="classcutlass_1_1ZipTileIterator.html#ab88ce07b3012ae2e6a92ad784c8067f0">cutlass::ZipTileIterator&lt; First_, Second_ &gt;</a>
 </li>
-<li>shared_load_iterator_d
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a1742e43c128665f0ca39cb578291df81">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
+<li>shared_load_stream_d
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a5d3d1abd85f18476a74bcf616a717f9d">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
 </li>
 <li>shared_storage
 : <a class="el" href="structcutlass_1_1gemm_1_1Gemm.html#a6b0119ed8d92698dab4de68987c8cc1b">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a442b5b5688cd658c3b3476650c00281e">cutlass::gemm::GemmEpilogue&lt; GemmEpilogueTraits_ &gt;</a>
 </li>
 <li>shared_store_iterator_d
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#af79a0c74a4c30ccec59b393721b5dfc1">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#adfdf3eca06ea4061fbfe016336a3f276">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
 </li>
 <li>shared_stream
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1SharedStorage.html#ae63b5a52106dbd37ea304196335ec210">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::SharedStorage</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1SharedStorage.html#a64ecac7d5843c38e55df78dcf609d33e">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::SharedStorage</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html#a50e9cc382a32abd5beab299a79b30b27">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::Params</a>
 </li>
-<li>shared_stream_a
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html#aa9937ec51d18aad02398d95095117978">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::Params</a>
-</li>
-<li>shared_stream_b
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html#a78f22007632937bbd5f3dab7b097477d">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::Params</a>
+<li>source_fragment
+: <a class="el" href="structcutlass_1_1TileStoreStream.html#a0880c28b3ec82d38571ed332451c8d6a">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;</a>
 </li>
 <li>stage
-: <a class="el" href="structcutlass_1_1TileLoadIterator.html#aa3fd9859de68d76e07ebee06c6ccee92">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator.html#ae435b72b15eca46eb871446d92bd316e">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+: <a class="el" href="structcutlass_1_1TileLoadIterator.html#ad8e730768c1805d98e23886a492389d3">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator.html#aff36e4a3de7e27667542564e0ec96a7e">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+</li>
+<li>storage
+: <a class="el" href="structcutlass_1_1TileAllocation.html#a3c1ba61c511110b14558941367ad4604">cutlass::TileAllocation&lt; Scalar_, Shape_ &gt;</a>
 </li>
 <li>store
-: <a class="el" href="unioncutlass_1_1gemm_1_1GemmEpilogueTraits_1_1StreamSharedStorage.html#a1f31090613c4e6f0895f598880d6c4e5">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::StreamSharedStorage</a>
+: <a class="el" href="unioncutlass_1_1gemm_1_1GemmEpilogueTraits_1_1StreamSharedStorage.html#a673ddeb91e89c9a39c0a4dbaaa97dd8f">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::StreamSharedStorage</a>
 </li>
 <li>store_iterator
-: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamBase_1_1Params.html#a3e5167fa3f2dc0d8b4b903bd4e936969">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;::Params</a>
-, <a class="el" href="unioncutlass_1_1gemm_1_1GlobalLoadStreamBase_1_1SharedStorage.html#a939e9ddecc5ee97882a54211a61f5586">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;::SharedStorage</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamBase.html#a0eafd1e245946bd1b9d228ad7d2d0dae">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#a289ac736c0c098ae6da6a21c9abfe63f">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a45a4bceb72fcb856e32eaa20eec11e9d">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
 </li>
 <li>stream_a
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1GlobalLoadStream.html#a82a59524b5d3134eb609d280193a5c47">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::GlobalLoadStream</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1MainLoopSharedStorage.html#a62d3dcf5d97a0a896b2033e55dfb0811">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::MainLoopSharedStorage</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html#a8e68561561ac6b08efbfd116903198c8">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedLoadStream</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair_1_1Params.html#a235c77b257b93dace812d2f7b9340705">cutlass::gemm::GlobalLoadStreamPair&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair_1_1SharedStorage.html#a87d507b703a0eb654265f4529ed18f66">cutlass::gemm::GlobalLoadStreamPair&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;::SharedStorage</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a93cde16f4aef554603fcf27fa23d5127">cutlass::gemm::GlobalLoadStreamPair&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SharedStreamPair_1_1Params.html#afb56016927b59b8d5447c3656f0b634e">cutlass::gemm::SharedStreamPair&lt; StreamA_, StreamB_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SharedStreamPair.html#a157cec4ae2881fd37e0244614bc4ab7a">cutlass::gemm::SharedStreamPair&lt; StreamA_, StreamB_ &gt;</a>
 </li>
 <li>stream_b
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1GlobalLoadStream.html#acc287ce5e2f3635d9d55d91914d2d04c">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::GlobalLoadStream</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1MainLoopSharedStorage.html#a0173fcc8856b17a52cc5eee845f101fa">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::MainLoopSharedStorage</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html#a1fdc6af44c14c88a94529d187fda176d">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedLoadStream</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair_1_1Params.html#a12b5e3e21137480047b8b0f55cbf7258">cutlass::gemm::GlobalLoadStreamPair&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair_1_1SharedStorage.html#a6d9444ed13ed544febe196e3e835ea16">cutlass::gemm::GlobalLoadStreamPair&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;::SharedStorage</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a9aeaeabd4f8af2d864f28c76c6a301d9">cutlass::gemm::GlobalLoadStreamPair&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SharedStreamPair_1_1Params.html#a4a8f9207ffb3bbcdb000af62808371f5">cutlass::gemm::SharedStreamPair&lt; StreamA_, StreamB_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SharedStreamPair.html#a698586bcc25212e8cd65ab6a4e5c42a9">cutlass::gemm::SharedStreamPair&lt; StreamA_, StreamB_ &gt;</a>
 </li>
 <li>stride_d
-: <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#ad67234ec264354a22032bb2519575dc1">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd_1_1Params.html#a1a53695ce7f3cb267225d3ab86a0d5aa">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a235647baff946e483dd61a2069aa01d2">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params</a>
 </li>
 <li>stride_h
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#ae0fdc7426b22ff2c20f077e251ebc823">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a497b91e93d0eb29ca54553f8de4c694f">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd_1_1Params.html#a0c6b03c635e14ad4424a83f8c7f8025e">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd_1_1Params.html#a5cff0436eed0fefa2957ad6d083ed007">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a58e8c883aea4cfdfa5a84c25a4704ebc">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a4f029a268387bd63112d9074c185c623">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params</a>
 </li>
 <li>stride_w
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a565f6cab8925d632dcf24bd1974caca2">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a313984457c78eea66c980f6813047b9c">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#ae814ac640d05358a3ce0ea70ed13ea68">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#af7e7a71a9fa41cc3f6d0e5963963339d">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params</a>
+</li>
+<li>strides
+: <a class="el" href="structcutlass_1_1TensorRefArray.html#a76228819a72b8ed341e680ba84a960be">cutlass::TensorRefArray&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
 </li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:15 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

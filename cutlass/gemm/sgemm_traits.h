@@ -27,13 +27,13 @@
 */
 #pragma once
 
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/gemm_epilogue.h>
-#include <cutlass/gemm/gemm_epilogue_traits.h>
-#include <cutlass/gemm/gemm_global_tile.h>
-#include <cutlass/gemm/gemm_shared_tile.h>
-#include <cutlass/gemm/gemm_traits.h>
-#include <cutlass/gemm/thread_multiply_add.h>
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/gemm_epilogue.h"
+#include "cutlass/gemm/gemm_epilogue_traits.h"
+#include "cutlass/gemm/gemm_global_tile.h"
+#include "cutlass/gemm/gemm_shared_tile.h"
+#include "cutlass/gemm/gemm_traits.h"
+#include "cutlass/gemm/thread_multiply_add.h"
 
 namespace cutlass {
 namespace gemm {
@@ -43,46 +43,53 @@ namespace gemm {
 template <
     /// The tile size for the GEMM KxNxM.
     typename OutputTile_,
-    /// The number of accumulators per thread.
-    typename AccumulatorsPerThread_,
+    /// Tile size for thread-level GEMM (K-by-N-by-M)
+    typename ThreadGemmShape_,
     /// The number of scalars per LDG for A.
     int kScalarsPerLdgA_ = 1,
     /// The number of scalars per LDG for B.
-    int kScalarsPerLdgB_ = 1>
-struct SgemmConfig
-    : public GemmConfig<
-          /// The scalar type for A.
-          float,
-          /// The scalar type for B.
-          float,
-          /// The scalar type for C.
-          float,
-          /// The scalar type for D.
-          float,
-          /// The tile size for the GEMM KxNxM.
-          OutputTile_,
-          /// The functor to do the math in the main loop.
-          ThreadMultiplyAdd<AccumulatorsPerThread_, Shape<1, 4, 8>, float, float, float>,
-          /// The number of scalars per LDG for A.
-          kScalarsPerLdgA_,
-          /// The number of scalars per STS for A.
-          kScalarsPerLdgA_,
-          /// The number of scalars per LDS for A.
-          4,
-          /// The number of scalars per LDG for B.
-          kScalarsPerLdgB_,
-          /// The number of scalars per STS for B.
-          kScalarsPerLdgB_,
-          /// The number of scalars per LDS for B.
-          4,
-          /// The number of scalars per LDG for C and STG for D.
-          1,
-          /// The number of scalars per STS for D.
-          4,
-          /// The number of scalars per LDS for D.
-          1,
-          /// The number of stages in shared memory.
-          2> {};
+    int kScalarsPerLdgB_ = 1,
+    /// Whether to specify launch bounds
+    bool kLaunchBounds = true>
+struct SgemmConfig : public GemmConfig<
+                         /// The scalar type for A.
+                         float,
+                         /// The scalar type for B.
+                         float,
+                         /// The scalar type for C.
+                         float,
+                         /// The scalar type for D.
+                         float,
+                         /// The tile size for the GEMM KxNxM.
+                         OutputTile_,
+                         /// The functor to do the math in the main loop.
+                         ThreadMultiplyAdd<ThreadGemmShape_, Shape<1, 4, 8>, float, float, float>,
+                         /// The number of scalars per LDG for A.
+                         kScalarsPerLdgA_,
+                         /// The number of scalars per STS for A.
+                         kScalarsPerLdgA_,
+                         /// The number of scalars per LDS for A.
+                         4,
+                         /// The number of scalars per LDG for B.
+                         kScalarsPerLdgB_,
+                         /// The number of scalars per STS for B.
+                         kScalarsPerLdgB_,
+                         /// The number of scalars per LDS for B.
+                         4,
+                         /// The number of scalars per LDG for C and STG for D.
+                         1,
+                         /// The number of scalars per STS for D.
+                         4,
+                         /// The number of scalars per LDS for D.
+                         1,
+                         /// The number of stages in shared memory.
+                         2,
+                         /// kResidueSeparate
+                         false,
+                         /// kResidueInPrologue
+                         true,
+                         /// kLaunchBounds
+                         kLaunchBounds> {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -95,8 +102,8 @@ template <
     typename OutputTile_ = Shape<8, 128, 128>,
     /// The functor to use in the epilogue.
     typename EpilogueFunctor_ = LinearScaling<float>,
-    /// The number of accumulators per thread.
-    typename AccumulatorsPerThread_ = Shape<8, 8, 8>,
+    /// Tile size for thread-level GEMM (K-by-N-by-M)
+    typename ThreadGemmShape_ = Shape<8, 8, 8>,
     /// The number of floats loaded in one LDG for A.
     int kScalarsPerLdgA_ = 1,
     /// The number of floats loaded in one LDG for B.
@@ -105,11 +112,49 @@ template <
     typename Index_ = int,
     /// The SGEMM config.
     typename GemmConfig_ =
-        SgemmConfig<OutputTile_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_>,
+        SgemmConfig<OutputTile_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, false>,
     /// The traits class for the epilogue.
     typename GemmEpilogueTraits_ =
         SimplifiedGemmEpilogueTraits<GemmConfig_, EpilogueFunctor_, Index_> >
 struct SgemmTraits : public SimplifiedGemmTraits<
+                         // The layout for A.
+                         kLayoutA_,
+                         // The layout for B.
+                         kLayoutB_,
+                         // The config.
+                         GemmConfig_,
+                         // The epilogue.
+                         GemmEpilogue<GemmEpilogueTraits_>,
+                         // The index.
+                         Index_> {};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Helper to define SGEMM traits using Launch Bounds
+template <
+    /// The layout for A.
+    MatrixLayout::Kind kLayoutA_,
+    /// The layout for B.
+    MatrixLayout::Kind kLayoutB_,
+    /// The output tile.
+    typename OutputTile_ = Shape<8, 128, 128>,
+    /// The functor to use in the epilogue.
+    typename EpilogueFunctor_ = LinearScaling<float>,
+    /// Tile size for thread-level GEMM (K-by-N-by-M)
+    typename ThreadGemmShape_ = Shape<8, 8, 8>,
+    /// The number of floats loaded in one LDG for A.
+    int kScalarsPerLdgA_ = 1,
+    /// The number of floats loaded in one LDG for B.
+    int kScalarsPerLdgB_ = 1,
+    /// The index.
+    typename Index_ = int,
+    /// The SGEMM config.
+    typename GemmConfig_ =
+        SgemmConfig<OutputTile_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, true>,
+    /// The traits class for the epilogue.
+    typename GemmEpilogueTraits_ =
+        SimplifiedGemmEpilogueTraits<GemmConfig_, EpilogueFunctor_, Index_> >
+struct SgemmLBTraits : public SimplifiedGemmTraits<
                          // The layout for A.
                          kLayoutA_,
                          // The layout for B.

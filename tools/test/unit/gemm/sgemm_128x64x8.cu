@@ -22,11 +22,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-#include <cutlass_unit_test.h>
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/sgemm_traits.h>
-#include <tools/test/unit/gemm/gemm_testbed.h>
-#include <tools/test/unit/gemm/gemm.h>
+#include "cutlass_unit_test.h"
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/sgemm_traits.h"
+#include "tools/test/unit/gemm/gemm_testbed.h"
+#include "tools/test/unit/gemm/run_gemm.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -348,7 +348,7 @@ TEST(Sgemm_128x64x8, sgemm_128x64x64_4x8_accumulators_nt) {
                                      cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<8, 64, 128>,
                                      cutlass::gemm::LinearScaling<float>,
-                                     cutlass::Shape<8, 8, 4> >
+                                     cutlass::Shape<8, 8, 8> >
       SgemmTraits;
   run_gemm<SgemmTraits>(128, 64, 64);
 }

@@ -103,12 +103,6 @@ Public Types</h2></td></tr>
 <tr class="memitem:a8160a260acce2362e90d43bce733c69d"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html">GemmGlobalTileTraits</a>&lt; <a class="el" href="structcutlass_1_1GemmOperand.html#ab209ea3de198efabe8e8707dfe8e0a0cac2b9fe9e3679a059d1a6c946b2a2c31a">GemmOperand::kA</a>, <a class="el" href="structcutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2ba6a287c17f9f5bf53528ae68296beeedb">MatrixLayout::kRowMajor</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#ac618881d66790e4c280dc5692e5ddf95">Scalar</a> const, <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 1, GemmConfig_::OutputTile::kW, GemmConfig_::OutputTile::kD &gt;, <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 1, GemmConfig_::kThreads/GemmConfig_::OutputTile::kD, GemmConfig_::OutputTile::kD &gt;, GemmConfig_::kScalarsPerLdgA &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#a8160a260acce2362e90d43bce733c69d">GlobalTileTraits</a></td></tr>
 <tr class="memdesc:a8160a260acce2362e90d43bce733c69d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The traits class to build the iterator to load data from global memory for A^T.  <a href="#a8160a260acce2362e90d43bce733c69d">More...</a><br /></td></tr>
 <tr class="separator:a8160a260acce2362e90d43bce733c69d"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad6511b7c2d84a9f6c3ed3639269ac44f"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreWithSkewTileAbTraits.html">GemmSharedStoreWithSkewTileAbTraits</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#afac6f7a62b24396ea6861e6fd10779cc">MultiplyAddScalar</a>, <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; GemmConfig_::kStages, GemmConfig_::OutputTile::kD/GemmConfig_::InstructionShape::kD, GemmConfig_::OutputTile::kW *GemmConfig_::InstructionShape::kD &gt;, typename <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a29bd05960cc541bb67098f5483c84cf6">GlobalTileTraits::Threads</a>, GemmConfig_::kScalarsPerStsA, 128/sizeof(<a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#afac6f7a62b24396ea6861e6fd10779cc">MultiplyAddScalar</a>)/GemmConfig_::kScalarsPerStsA/GlobalTileTraits::Threads::kW *<a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#ad77b9084720ad7378e033e54bfb74ce7">kScalarsIn4B</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#ad6511b7c2d84a9f6c3ed3639269ac44f">SharedStoreTileTraits</a></td></tr>
-<tr class="memdesc:ad6511b7c2d84a9f6c3ed3639269ac44f"><td class="mdescLeft">&#160;</td><td class="mdescRight">The traits class to build the iterator to store data to shared memory for A^T.  <a href="#ad6511b7c2d84a9f6c3ed3639269ac44f">More...</a><br /></td></tr>
-<tr class="separator:ad6511b7c2d84a9f6c3ed3639269ac44f"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a1125408805bc697755f2b16594c6c8e1"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileATraits.html">GemmSharedLoadTileATraits</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#afac6f7a62b24396ea6861e6fd10779cc">MultiplyAddScalar</a> const, typename GemmConfig_::OutputTile, typename GemmConfig_::Warps, typename GemmConfig_::MultiplyAdd::ThreadsPerWarp, typename GemmConfig_::InstructionShape, GemmConfig_::kStages, GemmConfig_::kScalarsPerLdsA, SharedStoreTileTraits::kSkew &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#a1125408805bc697755f2b16594c6c8e1">SharedLoadTileTraits</a></td></tr>
-<tr class="memdesc:a1125408805bc697755f2b16594c6c8e1"><td class="mdescLeft">&#160;</td><td class="mdescRight">The traits class to build the iterator to load from shared memory for A^T.  <a href="#a1125408805bc697755f2b16594c6c8e1">More...</a><br /></td></tr>
-<tr class="separator:a1125408805bc697755f2b16594c6c8e1"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-attribs"></a>
 Static Public Attributes</h2></td></tr>
@@ -118,6 +112,9 @@ Static Public Attributes</h2></td></tr>
 <tr class="memitem:ad77b9084720ad7378e033e54bfb74ce7"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#ad77b9084720ad7378e033e54bfb74ce7">kScalarsIn4B</a> = sizeof(<a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#afac6f7a62b24396ea6861e6fd10779cc">MultiplyAddScalar</a>) &gt; 4 ? 1 : 4 / sizeof(<a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#afac6f7a62b24396ea6861e6fd10779cc">MultiplyAddScalar</a>)</td></tr>
 <tr class="memdesc:ad77b9084720ad7378e033e54bfb74ce7"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of scalars in 4B.  <a href="#ad77b9084720ad7378e033e54bfb74ce7">More...</a><br /></td></tr>
 <tr class="separator:ad77b9084720ad7378e033e54bfb74ce7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9c296924f9a6c6908f09830bbbf6a775"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#a9c296924f9a6c6908f09830bbbf6a775">kSkewA</a></td></tr>
+<tr class="memdesc:a9c296924f9a6c6908f09830bbbf6a775"><td class="mdescLeft">&#160;</td><td class="mdescRight">The skew for A.  <a href="#a9c296924f9a6c6908f09830bbbf6a775">More...</a><br /></td></tr>
+<tr class="separator:a9c296924f9a6c6908f09830bbbf6a775"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Typedef Documentation</h2>
 <a id="a8160a260acce2362e90d43bce733c69d"></a>
@@ -162,38 +159,6 @@ template&lt;typename GemmConfig_ &gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef GemmConfig_::ScalarA <a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA.html">cutlass::gemm::GemmTileTraitsHelperA</a>&lt; <a class="el" href="structcutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2ba6a287c17f9f5bf53528ae68296beeedb">MatrixLayout::kRowMajor</a>, GemmConfig_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#ac618881d66790e4c280dc5692e5ddf95">Scalar</a></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
-<a id="a1125408805bc697755f2b16594c6c8e1"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a1125408805bc697755f2b16594c6c8e1">&#9670;&nbsp;</a></span>SharedLoadTileTraits</h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;typename GemmConfig_ &gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileATraits.html">GemmSharedLoadTileATraits</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#afac6f7a62b24396ea6861e6fd10779cc">MultiplyAddScalar</a> const, typename GemmConfig_::OutputTile, typename GemmConfig_::Warps, typename GemmConfig_::MultiplyAdd::ThreadsPerWarp, typename GemmConfig_::InstructionShape, GemmConfig_::kStages, GemmConfig_::kScalarsPerLdsA, SharedStoreTileTraits::kSkew&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA.html">cutlass::gemm::GemmTileTraitsHelperA</a>&lt; <a class="el" href="structcutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2ba6a287c17f9f5bf53528ae68296beeedb">MatrixLayout::kRowMajor</a>, GemmConfig_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#a1125408805bc697755f2b16594c6c8e1">SharedLoadTileTraits</a></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
-<a id="ad6511b7c2d84a9f6c3ed3639269ac44f"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ad6511b7c2d84a9f6c3ed3639269ac44f">&#9670;&nbsp;</a></span>SharedStoreTileTraits</h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;typename GemmConfig_ &gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreWithSkewTileAbTraits.html">GemmSharedStoreWithSkewTileAbTraits</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#afac6f7a62b24396ea6861e6fd10779cc">MultiplyAddScalar</a>, <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;GemmConfig_::kStages, GemmConfig_::OutputTile::kD / GemmConfig_::InstructionShape::kD, GemmConfig_::OutputTile::kW * GemmConfig_::InstructionShape::kD&gt;, typename <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a29bd05960cc541bb67098f5483c84cf6">GlobalTileTraits::Threads</a>, GemmConfig_::kScalarsPerStsA, 128 / sizeof(<a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#afac6f7a62b24396ea6861e6fd10779cc">MultiplyAddScalar</a>) / GemmConfig_::kScalarsPerStsA / GlobalTileTraits::Threads::kW * <a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#ad77b9084720ad7378e033e54bfb74ce7">kScalarsIn4B</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA.html">cutlass::gemm::GemmTileTraitsHelperA</a>&lt; <a class="el" href="structcutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2ba6a287c17f9f5bf53528ae68296beeedb">MatrixLayout::kRowMajor</a>, GemmConfig_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#ad6511b7c2d84a9f6c3ed3639269ac44f">SharedStoreTileTraits</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -249,13 +214,37 @@ template&lt;typename GemmConfig_ &gt; </div>
 
 </div>
 </div>
+<a id="a9c296924f9a6c6908f09830bbbf6a775"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9c296924f9a6c6908f09830bbbf6a775">&#9670;&nbsp;</a></span>kSkewA</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename GemmConfig_ &gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA.html">cutlass::gemm::GemmTileTraitsHelperA</a>&lt; <a class="el" href="structcutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2ba6a287c17f9f5bf53528ae68296beeedb">MatrixLayout::kRowMajor</a>, GemmConfig_ &gt;::kSkewA</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<b>Initial value:</b><div class="fragment"><div class="line">= 128 / <span class="keyword">sizeof</span>(<a class="code" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#afac6f7a62b24396ea6861e6fd10779cc">MultiplyAddScalar</a>) / GemmConfig_::kScalarsPerStsA /</div><div class="line">                            GlobalTileTraits::Threads::kW * <a class="code" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kRowMajor_00_01GemmConfig___01_4.html#ad77b9084720ad7378e033e54bfb74ce7">kScalarsIn4B</a></div></div><!-- fragment -->
+</div>
+</div>
 <hr/>The documentation for this struct was generated from the following file:<ul>
 <li><a class="el" href="gemm__traits_8h_source.html">gemm_traits.h</a></li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:14 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:52 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

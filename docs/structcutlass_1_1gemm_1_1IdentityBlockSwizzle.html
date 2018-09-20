@@ -80,20 +80,26 @@ $(function() {
 </div><!--header-->
 <div class="contents">
 
-<p><code>#include &lt;<a class="el" href="identity__block__swizzle_8h_source.html">identity_block_swizzle.h</a>&gt;</code></p>
+<p><code>#include &lt;<a class="el" href="threadblock__swizzle_8h_source.html">threadblock_swizzle.h</a>&gt;</code></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:abfde9b316173b1c0b8622cf22ffb6d68"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#abfde9b316173b1c0b8622cf22ffb6d68">IdentityBlockSwizzle</a> ()</td></tr>
-<tr class="memdesc:abfde9b316173b1c0b8622cf22ffb6d68"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#abfde9b316173b1c0b8622cf22ffb6d68">More...</a><br /></td></tr>
-<tr class="separator:abfde9b316173b1c0b8622cf22ffb6d68"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a046a5dfd01164df2abd514e9a52987c3"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#a046a5dfd01164df2abd514e9a52987c3">IdentityBlockSwizzle</a> ()</td></tr>
+<tr class="memdesc:a046a5dfd01164df2abd514e9a52987c3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor. aka ColumnMajorBlockSwizzle&lt;1&gt;  <a href="#a046a5dfd01164df2abd514e9a52987c3">More...</a><br /></td></tr>
+<tr class="separator:a046a5dfd01164df2abd514e9a52987c3"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a0a366c072ee66bbcb390acd7b8bbe5f8"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE dim3&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#a0a366c072ee66bbcb390acd7b8bbe5f8">swizzle</a> ()</td></tr>
 <tr class="memdesc:a0a366c072ee66bbcb390acd7b8bbe5f8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Swizzle the block index.  <a href="#a0a366c072ee66bbcb390acd7b8bbe5f8">More...</a><br /></td></tr>
 <tr class="separator:a0a366c072ee66bbcb390acd7b8bbe5f8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:afc20f302a5cc5b736cfc1c91dfcaa57c"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> dim3&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#afc20f302a5cc5b736cfc1c91dfcaa57c">get_grid_layout</a> (<a class="el" href="structcutlass_1_1gemm_1_1GemmCoord.html">GemmCoord</a> const &amp;problem_size, <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;OutputTile)</td></tr>
+<tr class="separator:afc20f302a5cc5b736cfc1c91dfcaa57c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a386e5cf702b0dcc3d57f9fdb4ab5d236"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#a386e5cf702b0dcc3d57f9fdb4ab5d236">get_threadblock_offset</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;OutputTile)</td></tr>
+<tr class="separator:a386e5cf702b0dcc3d57f9fdb4ab5d236"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8f84a2b830caecff3edd052dc24635e6"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#a8f84a2b830caecff3edd052dc24635e6">get_batch_id</a> ()</td></tr>
+<tr class="separator:a8f84a2b830caecff3edd052dc24635e6"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
-<a id="abfde9b316173b1c0b8622cf22ffb6d68"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#abfde9b316173b1c0b8622cf22ffb6d68">&#9670;&nbsp;</a></span>IdentityBlockSwizzle()</h2>
+<a id="a046a5dfd01164df2abd514e9a52987c3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a046a5dfd01164df2abd514e9a52987c3">&#9670;&nbsp;</a></span>IdentityBlockSwizzle()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -102,7 +108,7 @@ Public Member Functions</h2></td></tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">CUTLASS_DEVICE cutlass::gemm::IdentityBlockSwizzle::IdentityBlockSwizzle </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> cutlass::gemm::IdentityBlockSwizzle::IdentityBlockSwizzle </td>
           <td>(</td>
           <td class="paramname"></td><td>)</td>
           <td></td>
@@ -118,6 +124,93 @@ Public Member Functions</h2></td></tr>
 </div>
 </div>
 <h2 class="groupheader">Member Function Documentation</h2>
+<a id="a8f84a2b830caecff3edd052dc24635e6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8f84a2b830caecff3edd052dc24635e6">&#9670;&nbsp;</a></span>get_batch_id()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE int cutlass::gemm::IdentityBlockSwizzle::get_batch_id </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="afc20f302a5cc5b736cfc1c91dfcaa57c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afc20f302a5cc5b736cfc1c91dfcaa57c">&#9670;&nbsp;</a></span>get_grid_layout()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> dim3 cutlass::gemm::IdentityBlockSwizzle::get_grid_layout </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GemmCoord.html">GemmCoord</a> const &amp;&#160;</td>
+          <td class="paramname"><em>problem_size</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>OutputTile</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a386e5cf702b0dcc3d57f9fdb4ab5d236"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a386e5cf702b0dcc3d57f9fdb4ab5d236">&#9670;&nbsp;</a></span>get_threadblock_offset()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt;3&gt; cutlass::gemm::IdentityBlockSwizzle::get_threadblock_offset </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>OutputTile</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a0a366c072ee66bbcb390acd7b8bbe5f8"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a0a366c072ee66bbcb390acd7b8bbe5f8">&#9670;&nbsp;</a></span>swizzle()</h2>
 
@@ -144,12 +237,12 @@ Public Member Functions</h2></td></tr>
 </div>
 </div>
 <hr/>The documentation for this struct was generated from the following file:<ul>
-<li><a class="el" href="identity__block__swizzle_8h_source.html">identity_block_swizzle.h</a></li>
+<li><a class="el" href="threadblock__swizzle_8h_source.html">threadblock_swizzle.h</a></li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:14 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:52 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

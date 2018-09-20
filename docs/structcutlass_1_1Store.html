@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=9"/>
 <meta name="generator" content="Doxygen 1.8.14"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Cutlass: cutlass::Store&lt; Scalar_, Lanes_, Memory_, bool, size_t &gt; Struct Template Reference</title>
+<title>Cutlass: cutlass::Store&lt; Scalar_, kAccessSize, Memory_, kFragmentElementType, FragmentElement_, kStride, size &gt; Struct Template Reference</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -77,7 +77,7 @@ $(function() {
 <a href="#pub-static-methods">Static Public Member Functions</a> &#124;
 <a href="structcutlass_1_1Store-members.html">List of all members</a>  </div>
   <div class="headertitle">
-<div class="title">cutlass::Store&lt; Scalar_, Lanes_, Memory_, bool, size_t &gt; Struct Template Reference</div>  </div>
+<div class="title">cutlass::Store&lt; Scalar_, kAccessSize, Memory_, kFragmentElementType, FragmentElement_, kStride, size &gt; Struct Template Reference</div>  </div>
 </div><!--header-->
 <div class="contents">
 
@@ -85,27 +85,27 @@ $(function() {
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-types"></a>
 Public Types</h2></td></tr>
-<tr class="memitem:a8d2f927b2b61987dcea40e84f4575942"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Vectorize.html">Vectorize</a>&lt; Scalar_, Lanes_ &gt;::Type&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Store.html#a8d2f927b2b61987dcea40e84f4575942">AccessType</a></td></tr>
-<tr class="memdesc:a8d2f927b2b61987dcea40e84f4575942"><td class="mdescLeft">&#160;</td><td class="mdescRight">The output type.  <a href="#a8d2f927b2b61987dcea40e84f4575942">More...</a><br /></td></tr>
-<tr class="separator:a8d2f927b2b61987dcea40e84f4575942"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a82acff2a97f8e08d040b4e603419c2c7"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Vectorize.html">Vectorize</a>&lt; FragmentElement_, kAccessSize &gt;::Type&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Store.html#a82acff2a97f8e08d040b4e603419c2c7">AccessType</a></td></tr>
+<tr class="memdesc:a82acff2a97f8e08d040b4e603419c2c7"><td class="mdescLeft">&#160;</td><td class="mdescRight">The output type.  <a href="#a82acff2a97f8e08d040b4e603419c2c7">More...</a><br /></td></tr>
+<tr class="separator:a82acff2a97f8e08d040b4e603419c2c7"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-methods"></a>
 Static Public Member Functions</h2></td></tr>
-<tr class="memitem:a1117fa7b7bdeeb3a7f2d647a1d340aaf"><td class="memItemLeft" align="right" valign="top">static CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Store.html#a1117fa7b7bdeeb3a7f2d647a1d340aaf">store</a> (<a class="el" href="structcutlass_1_1Store.html#a8d2f927b2b61987dcea40e84f4575942">AccessType</a> const &amp;src, Scalar_ *pointer, int offset)</td></tr>
-<tr class="memdesc:a1117fa7b7bdeeb3a7f2d647a1d340aaf"><td class="mdescLeft">&#160;</td><td class="mdescRight">The store function.  <a href="#a1117fa7b7bdeeb3a7f2d647a1d340aaf">More...</a><br /></td></tr>
-<tr class="separator:a1117fa7b7bdeeb3a7f2d647a1d340aaf"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a187b63f682f7f00f8bf9ed3ee59d602f"><td class="memItemLeft" align="right" valign="top">static <a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Store.html#a187b63f682f7f00f8bf9ed3ee59d602f">store</a> (<a class="el" href="structcutlass_1_1Store.html#a82acff2a97f8e08d040b4e603419c2c7">AccessType</a> const &amp;src, Scalar_ *pointer, int offset)</td></tr>
+<tr class="memdesc:a187b63f682f7f00f8bf9ed3ee59d602f"><td class="mdescLeft">&#160;</td><td class="mdescRight">The store function.  <a href="#a187b63f682f7f00f8bf9ed3ee59d602f">More...</a><br /></td></tr>
+<tr class="separator:a187b63f682f7f00f8bf9ed3ee59d602f"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Typedef Documentation</h2>
-<a id="a8d2f927b2b61987dcea40e84f4575942"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a8d2f927b2b61987dcea40e84f4575942">&#9670;&nbsp;</a></span>AccessType</h2>
+<a id="a82acff2a97f8e08d040b4e603419c2c7"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a82acff2a97f8e08d040b4e603419c2c7">&#9670;&nbsp;</a></span>AccessType</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_ , int Lanes_, MemorySpace::Kind Memory_, bool  = (Lanes_ &gt; 1), size_t  = (sizeof(Scalar_) * Lanes_)&gt; </div>
+template&lt;typename Scalar_ , int kAccessSize, MemorySpace::Kind Memory_, FragmentElementType::Kind kFragmentElementType = FragmentElementType::kScalar, typename FragmentElement_  = Scalar_, int kStride = 1, size_t size = (sizeof(Scalar_) * kAccessSize)&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1Vectorize.html">Vectorize</a>&lt;Scalar_, Lanes_&gt;::Type <a class="el" href="structcutlass_1_1Store.html">cutlass::Store</a>&lt; Scalar_, Lanes_, Memory_, bool, size_t &gt;::<a class="el" href="structcutlass_1_1Store.html#a8d2f927b2b61987dcea40e84f4575942">AccessType</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1Vectorize.html">Vectorize</a>&lt;FragmentElement_, kAccessSize&gt;::Type <a class="el" href="structcutlass_1_1Store.html">cutlass::Store</a>&lt; Scalar_, kAccessSize, Memory_, kFragmentElementType, FragmentElement_, kStride, size &gt;::<a class="el" href="structcutlass_1_1Store.html#a82acff2a97f8e08d040b4e603419c2c7">AccessType</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -113,21 +113,21 @@ template&lt;typename Scalar_ , int Lanes_, MemorySpace::Kind Memory_, bool  = (L
 </div>
 </div>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="a1117fa7b7bdeeb3a7f2d647a1d340aaf"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a1117fa7b7bdeeb3a7f2d647a1d340aaf">&#9670;&nbsp;</a></span>store()</h2>
+<a id="a187b63f682f7f00f8bf9ed3ee59d602f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a187b63f682f7f00f8bf9ed3ee59d602f">&#9670;&nbsp;</a></span>store()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_ , int Lanes_, MemorySpace::Kind Memory_, bool  = (Lanes_ &gt; 1), size_t  = (sizeof(Scalar_) * Lanes_)&gt; </div>
+template&lt;typename Scalar_ , int kAccessSize, MemorySpace::Kind Memory_, FragmentElementType::Kind kFragmentElementType = FragmentElementType::kScalar, typename FragmentElement_  = Scalar_, int kStride = 1, size_t size = (sizeof(Scalar_) * kAccessSize)&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">static CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1Store.html">cutlass::Store</a>&lt; Scalar_, Lanes_, Memory_, bool, size_t &gt;::store </td>
+          <td class="memname">static <a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> void <a class="el" href="structcutlass_1_1Store.html">cutlass::Store</a>&lt; Scalar_, kAccessSize, Memory_, kFragmentElementType, FragmentElement_, kStride, size &gt;::store </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Store.html#a8d2f927b2b61987dcea40e84f4575942">AccessType</a> const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Store.html#a82acff2a97f8e08d040b4e603419c2c7">AccessType</a> const &amp;&#160;</td>
           <td class="paramname"><em>src</em>, </td>
         </tr>
         <tr>
@@ -163,7 +163,7 @@ template&lt;typename Scalar_ , int Lanes_, MemorySpace::Kind Memory_, bool  = (L
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:13 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

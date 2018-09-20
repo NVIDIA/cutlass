@@ -28,7 +28,7 @@
 #include <iosfwd>
 #include <stdexcept>
 
-#include <cutlass/util/platform.h>
+#include "cutlass/util/platform.h"
 
 namespace cutlass {
 

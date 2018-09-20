@@ -22,30 +22,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-#include <cutlass_unit_test.h>
-#include <tools/util/half.h>
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/hgemm_traits.h>
-#include <tools/test/unit/gemm/gemm_testbed.h>
-#include <tools/test/unit/gemm/gemm.h>
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(Hgemm_128x128x16, hgemm_2x2x2_nt) {
-  typedef cutlass::gemm::HgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 128, 128> >
-      HgemmTraits;
-  run_gemm<HgemmTraits>(2, 2, 2);
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(Hgemm_128x128x16, hgemm_128x128x8_nt) {
-  typedef cutlass::gemm::HgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, cutlass::Shape<16, 128, 128> >
-      HgemmTraits;
-  run_gemm<HgemmTraits>(128, 128, 8);
-}
+#include "cutlass_unit_test.h"
+#include "tools/util/half.h"
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/hgemm_traits.h"
+#include "tools/test/unit/gemm/gemm_testbed.h"
+#include "tools/test/unit/gemm/run_gemm.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

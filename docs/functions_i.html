@@ -72,20 +72,23 @@ $(function() {
 
 <h3><a id="index_i"></a>- i -</h3><ul>
 <li>IdentityBlockSwizzle()
-: <a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#abfde9b316173b1c0b8622cf22ffb6d68">cutlass::gemm::IdentityBlockSwizzle</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#a046a5dfd01164df2abd514e9a52987c3">cutlass::gemm::IdentityBlockSwizzle</a>
 </li>
 <li>idx
-: <a class="el" href="structcutlass_1_1Coord.html#a50de265129f1db7bdf2f0aefbc6a46bc">cutlass::Coord&lt; N_ &gt;</a>
+: <a class="el" href="structcutlass_1_1Coord.html#a872e1e0d9cc255fa438c04daaf10ad68">cutlass::Coord&lt; Rank_, Index_ &gt;</a>
 </li>
 <li>IgemmConfig
 : <a class="el" href="structcutlass_1_1gemm_1_1IgemmEpilogueTraitsHelper.html#a5a52727bb9b5d5f8afa7d0384f564036">cutlass::gemm::IgemmEpilogueTraitsHelper&lt; IgemmConfig_, EpilogueFunctor_, Index_ &gt;</a>
 </li>
 <li>IgemmEpilogue()
-: <a class="el" href="structcutlass_1_1gemm_1_1IgemmEpilogue.html#ab7a51121d24250d6441ee538e6521dc2">cutlass::gemm::IgemmEpilogue&lt; GemmEpilogueTraits_, bool &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1IgemmEpilogue_3_01GemmEpilogueTraits___00_01true_01_4.html#a49ac00bed1532707aacd3ff108c84623">cutlass::gemm::IgemmEpilogue&lt; GemmEpilogueTraits_, true &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1IgemmEpilogue.html#a599a50becefed561d063c1b834188aca">cutlass::gemm::IgemmEpilogue&lt; GemmEpilogueTraits_, bool &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1IgemmEpilogue_3_01GemmEpilogueTraits___00_01true_01_4.html#a0a1be1aab827127161406871ca75cbe0">cutlass::gemm::IgemmEpilogue&lt; GemmEpilogueTraits_, true &gt;</a>
 </li>
 <li>IgemmFloatToInt8Converter()
 : <a class="el" href="structcutlass_1_1gemm_1_1IgemmFloatToInt8Converter.html#ac65f020e93584b1bd3cdb849ff625026">cutlass::gemm::IgemmFloatToInt8Converter&lt; kElements_ &gt;</a>
+</li>
+<li>IgemmGlobalIteratorAb()
+: <a class="el" href="structcutlass_1_1gemm_1_1IgemmGlobalIteratorAb.html#a489fe448cd7f7e1f3805d33504f9d336">cutlass::gemm::IgemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
 </li>
 <li>IgemmInt8ToFloatConverter()
 : <a class="el" href="structcutlass_1_1gemm_1_1IgemmInt8ToFloatConverter.html#a88a55a494d3a30d50477d50bf6a8804d">cutlass::gemm::IgemmInt8ToFloatConverter&lt; kElements_ &gt;</a>
@@ -93,96 +96,112 @@ $(function() {
 <li>IgemmSwizzle()
 : <a class="el" href="structcutlass_1_1gemm_1_1IgemmSwizzle.html#ac041d287c966cf568599d7e462e81d5a">cutlass::gemm::IgemmSwizzle&lt; GlobalIterator_ &gt;</a>
 </li>
+<li>imag()
+: <a class="el" href="classcutlass_1_1platform_1_1complex.html#a57360dbcada12083ecb92fba32fae801">cutlass::platform::complex&lt; T &gt;</a>
+</li>
 <li>ImmediateOffsetStrides
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileCdTraits.html#a14e9713b0cd34af433c3cae9b283b54c">cutlass::gemm::GemmGlobalTileCdTraits&lt; Scalar_, Tile_, Threads_, kStrideH_, kAccessSize_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#abc47717230ddde3edc88d2770f6841bf">cutlass::gemm::GemmGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileATraits.html#a8e767b5e2fb95b0b02a0ea3e8ea58368">cutlass::gemm::GemmSharedLoadTileATraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, InstructionShape_, kStages_, kScalarsPerLds_, kSkew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileBTraits.html#a5e4204b52ee081a37e824ca71c291c03">cutlass::gemm::GemmSharedLoadTileBTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, InstructionShape_, kStages_, kScalarsPerLds_, kSkew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a9cfb32f902593e7dc018ee802c3520b8">cutlass::gemm::GemmSharedLoadTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileATraits.html#ad012add21d9393d136720f609467e121">cutlass::gemm::GemmSharedLoadTileATraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, InstructionShape_, kStages_, kScalarsPerLds_, kSkew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileBTraits.html#a99017ecc737060f53fd9804ea6f9583f">cutlass::gemm::GemmSharedLoadTileBTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, InstructionShape_, kStages_, kScalarsPerLds_, kSkew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a57b065abb737bee1c17398c90b5bc39b">cutlass::gemm::GemmSharedLoadTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreTileAbTraits.html#a027bebceeda2287b40915ffd95d494a7">cutlass::gemm::GemmSharedStoreTileAbTraits&lt; Scalar_, Tile_, Threads_, kScalarsPerSts_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreTileDTraits.html#ac585815d08290d9a5a9cdbd611ffdac4">cutlass::gemm::GemmSharedStoreTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kScalarsPerSts_, kSkew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreWithSkewTileAbTraits.html#a39414f484da7f993bc96d61c97273614">cutlass::gemm::GemmSharedStoreWithSkewTileAbTraits&lt; Scalar_, Tile_, Threads_, kScalarsPerSts_, kSkew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#af53d49bad7060b87a2761fe8a82a7ddd">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a561ceb1093b28b8dce67df0129b7b8b8">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab37eec43846be90d558201bd6bb27ee4">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileTraits.html#a3db8202befa891bbc7c0a53c535cd21f">cutlass::TileTraits&lt; Tile_, Delta_, Iterations_, ThreadOffset_, AccessSize &gt;</a>
 </li>
 <li>inc_advance()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#a9dea455aa86bb59517b4a4d0309e424b">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#ab4b8150f19c9f8649d75c69ec0a76e1a">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#ae3ecef6501f0761051f298eb7cefcacf">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#aeac77cdc31ce151634b7c27ccdaf5552">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd_1_1Params.html#a8c2618ac16362a8362dcddeed71c41d4">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#a174ae7d8aa0664eaf1d6f63c5606baa0">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd_1_1Params.html#a857db0c999250248b104f17f13fe9bd8">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a1187258cd4068a627e73bee0302f1fc2">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a91e13a7aad4b0acac002b6dd125abc37">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a1614b27755cf82c0e1f3e7852c5a4c75">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a6d8f1e07f286ed8d5761e2a878b807d3">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a9bda55335fb2e90af2ee7d20571f3d9b">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a3ecd73de1202f7e4a0db86d9fe9de38d">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
 </li>
 <li>inc_c()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#a12ead84ea9634e963d10c6df7b7792c9">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#a44287250bf5631a490b514859fd101d1">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#a365eb7c90a79c9ab32f603c6985a0316">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
 </li>
 <li>inc_d()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#a1e42503e5a54cdc01308e9030aebdd35">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#ad26ab8d8010c9a1d7f3b91f60940b460">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#ab1ebbe54e4315ac07daf260a88f41d04">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#af95fa1b5102176a0fa9b17713fd48150">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a0a93f37fd366a48c4ed6cc39aa850eb5">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a74dffe1ddcc84935ab170117e939b7e3">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#a2ad473e8f2fa2694617ee39ead5c41b3">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#a49d7db2dab7a6d1e496ebff0e67039bc">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a7b4293bf8291b0383dee695a60f2e0fd">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileLoadIterator.html#aeb92092230ae933ff6cc4a36960d0674">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator.html#abcb7af7b35e605dfda5ce6a37a02f975">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
 </li>
 <li>inc_h()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#aa24336597f4a3316d94df6ab0c20f714">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#ae07fa10a53d44471a04275145201299e">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#a1d86f7e16bd11e10c94b0c14111c8c14">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#a40144d869b56b46cf1dd8f9941e61e77">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd_1_1Params.html#aed94505e5a269d5f33499e71284104f5">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#aa9a733f35e9be67663c9c8f80b0034d4">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd_1_1Params.html#a6306f771718c0c05276e103f30f862b2">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#aea591d4278a8338ae8b50fa0b8f3a366">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a228a95cf2c9c6089287984fcbf5cface">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a3793f5d5846862f22f1de736e36ae7c1">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a15227102466522445261b6ea65c89c06">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a1b94be88a160b21347c0eb58ed8e1b51">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator.html#aaec63ca7faf0cf4f54cac31c7d6e0d3d">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
 </li>
 <li>inc_stage()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html#a8851150a49e4a9c135279c8c9dfdc592">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedLoadStream</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#acf22fd09aa537943c16b900d66f1ec6f">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileLoadIterator.html#aeb3faf5e8f976f5a4d158ceb41a1cc64">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a187e0852ec4862f6d3cb6249bedc3bb3">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#acf22fd09aa537943c16b900d66f1ec6f">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SharedStreamPair.html#ad4b9b1c1fe4b0c6961842d0eff6d7db7">cutlass::gemm::SharedStreamPair&lt; StreamA_, StreamB_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a64ce59c5deb58e208529761a44c7661d">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator.html#ad61206a742c8c5ab5bcd64b76ece9f74">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
 </li>
 <li>inc_w()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#a622a4dd27162854ec96efea93cdd4380">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#aec2d692967d9be5d42673dfde21f5427">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#ac6e81450a2d78555a6c2415dcc42b178">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a49cf3ee608debebf451cdd8c2125d073">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator.html#aa573a47a9ffc3e07239a09e2bc470cf1">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#a760404b7879a38364d7eef47fc1fe209">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#ab1d9e606a89d3dd315df3d3efa48bcc2">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#af0be1271cfe6d6c03a9a76ff992d8a5c">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileLoadIterator.html#af4f964364fc54a2b9a431fa529f6c44c">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator.html#aa676184bbd4c2e3f6c09dbc548e6c4e1">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+</li>
+<li>increment()
+: <a class="el" href="classcutlass_1_1ZipTileIterator.html#a738f23c02f4a7437981d9e3e22470808">cutlass::ZipTileIterator&lt; First_, Second_ &gt;</a>
 </li>
 <li>Index
-: <a class="el" href="structcutlass_1_1gemm_1_1Gemm.html#a0aca711d07245f3071adeb1111fedd34">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;</a>
+: <a class="el" href="structcutlass_1_1Coord.html#a7c73966e94b4f45854f16e33683bc02c">cutlass::Coord&lt; Rank_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1Gemm.html#a0aca711d07245f3071adeb1111fedd34">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmCoord.html#a8e3f0250e2265503862354c729dca892">cutlass::gemm::GemmCoord</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmDesc.html#abd12fea9779ada02c0f2266909602171">cutlass::gemm::GemmDesc&lt; AType_, BType_, CType_, DType_, SType_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a07c93d583bfddd8f916fba6ef809832e">cutlass::gemm::GemmEpilogue&lt; GemmEpilogueTraits_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#ab430d05bd17efd60c28077c87b5ca331">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#a23b0e6a448e51f2e0837af95802c23b0">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#a7ff9cae930c8a6bb9c8ee6d81cb1953f">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#a56847e834b31b88544093c3df54d299f">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ae67227cecbe84f5c8497d9a7ff82b367">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamBase.html#a6a6e38022606dd8d41cf7264fb059cc2">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a3e22454d24cadb7d335f2a0152caae2a">cutlass::gemm::GlobalLoadStreamPair&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#a3f45216454a550a116935aede0bda3de">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileLoadIterator.html#aaa83f05e0cb3204053c3ee1da036cd36">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a5ac2280dfcac08cec17b8c0db1c4593e">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1MatrixCoord.html#a33eea222c3dcaf22cf62502e41afb24f">cutlass::MatrixCoord</a>
+, <a class="el" href="classcutlass_1_1TensorRef.html#a2beda7a1946bde2858e730bece21b890">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="classcutlass_1_1TensorRef_3_01Storage___00_01Rank___00_01MapFunc___00_011_00_01Index___00_01LongIndex___01_4.html#aa72857a51fafb4764ef338aea16ddfa3">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, 1, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TensorRefArray.html#a8f4658dd194b305ae4f150cf371869d9">cutlass::TensorRefArray&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TensorRefBatchStrided.html#ab12d9d196122dc3075185ab239a27fb4">cutlass::TensorRefBatchStrided&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="classcutlass_1_1TensorView.html#a5a3f096a01e6a2dfe984d7e605380599">cutlass::TensorView&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileCoord.html#a7018df7f2dbc7d70345d5f076fb26259">cutlass::TileCoord&lt; Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileLoadIterator.html#aaa5d98b72576478ba04e4ad554faa827">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileLoadStream.html#a90ca6bbd882e39b5624ee0cd17e0d652">cutlass::TileLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator.html#aae07fdedeef68abd4e6c099924c70910">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreStream.html#aa0e894a30d3a979ac56e5134360a08f4">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="classcutlass_1_1ZipTileIterator.html#ab48ad3cf2ffeec356d8592d94f6b81f0">cutlass::ZipTileIterator&lt; First_, Second_ &gt;</a>
 </li>
 <li>initialize()
-: <a class="el" href="structcutlass_1_1gemm_1_1Gemm_1_1Params.html#ac00c9d78a187d9c7d53399f971c0e129">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a3e9d0fd2989fea776b0cab0e0f2813ce">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb_1_1Params.html#a73091e07b6d4c99f6e0319fbf6bd1709">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd_1_1Params.html#af5a496f1b6a46ea6a9894512029add6a">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a13395bf81eabdc539c935e179c31d7ca">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb_1_1Params.html#ad0602cf5d322e98e3e5990c84ae1e3f3">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd_1_1Params.html#ae24453fcdf9f21385b2637476746bbe5">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html#a40023f0ffdd8bee4ccbcaac28222e983">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamBase_1_1Params.html#a7c7e448384156c801ed362359a1a6a40">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html#a4946e45e10661307f562b27bad5cb72d">cutlass::gemm::LinearScaling&lt; Scalar_, FragmentMultiplyAdd_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a8e4d277325bb5e56c718a2298b60d3cf">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#a054aee5b4bf288cc1f5945f2521ef835">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html#ad4089906220d4656ba075fb9afd1012c">cutlass::gemm::LinearScaling&lt; Scalar_, FragmentMultiplyAdd_ &gt;::Params</a>
+, <a class="el" href="classcutlass_1_1gemm_1_1LinearScalingDevicePtr_1_1Params.html#ad1b2291b898091ee1966b73bd1ad56fa">cutlass::gemm::LinearScalingDevicePtr&lt; Scalar_, FragmentMultiplyAdd_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a9b62788c187fff49b0250c0070a41fa0">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream_1_1Params.html#adb66103b905b35a1594c6f0bab65758a">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd_1_1Params.html#ad6b65c5f3ed7cd9e7ffeb684cbf30d04">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#ad2631ffcc963638aa5b016c66a2e2c55">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileLoadIterator_1_1Params.html#aeeea0f8bdee876553a4908b9b7cbaf76">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator_1_1Params.html#a71f5238a712f7b2f377fb58938ac829b">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd_1_1Params.html#a98867f4fc4daf790e309f8365e71cc8f">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a802c270449da579ed8661e915d27ce60">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileLoadIterator_1_1Params.html#ac22d9229f3f8993d52b808dced173803">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator_1_1Params.html#a23c9e9d1d2bed7e5d8579df9cc42dda3">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params</a>
 </li>
 <li>initialize_predicates()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#ab9375d9e779dcda79a5cd561bb3762ff">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a78b6c0d6a1a96dd55a34bc302ecb07d7">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a8291a51bf96f86bc77d0e3453345dbd5">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator.html#af92ba20db048a9ec96976a1673f0f7c2">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#aba8142a7a3b43da97f7968d98f3ba018">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase.html#aa58daf082cf97108e2e2ad0b1fd89208">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a60bbb4d4a6a5b8fb32e176e7d33f9e82">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a890a7239a89679662aeaea797ba32d32">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="classcutlass_1_1ZipTileIterator.html#a8f334010614b50d962e4769904d7b76f">cutlass::ZipTileIterator&lt; First_, Second_ &gt;</a>
 </li>
 <li>InputFragment
 : <a class="el" href="structcutlass_1_1Convert_3_01Fragment_3_01InputScalar___00_01kScalars___01_4_00_01Fragment_3_01Ofca5985d18bcb54bc1f49355f3cee121.html#ac7906301019c3e6d60985c3851f1e95e">cutlass::Convert&lt; Fragment&lt; InputScalar_, kScalars_ &gt;, Fragment&lt; OutputScalar_, kScalars_ &gt; &gt;</a>
@@ -191,14 +210,23 @@ $(function() {
 , <a class="el" href="structcutlass_1_1gemm_1_1IgemmFloatToInt8Converter.html#aa9a4b05f9fc28b80a4ae4aabb2ce1e8c">cutlass::gemm::IgemmFloatToInt8Converter&lt; kElements_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1IgemmInt8ToFloatConverter.html#a702ca51abc077355a2d7343976a0cfdb">cutlass::gemm::IgemmInt8ToFloatConverter&lt; kElements_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1IgemmSwizzle.html#a24a0bd5a9251ba5204b35eb4c4ac7727">cutlass::gemm::IgemmSwizzle&lt; GlobalIterator_ &gt;</a>
+, <a class="el" href="structcutlass_1_1ZipConvert.html#a20d8f64fce1ad330969323f6959209d3">cutlass::ZipConvert&lt; First_, Second_ &gt;</a>
 </li>
 <li>InstructionShape
-: <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd.html#ac93ba536992debeae86087e638167a13">cutlass::gemm::FragmentMultiplyAdd&lt; Scalar_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd_3_01half_01_4.html#ab16a3d8adda89cc4f9765116ea75a4b7">cutlass::gemm::FragmentMultiplyAdd&lt; half &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a3a57d05f50932d718538f0d1ededa95b">cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd.html#ac6381210d447fda9b0e9a028d167f22b">cutlass::gemm::ThreadMultiplyAdd&lt; AccumulatorsPerThread_, ThreadsPerWarp_, ScalarA_, ScalarB_, ScalarC_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd_3_01AccumulatorsPerThread___00_01ThreadsPerWarp___00_01half_00_01half_00_01half_01_4.html#aa56cdefa659af5ce4efd493b94bafdfd">cutlass::gemm::ThreadMultiplyAdd&lt; AccumulatorsPerThread_, ThreadsPerWarp_, half, half, half &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd_3_01AccumulatorsPerThread___00_01ThreadsPerWarp___00_f5353db950bbf0023472029cac4814b6.html#ad73372a37315b0c17a8db21e40a78574">cutlass::gemm::ThreadMultiplyAdd&lt; AccumulatorsPerThread_, ThreadsPerWarp_, int8_t, int8_t, int &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd.html#aa101be5d45e2be54bb4056517b6d5e76">cutlass::gemm::FragmentMultiplyAdd&lt; ScalarAlphaBeta_, ScalarAccum_, fragMul2 &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd_3_01half_00_01half_00_01true_01_4.html#a7d83cf5bde360251a252c6e728ea80ff">cutlass::gemm::FragmentMultiplyAdd&lt; half, half, true &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#ad83132bd03f8bd844487d1a9da908c8b">cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd.html#a56d687b878397c694e7338fa750995af">cutlass::gemm::ThreadMultiplyAdd&lt; ThreadGemmShape_, ThreadsPerWarp_, ScalarA_, ScalarB_, ScalarC_, kLayout_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd_3_01ThreadGemmShape___00_01ThreadsPerWarp___00_01half_00_01half_00_01float_01_4.html#afc7858e849a2967631761986512dbfb7">cutlass::gemm::ThreadMultiplyAdd&lt; ThreadGemmShape_, ThreadsPerWarp_, half, half, float &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd_3_01ThreadGemmShape___00_01ThreadsPerWarp___00_01half_00_01half_00_01half_01_4.html#a245bdf059794144d04d2823d2b39588e">cutlass::gemm::ThreadMultiplyAdd&lt; ThreadGemmShape_, ThreadsPerWarp_, half, half, half &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1ThreadMultiplyAdd_3_01ThreadGemmShape___00_01ThreadsPerWarp___00_01int8__t_00_01int8__t_00_01int_01_4.html#aa84c3d4efc7947d6efb75536c88043bd">cutlass::gemm::ThreadMultiplyAdd&lt; ThreadGemmShape_, ThreadsPerWarp_, int8_t, int8_t, int &gt;</a>
+</li>
+<li>intermediate_fragment()
+: <a class="el" href="structcutlass_1_1TileLoadStream.html#af2727fc0ddeffd1cdaef751140aa6093">cutlass::TileLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreStream.html#aff77aed0f1b1583b01a427fc935c5d71">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;</a>
+</li>
+<li>is_pointer()
+: <a class="el" href="classcutlass_1_1detail_1_1ScalarOrPointer.html#a95373f3d1b286c61cb204ba6a1282ce0">cutlass::detail::ScalarOrPointer&lt; Scalar_ &gt;</a>
 </li>
 <li>is_zero()
 : <a class="el" href="structcutlass_1_1PredicateVector.html#a1c4fe2bec906cd7937428ed6561ac79a">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;</a>
@@ -213,54 +241,70 @@ $(function() {
 , <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a527100e34ed700787b1419157710dbb2">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
 , <a class="el" href="structcutlass_1_1FragmentIterator.html#a4324ae522c6463e66a64f05d2e58b5f0">cutlass::FragmentIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a8e3c978da6ed56239783bf4db0a936ae">cutlass::gemm::GemmEpilogue&lt; GemmEpilogueTraits_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#ab00969bdda930eeb7b82985c476adf7d">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#a7cf2e703f78b877ad551d0516982da10">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraitsHelper.html#ad7b23352072b1509d3383ee775756d2a">cutlass::gemm::GemmEpilogueTraitsHelper&lt; GemmConfig_, EpilogueFunctor_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileCdTraits.html#a72eebc18d31900db57fa77508016f64a">cutlass::gemm::GemmGlobalTileCdTraits&lt; Scalar_, Tile_, Threads_, kStrideH_, kAccessSize_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#aaf6410f99d7f995792d0ac34efd3a82f">cutlass::gemm::GemmGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a893cb2cc67676b44c1f3ad5908a4ab0c">cutlass::gemm::GemmGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileATraits.html#ae96e490d38ade6db4d853fb6c8f3378b">cutlass::gemm::GemmSharedLoadTileATraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, InstructionShape_, kStages_, kScalarsPerLds_, kSkew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileBTraits.html#a27bc06b72a94e34d5da6fbfb950459b5">cutlass::gemm::GemmSharedLoadTileBTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, InstructionShape_, kStages_, kScalarsPerLds_, kSkew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a81ca35e0c5d9553d1dccc981cbd89d47">cutlass::gemm::GemmSharedLoadTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a1b33700f904dd15e3533fec15d9d71bd">cutlass::gemm::GemmSharedLoadTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreTileAbTraits.html#a6125e052e47296c3ef53c8a149ffd31b">cutlass::gemm::GemmSharedStoreTileAbTraits&lt; Scalar_, Tile_, Threads_, kScalarsPerSts_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreTileDTraits.html#a6bacc866485330f80596f634e6d14336">cutlass::gemm::GemmSharedStoreTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kScalarsPerSts_, kSkew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreWithSkewTileAbTraits.html#a025445699c5c86237d8c3e48f01081ea">cutlass::gemm::GemmSharedStoreWithSkewTileAbTraits&lt; Scalar_, Tile_, Threads_, kScalarsPerSts_, kSkew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1HgemmCrosswiseGlobalTileTraits.html#aa9b46937bea47d071d277aa212dd610b">cutlass::gemm::HgemmCrosswiseGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1IgemmContiguousGlobalTileTraits.html#a9fb4b56091d4458ebd82130bc3951e5b">cutlass::gemm::IgemmContiguousGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1HgemmCrosswiseGlobalTileTraits.html#a2dc8573498bcda33273b86db76dbd511">cutlass::gemm::HgemmCrosswiseGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1IgemmEpilogueTraitsHelper.html#a0b9b2b7838cb13a61a16501a2662fa51">cutlass::gemm::IgemmEpilogueTraitsHelper&lt; IgemmConfig_, EpilogueFunctor_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1IgemmGlobalTileTraits.html#ae1d930fa295d8ddfaa10bda5978258de">cutlass::gemm::IgemmGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;</a>
 , <a class="el" href="structcutlass_1_1PredicateTileAdapter.html#a1f2d52eec9f488c2a53c4d62af824450">cutlass::PredicateTileAdapter&lt; PredicateVector_, Iterations_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a352ed0773b37f03bf68e4b6cf9899474">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a9720b1e4a10c2d5aa85f9a9c66a31bbf">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a552a67fb03c28e985d143f6193f88308">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileTraits.html#af7ae2fdb4c8f1702169cc7d437d2b469">cutlass::TileTraits&lt; Tile_, Delta_, Iterations_, ThreadOffset_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileIteratorBase.html#adbf563ecda4ffd4110d288f521c7e0da">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileLoadIterator.html#a6c570dfa1cb68d436d8da6bd23cce6ce">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreIterator.html#a8628ea7116f736b59c644fc0d85d395f">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileTraits.html#a46b9e04bb8d33fcf8fc116cc48a555fc">cutlass::TileTraits&lt; Tile_, Delta_, Iterations_, ThreadOffset_, AccessSize &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsContiguousMajor.html#a425a20b642ae8736c12626b2de9b8b82">cutlass::TileTraitsContiguousMajor&lt; Tile_, Threads &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsStrideMajor.html#a03a32694da75bb95422c6b550e3324e2">cutlass::TileTraitsStrideMajor&lt; Tile_, Threads &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsWarpRake.html#a410e44aa83f2179152a48f7aceb05323">cutlass::TileTraitsWarpRake&lt; Tile_, Threads &gt;</a>
 </li>
 <li>IterationsStrides
-: <a class="el" href="structcutlass_1_1FragmentConstIterator.html#ab683796885f3bae3765efd96883f311b">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
-</li>
-<li>iterator
-: <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a54481a42d4125e3693a086269d9a7b10">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+: <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a14ef0a0095e391503a19067e146c584a">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
 </li>
 <li>Iterator
 : <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a6925270c4ad157554ab155cddc7b46e6">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
 </li>
 <li>iterator
-: <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream_1_1Params.html#ae59f871c06a0ac7b9224f0de923082d7">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;::Params</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a54481a42d4125e3693a086269d9a7b10">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream_1_1Params.html#ae59f871c06a0ac7b9224f0de923082d7">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;::Params</a>
 </li>
-<li>Iterator()
-: <a class="el" href="classcutlass_1_1PredicateVector_1_1Iterator.html#a83c2f584bd061f0b9b6b2a6cddf5b038">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;::Iterator</a>
+<li>Iterator
+: <a class="el" href="structcutlass_1_1PredicatedTileLoadStream.html#a1f2314aa062360b249b7c57c39af5430">cutlass::PredicatedTileLoadStream&lt; Iterator_, PredicateFunctor_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1PredicatedTileStoreStream.html#a0ba9097d54f3ba7b7dab12012631fa76">cutlass::PredicatedTileStoreStream&lt; Iterator_, PredicateFunctor_, Transformer_ &gt;</a>
+, <a class="el" href="classcutlass_1_1PredicateVector_1_1Iterator.html#a83c2f584bd061f0b9b6b2a6cddf5b038">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;::Iterator</a>
+</li>
+<li>iterator
+: <a class="el" href="structcutlass_1_1TileLoadStream.html#ab6d8716c166d071615f4e78d9ac6efb8">cutlass::TileLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+</li>
+<li>Iterator
+: <a class="el" href="structcutlass_1_1TileLoadStream.html#a21234ea1d4e0ff5cd599c763035b967b">cutlass::TileLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+</li>
+<li>iterator
+: <a class="el" href="structcutlass_1_1TileLoadStream_1_1Params.html#a0430f377595718291f84ef62eb6f4e57">cutlass::TileLoadStream&lt; Iterator_, Transformer_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1TileStoreStream.html#a601a296ec830e9b98aca9d5cf4b4010c">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;</a>
+</li>
+<li>Iterator
+: <a class="el" href="structcutlass_1_1TileStoreStream.html#a35009c9a697f20fd5a7ee634de4d6c97">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;</a>
+</li>
+<li>iterator
+: <a class="el" href="structcutlass_1_1TileStoreStream_1_1Params.html#acd106661221997d7c5943daac8eb5088">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;::Params</a>
 </li>
 <li>iterator_c
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a7350ceefcd09a9e3662ca30b780cc2ce">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a0745d33dd881f6ca78b168e05b133ff8">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
 </li>
 <li>iterator_d
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a987c179a7e73c2572fe8aef3255668f7">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#abbcccb203f9823e621caa4475aa3d346">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params</a>
 </li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:15 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

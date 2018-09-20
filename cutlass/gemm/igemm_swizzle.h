@@ -27,7 +27,7 @@
 */
 #pragma once
 
-#include <cutlass/fragment.h>
+#include "cutlass/fragment.h"
 
 namespace cutlass {
 namespace gemm {
@@ -82,6 +82,11 @@ struct IgemmSwizzle {
           int a2 = src_int[i2];
           int a3 = src_int[i3];
 
+          // // DEBUG.
+          // if (threadIdx.x == 0) {
+          //     printf("a=0x%08x 0x%08x 0x%08x 0x%08x\n", a0, a1, a2, a3);
+          // }
+
           int b0, b1, b2, b3, c0;
           asm volatile("prmt.b32 %0, %1, %2, 0x0040;" : "=r"(b0) : "r"(a0), "r"(a1));
           asm volatile("prmt.b32 %0, %1, %2, 0x0040;" : "=r"(c0) : "r"(a2), "r"(a3));
@@ -98,6 +103,11 @@ struct IgemmSwizzle {
           asm volatile("prmt.b32 %0, %1, %2, 0x0073;" : "=r"(b3) : "r"(a0), "r"(a1));
           asm volatile("prmt.b32 %0, %1, %2, 0x0073;" : "=r"(c0) : "r"(a2), "r"(a3));
           asm volatile("prmt.b32 %0, %1, %2, 0x5410;" : "=r"(b3) : "r"(b3), "r"(c0));
+
+          // // DEBUG.
+          // if (threadIdx.x == 0) {
+          //     printf("b=0x%08x 0x%08x 0x%08x 0x%08x\n", b0, b1, b2, b3);
+          // }
 
           dst_int[i0] = b0;
           dst_int[i1] = b1;

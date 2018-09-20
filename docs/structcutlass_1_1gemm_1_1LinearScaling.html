@@ -87,6 +87,15 @@ $(function() {
 </p>
 
 <p><code>#include &lt;<a class="el" href="linear__scaling_8h_source.html">linear_scaling.h</a>&gt;</code></p>
+<div class="dynheader">
+Inheritance diagram for cutlass::gemm::LinearScaling&lt; Scalar_, FragmentMultiplyAdd_ &gt;:</div>
+<div class="dyncontent">
+ <div class="center">
+  <img src="structcutlass_1_1gemm_1_1LinearScaling.png" usemap="#cutlass::gemm::LinearScaling_3C_20Scalar_5F_2C_20FragmentMultiplyAdd_5F_20_3E_map" alt=""/>
+  <map id="cutlass::gemm::LinearScaling_3C_20Scalar_5F_2C_20FragmentMultiplyAdd_5F_20_3E_map" name="cutlass::gemm::LinearScaling_3C_20Scalar_5F_2C_20FragmentMultiplyAdd_5F_20_3E_map">
+<area href="structcutlass_1_1gemm_1_1LinearScalingDevicePtr.html" alt="cutlass::gemm::LinearScalingDevicePtr&lt; Scalar_, FragmentMultiplyAdd_ &gt;" shape="rect" coords="0,56,433,80"/>
+</map>
+ </div></div>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
 Classes</h2></td></tr>
@@ -98,30 +107,42 @@ Classes</h2></td></tr>
 Public Types</h2></td></tr>
 <tr class="memitem:ae6b053ca059932f7c0d3c99243854183"><td class="memItemLeft" align="right" valign="top">typedef Scalar_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a></td></tr>
 <tr class="separator:ae6b053ca059932f7c0d3c99243854183"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae80882255b71c1ec94c6caeded2d0309"><td class="memItemLeft" align="right" valign="top">typedef FragmentMultiplyAdd_::ScalarAccum&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae80882255b71c1ec94c6caeded2d0309">ScalarAccum</a></td></tr>
+<tr class="separator:ae80882255b71c1ec94c6caeded2d0309"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aa697d4eaced1ef08247aeb1fcc0f0ea8"><td class="memItemLeft" align="right" valign="top">typedef FragmentMultiplyAdd_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#aa697d4eaced1ef08247aeb1fcc0f0ea8">FragmentMultiplyAdd</a></td></tr>
 <tr class="separator:aa697d4eaced1ef08247aeb1fcc0f0ea8"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:a34df6970f033b3090ad8f4d40063b1b2"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#a34df6970f033b3090ad8f4d40063b1b2">LinearScaling</a> (<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html">Params</a> const &amp;params)</td></tr>
-<tr class="memdesc:a34df6970f033b3090ad8f4d40063b1b2"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#a34df6970f033b3090ad8f4d40063b1b2">More...</a><br /></td></tr>
-<tr class="separator:a34df6970f033b3090ad8f4d40063b1b2"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a2e0d140aed388d2457dfb24d28fcd08a"><td class="memTemplParams" colspan="2">template&lt;typename Fragment_ &gt; </td></tr>
-<tr class="memitem:a2e0d140aed388d2457dfb24d28fcd08a"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#a2e0d140aed388d2457dfb24d28fcd08a">evaluate</a> (Fragment_ const &amp;accum, Fragment_ &amp;output)</td></tr>
-<tr class="memdesc:a2e0d140aed388d2457dfb24d28fcd08a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Evaluate the functor.  <a href="#a2e0d140aed388d2457dfb24d28fcd08a">More...</a><br /></td></tr>
-<tr class="separator:a2e0d140aed388d2457dfb24d28fcd08a"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a47a53e5b67b2207fb3ba38a8b9cef448"><td class="memTemplParams" colspan="2">template&lt;typename Fragment_ &gt; </td></tr>
-<tr class="memitem:a47a53e5b67b2207fb3ba38a8b9cef448"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#a47a53e5b67b2207fb3ba38a8b9cef448">evaluate</a> (Fragment_ const &amp;accum, Fragment_ const &amp;old, Fragment_ &amp;output)</td></tr>
-<tr class="memdesc:a47a53e5b67b2207fb3ba38a8b9cef448"><td class="mdescLeft">&#160;</td><td class="mdescRight">Evaluate the functor.  <a href="#a47a53e5b67b2207fb3ba38a8b9cef448">More...</a><br /></td></tr>
-<tr class="separator:a47a53e5b67b2207fb3ba38a8b9cef448"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae5ed200fe8c45b6478d3893e67da0ebe"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae5ed200fe8c45b6478d3893e67da0ebe">LinearScaling</a> ()</td></tr>
+<tr class="memdesc:ae5ed200fe8c45b6478d3893e67da0ebe"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#ae5ed200fe8c45b6478d3893e67da0ebe">More...</a><br /></td></tr>
+<tr class="separator:ae5ed200fe8c45b6478d3893e67da0ebe"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a46965529bd1384465c6f2b8c2a244889"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#a46965529bd1384465c6f2b8c2a244889">LinearScaling</a> (<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html">Params</a> const &amp;_params)</td></tr>
+<tr class="memdesc:a46965529bd1384465c6f2b8c2a244889"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#a46965529bd1384465c6f2b8c2a244889">More...</a><br /></td></tr>
+<tr class="separator:a46965529bd1384465c6f2b8c2a244889"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aae313f3e691334f80d1316ac4cd30d54"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#aae313f3e691334f80d1316ac4cd30d54">source_required</a> () const</td></tr>
+<tr class="separator:aae313f3e691334f80d1316ac4cd30d54"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a303c8dd75a31c01aa4e1de5097aca8eb"><td class="memTemplParams" colspan="2">template&lt;typename FragmentA_ , typename FragmentB_ &gt; </td></tr>
+<tr class="memitem:a303c8dd75a31c01aa4e1de5097aca8eb"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#a303c8dd75a31c01aa4e1de5097aca8eb">evaluate</a> (FragmentA_ const &amp;accum, FragmentB_ &amp;output)</td></tr>
+<tr class="memdesc:a303c8dd75a31c01aa4e1de5097aca8eb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Evaluate the functor.  <a href="#a303c8dd75a31c01aa4e1de5097aca8eb">More...</a><br /></td></tr>
+<tr class="separator:a303c8dd75a31c01aa4e1de5097aca8eb"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0159214b89d7648f1e8f3b5dd228df02"><td class="memTemplParams" colspan="2">template&lt;typename ScalarAccum , typename ScalarOutput , int size&gt; </td></tr>
+<tr class="memitem:a0159214b89d7648f1e8f3b5dd228df02"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#a0159214b89d7648f1e8f3b5dd228df02">evaluate</a> (<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae80882255b71c1ec94c6caeded2d0309">ScalarAccum</a> const *accum, ScalarOutput *output)</td></tr>
+<tr class="memdesc:a0159214b89d7648f1e8f3b5dd228df02"><td class="mdescLeft">&#160;</td><td class="mdescRight">Evaluate the functor, without using fragment in the API.  <a href="#a0159214b89d7648f1e8f3b5dd228df02">More...</a><br /></td></tr>
+<tr class="separator:a0159214b89d7648f1e8f3b5dd228df02"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a429d78c47d55929903ee02733ad881c1"><td class="memTemplParams" colspan="2">template&lt;typename FragmentA_ , typename FragmentB_ &gt; </td></tr>
+<tr class="memitem:a429d78c47d55929903ee02733ad881c1"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#a429d78c47d55929903ee02733ad881c1">evaluate</a> (FragmentA_ const &amp;accum, FragmentB_ const &amp;old, FragmentB_ &amp;output)</td></tr>
+<tr class="memdesc:a429d78c47d55929903ee02733ad881c1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Evaluate the functor.  <a href="#a429d78c47d55929903ee02733ad881c1">More...</a><br /></td></tr>
+<tr class="separator:a429d78c47d55929903ee02733ad881c1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aad0708f7681b16e6d6b4ca8d1f59a947"><td class="memTemplParams" colspan="2">template&lt;typename ScalarAccum , typename ScalarOutput , int size&gt; </td></tr>
+<tr class="memitem:aad0708f7681b16e6d6b4ca8d1f59a947"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#aad0708f7681b16e6d6b4ca8d1f59a947">evaluate</a> (<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae80882255b71c1ec94c6caeded2d0309">ScalarAccum</a> const *accum, ScalarOutput const *old, ScalarOutput *output)</td></tr>
+<tr class="memdesc:aad0708f7681b16e6d6b4ca8d1f59a947"><td class="mdescLeft">&#160;</td><td class="mdescRight">Evaluate the functor, without using fragment in the API.  <a href="#aad0708f7681b16e6d6b4ca8d1f59a947">More...</a><br /></td></tr>
+<tr class="separator:aad0708f7681b16e6d6b4ca8d1f59a947"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
-<tr class="memitem:ab9c51c8b1f06e935a353ac5b1c22cee6"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ab9c51c8b1f06e935a353ac5b1c22cee6">alpha</a></td></tr>
-<tr class="memdesc:ab9c51c8b1f06e935a353ac5b1c22cee6"><td class="mdescLeft">&#160;</td><td class="mdescRight">The alpha/beta scaling factors.  <a href="#ab9c51c8b1f06e935a353ac5b1c22cee6">More...</a><br /></td></tr>
-<tr class="separator:ab9c51c8b1f06e935a353ac5b1c22cee6"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8af4e58c4988838f2dd0a2172c47e12e"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#a8af4e58c4988838f2dd0a2172c47e12e">beta</a></td></tr>
-<tr class="separator:a8af4e58c4988838f2dd0a2172c47e12e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7bbf90dc0938698a0fa22468f9df315d"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html">Params</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#a7bbf90dc0938698a0fa22468f9df315d">params</a></td></tr>
+<tr class="separator:a7bbf90dc0938698a0fa22468f9df315d"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Typedef Documentation</h2>
 <a id="aa697d4eaced1ef08247aeb1fcc0f0ea8"></a>
@@ -130,7 +151,7 @@ Public Attributes</h2></td></tr>
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_&gt;&gt; </div>
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef FragmentMultiplyAdd_ <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#aa697d4eaced1ef08247aeb1fcc0f0ea8">FragmentMultiplyAdd</a></td>
@@ -146,7 +167,7 @@ template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAd
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_&gt;&gt; </div>
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef Scalar_ <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a></td>
@@ -156,14 +177,57 @@ template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAd
 
 </div>
 </div>
-<h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
-<a id="a34df6970f033b3090ad8f4d40063b1b2"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a34df6970f033b3090ad8f4d40063b1b2">&#9670;&nbsp;</a></span>LinearScaling()</h2>
+<a id="ae80882255b71c1ec94c6caeded2d0309"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae80882255b71c1ec94c6caeded2d0309">&#9670;&nbsp;</a></span>ScalarAccum</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_&gt;&gt; </div>
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef FragmentMultiplyAdd_::ScalarAccum <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae80882255b71c1ec94c6caeded2d0309">ScalarAccum</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="ae5ed200fe8c45b6478d3893e67da0ebe"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae5ed200fe8c45b6478d3893e67da0ebe">&#9670;&nbsp;</a></span>LinearScaling() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">LinearScaling</a> </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a46965529bd1384465c6f2b8c2a244889"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a46965529bd1384465c6f2b8c2a244889">&#9670;&nbsp;</a></span>LinearScaling() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
@@ -172,7 +236,7 @@ template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAd
           <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">LinearScaling</a> </td>
           <td>(</td>
           <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html">Params</a> const &amp;&#160;</td>
-          <td class="paramname"><em>params</em></td><td>)</td>
+          <td class="paramname"><em>_params</em></td><td>)</td>
           <td></td>
         </tr>
       </table>
@@ -186,15 +250,15 @@ template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAd
 </div>
 </div>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="a2e0d140aed388d2457dfb24d28fcd08a"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a2e0d140aed388d2457dfb24d28fcd08a">&#9670;&nbsp;</a></span>evaluate() <span class="overload">[1/2]</span></h2>
+<a id="a303c8dd75a31c01aa4e1de5097aca8eb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a303c8dd75a31c01aa4e1de5097aca8eb">&#9670;&nbsp;</a></span>evaluate() <span class="overload">[1/4]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_&gt;&gt; </div>
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
 <div class="memtemplate">
-template&lt;typename Fragment_ &gt; </div>
+template&lt;typename FragmentA_ , typename FragmentB_ &gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
@@ -202,13 +266,13 @@ template&lt;typename Fragment_ &gt; </div>
         <tr>
           <td class="memname">CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::evaluate </td>
           <td>(</td>
-          <td class="paramtype">Fragment_ const &amp;&#160;</td>
+          <td class="paramtype">FragmentA_ const &amp;&#160;</td>
           <td class="paramname"><em>accum</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype">Fragment_ &amp;&#160;</td>
+          <td class="paramtype">FragmentB_ &amp;&#160;</td>
           <td class="paramname"><em>output</em>&#160;</td>
         </tr>
         <tr>
@@ -226,15 +290,15 @@ template&lt;typename Fragment_ &gt; </div>
 
 </div>
 </div>
-<a id="a47a53e5b67b2207fb3ba38a8b9cef448"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a47a53e5b67b2207fb3ba38a8b9cef448">&#9670;&nbsp;</a></span>evaluate() <span class="overload">[2/2]</span></h2>
+<a id="a0159214b89d7648f1e8f3b5dd228df02"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0159214b89d7648f1e8f3b5dd228df02">&#9670;&nbsp;</a></span>evaluate() <span class="overload">[2/4]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_&gt;&gt; </div>
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
 <div class="memtemplate">
-template&lt;typename Fragment_ &gt; </div>
+template&lt;typename ScalarAccum , typename ScalarOutput , int size&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
@@ -242,19 +306,59 @@ template&lt;typename Fragment_ &gt; </div>
         <tr>
           <td class="memname">CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::evaluate </td>
           <td>(</td>
-          <td class="paramtype">Fragment_ const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae80882255b71c1ec94c6caeded2d0309">ScalarAccum</a> const *&#160;</td>
           <td class="paramname"><em>accum</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype">Fragment_ const &amp;&#160;</td>
+          <td class="paramtype">ScalarOutput *&#160;</td>
+          <td class="paramname"><em>output</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a429d78c47d55929903ee02733ad881c1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a429d78c47d55929903ee02733ad881c1">&#9670;&nbsp;</a></span>evaluate() <span class="overload">[3/4]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
+<div class="memtemplate">
+template&lt;typename FragmentA_ , typename FragmentB_ &gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::evaluate </td>
+          <td>(</td>
+          <td class="paramtype">FragmentA_ const &amp;&#160;</td>
+          <td class="paramname"><em>accum</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">FragmentB_ const &amp;&#160;</td>
           <td class="paramname"><em>old</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype">Fragment_ &amp;&#160;</td>
+          <td class="paramtype">FragmentB_ &amp;&#160;</td>
           <td class="paramname"><em>output</em>&#160;</td>
         </tr>
         <tr>
@@ -272,33 +376,91 @@ template&lt;typename Fragment_ &gt; </div>
 
 </div>
 </div>
-<h2 class="groupheader">Member Data Documentation</h2>
-<a id="ab9c51c8b1f06e935a353ac5b1c22cee6"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab9c51c8b1f06e935a353ac5b1c22cee6">&#9670;&nbsp;</a></span>alpha</h2>
+<a id="aad0708f7681b16e6d6b4ca8d1f59a947"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aad0708f7681b16e6d6b4ca8d1f59a947">&#9670;&nbsp;</a></span>evaluate() <span class="overload">[4/4]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_&gt;&gt; </div>
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
+<div class="memtemplate">
+template&lt;typename ScalarAccum , typename ScalarOutput , int size&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a> <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::alpha</td>
+          <td class="memname">CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::evaluate </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae80882255b71c1ec94c6caeded2d0309">ScalarAccum</a> const *&#160;</td>
+          <td class="paramname"><em>accum</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">ScalarOutput const *&#160;</td>
+          <td class="paramname"><em>old</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">ScalarOutput *&#160;</td>
+          <td class="paramname"><em>output</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
         </tr>
       </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a8af4e58c4988838f2dd0a2172c47e12e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a8af4e58c4988838f2dd0a2172c47e12e">&#9670;&nbsp;</a></span>beta</h2>
+<a id="aae313f3e691334f80d1316ac4cd30d54"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aae313f3e691334f80d1316ac4cd30d54">&#9670;&nbsp;</a></span>source_required()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_&gt;&gt; </div>
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#ae6b053ca059932f7c0d3c99243854183">Scalar</a> <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::beta</td>
+          <td class="memname">CUTLASS_DEVICE bool <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::source_required </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+<p>Method to determine whether the source accumulator matrix C is ever needed. This method may always safely return true, though better performance is possible if the source accumulator matrix is never loaded unnecessarily. </p>
+
+</div>
+</div>
+<h2 class="groupheader">Member Data Documentation</h2>
+<a id="a7bbf90dc0938698a0fa22468f9df315d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7bbf90dc0938698a0fa22468f9df315d">&#9670;&nbsp;</a></span>params</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAdd&lt;Scalar_, Scalar_&gt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1LinearScaling_1_1Params.html">Params</a> <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html">cutlass::gemm::LinearScaling</a>&lt; Scalar_, FragmentMultiplyAdd_ &gt;::params</td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -311,7 +473,7 @@ template&lt;typename Scalar_, typename FragmentMultiplyAdd_ = FragmentMultiplyAd
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:14 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -27,114 +27,24 @@
 */
 #pragma once
 
-#include <cutlass/convert.h>
-#include <cutlass/gemm/clear_accumulators.h>
-#include <cutlass/gemm/gemm_global_stream.h>
-#include <cutlass/gemm/gemm_operand.h>
-#include <cutlass/gemm/gemm_shared_stream.h>
-#include <cutlass/gemm/identity_block_swizzle.h>
-#include <cutlass/matrix_traits.h>
-#include <cutlass/reshape_tile.h>
-#include <cutlass/tile_iterator.h>
+#include "cutlass/convert.h"
+#include "cutlass/matrix_traits.h"
+#include "cutlass/reshape_tile.h"
+#include "cutlass/tile_allocation.h"
+#include "cutlass/tile_iterator.h"
+#include "cutlass/kernel_launch.h"
 
+#include "cutlass/gemm/clear_accumulators.h"
+#include "cutlass/gemm/gemm_config.h"
+#include "cutlass/gemm/gemm_desc.h"
+#include "cutlass/gemm/gemm_stream_pair.h"
+#include "cutlass/gemm/gemm_global_stream.h"
+#include "cutlass/gemm/gemm_operand.h"
+#include "cutlass/gemm/gemm_shared_stream.h"
+#include "cutlass/gemm/threadblock_swizzle.h"
+#include "cutlass/gemm/gemm.h"
 namespace cutlass {
 namespace gemm {
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <
-    /// The scalar type for A.
-    typename ScalarA_,
-    /// The scalar type for B.
-    typename ScalarB_,
-    /// The scalar type for C.
-    typename ScalarC_,
-    /// The scalar type for D.
-    typename ScalarD_,
-    /// The output tile size for the GEMM KxNxM.
-    typename OutputTile_,
-    /// The functor to do the math.
-    typename MultiplyAdd_,
-    /// The number of scalars per LDG for A.
-    int kScalarsPerLdgA_,
-    /// The number of scalars per STS for A.
-    int kScalarsPerStsA_,
-    /// The number of scalars per LDG for A.
-    int kScalarsPerLdsA_,
-    /// The number of scalars per LDG for B.
-    int kScalarsPerLdgB_,
-    /// The number of scalars per STS for B.
-    int kScalarsPerStsB_,
-    /// The number of scalars per LDS for B.
-    int kScalarsPerLdsB_,
-    /// The number of scalars per LDG for C and STG for D.
-    int kScalarsPerLdgCAndStgD_,
-    /// The number of scalars per STS for D.
-    int kScalarsPerStsD_,
-    /// The number of scalars per LDS for D.
-    int kScalarsPerLdsD_,
-    /// The number of stages in shared memory to do single/double/triple-buffering.
-    int kStages_,
-    /// Do we do the residue in the prologue?
-    bool kResidueInPrologue_ = false>
-
-struct GemmConfig {
-  //
-  /// The scalar for A.
-  typedef ScalarA_ ScalarA;
-  /// The scalar for B.
-  typedef ScalarB_ ScalarB;
-  /// The scalar for C.
-  typedef ScalarC_ ScalarC;
-  /// The scalar for D.
-  typedef ScalarD_ ScalarD;
-
-  /// The tile.
-  typedef OutputTile_ OutputTile;
-  /// The functor to do D = A*B + C.
-  typedef MultiplyAdd_ MultiplyAdd;
-  /// The shape of the instruction.
-  typedef typename MultiplyAdd::InstructionShape InstructionShape;
-  /// The number of accumulators per warp.
-  typedef typename MultiplyAdd::AccumulatorsPerWarp AccumulatorsPerWarp;
-  /// The accumulators.
-  typedef typename MultiplyAdd::Accumulators Accumulators;
-
-  /// The number of warps.
-  typedef typename ShapeDiv<OutputTile, AccumulatorsPerWarp>::Shape Warps;
-  /// The default warp size (32 threads per warp).
-  static int const kWarpSize = cutlass::kWarpSize;
-  /// The numnber of threads.
-  static int const kThreads = ShapeCount<Warps>::kCount * kWarpSize;
-
-  /// The number of scalars per LDG/STS/LDS for A.
-  static int const kScalarsPerLdgA = kScalarsPerLdgA_;
-  static int const kScalarsPerStsA = kScalarsPerStsA_;
-  static int const kScalarsPerLdsA = kScalarsPerLdsA_;
-
-  /// The number of scalars per LDG/STS/LDS for B.
-  static int const kScalarsPerLdgB = kScalarsPerLdgB_;
-  static int const kScalarsPerStsB = kScalarsPerStsB_;
-  static int const kScalarsPerLdsB = kScalarsPerLdsB_;
-
-  /// The number of scalars per LDG for C.
-  static int const kScalarsPerLdgC = kScalarsPerLdgCAndStgD_;
-
-  /// The number of scalars per STS/LDS/STG for D.
-  static int const kScalarsPerStgD = kScalarsPerLdgCAndStgD_;
-  static int const kScalarsPerStsD = kScalarsPerStsD_;
-  static int const kScalarsPerLdsD = kScalarsPerLdsD_;
-
-  /// The number of accumulators that are going to be fed from one LDS A/B.
-  static int const kAccumulatorsPerLdsA = kScalarsPerLdsA / InstructionShape::kD;
-  static int const kAccumulatorsPerLdsB = kScalarsPerLdsB / InstructionShape::kD;
-
-  /// The number of stages in shared memory to implement double, triple, more-buffering.
-  static int const kStages = kStages_;
-
-  /// Do we do the residue in the prologue?
-  static bool const kResidueInPrologue = kResidueInPrologue_;
-};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -416,60 +326,6 @@ struct GemmTileTraitsHelperB<MatrixLayout::kRowMajor, GemmConfig_> {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename GemmTraits_, bool kResidueInPrologue_ = GemmTraits_::kResidueInPrologue>
-struct GemmResidue {
-  /// Move to residue portion.
-  template <bool kIsPrologue>
-  static CUTLASS_DEVICE void move_to_residue(typename GemmTraits_::GlobalLoadStreamA& stream_a,
-                                             typename GemmTraits_::GlobalLoadStreamB& stream_b,
-                                             typename GemmTraits_::Index k) {
-    // The new code path in CUTLASS 1.0.1: We treat the residue in the prologue so we can have
-    // complete main loops after that. It helps simplify the logic in the main loop.
-    if (kIsPrologue) {
-      stream_a.move_to_residue(k);
-      stream_b.move_to_residue(k);
-    }
-  }
-
-  /// Rollback to beginning of first tile and initialize predicates.
-  static CUTLASS_DEVICE void rollback(typename GemmTraits_::GlobalLoadStreamA& stream_a,
-                                      typename GemmTraits_::GlobalLoadStreamB& stream_b) {
-    stream_a.rollback();
-    stream_b.rollback();
-  }
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename GemmTraits_>
-struct GemmResidue<GemmTraits_, false> {
-  /// Move to residue portion.
-  template <bool kIsPrologue>
-  static CUTLASS_DEVICE void move_to_residue(typename GemmTraits_::GlobalLoadStreamA& stream_a,
-                                             typename GemmTraits_::GlobalLoadStreamB& stream_b,
-                                             typename GemmTraits_::Index k) {
-    // The index.
-    typedef typename GemmTraits_::Index Index;
-    // By how much we unroll the main loop.
-    Index const kUnroll = static_cast<Index>(GemmTraits_::OutputTile::kD);
-
-    // Call the residue code. That's the same path as CUTLASS 1.0.0.
-    if (kIsPrologue && k < kUnroll) {
-      stream_a.residue(k, true);
-      stream_b.residue(k, true);
-    } else if (k <= kUnroll) {
-      stream_a.residue(k, false);
-      stream_b.residue(k, false);
-    }
-  }
-
-  /// Rollback to beginning of first tile and initialize predicates.
-  static CUTLASS_DEVICE void rollback(typename GemmTraits_::GlobalLoadStreamA& stream_a,
-                                      typename GemmTraits_::GlobalLoadStreamB& stream_b) {}
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
 template <
     /// The GEMM configuration.
     typename GemmConfig_,
@@ -488,27 +344,27 @@ template <
     /// The index.
     typename Index_ = int,
     /// The tool used to clear accumulators.
-    typename ClearAccumulators_ = ClearAccumulators<typename GemmConfig_::Accumulators::Scalar> >
+    typename ClearAccumulators_ = ClearAccumulators<typename GemmConfig_::Accumulators::Element> >
 
 struct GemmTraits {
-  /// This class.
+  /// This traits
   typedef GemmTraits<GemmConfig_,
-                     GlobalLoadStreamA_,
-                     GlobalLoadStreamB_,
-                     SharedLoadStreamA_,
-                     SharedLoadStreamB_,
-                     Epilogue_,
-                     BlockSwizzle_,
-                     Index_,
-                     ClearAccumulators_>
-      This_;
+    GlobalLoadStreamA_,
+    GlobalLoadStreamB_,
+    SharedLoadStreamA_,
+    SharedLoadStreamB_,
+    Epilogue_,
+    BlockSwizzle_,
+    Index_,
+    ClearAccumulators_> This_;
+
+  /// The struct that consumes this Traits
+  typedef typename cutlass::gemm::Gemm<This_> KernelClass;
 
   /// The configuration.
   typedef GemmConfig_ GemmConfig;
   /// The output tile.
   typedef typename GemmConfig::OutputTile OutputTile;
-  /// Is the residue treated in the prologue?
-  static bool const kResidueInPrologue = GemmConfig::kResidueInPrologue;
 
   /// The stream to load A from global memory to shared memory.
   typedef GlobalLoadStreamA_ GlobalLoadStreamA;
@@ -544,18 +400,30 @@ struct GemmTraits {
   /// Clear the accumulators.
   typedef ClearAccumulators_ ClearAccumulators;
 
-  /// The params.
-  struct Params {
-    /// The dimensions of the GEMM.
-    Index m, n, k;
-    /// The params for the A stream.
-    typename GlobalLoadStreamA::Params global_stream_a;
-    /// The params for the B stream.
-    typename GlobalLoadStreamB::Params global_stream_b;
-    /// The params for the A stream from shared memory.
-    typename SharedLoadStreamA::Params shared_stream_a;
-    /// The params for the B stream from shared memory.
-    typename SharedLoadStreamB::Params shared_stream_b;
+  /// Assemble the global load streams for A/B.
+  typedef GlobalLoadStreamPair<GlobalLoadStreamA,
+                               GlobalLoadStreamB,
+                               GemmConfig::kResidueInProlog>
+      GlobalLoadStream;
+
+  /// Memory needed to store the threadblock-scoped GEMM tile
+  typedef typename GlobalLoadStream::ThreadblockTileStorage ThreadblockTileStorage;
+
+  /// Assemble the shared load streams for A/B.
+  typedef SharedStreamPair<SharedLoadStreamA, SharedLoadStreamB> SharedStream;
+
+  /// Parameters object constructable on the host.
+  struct Params : public KernelLaunchConfiguration {
+
+    /// GEMM problem size
+    GemmCoord problem_size;
+
+    /// Parameters object for the global load stream
+    typename GlobalLoadStream::Params global_to_shared_stream;
+
+    /// Parameters object for the shared load stream
+    typename SharedStream::Params shared_stream;
+
     /// The params for the epilogue.
     typename Epilogue::Params epilogue;
 
@@ -563,21 +431,36 @@ struct GemmTraits {
     template <typename GemmDesc_>
     CUTLASS_HOST_DEVICE int initialize(GemmDesc_ const& desc) {
       // Set the problem size.
-      this->m = desc.m;
-      this->n = desc.n;
-      this->k = desc.k;
+      problem_size = desc.problem_size;
 
-      // Initialize the iterator for A.
-      int error_code =
-          global_stream_a.initialize(desc, reinterpret_cast<ScalarA const*>(desc.d_a), desc.lda);
+      // Compute grid dimensions
+      BlockSwizzle block_swizzle;
+      this->block = dim3(GemmConfig::kThreads);
+      this->grid = block_swizzle.get_grid_layout(
+        problem_size,
+        make_Coord_from_shape<OutputTile>());
 
+      // Compute offset to residue.
+      Index gemm_k = problem_size[0];
+      Index offset_to_residue = (gemm_k % OutputTile::kD) ? gemm_k - (gemm_k % OutputTile::kD) : 0;
+
+      // Initialize parameters objects for
+      int error_code = global_to_shared_stream.stream_a.initialize(
+        desc.A.data(),
+        desc.batch_stride_A,
+        desc.A.leading_dim(),
+        offset_to_residue
+      );
       if (error_code) {
         return error_code;
       }
 
-      // Initialize the iterator for B.
-      error_code =
-          global_stream_b.initialize(desc, reinterpret_cast<ScalarB const*>(desc.d_b), desc.ldb);
+      error_code = global_to_shared_stream.stream_b.initialize(
+        desc.B.data(),
+        desc.batch_stride_B,
+        desc.B.leading_dim(),
+        offset_to_residue
+      );
 
       if (error_code) {
         return error_code;
@@ -586,24 +469,81 @@ struct GemmTraits {
       // The epilogue.
       return epilogue.initialize(desc);
     }
-  };
 
-  // The storage for A.
-  template <typename GlobalLoadStream_, typename SharedLoadStream_>
-  union StreamSharedStorage {
-    // The storage needed by the global stream.
-    typename GlobalLoadStream_::SharedStorage global;
-    // The storage needed by the shared stream.
-    typename SharedLoadStream_::SharedStorage shared;
+    /// Helper to construct a GEMM params using a BLAS-like API
+    CUTLASS_HOST_DEVICE int initialize(Index m,
+                                       Index n,
+                                       Index k,
+                                       typename Epilogue::Scalar alpha,
+                                       ScalarA const* d_a,
+                                       Index lda,
+                                       ScalarB const* d_b,
+                                       Index ldb,
+                                       typename Epilogue::Scalar beta,
+                                       ScalarC const* d_c,
+                                       Index ldc,
+                                       ScalarD* d_d,
+                                       Index ldd) {
+      GemmDesc<ScalarA, ScalarB, ScalarC, ScalarD, typename Epilogue::Scalar> desc(
+        GemmCoord(k, n, m, 1),
+        alpha,
+        TensorRef<ScalarA const, 2>(d_a, lda),
+        TensorRef<ScalarB const, 2>(d_b, ldb),
+        beta,
+        TensorRef<ScalarC const, 2>(d_c, ldc),
+        TensorRef<ScalarD, 2>(d_d, ldd)
+      );
+
+      return this->initialize(desc);
+    }
+
+    /// Helper to construct a batched GEMM params
+    CUTLASS_HOST_DEVICE int initialize(Index m,
+                                       Index n,
+                                       Index k,
+                                       typename Epilogue::Scalar alpha,
+                                       ScalarA const* d_a,
+                                       Index lda,
+                                       long long int batch_stride_A,
+                                       ScalarB const* d_b,
+                                       Index ldb,
+                                       long long int batch_stride_B,
+                                       typename Epilogue::Scalar beta,
+                                       ScalarC const* d_c,
+                                       Index ldc,
+                                       long long int batch_stride_C,
+                                       ScalarD* d_d,
+                                       Index ldd,
+                                       long long int batch_stride_D,
+                                       Index batch_count) {
+
+      GemmDesc<ScalarA, ScalarB, ScalarC, ScalarD, typename Epilogue::Scalar> desc(
+        GemmCoord(k, n, m, batch_count),
+        alpha,
+        TensorRef<ScalarA const, 2>(d_a, lda),
+        batch_stride_A,
+        TensorRef<ScalarB const, 2>(d_b, ldb),
+        batch_stride_B,
+        beta,
+        TensorRef<ScalarC const, 2>(d_c, ldc),
+        batch_stride_C,
+        TensorRef<ScalarD, 2>(d_d, ldd),
+        batch_stride_D
+      );
+
+      return this->initialize(desc);
+    }
   };
 
   // The storage for the main loop + prologue.
   struct MainLoopSharedStorage {
-    // The storage to shuffle the A matrix in shared memory.
-    StreamSharedStorage<GlobalLoadStreamA, SharedLoadStreamA> stream_a;
-    // The storage to shuffle the B matrix in shared memory.
-    StreamSharedStorage<GlobalLoadStreamB, SharedLoadStreamB> stream_b;
-    // The storage to clear the accumulators if needed.
+    /// Stores the threadblock tile
+    ThreadblockTileStorage threadblock_tile;
+
+    /// Storage for GEMM global stream
+    typename GlobalLoadStream::SharedStorage global_to_shared_stream;
+
+    /// Storage for clearing accumulators
     typename ClearAccumulators::SharedStorage clear;
   };
 
@@ -615,108 +555,18 @@ struct GemmTraits {
     typename Epilogue::SharedStorage epilogue;
   };
 
-  /// Assemble the global load streams for A/B.
-  struct GlobalLoadStream {
-    /// Ctor.
-    CUTLASS_DEVICE GlobalLoadStream(Params const& params,
-                                    SharedStorage& shared_storage,
-                                    dim3 const& block)
-        : stream_a(params.global_stream_a,
-                   shared_storage.main_loop.stream_a.global,
-                   cutlass::make_Coord(0, params.k, params.m),
-                   cutlass::make_Coord(0, 0, block.x)),
-          stream_b(params.global_stream_b,
-                   shared_storage.main_loop.stream_b.global,
-                   cutlass::make_Coord(0, params.k, params.n),
-                   make_Coord(0, 0, block.y)) {}
-
-    /// Trigger the copies from shared memory to registers.
-    CUTLASS_DEVICE void copy() {
-      stream_a.copy();
-      stream_b.copy();
-    }
-
-    /// Commit the data.
-    CUTLASS_DEVICE void commit() {
-      stream_a.commit();
-      stream_b.commit();
-    }
-
-    /// Move to residue portion.
-    template <bool kIsPrologue>
-    CUTLASS_DEVICE void move_to_residue(Index k) {
-      GemmResidue<This_>::move_to_residue<kIsPrologue>(stream_a, stream_b, k);
-    }
-
-    /// Rollback to beginning of first tile and initialize predicates.
-    CUTLASS_DEVICE void rollback() { GemmResidue<This_>::rollback(stream_a, stream_b); }
-
-    /// The stream for A.
-    GlobalLoadStreamA stream_a;
-    /// The stream for B.
-    GlobalLoadStreamB stream_b;
-  };
-
-  /// Assemble the shared load stream for A/B.
-  struct SharedLoadStream {
-    /// Ctor.
-    CUTLASS_DEVICE SharedLoadStream(Params const& params, SharedStorage& shared_storage) {
-      stream_a.initialize(params.shared_stream_a, shared_storage.main_loop.stream_a.shared);
-      stream_b.initialize(params.shared_stream_b, shared_storage.main_loop.stream_b.shared);
-    }
-
-    /// Trigger the copies from shared memory to registers.
-    CUTLASS_DEVICE void copy(int step) {
-      stream_a.copy(step, fetched_a[step % 2]);
-      stream_b.copy(step, fetched_b[step % 2]);
-    }
-
-    /// Commit the data.
-    CUTLASS_DEVICE void commit(int step) {
-      stream_a.commit(fetched_a[step % 2], transformed_a[step % 2]);
-      stream_b.commit(fetched_b[step % 2], transformed_b[step % 2]);
-    }
-
-    /// The fragment A.
-    CUTLASS_DEVICE typename SharedLoadStreamA::Fragment const& fragment_a(int step) const {
-      return transformed_a[step % 2];
-    }
-
-    /// The fragment B.
-    CUTLASS_DEVICE typename SharedLoadStreamB::Fragment const& fragment_b(int step) const {
-      return transformed_b[step % 2];
-    }
-
-    /// Increment the stage.
-    CUTLASS_DEVICE void inc_stage() {
-      stream_a.inc_stage();
-      stream_b.inc_stage();
-    }
-
-    /// The stream for A.
-    SharedLoadStreamA stream_a;
-    /// The fragments to fetch A.
-    typename SharedLoadStreamA::FetchedFragment fetched_a[2];
-    /// The fragments to transform A.
-    typename SharedLoadStreamA::TransformedFragment transformed_a[2];
-    /// The stream for B.
-    SharedLoadStreamB stream_b;
-    /// The fragments to fetch B.
-    typename SharedLoadStreamB::FetchedFragment fetched_b[2];
-    /// The fragments to transform B.
-    typename SharedLoadStreamB::TransformedFragment transformed_b[2];
-  };
-
   /// The memory fence for shared loads.
   static CUTLASS_DEVICE void shared_load_fence(bool in_loop) {
     if (SharedLoadStreamA::Iterator::kRequiresLoadFence ||
         SharedLoadStreamB::Iterator::kRequiresLoadFence) {
-      __syncthreads();
+        __syncthreads();
     }
   }
 
   /// The memory fence for shared stores.
-  static CUTLASS_DEVICE void shared_store_fence(bool in_loop) { __syncthreads(); }
+  static CUTLASS_DEVICE void shared_store_fence(bool in_loop) {
+      __syncthreads();
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -735,7 +585,10 @@ struct SimplifiedGemmTraitsHelper {
                             MemorySpace::kShared>
       SharedStoreIteratorA;
   /// The stream to load A from global memory to shared memory.
-  typedef GlobalLoadStream<GlobalLoadIteratorA, SharedStoreIteratorA, GlobalTransformerA>
+  typedef GlobalLoadStream<GemmOperand::kA,
+                              GlobalLoadIteratorA,
+                              SharedStoreIteratorA,
+                              GlobalTransformerA>
       GlobalLoadStreamA;
 
   /// The global iterator to load B from global memory.
@@ -750,7 +603,10 @@ struct SimplifiedGemmTraitsHelper {
                             MemorySpace::kShared>
       SharedStoreIteratorB;
   /// The stream to load B from global memory to shared memory.
-  typedef GlobalLoadStream<GlobalLoadIteratorB, SharedStoreIteratorB, GlobalTransformerB>
+  typedef GlobalLoadStream<GemmOperand::kB,
+                              GlobalLoadIteratorB,
+                              SharedStoreIteratorB,
+                              GlobalTransformerB>
       GlobalLoadStreamB;
 
   /// The iterator to load A from shared memory.

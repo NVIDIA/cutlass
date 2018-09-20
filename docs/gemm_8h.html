@@ -84,19 +84,20 @@ $(function() {
 <p>Implements a software-pipelined efficient GEMM.  
 <a href="#details">More...</a></p>
 <div class="textblock"><code>#include &lt;cuda.h&gt;</code><br />
-<code>#include &lt;<a class="el" href="coord_8h_source.html">cutlass/coord.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="platform_8h_source.html">cutlass/util/platform.h</a>&gt;</code><br />
+<code>#include &quot;<a class="el" href="coord_8h_source.html">cutlass/coord.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="platform_8h_source.html">cutlass/util/platform.h</a>&quot;</code><br />
 </div>
 <p><a href="gemm_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
 Classes</h2></td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmDesc.html">cutlass::gemm::GemmDesc&lt; Scalar_, Index_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1Launch.html">cutlass::gemm::Launch&lt; Gemm, WithLaunchBounds &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Partial specialization for launching the GEMM kernel with or without launch bounds.  <a href="structcutlass_1_1gemm_1_1Launch.html#details">More...</a><br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1Launch_3_01Gemm_00_01false_01_4.html">cutlass::gemm::Launch&lt; Gemm, false &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Partial specialization for launching the GEMM kernel with or without launch bounds.  <a href="structcutlass_1_1gemm_1_1Launch_3_01Gemm_00_01false_01_4.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1Gemm.html">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;</a></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1Gemm_1_1Params.html">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;::Params</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params.  <a href="structcutlass_1_1gemm_1_1Gemm_1_1Params.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="namespaces"></a>
@@ -108,14 +109,19 @@ Namespaces</h2></td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="func-members"></a>
 Functions</h2></td></tr>
-<tr class="memitem:ad9577c9086b0f7fd1202d7f8109e4439"><td class="memTemplParams" colspan="2">template&lt;typename Gemm_ &gt; </td></tr>
-<tr class="memitem:ad9577c9086b0f7fd1202d7f8109e4439"><td class="memTemplItemLeft" align="right" valign="top">__global__ void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1gemm.html#ad9577c9086b0f7fd1202d7f8109e4439">cutlass::gemm::gemm_kernel</a> (typename Gemm_::Params params)</td></tr>
-<tr class="separator:ad9577c9086b0f7fd1202d7f8109e4439"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a01dd61085e2b3f578a7fc266b94fac55"><td class="memTemplParams" colspan="2">template&lt;typename Gemm_ &gt; </td></tr>
+<tr class="memitem:a01dd61085e2b3f578a7fc266b94fac55"><td class="memTemplItemLeft" align="right" valign="top">__global__&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1gemm.html#a01dd61085e2b3f578a7fc266b94fac55">cutlass::gemm::__launch_bounds__</a> (Gemm_::kThreads) void gemm_kernel(typename Gemm_</td></tr>
+<tr class="memdesc:a01dd61085e2b3f578a7fc266b94fac55"><td class="mdescLeft">&#160;</td><td class="mdescRight">GEMM kernel with launch bounds specified.  <a href="namespacecutlass_1_1gemm.html#a01dd61085e2b3f578a7fc266b94fac55">More...</a><br /></td></tr>
+<tr class="separator:a01dd61085e2b3f578a7fc266b94fac55"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae23b870e60261e2322f3c6edb3d2bcb9"><td class="memTemplParams" colspan="2">template&lt;typename Gemm_ &gt; </td></tr>
+<tr class="memitem:ae23b870e60261e2322f3c6edb3d2bcb9"><td class="memTemplItemLeft" align="right" valign="top">__global__ void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1gemm.html#ae23b870e60261e2322f3c6edb3d2bcb9">cutlass::gemm::gemm_kernel_nolb</a> (typename Gemm_::Params params)</td></tr>
+<tr class="memdesc:ae23b870e60261e2322f3c6edb3d2bcb9"><td class="mdescLeft">&#160;</td><td class="mdescRight">GEMM kernel without launch bounds specified.  <a href="namespacecutlass_1_1gemm.html#ae23b870e60261e2322f3c6edb3d2bcb9">More...</a><br /></td></tr>
+<tr class="separator:ae23b870e60261e2322f3c6edb3d2bcb9"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

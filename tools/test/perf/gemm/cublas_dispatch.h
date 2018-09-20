@@ -24,8 +24,8 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cutlass/matrix_traits.h>
-#include <tools/util/type_traits.h>
+#include "cutlass/matrix_traits.h"
+#include "tools/util/type_traits.h"
 
 namespace perf {
 

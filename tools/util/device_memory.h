@@ -26,9 +26,9 @@
 
 #include <memory>
 
-#include <cutlass/util/debug.h>
-#include <cutlass/util/platform.h>
-#include <tools/util/exceptions.h>
+#include "cutlass/util/debug.h"
+#include "cutlass/util/platform.h"
+#include "tools/util/exceptions.h"
 
 namespace cutlass {
 namespace device_memory {
@@ -124,6 +124,10 @@ struct allocation {
     }
   };
 
+  //
+  // Data members
+  //
+
   /// Number of elements of T allocated on the current CUDA device
   size_t capacity;
 
@@ -131,7 +135,7 @@ struct allocation {
   platform::unique_ptr<T, deleter> smart_ptr;
 
   //
-  //
+  // Methods
   //
 
   /// Constructor: allocates no memory
@@ -139,6 +143,11 @@ struct allocation {
 
   /// Constructor: allocates \p capacity elements on the current CUDA device
   allocation(size_t _capacity) : smart_ptr(allocate<T>(_capacity)), capacity(_capacity) {}
+
+  /// Copy constructor
+  allocation(allocation const &p): smart_ptr(allocate<T>(p.capacity)), capacity(p.capacity) {
+    copy_device_to_device(smart_ptr.get(), p.get(), capacity);
+  }
 
   /// Destructor
   ~allocation() { reset(); }
@@ -172,6 +181,16 @@ struct allocation {
 
   /// Returns the deleter object which would be used for destruction of the managed object (const)
   const deleter& get_deleter() const { return smart_ptr.get_deleter(); }
+
+  /// Copies a device-side memory allocation
+  allocation & operator=(allocation const &p) {
+    if (capacity != p.capacity) {
+      smart_ptr.reset(allocate<T>(p.capacity));
+      capacity = p.capacity;
+    }
+    copy_device_to_device(smart_ptr.get(), p.get(), capacity);
+    return *this;
+  }
 };
 
 }  // namespace device_memory

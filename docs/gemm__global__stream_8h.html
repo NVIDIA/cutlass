@@ -82,23 +82,21 @@ $(function() {
 
 <p>Implements efficient loading of the thread block-level tile from global memory and storing to shared memory.  
 <a href="#details">More...</a></p>
-<div class="textblock"><code>#include &lt;<a class="el" href="convert_8h_source.html">cutlass/convert.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__global__tile_8h_source.html">cutlass/gemm/gemm_global_tile.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="iterator__access_8h_source.html">cutlass/iterator_access.h</a>&gt;</code><br />
+<div class="textblock"><code>#include &quot;<a class="el" href="coord_8h_source.html">cutlass/coord.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="convert_8h_source.html">cutlass/convert.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__global__tile_8h_source.html">cutlass/gemm/gemm_global_tile.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="tile__allocation_8h_source.html">cutlass/tile_allocation.h</a>&quot;</code><br />
 </div>
 <p><a href="gemm__global__stream_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
 Classes</h2></td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamBase.html">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamBase_1_1Params.html">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;::Params</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params.  <a href="structcutlass_1_1gemm_1_1GlobalLoadStreamBase_1_1Params.html#details">More...</a><br /></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;::Params</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params.  <a href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1gemm_1_1GlobalLoadStreamBase_1_1SharedStorage.html">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;::SharedStorage</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The storage in shared memory needed by that stream.  <a href="unioncutlass_1_1gemm_1_1GlobalLoadStreamBase_1_1SharedStorage.html#details">More...</a><br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">cutlass::gemm::GlobalLoadStream&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1SharedStorage.html">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;::SharedStorage</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="namespaces"></a>
@@ -111,7 +109,7 @@ Namespaces</h2></td></tr>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

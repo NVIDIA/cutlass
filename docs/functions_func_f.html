@@ -74,27 +74,32 @@ $(function() {
 <li>fill()
 : <a class="el" href="structcutlass_1_1PredicateVector.html#a236bd1a822479750a809452fd58dd917">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;</a>
 </li>
+<li>fragment()
+: <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#ad5cb076de46e841a165bd43924dab463">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileLoadStream.html#a5b7161b2b97100c13c2c5009edd2a6be">cutlass::TileLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreStream.html#ad6ff1786f85d64053ece0ac8ae9a92b5">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;</a>
+</li>
 <li>fragment_a()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html#a4a8c64d85aa012e3689dd024c486924b">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedLoadStream</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1SharedStreamPair.html#af29f052dc0145abe3144dea1472d241a">cutlass::gemm::SharedStreamPair&lt; StreamA_, StreamB_ &gt;</a>
 </li>
 <li>fragment_b()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html#aa28f34fb0c4bf739246d92c2fef80e0b">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedLoadStream</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1SharedStreamPair.html#a375e96bc2e35447682bd1dea3c4d87ad">cutlass::gemm::SharedStreamPair&lt; StreamA_, StreamB_ &gt;</a>
 </li>
 <li>FragmentConstIterator()
-: <a class="el" href="structcutlass_1_1FragmentConstIterator.html#ac4b6f351e6e72bed37e425f02a10c81e">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
+: <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a18f926c9c877e15a279f16637bd24e83">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
 </li>
 <li>FragmentIterator()
-: <a class="el" href="structcutlass_1_1FragmentIterator.html#ae1825fe3e138e2aa62d27dab2b5227b4">cutlass::FragmentIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
+: <a class="el" href="structcutlass_1_1FragmentIterator.html#a638e4e1d84b4ae84e758288c7f37548b">cutlass::FragmentIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
 </li>
 <li>FragmentMultiplyAdd()
-: <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd.html#af19e14a22aefd1124f7d31beec6f8c42">cutlass::gemm::FragmentMultiplyAdd&lt; Scalar_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd_3_01half_01_4.html#a21f0965f6178917c7f5c6d79ed048059">cutlass::gemm::FragmentMultiplyAdd&lt; half &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd.html#ae1fbd0fd103deda51208102f15f896ed">cutlass::gemm::FragmentMultiplyAdd&lt; ScalarAlphaBeta_, ScalarAccum_, fragMul2 &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1FragmentMultiplyAdd_3_01half_00_01half_00_01true_01_4.html#ad35b57b3f0cf5a467a1b0e48cffc3061">cutlass::gemm::FragmentMultiplyAdd&lt; half, half, true &gt;</a>
 </li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:15 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -27,7 +27,7 @@
 */
 #pragma once
 
-#include <cutlass/vector.h>
+#include "cutlass/vector.h"
 
 namespace cutlass {
 namespace gemm {
@@ -40,9 +40,10 @@ struct ClearAccumulators {
   struct SharedStorage {};
 
   /// Ctor.
-  CUTLASS_DEVICE ClearAccumulators() {}
-  /// Ctor.
   CUTLASS_DEVICE ClearAccumulators(SharedStorage& shared_storage) {}
+
+  /// Ctor.
+  CUTLASS_DEVICE ClearAccumulators() {}
 
   /// Clear the fragment.
   template <typename Fragment_>

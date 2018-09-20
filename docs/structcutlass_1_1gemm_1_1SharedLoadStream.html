@@ -108,6 +108,12 @@ Public Types</h2></td></tr>
 <tr class="memitem:a9f025ed2609bf33230f6a390c22b11b7"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aa2227d7fa1edef3f6730c7db41b132b4">TransformedFragment</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a9f025ed2609bf33230f6a390c22b11b7">Fragment</a></td></tr>
 <tr class="memdesc:a9f025ed2609bf33230f6a390c22b11b7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Make sure the fragments match.  <a href="#a9f025ed2609bf33230f6a390c22b11b7">More...</a><br /></td></tr>
 <tr class="separator:a9f025ed2609bf33230f6a390c22b11b7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5da116ae7e3f8ac2168bcf9bb964a429"><td class="memItemLeft" align="right" valign="top">typedef Iterator::Scalar&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a5da116ae7e3f8ac2168bcf9bb964a429">Scalar</a></td></tr>
+<tr class="memdesc:a5da116ae7e3f8ac2168bcf9bb964a429"><td class="mdescLeft">&#160;</td><td class="mdescRight">Scalar data type.  <a href="#a5da116ae7e3f8ac2168bcf9bb964a429">More...</a><br /></td></tr>
+<tr class="separator:a5da116ae7e3f8ac2168bcf9bb964a429"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aff5202428b0e7207456c97204d4d219a"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aff5202428b0e7207456c97204d4d219a">TensorRef</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a5da116ae7e3f8ac2168bcf9bb964a429">Scalar</a>, 4 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aff5202428b0e7207456c97204d4d219a">TensorRef</a></td></tr>
+<tr class="memdesc:aff5202428b0e7207456c97204d4d219a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reference type to a tensor.  <a href="#aff5202428b0e7207456c97204d4d219a">More...</a><br /></td></tr>
+<tr class="separator:aff5202428b0e7207456c97204d4d219a"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a22c671494d487511c71f2b0f26fdb404"><td class="memItemLeft" align="right" valign="top">typedef Iterator::Storage&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a22c671494d487511c71f2b0f26fdb404">SharedStorage</a></td></tr>
 <tr class="memdesc:a22c671494d487511c71f2b0f26fdb404"><td class="mdescLeft">&#160;</td><td class="mdescRight">The storage in shared memory needed by that stream.  <a href="#a22c671494d487511c71f2b0f26fdb404">More...</a><br /></td></tr>
 <tr class="separator:a22c671494d487511c71f2b0f26fdb404"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -117,21 +123,30 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a6e097738679436d580e8dc6ac70efaad"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a6e097738679436d580e8dc6ac70efaad">SharedLoadStream</a> ()</td></tr>
 <tr class="memdesc:a6e097738679436d580e8dc6ac70efaad"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#a6e097738679436d580e8dc6ac70efaad">More...</a><br /></td></tr>
 <tr class="separator:a6e097738679436d580e8dc6ac70efaad"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a93e9bcdca4ceb68754fb1f73e2b25d25"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a93e9bcdca4ceb68754fb1f73e2b25d25">SharedLoadStream</a> (<a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream_1_1Params.html">Params</a> const &amp;params, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a22c671494d487511c71f2b0f26fdb404">SharedStorage</a> &amp;shared_storage)</td></tr>
-<tr class="memdesc:a93e9bcdca4ceb68754fb1f73e2b25d25"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#a93e9bcdca4ceb68754fb1f73e2b25d25">More...</a><br /></td></tr>
-<tr class="separator:a93e9bcdca4ceb68754fb1f73e2b25d25"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8e4d277325bb5e56c718a2298b60d3cf"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a8e4d277325bb5e56c718a2298b60d3cf">initialize</a> (<a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream_1_1Params.html">Params</a> const &amp;params, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a22c671494d487511c71f2b0f26fdb404">SharedStorage</a> &amp;shared_storage)</td></tr>
-<tr class="memdesc:a8e4d277325bb5e56c718a2298b60d3cf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initialize the stream.  <a href="#a8e4d277325bb5e56c718a2298b60d3cf">More...</a><br /></td></tr>
-<tr class="separator:a8e4d277325bb5e56c718a2298b60d3cf"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a7f6bf3b8d70bcd74d84519decd9f0d8e"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a7f6bf3b8d70bcd74d84519decd9f0d8e">copy</a> (<a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a41b45085f17532a6394de3f5ccf201e7">FetchedFragment</a> &amp;fetched)</td></tr>
-<tr class="memdesc:a7f6bf3b8d70bcd74d84519decd9f0d8e"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="structcutlass_1_1Load.html">Load</a> the data from shared memory to the fetch fragment.  <a href="#a7f6bf3b8d70bcd74d84519decd9f0d8e">More...</a><br /></td></tr>
-<tr class="separator:a7f6bf3b8d70bcd74d84519decd9f0d8e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a279144e9722055d4b862e3fa25948762"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a279144e9722055d4b862e3fa25948762">copy</a> (int d, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a41b45085f17532a6394de3f5ccf201e7">FetchedFragment</a> &amp;fetched)</td></tr>
-<tr class="memdesc:a279144e9722055d4b862e3fa25948762"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="structcutlass_1_1Load.html">Load</a> the data from shared memory to the fetch fragment.  <a href="#a279144e9722055d4b862e3fa25948762">More...</a><br /></td></tr>
-<tr class="separator:a279144e9722055d4b862e3fa25948762"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a9cc435369c7fc76d0bb6233a8258e257"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a9cc435369c7fc76d0bb6233a8258e257">commit</a> (<a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a41b45085f17532a6394de3f5ccf201e7">FetchedFragment</a> &amp;fetched, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aa2227d7fa1edef3f6730c7db41b132b4">TransformedFragment</a> &amp;transformed)</td></tr>
-<tr class="memdesc:a9cc435369c7fc76d0bb6233a8258e257"><td class="mdescLeft">&#160;</td><td class="mdescRight">Commit the data.  <a href="#a9cc435369c7fc76d0bb6233a8258e257">More...</a><br /></td></tr>
-<tr class="separator:a9cc435369c7fc76d0bb6233a8258e257"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad2f619712c817f91d62a13db0476a627"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#ad2f619712c817f91d62a13db0476a627">SharedLoadStream</a> (<a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream_1_1Params.html">Params</a> const &amp;params, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aff5202428b0e7207456c97204d4d219a">TensorRef</a> const &amp;ref)</td></tr>
+<tr class="memdesc:ad2f619712c817f91d62a13db0476a627"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#ad2f619712c817f91d62a13db0476a627">More...</a><br /></td></tr>
+<tr class="separator:ad2f619712c817f91d62a13db0476a627"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9b62788c187fff49b0250c0070a41fa0"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a9b62788c187fff49b0250c0070a41fa0">initialize</a> (<a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream_1_1Params.html">Params</a> const &amp;params, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aff5202428b0e7207456c97204d4d219a">TensorRef</a> const &amp;ref)</td></tr>
+<tr class="memdesc:a9b62788c187fff49b0250c0070a41fa0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initialize the stream.  <a href="#a9b62788c187fff49b0250c0070a41fa0">More...</a><br /></td></tr>
+<tr class="separator:a9b62788c187fff49b0250c0070a41fa0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4b919d229e259909efbf994ff2c09339"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a4b919d229e259909efbf994ff2c09339">copy</a> ()</td></tr>
+<tr class="memdesc:a4b919d229e259909efbf994ff2c09339"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="structcutlass_1_1Load.html">Load</a> the data from shared memory to the fetch fragment.  <a href="#a4b919d229e259909efbf994ff2c09339">More...</a><br /></td></tr>
+<tr class="separator:a4b919d229e259909efbf994ff2c09339"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a99039d115a539fc99e2235c12ac57eed"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a99039d115a539fc99e2235c12ac57eed">copy</a> (int step)</td></tr>
+<tr class="memdesc:a99039d115a539fc99e2235c12ac57eed"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="structcutlass_1_1Load.html">Load</a> the data from shared memory to the fetch fragment.  <a href="#a99039d115a539fc99e2235c12ac57eed">More...</a><br /></td></tr>
+<tr class="separator:a99039d115a539fc99e2235c12ac57eed"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa3aa987bf0fd6303e06f46e2f54e47e4"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aa3aa987bf0fd6303e06f46e2f54e47e4">commit</a> ()</td></tr>
+<tr class="memdesc:aa3aa987bf0fd6303e06f46e2f54e47e4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Commit the data.  <a href="#aa3aa987bf0fd6303e06f46e2f54e47e4">More...</a><br /></td></tr>
+<tr class="separator:aa3aa987bf0fd6303e06f46e2f54e47e4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6be479189765a1803ceced424561466b"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a6be479189765a1803ceced424561466b">commit</a> (int step)</td></tr>
+<tr class="memdesc:a6be479189765a1803ceced424561466b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Commit the data.  <a href="#a6be479189765a1803ceced424561466b">More...</a><br /></td></tr>
+<tr class="separator:a6be479189765a1803ceced424561466b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad5cb076de46e841a165bd43924dab463"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aa2227d7fa1edef3f6730c7db41b132b4">TransformedFragment</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#ad5cb076de46e841a165bd43924dab463">fragment</a> (int step=0)</td></tr>
+<tr class="memdesc:ad5cb076de46e841a165bd43924dab463"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns the fragment for the given step.  <a href="#ad5cb076de46e841a165bd43924dab463">More...</a><br /></td></tr>
+<tr class="separator:ad5cb076de46e841a165bd43924dab463"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a30e815fcee63b5a99b2797464b6a3192"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aa2227d7fa1edef3f6730c7db41b132b4">TransformedFragment</a> const  &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a30e815fcee63b5a99b2797464b6a3192">fragment</a> (int step=0) const</td></tr>
+<tr class="memdesc:a30e815fcee63b5a99b2797464b6a3192"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns the fragment for the given step.  <a href="#a30e815fcee63b5a99b2797464b6a3192">More...</a><br /></td></tr>
+<tr class="separator:a30e815fcee63b5a99b2797464b6a3192"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:acf22fd09aa537943c16b900d66f1ec6f"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#acf22fd09aa537943c16b900d66f1ec6f">inc_stage</a> ()</td></tr>
 <tr class="memdesc:acf22fd09aa537943c16b900d66f1ec6f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Increment the stage.  <a href="#acf22fd09aa537943c16b900d66f1ec6f">More...</a><br /></td></tr>
 <tr class="separator:acf22fd09aa537943c16b900d66f1ec6f"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -141,9 +156,15 @@ Public Attributes</h2></td></tr>
 <tr class="memitem:a54481a42d4125e3693a086269d9a7b10"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a6925270c4ad157554ab155cddc7b46e6">Iterator</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a54481a42d4125e3693a086269d9a7b10">iterator</a></td></tr>
 <tr class="memdesc:a54481a42d4125e3693a086269d9a7b10"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator.  <a href="#a54481a42d4125e3693a086269d9a7b10">More...</a><br /></td></tr>
 <tr class="separator:a54481a42d4125e3693a086269d9a7b10"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8ae6f60b5fb3642542a6cb833d83c8e4"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a41b45085f17532a6394de3f5ccf201e7">FetchedFragment</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a8ae6f60b5fb3642542a6cb833d83c8e4">fetched</a> [2]</td></tr>
+<tr class="memdesc:a8ae6f60b5fb3642542a6cb833d83c8e4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Fetched fragment.  <a href="#a8ae6f60b5fb3642542a6cb833d83c8e4">More...</a><br /></td></tr>
+<tr class="separator:a8ae6f60b5fb3642542a6cb833d83c8e4"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:af846390ad0e5b80ccb4e8b95c5fe64a7"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#ad1f70f0dd1027da1353ff7a38f524904">Transformer</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#af846390ad0e5b80ccb4e8b95c5fe64a7">transformer</a></td></tr>
 <tr class="memdesc:af846390ad0e5b80ccb4e8b95c5fe64a7"><td class="mdescLeft">&#160;</td><td class="mdescRight">The transformer.  <a href="#af846390ad0e5b80ccb4e8b95c5fe64a7">More...</a><br /></td></tr>
 <tr class="separator:af846390ad0e5b80ccb4e8b95c5fe64a7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7583af38ca0fb446882b28c0e2dcae88"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aa2227d7fa1edef3f6730c7db41b132b4">TransformedFragment</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a7583af38ca0fb446882b28c0e2dcae88">transformed</a> [2]</td></tr>
+<tr class="memdesc:a7583af38ca0fb446882b28c0e2dcae88"><td class="mdescLeft">&#160;</td><td class="mdescRight">Transformed fragment.  <a href="#a7583af38ca0fb446882b28c0e2dcae88">More...</a><br /></td></tr>
+<tr class="separator:a7583af38ca0fb446882b28c0e2dcae88"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Typedef Documentation</h2>
 <a id="a41b45085f17532a6394de3f5ccf201e7"></a>
@@ -195,6 +216,22 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
 
 </div>
 </div>
+<a id="a5da116ae7e3f8ac2168bcf9bb964a429"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5da116ae7e3f8ac2168bcf9bb964a429">&#9670;&nbsp;</a></span>Scalar</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Iterator_::Fragment&gt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef Iterator::Scalar <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a5da116ae7e3f8ac2168bcf9bb964a429">Scalar</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a22c671494d487511c71f2b0f26fdb404"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a22c671494d487511c71f2b0f26fdb404">&#9670;&nbsp;</a></span>SharedStorage</h2>
 
@@ -205,6 +242,22 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
       <table class="memname">
         <tr>
           <td class="memname">typedef Iterator::Storage <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a22c671494d487511c71f2b0f26fdb404">SharedStorage</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="aff5202428b0e7207456c97204d4d219a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aff5202428b0e7207456c97204d4d219a">&#9670;&nbsp;</a></span>TensorRef</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Iterator_::Fragment&gt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aff5202428b0e7207456c97204d4d219a">TensorRef</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a5da116ae7e3f8ac2168bcf9bb964a429">Scalar</a>, 4&gt; <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aff5202428b0e7207456c97204d4d219a">TensorRef</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -271,8 +324,8 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
 
 </div>
 </div>
-<a id="a93e9bcdca4ceb68754fb1f73e2b25d25"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a93e9bcdca4ceb68754fb1f73e2b25d25">&#9670;&nbsp;</a></span>SharedLoadStream() <span class="overload">[2/2]</span></h2>
+<a id="ad2f619712c817f91d62a13db0476a627"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad2f619712c817f91d62a13db0476a627">&#9670;&nbsp;</a></span>SharedLoadStream() <span class="overload">[2/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -291,8 +344,8 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a22c671494d487511c71f2b0f26fdb404">SharedStorage</a> &amp;&#160;</td>
-          <td class="paramname"><em>shared_storage</em>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aff5202428b0e7207456c97204d4d219a">TensorRef</a> const &amp;&#160;</td>
+          <td class="paramname"><em>ref</em>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -310,8 +363,8 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
 </div>
 </div>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="a9cc435369c7fc76d0bb6233a8258e257"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a9cc435369c7fc76d0bb6233a8258e257">&#9670;&nbsp;</a></span>commit()</h2>
+<a id="aa3aa987bf0fd6303e06f46e2f54e47e4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa3aa987bf0fd6303e06f46e2f54e47e4">&#9670;&nbsp;</a></span>commit() <span class="overload">[1/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -324,19 +377,8 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
         <tr>
           <td class="memname">CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::commit </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a41b45085f17532a6394de3f5ccf201e7">FetchedFragment</a> &amp;&#160;</td>
-          <td class="paramname"><em>fetched</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
+          <td class="paramname"></td><td>)</td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aa2227d7fa1edef3f6730c7db41b132b4">TransformedFragment</a> &amp;&#160;</td>
-          <td class="paramname"><em>transformed</em>&#160;</td>
-        </tr>
-        <tr>
-          <td></td>
-          <td>)</td>
-          <td></td><td></td>
         </tr>
       </table>
   </td>
@@ -348,8 +390,36 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
 
 </div>
 </div>
-<a id="a7f6bf3b8d70bcd74d84519decd9f0d8e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a7f6bf3b8d70bcd74d84519decd9f0d8e">&#9670;&nbsp;</a></span>copy() <span class="overload">[1/2]</span></h2>
+<a id="a6be479189765a1803ceced424561466b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6be479189765a1803ceced424561466b">&#9670;&nbsp;</a></span>commit() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Iterator_::Fragment&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::commit </td>
+          <td>(</td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>step</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a4b919d229e259909efbf994ff2c09339"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4b919d229e259909efbf994ff2c09339">&#9670;&nbsp;</a></span>copy() <span class="overload">[1/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -362,8 +432,7 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
         <tr>
           <td class="memname">CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::copy </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a41b45085f17532a6394de3f5ccf201e7">FetchedFragment</a> &amp;&#160;</td>
-          <td class="paramname"><em>fetched</em></td><td>)</td>
+          <td class="paramname"></td><td>)</td>
           <td></td>
         </tr>
       </table>
@@ -376,8 +445,8 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
 
 </div>
 </div>
-<a id="a279144e9722055d4b862e3fa25948762"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a279144e9722055d4b862e3fa25948762">&#9670;&nbsp;</a></span>copy() <span class="overload">[2/2]</span></h2>
+<a id="a99039d115a539fc99e2235c12ac57eed"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a99039d115a539fc99e2235c12ac57eed">&#9670;&nbsp;</a></span>copy() <span class="overload">[2/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -391,18 +460,64 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
           <td class="memname">CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::copy </td>
           <td>(</td>
           <td class="paramtype">int&#160;</td>
-          <td class="paramname"><em>d</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
+          <td class="paramname"><em>step</em></td><td>)</td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a41b45085f17532a6394de3f5ccf201e7">FetchedFragment</a> &amp;&#160;</td>
-          <td class="paramname"><em>fetched</em>&#160;</td>
         </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="ad5cb076de46e841a165bd43924dab463"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad5cb076de46e841a165bd43924dab463">&#9670;&nbsp;</a></span>fragment() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Iterator_::Fragment&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
         <tr>
+          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aa2227d7fa1edef3f6730c7db41b132b4">TransformedFragment</a>&amp; <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::fragment </td>
+          <td>(</td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>step</em> = <code>0</code></td><td>)</td>
           <td></td>
-          <td>)</td>
-          <td></td><td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a30e815fcee63b5a99b2797464b6a3192"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a30e815fcee63b5a99b2797464b6a3192">&#9670;&nbsp;</a></span>fragment() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Iterator_::Fragment&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aa2227d7fa1edef3f6730c7db41b132b4">TransformedFragment</a> const&amp; <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::fragment </td>
+          <td>(</td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>step</em> = <code>0</code></td><td>)</td>
+          <td> const</td>
         </tr>
       </table>
   </td>
@@ -441,8 +556,8 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
 
 </div>
 </div>
-<a id="a8e4d277325bb5e56c718a2298b60d3cf"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a8e4d277325bb5e56c718a2298b60d3cf">&#9670;&nbsp;</a></span>initialize()</h2>
+<a id="a9b62788c187fff49b0250c0070a41fa0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9b62788c187fff49b0250c0070a41fa0">&#9670;&nbsp;</a></span>initialize()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -461,8 +576,8 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a22c671494d487511c71f2b0f26fdb404">SharedStorage</a> &amp;&#160;</td>
-          <td class="paramname"><em>shared_storage</em>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aff5202428b0e7207456c97204d4d219a">TensorRef</a> const &amp;&#160;</td>
+          <td class="paramname"><em>ref</em>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -480,6 +595,22 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
 </div>
 </div>
 <h2 class="groupheader">Member Data Documentation</h2>
+<a id="a8ae6f60b5fb3642542a6cb833d83c8e4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8ae6f60b5fb3642542a6cb833d83c8e4">&#9670;&nbsp;</a></span>fetched</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Iterator_::Fragment&gt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a41b45085f17532a6394de3f5ccf201e7">FetchedFragment</a> <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::fetched[2]</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a54481a42d4125e3693a086269d9a7b10"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a54481a42d4125e3693a086269d9a7b10">&#9670;&nbsp;</a></span>iterator</h2>
 
@@ -490,6 +621,22 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
       <table class="memname">
         <tr>
           <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a6925270c4ad157554ab155cddc7b46e6">Iterator</a> <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::iterator</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a7583af38ca0fb446882b28c0e2dcae88"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7583af38ca0fb446882b28c0e2dcae88">&#9670;&nbsp;</a></span>transformed</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Iterator_::Fragment&gt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aa2227d7fa1edef3f6730c7db41b132b4">TransformedFragment</a> <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html">cutlass::gemm::SharedLoadStream</a>&lt; Iterator_, Transformer_ &gt;::transformed[2]</td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -518,7 +665,7 @@ template&lt;typename Iterator_ , typename Transformer_  = Copy&lt;typename Itera
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:14 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

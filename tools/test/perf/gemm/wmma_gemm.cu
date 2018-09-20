@@ -23,17 +23,19 @@
  *
  **************************************************************************************************/
 
-#include <cutlass/wmma_matrix.h>
+#include "cutlass/wmma_matrix.h"
 #ifdef CUTLASS_USE_WMMA_API
+
+#pragma warning( disable : 4503)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <cutlass/gemm/gemm.h>
-
-#include <tools/test/perf/gemm/gemm_profiler.h>
-#include <tools/test/perf/gemm/cutlass_dispatch.h>
-#include <tools/test/perf/gemm/gemm_perf_testbed.h>
-#include <cutlass/gemm/wmma_gemm_traits.h>
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/wmma_gemm_traits.h"
+#include "tools/test/perf/cutlass_perf_test.h"
+#include "tools/test/perf/gemm/gemm_profiler.h"
+#include "tools/test/perf/gemm/cutlass_dispatch.h"
+#include "tools/test/perf/gemm/gemm_perf_testbed.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -47,8 +49,16 @@ struct WmmaGemmDispatch {
   /// Indicate warp-level GEMM
   static bool const kThreadMultiplyAdd = false;
 
+  static bool const kRunCuBLAS = true;
+
   static cutlass::MatrixLayout::Kind const kLayoutA = Traits::kLayoutA;
   static cutlass::MatrixLayout::Kind const kLayoutB = Traits::kLayoutB;
+
+  typedef typename Traits::ScalarA ScalarA;
+  typedef typename Traits::ScalarB ScalarB;
+  typedef typename Traits::ScalarC ScalarC;
+  typedef typename Traits::ScalarD ScalarD;
+  typedef typename Traits::Epilogue::Functor::Scalar Scalar;
 
   //
   // Data members
@@ -64,9 +74,20 @@ struct WmmaGemmDispatch {
   WmmaGemmDispatch() {}
 
   /// Initializes params object
-  WmmaGemmDispatch(int m, int n, int k, float alpha, half const* d_a, int lda,
-                  half const* d_b, int ldb, float beta, float const* d_c, int ldc,
-                  float* d_d, int ldd) {
+  WmmaGemmDispatch(
+    int m,
+    int n,
+    int k,
+    Scalar alpha,
+    ScalarA const* d_a,
+    int lda,
+    ScalarB const* d_b,
+    int ldb,
+    Scalar beta,
+    ScalarC const* d_c,
+    int ldc,
+    ScalarD* d_d,
+    int ldd) {
 
     params.initialize(m, n, k, alpha, d_a, lda, d_b, ldb, beta, d_c, ldc, d_d, ldd);
   }
@@ -76,33 +97,6 @@ struct WmmaGemmDispatch {
 
   /// Launches kernel
   cudaError_t operator()() { return Gemm::launch(params); }
-
-  /// Determines if problem is aligned (assuming no padding)
-  static bool is_problem_aligned(
-    int m,
-    int n,
-    int k) {
-
-    bool aligned = true;
-
-    if (kLayoutA == cutlass::MatrixLayout::kColumnMajor) {
-      aligned = aligned && !(m % Gemm::Traits::GemmConfig::kScalarsPerLdgA);
-    }
-    else {
-      aligned = aligned && !(k % Gemm::Traits::GemmConfig::kScalarsPerLdgA);
-    }
-
-    if (kLayoutB == cutlass::MatrixLayout::kColumnMajor) {
-      aligned = aligned && !(k % Gemm::Traits::GemmConfig::kScalarsPerLdgB);
-    }
-    else {
-      aligned = aligned && !(n % Gemm::Traits::GemmConfig::kScalarsPerLdgB);
-    }
-
-    aligned = aligned && !(m % Gemm::Traits::GemmConfig::kScalarsPerLdgC);
-
-    return aligned;
-  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -111,58 +105,159 @@ namespace perf {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int profile_wmma_gemm(TestbenchOutput &output, TestbenchOptions const &options) {
-
+int profile_wmma_gemm_f32(TestbenchOutput<GemmProblem> &output, TestbenchOptions const &options, Config const &config) {
   typedef perf::GemmProfiler<cutlass::half_t, cutlass::half_t, float, float, float> GemmProfiler;
 
   int results = 0;
 
-  if (!results) {
-
+  {
     typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::MatrixLayout::kRowMajor>
     WmmaGemmTraits;
 
     typedef WmmaGemmDispatch<WmmaGemmTraits> Dispatch;
 
-    profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_nt", options);
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_nt", options, config);
   }
 
-  if (!results) {
-
+  {
     typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kColumnMajor,
                                         cutlass::MatrixLayout::kColumnMajor>
     WmmaGemmTraits;
 
     typedef WmmaGemmDispatch<WmmaGemmTraits> Dispatch;
 
-    profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_nn", options);
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_nn", options, config);
   }
 
-  if (!results) {
-
+  {
     typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
                                         cutlass::MatrixLayout::kColumnMajor>
       WmmaGemmTraits;
 
     typedef WmmaGemmDispatch<WmmaGemmTraits> Dispatch;
 
-    profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_tn", options);
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_tn", options, config);
   }
 
-  if (!results) {
-
+  {
     typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
                                         cutlass::MatrixLayout::kRowMajor>
       WmmaGemmTraits;
 
     typedef WmmaGemmDispatch<WmmaGemmTraits> Dispatch;
 
-    profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_tt", options);
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_tt", options, config);
   }
 
   return results;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int profile_wmma_gemm_f16(
+    TestbenchOutput<GemmProblem> &output,
+    TestbenchOptions const &options,
+    Config const &config) {
+
+  typedef perf::GemmProfiler<
+    cutlass::half_t,
+    cutlass::half_t,
+    cutlass::half_t,
+    cutlass::half_t,
+    cutlass::half_t> GemmProfiler;
+
+  int results = 0;
+
+  {
+    typedef cutlass::gemm::WmmaGemmTraits<
+      cutlass::MatrixLayout::kColumnMajor,
+      cutlass::MatrixLayout::kRowMajor,
+      cutlass::Shape<32, 128, 128>,
+      half,
+      half,
+      half,
+      cutlass::gemm::LinearScaling<half>,
+      half,
+      cutlass::Shape<32, 64, 64>
+    >
+      WmmaGemmTraits;
+
+    typedef WmmaGemmDispatch<WmmaGemmTraits> Dispatch;
+
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_f16_nt", options, config);
+  }
+
+  {
+    typedef cutlass::gemm::WmmaGemmTraits<
+      cutlass::MatrixLayout::kColumnMajor,
+      cutlass::MatrixLayout::kColumnMajor,
+      cutlass::Shape<32, 128, 128>,
+      half,
+      half,
+      half,
+      cutlass::gemm::LinearScaling<half>,
+      half,
+      cutlass::Shape<32, 64, 64>
+    >
+      WmmaGemmTraits;
+
+    typedef WmmaGemmDispatch<WmmaGemmTraits> Dispatch;
+
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_f16_nn", options, config);
+  }
+
+  {
+    typedef cutlass::gemm::WmmaGemmTraits<
+      cutlass::MatrixLayout::kRowMajor,
+      cutlass::MatrixLayout::kColumnMajor,
+      cutlass::Shape<32, 128, 128>,
+      half,
+      half,
+      half,
+      cutlass::gemm::LinearScaling<half>,
+      half,
+      cutlass::Shape<32, 64, 64>
+    >
+      WmmaGemmTraits;
+
+    typedef WmmaGemmDispatch<WmmaGemmTraits> Dispatch;
+
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_f16_tn", options, config);
+  }
+
+  {
+    typedef cutlass::gemm::WmmaGemmTraits<
+      cutlass::MatrixLayout::kRowMajor,
+      cutlass::MatrixLayout::kRowMajor,
+      cutlass::Shape<32, 128, 128>,
+      half,
+      half,
+      half,
+      cutlass::gemm::LinearScaling<half>,
+      half,
+      cutlass::Shape<32, 64, 64>
+    >
+      WmmaGemmTraits;
+
+    typedef WmmaGemmDispatch<WmmaGemmTraits> Dispatch;
+
+    results |= profile_gemm<Dispatch, GemmProfiler>(output, "wmma_gemm_f16_tt", options, config);
+  }
+
+  return results;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct WmmaGemmRegistrar {
+  WmmaGemmRegistrar() {
+    RegisterGemmProfileFunc(profile_wmma_gemm_f32);
+    RegisterGemmProfileFunc(profile_wmma_gemm_f16);
+  }
+};
+
+volatile WmmaGemmRegistrar _WmmaGemmRegistrar;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

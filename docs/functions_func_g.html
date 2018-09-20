@@ -74,47 +74,73 @@ $(function() {
 <li>Gemm()
 : <a class="el" href="structcutlass_1_1gemm_1_1Gemm.html#a8bff0bd32aec05f8c1e282024be0bcfd">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;</a>
 </li>
+<li>GemmCoord()
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmCoord.html#abaa87475d518a2e5cdf44c62122b9e01">cutlass::gemm::GemmCoord</a>
+</li>
+<li>GemmDesc()
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmDesc.html#a948af4a974f1aa74d3b6da9cd3e185de">cutlass::gemm::GemmDesc&lt; AType_, BType_, CType_, DType_, SType_, Index_ &gt;</a>
+</li>
 <li>GemmEpilogue()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#ab10147070c3a38fca75397f55dc51925">cutlass::gemm::GemmEpilogue&lt; GemmEpilogueTraits_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#af91ebe8d2ed73808b9ea8846c140d3f8">cutlass::gemm::GemmEpilogue&lt; GemmEpilogueTraits_ &gt;</a>
 </li>
 <li>GemmGlobalIteratorAb()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#a34cb153d311377388e7819296a84d07e">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#ab61ce6b04d72d2652ee3bffca3885fe5">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
 </li>
 <li>GemmGlobalIteratorCd()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#a6dae81995ab94c0b7f28eeeeb84a6c8d">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#aeeed9a3582a879d9da77191df88e83ff">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
 </li>
 <li>get()
-: <a class="el" href="structcutlass_1_1ComputeOffsetFromShape.html#a3c6f60a59178ffb84899aa449bd51d38">cutlass::ComputeOffsetFromShape&lt; Shape_ &gt;</a>
-, <a class="el" href="structcutlass_1_1ComputeOffsetFromShape_3_01Shape_3_011_00_01kSh___00_01kSw___00_011_01_4_01_4.html#a11bf40abc57580db5ce4b0fd4c3e55ff">cutlass::ComputeOffsetFromShape&lt; Shape&lt; 1, kSh_, kSw_, 1 &gt; &gt;</a>
-, <a class="el" href="structcutlass_1_1ComputeOffsetFromShape_3_01Shape_3_011_00_01kSh___00_01kSw___00_01kSc___01_4_01_4.html#a5198e838e3892245fe7b10884555ec93">cutlass::ComputeOffsetFromShape&lt; Shape&lt; 1, kSh_, kSw_, kSc_ &gt; &gt;</a>
-, <a class="el" href="structcutlass_1_1ComputeOffsetFromStrides.html#af5e46bc2b325cb6952d2d68c8aca1409">cutlass::ComputeOffsetFromStrides&lt; Strides_ &gt;</a>
-, <a class="el" href="structcutlass_1_1ComputeOffsetFromStrides_3_01Shape_3_011_00_01S__h___00_01S__w___00_011_01_4_01_4.html#a512a9d46f6bea9d85641d7263bcfee36">cutlass::ComputeOffsetFromStrides&lt; Shape&lt; 1, S_h_, S_w_, 1 &gt; &gt;</a>
-, <a class="el" href="structcutlass_1_1ComputeOffsetFromStrides_3_01Shape_3_011_00_01S__h___00_01S__w___00_01S__c___01_4_01_4.html#acdbb9c7cdf9fc054656614f72396434e">cutlass::ComputeOffsetFromStrides&lt; Shape&lt; 1, S_h_, S_w_, S_c_ &gt; &gt;</a>
+: <a class="el" href="structcutlass_1_1ComputeOffsetFromShape.html#a7bc0bc7e03cd974a05d00e98a72ee78b">cutlass::ComputeOffsetFromShape&lt; Shape_ &gt;</a>
+, <a class="el" href="structcutlass_1_1ComputeOffsetFromStrides.html#aa28231590bfa0ced0f317e6a4d52dc1e">cutlass::ComputeOffsetFromStrides&lt; Strides_ &gt;</a>
 , <a class="el" href="structcutlass_1_1ComputeThreadOffsetFromStrides.html#a1744bfe277cbe0c642cce4a48c1dd9ad">cutlass::ComputeThreadOffsetFromStrides&lt; Threads_, Strides_ &gt;</a>
 , <a class="el" href="structcutlass_1_1ComputeThreadOffsetFromStrides_3_01Shape_3_011_00_01T__h___00_01T__w___00_011_0e75281d7e02fa191f5d498e10e25dc1b.html#a6e621f5fae2ba29277fde46be1cede24">cutlass::ComputeThreadOffsetFromStrides&lt; Shape&lt; 1, T_h_, T_w_, 1 &gt;, Shape&lt; 1, S_h_, S_w_, 1 &gt; &gt;</a>
 , <a class="el" href="structcutlass_1_1ComputeThreadOffsetFromStrides_3_01Shape_3_011_00_01T__h___00_01T__w___00_01T__dd54c41f6edb97d3c208cb7c6fe4ab9b.html#a5d446b2663c01362361e09435a726996">cutlass::ComputeThreadOffsetFromStrides&lt; Shape&lt; 1, T_h_, T_w_, T_c_ &gt;, Shape&lt; 1, S_h_, S_w_, S_c_ &gt; &gt;</a>
+, <a class="el" href="classcutlass_1_1detail_1_1ScalarOrPointer.html#a1661baed19b4aa4eea725a6f6e6b26a3">cutlass::detail::ScalarOrPointer&lt; Scalar_ &gt;</a>
 , <a class="el" href="classcutlass_1_1platform_1_1unique__ptr.html#a2e7c14b8a118f81c1df46ea5045e297b">cutlass::platform::unique_ptr&lt; T, Deleter &gt;</a>
 , <a class="el" href="classcutlass_1_1PredicateVector_1_1Iterator.html#af035589126434bd2dbef4000cd864b8b">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;::Iterator</a>
 </li>
+<li>get_batch_id()
+: <a class="el" href="structcutlass_1_1gemm_1_1ColumnMajorBlockSwizzle.html#abb21a72e2cef3217f446f70758c59c1e">cutlass::gemm::ColumnMajorBlockSwizzle&lt; groupCols, swDirection &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#a8f84a2b830caecff3edd052dc24635e6">cutlass::gemm::IdentityBlockSwizzle</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1RowMajorBlockSwizzle.html#a9be74716c0e3dc6a7f4cdd64cbb16211">cutlass::gemm::RowMajorBlockSwizzle&lt; groupRows, swDirection &gt;</a>
+</li>
 <li>get_deleter()
-: <a class="el" href="classcutlass_1_1platform_1_1unique__ptr.html#a5b8d8ecafb4da336acd50e40cd42b6e0">cutlass::platform::unique_ptr&lt; T, Deleter &gt;</a>
+: <a class="el" href="classcutlass_1_1platform_1_1unique__ptr.html#aa427ab4ea4f2336ac6db28d53a4c11ac">cutlass::platform::unique_ptr&lt; T, Deleter &gt;</a>
+</li>
+<li>get_grid_layout()
+: <a class="el" href="structcutlass_1_1gemm_1_1ColumnMajorBlockSwizzle.html#a927ce3eed4cd22554f9e6fe20a1ccc6e">cutlass::gemm::ColumnMajorBlockSwizzle&lt; groupCols, swDirection &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#afc20f302a5cc5b736cfc1c91dfcaa57c">cutlass::gemm::IdentityBlockSwizzle</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1RowMajorBlockSwizzle.html#aa9fc825e19404ff527cb3d2dcc55ae1c">cutlass::gemm::RowMajorBlockSwizzle&lt; groupRows, swDirection &gt;</a>
+</li>
+<li>get_pointer_offset()
+: <a class="el" href="structcutlass_1_1TensorRefBatchStrided.html#a3d1922402bba34d0bc865fcc3e1a9a5c">cutlass::TensorRefBatchStrided&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
+</li>
+<li>get_ptr()
+: <a class="el" href="classcutlass_1_1detail_1_1ScalarOrPointer.html#a6b066568947df37094e4125b0347faf1">cutlass::detail::ScalarOrPointer&lt; Scalar_ &gt;</a>
+</li>
+<li>get_scalar()
+: <a class="el" href="classcutlass_1_1detail_1_1ScalarOrPointer.html#a81bd7b4f50b8d7c5effe5291ad920380">cutlass::detail::ScalarOrPointer&lt; Scalar_ &gt;</a>
+</li>
+<li>get_threadblock_offset()
+: <a class="el" href="structcutlass_1_1gemm_1_1ColumnMajorBlockSwizzle.html#a380fb7f905548c52933ea411166424b4">cutlass::gemm::ColumnMajorBlockSwizzle&lt; groupCols, swDirection &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1IdentityBlockSwizzle.html#a386e5cf702b0dcc3d57f9fdb4ab5d236">cutlass::gemm::IdentityBlockSwizzle</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1RowMajorBlockSwizzle.html#af7c1b4e0afb08e893cd14a169a0b47cd">cutlass::gemm::RowMajorBlockSwizzle&lt; groupRows, swDirection &gt;</a>
 </li>
 <li>GlobalLoadStream()
-: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1GlobalLoadStream.html#ab2961b4db0694cf128d55d38a98db575">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::GlobalLoadStream</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a4dd11a75375b6b9d7b8dcbd4d402d8d6">cutlass::gemm::GlobalLoadStream&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#aec86bdf5d7d4ad1f7b6ebebcf2da8395">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
 </li>
-<li>GlobalLoadStreamBase()
-: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamBase.html#a0fdc0f56d1352b5ad41fd4985edd3278">cutlass::gemm::GlobalLoadStreamBase&lt; LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
+<li>GlobalLoadStreamPair()
+: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#ab97442e24a1d6d64727b6320ab901ad1">cutlass::gemm::GlobalLoadStreamPair&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;</a>
 </li>
 <li>good()
-: <a class="el" href="classcutlass_1_1TensorRef.html#a0c049e523ee0fc98769ed8cd2d026780">cutlass::TensorRef&lt; Storage_, Rank_ &gt;</a>
-, <a class="el" href="classcutlass_1_1TensorView.html#a837881bc82704491accf54aad2b9def9">cutlass::TensorView&lt; T &gt;</a>
+: <a class="el" href="classcutlass_1_1TensorRef.html#a2dbee889626b4764d30e9058ef3a7ae8">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="classcutlass_1_1TensorRef_3_01Storage___00_01Rank___00_01MapFunc___00_011_00_01Index___00_01LongIndex___01_4.html#a8e1cfab3a220175dad58239c764a5d98">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, 1, Index_, LongIndex_ &gt;</a>
 </li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:15 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -23,45 +23,77 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Host-side implementation of useful operations
+    \brief Host-side implementation of basic tensor operations.
+
+    See cutlass/tensor_ref.h and cutlass/tensor_view.h for more details.
 */
 
 #pragma once
 
-#include <cutlass/cutlass.h>
-#include <cutlass/tensor_view.h>
-#include <tools/util/type_traits.h>
+#include "cutlass/cutlass.h"
+#include "cutlass/tensor_view.h"
+#include "tools/util/type_traits.h"
 
 namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename SrcType, typename DstType>
-struct Cast {
-  static inline DstType apply(SrcType src) { return static_cast<DstType>(src); };
-};
-
-template <>
-struct Cast<float, int8_t> {
-  static inline int8_t apply(float src) {
-    return static_cast<int8_t>(fmaxf(-128.f, fminf(127.f, src)));
-  };
-};
-
-template <>
-struct Cast<float, uint8_t> {
-  static inline uint8_t apply(float src) {
-    return static_cast<uint8_t>(fmaxf(0.f, fminf(255.f, src)));
-  };
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename T>
-class HostTensorView : public TensorView<T> {
+template <
+  /// Data type of element stored within tensor
+  typename Storage_,
+  /// Rank of logical tensor
+  int Rank_ = 4,
+  /// Maps a Coord<Rank_> in the logical tensor index space to the internal n-D array
+  typename MapFunc_ = IdentityTensorMapFunc<Rank_>,
+  /// Rank of internal n-D array
+  int StorageRank_ = Rank_,
+  /// Index type used for coordinates
+  typename Index_ = int,
+  /// Index type used for offsets and pointer differences
+  typename LongIndex_ = long long
+>
+class HostTensorView :
+  public TensorView<Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_> {
  public:
   /// Base class
-  typedef TensorView<T> TensorView_t;
+  typedef TensorView<Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_> Base;
+
+  /// Storage type
+  typedef typename Base::Storage Storage;
+
+  /// Alias for underlying TensorRef
+  typedef typename Base::TensorRef TensorRef;
+
+  /// Index type
+  typedef typename Base::Index Index;
+
+  /// Coordinate in logical tensor space
+  typedef typename TensorRef::TensorCoord TensorCoord;
+
+  /// Coordinate in storage n-D array
+  typedef typename TensorRef::StorageCoord StorageCoord;
+
+  /// Stride vector in storage coordinate space
+  /// Least significant stride is = 1 and not stored
+  typedef typename TensorRef::StrideVector StrideVector;
+
+  /// Long index type for pointer offsets
+  typedef typename Base::LongIndex LongIndex;
+
+  /// Rank of tensor index space
+  static int const kRank = Base::kRank;
+
+  //
+  // Definitions included for backwards compatibility - These will be remmoved
+  // in the next major release.
+  //
+
+  /// Base class
+  typedef Base TensorView_t;
+
+  //
+  // These definitions are meaningful for rank=4 tensors.
+  //
 
   /// Convention: depth is the first dimension
   static int const Dim_D = 0;
@@ -75,19 +107,8 @@ class HostTensorView : public TensorView<T> {
   /// Convention: channel is the second dimension
   static int const Dim_C = 3;
 
-  /// Rank of tensor
-  static int const Rank = TensorView_t::Rank;
-
-  /// Type used to compute the offset of an element to the base of a tensor
-  typedef typename TensorView_t::Offset_t Offset_t;
-
-  /// Reference and stride
-  typedef typename TensorView_t::TensorRef_t TensorRef_t;
-
-  /// Coordinate into tensor
-  typedef typename TensorView_t::Coord_t Coord_t;
-
  public:
+
   //
   // Device and Host Methods
   //
@@ -95,91 +116,87 @@ class HostTensorView : public TensorView<T> {
   /// Default constructor
   HostTensorView() {}
 
-  /// Constructs a Tensor_view from a TensorRef and size
-  HostTensorView(TensorRef_t const& _ref, Coord_t const& _size) : TensorView_t(_ref, _size) {}
+  /// Helper to construct from pointer, stride, and size
+  HostTensorView(
+    Storage_ *_ptr,
+    StrideVector const &_stride,
+    TensorCoord const& _size
+  ) : Base(TensorRef(_ptr, _stride), _size) {}
 
-  /// Accesses the size
-  Coord_t const& size() const { return TensorView_t::size(); }
+  /// Helper to construct from pointer, stride, and size
+  HostTensorView(
+    Storage_ *_ptr,
+    StorageCoord const &_stride,
+    TensorCoord const& _size
+  ) : Base(TensorRef(_ptr, _stride), _size) {}
 
-  /// Accesses the size of a specified dimension
-  int size(int dim) const { return size().at(dim); }
-
-  /// Accesses the stride
-  Coord_t const& stride() const { return TensorView_t::stride(); }
-
-  /// Accesses the stride along a specified dimension
-  int stride(int dim) const { return stride().at(dim); }
-
-  /// Returns the number of scalar elements needed to store tensor
-  size_t capacity() const { return size(3) * stride(3) * stride(2) * stride(1) * stride(0); }
-
-  /// Returns true if the Tensor_view is bound to some memory
-  bool good() const { return TensorView_t::good(); }
-
-  /// Updates the reference and size of a TensorView object
-  void reset(TensorRef_t const& _ref = TensorRef_t(0), Coord_t const& _size = Coord_t()) {
-    return TensorView_t::reset(_ref, _size);
-  }
-
-  /// Accesses the tensor reference pointing to data
-  TensorRef_t& ref() { return TensorView_t::ref(); }
-
-  /// Accesses the tensor reference pointing to data
-  TensorRef_t const& ref() const { return TensorView_t::ref(); }
+  /// Constructs a Tensor_view from a TensorRef and size assuming dense packing
+  HostTensorView(
+    TensorRef const& _ref,
+    TensorCoord const& _size) : Base(_ref, _size) {}
 
   /// Assigns a tensor view
-  HostTensorView& operator=(TensorView_t const& _tensor) {
-    reset(_tensor.ref(), _tensor.size());
+  HostTensorView& operator=(Base const& _tensor) {
+    this->reset(_tensor.ref(), _tensor.size());
     return *this;
   }
 
-  /// Returns the index of an element
-  Offset_t offset(Coord_t const& coord) const { return TensorView_t::offset(coord); }
+  /// Returns a TensorView offset by a given amount
+  CUTLASS_HOST_DEVICE
+  HostTensorView operator+(TensorCoord const& b) const {
+    HostTensorView result(*this);
+    result.add_pointer_offset(this->offset(b));
+    return result;
+  }
 
-  /// Determines whether a location is within a tensor
-  bool contains(Coord_t const& coord) const { return TensorView_t::contains(coord); }
+  /// Returns a TensorRef offset by a given amount
+  CUTLASS_HOST_DEVICE
+  HostTensorView& operator+=(TensorCoord const& b) {
+    this->add_pointer_offset(this->offset(b));
+    return *this;
+  }
 
-  /// Element-wise accessor
-  T& at(Coord_t const& coord) const { return TensorView_t::at(coord); }
+  /// Returns a TensorRef offset by a given amount
+  CUTLASS_HOST_DEVICE
+  HostTensorView operator-(TensorCoord const& b) const {
+    TensorRef result(*this);
+    result.add_pointer_offset(-this->offset(b));
+    return result;
+  }
 
-  /// Element-wise accessor
-  T& operator[](Coord_t const& coord) const { return at(coord); }
-
-  /// Accesses an element with a raw offset
-  T& at(int idx) const { return TensorView_t::at(idx); }
-
-  /// Accesses an element with a raw offset
-  T& operator[](int idx) const { return at(idx); }
-
-  /// Returns a Tensor_view given location and size quantities
-  TensorView_t subview(Coord_t const& location, Coord_t size) const {
-    return TensorView_t::subview(location, size);
+  /// Returns a TensorRef offset by a given amount
+  CUTLASS_HOST_DEVICE
+  HostTensorView& operator-=(TensorCoord const& b) {
+    this->add_pointer_offset(-this->offset(b));
+    return *this;
   }
 
   /// Recurses through all dimensions and applies a unary operation in place
   template <typename F>
-  void elementwise_in_place(F& op, int dim = 0, Offset_t dst_offset_base = 0) {
-    Offset_t dst_offset = dst_offset_base;
+  void elementwise_in_place(F& op, int dim = 0, TensorCoord const &start_coord = TensorCoord()) {
 
-    for (int idx = 0; idx < size(dim); ++idx, dst_offset += stride(dim)) {
-      if (dim < Rank - 1) {
-        elementwise_in_place(op, dim + 1, dst_offset);
+    TensorCoord coord(start_coord);
+    for (int idx = 0; idx < this->size(dim); ++idx) {
+      coord[dim] = idx;
+      if (dim < kRank - 1) {
+        elementwise_in_place(op, dim + 1, coord);
       } else {
-        op(ref().data()[dst_offset]);
+        op(this->at(coord));
       }
     }
   }
 
   /// Recurses through all dimensions and applies a unary operator with no arguments
   template <typename F>
-  void elementwise_stream(F& op, int dim = 0, Offset_t dst_offset_base = 0) {
-    Offset_t dst_offset = dst_offset_base;
+  void elementwise_stream(F& op, int dim = 0, TensorCoord const &start_coord = TensorCoord()) {
 
-    for (int idx = 0; idx < size(dim); ++idx, dst_offset += stride(dim)) {
-      if (dim < Rank - 1) {
-        elementwise_stream(op, dim + 1, dst_offset);
+    TensorCoord coord(start_coord);
+    for (int idx = 0; idx < this->size(dim); ++idx) {
+      coord[dim] = idx;
+      if (dim < kRank - 1) {
+        elementwise_stream(op, dim + 1, coord);
       } else {
-        ref().data()[dst_offset] = op();
+        this->at(coord) = op();
       }
     }
   }
@@ -189,61 +206,56 @@ class HostTensorView : public TensorView<T> {
   template <typename F>
   void elementwise_generate(F& op,
                             int dim = 0,
-                            Offset_t dst_offset_base = 0,
-                            Coord_t coord = Coord_t(0)) {
-    Offset_t dst_offset = dst_offset_base;
+                            TensorCoord const & start_coord = TensorCoord()) {
 
-    for (int idx = 0; idx < size(dim); ++idx, dst_offset += stride(dim)) {
-      coord.at(dim) = idx;
-
-      if (dim < Rank - 1) {
-        elementwise_generate(op, dim + 1, dst_offset, coord);
+    TensorCoord coord(start_coord);
+    for (int idx = 0; idx < this->size(dim); ++idx) {
+      coord[dim] = idx;
+      if (dim < kRank - 1) {
+        elementwise_generate(op, dim + 1, coord);
       } else {
-        ref().data()[dst_offset] = op(coord);
+        this->at(coord) = op(coord);
       }
     }
   }
 
   /// Recurses through all dimensions and applies a unary operator, supplying the logical
-  /// coordinate within the tensor as an argument
+  /// coordinate within the tensor as an argument. Mutable.
   template <typename F>
   void elementwise_visit(F& op,
                          int dim = 0,
-                         Offset_t dst_offset_base = 0,
-                         Coord_t coord = Coord_t(0)) const {
-    Offset_t dst_offset = dst_offset_base;
+                         TensorCoord const & start_coord = TensorCoord()) const {
 
-    for (int idx = 0; idx < size(dim); ++idx, dst_offset += stride(dim)) {
-      coord.at(dim) = idx;
+    TensorCoord coord(start_coord);
+    for (int idx = 0; idx < this->size(dim); ++idx) {
+      coord[dim] = idx;
 
-      if (dim < Rank - 1) {
-        elementwise_visit(op, dim + 1, dst_offset, coord);
+      if (dim < kRank - 1) {
+        elementwise_visit(op, dim + 1, coord);
       } else {
-        op(ref().data()[dst_offset], coord);
+        op(this->at(coord), coord);
       }
     }
   }
 
   /// Recurses through all dimensions and applies a binary operation
-  template <typename Src, typename F>
+  template <typename F, typename SrcTensorView>
   bool elementwise_in_place(F& op,
-                            TensorView<Src> const& tensor,
+                            SrcTensorView const& tensor,
                             int dim = 0,
-                            Offset_t dst_offset_base = 0,
-                            Offset_t src_offset_base = 0) {
-    Offset_t dst_offset = dst_offset_base;
-    Offset_t src_offset = src_offset_base;
+                            TensorCoord const &start_coord = TensorCoord()) {
 
-    if (size().at(dim) != tensor.size().at(dim)) {
+    if (this->size(dim) != tensor.size(dim)) {
       return false;
     }
 
-    for (int idx = 0; idx < size(dim);
-         ++idx, dst_offset += stride(dim), src_offset += tensor.stride(dim)) {
-      if (dim < Rank - 1) {
-        elementwise_in_place(op, tensor, dim + 1, dst_offset, src_offset);
+    TensorCoord coord(start_coord);
+    for (int idx = 0; idx < this->size(dim); ++idx) {
+      coord[dim] = idx;
+      if (dim < kRank - 1) {
+        elementwise_in_place(op, tensor, dim + 1, coord);
       } else {
-        op(data()[dst_offset], tensor.data()[src_offset]);
+        op(this->at(coord), tensor.at(coord));
       }
     }
 
@@ -252,55 +264,55 @@ class HostTensorView : public TensorView<T> {
 
   template <typename Src>
   struct LambdaBinaryAddition {
-    void operator()(T& a, Src b) const { a += T(b); }
+    void operator()(Storage_& a, Src b) const { a += Storage_(b); }
   };
 
   template <typename Src>
   struct LambdaBinarySubtraction {
-    void operator()(T& a, Src b) const { a -= T(b); }
+    void operator()(Storage_& a, Src b) const { a -= Storage_(b); }
   };
 
   template <typename Src>
   struct LambdaBinaryMultiplication {
-    void operator()(T& a, Src b) const { a *= T(b); }
+    void operator()(Storage_& a, Src b) const { a *= Storage_(b); }
   };
 
   template <typename Src>
   struct LambdaBinaryDivision {
-    void operator()(T& a, Src b) const { a /= T(b); }
+    void operator()(Storage_& a, Src b) const { a /= Storage_(b); }
   };
 
   /// Accumulate in place
-  template <typename Src>
-  TensorView<T>& operator+=(TensorView<Src> const& tensor) {
-    LambdaBinaryAddition<Src> op;
+  template <typename SrcTensorView>
+  HostTensorView& operator+=(SrcTensorView const& tensor) {
+    LambdaBinaryAddition<typename SrcTensorView::Storage> op;
     elementwise_in_place(op, tensor);
 
     return *this;
   }
 
   /// Subtract in place
-  template <typename Src>
-  TensorView<T>& operator-=(TensorView<Src> const& tensor) {
-    LambdaBinarySubtraction<Src> op;
+  template <typename SrcTensorView>
+  HostTensorView& operator-=(SrcTensorView const& tensor) {
+    LambdaBinarySubtraction<typename SrcTensorView::Storage> op;
     elementwise_in_place(op, tensor);
 
     return *this;
   }
 
   /// Multiply in place
-  template <typename Src>
-  TensorView<T>& operator*=(TensorView<Src> const& tensor) {
-    LambdaBinaryMultiplication<Src> op;
+  template <typename SrcTensorView>
+  HostTensorView& operator*=(SrcTensorView const& tensor) {
+    LambdaBinaryMultiplication<typename SrcTensorView::Storage> op;
     elementwise_in_place(op, tensor);
 
     return *this;
   }
 
   /// Divide in place
-  template <typename Src>
-  TensorView<T>& operator/=(TensorView<Src> const& tensor) {
-    LambdaBinaryDivision<Src> op;
+  template <typename SrcTensorView>
+  HostTensorView& operator/=(SrcTensorView const& tensor) {
+    LambdaBinaryDivision<typename SrcTensorView::Storage> op;
     elementwise_in_place(op, tensor);
 
     return *this;
@@ -309,19 +321,19 @@ class HostTensorView : public TensorView<T> {
   /// Comparison operator
   struct EqualsOperator {
     bool equal;
-    T eps;
+    Storage_ eps;
 
-    EqualsOperator(T _epsilon) : equal(true), eps(_epsilon) {}
+    EqualsOperator(Storage_ _epsilon) : equal(true), eps(_epsilon) {}
 
-    void operator()(T a, T b) {
-      if (std::abs(T(a - b)) > eps * std::max(std::abs(a), std::abs(b))) {
+    void operator()(Storage_ a, Storage_ b) {
+      if (std::abs(Storage_(a - b)) > eps * std::max(std::abs(a), std::abs(b))) {
         equal = false;
       }
     }
   };
 
   /// equality with epsilon tolerance
-  bool equals(TensorView<T> const& tensor, T epsilon) const {
+  bool equals(Base const& tensor, Storage epsilon) const {
     EqualsOperator comparison_op(epsilon);
     bool equal_size = elementwise_in_place(comparison_op, tensor);
 
@@ -336,13 +348,13 @@ class HostTensorView : public TensorView<T> {
 
     BitEqualsOperator(long long _ulps_threshold) : equal(true), eps(_ulps_threshold), index(0) {}
 
-    void operator()(T a, T b) {
+    void operator()(Storage_ a, Storage_ b) {
       // convert bits to integers
       long long bits_a = 0;
       long long bits_b = 0;
 
-      *reinterpret_cast<T*>(&bits_a) = TypeTraits<T>::remove_negative_zero(a);
-      *reinterpret_cast<T*>(&bits_b) = TypeTraits<T>::remove_negative_zero(b);
+      *reinterpret_cast<Storage_*>(&bits_a) = TypeTraits<Storage_>::remove_negative_zero(a);
+      *reinterpret_cast<Storage_*>(&bits_b) = TypeTraits<Storage_>::remove_negative_zero(b);
 
       // compute diff
       long long ulps = bits_a - bits_b;
@@ -354,83 +366,11 @@ class HostTensorView : public TensorView<T> {
   };
 
   /// equality with ulps tolerance
-  bool bit_equals(TensorView<T> const& tensor, long long ulps_threshold = 0) {
+  bool bit_equals(Base const& tensor, long long ulps_threshold = 0) {
     BitEqualsOperator comparison_op(ulps_threshold);
     bool equal_size = elementwise_in_place(comparison_op, tensor);
 
     return equal_size && comparison_op.equal;
-  }
-
-  /// Gets naked pointer to data
-  T* data() const { return TensorView_t::data(); }
-
-  /// Computes general matrix product among select dimensions of a tensor
-  /// Assumes:
-  ///   D: number of independent GEMMs to compute
-  ///   H: height of matrix
-  ///   W: width of matrix
-  ///   C: "channels" of each element
-  template <typename A, typename B, typename Ctype, typename Stype>
-  void gemm(TensorView<A> const& tensor_a, TensorView<B> const& tensor_b, Stype alpha, Stype beta) {
-    int const Batch = size(Dim_D);
-    int const M = size(Dim_H);
-    int const N = size(Dim_W);
-    int const K = tensor_a.size(Dim_W);
-    int const C = tensor_a.size(Dim_C);
-
-    // Sizes must match
-    if (tensor_a.size(Dim_H) != M || tensor_b.size(Dim_W) != N || tensor_b.size(Dim_C) != C ||
-        tensor_b.size(Dim_H) != K) {
-      return;
-    }
-
-    int const Mblock = 32;
-    int const Nblock = 32;
-
-    for (int batch = 0; batch < Batch; ++batch) {
-      for (int row_block = 0; row_block < M; row_block += Mblock) {
-        for (int col_block = 0; col_block < N; col_block += Nblock) {
-          Ctype accum[Mblock][Nblock];
-
-          for (int j = 0; j < Nblock; j++) {
-            for (int i = 0; i < Mblock; i++) {
-              accum[i][j] = Ctype(0);
-            }
-          }
-
-          for (int k_block = 0; k_block < K; ++k_block) {
-            for (int j = 0; j < Nblock; j++) {
-              for (int i = 0; i < Mblock; i++) {
-                int row = row_block + i;
-                int col = col_block + j;
-
-                if (row < M && col < N) {
-                  for (int channel = 0; channel < C; ++channel) {
-                    Ctype a(tensor_a.at(make_Coord(batch, row, k_block, channel)));
-                    Ctype b(tensor_b.at(make_Coord(batch, k_block, col, channel)));
-
-                    accum[i][j] += a * b;
-                  }
-                }
-              }
-            }
-          }
-
-          for (int j = 0; j < Nblock; j++) {
-            for (int i = 0; i < Mblock; i++) {
-              int row = row_block + i;
-              int col = col_block + j;
-
-              Coord_t coord = make_Coord(batch, row, col, 0);
-              if (row < M && col < N) {
-                at(coord) =
-                    Cast<Stype, T>::apply(alpha * Stype(accum[i][j]) + beta * Stype(at(coord)));
-              }
-            }
-          }
-        }
-      }
-    }
   }
 
   /// Fills with random data
@@ -453,7 +393,9 @@ class HostTensorView : public TensorView<T> {
 
   /// Generator to fill a tensor with the identity matrix
   struct LambdaFillIdentity {
-    T operator()(Coord_t const& coord) { return (coord.at(1) == coord.at(2) ? T(1) : T(0)); }
+    Storage_ operator()(TensorCoord const& coord) {
+      return (coord.at(1) == coord.at(2) ? Storage_(1) : Storage_(0));
+    }
   };
 
   /// initializes with identity
@@ -464,39 +406,41 @@ class HostTensorView : public TensorView<T> {
 
   /// Lambda for fill_linear()
   struct LambdaFillLinear {
-    Coord_t v_;
-    T offset_;
+    TensorCoord v_;
+    Storage_ offset_;
 
-    LambdaFillLinear(Coord_t const& _v, T _offset) : v_(_v), offset_(_offset) {}
+    LambdaFillLinear(TensorCoord const& _v, Storage_ _offset) : v_(_v), offset_(_offset) {}
 
-    T operator()(Coord_t const& coord) { return T(v_.template dot<int>(coord)) + offset_; }
+    Storage_ operator()(TensorCoord const& coord) {
+      return Storage_(v_.template dot<int>(coord)) + offset_;
+    }
   };
 
   /// computes elements as a linear combination of their coordinates
-  void fill_linear(Coord_t v, T offset = T(0)) {
+  void fill_linear(TensorCoord v, Storage_ offset = Storage_(0)) {
     LambdaFillLinear lambda(v, offset);
     elementwise_generate(lambda);
   }
 
   /// computes elements as a linear combination of their coordinates
-  void fill_sequential(T v = T(1), T offset = T(0)) {
-    int const count = size().count();
+  void fill_sequential(Storage_ v = Storage_(1), Storage_ offset = Storage_(0)) {
+    int const count = this->size().count();
     for (int i = 0; i < count; ++i) {
-      data()[i] = T(i);
+      this->data()[i] = Storage_(i);
     }
   }
 
   /// Returns a constant value
   struct LambdaFillValue {
-    T value;
+    Storage_ value;
 
-    LambdaFillValue(T _value) : value(_value) {}
+    LambdaFillValue(Storage_ _value) : value(_value) {}
 
-    T operator()() { return value; }
+    Storage_ operator()() { return value; }
   };
 
   /// fills with a value
-  void fill(T val = T(0)) {
+  void fill(Storage_ val = Storage_(0)) {
     LambdaFillValue op(val);
     elementwise_stream(op);
   }
@@ -504,13 +448,21 @@ class HostTensorView : public TensorView<T> {
   /// Conversion from Src to T
   template <typename Src>
   struct LambdaAssign {
-    void operator()(T& a, Src b) const { a = T(b); }
+    void operator()(Storage_& a, Src b) const { a = Storage_(b); }
   };
 
   /// copies from external data source and performs type conversion
-  template <typename Src>
-  void fill(TensorView<Src> const& tensor) {
-    LambdaAssign<Src> op;
+  template <
+    typename SrcType,
+    typename SrcMapFunc_,
+    int SrcStorageRank_,
+    typename SrcIndex_,
+    typename SrcLongIndex_
+  >
+  void fill(
+    TensorView<SrcType, kRank, SrcMapFunc_, SrcStorageRank_, SrcIndex_, SrcLongIndex_> const& tensor) {
+
+    LambdaAssign<SrcType> op;
     elementwise_in_place(op, tensor);
   }
 
@@ -520,7 +472,7 @@ class HostTensorView : public TensorView<T> {
 
     LambdaNorm() : sum(0) {}
 
-    void operator()(T const& element) {
+    void operator()(Storage const& element) {
       double value(element);
       double conj(element);  // TODO - conjugates for complex
 
@@ -540,3 +492,4 @@ class HostTensorView : public TensorView<T> {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace cutlass
+

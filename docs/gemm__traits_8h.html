@@ -82,22 +82,26 @@ $(function() {
 
 <p>Defines structural properties of complete GEMM computation.  
 <a href="#details">More...</a></p>
-<div class="textblock"><code>#include &lt;<a class="el" href="convert_8h_source.html">cutlass/convert.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="clear__accumulators_8h_source.html">cutlass/gemm/clear_accumulators.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__global__stream_8h_source.html">cutlass/gemm/gemm_global_stream.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__operand_8h_source.html">cutlass/gemm/gemm_operand.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__shared__stream_8h_source.html">cutlass/gemm/gemm_shared_stream.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="identity__block__swizzle_8h_source.html">cutlass/gemm/identity_block_swizzle.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="matrix__traits_8h_source.html">cutlass/matrix_traits.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="reshape__tile_8h_source.html">cutlass/reshape_tile.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="tile__iterator_8h_source.html">cutlass/tile_iterator.h</a>&gt;</code><br />
+<div class="textblock"><code>#include &quot;<a class="el" href="convert_8h_source.html">cutlass/convert.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="matrix__traits_8h_source.html">cutlass/matrix_traits.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="reshape__tile_8h_source.html">cutlass/reshape_tile.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="tile__allocation_8h_source.html">cutlass/tile_allocation.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="tile__iterator_8h_source.html">cutlass/tile_iterator.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="kernel__launch_8h_source.html">cutlass/kernel_launch.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="clear__accumulators_8h_source.html">cutlass/gemm/clear_accumulators.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__config_8h_source.html">cutlass/gemm/gemm_config.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__desc_8h_source.html">cutlass/gemm/gemm_desc.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__stream__pair_8h_source.html">cutlass/gemm/gemm_stream_pair.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__global__stream_8h_source.html">cutlass/gemm/gemm_global_stream.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__operand_8h_source.html">cutlass/gemm/gemm_operand.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__shared__stream_8h_source.html">cutlass/gemm/gemm_shared_stream.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="threadblock__swizzle_8h_source.html">cutlass/gemm/threadblock_swizzle.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm_8h_source.html">cutlass/gemm/gemm.h</a>&quot;</code><br />
 </div>
 <p><a href="gemm__traits_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
 Classes</h2></td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;</a></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA.html">cutlass::gemm::GemmTileTraitsHelperA&lt; Kind, GemmConfig_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTileTraitsHelperA_3_01MatrixLayout_1_1kColumnMajor_00_01GemmConfig___01_4.html">cutlass::gemm::GemmTileTraitsHelperA&lt; MatrixLayout::kColumnMajor, GemmConfig_ &gt;</a></td></tr>
@@ -113,20 +117,12 @@ Classes</h2></td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::Params</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params.  <a href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html#details">More...</a><br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1gemm_1_1GemmTraits_1_1StreamSharedStorage.html">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::StreamSharedStorage&lt; GlobalLoadStream_, SharedLoadStream_ &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parameters object constructable on the host.  <a href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1MainLoopSharedStorage.html">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::MainLoopSharedStorage</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1gemm_1_1GemmTraits_1_1SharedStorage.html">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedStorage</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The storage in shared memory.  <a href="unioncutlass_1_1gemm_1_1GemmTraits_1_1SharedStorage.html#details">More...</a><br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1GlobalLoadStream.html">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::GlobalLoadStream</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Assemble the global load streams for A/B.  <a href="structcutlass_1_1gemm_1_1GemmTraits_1_1GlobalLoadStream.html#details">More...</a><br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedLoadStream</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Assemble the shared load stream for A/B.  <a href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1SimplifiedGemmTraitsHelper.html">cutlass::gemm::SimplifiedGemmTraitsHelper&lt; GemmTileTraitsHelperA_, GemmTileTraitsHelperB_, Index_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -143,7 +139,7 @@ Namespaces</h2></td></tr>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

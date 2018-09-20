@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=9"/>
 <meta name="generator" content="Doxygen 1.8.14"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Cutlass: cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params Struct Reference</title>
+<title>Cutlass: cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params Struct Reference</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -77,7 +77,7 @@ $(function() {
 <a href="#pub-attribs">Public Attributes</a> &#124;
 <a href="structcutlass_1_1TileIteratorBase_1_1Params-members.html">List of all members</a>  </div>
   <div class="headertitle">
-<div class="title">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params Struct Reference</div>  </div>
+<div class="title">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params Struct Reference</div>  </div>
 </div><!--header-->
 <div class="contents">
 
@@ -86,96 +86,137 @@ $(function() {
 
 <p><code>#include &lt;<a class="el" href="tile__iterator_8h_source.html">tile_iterator.h</a>&gt;</code></p>
 <div class="dynheader">
-Inheritance diagram for cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params:</div>
+Inheritance diagram for cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params:</div>
 <div class="dyncontent">
  <div class="center">
-  <img src="structcutlass_1_1TileIteratorBase_1_1Params.png" usemap="#cutlass::TileIteratorBase_3C_20Traits_5F_2C_20Scalar_5F_2C_20Advance_5F_2C_20MemorySpace_2C_20Index_5F_2C_20FragmentElement_5F_2C_20IteratorFragment_5F_2C_20Skew_5F_20_3E::Params_map" alt=""/>
-  <map id="cutlass::TileIteratorBase_3C_20Traits_5F_2C_20Scalar_5F_2C_20Advance_5F_2C_20MemorySpace_2C_20Index_5F_2C_20FragmentElement_5F_2C_20IteratorFragment_5F_2C_20Skew_5F_20_3E::Params_map" name="cutlass::TileIteratorBase_3C_20Traits_5F_2C_20Scalar_5F_2C_20Advance_5F_2C_20MemorySpace_2C_20Index_5F_2C_20FragmentElement_5F_2C_20IteratorFragment_5F_2C_20Skew_5F_20_3E::Params_map">
-<area href="structcutlass_1_1TileLoadIterator_1_1Params.html" title="Parameters. " alt="cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params" shape="rect" coords="0,56,782,80"/>
-<area href="structcutlass_1_1TileStoreIterator_1_1Params.html" title="Parameters. " alt="cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params" shape="rect" coords="792,56,1574,80"/>
-<area href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb_1_1Params.html" alt="cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;::Params" shape="rect" coords="0,112,782,136"/>
+  <img src="structcutlass_1_1TileIteratorBase_1_1Params.png" usemap="#cutlass::TileIteratorBase_3C_20Traits_5F_2C_20Scalar_5F_2C_20Advance_5F_2C_20MemorySpace_2C_20Index_5F_2C_20FragmentElement_5F_2C_20FragmentElementType_5F_2C_20Skew_5F_20_3E::Params_map" alt=""/>
+  <map id="cutlass::TileIteratorBase_3C_20Traits_5F_2C_20Scalar_5F_2C_20Advance_5F_2C_20MemorySpace_2C_20Index_5F_2C_20FragmentElement_5F_2C_20FragmentElementType_5F_2C_20Skew_5F_20_3E::Params_map" name="cutlass::TileIteratorBase_3C_20Traits_5F_2C_20Scalar_5F_2C_20Advance_5F_2C_20MemorySpace_2C_20Index_5F_2C_20FragmentElement_5F_2C_20FragmentElementType_5F_2C_20Skew_5F_20_3E::Params_map">
+<area href="structcutlass_1_1TileLoadIterator_1_1Params.html" title="Parameters. " alt="cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params" shape="rect" coords="0,56,814,80"/>
+<area href="structcutlass_1_1TileStoreIterator_1_1Params.html" title="Parameters. " alt="cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params" shape="rect" coords="824,56,1638,80"/>
+<area href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb_1_1Params.html" alt="cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;::Params" shape="rect" coords="0,112,814,136"/>
 </map>
  </div></div>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:ad2631ffcc963638aa5b016c66a2e2c55"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#ad2631ffcc963638aa5b016c66a2e2c55">initialize</a> (<a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> _stride_d, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> _stride_h, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> _stride_w, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> _inc_d, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> _inc_h, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> _inc_w, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> _inc_advance)</td></tr>
-<tr class="memdesc:ad2631ffcc963638aa5b016c66a2e2c55"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initializes params.  <a href="#ad2631ffcc963638aa5b016c66a2e2c55">More...</a><br /></td></tr>
-<tr class="separator:ad2631ffcc963638aa5b016c66a2e2c55"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a3ba93370bd4b2ede4bd4eb97ac0881be"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a3ba93370bd4b2ede4bd4eb97ac0881be">initialize</a> (<a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> _stride_d, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> _stride_h, <a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> _stride_w)</td></tr>
-<tr class="separator:a3ba93370bd4b2ede4bd4eb97ac0881be"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af496afebb8983e5d346c681334955224"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#af496afebb8983e5d346c681334955224">initialize</a> ()</td></tr>
-<tr class="separator:af496afebb8983e5d346c681334955224"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:acc0341b88143aac4ffd9bc1dcfaafa71"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#acc0341b88143aac4ffd9bc1dcfaafa71">Params</a> ()</td></tr>
+<tr class="memdesc:acc0341b88143aac4ffd9bc1dcfaafa71"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs params.  <a href="#acc0341b88143aac4ffd9bc1dcfaafa71">More...</a><br /></td></tr>
+<tr class="separator:acc0341b88143aac4ffd9bc1dcfaafa71"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab04617136a3bf909ef27eb97ea5ef81c"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#ab04617136a3bf909ef27eb97ea5ef81c">Params</a> (long long _stride_d, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> _stride_h, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> _stride_w, long long _inc_d, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> _inc_h, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> _inc_w, long long _inc_advance)</td></tr>
+<tr class="memdesc:ab04617136a3bf909ef27eb97ea5ef81c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs params.  <a href="#ab04617136a3bf909ef27eb97ea5ef81c">More...</a><br /></td></tr>
+<tr class="separator:ab04617136a3bf909ef27eb97ea5ef81c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac030ea4568fa2cb6d6661df75062cd1a"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#ac030ea4568fa2cb6d6661df75062cd1a">Params</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 4 &gt; const &amp;stride)</td></tr>
+<tr class="memdesc:ac030ea4568fa2cb6d6661df75062cd1a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs params with a stride vector.  <a href="#ac030ea4568fa2cb6d6661df75062cd1a">More...</a><br /></td></tr>
+<tr class="separator:ac030ea4568fa2cb6d6661df75062cd1a"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a802c270449da579ed8661e915d27ce60"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a802c270449da579ed8661e915d27ce60">initialize</a> (long long _stride_d, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> _stride_h, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> _stride_w, long long _inc_d, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> _inc_h, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> _inc_w, long long _inc_advance)</td></tr>
+<tr class="memdesc:a802c270449da579ed8661e915d27ce60"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initializes params.  <a href="#a802c270449da579ed8661e915d27ce60">More...</a><br /></td></tr>
+<tr class="separator:a802c270449da579ed8661e915d27ce60"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2ef70d9e13b5aa7e4a53233b153d7edd"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a2ef70d9e13b5aa7e4a53233b153d7edd">initialize</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 4 &gt; const &amp;stride)</td></tr>
+<tr class="memdesc:a2ef70d9e13b5aa7e4a53233b153d7edd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initializes the parameters object from a vector of strides.  <a href="#a2ef70d9e13b5aa7e4a53233b153d7edd">More...</a><br /></td></tr>
+<tr class="separator:a2ef70d9e13b5aa7e4a53233b153d7edd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a44870d45442ec45c8eaba46ab47a3ad9"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a44870d45442ec45c8eaba46ab47a3ad9">initialize</a> (long long _stride_d, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> _stride_h, <a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> _stride_w)</td></tr>
+<tr class="memdesc:a44870d45442ec45c8eaba46ab47a3ad9"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initializes the parameters object from a vector of strides.  <a href="#a44870d45442ec45c8eaba46ab47a3ad9">More...</a><br /></td></tr>
+<tr class="separator:a44870d45442ec45c8eaba46ab47a3ad9"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1776bf51e1e23cde6c58529be58aafb9"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a1776bf51e1e23cde6c58529be58aafb9">initialize</a> ()</td></tr>
+<tr class="memdesc:a1776bf51e1e23cde6c58529be58aafb9"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gotta have this.  <a href="#a1776bf51e1e23cde6c58529be58aafb9">More...</a><br /></td></tr>
+<tr class="separator:a1776bf51e1e23cde6c58529be58aafb9"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
-<tr class="memitem:ad67234ec264354a22032bb2519575dc1"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#ad67234ec264354a22032bb2519575dc1">stride_d</a></td></tr>
-<tr class="separator:ad67234ec264354a22032bb2519575dc1"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a58e8c883aea4cfdfa5a84c25a4704ebc"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a58e8c883aea4cfdfa5a84c25a4704ebc">stride_h</a></td></tr>
-<tr class="separator:a58e8c883aea4cfdfa5a84c25a4704ebc"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a313984457c78eea66c980f6813047b9c"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a313984457c78eea66c980f6813047b9c">stride_w</a></td></tr>
-<tr class="separator:a313984457c78eea66c980f6813047b9c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af95fa1b5102176a0fa9b17713fd48150"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#af95fa1b5102176a0fa9b17713fd48150">inc_d</a></td></tr>
-<tr class="separator:af95fa1b5102176a0fa9b17713fd48150"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aea591d4278a8338ae8b50fa0b8f3a366"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#aea591d4278a8338ae8b50fa0b8f3a366">inc_h</a></td></tr>
-<tr class="separator:aea591d4278a8338ae8b50fa0b8f3a366"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac6e81450a2d78555a6c2415dcc42b178"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#ac6e81450a2d78555a6c2415dcc42b178">inc_w</a></td></tr>
-<tr class="separator:ac6e81450a2d78555a6c2415dcc42b178"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a1187258cd4068a627e73bee0302f1fc2"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a1187258cd4068a627e73bee0302f1fc2">inc_advance</a></td></tr>
-<tr class="separator:a1187258cd4068a627e73bee0302f1fc2"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a235647baff946e483dd61a2069aa01d2"><td class="memItemLeft" align="right" valign="top">long long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a235647baff946e483dd61a2069aa01d2">stride_d</a></td></tr>
+<tr class="separator:a235647baff946e483dd61a2069aa01d2"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4f029a268387bd63112d9074c185c623"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a4f029a268387bd63112d9074c185c623">stride_h</a></td></tr>
+<tr class="separator:a4f029a268387bd63112d9074c185c623"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af7e7a71a9fa41cc3f6d0e5963963339d"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#af7e7a71a9fa41cc3f6d0e5963963339d">stride_w</a></td></tr>
+<tr class="separator:af7e7a71a9fa41cc3f6d0e5963963339d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7b4293bf8291b0383dee695a60f2e0fd"><td class="memItemLeft" align="right" valign="top">long long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a7b4293bf8291b0383dee695a60f2e0fd">inc_d</a></td></tr>
+<tr class="separator:a7b4293bf8291b0383dee695a60f2e0fd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a15227102466522445261b6ea65c89c06"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a15227102466522445261b6ea65c89c06">inc_h</a></td></tr>
+<tr class="separator:a15227102466522445261b6ea65c89c06"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af0be1271cfe6d6c03a9a76ff992d8a5c"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#af0be1271cfe6d6c03a9a76ff992d8a5c">inc_w</a></td></tr>
+<tr class="separator:af0be1271cfe6d6c03a9a76ff992d8a5c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6d8f1e07f286ed8d5761e2a878b807d3"><td class="memItemLeft" align="right" valign="top">long long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileIteratorBase_1_1Params.html#a6d8f1e07f286ed8d5761e2a878b807d3">inc_advance</a></td></tr>
+<tr class="separator:a6d8f1e07f286ed8d5761e2a878b807d3"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
-<h2 class="groupheader">Member Function Documentation</h2>
-<a id="ad2631ffcc963638aa5b016c66a2e2c55"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ad2631ffcc963638aa5b016c66a2e2c55">&#9670;&nbsp;</a></span>initialize() <span class="overload">[1/3]</span></h2>
+<h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="acc0341b88143aac4ffd9bc1dcfaafa71"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acc0341b88143aac4ffd9bc1dcfaafa71">&#9670;&nbsp;</a></span>Params() <span class="overload">[1/3]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, IteratorFragment::Kind IteratorFragment_ = IteratorFragment::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params::initialize </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::Params </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="ab04617136a3bf909ef27eb97ea5ef81c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab04617136a3bf909ef27eb97ea5ef81c">&#9670;&nbsp;</a></span>Params() <span class="overload">[2/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::Params </td>
+          <td>(</td>
+          <td class="paramtype">long long&#160;</td>
           <td class="paramname"><em>_stride_d</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td>
           <td class="paramname"><em>_stride_h</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td>
           <td class="paramname"><em>_stride_w</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td>
+          <td class="paramtype">long long&#160;</td>
           <td class="paramname"><em>_inc_d</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td>
           <td class="paramname"><em>_inc_h</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td>
           <td class="paramname"><em>_inc_w</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td>
+          <td class="paramtype">long long&#160;</td>
           <td class="paramname"><em>_inc_advance</em>&#160;</td>
         </tr>
         <tr>
@@ -193,33 +234,158 @@ template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ =
 
 </div>
 </div>
-<a id="a3ba93370bd4b2ede4bd4eb97ac0881be"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a3ba93370bd4b2ede4bd4eb97ac0881be">&#9670;&nbsp;</a></span>initialize() <span class="overload">[2/3]</span></h2>
+<a id="ac030ea4568fa2cb6d6661df75062cd1a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac030ea4568fa2cb6d6661df75062cd1a">&#9670;&nbsp;</a></span>Params() <span class="overload">[3/3]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, IteratorFragment::Kind IteratorFragment_ = IteratorFragment::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params::initialize </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::Params </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 4 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>stride</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<h2 class="groupheader">Member Function Documentation</h2>
+<a id="a802c270449da579ed8661e915d27ce60"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a802c270449da579ed8661e915d27ce60">&#9670;&nbsp;</a></span>initialize() <span class="overload">[1/4]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::initialize </td>
+          <td>(</td>
+          <td class="paramtype">long long&#160;</td>
           <td class="paramname"><em>_stride_d</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td>
           <td class="paramname"><em>_stride_h</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td>
+          <td class="paramname"><em>_stride_w</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">long long&#160;</td>
+          <td class="paramname"><em>_inc_d</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td>
+          <td class="paramname"><em>_inc_h</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td>
+          <td class="paramname"><em>_inc_w</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">long long&#160;</td>
+          <td class="paramname"><em>_inc_advance</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a2ef70d9e13b5aa7e4a53233b153d7edd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2ef70d9e13b5aa7e4a53233b153d7edd">&#9670;&nbsp;</a></span>initialize() <span class="overload">[2/4]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::initialize </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 4 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>stride</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a44870d45442ec45c8eaba46ab47a3ad9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a44870d45442ec45c8eaba46ab47a3ad9">&#9670;&nbsp;</a></span>initialize() <span class="overload">[3/4]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::initialize </td>
+          <td>(</td>
+          <td class="paramtype">long long&#160;</td>
+          <td class="paramname"><em>_stride_d</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td>
+          <td class="paramname"><em>_stride_h</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a>&#160;</td>
           <td class="paramname"><em>_stride_w</em>&#160;</td>
         </tr>
         <tr>
@@ -237,19 +403,19 @@ template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ =
 
 </div>
 </div>
-<a id="af496afebb8983e5d346c681334955224"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#af496afebb8983e5d346c681334955224">&#9670;&nbsp;</a></span>initialize() <span class="overload">[3/3]</span></h2>
+<a id="a1776bf51e1e23cde6c58529be58aafb9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1776bf51e1e23cde6c58529be58aafb9">&#9670;&nbsp;</a></span>initialize() <span class="overload">[4/4]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, IteratorFragment::Kind IteratorFragment_ = IteratorFragment::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params::initialize </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::initialize </td>
           <td>(</td>
           <td class="paramname"></td><td>)</td>
           <td></td>
@@ -265,112 +431,112 @@ template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ =
 </div>
 </div>
 <h2 class="groupheader">Member Data Documentation</h2>
-<a id="a1187258cd4068a627e73bee0302f1fc2"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a1187258cd4068a627e73bee0302f1fc2">&#9670;&nbsp;</a></span>inc_advance</h2>
+<a id="a6d8f1e07f286ed8d5761e2a878b807d3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6d8f1e07f286ed8d5761e2a878b807d3">&#9670;&nbsp;</a></span>inc_advance</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, IteratorFragment::Kind IteratorFragment_ = IteratorFragment::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params::inc_advance</td>
+          <td class="memname">long long <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::inc_advance</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="af95fa1b5102176a0fa9b17713fd48150"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#af95fa1b5102176a0fa9b17713fd48150">&#9670;&nbsp;</a></span>inc_d</h2>
+<a id="a7b4293bf8291b0383dee695a60f2e0fd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7b4293bf8291b0383dee695a60f2e0fd">&#9670;&nbsp;</a></span>inc_d</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, IteratorFragment::Kind IteratorFragment_ = IteratorFragment::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params::inc_d</td>
+          <td class="memname">long long <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::inc_d</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="aea591d4278a8338ae8b50fa0b8f3a366"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aea591d4278a8338ae8b50fa0b8f3a366">&#9670;&nbsp;</a></span>inc_h</h2>
+<a id="a15227102466522445261b6ea65c89c06"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a15227102466522445261b6ea65c89c06">&#9670;&nbsp;</a></span>inc_h</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, IteratorFragment::Kind IteratorFragment_ = IteratorFragment::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params::inc_h</td>
+          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::inc_h</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="ac6e81450a2d78555a6c2415dcc42b178"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ac6e81450a2d78555a6c2415dcc42b178">&#9670;&nbsp;</a></span>inc_w</h2>
+<a id="af0be1271cfe6d6c03a9a76ff992d8a5c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af0be1271cfe6d6c03a9a76ff992d8a5c">&#9670;&nbsp;</a></span>inc_w</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, IteratorFragment::Kind IteratorFragment_ = IteratorFragment::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params::inc_w</td>
+          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::inc_w</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="ad67234ec264354a22032bb2519575dc1"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ad67234ec264354a22032bb2519575dc1">&#9670;&nbsp;</a></span>stride_d</h2>
+<a id="a235647baff946e483dd61a2069aa01d2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a235647baff946e483dd61a2069aa01d2">&#9670;&nbsp;</a></span>stride_d</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, IteratorFragment::Kind IteratorFragment_ = IteratorFragment::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params::stride_d</td>
+          <td class="memname">long long <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::stride_d</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a58e8c883aea4cfdfa5a84c25a4704ebc"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a58e8c883aea4cfdfa5a84c25a4704ebc">&#9670;&nbsp;</a></span>stride_h</h2>
+<a id="a4f029a268387bd63112d9074c185c623"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4f029a268387bd63112d9074c185c623">&#9670;&nbsp;</a></span>stride_h</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, IteratorFragment::Kind IteratorFragment_ = IteratorFragment::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params::stride_h</td>
+          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::stride_h</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a313984457c78eea66c980f6813047b9c"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a313984457c78eea66c980f6813047b9c">&#9670;&nbsp;</a></span>stride_w</h2>
+<a id="af7e7a71a9fa41cc3f6d0e5963963339d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af7e7a71a9fa41cc3f6d0e5963963339d">&#9670;&nbsp;</a></span>stride_w</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, IteratorFragment::Kind IteratorFragment_ = IteratorFragment::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
+template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ = IteratorAdvance::kH, MemorySpace::Kind MemorySpace = MemorySpace::kGeneric, typename Index_ = int, typename FragmentElement_ = Scalar_, FragmentElementType::Kind FragmentElementType_ = FragmentElementType::kScalar, typename Skew_ = Shape&lt;0, 0, 0, 0&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#a44665808adfd69df0d26cec4b1840cc3">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, IteratorFragment_, Skew_ &gt;::Params::stride_w</td>
+          <td class="memname"><a class="el" href="structcutlass_1_1TileIteratorBase.html#ab49ff66953031a8cfcfa11ddc092025c">Index</a> <a class="el" href="structcutlass_1_1TileIteratorBase.html">cutlass::TileIteratorBase</a>&lt; Traits_, Scalar_, Advance_, <a class="el" href="structcutlass_1_1MemorySpace.html">MemorySpace</a>, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;::Params::stride_w</td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -383,7 +549,7 @@ template&lt;typename Traits_, typename Scalar_, IteratorAdvance::Kind Advance_ =
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:13 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

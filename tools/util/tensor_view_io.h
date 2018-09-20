@@ -24,38 +24,135 @@
 **************************************************************************************************/
 #pragma once
 
-#include <cutlass/core_io.h>
-#include <cutlass/tensor_view.h>
+#include "cutlass/core_io.h"
+#include "cutlass/tensor_view.h"
 
-template <typename T>
-inline std::ostream& tensor_view_output(std::ostream& out, T t) {
-  out << t;
-  return out;
-}
+namespace cutlass {
 
-template <>
-inline std::ostream& tensor_view_output<int8_t>(std::ostream& out, int8_t t) {
-  out << int(t);
-  return out;
-}
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename T>
-inline std::ostream& operator<<(std::ostream& out, cutlass::TensorView<T> const& tensor) {
-  for (int batch = 0; batch < tensor.size(0); ++batch) {
-    out << "[\n  ";
-    for (int h = 0; h < tensor.size(1); ++h) {
-      for (int w = 0; w < tensor.size(2); ++w) {
-        for (int c = 0; c < tensor.size(3); ++c) {
-          out << ((c | w) ? ", " : "");
-          tensor_view_output(out, tensor.at(cutlass::make_Coord(batch, h, w, c)));
-        }
-      }
-      if (h + 1 < tensor.size(1)) {
-        out << " ;\n  ";
-      }
+namespace detail {
+
+/// Helper to write the least significant rank of a TensorView
+template <
+  typename Storage_,
+  int Rank_,
+  typename MapFunc_,
+  int StorageRank_,
+  typename Index_,
+  typename LongIndex_
+>
+inline std::ostream & TensorView_WriteLeastSignificantRank(
+  std::ostream& out, 
+  cutlass::TensorView<
+    Storage_, 
+    Rank_, 
+    MapFunc_, 
+    StorageRank_, 
+    Index_, 
+    LongIndex_> const& tensor,
+  cutlass::Coord<Rank_> const &start_coord,
+  int rank,
+  std::streamsize width) {
+
+  for (int idx = 0; idx < tensor.size(rank); ++idx) {
+
+    Coord<Rank_> coord(start_coord);
+    coord[rank] = idx;
+
+    if (idx) {
+      out.width(0);
+      out << ", ";
     }
-    out << " ]";
+    if (idx || coord) {
+      out.width(width);
+    }
+    out << ScalarIO<Storage_>(tensor.at(coord));
   }
 
   return out;
 }
+
+/// Helper to write a rank of a TensorView
+template <
+  typename Storage_,
+  int Rank_,
+  typename MapFunc_,
+  int StorageRank_,
+  typename Index_,
+  typename LongIndex_
+>
+inline std::ostream & TensorView_WriteRank(
+  std::ostream& out, 
+  cutlass::TensorView<
+    Storage_, 
+    Rank_, 
+    MapFunc_, 
+    StorageRank_, 
+    Index_, 
+    LongIndex_> const& tensor,
+  cutlass::Coord<Rank_> const &start_coord,
+  int rank,
+  std::streamsize width) {
+
+  // If called on the least significant rank, write the result as a row
+  if (rank + 1 == Rank_) {
+    return TensorView_WriteLeastSignificantRank(out, tensor, start_coord, rank, width);
+  }
+
+  // Otherwise, write a sequence of rows and newlines
+  for (int idx = 0; idx < tensor.size(rank); ++idx) {
+
+    Coord<Rank_> coord(start_coord);
+    coord[rank] = idx;
+
+    if (rank + 2 == Rank_) {
+      // Write least significant ranks asa matrix with rows delimited by ";\n"
+      out << (idx ? ";\n" : "");
+      TensorView_WriteLeastSignificantRank(out, tensor, coord, rank + 1, width);
+    }
+    else {
+      // Higher ranks are separated by newlines
+      out << (idx ? "\n" : "");
+      TensorView_WriteRank(out, tensor, coord, rank + 1, width);
+    }
+  }
+
+  return out;
+}
+
+} // namespace detail
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Prints human-readable representation of a TensorView to an ostream
+template <
+  typename Storage_,
+  int Rank_,
+  typename MapFunc_,
+  int StorageRank_,
+  typename Index_,
+  typename LongIndex_
+>
+inline std::ostream& operator<<(
+  std::ostream& out, 
+  TensorView<
+    Storage_, 
+    Rank_, 
+    MapFunc_, 
+    StorageRank_, 
+    Index_, 
+    LongIndex_> const& tensor) {
+
+  // Prints a TensorView according to the following conventions:
+  //   - least significant rank is printed as rows separated by ";\n"
+  //   - all greater ranks are delimited with newlines
+  //
+  // The result is effectively a whitespace-delimited series of 2D matrices.
+
+  return detail::TensorView_WriteRank(out, tensor, Coord<Rank_>(), 0, out.width());
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+} // namespace cutlass

@@ -108,17 +108,16 @@ Public Types</h2></td></tr>
 <tr class="memdesc:a9022ffc49b32503fd3639341e7e291a3"><td class="mdescLeft">&#160;</td><td class="mdescRight">The threads in the warps.  <a href="#a9022ffc49b32503fd3639341e7e291a3">More...</a><br /></td></tr>
 <tr class="separator:a9022ffc49b32503fd3639341e7e291a3"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a63f980fea1ff3dd83ac276cfd83a4ce5"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 1, 2, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#aa3e378cabce9ed7f199c179c15a12ca4">kScalarsPerRow</a>/<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a63f980fea1ff3dd83ac276cfd83a4ce5">Tile</a></td></tr>
-<tr class="memdesc:a63f980fea1ff3dd83ac276cfd83a4ce5"><td class="mdescLeft">&#160;</td><td class="mdescRight">The tile.  <a href="#a63f980fea1ff3dd83ac276cfd83a4ce5">More...</a><br /></td></tr>
 <tr class="separator:a63f980fea1ff3dd83ac276cfd83a4ce5"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a81ca35e0c5d9553d1dccc981cbd89d47"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8663311646210b690bb0c2a1012e82f0">kIterationsD</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a3b1a461c1dfbcd3817ab2d57bd0da9f1">kIterationsH</a>, OutputTile::kW/kWarpSize/<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a81ca35e0c5d9553d1dccc981cbd89d47">Iterations</a></td></tr>
-<tr class="memdesc:a81ca35e0c5d9553d1dccc981cbd89d47"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of iterations needed to store the tile.  <a href="#a81ca35e0c5d9553d1dccc981cbd89d47">More...</a><br /></td></tr>
-<tr class="separator:a81ca35e0c5d9553d1dccc981cbd89d47"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac5578da2577cddd5a38cb628f894f644"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; OutputTile::kW, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#aa3e378cabce9ed7f199c179c15a12ca4">kScalarsPerRow</a>, kWarpSize *<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#ac5578da2577cddd5a38cb628f894f644">Delta</a></td></tr>
-<tr class="memdesc:ac5578da2577cddd5a38cb628f894f644"><td class="mdescLeft">&#160;</td><td class="mdescRight">The strides in each dimension between different loads/stores.  <a href="#ac5578da2577cddd5a38cb628f894f644">More...</a><br /></td></tr>
-<tr class="separator:ac5578da2577cddd5a38cb628f894f644"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a9cfb32f902593e7dc018ee802c3520b8"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; OutputTile::kW, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#aa3e378cabce9ed7f199c179c15a12ca4">kScalarsPerRow</a>, kWarpSize *<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a9cfb32f902593e7dc018ee802c3520b8">ImmediateOffsetStrides</a></td></tr>
-<tr class="memdesc:a9cfb32f902593e7dc018ee802c3520b8"><td class="mdescLeft">&#160;</td><td class="mdescRight">The strides in each dimension between different loads/stores.  <a href="#a9cfb32f902593e7dc018ee802c3520b8">More...</a><br /></td></tr>
-<tr class="separator:a9cfb32f902593e7dc018ee802c3520b8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1b33700f904dd15e3533fec15d9d71bd"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8663311646210b690bb0c2a1012e82f0">kIterationsD</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a3b1a461c1dfbcd3817ab2d57bd0da9f1">kIterationsH</a>, OutputTile::kW/kWarpSize/<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a>, Warps::kD &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a1b33700f904dd15e3533fec15d9d71bd">Iterations</a></td></tr>
+<tr class="memdesc:a1b33700f904dd15e3533fec15d9d71bd"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of iterations needed to store the tile.  <a href="#a1b33700f904dd15e3533fec15d9d71bd">More...</a><br /></td></tr>
+<tr class="separator:a1b33700f904dd15e3533fec15d9d71bd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a57b065abb737bee1c17398c90b5bc39b"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; OutputTile::kW, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#aa3e378cabce9ed7f199c179c15a12ca4">kScalarsPerRow</a>, kWarpSize *<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a15438a44b588dc4cfd4b47c18af79cd2">kSplitK</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a57b065abb737bee1c17398c90b5bc39b">ImmediateOffsetStrides</a></td></tr>
+<tr class="memdesc:a57b065abb737bee1c17398c90b5bc39b"><td class="mdescLeft">&#160;</td><td class="mdescRight">The strides in each dimension between different loads/stores.  <a href="#a57b065abb737bee1c17398c90b5bc39b">More...</a><br /></td></tr>
+<tr class="separator:a57b065abb737bee1c17398c90b5bc39b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2cd23d3b5e2cb64c6d5e9b1d6a78fbce"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; OutputTile::kW, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#aa3e378cabce9ed7f199c179c15a12ca4">kScalarsPerRow</a>, kWarpSize *<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a15438a44b588dc4cfd4b47c18af79cd2">kSplitK</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a2cd23d3b5e2cb64c6d5e9b1d6a78fbce">Delta</a></td></tr>
+<tr class="memdesc:a2cd23d3b5e2cb64c6d5e9b1d6a78fbce"><td class="mdescLeft">&#160;</td><td class="mdescRight">The strides in each dimension between different loads/stores.  <a href="#a2cd23d3b5e2cb64c6d5e9b1d6a78fbce">More...</a><br /></td></tr>
+<tr class="separator:a2cd23d3b5e2cb64c6d5e9b1d6a78fbce"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-attribs"></a>
 Static Public Attributes</h2></td></tr>
@@ -146,10 +145,12 @@ Static Public Attributes</h2></td></tr>
 <tr class="separator:a3b1a461c1dfbcd3817ab2d57bd0da9f1"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a8663311646210b690bb0c2a1012e82f0"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8663311646210b690bb0c2a1012e82f0">kIterationsD</a> = <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a4b8d66df02ba1653aa6d1f23b967f237">kIterationsInHPerWarp</a> / <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a3b1a461c1dfbcd3817ab2d57bd0da9f1">kIterationsH</a></td></tr>
 <tr class="separator:a8663311646210b690bb0c2a1012e82f0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a15438a44b588dc4cfd4b47c18af79cd2"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a15438a44b588dc4cfd4b47c18af79cd2">kSplitK</a> = OutputTile::kW * ThreadsPerWarp::kH / 2 * Warps::kH</td></tr>
+<tr class="separator:a15438a44b588dc4cfd4b47c18af79cd2"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Typedef Documentation</h2>
-<a id="ac5578da2577cddd5a38cb628f894f644"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ac5578da2577cddd5a38cb628f894f644">&#9670;&nbsp;</a></span>Delta</h2>
+<a id="a2cd23d3b5e2cb64c6d5e9b1d6a78fbce"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2cd23d3b5e2cb64c6d5e9b1d6a78fbce">&#9670;&nbsp;</a></span>Delta</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -157,15 +158,15 @@ Static Public Attributes</h2></td></tr>
 template&lt;typename Scalar_ , typename OutputTile_ , typename Warps_ , typename ThreadsPerWarp_ , int kTileH_, int kScalarsPerLds_, int kSkew_ = 0&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;OutputTile::kW, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#aa3e378cabce9ed7f199c179c15a12ca4">kScalarsPerRow</a>, kWarpSize * <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html">cutlass::gemm::GemmSharedLoadTileDTraits</a>&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#ac5578da2577cddd5a38cb628f894f644">Delta</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;OutputTile::kW, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#aa3e378cabce9ed7f199c179c15a12ca4">kScalarsPerRow</a>, kWarpSize * <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a15438a44b588dc4cfd4b47c18af79cd2">kSplitK</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html">cutlass::gemm::GemmSharedLoadTileDTraits</a>&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a2cd23d3b5e2cb64c6d5e9b1d6a78fbce">Delta</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a9cfb32f902593e7dc018ee802c3520b8"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a9cfb32f902593e7dc018ee802c3520b8">&#9670;&nbsp;</a></span>ImmediateOffsetStrides</h2>
+<a id="a57b065abb737bee1c17398c90b5bc39b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a57b065abb737bee1c17398c90b5bc39b">&#9670;&nbsp;</a></span>ImmediateOffsetStrides</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -173,15 +174,15 @@ template&lt;typename Scalar_ , typename OutputTile_ , typename Warps_ , typename
 template&lt;typename Scalar_ , typename OutputTile_ , typename Warps_ , typename ThreadsPerWarp_ , int kTileH_, int kScalarsPerLds_, int kSkew_ = 0&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;OutputTile::kW, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#aa3e378cabce9ed7f199c179c15a12ca4">kScalarsPerRow</a>, kWarpSize * <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html">cutlass::gemm::GemmSharedLoadTileDTraits</a>&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a9cfb32f902593e7dc018ee802c3520b8">ImmediateOffsetStrides</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;OutputTile::kW, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#aa3e378cabce9ed7f199c179c15a12ca4">kScalarsPerRow</a>, kWarpSize * <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a15438a44b588dc4cfd4b47c18af79cd2">kSplitK</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html">cutlass::gemm::GemmSharedLoadTileDTraits</a>&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a57b065abb737bee1c17398c90b5bc39b">ImmediateOffsetStrides</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a81ca35e0c5d9553d1dccc981cbd89d47"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a81ca35e0c5d9553d1dccc981cbd89d47">&#9670;&nbsp;</a></span>Iterations</h2>
+<a id="a1b33700f904dd15e3533fec15d9d71bd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1b33700f904dd15e3533fec15d9d71bd">&#9670;&nbsp;</a></span>Iterations</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -189,7 +190,7 @@ template&lt;typename Scalar_ , typename OutputTile_ , typename Warps_ , typename
 template&lt;typename Scalar_ , typename OutputTile_ , typename Warps_ , typename ThreadsPerWarp_ , int kTileH_, int kScalarsPerLds_, int kSkew_ = 0&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8663311646210b690bb0c2a1012e82f0">kIterationsD</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a3b1a461c1dfbcd3817ab2d57bd0da9f1">kIterationsH</a>, OutputTile::kW / kWarpSize / <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html">cutlass::gemm::GemmSharedLoadTileDTraits</a>&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a81ca35e0c5d9553d1dccc981cbd89d47">Iterations</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8663311646210b690bb0c2a1012e82f0">kIterationsD</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a3b1a461c1dfbcd3817ab2d57bd0da9f1">kIterationsH</a>, OutputTile::kW / kWarpSize / <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8d308d593b59624abe3e228d588be61d">kAccessSize</a>, Warps::kD&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html">cutlass::gemm::GemmSharedLoadTileDTraits</a>&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a1b33700f904dd15e3533fec15d9d71bd">Iterations</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -273,6 +274,7 @@ template&lt;typename Scalar_ , typename OutputTile_ , typename Warps_ , typename
         </tr>
       </table>
 </div><div class="memdoc">
+<p>The tile. We have 2 rows of scalars. We use those two rows to make sure we do not have bank conflicts in the epilogue. </p>
 
 </div>
 </div>
@@ -485,6 +487,30 @@ template&lt;typename Scalar_ , typename OutputTile_ , typename Warps_ , typename
 
 </div>
 </div>
+<a id="a15438a44b588dc4cfd4b47c18af79cd2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a15438a44b588dc4cfd4b47c18af79cd2">&#9670;&nbsp;</a></span>kSplitK</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_ , typename OutputTile_ , typename Warps_ , typename ThreadsPerWarp_ , int kTileH_, int kScalarsPerLds_, int kSkew_ = 0&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html">cutlass::gemm::GemmSharedLoadTileDTraits</a>&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;::kSplitK = OutputTile::kW * ThreadsPerWarp::kH / 2 * Warps::kH</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a8325bc9d56155ecb6f2ddbd56f4ed23d"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a8325bc9d56155ecb6f2ddbd56f4ed23d">&#9670;&nbsp;</a></span>kThreads</h2>
 
@@ -515,7 +541,7 @@ template&lt;typename Scalar_ , typename OutputTile_ , typename Warps_ , typename
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:14 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:52 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

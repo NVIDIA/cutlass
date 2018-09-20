@@ -84,7 +84,8 @@ $(function() {
 <p>Defines a 1D vector of elements held in the registers of each thread.  
 <a href="#details">More...</a></p>
 <div class="textblock"><code>#include &lt;cuda_fp16.h&gt;</code><br />
-<code>#include &lt;<a class="el" href="platform_8h_source.html">cutlass/util/platform.h</a>&gt;</code><br />
+<code>#include &quot;<a class="el" href="numeric__types_8h_source.html">cutlass/util/numeric_types.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="platform_8h_source.html">cutlass/util/platform.h</a>&quot;</code><br />
 </div>
 <p><a href="vector_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
@@ -94,11 +95,26 @@ Classes</h2></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1Vector.html">cutlass::Vector&lt; Scalar_, kLanes_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1Vector_3_01half_00_011_01_4.html">cutlass::Vector&lt; half, 1 &gt;</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1Vector_3_01half_00_01kLanes___01_4.html">cutlass::Vector&lt; half, kLanes_ &gt;</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1Vector_3_01bin1__t_00_01kLanes___01_4.html">cutlass::Vector&lt; bin1_t, kLanes_ &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="unioncutlass_1_1Vector.html">Vector</a> definition for 1-bit binary datatype.  <a href="unioncutlass_1_1Vector_3_01bin1__t_00_01kLanes___01_4.html#details">More...</a><br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1Vector_3_01int4__t_00_01kLanes___01_4.html">cutlass::Vector&lt; int4_t, kLanes_ &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="unioncutlass_1_1Vector.html">Vector</a> definition for 4-bit signed integer datatype.  <a href="unioncutlass_1_1Vector_3_01int4__t_00_01kLanes___01_4.html#details">More...</a><br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1Vector_3_01uint4__t_00_01kLanes___01_4.html">cutlass::Vector&lt; uint4_t, kLanes_ &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="unioncutlass_1_1Vector.html">Vector</a> definition for 4-bit unsigned integer datatype.  <a href="unioncutlass_1_1Vector_3_01uint4__t_00_01kLanes___01_4.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Vectorize.html">cutlass::Vectorize&lt; Element_, kLanes_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Vectorize_3_01Element___00_011_01_4.html">cutlass::Vectorize&lt; Element_, 1 &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Vectorize_3_01Vector_3_01bin1__t_00_0132_01_4_00_01kLanes___01_4.html">cutlass::Vectorize&lt; Vector&lt; bin1_t, 32 &gt;, kLanes_ &gt;</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Vectorize_3_01Vector_3_01int4__t_00_018_01_4_00_01kLanes___01_4.html">cutlass::Vectorize&lt; Vector&lt; int4_t, 8 &gt;, kLanes_ &gt;</a></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Vectorize_3_01Vector_3_01uint4__t_00_018_01_4_00_01kLanes___01_4.html">cutlass::Vectorize&lt; Vector&lt; uint4_t, 8 &gt;, kLanes_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1Extent.html">cutlass::Extent&lt; T &gt;</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns the extent of a scalar or vector.  <a href="structcutlass_1_1Extent.html#details">More...</a><br /></td></tr>
@@ -147,17 +163,17 @@ Functions</h2></td></tr>
 <tr class="memitem:aa80a7cb3febd19b96f2ecbcb610b1b9e"><td class="memTemplParams" colspan="2">template&lt;&gt; </td></tr>
 <tr class="memitem:aa80a7cb3febd19b96f2ecbcb610b1b9e"><td class="memTemplItemLeft" align="right" valign="top">struct&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#aa80a7cb3febd19b96f2ecbcb610b1b9e">cutlass::__align__</a> (64) AlignedStruct&lt; 64 &gt;</td></tr>
 <tr class="separator:aa80a7cb3febd19b96f2ecbcb610b1b9e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:acdb62db582cf90cfd437fc56f4ca7bbf"><td class="memTemplParams" colspan="2">template&lt;typename Scalar_ &gt; </td></tr>
-<tr class="memitem:acdb62db582cf90cfd437fc56f4ca7bbf"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#acdb62db582cf90cfd437fc56f4ca7bbf">cutlass::make_zero</a> (Scalar_ &amp;x)</td></tr>
-<tr class="separator:acdb62db582cf90cfd437fc56f4ca7bbf"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:abc5c00b4986db5a114e774cee9999717"><td class="memTemplParams" colspan="2">template&lt;typename Scalar_ , int kLanes_&gt; </td></tr>
-<tr class="memitem:abc5c00b4986db5a114e774cee9999717"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#abc5c00b4986db5a114e774cee9999717">cutlass::make_zero</a> (Vector&lt; Scalar_, kLanes_ &gt; &amp;vec)</td></tr>
-<tr class="separator:abc5c00b4986db5a114e774cee9999717"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa03883e612d292e1b53eedd46e08ccd1"><td class="memTemplParams" colspan="2">template&lt;typename Scalar_ &gt; </td></tr>
+<tr class="memitem:aa03883e612d292e1b53eedd46e08ccd1"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#aa03883e612d292e1b53eedd46e08ccd1">cutlass::make_zero</a> (Scalar_ &amp;x)</td></tr>
+<tr class="separator:aa03883e612d292e1b53eedd46e08ccd1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a55b5b15eadf125d5ddddee1ea22191ee"><td class="memTemplParams" colspan="2">template&lt;typename Scalar_ , int kLanes_&gt; </td></tr>
+<tr class="memitem:a55b5b15eadf125d5ddddee1ea22191ee"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass.html#a55b5b15eadf125d5ddddee1ea22191ee">cutlass::make_zero</a> (Vector&lt; Scalar_, kLanes_ &gt; &amp;vec)</td></tr>
+<tr class="separator:a55b5b15eadf125d5ddddee1ea22191ee"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

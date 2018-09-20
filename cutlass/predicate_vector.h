@@ -28,12 +28,13 @@
 */
 #pragma once
 
+#include <assert.h>
 #include <stdint.h>
 
-#include <cutlass/cutlass.h>
-#include <cutlass/shape.h>
+#include "cutlass/cutlass.h"
+#include "cutlass/shape.h"
 
-#include <cutlass/util/platform.h>
+#include "cutlass/util/platform.h"
 
 namespace cutlass {
 
@@ -114,7 +115,7 @@ struct PredicateVector {
   // Make sure no one tries to put more than 8 bits in a byte :)
   static_assert(kPredicatesPerByte <= 8, "kPredicatesPerByte must fit within an actual byte");
   // Make sure the "offsetted" bits fit in one byte.
-  static_assert(kPredicateStart + kPredicatesPerByte < 8,
+  static_assert(kPredicateStart + kPredicatesPerByte <= 8,
                 "The offsetted predicates must fit within an actual byte.");
 
   /// Storage type of individual elements

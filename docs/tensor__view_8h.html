@@ -83,15 +83,15 @@ $(function() {
 <p>Defines a structure containing strides and a pointer to tensor data.  
 <a href="#details">More...</a></p>
 <div class="textblock"><code>#include &lt;cmath&gt;</code><br />
-<code>#include &lt;<a class="el" href="cutlass_8h_source.html">cutlass/cutlass.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="tensor__ref_8h_source.html">cutlass/tensor_ref.h</a>&gt;</code><br />
+<code>#include &quot;<a class="el" href="cutlass_8h_source.html">cutlass/cutlass.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="tensor__ref_8h_source.html">cutlass/tensor_ref.h</a>&quot;</code><br />
 </div>
 <p><a href="tensor__view_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
 Classes</h2></td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classcutlass_1_1TensorView.html">cutlass::TensorView&lt; T &gt;</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Host-side reference implementation of tensor operations.  <a href="classcutlass_1_1TensorView.html#details">More...</a><br /></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classcutlass_1_1TensorView.html">cutlass::TensorView&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines a view into a logical tensor.  <a href="classcutlass_1_1TensorView.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="namespaces"></a>
@@ -99,10 +99,13 @@ Namespaces</h2></td></tr>
 <tr class="memitem:namespacecutlass"><td class="memItemLeft" align="right" valign="top"> &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacecutlass.html">cutlass</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
-</div><!-- contents -->
+<a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>TensorView is derived from TensorRef and contributes bounds to the tensor's index space. Thus, it is a complete mathematical object and may be used in tensor algorithms. It is decoupled from data storage and is therefore lightweight and may be embedded in larger tensor objects or memory structures.</p>
+<p>See <a class="el" href="tensor__ref_8h.html" title="Defines a structure containing strides, bounds, and a pointer to tensor data. ">cutlass/tensor_ref.h</a> for more details about the mapping of the logical tensor index space to linear memory. </p>
+</div></div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

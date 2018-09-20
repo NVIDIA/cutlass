@@ -27,18 +27,18 @@
 */
 #pragma once
 
-#include <cutlass/wmma_matrix.h>
+#include "cutlass/wmma_matrix.h"
 #ifdef CUTLASS_USE_WMMA_API
 
-#include <cutlass/convert.h>
-#include <cutlass/coord.h>
-#include <cutlass/gemm/gemm_global_stream.h>
-#include <cutlass/gemm/gemm_shared_stream.h>
-#include <cutlass/gemm/linear_scaling.h>
-#include <cutlass/gemm/wmma_gemm_global_tile.h>
-#include <cutlass/gemm/wmma_gemm_shared_tile.h>
-#include <cutlass/reshape_tile.h>
-#include <cutlass/tile_iterator.h>
+#include "cutlass/convert.h"
+#include "cutlass/coord.h"
+#include "cutlass/gemm/gemm_global_stream.h"
+#include "cutlass/gemm/gemm_shared_stream.h"
+#include "cutlass/gemm/linear_scaling.h"
+#include "cutlass/gemm/wmma_gemm_global_tile.h"
+#include "cutlass/gemm/wmma_gemm_shared_tile.h"
+#include "cutlass/reshape_tile.h"
+#include "cutlass/tile_iterator.h"
 
 namespace cutlass {
 namespace gemm {
@@ -89,7 +89,7 @@ struct WmmaGemmEpilogueTraitsHelper {
                             MemorySpace::kShared,
                             Index_,
                             WmmaMatrix,
-                            IteratorFragment::kWmmaMatrix>
+                            FragmentElementType::kWmmaMatrix>
       SharedStoreIteratorD;
 
   /// The shared store transformer for D.
@@ -113,6 +113,9 @@ struct WmmaGemmEpilogueTraitsHelper {
                            IteratorAdvance::kH,
                            MemorySpace::kShared>
       SharedLoadIteratorD;
+
+  /// The stream to load D.
+  typedef SharedLoadStream<SharedLoadIteratorD> SharedLoadStreamD;
 
   /// The traits class to build the iterator to load data from global memory for C^N.
   typedef WmmaGemmGlobalIteratorCdTraits<

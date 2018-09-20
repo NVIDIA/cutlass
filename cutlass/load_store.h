@@ -27,8 +27,7 @@
 */
 #pragma once
 
-#include <cutlass/vector.h>
-
+#include "cutlass/vector.h"
 namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -44,45 +43,68 @@ struct MemorySpace {
   };
 };
 
+/// Specifies whether iterator storage fragment consists of Scalar values or WMMA matrix
+struct FragmentElementType {
+  enum Kind { kScalar, kWmmaMatrix };
+};
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Scalar_,
-          int Lanes_,
+          int kAccessSize,
           MemorySpace::Kind Memory_,
-          bool = (Lanes_ > 1),
-          size_t = (sizeof(Scalar_) * Lanes_)>
+          FragmentElementType::Kind kFragmentElementType = FragmentElementType::kScalar,
+          typename FragmentElement_ = Scalar_,
+          int kStride = 1,
+          size_t size = (sizeof(Scalar_) * kAccessSize)>
 struct Load {
   /// The output type.
-  typedef typename Vectorize<Scalar_, Lanes_>::Type AccessType;
+  typedef typename Vectorize<Scalar_, kAccessSize>::Type AccessType;
 
   /// The load function.
-  static CUTLASS_DEVICE void load(AccessType& dst, Scalar_ const* pointer, int offset) {
-    dst = reinterpret_cast<AccessType const*>(&pointer[offset])[0];
+  static CUTLASS_HOST_DEVICE void load(AccessType& dst, Scalar_ const* pointer, int offset) {
+    dst = *reinterpret_cast<AccessType const*>(pointer + offset);
+  }
+
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for 16b loads
+template <typename Scalar_, int kAccessSize, MemorySpace::Kind Memory_>
+struct Load<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_, 1, 2> {
+  /// The output type.
+  typedef typename Vectorize<Scalar_, kAccessSize>::Type AccessType;
+
+  /// The load function.
+  static CUTLASS_HOST_DEVICE void load(AccessType& dst, Scalar_ const* pointer, int offset) {
+    reinterpret_cast<uint16_t&>(dst) = reinterpret_cast<uint16_t const*>(&pointer[offset])[0];
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Scalar_, int Lanes_, MemorySpace::Kind Memory_>
-struct Load<Scalar_, Lanes_, Memory_, true, 4> {
+template <typename Scalar_, int kAccessSize, MemorySpace::Kind Memory_, int kStride>
+struct Load<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_, kStride, 4> {
   /// The output type.
-  typedef typename Vectorize<Scalar_, Lanes_>::Type AccessType;
+  typedef typename Vectorize<Scalar_, kAccessSize>::Type AccessType;
 
-  /// The store function.
-  static CUTLASS_DEVICE void load(AccessType& dst, Scalar_ const* pointer, int offset) {
+  /// The load function.
+  static CUTLASS_HOST_DEVICE void load(AccessType& dst, Scalar_ const* pointer, int offset) {
     dst.registers[0] = reinterpret_cast<uint32_t const*>(&pointer[offset])[0];
   }
+
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Scalar_, int Lanes_, MemorySpace::Kind Memory_>
-struct Load<Scalar_, Lanes_, Memory_, true, 8> {
+template <typename Scalar_, int kAccessSize, MemorySpace::Kind Memory_, int kStride>
+struct Load<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_, kStride, 8> {
   /// The output type.
-  typedef typename Vectorize<Scalar_, Lanes_>::Type AccessType;
+  typedef typename Vectorize<Scalar_, kAccessSize>::Type AccessType;
 
-  /// The store function.
-  static CUTLASS_DEVICE void load(AccessType& dst, Scalar_ const* pointer, int offset) {
+  /// The load function.
+  static CUTLASS_HOST_DEVICE void load(AccessType& dst, Scalar_ const* pointer, int offset) {
     uint2 tmp = reinterpret_cast<uint2 const*>(&pointer[offset])[0];
     dst.registers[0] = tmp.x;
     dst.registers[1] = tmp.y;
@@ -91,13 +113,13 @@ struct Load<Scalar_, Lanes_, Memory_, true, 8> {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <MemorySpace::Kind Memory_>
-struct Load<double, 2, Memory_, true, 16> {
+template <MemorySpace::Kind Memory_, int kStride>
+struct Load<double, 2, Memory_, FragmentElementType::kScalar, double, kStride, 16> {
   /// The output type.
   typedef typename Vectorize<double, 2>::Type AccessType;
 
-  /// The store function.
-  static CUTLASS_DEVICE void load(AccessType& dst, double const* pointer, int offset) {
+  /// The load function.
+  static CUTLASS_HOST_DEVICE void load(AccessType& dst, double const* pointer, int offset) {
     double2 tmp = reinterpret_cast<double2 const*>(&pointer[offset])[0];
     dst[0] = tmp.x;
     dst[1] = tmp.y;
@@ -108,13 +130,13 @@ struct Load<double, 2, Memory_, true, 16> {
 
 #if defined(__CUDACC_VERSION_MAJOR) && __CUDACC_VERSION_MAJOR < 10
 // WAR bug in NVCC where the upper and lower half of the register end up being the same
-template <MemorySpace::Kind Memory_>
-struct Load<half, 8, Memory_, true, 16> {
+template <MemorySpace::Kind Memory_, int kStride>
+struct Load<half, 8, Memory_, FragmentElementType::kScalar, half, kStride, 16> {
   /// The output type.
   typedef typename Vectorize<half, 8>::Type AccessType;
 
-  /// The store function.
-  static CUTLASS_DEVICE void load(AccessType& dst, half const* pointer, int offset) {
+  /// The load function.
+  static CUTLASS_HOST_DEVICE void load(AccessType& dst, half const* pointer, int offset) {
     int2 tmp = reinterpret_cast<int2 const*>(&pointer[offset])[0];
     dst.registers[0] = tmp.x;
     dst.registers[1] = tmp.y;
@@ -129,13 +151,13 @@ struct Load<half, 8, Memory_, true, 16> {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Scalar_, int Lanes_, MemorySpace::Kind Memory_>
-struct Load<Scalar_, Lanes_, Memory_, true, 16> {
+template <typename Scalar_, int kAccessSize, MemorySpace::Kind Memory_, int kStride>
+struct Load<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_, kStride, 16> {
   /// The output type.
-  typedef typename Vectorize<Scalar_, Lanes_>::Type AccessType;
+  typedef typename Vectorize<Scalar_, kAccessSize>::Type AccessType;
 
-  /// The store function.
-  static CUTLASS_DEVICE void load(AccessType& dst, Scalar_ const* pointer, int offset) {
+  /// The load function.
+  static CUTLASS_HOST_DEVICE void load(AccessType& dst, Scalar_ const* pointer, int offset) {
     uint4 tmp = reinterpret_cast<uint4 const*>(&pointer[offset])[0];
     dst.registers[0] = tmp.x;
     dst.registers[1] = tmp.y;
@@ -147,29 +169,45 @@ struct Load<Scalar_, Lanes_, Memory_, true, 16> {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Scalar_,
-          int Lanes_,
+          int kAccessSize,
           MemorySpace::Kind Memory_,
-          bool = (Lanes_ > 1),
-          size_t = (sizeof(Scalar_) * Lanes_)>
+          FragmentElementType::Kind kFragmentElementType = FragmentElementType::kScalar,
+          typename FragmentElement_ = Scalar_,
+          int kStride = 1,
+          size_t size = (sizeof(Scalar_) * kAccessSize)>
 struct Store {
   /// The output type.
-  typedef typename Vectorize<Scalar_, Lanes_>::Type AccessType;
+  typedef typename Vectorize<FragmentElement_, kAccessSize>::Type AccessType;
 
   /// The store function.
-  static CUTLASS_DEVICE void store(AccessType const& src, Scalar_* pointer, int offset) {
-    pointer[offset] = src;
+  static CUTLASS_HOST_DEVICE void store(AccessType const& src, Scalar_* pointer, int offset) {
+    pointer[offset] = *reinterpret_cast<Scalar_ const*>(&src);
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Scalar_, int Lanes_, MemorySpace::Kind Memory_>
-struct Store<Scalar_, Lanes_, Memory_, true, 4> {
+template <typename Scalar_, int kAccessSize, MemorySpace::Kind Memory_>
+struct Store<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_, 1, 2> {
   /// The output type.
-  typedef typename Vectorize<Scalar_, Lanes_>::Type AccessType;
+  typedef typename Vectorize<Scalar_, kAccessSize>::Type AccessType;
 
   /// The store function.
-  static CUTLASS_DEVICE void store(AccessType const& src, Scalar_* pointer, int offset) {
+  static CUTLASS_HOST_DEVICE void store(AccessType const& src, Scalar_* pointer, int offset) {
+    uint16_t* addr = reinterpret_cast<uint16_t*>(&pointer[offset]);
+    addr[0] = reinterpret_cast<uint16_t const&>(src);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename Scalar_, int kAccessSize, MemorySpace::Kind Memory_, int kStride>
+struct Store<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_, kStride, 4> {
+  /// The output type.
+  typedef typename Vectorize<Scalar_, kAccessSize>::Type AccessType;
+
+  /// The store function.
+  static CUTLASS_HOST_DEVICE void store(AccessType const& src, Scalar_* pointer, int offset) {
     uint32_t* addr = reinterpret_cast<uint32_t*>(&pointer[offset]);
     addr[0] = src.registers[0];
   }
@@ -177,13 +215,13 @@ struct Store<Scalar_, Lanes_, Memory_, true, 4> {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Scalar_, int Lanes_, MemorySpace::Kind Memory_>
-struct Store<Scalar_, Lanes_, Memory_, true, 8> {
+template <typename Scalar_, int kAccessSize, MemorySpace::Kind Memory_, int kStride>
+struct Store<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_, kStride, 8> {
   /// The output type.
-  typedef typename Vectorize<Scalar_, Lanes_>::Type AccessType;
+  typedef typename Vectorize<Scalar_, kAccessSize>::Type AccessType;
 
   /// The store function.
-  static CUTLASS_DEVICE void store(AccessType const& src, Scalar_* pointer, int offset) {
+  static CUTLASS_HOST_DEVICE void store(AccessType const& src, Scalar_* pointer, int offset) {
     uint2* addr = reinterpret_cast<uint2*>(&pointer[offset]);
     addr[0] = make_uint2(src.registers[0], src.registers[1]);
   }
@@ -191,13 +229,13 @@ struct Store<Scalar_, Lanes_, Memory_, true, 8> {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <MemorySpace::Kind Memory_>
-struct Store<double, 2, Memory_, true, 16> {
+template <MemorySpace::Kind Memory_, int kStride>
+struct Store<double, 2, Memory_, FragmentElementType::kScalar, double, kStride, 16> {
   /// The output type.
   typedef typename Vectorize<double, 2>::Type AccessType;
 
   /// The store function.
-  static CUTLASS_DEVICE void store(AccessType const& src, double* pointer, int offset) {
+  static CUTLASS_HOST_DEVICE void store(AccessType const& src, double* pointer, int offset) {
     double2* addr = reinterpret_cast<double2*>(&pointer[offset]);
     addr[0] = make_double2(src[0], src[1]);
   }
@@ -205,15 +243,134 @@ struct Store<double, 2, Memory_, true, 16> {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Scalar_, int Lanes_, MemorySpace::Kind Memory_>
-struct Store<Scalar_, Lanes_, Memory_, true, 16> {
+template <typename Scalar_, int kAccessSize, MemorySpace::Kind Memory_, int kStride>
+struct Store<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_, kStride, 16> {
   /// The output type.
-  typedef typename Vectorize<Scalar_, Lanes_>::Type AccessType;
+  typedef typename Vectorize<Scalar_, kAccessSize>::Type AccessType;
 
   /// The store function.
-  static CUTLASS_DEVICE void store(AccessType const& src, Scalar_* pointer, int offset) {
+  static CUTLASS_HOST_DEVICE void store(AccessType const& src, Scalar_* pointer, int offset) {
     uint4* addr = reinterpret_cast<uint4*>(&pointer[offset]);
     addr[0] = make_uint4(src.registers[0], src.registers[1], src.registers[2], src.registers[3]);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename Scalar_,
+          int kAccessSize,
+          MemorySpace::Kind Memory_,
+          typename FragmentElement_,
+          int kStride,
+          size_t size>
+struct Load<Scalar_,
+            kAccessSize,
+            Memory_,
+            FragmentElementType::kWmmaMatrix,
+            FragmentElement_,
+            kStride,
+            size> {
+  /// The output type.
+  typedef FragmentElement_ AccessType;
+
+  /// The load function.
+  static CUTLASS_HOST_DEVICE void load(AccessType& value, Scalar_ const* pointer, int offset) {
+    value.load(&pointer[offset], kStride);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <int kAccessSize,
+          MemorySpace::Kind Memory_,
+          typename FragmentElement_,
+          int kStride,
+          size_t size>
+struct Load<Vector<bin1_t, 32>,
+            kAccessSize,
+            Memory_,
+            FragmentElementType::kWmmaMatrix,
+            FragmentElement_,
+            kStride,
+            size> {
+  /// The output type.
+  typedef FragmentElement_ AccessType;
+
+  /// The load function.
+  static CUTLASS_HOST_DEVICE void load(AccessType& value, Vector<bin1_t, 32> const* pointer,
+                                       int offset) {
+    value.load(&pointer[offset], kStride * 32);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <int kAccessSize,
+          MemorySpace::Kind Memory_,
+          typename FragmentElement_,
+          int kStride,
+          size_t size>
+struct Load<Vector<int4_t, 8>,
+            kAccessSize,
+            Memory_,
+            FragmentElementType::kWmmaMatrix,
+            FragmentElement_,
+            kStride,
+            size> {
+  /// The output type.
+  typedef FragmentElement_ AccessType;
+
+  /// The load function.
+  static CUTLASS_HOST_DEVICE void load(AccessType& value, Vector<int4_t, 8> const* pointer,
+                                       int offset) {
+    value.load(&pointer[offset], kStride * 8);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <int kAccessSize,
+          MemorySpace::Kind Memory_,
+          typename FragmentElement_,
+          int kStride,
+          size_t size>
+struct Load<Vector<uint4_t, 8>,
+            kAccessSize,
+            Memory_,
+            FragmentElementType::kWmmaMatrix,
+            FragmentElement_,
+            kStride,
+            size> {
+  /// The output type.
+  typedef FragmentElement_ AccessType;
+
+  /// The load function.
+  static CUTLASS_HOST_DEVICE void load(AccessType& value, Vector<uint4_t, 8> const* pointer,
+                                       int offset) {
+    value.load(&pointer[offset], kStride * 8);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+template <typename Scalar_,
+          int kAccessSize,
+          MemorySpace::Kind Memory_,
+          typename FragmentElement_,
+          int kStride,
+          size_t size>
+struct Store<Scalar_,
+             kAccessSize,
+             Memory_,
+             FragmentElementType::kWmmaMatrix,
+             FragmentElement_,
+             kStride,
+             size> {
+  /// The input type.
+  typedef FragmentElement_ AccessType;
+
+  /// The store function.
+  static CUTLASS_HOST_DEVICE void store(AccessType const& value, Scalar_* pointer, int offset) {
+    value.store(&pointer[offset], kStride);
   }
 };
 

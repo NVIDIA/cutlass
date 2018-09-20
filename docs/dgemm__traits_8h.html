@@ -82,21 +82,21 @@ $(function() {
 
 <p>Defines structural traits of double-precision GEMM.  
 <a href="#details">More...</a></p>
-<div class="textblock"><code>#include &lt;<a class="el" href="gemm_8h_source.html">cutlass/gemm/gemm.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__epilogue_8h_source.html">cutlass/gemm/gemm_epilogue.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__epilogue__traits_8h_source.html">cutlass/gemm/gemm_epilogue_traits.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__global__tile_8h_source.html">cutlass/gemm/gemm_global_tile.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__shared__tile_8h_source.html">cutlass/gemm/gemm_shared_tile.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="gemm__traits_8h_source.html">cutlass/gemm/gemm_traits.h</a>&gt;</code><br />
-<code>#include &lt;<a class="el" href="thread__multiply__add_8h_source.html">cutlass/gemm/thread_multiply_add.h</a>&gt;</code><br />
+<div class="textblock"><code>#include &quot;<a class="el" href="gemm_8h_source.html">cutlass/gemm/gemm.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__epilogue_8h_source.html">cutlass/gemm/gemm_epilogue.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__epilogue__traits_8h_source.html">cutlass/gemm/gemm_epilogue_traits.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__global__tile_8h_source.html">cutlass/gemm/gemm_global_tile.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__shared__tile_8h_source.html">cutlass/gemm/gemm_shared_tile.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="gemm__traits_8h_source.html">cutlass/gemm/gemm_traits.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="thread__multiply__add_8h_source.html">cutlass/gemm/thread_multiply_add.h</a>&quot;</code><br />
 </div>
 <p><a href="dgemm__traits_8h_source.html">Go to the source code of this file.</a></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
 Classes</h2></td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1DgemmConfig.html">cutlass::gemm::DgemmConfig&lt; OutputTile_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1DgemmConfig.html">cutlass::gemm::DgemmConfig&lt; OutputTile_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1DgemmTraits.html">cutlass::gemm::DgemmTraits&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, AccumulatorsPerThread_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_, GemmConfig_, GemmEpilogueTraits_ &gt;</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1DgemmTraits.html">cutlass::gemm::DgemmTraits&lt; kLayoutA_, kLayoutB_, OutputTile_, EpilogueFunctor_, ThreadGemmShape_, kScalarsPerLdgA_, kScalarsPerLdgB_, Index_, GemmConfig_, GemmEpilogueTraits_ &gt;</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="namespaces"></a>
@@ -109,7 +109,7 @@ Namespaces</h2></td></tr>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:50 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -22,17 +22,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-#include <cutlass_unit_test.h>
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/igemm_traits.h>
-#include <tools/test/unit/gemm/gemm_testbed.h>
-#include <tools/test/unit/gemm/gemm.h>
+#include "cutlass_unit_test.h"
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/igemm_traits.h"
+#include "tools/test/unit/gemm/gemm_testbed.h"
+#include "tools/test/unit/gemm/run_gemm.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(Igemm_128x128x32_float, igemm_128x128x4_nt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 128, 4);
@@ -42,7 +42,7 @@ TEST(Igemm_128x128x32_float, igemm_128x128x4_nt) {
 
 TEST(Igemm_128x128x32_float, igemm_128x128x32_nt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 128, 32);
@@ -52,7 +52,7 @@ TEST(Igemm_128x128x32_float, igemm_128x128x32_nt) {
 
 TEST(Igemm_128x128x32_float, igemm_128x128x36_nt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 128, 36);
@@ -62,7 +62,7 @@ TEST(Igemm_128x128x32_float, igemm_128x128x36_nt) {
 
 TEST(Igemm_128x128x32_float, igemm_128x128x64_nt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 128, 64);
@@ -72,7 +72,7 @@ TEST(Igemm_128x128x32_float, igemm_128x128x64_nt) {
 
 TEST(Igemm_128x128x32_float, igemm_128x128x256_nt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 128, 256);
@@ -82,7 +82,7 @@ TEST(Igemm_128x128x32_float, igemm_128x128x256_nt) {
 
 TEST(Igemm_128x128x32_float, igemm_256x128x64_nt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(256, 128, 64);
@@ -92,7 +92,7 @@ TEST(Igemm_128x128x32_float, igemm_256x128x64_nt) {
 
 TEST(Igemm_128x128x32_float, igemm_128x256x64_nt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 256, 64);
@@ -102,7 +102,7 @@ TEST(Igemm_128x128x32_float, igemm_128x256x64_nt) {
 
 TEST(Igemm_128x128x32_float, igemm_256x256x64_nt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(256, 256, 64);
@@ -189,6 +189,12 @@ TEST(Igemm_128x128x32_float, igemm_256x256x64_nn) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// NB: I have removed tests in which k=1. These result in the test environment definining matrices
+//     in which ld{a,b} = 1 which cannot be launched by cuBLAS.
+//
+// This problem size remains untested. --akerr
+//
 
 TEST(Igemm_128x128x32_float, igemm_128x128x4_tn) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
@@ -282,7 +288,7 @@ TEST(Igemm_128x128x32_float, igemm_128x128x4_tt) {
 
 TEST(Igemm_128x128x32_float, igemm_128x128x32_tt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 128, 32);
@@ -292,7 +298,7 @@ TEST(Igemm_128x128x32_float, igemm_128x128x32_tt) {
 
 TEST(Igemm_128x128x32_float, igemm_128x128x36_tt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 128, 36);
@@ -302,7 +308,7 @@ TEST(Igemm_128x128x32_float, igemm_128x128x36_tt) {
 
 TEST(Igemm_128x128x32_float, igemm_128x128x64_tt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 128, 64);
@@ -312,7 +318,7 @@ TEST(Igemm_128x128x32_float, igemm_128x128x64_tt) {
 
 TEST(Igemm_128x128x32_float, igemm_128x128x256_tt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 128, 256);
@@ -322,7 +328,7 @@ TEST(Igemm_128x128x32_float, igemm_128x128x256_tt) {
 
 TEST(Igemm_128x128x32_float, igemm_256x128x64_tt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(256, 128, 64);
@@ -332,7 +338,7 @@ TEST(Igemm_128x128x32_float, igemm_256x128x64_tt) {
 
 TEST(Igemm_128x128x32_float, igemm_128x256x64_tt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
   run_gemm<IgemmTraits>(128, 256, 64);
@@ -342,7 +348,7 @@ TEST(Igemm_128x128x32_float, igemm_128x256x64_tt) {
 
 TEST(Igemm_128x128x32_float, igemm_256x256x64_tt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
-                                     cutlass::MatrixLayout::kRowMajor, 
+                                     cutlass::MatrixLayout::kRowMajor,
                                      cutlass::Shape<32, 128, 128>, float>
       IgemmTraits;
 

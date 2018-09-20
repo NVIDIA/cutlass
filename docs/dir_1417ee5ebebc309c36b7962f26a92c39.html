@@ -101,14 +101,14 @@ Files</h2></td></tr>
 <tr class="memitem:fragment_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="fragment_8h.html">fragment.h</a> <a href="fragment_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:fragment_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines Fragment, a statically-sized array for storing parts of matrices within a thread's registers. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:fragment__load__store_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="fragment__load__store_8h.html">fragment_load_store.h</a> <a href="fragment__load__store_8h_source.html">[code]</a></td></tr>
-<tr class="memdesc:fragment__load__store_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines accessors for loading and storing fragments to memory efficiently. <br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:fragment__multiply__add_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="fragment__multiply__add_8h.html">fragment_multiply_add.h</a> <a href="fragment__multiply__add_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:fragment__multiply__add_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines multiply-add operations on fragments within a thread. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:iterator__access_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="iterator__access_8h.html">iterator_access.h</a> <a href="iterator__access_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:iterator__access_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Free functions for loading and storing to implementations of tile iteartor concepts. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:kernel__launch_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="kernel__launch_8h.html">kernel_launch.h</a> <a href="kernel__launch_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:kernel__launch_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines structures and helpers to launch CUDA kernels within CUTLASS. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:load__store_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="load__store_8h.html">load_store.h</a> <a href="load__store_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:load__store_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines abstractions for efficiently loading and storing vectors to memory. <br /></td></tr>
@@ -128,11 +128,23 @@ Files</h2></td></tr>
 <tr class="memitem:tensor__ref_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="tensor__ref_8h.html">tensor_ref.h</a> <a href="tensor__ref_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:tensor__ref_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines a structure containing strides, bounds, and a pointer to tensor data. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:tensor__ref__collection_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="tensor__ref__collection_8h.html">tensor_ref_collection.h</a> <a href="tensor__ref__collection_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:tensor__ref__collection_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Introduces TensorRefCollection concept and defines TensorRefBatch and TensorRefArray. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:tensor__view_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="tensor__view_8h.html">tensor_view.h</a> <a href="tensor__view_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:tensor__view_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines a structure containing strides and a pointer to tensor data. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:tile__allocation_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="tile__allocation_8h.html">tile_allocation.h</a> <a href="tile__allocation_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:tile__allocation_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines a fragment based on a Shape&lt;&gt; template. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:tile__coord_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="tile__coord_8h.html">tile_coord.h</a> <a href="tile__coord_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:tile__coord_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines a coordinate used for the CUTLASS 4-D tile structure. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:tile__iterator_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="tile__iterator_8h.html">tile_iterator.h</a> <a href="tile__iterator_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:tile__iterator_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines the Tile Traits concept and iterators for loading and storing to tiles efficiently. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:tile__stream_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="tile__stream_8h.html">tile_stream.h</a> <a href="tile__stream_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:tile__stream_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Implements the tile stream concept, composing an iterator with a transformation. Offers split-phase semantics, separating the initiation of an asynchronous memory operation with a fence forcing it to complete. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:tile__traits__standard_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="tile__traits__standard_8h.html">tile_traits_standard.h</a> <a href="tile__traits__standard_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:tile__traits__standard_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines tile traits for several tile partitioning arrangements of threads expected to achieve efficient streaming performance. <br /></td></tr>
@@ -143,11 +155,20 @@ Files</h2></td></tr>
 <tr class="memitem:wmma__matrix_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="wmma__matrix_8h.html">wmma_matrix.h</a> <a href="wmma__matrix_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:wmma__matrix_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Abstractions for loading and storing matrices using the CUDA WMMA API. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:zip__fragment_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="zip__fragment_8h.html">zip_fragment.h</a> <a href="zip__fragment_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:zip__fragment_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Models a pair of fragments. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:zip__tensor__ref_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="zip__tensor__ref_8h.html">zip_tensor_ref.h</a> <a href="zip__tensor__ref_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:zip__tensor__ref_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines a structure containing a pair of TensorRef-like objects. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:zip__tile__iterator_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="zip__tile__iterator_8h.html">zip_tile_iterator.h</a> <a href="zip__tile__iterator_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:zip__tile__iterator_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs an iterator that owns two tile iterator instances. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:15 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

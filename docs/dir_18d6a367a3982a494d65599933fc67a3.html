@@ -85,8 +85,23 @@ Files</h2></td></tr>
 <tr class="memitem:dgemm__traits_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="dgemm__traits_8h.html">dgemm_traits.h</a> <a href="dgemm__traits_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:dgemm__traits_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines structural traits of double-precision GEMM. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:fp16__sgemm__multiply__add_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="fp16__sgemm__multiply__add_8h.html">fp16_sgemm_multiply_add.h</a> <a href="fp16__sgemm__multiply__add_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:fp16__sgemm__multiply__add_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Template implementing matrix multiply-add operations on fragments. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:fp16__sgemm__traits_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="fp16__sgemm__traits_8h.html">fp16_sgemm_traits.h</a> <a href="fp16__sgemm__traits_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:fp16__sgemm__traits_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defies structural properties of single-precision GEMM where any number of the input/output could be fp16 or fp32. The accumulator type stays in fp32. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:gemm_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="gemm_8h.html">gemm.h</a> <a href="gemm_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:gemm_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Implements a software-pipelined efficient GEMM. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:gemm__config_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="gemm__config_8h.html">gemm_config.h</a> <a href="gemm__config_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:gemm__config_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines properties of GEMM computation that impose some constraints on caller. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:gemm__coord_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="gemm__coord_8h.html">gemm_coord.h</a> <a href="gemm__coord_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:gemm__coord_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">GemmCoord is a structure derived from <a class="el" href="structcutlass_1_1Coord.html">Coord&lt;4&gt;</a> that specifies a location within the coordinate system of a GEMM problem. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:gemm__desc_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="gemm__desc_8h.html">gemm_desc.h</a> <a href="gemm__desc_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:gemm__desc_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Implements a software-pipelined efficient GEMM. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:gemm__epilogue_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="gemm__epilogue_8h.html">gemm_epilogue.h</a> <a href="gemm__epilogue_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:gemm__epilogue_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Implements the epilogue phase of the GEMM kernel that efficiently updates global memory with the computed matrix product. <br /></td></tr>
@@ -109,6 +124,9 @@ Files</h2></td></tr>
 <tr class="memitem:gemm__shared__tile_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="gemm__shared__tile_8h.html">gemm_shared_tile.h</a> <a href="gemm__shared__tile_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:gemm__shared__tile_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines iterators for efficiently loading and storing tiles to and from shared memory. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:gemm__stream__pair_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="gemm__stream__pair_8h.html">gemm_stream_pair.h</a> <a href="gemm__stream__pair_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:gemm__stream__pair_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines a pair of GEMM tile streams. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:gemm__traits_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="gemm__traits_8h.html">gemm_traits.h</a> <a href="gemm__traits_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:gemm__traits_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines structural properties of complete GEMM computation. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -123,9 +141,6 @@ Files</h2></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:hgemm__traits_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="hgemm__traits_8h.html">hgemm_traits.h</a> <a href="hgemm__traits_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:hgemm__traits_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defies structural properties of half-precision GEMM computation. <br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:identity__block__swizzle_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="identity__block__swizzle_8h.html">identity_block_swizzle.h</a> <a href="identity__block__swizzle_8h_source.html">[code]</a></td></tr>
-<tr class="memdesc:identity__block__swizzle_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defies functors for mapping blockIdx to partitions of the GEMM computation. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:igemm__epilogue_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="igemm__epilogue_8h.html">igemm_epilogue.h</a> <a href="igemm__epilogue_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:igemm__epilogue_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines the epilogue phase of the GEMM computation for IGEMM, supporting integer and floating-point output matrix formats. <br /></td></tr>
@@ -145,11 +160,20 @@ Files</h2></td></tr>
 <tr class="memitem:linear__scaling_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="linear__scaling_8h.html">linear_scaling.h</a> <a href="linear__scaling_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:linear__scaling_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Implements the BLAS linear scaling function alpha*AB + beta*C. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:linear__scaling__device__ptr_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="linear__scaling__device__ptr_8h.html">linear_scaling_device_ptr.h</a> <a href="linear__scaling__device__ptr_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:linear__scaling__device__ptr_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Implements the BLAS linear scaling function alpha*AB + beta*C. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:scalar__or__pointer_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="scalar__or__pointer_8h.html">scalar_or_pointer.h</a> <a href="scalar__or__pointer_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:scalar__or__pointer_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Implements the BLAS linear scaling function alpha*AB + beta*C. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:sgemm__traits_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="sgemm__traits_8h.html">sgemm_traits.h</a> <a href="sgemm__traits_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:sgemm__traits_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defies structural properties of single-precision GEMM. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:thread__multiply__add_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="thread__multiply__add_8h.html">thread_multiply_add.h</a> <a href="thread__multiply__add_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:thread__multiply__add_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Template implementing matrix multiply-add operations on fragments. <br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:threadblock__swizzle_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="threadblock__swizzle_8h.html">threadblock_swizzle.h</a> <a href="threadblock__swizzle_8h_source.html">[code]</a></td></tr>
+<tr class="memdesc:threadblock__swizzle_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defies functors for mapping blockIdx to partitions of the GEMM computation. <br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:wmma__gemm__epilogue__traits_8h"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="wmma__gemm__epilogue__traits_8h.html">wmma_gemm_epilogue_traits.h</a> <a href="wmma__gemm__epilogue__traits_8h_source.html">[code]</a></td></tr>
 <tr class="memdesc:wmma__gemm__epilogue__traits_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines structural properties of WMMA GEMM's epilogue phase. <br /></td></tr>
@@ -170,7 +194,7 @@ Files</h2></td></tr>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:15 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

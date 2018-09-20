@@ -28,9 +28,9 @@
 */
 #pragma once
 
-#include <cutlass/matrix_traits.h>
-#include <cutlass/reshape_tile.h>
-#include <cutlass/util/platform.h>
+#include "cutlass/matrix_traits.h"
+#include "cutlass/reshape_tile.h"
+#include "cutlass/util/platform.h"
 
 namespace cutlass {
 namespace gemm {

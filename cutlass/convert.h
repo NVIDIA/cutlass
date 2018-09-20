@@ -28,7 +28,7 @@
 */
 #pragma once
 
-#include <cutlass/fragment.h>
+#include "cutlass/fragment.h"
 
 namespace cutlass {
 

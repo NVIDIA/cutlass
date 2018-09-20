@@ -110,9 +110,17 @@
 #include <type_traits>  // For integral constants, conditional metaprogramming, and type traits
 #endif
 
-#include <cutlass/cutlass.h>
+#include "cutlass/cutlass.h"
 
 #endif
+
+//-----------------------------------------------------------------------------
+// OS
+//-----------------------------------------------------------------------------
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
+#define CUTLASS_OS_WINDOWS
+#endif
+
 /******************************************************************************
  * Macros
  ******************************************************************************/

@@ -99,7 +99,7 @@ Public Attributes</h2></td></tr>
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">Epilogue::SharedStorage <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedStorage::epilogue</td>
@@ -115,7 +115,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1MainLoopSharedStorage.html">MainLoopSharedStorage</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::SharedStorage::main_loop</td>
@@ -131,7 +131,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:14 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:52 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -27,13 +27,13 @@
 */
 #pragma once
 
-#include <cutlass/convert.h>
-#include <cutlass/coord.h>
-#include <cutlass/gemm/gemm_global_stream.h>
-#include <cutlass/gemm/gemm_shared_stream.h>
-#include <cutlass/gemm/linear_scaling.h>
-#include <cutlass/reshape_tile.h>
-#include <cutlass/tile_iterator.h>
+#include "cutlass/convert.h"
+#include "cutlass/coord.h"
+#include "cutlass/gemm/gemm_global_stream.h"
+#include "cutlass/gemm/gemm_shared_stream.h"
+#include "cutlass/gemm/linear_scaling.h"
+#include "cutlass/reshape_tile.h"
+#include "cutlass/tile_iterator.h"
 
 namespace cutlass {
 namespace gemm {
@@ -57,8 +57,8 @@ template <
     typename SharedStoreIteratorD_,
     /// The shared store transformer for D.
     typename SharedStoreTransformerD_,
-    /// The iterator to load D from shared memory.
-    typename SharedLoadIteratorD_,
+    /// The stream to load D from shared memory.
+    typename SharedLoadStreamD_,
     /// The number of iterations in the epilogue.
     typename Iterations_,
     /// The iterations strides.
@@ -86,8 +86,8 @@ struct GemmEpilogueTraits {
   typedef SharedStoreIteratorD_ SharedStoreIteratorD;
   /// The shared store transformer for D.
   typedef SharedStoreTransformerD_ SharedStoreTransformerD;
-  /// The iterator to store D in shared memory.
-  typedef SharedLoadIteratorD_ SharedLoadIteratorD;
+  /// The stream to store D in shared memory.
+  typedef SharedLoadStreamD_ SharedLoadStreamD;
   /// typedef typename GemmConfig::EpilogueIterations Iterations;
   typedef Iterations_ Iterations;
   /// The iterations strides.
@@ -118,14 +118,15 @@ struct GemmEpilogueTraits {
     typename GlobalStoreIteratorD::Params iterator_d;
     /// The params for the D shared store iterator.
     typename SharedStoreIteratorD::Params shared_store_iterator_d;
-    /// The params for the D shared load iterator.
-    typename SharedLoadIteratorD::Params shared_load_iterator_d;
+    /// The params for the D shared load stream.
+    typename SharedLoadStreamD::Params shared_load_stream_d;
     /// The functor params.
     typename Functor::Params functor;
 
     /// Setup the params.
     template <typename GemmDesc_>
     CUTLASS_HOST_DEVICE int initialize(GemmDesc_ const& desc) {
+
       // The parameters for the functor.
       int error_code = functor.initialize(desc);
       if (error_code) {
@@ -133,20 +134,27 @@ struct GemmEpilogueTraits {
       }
 
       // At the end of the H iteration, we jump over a number of columns.
-      this->stride_h = desc.ldd * Delta::kH;
+      this->stride_h = desc.D.leading_dim() * Delta::kH;
       // Nothing to do here.
       this->stride_w = 0;
-
       // Setup the params for the global memory iterator for C.
-      error_code = iterator_c.initialize(
-          reinterpret_cast<ScalarC const*>(desc.d_c), desc.ldc, desc.n, stride_w, Delta::kW);
+      error_code = iterator_c.initialize(desc.C.data(),
+                                         desc.batch_stride_C,
+                                         desc.C.leading_dim(),
+                                         desc.problem_size[1],
+                                         stride_w,
+                                         Delta::kW);
       if (error_code) {
         return error_code;
       }
 
       // Setup the params for the global memory iterator for D.
-      return iterator_d.initialize(
-          reinterpret_cast<ScalarD*>(desc.d_d), desc.ldd, desc.n, stride_w, Delta::kW);
+      return iterator_d.initialize(desc.D.data(),
+                                   desc.batch_stride_D,
+                                   desc.D.leading_dim(),
+                                   desc.problem_size[1],
+                                   stride_w,
+                                   Delta::kW);
     }
   };
 
@@ -155,13 +163,20 @@ struct GemmEpilogueTraits {
     // The storage for the store iterator.
     typename SharedStoreIteratorD::SharedStorage store;
     // The storage for the store iterator.
-    typename SharedLoadIteratorD::SharedStorage load;
+    typename SharedLoadStreamD::SharedStorage load;
   };
 
   /// The shared memory to swizzle the data in the epilogue.
   struct SharedStorage {
     // The storage for the shared stream D.
     StreamSharedStorage shared_stream;
+
+    //
+    //
+    //
+
+    CUTLASS_DEVICE
+    ScalarD* data() { return reinterpret_cast<ScalarD*>(&shared_stream.load); }
   };
 };
 
@@ -192,7 +207,10 @@ struct GemmEpilogueTraitsHelper {
   /// The traits class to build the iterator to store to shared memory for D.
   typedef GemmSharedStoreTileDTraits<
       // The pointer is float.
-      typename Functor::Scalar,
+      // typename Functor::Scalar,
+      // Functor::Scalar is alpha, beta type, in mixed precision, alpha and beta may not be the same with accumulation.
+      // In this case Functor::ScalarAccum is needed
+      typename Functor::ScalarAccum,
       // The output tile size.
       typename GemmConfig_::OutputTile,
       // The number of warps.
@@ -221,7 +239,10 @@ struct GemmEpilogueTraitsHelper {
   /// The traits class to build the iterator to load from shared memory for D.
   typedef GemmSharedLoadTileDTraits<
       // The pointer is float.
-      typename Functor::Scalar,
+      // typename Functor::Scalar,
+      // Functor::Scalar is alpha, beta type, in mixed precision, alpha and beta may not be the same with accumulation.
+      // In this case Functor::ScalarAccum is needed
+      typename Functor::ScalarAccum,
       // The output tile size.
       typename GemmConfig_::OutputTile,
       // The number of warps.
@@ -242,6 +263,8 @@ struct GemmEpilogueTraitsHelper {
                            IteratorAdvance::kH,
                            MemorySpace::kShared>
       SharedLoadIteratorD;
+  /// The stream to load D.
+  typedef SharedLoadStream<SharedLoadIteratorD> SharedLoadStreamD;
 
   /// The traits class to build the iterator to load data from global memory for C^N.
   typedef GemmGlobalTileCdTraits<
@@ -314,8 +337,8 @@ struct SimplifiedGemmEpilogueTraits : public GemmEpilogueTraits<
                                           typename Helper_::SharedStoreIteratorD,
                                           // The shared store transformer for D.
                                           typename Helper_::SharedStoreTransformerD,
-                                          // The iterator to load D from shared memory.
-                                          typename Helper_::SharedLoadIteratorD,
+                                          // The stream to load D from shared memory.
+                                          typename Helper_::SharedLoadStreamD,
                                           // The number of iterations.
                                           typename Helper_::Iterations,
                                           // The strides between iterations.

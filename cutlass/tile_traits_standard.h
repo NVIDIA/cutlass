@@ -28,7 +28,7 @@
 */
 #pragma once
 
-#include <cutlass/tile_iterator.h>
+#include "cutlass/tile_iterator.h"
 
 namespace cutlass {
 
@@ -204,6 +204,9 @@ struct TileTraitsStandard {
   /// Number of participating warps
   static int const kWarpCount = kThreads / kWarpSize;
 
+  /// By default, do not do scalar loads
+  static int const kAccessSize = 1;
+
   // Static assertions
   static_assert(!(ShapeCount<Tile>::kDhw % kThreads),
                 "Tiling undefined if elements not divisible by threads.");
@@ -223,8 +226,7 @@ struct TileTraitsStandard {
   typedef typename Traits::Delta Delta;
 
   /// Delta between each thread's access
-  /// TODO MTA this is wrong for sure, but Delta is used for stride computation at the moment
-  typedef Delta ImmediateOffsetStrides;
+  typedef Shape<0, 0, 0, 0> ImmediateOffsetStrides;
 
   /// Number of accesses
   typedef typename Traits::Iterations Iterations;

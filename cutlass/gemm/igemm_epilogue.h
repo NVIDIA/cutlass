@@ -28,13 +28,13 @@
 */
 #pragma once
 
-#include <cutlass/convert.h>
-#include <cutlass/fragment.h>
-#include <cutlass/gemm/gemm_global_stream.h>
-#include <cutlass/gemm/gemm_shared_stream.h>
-#include <cutlass/gemm/igemm_global_tile.h>
-#include <cutlass/reshape_tile.h>
-#include <cutlass/tile_iterator.h>
+#include "cutlass/convert.h"
+#include "cutlass/fragment.h"
+#include "cutlass/gemm/gemm_global_stream.h"
+#include "cutlass/gemm/gemm_shared_stream.h"
+#include "cutlass/gemm/igemm_global_tile.h"
+#include "cutlass/reshape_tile.h"
+#include "cutlass/tile_iterator.h"
 
 namespace cutlass {
 namespace gemm {
@@ -269,8 +269,8 @@ struct IgemmEpilogueTraits : public GemmEpilogueTraits<
                                  typename Helper_::SharedStoreIteratorD,
                                  // The shared store transformer for D.
                                  typename Helper_::SharedStoreTransformerD,
-                                 // The iterator to load D from shared memory.
-                                 typename Helper_::SharedLoadIteratorD,
+                                 // The stream to load D from shared memory.
+                                 typename Helper_::SharedLoadStreamD,
                                  // The iterations.
                                  typename Helper_::Iterations,
                                  // The strides between iterations.
@@ -294,9 +294,8 @@ struct IgemmEpilogue : public GemmEpilogue<GemmEpilogueTraits_> {
   /// Ctor.
   CUTLASS_DEVICE IgemmEpilogue(typename Base::Params const& params_,
                                typename Base::SharedStorage& shared_storage_,
-                               typename Base::Index m_,
-                               typename Base::Index n_)
-      : Base(params_, shared_storage_, m_, n_) {}
+                               Coord<3> const& _problem_size)
+      : Base(params_, shared_storage_, _problem_size) {}
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -309,9 +308,8 @@ struct IgemmEpilogue<GemmEpilogueTraits_, true> : public GemmEpilogue<GemmEpilog
   /// Ctor.
   CUTLASS_DEVICE IgemmEpilogue(typename Base::Params const& params_,
                                typename Base::SharedStorage& shared_storage_,
-                               typename Base::Index m_,
-                               typename Base::Index n_)
-      : Base(params_, shared_storage_, m_, n_) {}
+                               Coord<3> const& _problem_size)
+      : Base(params_, shared_storage_, _problem_size) {}
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -87,29 +87,27 @@ $(function() {
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
 Classes</h2></td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1GlobalLoadStream.html">GlobalLoadStream</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Assemble the global load streams for A/B.  <a href="structcutlass_1_1gemm_1_1GemmTraits_1_1GlobalLoadStream.html#details">More...</a><br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1MainLoopSharedStorage.html">MainLoopSharedStorage</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html">Params</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params.  <a href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html#details">More...</a><br /></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html">SharedLoadStream</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Assemble the shared load stream for A/B.  <a href="structcutlass_1_1gemm_1_1GemmTraits_1_1SharedLoadStream.html#details">More...</a><br /></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parameters object constructable on the host.  <a href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1gemm_1_1GemmTraits_1_1SharedStorage.html">SharedStorage</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The storage in shared memory.  <a href="unioncutlass_1_1gemm_1_1GemmTraits_1_1SharedStorage.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">union &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="unioncutlass_1_1gemm_1_1GemmTraits_1_1StreamSharedStorage.html">StreamSharedStorage</a></td></tr>
-<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-types"></a>
 Public Types</h2></td></tr>
+<tr class="memitem:aa6214a0ad09d155ed79feadc6647b989"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#aa6214a0ad09d155ed79feadc6647b989">This_</a></td></tr>
+<tr class="memdesc:aa6214a0ad09d155ed79feadc6647b989"><td class="mdescLeft">&#160;</td><td class="mdescRight">This traits.  <a href="#aa6214a0ad09d155ed79feadc6647b989">More...</a><br /></td></tr>
+<tr class="separator:aa6214a0ad09d155ed79feadc6647b989"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a28c32832f0353f00e93e867373cf6cae"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1Gemm.html">cutlass::gemm::Gemm</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#aa6214a0ad09d155ed79feadc6647b989">This_</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a28c32832f0353f00e93e867373cf6cae">KernelClass</a></td></tr>
+<tr class="memdesc:a28c32832f0353f00e93e867373cf6cae"><td class="mdescLeft">&#160;</td><td class="mdescRight">The struct that consumes this Traits.  <a href="#a28c32832f0353f00e93e867373cf6cae">More...</a><br /></td></tr>
+<tr class="separator:a28c32832f0353f00e93e867373cf6cae"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4efe5d156abca056ef8b5334fb574dd5"><td class="memItemLeft" align="right" valign="top">typedef GemmConfig_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a4efe5d156abca056ef8b5334fb574dd5">GemmConfig</a></td></tr>
 <tr class="memdesc:a4efe5d156abca056ef8b5334fb574dd5"><td class="mdescLeft">&#160;</td><td class="mdescRight">The configuration.  <a href="#a4efe5d156abca056ef8b5334fb574dd5">More...</a><br /></td></tr>
 <tr class="separator:a4efe5d156abca056ef8b5334fb574dd5"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a97d7ee63e5d180410b370f095648f367"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a53450f4d7444d6a4c0d2353496c0a4fd">GemmConfig::OutputTile</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a97d7ee63e5d180410b370f095648f367">OutputTile</a></td></tr>
+<tr class="memitem:a97d7ee63e5d180410b370f095648f367"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9dd9c3efc3dfd9b5c6acd12236697399">GemmConfig::OutputTile</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a97d7ee63e5d180410b370f095648f367">OutputTile</a></td></tr>
 <tr class="memdesc:a97d7ee63e5d180410b370f095648f367"><td class="mdescLeft">&#160;</td><td class="mdescRight">The output tile.  <a href="#a97d7ee63e5d180410b370f095648f367">More...</a><br /></td></tr>
 <tr class="separator:a97d7ee63e5d180410b370f095648f367"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a9cd6c3fddfb4315eb52b672900462c47"><td class="memItemLeft" align="right" valign="top">typedef GlobalLoadStreamA_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a9cd6c3fddfb4315eb52b672900462c47">GlobalLoadStreamA</a></td></tr>
@@ -130,13 +128,7 @@ Public Types</h2></td></tr>
 <tr class="memitem:acaeb27063a444e2a3b93f3cb70e3c290"><td class="memItemLeft" align="right" valign="top">typedef SharedLoadStreamB_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#acaeb27063a444e2a3b93f3cb70e3c290">SharedLoadStreamB</a></td></tr>
 <tr class="memdesc:acaeb27063a444e2a3b93f3cb70e3c290"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator for B to load from shared memory.  <a href="#acaeb27063a444e2a3b93f3cb70e3c290">More...</a><br /></td></tr>
 <tr class="separator:acaeb27063a444e2a3b93f3cb70e3c290"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8d49ad32fc9d8c14f6141690962c3f9c"><td class="memItemLeft" align="right" valign="top">typedef GlobalLoadStreamA::SharedStoreStorage&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a8d49ad32fc9d8c14f6141690962c3f9c">SharedStoreStorageA</a></td></tr>
-<tr class="memdesc:a8d49ad32fc9d8c14f6141690962c3f9c"><td class="mdescLeft">&#160;</td><td class="mdescRight">The shared storage for A.  <a href="#a8d49ad32fc9d8c14f6141690962c3f9c">More...</a><br /></td></tr>
-<tr class="separator:a8d49ad32fc9d8c14f6141690962c3f9c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a438b80cd8d8df0e74014ae47a162f7ed"><td class="memItemLeft" align="right" valign="top">typedef GlobalLoadStreamB::SharedStoreStorage&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a438b80cd8d8df0e74014ae47a162f7ed">SharedStoreStorageB</a></td></tr>
-<tr class="memdesc:a438b80cd8d8df0e74014ae47a162f7ed"><td class="mdescLeft">&#160;</td><td class="mdescRight">The shared storage for B.  <a href="#a438b80cd8d8df0e74014ae47a162f7ed">More...</a><br /></td></tr>
-<tr class="separator:a438b80cd8d8df0e74014ae47a162f7ed"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af810544e956b04830c5be7ce41d3b45c"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a8669096ddbb8c810fb8d2313d62e6ee7">GemmConfig::MultiplyAdd</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#af810544e956b04830c5be7ce41d3b45c">MultiplyAdd</a></td></tr>
+<tr class="memitem:af810544e956b04830c5be7ce41d3b45c"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aedb95febe4a0b2943e233c95c36a22cd">GemmConfig::MultiplyAdd</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#af810544e956b04830c5be7ce41d3b45c">MultiplyAdd</a></td></tr>
 <tr class="memdesc:af810544e956b04830c5be7ce41d3b45c"><td class="mdescLeft">&#160;</td><td class="mdescRight">The multiply-add functor.  <a href="#af810544e956b04830c5be7ce41d3b45c">More...</a><br /></td></tr>
 <tr class="separator:af810544e956b04830c5be7ce41d3b45c"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a424f1ac14e1e7ad37428edd0cf13e7fe"><td class="memItemLeft" align="right" valign="top">typedef Epilogue_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a424f1ac14e1e7ad37428edd0cf13e7fe">Epilogue</a></td></tr>
@@ -156,6 +148,15 @@ Public Types</h2></td></tr>
 <tr class="memitem:ae1cf7988c9cff79a2c3252aaf91fc165"><td class="memItemLeft" align="right" valign="top">typedef ClearAccumulators_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ae1cf7988c9cff79a2c3252aaf91fc165">ClearAccumulators</a></td></tr>
 <tr class="memdesc:ae1cf7988c9cff79a2c3252aaf91fc165"><td class="mdescLeft">&#160;</td><td class="mdescRight">Clear the accumulators.  <a href="#ae1cf7988c9cff79a2c3252aaf91fc165">More...</a><br /></td></tr>
 <tr class="separator:ae1cf7988c9cff79a2c3252aaf91fc165"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a367aa0bd4be33d90ffe752274c728ef8"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html">GlobalLoadStreamPair</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a9cd6c3fddfb4315eb52b672900462c47">GlobalLoadStreamA</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ac393b07e780629fc8254fc22cc6f815b">GlobalLoadStreamB</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a600746def904eeca46d7f92a4b223b46">GemmConfig::kResidueInProlog</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a367aa0bd4be33d90ffe752274c728ef8">GlobalLoadStream</a></td></tr>
+<tr class="memdesc:a367aa0bd4be33d90ffe752274c728ef8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Assemble the global load streams for A/B.  <a href="#a367aa0bd4be33d90ffe752274c728ef8">More...</a><br /></td></tr>
+<tr class="separator:a367aa0bd4be33d90ffe752274c728ef8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:abfecd4a57dfbf82e8fa74a50e01fc4ee"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a5eef540f82acea5d9cb12965707ba158">GlobalLoadStream::ThreadblockTileStorage</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#abfecd4a57dfbf82e8fa74a50e01fc4ee">ThreadblockTileStorage</a></td></tr>
+<tr class="memdesc:abfecd4a57dfbf82e8fa74a50e01fc4ee"><td class="mdescLeft">&#160;</td><td class="mdescRight">Memory needed to store the threadblock-scoped GEMM tile.  <a href="#abfecd4a57dfbf82e8fa74a50e01fc4ee">More...</a><br /></td></tr>
+<tr class="separator:abfecd4a57dfbf82e8fa74a50e01fc4ee"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7864969e774c0f7155951e1ab599ed17"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedStreamPair.html">SharedStreamPair</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ae01371eb31b88fa83c4926564cecafdc">SharedLoadStreamA</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#acaeb27063a444e2a3b93f3cb70e3c290">SharedLoadStreamB</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a7864969e774c0f7155951e1ab599ed17">SharedStream</a></td></tr>
+<tr class="memdesc:a7864969e774c0f7155951e1ab599ed17"><td class="mdescLeft">&#160;</td><td class="mdescRight">Assemble the shared load streams for A/B.  <a href="#a7864969e774c0f7155951e1ab599ed17">More...</a><br /></td></tr>
+<tr class="separator:a7864969e774c0f7155951e1ab599ed17"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-methods"></a>
 Static Public Member Functions</h2></td></tr>
@@ -182,7 +183,7 @@ Static Public Attributes</h2></td></tr>
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef BlockSwizzle_ <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a50672b5fa67d858aeff8f254cf28e941">BlockSwizzle</a></td>
@@ -198,7 +199,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef ClearAccumulators_ <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ae1cf7988c9cff79a2c3252aaf91fc165">ClearAccumulators</a></td>
@@ -214,7 +215,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef Epilogue_ <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a424f1ac14e1e7ad37428edd0cf13e7fe">Epilogue</a></td>
@@ -230,10 +231,26 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef GemmConfig_ <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a4efe5d156abca056ef8b5334fb574dd5">GemmConfig</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a367aa0bd4be33d90ffe752274c728ef8"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a367aa0bd4be33d90ffe752274c728ef8">&#9670;&nbsp;</a></span>GlobalLoadStream</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html">GlobalLoadStreamPair</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a9cd6c3fddfb4315eb52b672900462c47">GlobalLoadStreamA</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ac393b07e780629fc8254fc22cc6f815b">GlobalLoadStreamB</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a600746def904eeca46d7f92a4b223b46">GemmConfig::kResidueInProlog</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a367aa0bd4be33d90ffe752274c728ef8">GlobalLoadStream</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -246,7 +263,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef GlobalLoadStreamA_ <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a9cd6c3fddfb4315eb52b672900462c47">GlobalLoadStreamA</a></td>
@@ -262,7 +279,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef GlobalLoadStreamB_ <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ac393b07e780629fc8254fc22cc6f815b">GlobalLoadStreamB</a></td>
@@ -278,10 +295,26 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef Index_ <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ae67227cecbe84f5c8497d9a7ff82b367">Index</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a28c32832f0353f00e93e867373cf6cae"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a28c32832f0353f00e93e867373cf6cae">&#9670;&nbsp;</a></span>KernelClass</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1Gemm.html">cutlass::gemm::Gemm</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#aa6214a0ad09d155ed79feadc6647b989">This_</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a28c32832f0353f00e93e867373cf6cae">KernelClass</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -294,10 +327,10 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a8669096ddbb8c810fb8d2313d62e6ee7">GemmConfig::MultiplyAdd</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#af810544e956b04830c5be7ce41d3b45c">MultiplyAdd</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aedb95febe4a0b2943e233c95c36a22cd">GemmConfig::MultiplyAdd</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#af810544e956b04830c5be7ce41d3b45c">MultiplyAdd</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -310,10 +343,10 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a53450f4d7444d6a4c0d2353496c0a4fd">GemmConfig::OutputTile</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a97d7ee63e5d180410b370f095648f367">OutputTile</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9dd9c3efc3dfd9b5c6acd12236697399">GemmConfig::OutputTile</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a97d7ee63e5d180410b370f095648f367">OutputTile</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -326,7 +359,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef GlobalLoadStreamA_::Scalar <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a96d64bdc48db4971798b620d6b49b3f6">ScalarA</a></td>
@@ -342,7 +375,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef GlobalLoadStreamB_::Scalar <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#aa0e8fd28f5247764dfb7843f7670c698">ScalarB</a></td>
@@ -358,7 +391,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef Epilogue::ScalarC <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a8f78d4a68817760099081523aa7fd443">ScalarC</a></td>
@@ -374,7 +407,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef Epilogue::ScalarD <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a3129be75ee087603170f8367e10e070e">ScalarD</a></td>
@@ -390,7 +423,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef SharedLoadStreamA_ <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ae01371eb31b88fa83c4926564cecafdc">SharedLoadStreamA</a></td>
@@ -406,7 +439,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef SharedLoadStreamB_ <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#acaeb27063a444e2a3b93f3cb70e3c290">SharedLoadStreamB</a></td>
@@ -416,32 +449,48 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 
 </div>
 </div>
-<a id="a8d49ad32fc9d8c14f6141690962c3f9c"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a8d49ad32fc9d8c14f6141690962c3f9c">&#9670;&nbsp;</a></span>SharedStoreStorageA</h2>
+<a id="a7864969e774c0f7155951e1ab599ed17"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7864969e774c0f7155951e1ab599ed17">&#9670;&nbsp;</a></span>SharedStream</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef GlobalLoadStreamA::SharedStoreStorage <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a8d49ad32fc9d8c14f6141690962c3f9c">SharedStoreStorageA</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1SharedStreamPair.html">SharedStreamPair</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ae01371eb31b88fa83c4926564cecafdc">SharedLoadStreamA</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#acaeb27063a444e2a3b93f3cb70e3c290">SharedLoadStreamB</a>&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a7864969e774c0f7155951e1ab599ed17">SharedStream</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a438b80cd8d8df0e74014ae47a162f7ed"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a438b80cd8d8df0e74014ae47a162f7ed">&#9670;&nbsp;</a></span>SharedStoreStorageB</h2>
+<a id="aa6214a0ad09d155ed79feadc6647b989"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa6214a0ad09d155ed79feadc6647b989">&#9670;&nbsp;</a></span>This_</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef GlobalLoadStreamB::SharedStoreStorage <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a438b80cd8d8df0e74014ae47a162f7ed">SharedStoreStorageB</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">GemmTraits</a>&lt;GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#aa6214a0ad09d155ed79feadc6647b989">This_</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="abfecd4a57dfbf82e8fa74a50e01fc4ee"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abfecd4a57dfbf82e8fa74a50e01fc4ee">&#9670;&nbsp;</a></span>ThreadblockTileStorage</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a5eef540f82acea5d9cb12965707ba158">GlobalLoadStream::ThreadblockTileStorage</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html">cutlass::gemm::GemmTraits</a>&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#abfecd4a57dfbf82e8fa74a50e01fc4ee">ThreadblockTileStorage</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -455,7 +504,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
@@ -483,7 +532,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
@@ -512,7 +561,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
@@ -536,7 +585,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Scalar&gt;&gt; </div>
+template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLoadStreamB_, typename SharedLoadStreamA_, typename SharedLoadStreamB_, typename Epilogue_, typename BlockSwizzle_ = IdentityBlockSwizzle, typename Index_ = int, typename ClearAccumulators_ = ClearAccumulators&lt;typename GemmConfig_::Accumulators::Element&gt;&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
@@ -560,7 +609,7 @@ template&lt;typename GemmConfig_, typename GlobalLoadStreamA_, typename GlobalLo
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:14 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:52 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

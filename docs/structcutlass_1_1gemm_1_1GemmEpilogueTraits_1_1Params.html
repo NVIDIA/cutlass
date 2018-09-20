@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=9"/>
 <meta name="generator" content="Doxygen 1.8.14"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Cutlass: cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params Struct Reference</title>
+<title>Cutlass: cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params Struct Reference</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -77,7 +77,7 @@ $(function() {
 <a href="#pub-attribs">Public Attributes</a> &#124;
 <a href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params-members.html">List of all members</a>  </div>
   <div class="headertitle">
-<div class="title">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params Struct Reference</div>  </div>
+<div class="title">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params Struct Reference</div>  </div>
 </div><!--header-->
 <div class="contents">
 
@@ -88,42 +88,42 @@ $(function() {
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:a3e9d0fd2989fea776b0cab0e0f2813ce"><td class="memTemplParams" colspan="2">template&lt;typename GemmDesc_ &gt; </td></tr>
-<tr class="memitem:a3e9d0fd2989fea776b0cab0e0f2813ce"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a3e9d0fd2989fea776b0cab0e0f2813ce">initialize</a> (GemmDesc_ const &amp;desc)</td></tr>
-<tr class="memdesc:a3e9d0fd2989fea776b0cab0e0f2813ce"><td class="mdescLeft">&#160;</td><td class="mdescRight">Setup the params.  <a href="#a3e9d0fd2989fea776b0cab0e0f2813ce">More...</a><br /></td></tr>
-<tr class="separator:a3e9d0fd2989fea776b0cab0e0f2813ce"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a13395bf81eabdc539c935e179c31d7ca"><td class="memTemplParams" colspan="2">template&lt;typename GemmDesc_ &gt; </td></tr>
+<tr class="memitem:a13395bf81eabdc539c935e179c31d7ca"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a13395bf81eabdc539c935e179c31d7ca">initialize</a> (GemmDesc_ const &amp;desc)</td></tr>
+<tr class="memdesc:a13395bf81eabdc539c935e179c31d7ca"><td class="mdescLeft">&#160;</td><td class="mdescRight">Setup the params.  <a href="#a13395bf81eabdc539c935e179c31d7ca">More...</a><br /></td></tr>
+<tr class="separator:a13395bf81eabdc539c935e179c31d7ca"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
-<tr class="memitem:ae0fdc7426b22ff2c20f077e251ebc823"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#ab430d05bd17efd60c28077c87b5ca331">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#ae0fdc7426b22ff2c20f077e251ebc823">stride_h</a></td></tr>
-<tr class="memdesc:ae0fdc7426b22ff2c20f077e251ebc823"><td class="mdescLeft">&#160;</td><td class="mdescRight">The strides for H and W in the different iterations of the epilogue.  <a href="#ae0fdc7426b22ff2c20f077e251ebc823">More...</a><br /></td></tr>
-<tr class="separator:ae0fdc7426b22ff2c20f077e251ebc823"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a565f6cab8925d632dcf24bd1974caca2"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#ab430d05bd17efd60c28077c87b5ca331">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a565f6cab8925d632dcf24bd1974caca2">stride_w</a></td></tr>
-<tr class="separator:a565f6cab8925d632dcf24bd1974caca2"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a7350ceefcd09a9e3662ca30b780cc2ce"><td class="memItemLeft" align="right" valign="top">GlobalLoadIteratorC::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a7350ceefcd09a9e3662ca30b780cc2ce">iterator_c</a></td></tr>
-<tr class="memdesc:a7350ceefcd09a9e3662ca30b780cc2ce"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the C iterator.  <a href="#a7350ceefcd09a9e3662ca30b780cc2ce">More...</a><br /></td></tr>
-<tr class="separator:a7350ceefcd09a9e3662ca30b780cc2ce"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a987c179a7e73c2572fe8aef3255668f7"><td class="memItemLeft" align="right" valign="top">GlobalStoreIteratorD::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a987c179a7e73c2572fe8aef3255668f7">iterator_d</a></td></tr>
-<tr class="memdesc:a987c179a7e73c2572fe8aef3255668f7"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the D global iterator.  <a href="#a987c179a7e73c2572fe8aef3255668f7">More...</a><br /></td></tr>
-<tr class="separator:a987c179a7e73c2572fe8aef3255668f7"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af79a0c74a4c30ccec59b393721b5dfc1"><td class="memItemLeft" align="right" valign="top">SharedStoreIteratorD::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#af79a0c74a4c30ccec59b393721b5dfc1">shared_store_iterator_d</a></td></tr>
-<tr class="memdesc:af79a0c74a4c30ccec59b393721b5dfc1"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the D shared store iterator.  <a href="#af79a0c74a4c30ccec59b393721b5dfc1">More...</a><br /></td></tr>
-<tr class="separator:af79a0c74a4c30ccec59b393721b5dfc1"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a1742e43c128665f0ca39cb578291df81"><td class="memItemLeft" align="right" valign="top">SharedLoadIteratorD::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a1742e43c128665f0ca39cb578291df81">shared_load_iterator_d</a></td></tr>
-<tr class="memdesc:a1742e43c128665f0ca39cb578291df81"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the D shared load iterator.  <a href="#a1742e43c128665f0ca39cb578291df81">More...</a><br /></td></tr>
-<tr class="separator:a1742e43c128665f0ca39cb578291df81"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:afa888d993b86ed88950a9e5ab7edeb06"><td class="memItemLeft" align="right" valign="top">Functor::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#afa888d993b86ed88950a9e5ab7edeb06">functor</a></td></tr>
-<tr class="memdesc:afa888d993b86ed88950a9e5ab7edeb06"><td class="mdescLeft">&#160;</td><td class="mdescRight">The functor params.  <a href="#afa888d993b86ed88950a9e5ab7edeb06">More...</a><br /></td></tr>
-<tr class="separator:afa888d993b86ed88950a9e5ab7edeb06"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a497b91e93d0eb29ca54553f8de4c694f"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#a23b0e6a448e51f2e0837af95802c23b0">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a497b91e93d0eb29ca54553f8de4c694f">stride_h</a></td></tr>
+<tr class="memdesc:a497b91e93d0eb29ca54553f8de4c694f"><td class="mdescLeft">&#160;</td><td class="mdescRight">The strides for H and W in the different iterations of the epilogue.  <a href="#a497b91e93d0eb29ca54553f8de4c694f">More...</a><br /></td></tr>
+<tr class="separator:a497b91e93d0eb29ca54553f8de4c694f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae814ac640d05358a3ce0ea70ed13ea68"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#a23b0e6a448e51f2e0837af95802c23b0">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#ae814ac640d05358a3ce0ea70ed13ea68">stride_w</a></td></tr>
+<tr class="separator:ae814ac640d05358a3ce0ea70ed13ea68"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0745d33dd881f6ca78b168e05b133ff8"><td class="memItemLeft" align="right" valign="top">GlobalLoadIteratorC::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a0745d33dd881f6ca78b168e05b133ff8">iterator_c</a></td></tr>
+<tr class="memdesc:a0745d33dd881f6ca78b168e05b133ff8"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the C iterator.  <a href="#a0745d33dd881f6ca78b168e05b133ff8">More...</a><br /></td></tr>
+<tr class="separator:a0745d33dd881f6ca78b168e05b133ff8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:abbcccb203f9823e621caa4475aa3d346"><td class="memItemLeft" align="right" valign="top">GlobalStoreIteratorD::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#abbcccb203f9823e621caa4475aa3d346">iterator_d</a></td></tr>
+<tr class="memdesc:abbcccb203f9823e621caa4475aa3d346"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the D global iterator.  <a href="#abbcccb203f9823e621caa4475aa3d346">More...</a><br /></td></tr>
+<tr class="separator:abbcccb203f9823e621caa4475aa3d346"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:adfdf3eca06ea4061fbfe016336a3f276"><td class="memItemLeft" align="right" valign="top">SharedStoreIteratorD::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#adfdf3eca06ea4061fbfe016336a3f276">shared_store_iterator_d</a></td></tr>
+<tr class="memdesc:adfdf3eca06ea4061fbfe016336a3f276"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the D shared store iterator.  <a href="#adfdf3eca06ea4061fbfe016336a3f276">More...</a><br /></td></tr>
+<tr class="separator:adfdf3eca06ea4061fbfe016336a3f276"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5d3d1abd85f18476a74bcf616a717f9d"><td class="memItemLeft" align="right" valign="top">SharedLoadStreamD::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a5d3d1abd85f18476a74bcf616a717f9d">shared_load_stream_d</a></td></tr>
+<tr class="memdesc:a5d3d1abd85f18476a74bcf616a717f9d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the D shared load stream.  <a href="#a5d3d1abd85f18476a74bcf616a717f9d">More...</a><br /></td></tr>
+<tr class="separator:a5d3d1abd85f18476a74bcf616a717f9d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:adb04e5990ab7faae9e8c0b110d2e3bee"><td class="memItemLeft" align="right" valign="top">Functor::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#adb04e5990ab7faae9e8c0b110d2e3bee">functor</a></td></tr>
+<tr class="memdesc:adb04e5990ab7faae9e8c0b110d2e3bee"><td class="mdescLeft">&#160;</td><td class="mdescRight">The functor params.  <a href="#adb04e5990ab7faae9e8c0b110d2e3bee">More...</a><br /></td></tr>
+<tr class="separator:adb04e5990ab7faae9e8c0b110d2e3bee"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="a3e9d0fd2989fea776b0cab0e0f2813ce"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a3e9d0fd2989fea776b0cab0e0f2813ce">&#9670;&nbsp;</a></span>initialize()</h2>
+<a id="a13395bf81eabdc539c935e179c31d7ca"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a13395bf81eabdc539c935e179c31d7ca">&#9670;&nbsp;</a></span>initialize()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadIteratorD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
 <div class="memtemplate">
 template&lt;typename GemmDesc_ &gt; </div>
 <table class="mlabels">
@@ -131,7 +131,7 @@ template&lt;typename GemmDesc_ &gt; </div>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::initialize </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::initialize </td>
           <td>(</td>
           <td class="paramtype">GemmDesc_ const &amp;&#160;</td>
           <td class="paramname"><em>desc</em></td><td>)</td>
@@ -148,112 +148,112 @@ template&lt;typename GemmDesc_ &gt; </div>
 </div>
 </div>
 <h2 class="groupheader">Member Data Documentation</h2>
-<a id="afa888d993b86ed88950a9e5ab7edeb06"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#afa888d993b86ed88950a9e5ab7edeb06">&#9670;&nbsp;</a></span>functor</h2>
+<a id="adb04e5990ab7faae9e8c0b110d2e3bee"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#adb04e5990ab7faae9e8c0b110d2e3bee">&#9670;&nbsp;</a></span>functor</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadIteratorD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">Functor::Params <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::functor</td>
+          <td class="memname">Functor::Params <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::functor</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a7350ceefcd09a9e3662ca30b780cc2ce"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a7350ceefcd09a9e3662ca30b780cc2ce">&#9670;&nbsp;</a></span>iterator_c</h2>
+<a id="a0745d33dd881f6ca78b168e05b133ff8"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0745d33dd881f6ca78b168e05b133ff8">&#9670;&nbsp;</a></span>iterator_c</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadIteratorD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">GlobalLoadIteratorC::Params <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::iterator_c</td>
+          <td class="memname">GlobalLoadIteratorC::Params <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::iterator_c</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a987c179a7e73c2572fe8aef3255668f7"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a987c179a7e73c2572fe8aef3255668f7">&#9670;&nbsp;</a></span>iterator_d</h2>
+<a id="abbcccb203f9823e621caa4475aa3d346"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abbcccb203f9823e621caa4475aa3d346">&#9670;&nbsp;</a></span>iterator_d</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadIteratorD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">GlobalStoreIteratorD::Params <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::iterator_d</td>
+          <td class="memname">GlobalStoreIteratorD::Params <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::iterator_d</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a1742e43c128665f0ca39cb578291df81"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a1742e43c128665f0ca39cb578291df81">&#9670;&nbsp;</a></span>shared_load_iterator_d</h2>
+<a id="a5d3d1abd85f18476a74bcf616a717f9d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5d3d1abd85f18476a74bcf616a717f9d">&#9670;&nbsp;</a></span>shared_load_stream_d</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadIteratorD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">SharedLoadIteratorD::Params <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::shared_load_iterator_d</td>
+          <td class="memname">SharedLoadStreamD::Params <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::shared_load_stream_d</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="af79a0c74a4c30ccec59b393721b5dfc1"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#af79a0c74a4c30ccec59b393721b5dfc1">&#9670;&nbsp;</a></span>shared_store_iterator_d</h2>
+<a id="adfdf3eca06ea4061fbfe016336a3f276"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#adfdf3eca06ea4061fbfe016336a3f276">&#9670;&nbsp;</a></span>shared_store_iterator_d</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadIteratorD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">SharedStoreIteratorD::Params <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::shared_store_iterator_d</td>
+          <td class="memname">SharedStoreIteratorD::Params <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::shared_store_iterator_d</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="ae0fdc7426b22ff2c20f077e251ebc823"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae0fdc7426b22ff2c20f077e251ebc823">&#9670;&nbsp;</a></span>stride_h</h2>
+<a id="a497b91e93d0eb29ca54553f8de4c694f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a497b91e93d0eb29ca54553f8de4c694f">&#9670;&nbsp;</a></span>stride_h</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadIteratorD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#ab430d05bd17efd60c28077c87b5ca331">Index</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::stride_h</td>
+          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#a23b0e6a448e51f2e0837af95802c23b0">Index</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::stride_h</td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a565f6cab8925d632dcf24bd1974caca2"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a565f6cab8925d632dcf24bd1974caca2">&#9670;&nbsp;</a></span>stride_w</h2>
+<a id="ae814ac640d05358a3ce0ea70ed13ea68"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae814ac640d05358a3ce0ea70ed13ea68">&#9670;&nbsp;</a></span>stride_w</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadIteratorD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#ab430d05bd17efd60c28077c87b5ca331">Index</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadIteratorD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::stride_w</td>
+          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#a23b0e6a448e51f2e0837af95802c23b0">Index</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::stride_w</td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -266,7 +266,7 @@ template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIte
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:13 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

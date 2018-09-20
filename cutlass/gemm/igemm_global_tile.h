@@ -32,9 +32,9 @@
 */
 #pragma once
 
-#include <cutlass/coord.h>
-#include <cutlass/gemm/gemm_global_tile.h>
-#include <cutlass/matrix_traits.h>
+#include "cutlass/coord.h"
+#include "cutlass/gemm/gemm_global_tile.h"
+#include "cutlass/matrix_traits.h"
 
 namespace cutlass {
 namespace gemm {
@@ -67,10 +67,10 @@ struct IgemmGlobalTileTraits : public GemmGlobalTileTraits<
   /// The strides in each dimension between different loads/stores.
   typedef Shape<Base::Threads::kH * 4, 1, Base::Threads::kW, Base::kAccessSize> Delta;
   /// The number of iterations needed to load/store the tile.
-  typedef Shape<Base::Tile::kH / Base::Threads::kH / 4,
+  typedef Shape<Base::VectorizedTile::kH / Base::Threads::kH / 4,
                 4,
-                Base::Tile::kW / Base::Threads::kW,
-                Base::Tile::kC / Base::kAccessSize>
+                Base::VectorizedTile::kW / Base::Threads::kW,
+                Base::VectorizedTile::kC / Base::kAccessSize>
       Iterations;
 
   /// Computes the thread offset in (H, W) based on thread ID
@@ -86,21 +86,8 @@ struct IgemmGlobalTileTraits : public GemmGlobalTileTraits<
 
  public:
   /// The threads strides.
-  typedef Shape<1, 4, Base::Tile::kC> ThreadsDelta;
+  typedef Shape<1, 4, Base::VectorizedTile::kC> ThreadsDelta;
 };
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Deprecated. Please use IgemmGlobalTileTraits instead.
-
-template <GemmOperand::Kind kOperand_,
-          MatrixLayout::Kind kLayout_,
-          typename Scalar_,
-          typename Tile_,
-          typename Threads_,
-          int kAccessSize_>
-struct IgemmContiguousGlobalTileTraits
-    : public IgemmGlobalTileTraits<kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_> {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -114,11 +101,11 @@ struct IgemmGlobalIteratorAb : public GemmGlobalIteratorAb<TileTraits_, Index_> 
   /// Constructor.
   CUTLASS_DEVICE IgemmGlobalIteratorAb(typename Base::Params const& _params,
                                        const Coord<3>& bounds,
-                                       const Coord<3>& block,
+                                       const Coord<3>& threadblock_offset,
                                        ThreadOffset thread_offset_func = ThreadOffset())
-      : Base(_params, bounds, block, thread_offset_func), in_residue_(false), mask_(0xffffffff) {
+      : Base(_params, bounds, threadblock_offset, thread_offset_func), mask_(0xffffffff) {
     // The number of elements read in a single iteration.
-    int const kBlock = TileTraits_::Tile::kW * TileTraits_::kAccessSize;
+    int const kBlock = TileTraits_::Tile::kW;
     // The residue.
     int const kResidue = (int)(bounds[1] % kBlock);
 
@@ -129,28 +116,12 @@ struct IgemmGlobalIteratorAb : public GemmGlobalIteratorAb<TileTraits_, Index_> 
     }
   }
 
-  /// The accessor.
-  CUTLASS_DEVICE void get(typename Base::AccessType& value, int d, int h, int w, int c) const {
-    Base::get(value, d, h, w, c);
-    if (in_residue_) {
-      reinterpret_cast<uint32_t&>(value) &= mask_;
-    }
+  CUTLASS_DEVICE void load_element(
+      typename Base::AccessType& value, int d, int h, int w, int c) const {
+    Base::load_element(value, d, h, w, c);
+    reinterpret_cast<uint32_t&>(value) &= mask_;
   }
 
-  /// Move to residue portion.
-  CUTLASS_DEVICE void move_to_residue(typename Base::Index k) {
-    Base::move_to_residue(k);
-    in_residue_ = true;
-  }
-
-  /// Move back to the beginning of the first tile.
-  CUTLASS_DEVICE void rollback() {
-    Base::rollback();
-    in_residue_ = false;
-  }
-
-  /// Are we in the residue?
-  bool in_residue_;
   /// The mask to clean up the values.
   uint32_t mask_;
 };

@@ -22,80 +22,96 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/sgemm_traits.h>
 
-#include <tools/test/perf/gemm/gemm_perf_testbed.h>
-
-#include <tools/test/perf/gemm/gemm_profiler.h>
-#include <tools/test/perf/gemm/cutlass_dispatch.h>
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/sgemm_traits.h"
+#include "tools/test/perf/cutlass_perf_test.h"
+#include "tools/test/perf/gemm/gemm_perf_testbed.h"
+#include "tools/test/perf/gemm/gemm_profiler.h"
+#include "tools/test/perf/gemm/cutlass_dispatch.h"
+#pragma warning( disable : 4503)
 
 namespace perf {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-int profile_sgemm(TestbenchOutput &output, TestbenchOptions const &options) {
+template <typename OutputTile>
+int profile_sgemm_kernel(
+  TestbenchOutput<GemmProblem> &output,
+  TestbenchOptions const &options,
+  Config const &config,
+  std::string const &name,
+  std::string const &algo) {
 
   typedef perf::GemmProfiler<float, float, float, float, float> SGemmProfiler;
 
   int results = 0;
 
-  if (!results) {
-    
+  {
     typedef cutlass::gemm::SgemmTraits<
       cutlass::MatrixLayout::kColumnMajor,
       cutlass::MatrixLayout::kRowMajor,
-      cutlass::Shape<8, 128, 128>
+      OutputTile
     > GemmTraits;
 
     typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
 
-    profile_gemm<Dispatch, SGemmProfiler>(output, "sgemm_nt", options);
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_nt", options, config, algo);
   }
 
-  if (!results) {
-    
+  {
     typedef cutlass::gemm::SgemmTraits<
       cutlass::MatrixLayout::kColumnMajor,
       cutlass::MatrixLayout::kColumnMajor,
-      cutlass::Shape<8, 128, 128>
+      OutputTile
     > GemmTraits;
 
     typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
 
-    profile_gemm<Dispatch, SGemmProfiler>(output, "sgemm_nn", options);
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_nn", options, config, algo);
   }
 
-  if (!results) {
-    
+  {
     typedef cutlass::gemm::SgemmTraits<
       cutlass::MatrixLayout::kRowMajor,
       cutlass::MatrixLayout::kColumnMajor,
-      cutlass::Shape<8, 128, 128>
+      OutputTile
     > GemmTraits;
 
     typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
 
-    profile_gemm<Dispatch, SGemmProfiler>(output, "sgemm_tn", options);
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_tn", options, config, algo);
   }
 
-  if (!results) {
-    
+  {
     typedef cutlass::gemm::SgemmTraits<
       cutlass::MatrixLayout::kRowMajor,
       cutlass::MatrixLayout::kRowMajor,
-      cutlass::Shape<8, 128, 128>
+      OutputTile
     > GemmTraits;
 
     typedef typename CutlassDispatchBasic<GemmTraits>::Dispatch Dispatch;
 
-    profile_gemm<Dispatch, SGemmProfiler>(output, "sgemm_tt", options);
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_tt", options, config, algo);
   }
+  return results;
+}
+
+/// Profiles all SGEMM tile sizes
+int profile_sgemm(TestbenchOutput<GemmProblem> &output, TestbenchOptions const &options, Config const &config) {
+  int results = 0;
+
+  results |= profile_sgemm_kernel<cutlass::Shape<8, 128, 128> >(output, options, config, "sgemm", "128x128");
 
   return results;
 }
 
+struct SgemmRegistrar {
+  SgemmRegistrar() { RegisterGemmProfileFunc(profile_sgemm); }
+};
+
+volatile SgemmRegistrar _SgemmRegistrar;
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace perf
-

@@ -29,9 +29,9 @@
 #pragma once
 
 #include <assert.h>
-#include <cutlass/shape.h>
-#include <cutlass/util/cutlass_math.h>
-#include <cutlass/vector.h>
+#include "cutlass/shape.h"
+#include "cutlass/util/cutlass_math.h"
+#include "cutlass/vector.h"
 
 namespace cutlass {
 
@@ -72,7 +72,7 @@ provides access to element at (d, h, w, c)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <int kAlignment_>
+template <int alignment>
 struct StorageType {
   typedef uint64_t Type;
 };
@@ -108,9 +108,11 @@ struct Fragment : public AlignedStruct<kAlignment_> {
   typedef Element_ Element;
   /// The number of elements.
   static int const kElements = kElements_;
+  /// Alignment
+  static int const kAlignment = kAlignment_;
 
   /// Clear a fragment.
-  CUTLASS_DEVICE void clear() {
+  CUTLASS_HOST_DEVICE void clear() {
     // Avoid element-wise access for sub 32b element type
     if (kAlignment_ >= 8 && (kElements * sizeof(Element)) % 8 == 0) {
       uint64_t* ptr = reinterpret_cast<uint64_t*>(storage);
@@ -135,14 +137,10 @@ struct Fragment : public AlignedStruct<kAlignment_> {
   }
 
   /// The accessor.
-  CUTLASS_DEVICE Element& operator[](int i) {
-    assert(i < kElements_);
-    return reinterpret_cast<Element*>(storage)[i];
-  }
+  CUTLASS_HOST_DEVICE Element& operator[](int i) { return reinterpret_cast<Element*>(storage)[i]; }
 
   /// The accessor.
-  CUTLASS_DEVICE Element const& operator[](int i) const {
-    assert(i < kElements_);
+  CUTLASS_HOST_DEVICE Element const& operator[](int i) const {
     return reinterpret_cast<Element const*>(storage)[i];
   }
 
@@ -188,35 +186,35 @@ struct FragmentIterator {
 
   /// Ctor.
   template <typename OtherFragment_>
-  CUTLASS_DEVICE FragmentIterator(OtherFragment_& fragment, int offset = 0)
+  CUTLASS_HOST_DEVICE FragmentIterator(OtherFragment_& fragment, int offset = 0)
       : pointer(reinterpret_cast<Element*>(&fragment[offset])) {
     static_assert(OtherFragment_::kElements >= Fragment::kElements, "");
   }
 
   /// The accessor.
-  CUTLASS_DEVICE AccessType const& at(int d, int h, int w, int c = 0) const {
+  CUTLASS_HOST_DEVICE AccessType const& at(int d, int h, int w, int c = 0) const {
     int const imm = ComputeOffsetFromStrides<Strides>::get(d, h, w, c);
     return reinterpret_cast<AccessType const&>(pointer[imm]);
   }
 
   /// The accessor.
-  CUTLASS_DEVICE AccessType& at(int d, int h, int w, int c = 0) {
+  CUTLASS_HOST_DEVICE AccessType& at(int d, int h, int w, int c = 0) {
     int const imm = ComputeOffsetFromStrides<Strides>::get(d, h, w, c);
     return reinterpret_cast<AccessType&>(pointer[imm]);
   }
 
   /// The accessor.
-  CUTLASS_DEVICE AccessType const& operator[](int i) const {
+  CUTLASS_HOST_DEVICE AccessType const& operator[](int i) const {
     return reinterpret_cast<AccessType const&>(pointer[i * kElementsPerAccess]);
   }
 
   /// The accessor.
-  CUTLASS_DEVICE AccessType& operator[](int i) {
+  CUTLASS_HOST_DEVICE AccessType& operator[](int i) {
     return reinterpret_cast<AccessType&>(pointer[i * kElementsPerAccess]);
   }
 
   /// Is the iterator valid?
-  CUTLASS_DEVICE bool valid(int d, int h, int w, int c) const { return true; }
+  CUTLASS_HOST_DEVICE bool valid(int d, int h, int w, int c) const { return true; }
 
   /// The pointer.
   Element* pointer;
@@ -246,28 +244,28 @@ struct FragmentConstIterator {
 
   /// Ctor.
   template <typename OtherFragment_>
-  CUTLASS_DEVICE FragmentConstIterator(OtherFragment_& fragment, int offset = 0)
+  CUTLASS_HOST_DEVICE FragmentConstIterator(OtherFragment_& fragment, int offset = 0)
       : pointer(reinterpret_cast<Element const*>(&fragment[offset])) {
     static_assert(OtherFragment_::kElements >= Fragment::kElements, "");
   }
   /// Create from non-constant FragmentIterator
-  CUTLASS_DEVICE FragmentConstIterator(
+  CUTLASS_HOST_DEVICE FragmentConstIterator(
       FragmentIterator<Fragment_, Iterations_, AccessType_> const& rhs_)
       : pointer(reinterpret_cast<Element const*>(rhs_.offset)) {}
 
   /// The accessor.
-  CUTLASS_DEVICE AccessType const& at(int d, int h, int w, int c = 0) const {
+  CUTLASS_HOST_DEVICE AccessType const& at(int d, int h, int w, int c = 0) const {
     int const imm = ComputeOffsetFromStrides<IterationsStrides>::get(d, h, w, c);
     return reinterpret_cast<AccessType const&>(pointer[imm]);
   }
 
   /// The accessor.
-  CUTLASS_DEVICE AccessType const& operator[](int i) const {
+  CUTLASS_HOST_DEVICE AccessType const& operator[](int i) const {
     return reinterpret_cast<AccessType const&>(pointer[i * kElementsPerAccess]);
   }
 
   /// Is the iterator valid?
-  CUTLASS_DEVICE bool valid(int d, int h, int w, int c) const { return true; }
+  CUTLASS_HOST_DEVICE bool valid(int d, int h, int w, int c) const { return true; }
 
   /// The pointer.
   Element const* pointer;

@@ -22,8 +22,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-#pragma once
-
 /*! \file
     \brief Helpers for printing cutlass/core objects
 */
@@ -33,12 +31,96 @@
 #include <iosfwd>
 #include <typeinfo>
 
-#include <cutlass/coord.h>
+#include "cutlass/coord.h"
+#include "cutlass/vector.h"
+
+namespace cutlass {
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <int Rank>
-std::ostream& operator<<(std::ostream& out, cutlass::Coord<Rank> const& coord) {
+std::ostream& operator<<(std::ostream& out, Coord<Rank> const& coord) {
   for (int i = 0; i < Rank; ++i) {
     out << (i ? ", " : "") << coord.idx[i];
   }
   return out;
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Helper to enable formatted printing of CUTLASS scalar types to an ostream
+template <typename T>
+struct ScalarIO {
+
+  /// Value to print
+  T value;
+
+  /// Default ctor
+  ScalarIO() { }
+
+  /// Constructs from a value
+  ScalarIO(T value): value(value) {}
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Default printing to ostream
+template <typename T>
+inline std::ostream &operator<<(std::ostream &out, ScalarIO<T> const &scalar) {
+  return out << scalar.value;
+}
+
+/// Printing to ostream of int8_t as integer rather than character
+template <>
+inline std::ostream &operator<<(std::ostream &out, ScalarIO<int8_t> const &scalar) {
+  return out << int(scalar.value);
+}
+
+/// Printing to ostream of uint8_t as integer rather than character
+template <>
+inline std::ostream &operator<<(std::ostream &out, ScalarIO<uint8_t> const &scalar) {
+  return out << unsigned(scalar.value);
+}
+
+/// Printing to ostream of vector of 1b elements
+template <>
+inline std::ostream &operator<<(
+  std::ostream &out, 
+  ScalarIO<cutlass::Vector<cutlass::bin1_t, 32> > const &scalar) {
+
+  for (int i = 0; i < 32; i++) {
+    out << int(scalar.value[i]);
+    out << ((i != 31) ? ", " : "");
+  }
+  return out;
+}
+
+/// Printing to ostream of vector of 4b signed integer elements
+template <>
+inline std::ostream &operator<<(
+  std::ostream &out, 
+  ScalarIO<cutlass::Vector<cutlass::int4_t, 8> > const &scalar) {
+
+  for (int i = 0; i < 8; i++) {
+    out << int(scalar.value[i]);
+    out << ((i != 7) ? ", " : "");
+  }
+  return out;
+}
+
+/// Printing to ostream of vector of 4b unsigned integer elements
+template <>
+inline std::ostream &operator<<(
+  std::ostream &out, 
+  ScalarIO<cutlass::Vector<cutlass::uint4_t, 8> > const &scalar) {
+
+  for (int i = 0; i < 8; i++) {
+    out << unsigned(scalar.value[i]);
+    out << ((i != 7) ? ", " : "");
+  }
+  return out;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+} // namespace cutlass

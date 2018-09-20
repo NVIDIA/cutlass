@@ -28,9 +28,9 @@
 */
 #pragma once
 
-#include <cutlass/fragment.h>
+#include "cutlass/fragment.h"
 
-#include <cutlass/gemm/thread_multiply_add.h>
+#include "cutlass/gemm/thread_multiply_add.h"
 
 namespace cutlass {
 namespace gemm {
@@ -38,16 +38,18 @@ namespace gemm {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Template performing matrix multiply-add operation within a thread
-template <typename AccumulatorsPerThread_, typename ThreadsPerWarp_>
-struct ThreadMultiplyAdd<AccumulatorsPerThread_, ThreadsPerWarp_, int8_t, int8_t, int> {
+template <typename ThreadGemmShape_, typename ThreadsPerWarp_>
+struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, int8_t, int8_t, int> {
   /// The shape of the instruction.
   typedef Shape<4, 1, 1> InstructionShape;
-  /// The number of accumulators per thread.
-  typedef AccumulatorsPerThread_ AccumulatorsPerThread;
+  /// Shape of the thread-level GEMM (K-by-N-by-M)
+  typedef ThreadGemmShape_ ThreadGemmShape;
+  /// Aliased for compatibility. Will be removed in CUTLASS v2.0
+  typedef ThreadGemmShape AccumulatorsPerThread;
   /// The number of threads per warp.
   typedef ThreadsPerWarp_ ThreadsPerWarp;
   /// The number of accumulators per warp.
-  typedef typename ShapeMul<AccumulatorsPerThread, ThreadsPerWarp>::Shape AccumulatorsPerWarp;
+  typedef typename ShapeMul<ThreadGemmShape, ThreadsPerWarp>::Shape AccumulatorsPerWarp;
   /// The type for A.
   typedef int8_t ScalarA;
   /// The fragment for A.

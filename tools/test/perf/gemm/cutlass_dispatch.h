@@ -32,7 +32,8 @@ template <typename Gemm_,
           typename ScalarD_,
           typename Compute_,
           typename ScalarEpilogue_,
-          bool ThreadMultiplyAdd_>
+          bool ThreadMultiplyAdd_,
+          bool RunCuBLAS_ = true>
 struct CutlassDispatch {
   typedef typename Gemm_::Params Params;
   typedef Gemm_ Gemm;
@@ -45,6 +46,7 @@ struct CutlassDispatch {
   typedef ScalarEpilogue_ ScalarEpilogue;
 
   static bool const kThreadMultiplyAdd = ThreadMultiplyAdd_;
+  static bool const kRunCuBLAS = RunCuBLAS_;
 
   static cutlass::MatrixLayout::Kind const kLayoutA = Gemm::Traits::kLayoutA;
   static cutlass::MatrixLayout::Kind const kLayoutB = Gemm::Traits::kLayoutB;
@@ -60,7 +62,7 @@ struct CutlassDispatch {
   // Methods
   //
 
-  CutlassDispatch() {}
+  // CutlassDispatch() {}
 
   /// Initializes params object
   CutlassDispatch(Index m,
@@ -84,33 +86,6 @@ struct CutlassDispatch {
 
   /// Launches kernel
   cudaError_t operator()() { return Gemm::launch(params); }
-
-  /// Determines if problem is aligned (assuming no padding)
-  static bool is_problem_aligned(
-    int m,
-    int n,
-    int k) {
-
-    bool aligned = true;
-
-    if (kLayoutA == cutlass::MatrixLayout::kColumnMajor) {
-      aligned = aligned && !(m % Gemm::Traits::GemmConfig::kScalarsPerLdgA);
-    }
-    else {
-      aligned = aligned && !(k % Gemm::Traits::GemmConfig::kScalarsPerLdgA);
-    }
-
-    if (kLayoutB == cutlass::MatrixLayout::kColumnMajor) {
-      aligned = aligned && !(k % Gemm::Traits::GemmConfig::kScalarsPerLdgB);
-    }
-    else {
-      aligned = aligned && !(n % Gemm::Traits::GemmConfig::kScalarsPerLdgB);
-    }
-
-    aligned = aligned && !(m % Gemm::Traits::GemmConfig::kScalarsPerLdgC);
-
-    return aligned;
-  }
 };
 
 /// Basic dispatcher inferred from GEMM traits

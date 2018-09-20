@@ -105,28 +105,28 @@ Public Types</h2></td></tr>
 <tr class="memitem:a880f12d0cd42cdae7ce6009d2233f577"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1ShapeMul.html">ShapeMul</a>&lt; <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a527100e34ed700787b1419157710dbb2">Iterations</a>, <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 1, 1, 1, <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a004fabc9caa6924f3fb4badcbb19e88f">kElementsPerAccess</a> &gt; &gt;::<a class="el" href="structcutlass_1_1Shape.html">Shape</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#a880f12d0cd42cdae7ce6009d2233f577">FragmentShape</a></td></tr>
 <tr class="memdesc:a880f12d0cd42cdae7ce6009d2233f577"><td class="mdescLeft">&#160;</td><td class="mdescRight">The shape of the the fragment.  <a href="#a880f12d0cd42cdae7ce6009d2233f577">More...</a><br /></td></tr>
 <tr class="separator:a880f12d0cd42cdae7ce6009d2233f577"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ab683796885f3bae3765efd96883f311b"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1ShapeStrides.html">ShapeStrides</a>&lt; <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a880f12d0cd42cdae7ce6009d2233f577">FragmentShape</a> &gt;::<a class="el" href="structcutlass_1_1Shape.html">Shape</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#ab683796885f3bae3765efd96883f311b">IterationsStrides</a></td></tr>
-<tr class="memdesc:ab683796885f3bae3765efd96883f311b"><td class="mdescLeft">&#160;</td><td class="mdescRight">The linear strides for iterations.  <a href="#ab683796885f3bae3765efd96883f311b">More...</a><br /></td></tr>
-<tr class="separator:ab683796885f3bae3765efd96883f311b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a14ef0a0095e391503a19067e146c584a"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1ShapeStrides.html">ShapeStrides</a>&lt; <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a880f12d0cd42cdae7ce6009d2233f577">FragmentShape</a>, <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a004fabc9caa6924f3fb4badcbb19e88f">kElementsPerAccess</a> &gt;::<a class="el" href="structcutlass_1_1Shape.html">Shape</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#a14ef0a0095e391503a19067e146c584a">IterationsStrides</a></td></tr>
+<tr class="memdesc:a14ef0a0095e391503a19067e146c584a"><td class="mdescLeft">&#160;</td><td class="mdescRight">The linear strides for iterations.  <a href="#a14ef0a0095e391503a19067e146c584a">More...</a><br /></td></tr>
+<tr class="separator:a14ef0a0095e391503a19067e146c584a"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:ac4b6f351e6e72bed37e425f02a10c81e"><td class="memTemplParams" colspan="2">template&lt;typename OtherFragment_ &gt; </td></tr>
-<tr class="memitem:ac4b6f351e6e72bed37e425f02a10c81e"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#ac4b6f351e6e72bed37e425f02a10c81e">FragmentConstIterator</a> (OtherFragment_ &amp;fragment, int offset=0)</td></tr>
-<tr class="memdesc:ac4b6f351e6e72bed37e425f02a10c81e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#ac4b6f351e6e72bed37e425f02a10c81e">More...</a><br /></td></tr>
-<tr class="separator:ac4b6f351e6e72bed37e425f02a10c81e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a3a8fd8f13c157ed13dc93fd78036c59e"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#a3a8fd8f13c157ed13dc93fd78036c59e">FragmentConstIterator</a> (<a class="el" href="structcutlass_1_1FragmentIterator.html">FragmentIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt; const &amp;rhs_)</td></tr>
-<tr class="memdesc:a3a8fd8f13c157ed13dc93fd78036c59e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create from non-constant <a class="el" href="structcutlass_1_1FragmentIterator.html" title="A template defining Fragment Iterator Concept. ">FragmentIterator</a>.  <a href="#a3a8fd8f13c157ed13dc93fd78036c59e">More...</a><br /></td></tr>
-<tr class="separator:a3a8fd8f13c157ed13dc93fd78036c59e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8b957150545becacab1b8ead1be29424"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1FragmentConstIterator.html#addf5c21444f129211eefe7cdca6dfa1b">AccessType</a> const  &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#a8b957150545becacab1b8ead1be29424">at</a> (int d, int h, int w, int c=0) const</td></tr>
-<tr class="memdesc:a8b957150545becacab1b8ead1be29424"><td class="mdescLeft">&#160;</td><td class="mdescRight">The accessor.  <a href="#a8b957150545becacab1b8ead1be29424">More...</a><br /></td></tr>
-<tr class="separator:a8b957150545becacab1b8ead1be29424"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af16f2aa14ff424b038a393b683c4783e"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1FragmentConstIterator.html#addf5c21444f129211eefe7cdca6dfa1b">AccessType</a> const  &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#af16f2aa14ff424b038a393b683c4783e">operator[]</a> (int i) const</td></tr>
-<tr class="memdesc:af16f2aa14ff424b038a393b683c4783e"><td class="mdescLeft">&#160;</td><td class="mdescRight">The accessor.  <a href="#af16f2aa14ff424b038a393b683c4783e">More...</a><br /></td></tr>
-<tr class="separator:af16f2aa14ff424b038a393b683c4783e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a01571b2fc566793fd50a10fa82441951"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#a01571b2fc566793fd50a10fa82441951">valid</a> (int d, int h, int w, int c) const</td></tr>
-<tr class="memdesc:a01571b2fc566793fd50a10fa82441951"><td class="mdescLeft">&#160;</td><td class="mdescRight">Is the iterator valid?  <a href="#a01571b2fc566793fd50a10fa82441951">More...</a><br /></td></tr>
-<tr class="separator:a01571b2fc566793fd50a10fa82441951"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad3e99cd7f56d4aec0a28cfcbde66f5af"><td class="memTemplParams" colspan="2">template&lt;typename OtherFragment_ &gt; </td></tr>
+<tr class="memitem:ad3e99cd7f56d4aec0a28cfcbde66f5af"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#ad3e99cd7f56d4aec0a28cfcbde66f5af">FragmentConstIterator</a> (OtherFragment_ &amp;fragment, int offset=0)</td></tr>
+<tr class="memdesc:ad3e99cd7f56d4aec0a28cfcbde66f5af"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#ad3e99cd7f56d4aec0a28cfcbde66f5af">More...</a><br /></td></tr>
+<tr class="separator:ad3e99cd7f56d4aec0a28cfcbde66f5af"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a18f926c9c877e15a279f16637bd24e83"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#a18f926c9c877e15a279f16637bd24e83">FragmentConstIterator</a> (<a class="el" href="structcutlass_1_1FragmentIterator.html">FragmentIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt; const &amp;rhs_)</td></tr>
+<tr class="memdesc:a18f926c9c877e15a279f16637bd24e83"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create from non-constant <a class="el" href="structcutlass_1_1FragmentIterator.html" title="A template defining Fragment Iterator Concept. ">FragmentIterator</a>.  <a href="#a18f926c9c877e15a279f16637bd24e83">More...</a><br /></td></tr>
+<tr class="separator:a18f926c9c877e15a279f16637bd24e83"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a14f2ad2f9b90aea092ff1836e8fb159d"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1FragmentConstIterator.html#addf5c21444f129211eefe7cdca6dfa1b">AccessType</a> const  &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#a14f2ad2f9b90aea092ff1836e8fb159d">at</a> (int d, int h, int w, int c=0) const</td></tr>
+<tr class="memdesc:a14f2ad2f9b90aea092ff1836e8fb159d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The accessor.  <a href="#a14f2ad2f9b90aea092ff1836e8fb159d">More...</a><br /></td></tr>
+<tr class="separator:a14f2ad2f9b90aea092ff1836e8fb159d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6216b58ffe6322f037f1e0a3ffa714c8"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1FragmentConstIterator.html#addf5c21444f129211eefe7cdca6dfa1b">AccessType</a> const  &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#a6216b58ffe6322f037f1e0a3ffa714c8">operator[]</a> (int i) const</td></tr>
+<tr class="memdesc:a6216b58ffe6322f037f1e0a3ffa714c8"><td class="mdescLeft">&#160;</td><td class="mdescRight">The accessor.  <a href="#a6216b58ffe6322f037f1e0a3ffa714c8">More...</a><br /></td></tr>
+<tr class="separator:a6216b58ffe6322f037f1e0a3ffa714c8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac4d601998a84a3eac23e3b7a7c8a935b"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1FragmentConstIterator.html#ac4d601998a84a3eac23e3b7a7c8a935b">valid</a> (int d, int h, int w, int c) const</td></tr>
+<tr class="memdesc:ac4d601998a84a3eac23e3b7a7c8a935b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Is the iterator valid?  <a href="#ac4d601998a84a3eac23e3b7a7c8a935b">More...</a><br /></td></tr>
+<tr class="separator:ac4d601998a84a3eac23e3b7a7c8a935b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
@@ -221,8 +221,8 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
 
 </div>
 </div>
-<a id="ab683796885f3bae3765efd96883f311b"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab683796885f3bae3765efd96883f311b">&#9670;&nbsp;</a></span>IterationsStrides</h2>
+<a id="a14ef0a0095e391503a19067e146c584a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a14ef0a0095e391503a19067e146c584a">&#9670;&nbsp;</a></span>IterationsStrides</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -230,7 +230,7 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
 template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1ShapeStrides.html">ShapeStrides</a>&lt;<a class="el" href="structcutlass_1_1FragmentConstIterator.html#a880f12d0cd42cdae7ce6009d2233f577">FragmentShape</a>&gt;::<a class="el" href="structcutlass_1_1Shape.html">Shape</a> <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::<a class="el" href="structcutlass_1_1FragmentConstIterator.html#ab683796885f3bae3765efd96883f311b">IterationsStrides</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1ShapeStrides.html">ShapeStrides</a>&lt;<a class="el" href="structcutlass_1_1FragmentConstIterator.html#a880f12d0cd42cdae7ce6009d2233f577">FragmentShape</a>, <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a004fabc9caa6924f3fb4badcbb19e88f">kElementsPerAccess</a>&gt;::<a class="el" href="structcutlass_1_1Shape.html">Shape</a> <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::<a class="el" href="structcutlass_1_1FragmentConstIterator.html#a14ef0a0095e391503a19067e146c584a">IterationsStrides</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -254,8 +254,8 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
 </div>
 </div>
 <h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
-<a id="ac4b6f351e6e72bed37e425f02a10c81e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ac4b6f351e6e72bed37e425f02a10c81e">&#9670;&nbsp;</a></span>FragmentConstIterator() <span class="overload">[1/2]</span></h2>
+<a id="ad3e99cd7f56d4aec0a28cfcbde66f5af"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad3e99cd7f56d4aec0a28cfcbde66f5af">&#9670;&nbsp;</a></span>FragmentConstIterator() <span class="overload">[1/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -268,7 +268,7 @@ template&lt;typename OtherFragment_ &gt; </div>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::<a class="el" href="structcutlass_1_1FragmentConstIterator.html">FragmentConstIterator</a> </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::<a class="el" href="structcutlass_1_1FragmentConstIterator.html">FragmentConstIterator</a> </td>
           <td>(</td>
           <td class="paramtype">OtherFragment_ &amp;&#160;</td>
           <td class="paramname"><em>fragment</em>, </td>
@@ -294,8 +294,8 @@ template&lt;typename OtherFragment_ &gt; </div>
 
 </div>
 </div>
-<a id="a3a8fd8f13c157ed13dc93fd78036c59e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a3a8fd8f13c157ed13dc93fd78036c59e">&#9670;&nbsp;</a></span>FragmentConstIterator() <span class="overload">[2/2]</span></h2>
+<a id="a18f926c9c877e15a279f16637bd24e83"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a18f926c9c877e15a279f16637bd24e83">&#9670;&nbsp;</a></span>FragmentConstIterator() <span class="overload">[2/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -306,7 +306,7 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::<a class="el" href="structcutlass_1_1FragmentConstIterator.html">FragmentConstIterator</a> </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::<a class="el" href="structcutlass_1_1FragmentConstIterator.html">FragmentConstIterator</a> </td>
           <td>(</td>
           <td class="paramtype"><a class="el" href="structcutlass_1_1FragmentIterator.html">FragmentIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt; const &amp;&#160;</td>
           <td class="paramname"><em>rhs_</em></td><td>)</td>
@@ -323,8 +323,8 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
 </div>
 </div>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="a8b957150545becacab1b8ead1be29424"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a8b957150545becacab1b8ead1be29424">&#9670;&nbsp;</a></span>at()</h2>
+<a id="a14f2ad2f9b90aea092ff1836e8fb159d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a14f2ad2f9b90aea092ff1836e8fb159d">&#9670;&nbsp;</a></span>at()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -335,7 +335,7 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1FragmentConstIterator.html#addf5c21444f129211eefe7cdca6dfa1b">AccessType</a> const&amp; <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::at </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1FragmentConstIterator.html#addf5c21444f129211eefe7cdca6dfa1b">AccessType</a> const&amp; <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::at </td>
           <td>(</td>
           <td class="paramtype">int&#160;</td>
           <td class="paramname"><em>d</em>, </td>
@@ -373,8 +373,8 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
 
 </div>
 </div>
-<a id="af16f2aa14ff424b038a393b683c4783e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#af16f2aa14ff424b038a393b683c4783e">&#9670;&nbsp;</a></span>operator[]()</h2>
+<a id="a6216b58ffe6322f037f1e0a3ffa714c8"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6216b58ffe6322f037f1e0a3ffa714c8">&#9670;&nbsp;</a></span>operator[]()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -385,7 +385,7 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1FragmentConstIterator.html#addf5c21444f129211eefe7cdca6dfa1b">AccessType</a> const&amp; <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::operator[] </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="structcutlass_1_1FragmentConstIterator.html#addf5c21444f129211eefe7cdca6dfa1b">AccessType</a> const&amp; <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::operator[] </td>
           <td>(</td>
           <td class="paramtype">int&#160;</td>
           <td class="paramname"><em>i</em></td><td>)</td>
@@ -401,8 +401,8 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
 
 </div>
 </div>
-<a id="a01571b2fc566793fd50a10fa82441951"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a01571b2fc566793fd50a10fa82441951">&#9670;&nbsp;</a></span>valid()</h2>
+<a id="ac4d601998a84a3eac23e3b7a7c8a935b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac4d601998a84a3eac23e3b7a7c8a935b">&#9670;&nbsp;</a></span>valid()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -413,7 +413,7 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">CUTLASS_DEVICE bool <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::valid </td>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool <a class="el" href="structcutlass_1_1FragmentConstIterator.html">cutlass::FragmentConstIterator</a>&lt; Fragment_, Iterations_, AccessType_ &gt;::valid </td>
           <td>(</td>
           <td class="paramtype">int&#160;</td>
           <td class="paramname"><em>d</em>, </td>
@@ -498,7 +498,7 @@ template&lt;typename Fragment_ , typename Iterations_ , typename AccessType_ &gt
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:12 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

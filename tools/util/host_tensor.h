@@ -25,51 +25,126 @@
 #pragma once
 
 /*! \file
-    \brief Template class to perform computations on tensors and manage memory.
+  \brief HostTensor contributes management for both host and device memory.
+
+  HostTensor allocates host and device memory upon construction. Basic element-wise operations on
+  host memory synchronize device memory automatically. Explicit copy operations provide abstractions
+  for CUDA memcpy operations.
+
+  Call device_{data, ref, view} for accessing device memory allocations.
+
+  See cutlass/tensor_ref.h, cutlass/tensor_view.h, and tools/util/host_tensor_view.h for more details.
 */
 
-#include <cutlass/cutlass.h>
-#include <cutlass/matrix_traits.h>
-#include <tools/util/device_memory.h>
-#include <tools/util/host_tensor_view.h>
-#include <tools/util/type_traits.h>
+#include "cutlass/cutlass.h"
+#include "cutlass/matrix_traits.h"
+#include "cutlass/tensor_ref.h"
+#include "tools/util/device_memory.h"
+#include "tools/util/host_tensor_view.h"
+#include "tools/util/type_traits.h"
 #include <vector>
 
 namespace cutlass {
 
-template <typename T, bool DeviceBacked_ = true>
-class HostTensor : public HostTensorView<T> {
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Host tensor
+template <
+  /// Scalar data type (may be mapped to compatible types for use on host and device)
+  typename T,
+  /// Rank of logical tensor
+  int Rank_ = 4,
+  /// Maps a Coord<Rank_> in the logical tensor index space to the internal n-D array
+  typename MapFunc_ = IdentityTensorMapFunc<Rank_>,
+  /// Rank of internal n-D array
+  int StorageRank_ = MapFunc_::kStorageRank,
+  /// Index type used for coordinates
+  typename Index_ = int,
+  /// Index type used for offsets and pointer differences
+  typename LongIndex_ = long long
+>
+class HostTensor : public HostTensorView<
+  typename TypeTraits<T>::host_type,
+  Rank_,
+  MapFunc_,
+  StorageRank_,
+  Index_,
+  LongIndex_> {
  public:
+  /// Type used for host-side allocations
+  typedef typename TypeTraits<T>::host_type HostType;
+
   /// Type used for device-side allocations
   typedef typename TypeTraits<T>::device_type DeviceType;
 
   /// Base class
-  typedef HostTensorView<T> Base;
-
-  /// If true, allocates device side memory
-  static bool const DeviceBacked = DeviceBacked_;
-
-  /// Rank of tensor
-  static int const Rank = Base::Rank;
+  typedef HostTensorView<
+    typename TypeTraits<T>::host_type,
+    Rank_,
+    MapFunc_,
+    StorageRank_,
+    Index_,
+    LongIndex_> Base;
 
   /// Type used to compute the offset of an element to the base of a tensor
-  typedef typename Base::Offset_t Offset_t;
-
-  /// Tensor reference to host memory
-  typedef typename Base::TensorRef_t TensorRef_t;
+  typedef LongIndex_ LongIndex;
 
   /// Tensor reference to device memory
-  typedef TensorRef<DeviceType, TensorRef_t::Rank> DeviceTensorRef;
+  typedef typename cutlass::TensorRef<
+    DeviceType,
+    Rank_,
+    MapFunc_,
+    StorageRank_,
+    Index_,
+    LongIndex_> DeviceTensorRef;
 
   /// Tensor reference to constant device memory
-  typedef TensorRef<DeviceType const, TensorRef_t::Rank> ConstDeviceTensorRef;
+  typedef typename DeviceTensorRef::ConstTensorRef ConstDeviceTensorRef;
 
-  /// Coordinate into tensor
-  typedef typename Base::Coord_t Coord_t;
+  /// TensorView to device memory
+  typedef TensorView<
+    DeviceType,
+    Rank_,
+    MapFunc_,
+    StorageRank_,
+    Index_,
+    LongIndex_> DeviceTensorView;
+
+  /// Tensor reference to constant device memory
+  typedef typename DeviceTensorView::ConstTensorView ConstDeviceTensorView;
+
+  /// Tensor reference to host memory
+  typedef typename Base::TensorRef TensorRef;
+
+  /// Tensor view to host memory
+  typedef TensorView<
+    typename TypeTraits<T>::host_type,
+    Rank_,
+    MapFunc_,
+    StorageRank_,
+    Index_,
+    LongIndex_> HostTensorView;
+
+  /// Tensor view to host memory
+  typedef typename HostTensorView::ConstTensorView ConstHostTensorView;
+
+  /// Coordinate in logical tensor space
+  typedef typename TensorRef::TensorCoord TensorCoord;
+
+  /// Coordinate in storage n-D array
+  typedef typename TensorRef::StorageCoord StorageCoord;
+
+  /// Stride vector in storage coordinate space
+  /// Least significant stride is = 1 and not stored
+  typedef typename TensorRef::StrideVector StrideVector;
+
+  /// Rank of internal storage.
+  static int const kStorageRank = Base::kStorageRank;
 
  private:
+
   /// Host-side memory allocation
-  std::vector<T> host_;
+  std::vector<HostType> host_;
 
   /// Device-side memory
   cutlass::device_memory::allocation<DeviceType> device_;
@@ -82,230 +157,171 @@ class HostTensor : public HostTensorView<T> {
   /// Default constructor
   HostTensor() {}
 
-  /// Constructs a Tensor_view from stride and size
-  HostTensor(Coord_t const& _stride, Coord_t const& _size) { reset(_stride, _size); }
-
-  /// Constructs a HostTensor from size - infers strides
-  HostTensor(Coord_t const& _size) {
-    Coord_t _stride = make_Coord(
-        _size.at(2) * _size.at(1) * _size.at(0), _size.at(1) * _size.at(0), _size.at(0), 1);
-    reset(_stride, _size);
+  /// Constructor for resizing the least significant rank
+  HostTensor(Index_ size_1D, bool device_backed = true) {
+    this->resize(size_1D, device_backed);
   }
 
-  /// Returns the number of elements needed to back vector
-  size_t capacity() { return Base::capacity(); }
+  /// Helper to construct from pointer, stride, and size
+  HostTensor(
+    StorageCoord const &_stride,
+    TensorCoord const& _size,
+    bool _device_backed = true
+  ) {
 
-  /// Returns true if the Tensor_view is bound to some memory
-  bool good() const { return Base::good(); }
+    this->reset(_stride, _size);
+  }
+
+  /// Clears the HostTensor allocation to size/capacity = 0
+  void reset() {
+    host_.clear();
+    device_.reset();
+    Base::reset();
+  }
+
+  /// Helper to resize the least significant rank
+  void resize(
+    Index_ size_1D,
+    bool _device_backed = true) {
+
+    TensorCoord _size;
+    _size[Base::kRank - 1] = size_1D;
+    for (int i = 0; i < Base::kRank - 1; ++i) {
+      _size[i] = 1;
+    }
+    StorageCoord _stride;
+    _stride[Base::kStorageRank - 1] = 1;
+    for (int i = 0; i < Base::kStorageRank - 1; ++i) {
+      _stride[i] = size_1D;
+    }
+    this->reset(_stride, _size, _device_backed);
+  }
 
   /// Updates the reference and size of a Tensor_view object
-  void reset(Coord_t const& _stride, Coord_t const& _size) {
-    size_t _capacity = _size.at(0) * _stride.at(0);
+  void reset(
+    StorageCoord const& stride,
+    TensorCoord const& size,
+    bool _device_backed = true) {
 
+    // Construct a temporary TensorView so we can calculate the new capacity
+    size_t _capacity = Base(nullptr, stride, size).capacity();
+
+    // Allocate memory
     DeviceType* _device_memory = nullptr;
-    if (DeviceBacked) {
+    if (_device_backed) {
       _device_memory = cutlass::device_memory::allocate<DeviceType>(_capacity);
     }
 
     host_.clear();
     host_.resize(_capacity);
-    for (size_t i = 0; i < _capacity; ++i) {
-      host_[i] = T((int)0xdeadbeef);
-    }
     device_.reset(_device_memory, _capacity);
 
-    Base::reset(TensorRef_t(host_.data(), _stride), _size);
+    Base::reset(TensorRef(host_.data(), stride), size);
   }
 
-  /// Initializes the host tensor as a matrix
-  void resize_matrix(int rows, int columns, MatrixLayout::Kind layout) {
-    bool col_major = (layout == MatrixLayout::kColumnMajor);
-    int ldm = (col_major ? rows : columns);
+  /// Accesses the tensor reference pointing to data
+  TensorRef host_ref() { return Base::ref(); }
 
-    Coord_t stride = make_Coord(rows * columns, col_major ? 1 : ldm, col_major ? ldm : 1, 1);
+  /// Accesses the tensor reference pointing to data
+  TensorRef host_ref() const { return Base::ref(); }
 
-    Coord_t size = make_Coord(1, rows, columns, 1);
-
-    reset(stride, size);
+  /// Accesses the tensor reference pointing to data
+  DeviceTensorRef device_ref() const {
+    return DeviceTensorRef(device_data(), this->stride());
   }
 
-  /// Simplifies resizing the host tensor
-  void resize(int elements) { resize_matrix(1, elements, MatrixLayout::kColumnMajor); }
+  /// Accesses the tensor reference pointing to data
+  HostTensorView host_view() {
+    return HostTensorView(host_data(), this->stride(), this->size());
+  }
+
+  /// Accesses the tensor reference pointing to data
+  ConstHostTensorView host_view() const {
+    return HostTensorView(host_data(), this->stride(), this->size());
+  }
+
+  /// Accesses the tensor reference pointing to data
+  DeviceTensorView device_view() const {
+    return DeviceTensorView(device_data(), this->stride(), this->size());
+  }
 
   /// Gets pointer to host data
-  T const* host_data() const { return &host_[0]; }
-
-  /// Gets pointer to host data
-  T* host_data() { return &host_[0]; }
+  HostType * host_data() { return host_.data(); }
 
   /// Gets pointer to device data
-  DeviceType* device_data() const { return device_.get(); }
+  DeviceType* device_data() { return device_.get(); }
+
+  /// Gets pointer to host data
+  HostType const * host_data() const { return host_.data(); }
+
+  /// Gets pointer to device data
+  DeviceType * device_data() const { return device_.get(); }
+
+  /// Returns true if device memory is allocated
+  bool device_backed() const {
+    return device_.get();
+  }
 
   /// Copies data from device to host
   void sync_host() {
-    if (DeviceBacked) {
+    if (device_.get()) {
       device_memory::copy_to_host(
-          host_.data(), reinterpret_cast<T const*>(device_.get()), host_.size());
+          host_.data(), reinterpret_cast<HostType const*>(device_.get()), host_.size());
     }
   }
 
   /// Copies data from host to device
   void sync_device() {
-    if (DeviceBacked) {
+    if (device_.get()) {
       device_memory::copy_to_device(
-          device_.get(), reinterpret_cast<DeviceType const*>(host_.data()), host_.size());
+        device_.get(),
+        reinterpret_cast<DeviceType const*>(host_.data()),
+        host_.size());
     }
   }
 
-  /// Copy data from a caller-supplied device pointer
-  void copy_to_host(DeviceType const *ptr_device) {
+  /// Copy data from a caller-supplied device pointer into host memory
+  void copy_to_host(DeviceType const* ptr_device) {
     device_memory::copy_to_host(
-      host_.data(), reinterpret_cast<T const *>(ptr_device), host_.size());
+      host_.data(), reinterpret_cast<HostType const*>(ptr_device), host_.size());
   }
 
-  /// Copies data to a caller-supplied device pointer
-  void copy_to_device(DeviceType *ptr_device) {
+  /// Copies device-to-device
+  void copy_to_device(DeviceType* ptr_device) {
     device_memory::copy_to_device(
-      ptr_device, reinterpret_cast<DeviceType const *>(host_.data()), host_.size());
-  }
-
-  /// Accesses the tensor reference pointing to data
-  TensorRef_t& host_ref() { return Base::ref(); }
-
-  /// Accesses the tensor reference pointing to data
-  TensorRef_t const& host_ref() const { return Base::ref(); }
-
-  /// Accesses the tensor reference pointing to data
-  DeviceTensorRef device_ref() const { return DeviceTensorRef(device_data(), stride()); }
-
-  /// Returns a tensor ref to constant memory on the device
-  ConstDeviceTensorRef const_device_ref() const {
-    return ConstDeviceTensorRef(device_data(), stride());
-  }
-
-  /// Accesses the size
-  Coord_t const& size() const { return Base::size(); }
-
-  /// Accesses the size
-  int size(int dim) const { return Base::size(dim); }
-
-  /// Accesses the size
-  Coord_t const& stride() const { return Base::stride(); }
-
-  /// Accesses the size
-  int stride(int dim) const { return Base::stride(dim); }
-
-  /// Returns the index of an element
-  Offset_t offset(Coord_t const& coord) const { return Base::offset(coord); }
-
-  /// Determines whether a location is within a tensor
-  bool contains(Coord_t const& coord) const { return Base::contains(coord); }
-
-  /// Element-wise accessor
-  T& at(Coord_t const& coord) const { return Base::at(coord); }
-
-  /// Element-wise accessor
-  T& operator[](Coord_t const& coord) { return at(coord); }
-
-  /// Element-wise accessor with basic offset
-  T& at(int idx) const { return Base::at(idx); }
-
-  /// Returns a Tensor_view given location and size quantities
-  TensorView<T> subview(Coord_t const& _location, Coord_t _size) const {
-    return Base::subview(_location, _size);
-  }
-
-  /// Recurses through all dimensions and applies a unary operation
-  template <typename F>
-  void elementwise_in_place(F& op, int dim = 0, Offset_t dst_offset_base = 0) {
-    Base::elementwise_in_place(op, dim, dst_offset_base);
-  }
-
-  /// Recurses through all dimensions and applies a unary operator, supplying the logical
-  /// coordinate within the tensor as an argument
-  template <typename F>
-  void elementwise_stream(F& op, int dim = 0, Offset_t dst_offset_base = 0) {
-    Base::elementwise_stream(op, dim, dst_offset_base);
-  }
-
-  /// Recurses through all dimensions and applies a unary operator, supplying the logical
-  /// coordinate within the tensor as an argument
-  template <typename F>
-  void elementwise_generate(F& op,
-                            int dim = 0,
-                            Offset_t dst_offset_base = 0,
-                            Coord_t coord = Coord_t(0)) {
-    Base::elementwise_generate(op, dim, dst_offset_base, coord);
-  }
-
-  /// Recurses through all dimensions and applies a binary operation
-  template <typename Src, typename F>
-  bool elementwise_in_place(F& op,
-                            int dim,
-                            TensorView<Src> const& tensor,
-                            Offset_t dst_offset_base = 0,
-                            Offset_t src_offset_base = 0) {
-    return Base::elementwise_in_place(op, dim, tensor, dst_offset_base, src_offset_base);
+      ptr_device, reinterpret_cast<DeviceType const*>(host_.data()), host_.size());
   }
 
   /// Accumulate in place
-  template <typename Src>
-  TensorView<T>& operator+=(TensorView<Src> const& tensor) {
+  template <typename SrcTensorView>
+  HostTensor& operator+=(SrcTensorView const& tensor) {
     Base::operator+=(tensor);
     sync_device();
     return *this;
   }
 
   /// Subtract in place
-  template <typename Src>
-  TensorView<T>& operator-=(TensorView<Src> const& tensor) {
+  template <typename SrcTensorView>
+  HostTensor& operator-=(SrcTensorView const& tensor) {
     Base::operator-=(tensor);
     sync_device();
     return *this;
   }
 
   /// Multiply in place
-  template <typename Src>
-  TensorView<T>& operator*=(TensorView<Src> const& tensor) {
+  template <typename SrcTensorView>
+  HostTensor& operator*=(SrcTensorView const& tensor) {
     Base::operator*=(tensor);
     sync_device();
     return *this;
   }
 
   /// Divide in place
-  template <typename Src>
-  TensorView<T>& operator/=(TensorView<Src> const& tensor) {
+  template <typename SrcTensorView>
+  HostTensor& operator/=(SrcTensorView const& tensor) {
     Base::operator/=(tensor);
     sync_device();
     return *this;
-  }
-
-  /// equality with epsilon tolerance
-  bool equals(TensorView<T> const& tensor, T epsilon) const {
-    return Base::equals(tensor, epsilon);
-  }
-
-  /// equality with ulps tolerance
-  bool bit_equals(TensorView<T> const& tensor, long long ulps_threshold = 0) {
-    return Base::bit_equals(tensor, ulps_threshold);
-  }
-
-  /// Computes general matrix product among select dimensions of a tensor
-  /// Assumes:
-  ///   D: number of independent GEMMs to compute
-  ///   H: height of matrix
-  ///   W: width of matrix
-  template <
-      /// Data type of A matrix elements
-      typename A,
-      /// Data type of B matrix elements
-      typename B,
-      /// Data type of "compute" type (i.e. accumulator)
-      typename Ctype,
-      /// Data type of scale factors
-      typename Stype>
-  void gemm(TensorView<A> const& tensor_a, TensorView<B> const& tensor_b, Stype alpha, Stype beta) {
-    Base::template gemm<A, B, Ctype, Stype>(tensor_a, tensor_b, alpha, beta);
   }
 
   /// Fills with random data
@@ -335,31 +351,38 @@ class HostTensor : public HostTensorView<T> {
   }
 
   /// computes elements as a linear combination of their coordinates
-  void fill_linear(Coord_t v, T offset = T(0)) {
+  void fill_linear(TensorCoord v, HostType offset = HostType(0)) {
     Base::fill_linear(v, offset);
     sync_device();
   }
 
   /// computes elements as a linear combination of their coordinates
-  void fill_sequential(T v = T(1), T offset = T(0)) {
+  void fill_sequential(HostType v = HostType(1), HostType offset = HostType(0)) {
     Base::fill_sequential(v, offset);
     sync_device();
   }
 
   /// fills with a value
-  void fill(T val = T(0)) {
+  void fill(HostType val = HostType(0)) {
     Base::fill(val);
     sync_device();
   }
 
-  /// Copies from external data source and performs type conversion
-  template <typename Src>
-  void fill(TensorView<Src> const& tensor) {
+  /// copies from external data source and performs type conversion
+  template <
+    typename SrcType,
+    typename SrcMapFunc_,
+    int SrcStorageRank_,
+    typename SrcIndex_,
+    typename SrcLongIndex_
+  >
+  void fill(
+    TensorView<SrcType, Base::kRank, SrcMapFunc_, SrcStorageRank_, SrcIndex_, SrcLongIndex_> const& tensor) {
     Base::fill(tensor);
     sync_device();
   }
-
-  /// Computes the norm of the matrix in double-precision
-  double norm() const { return Base::norm(); }
 };
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 }  // namespace cutlass

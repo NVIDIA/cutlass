@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=9"/>
 <meta name="generator" content="Doxygen 1.8.14"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Cutlass: cutlass::TileTraits&lt; Tile_, Delta_, Iterations_, ThreadOffset_ &gt; Struct Template Reference</title>
+<title>Cutlass: cutlass::TileTraits&lt; Tile_, Delta_, Iterations_, ThreadOffset_, AccessSize &gt; Struct Template Reference</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -74,9 +74,10 @@ $(function() {
 <div class="header">
   <div class="summary">
 <a href="#pub-types">Public Types</a> &#124;
+<a href="#pub-static-attribs">Static Public Attributes</a> &#124;
 <a href="structcutlass_1_1TileTraits-members.html">List of all members</a>  </div>
   <div class="headertitle">
-<div class="title">cutlass::TileTraits&lt; Tile_, Delta_, Iterations_, ThreadOffset_ &gt; Struct Template Reference<div class="ingroups"><a class="el" href="group__tile__traits__concept.html">Tile Traits Concept</a></div></div>  </div>
+<div class="title">cutlass::TileTraits&lt; Tile_, Delta_, Iterations_, ThreadOffset_, AccessSize &gt; Struct Template Reference<div class="ingroups"><a class="el" href="group__tile__traits__concept.html">Tile Traits Concept</a></div></div>  </div>
 </div><!--header-->
 <div class="contents">
 
@@ -87,80 +88,130 @@ $(function() {
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-types"></a>
 Public Types</h2></td></tr>
-<tr class="memitem:ab831be0adb255eece4f2e12fd9713831"><td class="memItemLeft" align="right" valign="top">typedef Tile_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileTraits.html#ab831be0adb255eece4f2e12fd9713831">Tile</a></td></tr>
-<tr class="memdesc:ab831be0adb255eece4f2e12fd9713831"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="structcutlass_1_1Shape.html" title="A Shape implementing Layout Concept describing the dimensions of a cube. ">Shape</a> of the tile.  <a href="#ab831be0adb255eece4f2e12fd9713831">More...</a><br /></td></tr>
-<tr class="separator:ab831be0adb255eece4f2e12fd9713831"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af88f5cea9f452d83004ea0fa0f9d56eb"><td class="memItemLeft" align="right" valign="top">typedef Delta_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileTraits.html#af88f5cea9f452d83004ea0fa0f9d56eb">Delta</a></td></tr>
-<tr class="memdesc:af88f5cea9f452d83004ea0fa0f9d56eb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Number of steps between accesses along each dimension.  <a href="#af88f5cea9f452d83004ea0fa0f9d56eb">More...</a><br /></td></tr>
-<tr class="separator:af88f5cea9f452d83004ea0fa0f9d56eb"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af7ae2fdb4c8f1702169cc7d437d2b469"><td class="memItemLeft" align="right" valign="top">typedef Iterations_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileTraits.html#af7ae2fdb4c8f1702169cc7d437d2b469">Iterations</a></td></tr>
-<tr class="memdesc:af7ae2fdb4c8f1702169cc7d437d2b469"><td class="mdescLeft">&#160;</td><td class="mdescRight">Number of accesses performed.  <a href="#af7ae2fdb4c8f1702169cc7d437d2b469">More...</a><br /></td></tr>
-<tr class="separator:af7ae2fdb4c8f1702169cc7d437d2b469"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af9c0fc178dac7f9dac8d254da34e04dd"><td class="memItemLeft" align="right" valign="top">typedef ThreadOffset_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileTraits.html#af9c0fc178dac7f9dac8d254da34e04dd">ThreadOffset</a></td></tr>
-<tr class="memdesc:af9c0fc178dac7f9dac8d254da34e04dd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Functor that returns the logical coordinate of each entity's initial offset in the tile.  <a href="#af9c0fc178dac7f9dac8d254da34e04dd">More...</a><br /></td></tr>
-<tr class="separator:af9c0fc178dac7f9dac8d254da34e04dd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a3632c351a28f71f6c140dd33089d80b0"><td class="memItemLeft" align="right" valign="top">typedef Tile_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileTraits.html#a3632c351a28f71f6c140dd33089d80b0">Tile</a></td></tr>
+<tr class="memdesc:a3632c351a28f71f6c140dd33089d80b0"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="structcutlass_1_1Shape.html" title="A Shape implementing Layout Concept describing the dimensions of a cube. ">Shape</a> of the tile.  <a href="#a3632c351a28f71f6c140dd33089d80b0">More...</a><br /></td></tr>
+<tr class="separator:a3632c351a28f71f6c140dd33089d80b0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad6d99ccf2fcd2bd47e45d068f4d99c82"><td class="memItemLeft" align="right" valign="top">typedef Delta_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileTraits.html#ad6d99ccf2fcd2bd47e45d068f4d99c82">Delta</a></td></tr>
+<tr class="memdesc:ad6d99ccf2fcd2bd47e45d068f4d99c82"><td class="mdescLeft">&#160;</td><td class="mdescRight">Number of steps between accesses along each dimension.  <a href="#ad6d99ccf2fcd2bd47e45d068f4d99c82">More...</a><br /></td></tr>
+<tr class="separator:ad6d99ccf2fcd2bd47e45d068f4d99c82"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a46b9e04bb8d33fcf8fc116cc48a555fc"><td class="memItemLeft" align="right" valign="top">typedef Iterations_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileTraits.html#a46b9e04bb8d33fcf8fc116cc48a555fc">Iterations</a></td></tr>
+<tr class="memdesc:a46b9e04bb8d33fcf8fc116cc48a555fc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Number of accesses performed.  <a href="#a46b9e04bb8d33fcf8fc116cc48a555fc">More...</a><br /></td></tr>
+<tr class="separator:a46b9e04bb8d33fcf8fc116cc48a555fc"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a671ef48f4141a9de30b6ec6fb0be1feb"><td class="memItemLeft" align="right" valign="top">typedef ThreadOffset_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileTraits.html#a671ef48f4141a9de30b6ec6fb0be1feb">ThreadOffset</a></td></tr>
+<tr class="memdesc:a671ef48f4141a9de30b6ec6fb0be1feb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Functor that returns the logical coordinate of each entity's initial offset in the tile.  <a href="#a671ef48f4141a9de30b6ec6fb0be1feb">More...</a><br /></td></tr>
+<tr class="separator:a671ef48f4141a9de30b6ec6fb0be1feb"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a3db8202befa891bbc7c0a53c535cd21f"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt; 0, 0, 0, 0 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileTraits.html#a3db8202befa891bbc7c0a53c535cd21f">ImmediateOffsetStrides</a></td></tr>
+<tr class="memdesc:a3db8202befa891bbc7c0a53c535cd21f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Strides for immediate offset computation.  <a href="#a3db8202befa891bbc7c0a53c535cd21f">More...</a><br /></td></tr>
+<tr class="separator:a3db8202befa891bbc7c0a53c535cd21f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-attribs"></a>
+Static Public Attributes</h2></td></tr>
+<tr class="memitem:a0a494c2eacb51b65487f8405908a0214"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileTraits.html#a0a494c2eacb51b65487f8405908a0214">kAccessSize</a> = AccessSize</td></tr>
+<tr class="memdesc:a0a494c2eacb51b65487f8405908a0214"><td class="mdescLeft">&#160;</td><td class="mdescRight">Access size.  <a href="#a0a494c2eacb51b65487f8405908a0214">More...</a><br /></td></tr>
+<tr class="separator:a0a494c2eacb51b65487f8405908a0214"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Typedef Documentation</h2>
-<a id="af88f5cea9f452d83004ea0fa0f9d56eb"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#af88f5cea9f452d83004ea0fa0f9d56eb">&#9670;&nbsp;</a></span>Delta</h2>
+<a id="ad6d99ccf2fcd2bd47e45d068f4d99c82"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad6d99ccf2fcd2bd47e45d068f4d99c82">&#9670;&nbsp;</a></span>Delta</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename ThreadOffset_ &gt; </div>
+template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename ThreadOffset_ , int AccessSize&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef Delta_ <a class="el" href="structcutlass_1_1TileTraits.html">cutlass::TileTraits</a>&lt; Tile_, Delta_, Iterations_, ThreadOffset_ &gt;::<a class="el" href="structcutlass_1_1TileTraits.html#af88f5cea9f452d83004ea0fa0f9d56eb">Delta</a></td>
+          <td class="memname">typedef Delta_ <a class="el" href="structcutlass_1_1TileTraits.html">cutlass::TileTraits</a>&lt; Tile_, Delta_, Iterations_, ThreadOffset_, AccessSize &gt;::<a class="el" href="structcutlass_1_1TileTraits.html#ad6d99ccf2fcd2bd47e45d068f4d99c82">Delta</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="af7ae2fdb4c8f1702169cc7d437d2b469"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#af7ae2fdb4c8f1702169cc7d437d2b469">&#9670;&nbsp;</a></span>Iterations</h2>
+<a id="a3db8202befa891bbc7c0a53c535cd21f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3db8202befa891bbc7c0a53c535cd21f">&#9670;&nbsp;</a></span>ImmediateOffsetStrides</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename ThreadOffset_ &gt; </div>
+template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename ThreadOffset_ , int AccessSize&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef Iterations_ <a class="el" href="structcutlass_1_1TileTraits.html">cutlass::TileTraits</a>&lt; Tile_, Delta_, Iterations_, ThreadOffset_ &gt;::<a class="el" href="structcutlass_1_1TileTraits.html#af7ae2fdb4c8f1702169cc7d437d2b469">Iterations</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1Shape.html">Shape</a>&lt;0, 0, 0, 0&gt; <a class="el" href="structcutlass_1_1TileTraits.html">cutlass::TileTraits</a>&lt; Tile_, Delta_, Iterations_, ThreadOffset_, AccessSize &gt;::<a class="el" href="structcutlass_1_1TileTraits.html#a3db8202befa891bbc7c0a53c535cd21f">ImmediateOffsetStrides</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="af9c0fc178dac7f9dac8d254da34e04dd"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#af9c0fc178dac7f9dac8d254da34e04dd">&#9670;&nbsp;</a></span>ThreadOffset</h2>
+<a id="a46b9e04bb8d33fcf8fc116cc48a555fc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a46b9e04bb8d33fcf8fc116cc48a555fc">&#9670;&nbsp;</a></span>Iterations</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename ThreadOffset_ &gt; </div>
+template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename ThreadOffset_ , int AccessSize&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef ThreadOffset_ <a class="el" href="structcutlass_1_1TileTraits.html">cutlass::TileTraits</a>&lt; Tile_, Delta_, Iterations_, ThreadOffset_ &gt;::<a class="el" href="structcutlass_1_1TileTraits.html#af9c0fc178dac7f9dac8d254da34e04dd">ThreadOffset</a></td>
+          <td class="memname">typedef Iterations_ <a class="el" href="structcutlass_1_1TileTraits.html">cutlass::TileTraits</a>&lt; Tile_, Delta_, Iterations_, ThreadOffset_, AccessSize &gt;::<a class="el" href="structcutlass_1_1TileTraits.html#a46b9e04bb8d33fcf8fc116cc48a555fc">Iterations</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="ab831be0adb255eece4f2e12fd9713831"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab831be0adb255eece4f2e12fd9713831">&#9670;&nbsp;</a></span>Tile</h2>
+<a id="a671ef48f4141a9de30b6ec6fb0be1feb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a671ef48f4141a9de30b6ec6fb0be1feb">&#9670;&nbsp;</a></span>ThreadOffset</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename ThreadOffset_ &gt; </div>
+template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename ThreadOffset_ , int AccessSize&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef Tile_ <a class="el" href="structcutlass_1_1TileTraits.html">cutlass::TileTraits</a>&lt; Tile_, Delta_, Iterations_, ThreadOffset_ &gt;::<a class="el" href="structcutlass_1_1TileTraits.html#ab831be0adb255eece4f2e12fd9713831">Tile</a></td>
+          <td class="memname">typedef ThreadOffset_ <a class="el" href="structcutlass_1_1TileTraits.html">cutlass::TileTraits</a>&lt; Tile_, Delta_, Iterations_, ThreadOffset_, AccessSize &gt;::<a class="el" href="structcutlass_1_1TileTraits.html#a671ef48f4141a9de30b6ec6fb0be1feb">ThreadOffset</a></td>
         </tr>
       </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a3632c351a28f71f6c140dd33089d80b0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3632c351a28f71f6c140dd33089d80b0">&#9670;&nbsp;</a></span>Tile</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename ThreadOffset_ , int AccessSize&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef Tile_ <a class="el" href="structcutlass_1_1TileTraits.html">cutlass::TileTraits</a>&lt; Tile_, Delta_, Iterations_, ThreadOffset_, AccessSize &gt;::<a class="el" href="structcutlass_1_1TileTraits.html#a3632c351a28f71f6c140dd33089d80b0">Tile</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<h2 class="groupheader">Member Data Documentation</h2>
+<a id="a0a494c2eacb51b65487f8405908a0214"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0a494c2eacb51b65487f8405908a0214">&#9670;&nbsp;</a></span>kAccessSize</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename ThreadOffset_ , int AccessSize&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1TileTraits.html">cutlass::TileTraits</a>&lt; Tile_, Delta_, Iterations_, ThreadOffset_, AccessSize &gt;::kAccessSize = AccessSize</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
 </div><div class="memdoc">
 
 </div>
@@ -171,7 +222,7 @@ template&lt;typename Tile_ , typename Delta_ , typename Iterations_ , typename T
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:13 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

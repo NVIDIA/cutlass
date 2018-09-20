@@ -138,12 +138,9 @@ Public Types</h2></td></tr>
 <tr class="memitem:a9063e7fc044a679652d5a3a31aa77e7c"><td class="memItemLeft" align="right" valign="top">typedef Traits::SharedStoreTransformerD&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a9063e7fc044a679652d5a3a31aa77e7c">SharedStoreTransformerD</a></td></tr>
 <tr class="memdesc:a9063e7fc044a679652d5a3a31aa77e7c"><td class="mdescLeft">&#160;</td><td class="mdescRight">The shared store transformer for D.  <a href="#a9063e7fc044a679652d5a3a31aa77e7c">More...</a><br /></td></tr>
 <tr class="separator:a9063e7fc044a679652d5a3a31aa77e7c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a4a0b439f8a57d8e67174ecbd96183070"><td class="memItemLeft" align="right" valign="top">typedef Traits::SharedLoadIteratorD&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a4a0b439f8a57d8e67174ecbd96183070">SharedLoadIteratorD</a></td></tr>
-<tr class="memdesc:a4a0b439f8a57d8e67174ecbd96183070"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to load D in shared memory.  <a href="#a4a0b439f8a57d8e67174ecbd96183070">More...</a><br /></td></tr>
-<tr class="separator:a4a0b439f8a57d8e67174ecbd96183070"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a132cabbc1402c87c7b35dea427001a13"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1Copy.html">Copy</a>&lt; typename SharedLoadIteratorD::Fragment &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a132cabbc1402c87c7b35dea427001a13">SharedLoadTransformerD</a></td></tr>
-<tr class="memdesc:a132cabbc1402c87c7b35dea427001a13"><td class="mdescLeft">&#160;</td><td class="mdescRight">The shared load transformer for D.  <a href="#a132cabbc1402c87c7b35dea427001a13">More...</a><br /></td></tr>
-<tr class="separator:a132cabbc1402c87c7b35dea427001a13"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8e5d38a7795b50a021fc43dc7424288b"><td class="memItemLeft" align="right" valign="top">typedef Traits::SharedLoadStreamD&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a8e5d38a7795b50a021fc43dc7424288b">SharedLoadStreamD</a></td></tr>
+<tr class="memdesc:a8e5d38a7795b50a021fc43dc7424288b"><td class="mdescLeft">&#160;</td><td class="mdescRight">The iterator to load D in shared memory.  <a href="#a8e5d38a7795b50a021fc43dc7424288b">More...</a><br /></td></tr>
+<tr class="separator:a8e5d38a7795b50a021fc43dc7424288b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a07c93d583bfddd8f916fba6ef809832e"><td class="memItemLeft" align="right" valign="top">typedef Traits::Index&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a07c93d583bfddd8f916fba6ef809832e">Index</a></td></tr>
 <tr class="memdesc:a07c93d583bfddd8f916fba6ef809832e"><td class="mdescLeft">&#160;</td><td class="mdescRight">The index.  <a href="#a07c93d583bfddd8f916fba6ef809832e">More...</a><br /></td></tr>
 <tr class="separator:a07c93d583bfddd8f916fba6ef809832e"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -156,15 +153,15 @@ Public Types</h2></td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:ab10147070c3a38fca75397f55dc51925"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#ab10147070c3a38fca75397f55dc51925">GemmEpilogue</a> (<a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#ae5209fa80705442693833c63d535161e">Params</a> const &amp;params_, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#ac36dad8a7b6bc7fc6ef88e44068468dc">SharedStorage</a> &amp;shared_storage_, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a07c93d583bfddd8f916fba6ef809832e">Index</a> m_, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a07c93d583bfddd8f916fba6ef809832e">Index</a> n_)</td></tr>
-<tr class="memdesc:ab10147070c3a38fca75397f55dc51925"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#ab10147070c3a38fca75397f55dc51925">More...</a><br /></td></tr>
-<tr class="separator:ab10147070c3a38fca75397f55dc51925"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ae1983e37454ed14272b23b964614c54c"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#ae1983e37454ed14272b23b964614c54c">epilogue</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;block, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#afe6bebd94e3379c94054d04c5196edce">Accumulators</a> &amp;accumulators)</td></tr>
-<tr class="memdesc:ae1983e37454ed14272b23b964614c54c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Execute the epilogue.  <a href="#ae1983e37454ed14272b23b964614c54c">More...</a><br /></td></tr>
-<tr class="separator:ae1983e37454ed14272b23b964614c54c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a0c24dce365565f75e7edc1de1cb50ea4"><td class="memTemplParams" colspan="2">template&lt;bool kBetaIsZero_&gt; </td></tr>
-<tr class="memitem:a0c24dce365565f75e7edc1de1cb50ea4"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a0c24dce365565f75e7edc1de1cb50ea4">epilogue_with_or_without_beta</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;block, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#afe6bebd94e3379c94054d04c5196edce">Accumulators</a> &amp;accumulators)</td></tr>
-<tr class="separator:a0c24dce365565f75e7edc1de1cb50ea4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af91ebe8d2ed73808b9ea8846c140d3f8"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#af91ebe8d2ed73808b9ea8846c140d3f8">GemmEpilogue</a> (<a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#ae5209fa80705442693833c63d535161e">Params</a> const &amp;params_, <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#ac36dad8a7b6bc7fc6ef88e44068468dc">SharedStorage</a> &amp;shared_storage_, <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;_problem_size)</td></tr>
+<tr class="memdesc:af91ebe8d2ed73808b9ea8846c140d3f8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#af91ebe8d2ed73808b9ea8846c140d3f8">More...</a><br /></td></tr>
+<tr class="separator:af91ebe8d2ed73808b9ea8846c140d3f8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6f1f96715425b7196e960907676a7db3"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a6f1f96715425b7196e960907676a7db3">epilogue</a> (<a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#afe6bebd94e3379c94054d04c5196edce">Accumulators</a> &amp;accumulators, <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;block=<a class="el" href="namespacecutlass.html#a7419519fa453a121dfa5f26bf87318d9">make_Coord</a>(0, 0, 0), int batch_id=0)</td></tr>
+<tr class="memdesc:a6f1f96715425b7196e960907676a7db3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Execute the epilogue.  <a href="#a6f1f96715425b7196e960907676a7db3">More...</a><br /></td></tr>
+<tr class="separator:a6f1f96715425b7196e960907676a7db3"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7af2eb421840e037263e6a144cca5c32"><td class="memTemplParams" colspan="2">template&lt;bool kSourceRequired&gt; </td></tr>
+<tr class="memitem:a7af2eb421840e037263e6a144cca5c32"><td class="memTemplItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a7af2eb421840e037263e6a144cca5c32">epilogue_with_or_without_beta</a> (<a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#afe6bebd94e3379c94054d04c5196edce">Accumulators</a> &amp;accumulators, <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;block, int batch_id)</td></tr>
+<tr class="separator:a7af2eb421840e037263e6a144cca5c32"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a9b5e42f222fec98ff479bc1650221b84"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a9b5e42f222fec98ff479bc1650221b84">shared_load_fence</a> ()</td></tr>
 <tr class="memdesc:a9b5e42f222fec98ff479bc1650221b84"><td class="mdescLeft">&#160;</td><td class="mdescRight">The memory fence for shared loads.  <a href="#a9b5e42f222fec98ff479bc1650221b84">More...</a><br /></td></tr>
 <tr class="separator:a9b5e42f222fec98ff479bc1650221b84"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -180,11 +177,11 @@ Public Attributes</h2></td></tr>
 <tr class="memitem:a442b5b5688cd658c3b3476650c00281e"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#ac36dad8a7b6bc7fc6ef88e44068468dc">SharedStorage</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a442b5b5688cd658c3b3476650c00281e">shared_storage</a></td></tr>
 <tr class="memdesc:a442b5b5688cd658c3b3476650c00281e"><td class="mdescLeft">&#160;</td><td class="mdescRight">The shared storage.  <a href="#a442b5b5688cd658c3b3476650c00281e">More...</a><br /></td></tr>
 <tr class="separator:a442b5b5688cd658c3b3476650c00281e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac344bf5ca318dc343bd6fa6bf52d2e22"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a07c93d583bfddd8f916fba6ef809832e">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#ac344bf5ca318dc343bd6fa6bf52d2e22">m</a></td></tr>
-<tr class="memdesc:ac344bf5ca318dc343bd6fa6bf52d2e22"><td class="mdescLeft">&#160;</td><td class="mdescRight">The dimensions of the GEMM.  <a href="#ac344bf5ca318dc343bd6fa6bf52d2e22">More...</a><br /></td></tr>
-<tr class="separator:ac344bf5ca318dc343bd6fa6bf52d2e22"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a9cc371cd2f1a9485583afdacbb7403ea"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a07c93d583bfddd8f916fba6ef809832e">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a9cc371cd2f1a9485583afdacbb7403ea">n</a></td></tr>
-<tr class="separator:a9cc371cd2f1a9485583afdacbb7403ea"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6bea57249e3645a4b08a11619cb1687e"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a6bea57249e3645a4b08a11619cb1687e">problem_size</a></td></tr>
+<tr class="memdesc:a6bea57249e3645a4b08a11619cb1687e"><td class="mdescLeft">&#160;</td><td class="mdescRight">The dimensions of the GEMM.  <a href="#a6bea57249e3645a4b08a11619cb1687e">More...</a><br /></td></tr>
+<tr class="separator:a6bea57249e3645a4b08a11619cb1687e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5aa254702fcf24630e04ceb174aa3d57"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a6c30bea1b2a1bd2e981025851d5b12d1">Functor</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a5aa254702fcf24630e04ceb174aa3d57">functor</a></td></tr>
+<tr class="separator:a5aa254702fcf24630e04ceb174aa3d57"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Typedef Documentation</h2>
 <a id="afe6bebd94e3379c94054d04c5196edce"></a>
@@ -396,8 +393,8 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
 
 </div>
 </div>
-<a id="a4a0b439f8a57d8e67174ecbd96183070"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a4a0b439f8a57d8e67174ecbd96183070">&#9670;&nbsp;</a></span>SharedLoadIteratorD</h2>
+<a id="a8e5d38a7795b50a021fc43dc7424288b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8e5d38a7795b50a021fc43dc7424288b">&#9670;&nbsp;</a></span>SharedLoadStreamD</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -405,23 +402,7 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
 template&lt;typename GemmEpilogueTraits_ &gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef Traits::SharedLoadIteratorD <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">cutlass::gemm::GemmEpilogue</a>&lt; GemmEpilogueTraits_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a4a0b439f8a57d8e67174ecbd96183070">SharedLoadIteratorD</a></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
-<a id="a132cabbc1402c87c7b35dea427001a13"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a132cabbc1402c87c7b35dea427001a13">&#9670;&nbsp;</a></span>SharedLoadTransformerD</h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;typename GemmEpilogueTraits_ &gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1Copy.html">Copy</a>&lt;typename SharedLoadIteratorD::Fragment&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">cutlass::gemm::GemmEpilogue</a>&lt; GemmEpilogueTraits_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a132cabbc1402c87c7b35dea427001a13">SharedLoadTransformerD</a></td>
+          <td class="memname">typedef Traits::SharedLoadStreamD <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">cutlass::gemm::GemmEpilogue</a>&lt; GemmEpilogueTraits_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a8e5d38a7795b50a021fc43dc7424288b">SharedLoadStreamD</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -493,8 +474,8 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
 </div>
 </div>
 <h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
-<a id="ab10147070c3a38fca75397f55dc51925"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab10147070c3a38fca75397f55dc51925">&#9670;&nbsp;</a></span>GemmEpilogue()</h2>
+<a id="af91ebe8d2ed73808b9ea8846c140d3f8"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af91ebe8d2ed73808b9ea8846c140d3f8">&#9670;&nbsp;</a></span>GemmEpilogue()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -519,14 +500,8 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a07c93d583bfddd8f916fba6ef809832e">Index</a>&#160;</td>
-          <td class="paramname"><em>m_</em>, </td>
-        </tr>
-        <tr>
-          <td class="paramkey"></td>
-          <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a07c93d583bfddd8f916fba6ef809832e">Index</a>&#160;</td>
-          <td class="paramname"><em>n_</em>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>_problem_size</em>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -544,8 +519,8 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
 </div>
 </div>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="ae1983e37454ed14272b23b964614c54c"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae1983e37454ed14272b23b964614c54c">&#9670;&nbsp;</a></span>epilogue()</h2>
+<a id="a6f1f96715425b7196e960907676a7db3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6f1f96715425b7196e960907676a7db3">&#9670;&nbsp;</a></span>epilogue()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -558,14 +533,20 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
         <tr>
           <td class="memname">CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">cutlass::gemm::GemmEpilogue</a>&lt; GemmEpilogueTraits_ &gt;::epilogue </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;&#160;</td>
-          <td class="paramname"><em>block</em>, </td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#afe6bebd94e3379c94054d04c5196edce">Accumulators</a> &amp;&#160;</td>
+          <td class="paramname"><em>accumulators</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#afe6bebd94e3379c94054d04c5196edce">Accumulators</a> &amp;&#160;</td>
-          <td class="paramname"><em>accumulators</em>&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>block</em> = <code><a class="el" href="namespacecutlass.html#a7419519fa453a121dfa5f26bf87318d9">make_Coord</a>(0,&#160;0,&#160;0)</code>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>batch_id</em> = <code>0</code>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -582,15 +563,15 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
 
 </div>
 </div>
-<a id="a0c24dce365565f75e7edc1de1cb50ea4"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a0c24dce365565f75e7edc1de1cb50ea4">&#9670;&nbsp;</a></span>epilogue_with_or_without_beta()</h2>
+<a id="a7af2eb421840e037263e6a144cca5c32"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7af2eb421840e037263e6a144cca5c32">&#9670;&nbsp;</a></span>epilogue_with_or_without_beta()</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
 template&lt;typename GemmEpilogueTraits_ &gt; </div>
 <div class="memtemplate">
-template&lt;bool kBetaIsZero_&gt; </div>
+template&lt;bool kSourceRequired&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
@@ -598,14 +579,20 @@ template&lt;bool kBetaIsZero_&gt; </div>
         <tr>
           <td class="memname">CUTLASS_DEVICE void <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">cutlass::gemm::GemmEpilogue</a>&lt; GemmEpilogueTraits_ &gt;::epilogue_with_or_without_beta </td>
           <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#afe6bebd94e3379c94054d04c5196edce">Accumulators</a> &amp;&#160;</td>
+          <td class="paramname"><em>accumulators</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
           <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;&#160;</td>
           <td class="paramname"><em>block</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#afe6bebd94e3379c94054d04c5196edce">Accumulators</a> &amp;&#160;</td>
-          <td class="paramname"><em>accumulators</em>&#160;</td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>batch_id</em>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -677,8 +664,8 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
 </div>
 </div>
 <h2 class="groupheader">Member Data Documentation</h2>
-<a id="ac344bf5ca318dc343bd6fa6bf52d2e22"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ac344bf5ca318dc343bd6fa6bf52d2e22">&#9670;&nbsp;</a></span>m</h2>
+<a id="a5aa254702fcf24630e04ceb174aa3d57"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5aa254702fcf24630e04ceb174aa3d57">&#9670;&nbsp;</a></span>functor</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -686,23 +673,7 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
 template&lt;typename GemmEpilogueTraits_ &gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a07c93d583bfddd8f916fba6ef809832e">Index</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">cutlass::gemm::GemmEpilogue</a>&lt; GemmEpilogueTraits_ &gt;::m</td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
-<a id="a9cc371cd2f1a9485583afdacbb7403ea"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a9cc371cd2f1a9485583afdacbb7403ea">&#9670;&nbsp;</a></span>n</h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;typename GemmEpilogueTraits_ &gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a07c93d583bfddd8f916fba6ef809832e">Index</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">cutlass::gemm::GemmEpilogue</a>&lt; GemmEpilogueTraits_ &gt;::n</td>
+          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a6c30bea1b2a1bd2e981025851d5b12d1">Functor</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">cutlass::gemm::GemmEpilogue</a>&lt; GemmEpilogueTraits_ &gt;::functor</td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -719,6 +690,22 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
       <table class="memname">
         <tr>
           <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#ae5209fa80705442693833c63d535161e">Params</a> const&amp; <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">cutlass::gemm::GemmEpilogue</a>&lt; GemmEpilogueTraits_ &gt;::params</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a6bea57249e3645a4b08a11619cb1687e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6bea57249e3645a4b08a11619cb1687e">&#9670;&nbsp;</a></span>problem_size</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename GemmEpilogueTraits_ &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt;3&gt; <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html">cutlass::gemm::GemmEpilogue</a>&lt; GemmEpilogueTraits_ &gt;::problem_size</td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -747,7 +734,7 @@ template&lt;typename GemmEpilogueTraits_ &gt; </div>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:13 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

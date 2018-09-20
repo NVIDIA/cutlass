@@ -27,7 +27,7 @@
 */
 #pragma once
 
-#include <cutlass/shape.h>
+#include "cutlass/shape.h"
 
 namespace cutlass {
 

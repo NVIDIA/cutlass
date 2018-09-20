@@ -28,9 +28,9 @@
 */
 #pragma once
 
-#include <cutlass/fragment.h>
+#include "cutlass/fragment.h"
 
-#include <cutlass/gemm/thread_multiply_add.h>
+#include "cutlass/gemm/thread_multiply_add.h"
 
 namespace cutlass {
 namespace gemm {
@@ -38,16 +38,18 @@ namespace gemm {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Template performing matrix multiply-add operation within a thread
-template <typename AccumulatorsPerThread_, typename ThreadsPerWarp_>
-struct ThreadMultiplyAdd<AccumulatorsPerThread_, ThreadsPerWarp_, half, half, half> {
+template <typename ThreadGemmShape_, typename ThreadsPerWarp_>
+struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, half, half, half> {
   /// The shape of the instruction.
   typedef Shape<1, 1, 2, 1> InstructionShape;
   /// The number of accumulators per thread.
-  typedef AccumulatorsPerThread_ AccumulatorsPerThread;
+  typedef ThreadGemmShape_ ThreadGemmShape;
+  /// Aliased for compatibility. Will be removed for CUTLASS v2.0.
+  typedef ThreadGemmShape AccumulatorsPerThread;
   /// The number of threads per warp.
   typedef ThreadsPerWarp_ ThreadsPerWarp;
   /// The number of accumulators per warp.
-  typedef typename ShapeMul<AccumulatorsPerThread, ThreadsPerWarp>::Shape AccumulatorsPerWarp;
+  typedef typename ShapeMul<ThreadGemmShape, ThreadsPerWarp>::Shape AccumulatorsPerWarp;
   /// The type for A.
   typedef half ScalarA;
   /// The fragment for A.
@@ -88,9 +90,9 @@ struct ThreadMultiplyAdd<AccumulatorsPerThread_, ThreadsPerWarp_, half, half, ha
         int const k0 = (2 * j + 0) * (AccumulatorsPerThread::kW / 2) + i;
         int const k1 = (2 * j + 1) * (AccumulatorsPerThread::kW / 2) + i;
 
-        // Compute the product a[i] * b[j].H0_H0.
+        // Compute the product a[i] * b[j].low.
         d_half2[k0] = __hfma2(a_half2[i], __low2half2(b_half2[j]), c_half2[k0]);
-        // Compute the product a[i] * b[j].H1_H1.
+        // Compute the product a[i] * b[j].high.
         d_half2[k1] = __hfma2(a_half2[i], __high2half2(b_half2[j]), c_half2[k1]);
       }
     }

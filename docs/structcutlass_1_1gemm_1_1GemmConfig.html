@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=9"/>
 <meta name="generator" content="Doxygen 1.8.14"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Cutlass: cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt; Struct Template Reference</title>
+<title>Cutlass: cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt; Struct Template Reference</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -77,241 +77,250 @@ $(function() {
 <a href="#pub-static-attribs">Static Public Attributes</a> &#124;
 <a href="structcutlass_1_1gemm_1_1GemmConfig-members.html">List of all members</a>  </div>
   <div class="headertitle">
-<div class="title">cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt; Struct Template Reference</div>  </div>
+<div class="title">cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt; Struct Template Reference</div>  </div>
 </div><!--header-->
 <div class="contents">
 
-<p><code>#include &lt;<a class="el" href="gemm__traits_8h_source.html">gemm_traits.h</a>&gt;</code></p>
+<p><code>#include &lt;<a class="el" href="gemm__config_8h_source.html">gemm_config.h</a>&gt;</code></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-types"></a>
 Public Types</h2></td></tr>
-<tr class="memitem:a9d1e4e364be8fd9de5e1199d93ad76aa"><td class="memItemLeft" align="right" valign="top">typedef ScalarA_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9d1e4e364be8fd9de5e1199d93ad76aa">ScalarA</a></td></tr>
-<tr class="memdesc:a9d1e4e364be8fd9de5e1199d93ad76aa"><td class="mdescLeft">&#160;</td><td class="mdescRight">The scalar for A.  <a href="#a9d1e4e364be8fd9de5e1199d93ad76aa">More...</a><br /></td></tr>
-<tr class="separator:a9d1e4e364be8fd9de5e1199d93ad76aa"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aa13d6f5e5ad907ef09c88ae49e6e8e9b"><td class="memItemLeft" align="right" valign="top">typedef ScalarB_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aa13d6f5e5ad907ef09c88ae49e6e8e9b">ScalarB</a></td></tr>
-<tr class="memdesc:aa13d6f5e5ad907ef09c88ae49e6e8e9b"><td class="mdescLeft">&#160;</td><td class="mdescRight">The scalar for B.  <a href="#aa13d6f5e5ad907ef09c88ae49e6e8e9b">More...</a><br /></td></tr>
-<tr class="separator:aa13d6f5e5ad907ef09c88ae49e6e8e9b"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad8f262d7da093d07cdd5c6a4fd9aceea"><td class="memItemLeft" align="right" valign="top">typedef ScalarC_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#ad8f262d7da093d07cdd5c6a4fd9aceea">ScalarC</a></td></tr>
-<tr class="memdesc:ad8f262d7da093d07cdd5c6a4fd9aceea"><td class="mdescLeft">&#160;</td><td class="mdescRight">The scalar for C.  <a href="#ad8f262d7da093d07cdd5c6a4fd9aceea">More...</a><br /></td></tr>
-<tr class="separator:ad8f262d7da093d07cdd5c6a4fd9aceea"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a188ef7f4c49ff2830753218343a1b8f8"><td class="memItemLeft" align="right" valign="top">typedef ScalarD_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a188ef7f4c49ff2830753218343a1b8f8">ScalarD</a></td></tr>
-<tr class="memdesc:a188ef7f4c49ff2830753218343a1b8f8"><td class="mdescLeft">&#160;</td><td class="mdescRight">The scalar for D.  <a href="#a188ef7f4c49ff2830753218343a1b8f8">More...</a><br /></td></tr>
-<tr class="separator:a188ef7f4c49ff2830753218343a1b8f8"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a53450f4d7444d6a4c0d2353496c0a4fd"><td class="memItemLeft" align="right" valign="top">typedef OutputTile_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a53450f4d7444d6a4c0d2353496c0a4fd">OutputTile</a></td></tr>
-<tr class="memdesc:a53450f4d7444d6a4c0d2353496c0a4fd"><td class="mdescLeft">&#160;</td><td class="mdescRight">The tile.  <a href="#a53450f4d7444d6a4c0d2353496c0a4fd">More...</a><br /></td></tr>
-<tr class="separator:a53450f4d7444d6a4c0d2353496c0a4fd"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8669096ddbb8c810fb8d2313d62e6ee7"><td class="memItemLeft" align="right" valign="top">typedef MultiplyAdd_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a8669096ddbb8c810fb8d2313d62e6ee7">MultiplyAdd</a></td></tr>
-<tr class="memdesc:a8669096ddbb8c810fb8d2313d62e6ee7"><td class="mdescLeft">&#160;</td><td class="mdescRight">The functor to do D = A*B + C.  <a href="#a8669096ddbb8c810fb8d2313d62e6ee7">More...</a><br /></td></tr>
-<tr class="separator:a8669096ddbb8c810fb8d2313d62e6ee7"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a3a57d05f50932d718538f0d1ededa95b"><td class="memItemLeft" align="right" valign="top">typedef MultiplyAdd::InstructionShape&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a3a57d05f50932d718538f0d1ededa95b">InstructionShape</a></td></tr>
-<tr class="memdesc:a3a57d05f50932d718538f0d1ededa95b"><td class="mdescLeft">&#160;</td><td class="mdescRight">The shape of the instruction.  <a href="#a3a57d05f50932d718538f0d1ededa95b">More...</a><br /></td></tr>
-<tr class="separator:a3a57d05f50932d718538f0d1ededa95b"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a51d583dfcd645ad0ecfc23b87b3c5108"><td class="memItemLeft" align="right" valign="top">typedef MultiplyAdd::AccumulatorsPerWarp&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a51d583dfcd645ad0ecfc23b87b3c5108">AccumulatorsPerWarp</a></td></tr>
-<tr class="memdesc:a51d583dfcd645ad0ecfc23b87b3c5108"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of accumulators per warp.  <a href="#a51d583dfcd645ad0ecfc23b87b3c5108">More...</a><br /></td></tr>
-<tr class="separator:a51d583dfcd645ad0ecfc23b87b3c5108"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a2fadb0ad2e28109ccfa9195e817a4d54"><td class="memItemLeft" align="right" valign="top">typedef MultiplyAdd::Accumulators&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a2fadb0ad2e28109ccfa9195e817a4d54">Accumulators</a></td></tr>
-<tr class="memdesc:a2fadb0ad2e28109ccfa9195e817a4d54"><td class="mdescLeft">&#160;</td><td class="mdescRight">The accumulators.  <a href="#a2fadb0ad2e28109ccfa9195e817a4d54">More...</a><br /></td></tr>
-<tr class="separator:a2fadb0ad2e28109ccfa9195e817a4d54"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:abb6ba58a2f2d80db0b2c9c1d88454efd"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1ShapeDiv.html">ShapeDiv</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a53450f4d7444d6a4c0d2353496c0a4fd">OutputTile</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a51d583dfcd645ad0ecfc23b87b3c5108">AccumulatorsPerWarp</a> &gt;::<a class="el" href="structcutlass_1_1Shape.html">Shape</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#abb6ba58a2f2d80db0b2c9c1d88454efd">Warps</a></td></tr>
-<tr class="memdesc:abb6ba58a2f2d80db0b2c9c1d88454efd"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of warps.  <a href="#abb6ba58a2f2d80db0b2c9c1d88454efd">More...</a><br /></td></tr>
-<tr class="separator:abb6ba58a2f2d80db0b2c9c1d88454efd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa97b0e7f369f927c4db6d683dbb7f53b"><td class="memItemLeft" align="right" valign="top">typedef ScalarA_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aa97b0e7f369f927c4db6d683dbb7f53b">ScalarA</a></td></tr>
+<tr class="memdesc:aa97b0e7f369f927c4db6d683dbb7f53b"><td class="mdescLeft">&#160;</td><td class="mdescRight">The scalar for A.  <a href="#aa97b0e7f369f927c4db6d683dbb7f53b">More...</a><br /></td></tr>
+<tr class="separator:aa97b0e7f369f927c4db6d683dbb7f53b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a389c0980e978463d3cc126342d8413c6"><td class="memItemLeft" align="right" valign="top">typedef ScalarB_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a389c0980e978463d3cc126342d8413c6">ScalarB</a></td></tr>
+<tr class="memdesc:a389c0980e978463d3cc126342d8413c6"><td class="mdescLeft">&#160;</td><td class="mdescRight">The scalar for B.  <a href="#a389c0980e978463d3cc126342d8413c6">More...</a><br /></td></tr>
+<tr class="separator:a389c0980e978463d3cc126342d8413c6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a30d9cfbbede42166e4e1964145dfe05d"><td class="memItemLeft" align="right" valign="top">typedef ScalarC_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a30d9cfbbede42166e4e1964145dfe05d">ScalarC</a></td></tr>
+<tr class="memdesc:a30d9cfbbede42166e4e1964145dfe05d"><td class="mdescLeft">&#160;</td><td class="mdescRight">The scalar for C.  <a href="#a30d9cfbbede42166e4e1964145dfe05d">More...</a><br /></td></tr>
+<tr class="separator:a30d9cfbbede42166e4e1964145dfe05d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7ad231b16f05a58900dca8ff0e0e7bfa"><td class="memItemLeft" align="right" valign="top">typedef ScalarD_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a7ad231b16f05a58900dca8ff0e0e7bfa">ScalarD</a></td></tr>
+<tr class="memdesc:a7ad231b16f05a58900dca8ff0e0e7bfa"><td class="mdescLeft">&#160;</td><td class="mdescRight">The scalar for D.  <a href="#a7ad231b16f05a58900dca8ff0e0e7bfa">More...</a><br /></td></tr>
+<tr class="separator:a7ad231b16f05a58900dca8ff0e0e7bfa"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9dd9c3efc3dfd9b5c6acd12236697399"><td class="memItemLeft" align="right" valign="top">typedef OutputTile_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9dd9c3efc3dfd9b5c6acd12236697399">OutputTile</a></td></tr>
+<tr class="memdesc:a9dd9c3efc3dfd9b5c6acd12236697399"><td class="mdescLeft">&#160;</td><td class="mdescRight">The tile.  <a href="#a9dd9c3efc3dfd9b5c6acd12236697399">More...</a><br /></td></tr>
+<tr class="separator:a9dd9c3efc3dfd9b5c6acd12236697399"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aedb95febe4a0b2943e233c95c36a22cd"><td class="memItemLeft" align="right" valign="top">typedef MultiplyAdd_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aedb95febe4a0b2943e233c95c36a22cd">MultiplyAdd</a></td></tr>
+<tr class="memdesc:aedb95febe4a0b2943e233c95c36a22cd"><td class="mdescLeft">&#160;</td><td class="mdescRight">The functor to do D = A*B + C.  <a href="#aedb95febe4a0b2943e233c95c36a22cd">More...</a><br /></td></tr>
+<tr class="separator:aedb95febe4a0b2943e233c95c36a22cd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad83132bd03f8bd844487d1a9da908c8b"><td class="memItemLeft" align="right" valign="top">typedef MultiplyAdd::InstructionShape&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#ad83132bd03f8bd844487d1a9da908c8b">InstructionShape</a></td></tr>
+<tr class="memdesc:ad83132bd03f8bd844487d1a9da908c8b"><td class="mdescLeft">&#160;</td><td class="mdescRight">The shape of the instruction.  <a href="#ad83132bd03f8bd844487d1a9da908c8b">More...</a><br /></td></tr>
+<tr class="separator:ad83132bd03f8bd844487d1a9da908c8b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a32a8979ff618f069665708c7771c3cc3"><td class="memItemLeft" align="right" valign="top">typedef MultiplyAdd::AccumulatorsPerWarp&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a32a8979ff618f069665708c7771c3cc3">AccumulatorsPerWarp</a></td></tr>
+<tr class="memdesc:a32a8979ff618f069665708c7771c3cc3"><td class="mdescLeft">&#160;</td><td class="mdescRight">The shape of warp-level GEMM.  <a href="#a32a8979ff618f069665708c7771c3cc3">More...</a><br /></td></tr>
+<tr class="separator:a32a8979ff618f069665708c7771c3cc3"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9f90f91f9e5e40496e8a88eb657fd591"><td class="memItemLeft" align="right" valign="top">typedef MultiplyAdd::Accumulators&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9f90f91f9e5e40496e8a88eb657fd591">Accumulators</a></td></tr>
+<tr class="memdesc:a9f90f91f9e5e40496e8a88eb657fd591"><td class="mdescLeft">&#160;</td><td class="mdescRight">The accumulators.  <a href="#a9f90f91f9e5e40496e8a88eb657fd591">More...</a><br /></td></tr>
+<tr class="separator:a9f90f91f9e5e40496e8a88eb657fd591"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9b987cfb25a32e671a47cb6376a361f3"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1ShapeDiv.html">ShapeDiv</a>&lt; <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9dd9c3efc3dfd9b5c6acd12236697399">OutputTile</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a32a8979ff618f069665708c7771c3cc3">AccumulatorsPerWarp</a> &gt;::<a class="el" href="structcutlass_1_1Shape.html">Shape</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9b987cfb25a32e671a47cb6376a361f3">Warps</a></td></tr>
+<tr class="memdesc:a9b987cfb25a32e671a47cb6376a361f3"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of warps.  <a href="#a9b987cfb25a32e671a47cb6376a361f3">More...</a><br /></td></tr>
+<tr class="separator:a9b987cfb25a32e671a47cb6376a361f3"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-attribs"></a>
 Static Public Attributes</h2></td></tr>
-<tr class="memitem:a677d6a1711cc756b817095b7437cce0e"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a677d6a1711cc756b817095b7437cce0e">kWarpSize</a> = cutlass::kWarpSize</td></tr>
-<tr class="memdesc:a677d6a1711cc756b817095b7437cce0e"><td class="mdescLeft">&#160;</td><td class="mdescRight">The default warp size (32 threads per warp).  <a href="#a677d6a1711cc756b817095b7437cce0e">More...</a><br /></td></tr>
-<tr class="separator:a677d6a1711cc756b817095b7437cce0e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a0b2be601de08848afc4418adb97255bf"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a0b2be601de08848afc4418adb97255bf">kThreads</a> = <a class="el" href="structcutlass_1_1ShapeCount.html">ShapeCount</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#abb6ba58a2f2d80db0b2c9c1d88454efd">Warps</a>&gt;::kCount * <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a677d6a1711cc756b817095b7437cce0e">kWarpSize</a></td></tr>
-<tr class="memdesc:a0b2be601de08848afc4418adb97255bf"><td class="mdescLeft">&#160;</td><td class="mdescRight">The numnber of threads.  <a href="#a0b2be601de08848afc4418adb97255bf">More...</a><br /></td></tr>
-<tr class="separator:a0b2be601de08848afc4418adb97255bf"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a2e0a043c5d4d7959ec1a2214c3ac39ac"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a2e0a043c5d4d7959ec1a2214c3ac39ac">kScalarsPerLdgA</a> = kScalarsPerLdgA_</td></tr>
-<tr class="memdesc:a2e0a043c5d4d7959ec1a2214c3ac39ac"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of scalars per LDG/STS/LDS for A.  <a href="#a2e0a043c5d4d7959ec1a2214c3ac39ac">More...</a><br /></td></tr>
-<tr class="separator:a2e0a043c5d4d7959ec1a2214c3ac39ac"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:accc95abc55880abdab92253367b4b186"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#accc95abc55880abdab92253367b4b186">kScalarsPerStsA</a> = kScalarsPerStsA_</td></tr>
-<tr class="separator:accc95abc55880abdab92253367b4b186"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aa1b75484138923a52b32888fef608d9b"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aa1b75484138923a52b32888fef608d9b">kScalarsPerLdsA</a> = kScalarsPerLdsA_</td></tr>
-<tr class="separator:aa1b75484138923a52b32888fef608d9b"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a849b21fed39aaac1cdd546334739be97"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a849b21fed39aaac1cdd546334739be97">kScalarsPerLdgB</a> = kScalarsPerLdgB_</td></tr>
-<tr class="memdesc:a849b21fed39aaac1cdd546334739be97"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of scalars per LDG/STS/LDS for B.  <a href="#a849b21fed39aaac1cdd546334739be97">More...</a><br /></td></tr>
-<tr class="separator:a849b21fed39aaac1cdd546334739be97"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac0c8c027e3ede14b62d7c7d519551f21"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#ac0c8c027e3ede14b62d7c7d519551f21">kScalarsPerStsB</a> = kScalarsPerStsB_</td></tr>
-<tr class="separator:ac0c8c027e3ede14b62d7c7d519551f21"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a86470d3a44e2b50ee31ec3c9f79927ef"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a86470d3a44e2b50ee31ec3c9f79927ef">kScalarsPerLdsB</a> = kScalarsPerLdsB_</td></tr>
-<tr class="separator:a86470d3a44e2b50ee31ec3c9f79927ef"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aad47c635a73e83bd4b19494864832d31"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aad47c635a73e83bd4b19494864832d31">kScalarsPerLdgC</a> = kScalarsPerLdgCAndStgD_</td></tr>
-<tr class="memdesc:aad47c635a73e83bd4b19494864832d31"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of scalars per LDG for C.  <a href="#aad47c635a73e83bd4b19494864832d31">More...</a><br /></td></tr>
-<tr class="separator:aad47c635a73e83bd4b19494864832d31"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a3633083f4f778215543e376c092745d7"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a3633083f4f778215543e376c092745d7">kScalarsPerStgD</a> = kScalarsPerLdgCAndStgD_</td></tr>
-<tr class="memdesc:a3633083f4f778215543e376c092745d7"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of scalars per STS/LDS/STG for D.  <a href="#a3633083f4f778215543e376c092745d7">More...</a><br /></td></tr>
-<tr class="separator:a3633083f4f778215543e376c092745d7"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a3087cdd38e2c65ad0dffdd0587d2cce0"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a3087cdd38e2c65ad0dffdd0587d2cce0">kScalarsPerStsD</a> = kScalarsPerStsD_</td></tr>
-<tr class="separator:a3087cdd38e2c65ad0dffdd0587d2cce0"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:adaf2ee5b8e6f7bdb9939cd45a186ca56"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#adaf2ee5b8e6f7bdb9939cd45a186ca56">kScalarsPerLdsD</a> = kScalarsPerLdsD_</td></tr>
-<tr class="separator:adaf2ee5b8e6f7bdb9939cd45a186ca56"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:abbdd356f280099269867e614684645cf"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#abbdd356f280099269867e614684645cf">kAccumulatorsPerLdsA</a> = <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aa1b75484138923a52b32888fef608d9b">kScalarsPerLdsA</a> / InstructionShape::kD</td></tr>
-<tr class="memdesc:abbdd356f280099269867e614684645cf"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of accumulators that are going to be fed from one LDS A/B.  <a href="#abbdd356f280099269867e614684645cf">More...</a><br /></td></tr>
-<tr class="separator:abbdd356f280099269867e614684645cf"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a9dd092bca2f1f2c039f367b23bafa9c1"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9dd092bca2f1f2c039f367b23bafa9c1">kAccumulatorsPerLdsB</a> = <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a86470d3a44e2b50ee31ec3c9f79927ef">kScalarsPerLdsB</a> / InstructionShape::kD</td></tr>
-<tr class="separator:a9dd092bca2f1f2c039f367b23bafa9c1"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a221949c289057e39d439ce03a5b01c52"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a221949c289057e39d439ce03a5b01c52">kStages</a> = kStages_</td></tr>
-<tr class="memdesc:a221949c289057e39d439ce03a5b01c52"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of stages in shared memory to implement double, triple, more-buffering.  <a href="#a221949c289057e39d439ce03a5b01c52">More...</a><br /></td></tr>
-<tr class="separator:a221949c289057e39d439ce03a5b01c52"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa549183981095a3e604974e909a7d396"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aa549183981095a3e604974e909a7d396">kWarpSize</a> = cutlass::kWarpSize</td></tr>
+<tr class="memdesc:aa549183981095a3e604974e909a7d396"><td class="mdescLeft">&#160;</td><td class="mdescRight">The default warp size (32 threads per warp).  <a href="#aa549183981095a3e604974e909a7d396">More...</a><br /></td></tr>
+<tr class="separator:aa549183981095a3e604974e909a7d396"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:acf461f0ba3067cc5d66a04f0a176308f"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#acf461f0ba3067cc5d66a04f0a176308f">kThreads</a> = <a class="el" href="structcutlass_1_1ShapeCount.html">ShapeCount</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9b987cfb25a32e671a47cb6376a361f3">Warps</a>&gt;::kCount * <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aa549183981095a3e604974e909a7d396">kWarpSize</a></td></tr>
+<tr class="memdesc:acf461f0ba3067cc5d66a04f0a176308f"><td class="mdescLeft">&#160;</td><td class="mdescRight">The numnber of threads.  <a href="#acf461f0ba3067cc5d66a04f0a176308f">More...</a><br /></td></tr>
+<tr class="separator:acf461f0ba3067cc5d66a04f0a176308f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a64e7d66e0646c7044e754b3b6b91e761"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a64e7d66e0646c7044e754b3b6b91e761">kScalarsPerLdgA</a> = kScalarsPerLdgA_</td></tr>
+<tr class="memdesc:a64e7d66e0646c7044e754b3b6b91e761"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of scalars per LDG/STS/LDS for A.  <a href="#a64e7d66e0646c7044e754b3b6b91e761">More...</a><br /></td></tr>
+<tr class="separator:a64e7d66e0646c7044e754b3b6b91e761"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab2b6167b0165ed544254dc87c2a7db8f"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#ab2b6167b0165ed544254dc87c2a7db8f">kScalarsPerStsA</a> = kScalarsPerStsA_</td></tr>
+<tr class="separator:ab2b6167b0165ed544254dc87c2a7db8f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a82295105d7ccbcce057b4c57632a644b"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a82295105d7ccbcce057b4c57632a644b">kScalarsPerLdsA</a> = kScalarsPerLdsA_</td></tr>
+<tr class="separator:a82295105d7ccbcce057b4c57632a644b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aff7409a9d2666159435d3b9db16443bc"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aff7409a9d2666159435d3b9db16443bc">kScalarsPerLdgB</a> = kScalarsPerLdgB_</td></tr>
+<tr class="memdesc:aff7409a9d2666159435d3b9db16443bc"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of scalars per LDG/STS/LDS for B.  <a href="#aff7409a9d2666159435d3b9db16443bc">More...</a><br /></td></tr>
+<tr class="separator:aff7409a9d2666159435d3b9db16443bc"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2a424063136c56c5ca6345496485afce"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a2a424063136c56c5ca6345496485afce">kScalarsPerStsB</a> = kScalarsPerStsB_</td></tr>
+<tr class="separator:a2a424063136c56c5ca6345496485afce"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9ccd14b44a22dfdfeefabe1e643da65e"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9ccd14b44a22dfdfeefabe1e643da65e">kScalarsPerLdsB</a> = kScalarsPerLdsB_</td></tr>
+<tr class="separator:a9ccd14b44a22dfdfeefabe1e643da65e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9c3985d8de485d76a5d72c91c3e3aaff"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9c3985d8de485d76a5d72c91c3e3aaff">kScalarsPerLdgC</a> = kScalarsPerLdgCAndStgD_</td></tr>
+<tr class="memdesc:a9c3985d8de485d76a5d72c91c3e3aaff"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of scalars per LDG for C.  <a href="#a9c3985d8de485d76a5d72c91c3e3aaff">More...</a><br /></td></tr>
+<tr class="separator:a9c3985d8de485d76a5d72c91c3e3aaff"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ade9d3c2aeb0e4d73e04a5e9a06ce5203"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#ade9d3c2aeb0e4d73e04a5e9a06ce5203">kScalarsPerStgD</a> = kScalarsPerLdgCAndStgD_</td></tr>
+<tr class="memdesc:ade9d3c2aeb0e4d73e04a5e9a06ce5203"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of scalars per STS/LDS/STG for D.  <a href="#ade9d3c2aeb0e4d73e04a5e9a06ce5203">More...</a><br /></td></tr>
+<tr class="separator:ade9d3c2aeb0e4d73e04a5e9a06ce5203"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1e93d0163c0d150d33f4093b4a1ec87f"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a1e93d0163c0d150d33f4093b4a1ec87f">kScalarsPerStsD</a> = kScalarsPerStsD_</td></tr>
+<tr class="separator:a1e93d0163c0d150d33f4093b4a1ec87f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a26942561aa111089b3ba0f12cf233951"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a26942561aa111089b3ba0f12cf233951">kScalarsPerLdsD</a> = kScalarsPerLdsD_</td></tr>
+<tr class="separator:a26942561aa111089b3ba0f12cf233951"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a60ab48db1b87fb6063d194247bc055f5"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a60ab48db1b87fb6063d194247bc055f5">kAccumulatorsPerLdsA</a> = <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a82295105d7ccbcce057b4c57632a644b">kScalarsPerLdsA</a> / InstructionShape::kD</td></tr>
+<tr class="memdesc:a60ab48db1b87fb6063d194247bc055f5"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of accumulators that are going to be fed from one LDS A/B.  <a href="#a60ab48db1b87fb6063d194247bc055f5">More...</a><br /></td></tr>
+<tr class="separator:a60ab48db1b87fb6063d194247bc055f5"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aeb740e4ab9f93f29f1b8ab43ebef68eb"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aeb740e4ab9f93f29f1b8ab43ebef68eb">kAccumulatorsPerLdsB</a> = <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9ccd14b44a22dfdfeefabe1e643da65e">kScalarsPerLdsB</a> / InstructionShape::kD</td></tr>
+<tr class="separator:aeb740e4ab9f93f29f1b8ab43ebef68eb"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab26d76515e394118bfc530d6a81b9508"><td class="memItemLeft" align="right" valign="top">static int const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#ab26d76515e394118bfc530d6a81b9508">kStages</a> = kStages_</td></tr>
+<tr class="memdesc:ab26d76515e394118bfc530d6a81b9508"><td class="mdescLeft">&#160;</td><td class="mdescRight">The number of stages in shared memory to implement double, triple, more-buffering.  <a href="#ab26d76515e394118bfc530d6a81b9508">More...</a><br /></td></tr>
+<tr class="separator:ab26d76515e394118bfc530d6a81b9508"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a64c1e0d794c1bdfa8b2f3a53e387155c"><td class="memItemLeft" align="right" valign="top">static bool const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a64c1e0d794c1bdfa8b2f3a53e387155c">kResidueSeparate</a> = kResidueSeparate_</td></tr>
+<tr class="memdesc:a64c1e0d794c1bdfa8b2f3a53e387155c"><td class="mdescLeft">&#160;</td><td class="mdescRight">If true, mainloop is instantiated twice. The first instantiation contains no predicate.  <a href="#a64c1e0d794c1bdfa8b2f3a53e387155c">More...</a><br /></td></tr>
+<tr class="separator:a64c1e0d794c1bdfa8b2f3a53e387155c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a600746def904eeca46d7f92a4b223b46"><td class="memItemLeft" align="right" valign="top">static bool const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a600746def904eeca46d7f92a4b223b46">kResidueInProlog</a> = kResidueInProlog_</td></tr>
+<tr class="memdesc:a600746def904eeca46d7f92a4b223b46"><td class="mdescLeft">&#160;</td><td class="mdescRight">If true, residue is computed in the prologue.  <a href="#a600746def904eeca46d7f92a4b223b46">More...</a><br /></td></tr>
+<tr class="separator:a600746def904eeca46d7f92a4b223b46"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a54e252cedbfee75e7c4ac2f7fe5ce45b"><td class="memItemLeft" align="right" valign="top">static bool const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a54e252cedbfee75e7c4ac2f7fe5ce45b">kLaunchBounds</a> = kLaunchBounds_</td></tr>
+<tr class="memdesc:a54e252cedbfee75e7c4ac2f7fe5ce45b"><td class="mdescLeft">&#160;</td><td class="mdescRight">If true, kernel is launched with launch bounds specified.  <a href="#a54e252cedbfee75e7c4ac2f7fe5ce45b">More...</a><br /></td></tr>
+<tr class="separator:a54e252cedbfee75e7c4ac2f7fe5ce45b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Typedef Documentation</h2>
-<a id="a2fadb0ad2e28109ccfa9195e817a4d54"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a2fadb0ad2e28109ccfa9195e817a4d54">&#9670;&nbsp;</a></span>Accumulators</h2>
+<a id="a9f90f91f9e5e40496e8a88eb657fd591"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9f90f91f9e5e40496e8a88eb657fd591">&#9670;&nbsp;</a></span>Accumulators</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef MultiplyAdd::Accumulators <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a2fadb0ad2e28109ccfa9195e817a4d54">Accumulators</a></td>
+          <td class="memname">typedef MultiplyAdd::Accumulators <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9f90f91f9e5e40496e8a88eb657fd591">Accumulators</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a51d583dfcd645ad0ecfc23b87b3c5108"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a51d583dfcd645ad0ecfc23b87b3c5108">&#9670;&nbsp;</a></span>AccumulatorsPerWarp</h2>
+<a id="a32a8979ff618f069665708c7771c3cc3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a32a8979ff618f069665708c7771c3cc3">&#9670;&nbsp;</a></span>AccumulatorsPerWarp</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef MultiplyAdd::AccumulatorsPerWarp <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a51d583dfcd645ad0ecfc23b87b3c5108">AccumulatorsPerWarp</a></td>
+          <td class="memname">typedef MultiplyAdd::AccumulatorsPerWarp <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a32a8979ff618f069665708c7771c3cc3">AccumulatorsPerWarp</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a3a57d05f50932d718538f0d1ededa95b"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a3a57d05f50932d718538f0d1ededa95b">&#9670;&nbsp;</a></span>InstructionShape</h2>
+<a id="ad83132bd03f8bd844487d1a9da908c8b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad83132bd03f8bd844487d1a9da908c8b">&#9670;&nbsp;</a></span>InstructionShape</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef MultiplyAdd::InstructionShape <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a3a57d05f50932d718538f0d1ededa95b">InstructionShape</a></td>
+          <td class="memname">typedef MultiplyAdd::InstructionShape <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#ad83132bd03f8bd844487d1a9da908c8b">InstructionShape</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a8669096ddbb8c810fb8d2313d62e6ee7"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a8669096ddbb8c810fb8d2313d62e6ee7">&#9670;&nbsp;</a></span>MultiplyAdd</h2>
+<a id="aedb95febe4a0b2943e233c95c36a22cd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aedb95febe4a0b2943e233c95c36a22cd">&#9670;&nbsp;</a></span>MultiplyAdd</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef MultiplyAdd_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a8669096ddbb8c810fb8d2313d62e6ee7">MultiplyAdd</a></td>
+          <td class="memname">typedef MultiplyAdd_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aedb95febe4a0b2943e233c95c36a22cd">MultiplyAdd</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a53450f4d7444d6a4c0d2353496c0a4fd"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a53450f4d7444d6a4c0d2353496c0a4fd">&#9670;&nbsp;</a></span>OutputTile</h2>
+<a id="a9dd9c3efc3dfd9b5c6acd12236697399"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9dd9c3efc3dfd9b5c6acd12236697399">&#9670;&nbsp;</a></span>OutputTile</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef OutputTile_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a53450f4d7444d6a4c0d2353496c0a4fd">OutputTile</a></td>
+          <td class="memname">typedef OutputTile_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9dd9c3efc3dfd9b5c6acd12236697399">OutputTile</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a9d1e4e364be8fd9de5e1199d93ad76aa"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a9d1e4e364be8fd9de5e1199d93ad76aa">&#9670;&nbsp;</a></span>ScalarA</h2>
+<a id="aa97b0e7f369f927c4db6d683dbb7f53b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa97b0e7f369f927c4db6d683dbb7f53b">&#9670;&nbsp;</a></span>ScalarA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef ScalarA_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9d1e4e364be8fd9de5e1199d93ad76aa">ScalarA</a></td>
+          <td class="memname">typedef ScalarA_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aa97b0e7f369f927c4db6d683dbb7f53b">ScalarA</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="aa13d6f5e5ad907ef09c88ae49e6e8e9b"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aa13d6f5e5ad907ef09c88ae49e6e8e9b">&#9670;&nbsp;</a></span>ScalarB</h2>
+<a id="a389c0980e978463d3cc126342d8413c6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a389c0980e978463d3cc126342d8413c6">&#9670;&nbsp;</a></span>ScalarB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef ScalarB_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aa13d6f5e5ad907ef09c88ae49e6e8e9b">ScalarB</a></td>
+          <td class="memname">typedef ScalarB_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a389c0980e978463d3cc126342d8413c6">ScalarB</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="ad8f262d7da093d07cdd5c6a4fd9aceea"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ad8f262d7da093d07cdd5c6a4fd9aceea">&#9670;&nbsp;</a></span>ScalarC</h2>
+<a id="a30d9cfbbede42166e4e1964145dfe05d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a30d9cfbbede42166e4e1964145dfe05d">&#9670;&nbsp;</a></span>ScalarC</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef ScalarC_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#ad8f262d7da093d07cdd5c6a4fd9aceea">ScalarC</a></td>
+          <td class="memname">typedef ScalarC_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a30d9cfbbede42166e4e1964145dfe05d">ScalarC</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="a188ef7f4c49ff2830753218343a1b8f8"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a188ef7f4c49ff2830753218343a1b8f8">&#9670;&nbsp;</a></span>ScalarD</h2>
+<a id="a7ad231b16f05a58900dca8ff0e0e7bfa"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7ad231b16f05a58900dca8ff0e0e7bfa">&#9670;&nbsp;</a></span>ScalarD</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef ScalarD_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a188ef7f4c49ff2830753218343a1b8f8">ScalarD</a></td>
+          <td class="memname">typedef ScalarD_ <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a7ad231b16f05a58900dca8ff0e0e7bfa">ScalarD</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
 
 </div>
 </div>
-<a id="abb6ba58a2f2d80db0b2c9c1d88454efd"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#abb6ba58a2f2d80db0b2c9c1d88454efd">&#9670;&nbsp;</a></span>Warps</h2>
+<a id="a9b987cfb25a32e671a47cb6376a361f3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9b987cfb25a32e671a47cb6376a361f3">&#9670;&nbsp;</a></span>Warps</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef <a class="el" href="structcutlass_1_1ShapeDiv.html">ShapeDiv</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a53450f4d7444d6a4c0d2353496c0a4fd">OutputTile</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a51d583dfcd645ad0ecfc23b87b3c5108">AccumulatorsPerWarp</a>&gt;::<a class="el" href="structcutlass_1_1Shape.html">Shape</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#abb6ba58a2f2d80db0b2c9c1d88454efd">Warps</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1ShapeDiv.html">ShapeDiv</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9dd9c3efc3dfd9b5c6acd12236697399">OutputTile</a>, <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a32a8979ff618f069665708c7771c3cc3">AccumulatorsPerWarp</a>&gt;::<a class="el" href="structcutlass_1_1Shape.html">Shape</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9b987cfb25a32e671a47cb6376a361f3">Warps</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -319,19 +328,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 </div>
 </div>
 <h2 class="groupheader">Member Data Documentation</h2>
-<a id="abbdd356f280099269867e614684645cf"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#abbdd356f280099269867e614684645cf">&#9670;&nbsp;</a></span>kAccumulatorsPerLdsA</h2>
+<a id="a60ab48db1b87fb6063d194247bc055f5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a60ab48db1b87fb6063d194247bc055f5">&#9670;&nbsp;</a></span>kAccumulatorsPerLdsA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kAccumulatorsPerLdsA = <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aa1b75484138923a52b32888fef608d9b">kScalarsPerLdsA</a> / InstructionShape::kD</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kAccumulatorsPerLdsA = <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a82295105d7ccbcce057b4c57632a644b">kScalarsPerLdsA</a> / InstructionShape::kD</td>
         </tr>
       </table>
   </td>
@@ -343,19 +352,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="a9dd092bca2f1f2c039f367b23bafa9c1"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a9dd092bca2f1f2c039f367b23bafa9c1">&#9670;&nbsp;</a></span>kAccumulatorsPerLdsB</h2>
+<a id="aeb740e4ab9f93f29f1b8ab43ebef68eb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aeb740e4ab9f93f29f1b8ab43ebef68eb">&#9670;&nbsp;</a></span>kAccumulatorsPerLdsB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kAccumulatorsPerLdsB = <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a86470d3a44e2b50ee31ec3c9f79927ef">kScalarsPerLdsB</a> / InstructionShape::kD</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kAccumulatorsPerLdsB = <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9ccd14b44a22dfdfeefabe1e643da65e">kScalarsPerLdsB</a> / InstructionShape::kD</td>
         </tr>
       </table>
   </td>
@@ -367,19 +376,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="a2e0a043c5d4d7959ec1a2214c3ac39ac"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a2e0a043c5d4d7959ec1a2214c3ac39ac">&#9670;&nbsp;</a></span>kScalarsPerLdgA</h2>
+<a id="a54e252cedbfee75e7c4ac2f7fe5ce45b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a54e252cedbfee75e7c4ac2f7fe5ce45b">&#9670;&nbsp;</a></span>kLaunchBounds</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kScalarsPerLdgA = kScalarsPerLdgA_</td>
+          <td class="memname">bool const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kLaunchBounds = kLaunchBounds_</td>
         </tr>
       </table>
   </td>
@@ -391,19 +400,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="a849b21fed39aaac1cdd546334739be97"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a849b21fed39aaac1cdd546334739be97">&#9670;&nbsp;</a></span>kScalarsPerLdgB</h2>
+<a id="a600746def904eeca46d7f92a4b223b46"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a600746def904eeca46d7f92a4b223b46">&#9670;&nbsp;</a></span>kResidueInProlog</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kScalarsPerLdgB = kScalarsPerLdgB_</td>
+          <td class="memname">bool const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kResidueInProlog = kResidueInProlog_</td>
         </tr>
       </table>
   </td>
@@ -415,19 +424,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="aad47c635a73e83bd4b19494864832d31"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aad47c635a73e83bd4b19494864832d31">&#9670;&nbsp;</a></span>kScalarsPerLdgC</h2>
+<a id="a64c1e0d794c1bdfa8b2f3a53e387155c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a64c1e0d794c1bdfa8b2f3a53e387155c">&#9670;&nbsp;</a></span>kResidueSeparate</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kScalarsPerLdgC = kScalarsPerLdgCAndStgD_</td>
+          <td class="memname">bool const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kResidueSeparate = kResidueSeparate_</td>
         </tr>
       </table>
   </td>
@@ -439,19 +448,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="aa1b75484138923a52b32888fef608d9b"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aa1b75484138923a52b32888fef608d9b">&#9670;&nbsp;</a></span>kScalarsPerLdsA</h2>
+<a id="a64e7d66e0646c7044e754b3b6b91e761"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a64e7d66e0646c7044e754b3b6b91e761">&#9670;&nbsp;</a></span>kScalarsPerLdgA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kScalarsPerLdsA = kScalarsPerLdsA_</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kScalarsPerLdgA = kScalarsPerLdgA_</td>
         </tr>
       </table>
   </td>
@@ -463,19 +472,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="a86470d3a44e2b50ee31ec3c9f79927ef"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a86470d3a44e2b50ee31ec3c9f79927ef">&#9670;&nbsp;</a></span>kScalarsPerLdsB</h2>
+<a id="aff7409a9d2666159435d3b9db16443bc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aff7409a9d2666159435d3b9db16443bc">&#9670;&nbsp;</a></span>kScalarsPerLdgB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kScalarsPerLdsB = kScalarsPerLdsB_</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kScalarsPerLdgB = kScalarsPerLdgB_</td>
         </tr>
       </table>
   </td>
@@ -487,19 +496,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="adaf2ee5b8e6f7bdb9939cd45a186ca56"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#adaf2ee5b8e6f7bdb9939cd45a186ca56">&#9670;&nbsp;</a></span>kScalarsPerLdsD</h2>
+<a id="a9c3985d8de485d76a5d72c91c3e3aaff"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9c3985d8de485d76a5d72c91c3e3aaff">&#9670;&nbsp;</a></span>kScalarsPerLdgC</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kScalarsPerLdsD = kScalarsPerLdsD_</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kScalarsPerLdgC = kScalarsPerLdgCAndStgD_</td>
         </tr>
       </table>
   </td>
@@ -511,19 +520,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="a3633083f4f778215543e376c092745d7"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a3633083f4f778215543e376c092745d7">&#9670;&nbsp;</a></span>kScalarsPerStgD</h2>
+<a id="a82295105d7ccbcce057b4c57632a644b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a82295105d7ccbcce057b4c57632a644b">&#9670;&nbsp;</a></span>kScalarsPerLdsA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kScalarsPerStgD = kScalarsPerLdgCAndStgD_</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kScalarsPerLdsA = kScalarsPerLdsA_</td>
         </tr>
       </table>
   </td>
@@ -535,19 +544,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="accc95abc55880abdab92253367b4b186"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#accc95abc55880abdab92253367b4b186">&#9670;&nbsp;</a></span>kScalarsPerStsA</h2>
+<a id="a9ccd14b44a22dfdfeefabe1e643da65e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9ccd14b44a22dfdfeefabe1e643da65e">&#9670;&nbsp;</a></span>kScalarsPerLdsB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kScalarsPerStsA = kScalarsPerStsA_</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kScalarsPerLdsB = kScalarsPerLdsB_</td>
         </tr>
       </table>
   </td>
@@ -559,19 +568,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="ac0c8c027e3ede14b62d7c7d519551f21"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ac0c8c027e3ede14b62d7c7d519551f21">&#9670;&nbsp;</a></span>kScalarsPerStsB</h2>
+<a id="a26942561aa111089b3ba0f12cf233951"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a26942561aa111089b3ba0f12cf233951">&#9670;&nbsp;</a></span>kScalarsPerLdsD</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kScalarsPerStsB = kScalarsPerStsB_</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kScalarsPerLdsD = kScalarsPerLdsD_</td>
         </tr>
       </table>
   </td>
@@ -583,19 +592,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="a3087cdd38e2c65ad0dffdd0587d2cce0"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a3087cdd38e2c65ad0dffdd0587d2cce0">&#9670;&nbsp;</a></span>kScalarsPerStsD</h2>
+<a id="ade9d3c2aeb0e4d73e04a5e9a06ce5203"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ade9d3c2aeb0e4d73e04a5e9a06ce5203">&#9670;&nbsp;</a></span>kScalarsPerStgD</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kScalarsPerStsD = kScalarsPerStsD_</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kScalarsPerStgD = kScalarsPerLdgCAndStgD_</td>
         </tr>
       </table>
   </td>
@@ -607,19 +616,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="a221949c289057e39d439ce03a5b01c52"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a221949c289057e39d439ce03a5b01c52">&#9670;&nbsp;</a></span>kStages</h2>
+<a id="ab2b6167b0165ed544254dc87c2a7db8f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab2b6167b0165ed544254dc87c2a7db8f">&#9670;&nbsp;</a></span>kScalarsPerStsA</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kStages = kStages_</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kScalarsPerStsA = kScalarsPerStsA_</td>
         </tr>
       </table>
   </td>
@@ -631,19 +640,19 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="a0b2be601de08848afc4418adb97255bf"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a0b2be601de08848afc4418adb97255bf">&#9670;&nbsp;</a></span>kThreads</h2>
+<a id="a2a424063136c56c5ca6345496485afce"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2a424063136c56c5ca6345496485afce">&#9670;&nbsp;</a></span>kScalarsPerStsB</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kThreads = <a class="el" href="structcutlass_1_1ShapeCount.html">ShapeCount</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#abb6ba58a2f2d80db0b2c9c1d88454efd">Warps</a>&gt;::kCount * <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a677d6a1711cc756b817095b7437cce0e">kWarpSize</a></td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kScalarsPerStsB = kScalarsPerStsB_</td>
         </tr>
       </table>
   </td>
@@ -655,19 +664,91 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 
 </div>
 </div>
-<a id="a677d6a1711cc756b817095b7437cce0e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a677d6a1711cc756b817095b7437cce0e">&#9670;&nbsp;</a></span>kWarpSize</h2>
+<a id="a1e93d0163c0d150d33f4093b4a1ec87f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1e93d0163c0d150d33f4093b4a1ec87f">&#9670;&nbsp;</a></span>kScalarsPerStsD</h2>
 
 <div class="memitem">
 <div class="memproto">
 <div class="memtemplate">
-template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_&gt; </div>
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
 <table class="mlabels">
   <tr>
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_ &gt;::kWarpSize = cutlass::kWarpSize</td>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kScalarsPerStsD = kScalarsPerStsD_</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="ab26d76515e394118bfc530d6a81b9508"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab26d76515e394118bfc530d6a81b9508">&#9670;&nbsp;</a></span>kStages</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kStages = kStages_</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="acf461f0ba3067cc5d66a04f0a176308f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acf461f0ba3067cc5d66a04f0a176308f">&#9670;&nbsp;</a></span>kThreads</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kThreads = <a class="el" href="structcutlass_1_1ShapeCount.html">ShapeCount</a>&lt;<a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a9b987cfb25a32e671a47cb6376a361f3">Warps</a>&gt;::kCount * <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#aa549183981095a3e604974e909a7d396">kWarpSize</a></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="aa549183981095a3e604974e909a7d396"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa549183981095a3e604974e909a7d396">&#9670;&nbsp;</a></span>kWarpSize</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename ScalarD_, typename OutputTile_, typename MultiplyAdd_, int kScalarsPerLdgA_, int kScalarsPerStsA_, int kScalarsPerLdsA_, int kScalarsPerLdgB_, int kScalarsPerStsB_, int kScalarsPerLdsB_, int kScalarsPerLdgCAndStgD_, int kScalarsPerStsD_, int kScalarsPerLdsD_, int kStages_, bool kResidueSeparate_ = false, bool kResidueInProlog_ = false, bool kLaunchBounds_ = true&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int const <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html">cutlass::gemm::GemmConfig</a>&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;::kWarpSize = cutlass::kWarpSize</td>
         </tr>
       </table>
   </td>
@@ -680,12 +761,12 @@ template&lt;typename ScalarA_, typename ScalarB_, typename ScalarC_, typename Sc
 </div>
 </div>
 <hr/>The documentation for this struct was generated from the following file:<ul>
-<li><a class="el" href="gemm__traits_8h_source.html">gemm_traits.h</a></li>
+<li><a class="el" href="gemm__config_8h_source.html">gemm_config.h</a></li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Thu May 3 2018 16:36:13 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

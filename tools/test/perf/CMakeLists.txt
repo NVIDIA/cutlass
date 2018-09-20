@@ -34,12 +34,14 @@ set(CUTLASS_PERF_TEST_HEADERS
 )
 
 set(CUTLASS_PERF_TEST_SOURCES
-  cutlass_perf_test.cpp
+  cutlass_perf_test.cu
   gemm/sgemm.cu
   gemm/dgemm.cu
   gemm/hgemm.cu
   gemm/igemm.cu
   gemm/wmma_gemm.cu
+  gemm/wmma_binary_gemm.cu
+  gemm/wmma_integer_gemm.cu
 )
 
 source_group("Source\ Files" FILES ${CUTLASS_PERF_TEST_SOURCES})
@@ -56,4 +58,6 @@ cutlass_add_executable(
     ${CUTLASS_PERF_TEST_SOURCES}
     ${CUTLASS_PERF_TEST_HEADERS}
 )
-CUDA_ADD_CUBLAS_TO_TARGET(cutlass_perf_test)
+
+target_link_libraries(cutlass_perf_test ${CUBLAS_LIBRARY})
+

@@ -28,3 +28,4 @@
 #pragma diag_suppress boolean_controlling_expr_is_constant
 #include <gtest/gtest.h>
 #pragma diag_warning boolean_controlling_expr_is_constant
+#pragma warning( disable : 4503)

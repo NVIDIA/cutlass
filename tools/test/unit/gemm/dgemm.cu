@@ -24,11 +24,11 @@
  **************************************************************************************************/
 #include <cublas_v2.h>
 #include <cstring>
-#include <cutlass_unit_test.h>
-#include <cutlass/gemm/gemm.h>
-#include <cutlass/gemm/dgemm_traits.h>
-#include <tools/test/unit/gemm/gemm_testbed.h>
-#include <tools/test/unit/gemm/gemm.h>
+#include "cutlass_unit_test.h"
+#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/dgemm_traits.h"
+#include "tools/test/unit/gemm/gemm_testbed.h"
+#include "tools/test/unit/gemm/run_gemm.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -39,6 +39,7 @@ TEST(Dgemm_64x32x8, dgemm_64x32x8_nt) {
                                      cutlass::Shape<8, 32, 64> > GemmTraits;
   run_gemm<GemmTraits>(64, 32, 8);
 }
+
 
 TEST(Dgemm_64x32x8, dgemm_256x128x64_nt) {
 
@@ -569,5 +570,3 @@ TEST(Dgemm_128x32x16, dgemm_256x64x64_tt) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-

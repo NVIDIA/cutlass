@@ -24,51 +24,110 @@
  **************************************************************************************************/
 /*! \file
     \brief Defines a structure containing strides and a pointer to tensor data.
+
+    TensorView is derived from TensorRef and contributes bounds to the tensor's index space. Thus,
+    it is a complete mathematical object and may be used in tensor algorithms. It is decoupled from
+    data storage and is therefore lightweight and may be embedded in larger tensor objects or
+    memory structures.
+
+    See cutlass/tensor_ref.h for more details about the mapping of the logical tensor index space to
+    linear memory.
 */
 
 #pragma once
 
 #include <cmath>
 
-#include <cutlass/cutlass.h>
-#include <cutlass/tensor_ref.h>
+#include "cutlass/cutlass.h"
+#include "cutlass/tensor_ref.h"
 
 namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Host-side reference implementation of tensor operations
-template <typename T>
-class TensorView : public TensorRef<T, 4> {
+/// Defines a view into a logical tensor
+template <
+  /// Data type of element stored within tensor
+  typename Storage_,
+  /// Rank of logical tensor
+  int Rank_ = 4,
+  /// Maps a Coord<Rank_> in the logical tensor index space to the internal n-D array
+  typename MapFunc_ = IdentityTensorMapFunc<Rank_>,
+  /// Rank of internal n-D array
+  int StorageRank_ = MapFunc_::kStorageRank,
+  /// Index type used for coordinates
+  typename Index_ = int,
+  /// Index type used for offsets and pointer differences
+  typename LongIndex_ = long long
+>
+class TensorView : public TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_> {
  public:
-  /// Reference and stride
-  typedef TensorRef<T, 4> Base;
+  /// Base tensor reference
+  typedef TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_> Base;
 
-  /// Reference and stride
-  typedef Base TensorRef_t;
+  /// Tensor reference to of constant value
+  typedef TensorRef<
+    typename platform::remove_const<Storage_>::type const,
+    Rank_,
+    MapFunc_,
+    StorageRank_,
+    Index_,
+    LongIndex_> ConstTensorRef;
 
-  /// Reference to constant type
-  typedef TensorRef<T const, 4> ConstTensorRef_t;
+  /// Base tensor reference
+  typedef Base TensorRef;
 
-  /// Rank of tensor
-  static int const Rank = TensorRef_t::Rank;
+  /// Storage type
+  typedef typename Base::Storage Storage;
+
+  /// Index type
+  typedef typename Base::Index Index;
+
+  /// Coordinate in logical tensor space
+  typedef typename TensorRef::TensorCoord TensorCoord;
+
+  /// Coordinate in storage n-D array
+  typedef typename TensorRef::StorageCoord StorageCoord;
+
+  /// Stride vector in storage coordinate space
+  /// Least significant stride is = 1 and not stored
+  typedef typename TensorRef::StrideVector StrideVector;
+
+  /// TensorView of constant value
+  typedef TensorView<
+    typename platform::remove_const<Storage>::type const,
+    Rank_,
+    MapFunc_,
+    StorageRank_,
+    Index_,
+    LongIndex_> ConstTensorView;
+
+  //
+  // Definitions included for backwards compatibility - to be removed in next major release
+  //
+
+  /// Coordinate in logical tensor space
+  typedef TensorCoord Coord_t;
+
+  /// Logical rank of tensor index space
+  static int const Rank = Base::kRank;
 
   /// Type used to compute the offset of an element to the base of a tensor
-  typedef int Offset_t;
+  typedef typename Base::LongIndex Offset_t;
 
-  /// Coordinate into tensor
-  typedef Coord<Rank> Coord_t;
+  /// Base class
+  typedef TensorRef TensorRef_t;
+
+  /// TensorRef to const-valued type
+  typedef typename TensorRef::ConstTensorRef ConstTensorRef_t;
 
  private:
   //
   // Data members
   //
 
-  /// Pointer to pitch-linear memory
-  TensorRef_t ref_;
-
   /// Dimensions of coordinate (independent of stride)
-  Coord_t size_;
+  TensorCoord size_;
 
  public:
   //
@@ -79,91 +138,126 @@ class TensorView : public TensorRef<T, 4> {
   CUTLASS_HOST_DEVICE
   TensorView() {}
 
-  /// Constructs a Tensor_view from a TensorRef and size
+  /// Constructs a TensorView from a TensorRef and size
   CUTLASS_HOST_DEVICE
-  TensorView(TensorRef_t const& _ref, Coord_t const& _size) : Base(_ref), size_(_size) {}
+  TensorView(Base const& _ref, TensorCoord const& _size) : Base(_ref), size_(_size) {}
 
-  /// Returns true if the Tensor_view is bound to some memory
+  /// Constructs a TensorView from a pointer, a stride vector, and size
   CUTLASS_HOST_DEVICE
-  bool good() const { return ref().good(); }
+  TensorView(
+    Storage *ptr,
+    StrideVector const &stride,
+    TensorCoord const& size
+  ):
+    Base(ptr, stride), size_(size) {}
 
-  /// Returns a pointer to data
+  /// Constructs a TensorView from a pointer, a stride vector, and size
   CUTLASS_HOST_DEVICE
-  T* data() const { return ref().data(); }
+  TensorView(
+    Storage *ptr,
+    StorageCoord const &stride,
+    TensorCoord const& size
+  ):
+    Base(ptr, stride), size_(size) {}
 
   /// Updates the reference and size of a Tensor_view object
   CUTLASS_HOST_DEVICE
-  void reset(TensorRef_t const& _ref = TensorRef_t(0), Coord_t const& _size = Coord_t()) {
+  void reset(Base const& _ref = Base(), TensorCoord const& _size = TensorCoord()) {
     Base::operator=(_ref);
     size_ = _size;
   }
 
-  /// Accesses the tensor reference pointing to data
+  /// Accesses the size
   CUTLASS_HOST_DEVICE
-  TensorRef_t& ref() { return *this; }
-
-  ///
-  CUTLASS_HOST_DEVICE
-  ConstTensorRef_t const_ref() { return ConstTensorRef_t(data(), stride()); }
-
-  /// Accesses the tensor reference pointing to data
-  CUTLASS_HOST_DEVICE
-  TensorRef_t const& ref() const { return *this; }
+  TensorCoord const& size() const { return size_; }
 
   /// Accesses the size
   CUTLASS_HOST_DEVICE
-  Coord_t const& size() const { return size_; }
-
-  /// Accesses the size
-  CUTLASS_HOST_DEVICE
-  int size(int dim) const { return size_.at(dim); }
-
-  /// Accesses the stride
-  CUTLASS_HOST_DEVICE
-  Coord_t const& stride() const { return ref().stride(); }
-
-  /// Accesses the stride
-  CUTLASS_HOST_DEVICE
-  int const& stride(int dim) const { return ref().stride(dim); }
+  Index size(int dim) const { return size_.at(dim); }
 
   /// Assigns the Tensor_view
   CUTLASS_HOST_DEVICE
   TensorView& operator=(TensorView const& _tensor) {
-    Base::operator=(_tensor._ref);
+    Base::operator=(_tensor);
     size_ = _tensor.size_;
     return *this;
   }
 
-  /// Returns the index of an element
-  CUTLASS_HOST_DEVICE
-  Offset_t offset(Coord_t const& coord) const { return ref().offset(coord); }
-
   /// Determines whether a location is within a tensor
   CUTLASS_HOST_DEVICE
-  bool contains(Coord_t const& coord) const {
-    for (int dim = 0; dim < Rank; ++dim) {
-      if (coord.at(dim) >= size_.at(dim)) {
+  bool contains(TensorCoord const& coord) const {
+    CUTLASS_PRAGMA_UNROLL
+    for (int dim = 0; dim < Rank_; ++dim) {
+      if (coord[dim] >= size_[dim]) {
         return false;
       }
     }
     return true;
   }
 
-  /// Element-wise accessor
+  /// Returns a TensorRef pointing to the first element of the tensor.
   CUTLASS_HOST_DEVICE
-  T& at(Coord_t const& coord) const { return ref().at(coord); }
+  TensorRef ref() const {
+    return TensorRef(*this);
+  }
 
-  /// Element-wise accessor
-  T& operator[](Coord<Rank> const& coord) const { return at(coord); }
-
-  /// Element-wise accessor
+  /// Returns a TensorRef pointing to the first element of the tensor.
   CUTLASS_HOST_DEVICE
-  T& at(Offset_t idx) const { return ref().at(idx); }
+  ConstTensorRef const_ref() const {
+    return ConstTensorRef(*this);
+  }
 
   /// Returns a Tensor_view given location and size quantities
   CUTLASS_HOST_DEVICE
-  TensorView<T> subview(Coord_t const& location, Coord_t size) const {
-    return TensorView<T>(ref() + location, size.clamp(size_ - location));
+  TensorView subview(TensorCoord const& location, TensorCoord size) const {
+    return TensorView((*this) + location, size.clamp(size_ - location));
+  }
+
+  /// Returns the number of scalar elements needed to store tensor
+  CUTLASS_HOST_DEVICE
+  size_t capacity() const {
+    int max_rank = 0;
+
+    StorageCoord mapped_size(this->map(size()));
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < Base::kStorageRank; ++i) {
+      if (!i ||
+        this->stride(i) * mapped_size[i] > this->stride(max_rank) * mapped_size[max_rank]) {
+        max_rank = i;
+      }
+    }
+    return this->stride(max_rank) * mapped_size[max_rank];
+  }
+
+  /// Returns a TensorView offset by a given amount
+  CUTLASS_HOST_DEVICE
+  TensorView operator+(TensorCoord const& b) const {
+    TensorView result(*this);
+    result.add_pointer_offset(this->offset(b));
+    return result;
+  }
+
+  /// Returns a TensorRef offset by a given amount
+  CUTLASS_HOST_DEVICE
+  TensorView& operator+=(TensorCoord const& b) {
+    this->add_pointer_offset(this->offset(b));
+    return *this;
+  }
+
+  /// Returns a TensorRef offset by a given amount
+  CUTLASS_HOST_DEVICE
+  TensorView operator-(TensorCoord const& b) const {
+    TensorRef result(*this);
+    result.add_pointer_offset(-this->offset(b));
+    return result;
+  }
+
+  /// Returns a TensorRef offset by a given amount
+  CUTLASS_HOST_DEVICE
+  TensorView& operator-=(TensorCoord const& b) {
+    this->add_pointer_offset(-this->offset(b));
+    return *this;
   }
 };
 
