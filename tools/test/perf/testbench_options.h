@@ -263,18 +263,18 @@ struct InitialDistribution {
 
   /// Basic uniform random distribution
   InitialDistribution(int64_t _seed = 700) : seed(_seed) {
-    dist_A.set_uniform(-8, 8);
-    dist_B.set_uniform(-8, 8);
-    dist_C.set_uniform(-8, 8);
+    dist_A.set_uniform(-4, 4);
+    dist_B.set_uniform(-4, 4);
+    dist_C.set_uniform(-4, 4);
   }
 
   /// Extracts initial distribution from command line arguments
   InitialDistribution(cutlass::CommandLine const &args) {
     // Set initial values
     seed = 700;
-    dist_A.set_uniform(-8, 8);
-    dist_B.set_uniform(-8, 8);
-    dist_C.set_uniform(-8, 8);
+    dist_A.set_uniform(-4, 4);
+    dist_B.set_uniform(-4, 4);
+    dist_C.set_uniform(-4, 4);
 
     // Update with command line arguments
     args.get_cmd_line_argument("seed", seed, seed);
