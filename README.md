@@ -56,7 +56,10 @@ when compiled with CUDA 10.0.
 
 # Compatibility
 
-CUTLASS requires CUDA 9 but performs best with [CUDA 10.0 Toolkit](ttps://developer.nvidia.com/cuda-toolkit) or later.
+CUTLASS performs best when compiled with the [CUDA 10.0 Toolkit](ttps://developer.nvidia.com/cuda-toolkit).
+It is compatible with CUDA 9.0, 9.1, and 9.2, but these versions of the CUDA Toolkit do not support new Turing WMMA features.
+
+We have tested the following environments.
 
 |**Operating System** | **Compiler** |
 |-----------------|----------|
@@ -64,7 +67,7 @@ CUTLASS requires CUDA 9 but performs best with [CUDA 10.0 Toolkit](ttps://develo
 |                 | Microsoft Visual Studio 2017|
 | Ubuntu 14.04 | GCC 4.8.2 |
 | Ubuntu 16.04 | GCC 5.4.0 |
-
+| Ubuntu 18.04 | GCC 7.3.0 |
 
 CUTLASS runs successfully on the following NVIDIA GPUs, and it is expected to be efficient on
 any Maxwell-, Pascal-, or Volta-architecture NVIDIA GPU.
