@@ -37,7 +37,7 @@ We describe the structure of an efficient GEMM in our talk at the
 * [Batched Strided GEMM](tools/test/unit/gemm/batched_strided_sgemm_128x128x8.cu)
 * [Threadblock rasterization strategies](tools/test/unit/gemm/sgemm_threadblock_swizzle_nt.cu)
   * Improved performance for adverse problem sizes and data layouts
-* Extended CUTLASS Core comonents
+* Extended CUTLASS Core components
   * Tensor views support arbitrary matrix and tensor layouts
   * Zip iterators for structuring multiple data streams
 * Enhanced CUTLASS utilities
