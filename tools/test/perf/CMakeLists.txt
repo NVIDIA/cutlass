@@ -29,6 +29,7 @@ set(CUTLASS_PERF_TEST_HEADERS
   performance_result.h
   gemm/cublas_dispatch.h
   gemm/cutlass_dispatch.h
+  gemm/cutlass_dispatch_splitK_PI.h
   gemm/gemm_perf_testbed.h
   gemm/gemm_profiler.h
 )
@@ -36,9 +37,11 @@ set(CUTLASS_PERF_TEST_HEADERS
 set(CUTLASS_PERF_TEST_SOURCES
   cutlass_perf_test.cu
   gemm/sgemm.cu
+  gemm/sgemm_splitK.cu
   gemm/dgemm.cu
   gemm/hgemm.cu
   gemm/igemm.cu
+  gemm/igemm_splitK.cu
   gemm/wmma_gemm.cu
   gemm/wmma_binary_gemm.cu
   gemm/wmma_integer_gemm.cu

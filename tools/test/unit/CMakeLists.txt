@@ -39,10 +39,18 @@ set(CUTLASS_UNIT_TEST_HEADERS
   core/layout_verification.h
   gemm/run_gemm.h
   gemm/gemm_testbed.h
+  reduction/batched_reduction_testbed.h
+  reduction/test_batched_reduction.h
+)
+
+set(CUTLASS_UNIT_TEST_SOURCES_BACKUP
+  cutlass_unit_test.cpp
+  gemm/batched_strided_sgemm_128x128x8.cu
 )
 
 set(CUTLASS_UNIT_TEST_SOURCES
   cutlass_unit_test.cpp
+  tile_iterator_test.cu
   core/tensor_ref.cu
   core/tensor_view.cu
   util/unique_ptr.cu
@@ -80,6 +88,9 @@ set(CUTLASS_UNIT_TEST_SOURCES
   gemm/fp16_sgemm_fp32_128x128x16.cu
   gemm/fp16_sgemm_fp16_128x128x16.cu
   gemm/wmma_gemm.cu
+  gemm/fp16_wmma_gemm_fp16.cu
+  gemm/wmma_gemm_non_multiple16.cu
+  gemm/fp16_wmma_gemm_fp16_non_multiple16.cu
   gemm/wmma_binary_gemm.cu
   gemm/wmma_integer_gemm.cu
   gemm/sgemm_threadblock_swizzle_nn.cu
@@ -89,7 +100,18 @@ set(CUTLASS_UNIT_TEST_SOURCES
   gemm/batched_strided_sgemm_128x128x8.cu
   gemm/batched_strided_dgemm_128x128x8.cu
   gemm/batched_strided_hgemm_128x128x8.cu
+  gemm/batched_strided_wmma_gemm.cu
+  gemm/batched_strided_fp16_wmma_gemm_fp16.cu
   gemm/epilogue_functor.cu
+  reduction/batched_reduction.cu
+  reduction/mixed_batched_reduction.cu
+  gemm/splitK_sgemm.cu
+  gemm/splitK_igemm.cu
+  gemm/splitK_fp16_sgemm_fp16.cu
+  gemm/splitK_dgemm.cu
+  gemm/splitK_hgemm.cu
+  gemm/splitK_wmma_gemm.cu
+  gemm/partitionedK_sgemm_128x128x8.cu
 )
 
 if (CUTLASS_NVRTC_ENABLE)

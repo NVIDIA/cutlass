@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['numeric_5ftypes_2eh',['numeric_types.h',['../numeric__types_8h.html',1,'']]]
+  ['matrix_5ftraits_2eh',['matrix_traits.h',['../matrix__traits_8h.html',1,'']]]
 ];

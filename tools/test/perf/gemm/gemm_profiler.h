@@ -164,24 +164,52 @@ class GemmProfiler {
       result.disposition = Disposition::Passed;
     }
 
-    CutlassDispatch dispatch(testbed.M(),
-                             testbed.N(),
-                             testbed.K(),
-                             testbed.alpha(),
-                             testbed.ptr_A(),
-                             testbed.lda(),
-                             testbed.ptr_B(),
-                             testbed.ldb(),
-                             testbed.beta(),
-                             testbed.ptr_C_initial(),
-                             testbed.ldc(),
-                             testbed.ptr_experimental(),
-                             testbed.ldc());
+    CutlassDispatch *dispatch_ptr;
 
-    dispatch();
+    // check to see if we need to launch batched strided gemm
+    if (testbed.batch_count() == 1) {
+      dispatch_ptr = new CutlassDispatch(testbed.M(),
+        testbed.N(),
+        testbed.K(),
+        testbed.alpha(),
+        testbed.ptr_A(),
+        testbed.lda(),
+        testbed.ptr_B(),
+        testbed.ldb(),
+        testbed.beta(),
+        testbed.ptr_C_initial(),
+        testbed.ldc(),
+        testbed.ptr_experimental(),
+        testbed.ldc());
+
+      dispatch_ptr->operator()();
+    }
+    else {
+      dispatch_ptr = new CutlassDispatch(testbed.M(),
+        testbed.N(),
+        testbed.K(),
+        testbed.alpha(),
+        testbed.ptr_A(),
+        testbed.lda(),
+        testbed.batch_stride_a(),
+        testbed.ptr_B(),
+        testbed.ldb(),
+        testbed.batch_stride_b(),
+        testbed.beta(),
+        testbed.ptr_C_initial(),
+        testbed.ldc(),
+        testbed.batch_stride_c(),
+        testbed.ptr_experimental(),
+        testbed.ldc(),
+        testbed.batch_stride_c(),
+        testbed.batch_count());
+
+      dispatch_ptr->operator()();
+    }
 
     if (cudaDeviceSynchronize() != cudaSuccess) {
       result.disposition = Disposition::Failed;
+      delete dispatch_ptr;
       return result;
     }
 
@@ -202,35 +230,40 @@ class GemmProfiler {
     }
 
     // warmup launch
-    dispatch();
+    dispatch_ptr->operator()();
 
     if (cudaDeviceSynchronize() != cudaSuccess) {
       result.disposition = Disposition::Failed;
+      delete dispatch_ptr;
       return result;
     }
 
     if (cudaEventRecord(events[0]) != cudaSuccess) {
       result.disposition = Disposition::Failed;
+      delete dispatch_ptr;
       return result;
     }
 
     for (int iter = 0; iter < options.iterations; ++iter) {
-      dispatch();
+      dispatch_ptr->operator()();
     }
 
     if (cudaEventRecord(events[1]) != cudaSuccess) {
       result.disposition = Disposition::Failed;
+      delete dispatch_ptr;
       return result;
     }
 
     if (cudaEventSynchronize(events[1]) != cudaSuccess) {
       result.disposition = Disposition::Failed;
+      delete dispatch_ptr;
       return result;
     }
 
     float average_ms = 0;
     if (cudaEventElapsedTime(&average_ms, events[0], events[1]) != cudaSuccess) {
       result.disposition = Disposition::Failed;
+      delete dispatch_ptr;
       return result;
     }
 
@@ -242,6 +275,7 @@ class GemmProfiler {
                 << " failed with disposition: " << result.disposition << "\n";
     }
 
+    delete dispatch_ptr;
     return result;
   }
 
@@ -265,7 +299,7 @@ class GemmProfiler {
 
     std::vector<PerformanceResult<GemmProblem> > results;
 
-      results.push_back(execute_cutlass<CutlassDispatch>(problem, algorithm));
+    results.push_back(execute_cutlass<CutlassDispatch>(problem, algorithm));
     // cool-down period
     if (!options.dry_run) {
       pause(options.sleep_time);
@@ -276,28 +310,30 @@ class GemmProfiler {
 
   /// Runs the test and collects performance for all results
   template <typename CutlassDispatch>
-  void schmoo(Range const &M, Range const &N, Range const &K) {
-    for (int m = M.start; m <= M.end; m = M.next(m)) {
-      for (int n = N.start; n <= N.end; n = N.next(n)) {
-        for (int k = K.start; k <= K.end; k = K.next(k)) {
-
-          std::vector<PerformanceResult<GemmProblem> > results =
+  void schmoo(Range const &M, Range const &N, Range const &K, Range const &batch_count) {
+    for (int b = batch_count.start; b <= batch_count.end; b = batch_count.next(b)) {
+      for (int m = M.start; m <= M.end; m = M.next(m)) {
+        for (int n = N.start; n <= N.end; n = N.next(n)) {
+          for (int k = K.start; k <= K.end; k = K.next(k)) {
+            std::vector<PerformanceResult<GemmProblem> > results =
               execute<CutlassDispatch>(GemmProblem(m,
-                                                   n,
-                                                   k,
-                                                   CutlassDispatch::kLayoutA,
-                                                   CutlassDispatch::kLayoutB,
-                                                   config.alpha,
-                                                   config.beta));
+                n,
+                k,
+                CutlassDispatch::kLayoutA,
+                CutlassDispatch::kLayoutB,
+                config.alpha,
+                config.beta,
+                b));
 
-          for (std::vector<PerformanceResult<GemmProblem> >::const_iterator it = results.begin();
-               it != results.end();
-               ++it) {
-            output.append(*it);
-          }
-        }
-      }
-    }
+            for (std::vector<PerformanceResult<GemmProblem> >::const_iterator it = results.begin();
+              it != results.end();
+              ++it) {
+              output.append(*it);
+            }
+          }//k
+        }//n
+      }//m
+    }//batch_count
   }
 
   /// Runs the test over the problem space and reports only the best performance
@@ -369,7 +405,7 @@ int profile_gemm(TestbenchOutput<GemmProblem> &output,
           config.problem_range.M, config.problem_range.N, config.problem_range.K);
     } else {
       perf.template schmoo<Dispatch>(
-          config.problem_range.M, config.problem_range.N, config.problem_range.K);
+          config.problem_range.M, config.problem_range.N, config.problem_range.K, config.problem_range.batch_count);
     }
   }
 

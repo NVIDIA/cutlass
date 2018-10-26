@@ -80,7 +80,7 @@ $(function() {
 </div><!--header-->
 <div class="contents">
 
-<p><code>#include &lt;<a class="el" href="threadblock__swizzle_8h_source.html">threadblock_swizzle.h</a>&gt;</code></p>
+<p><code>#include &lt;<a class="el" href="gemm_2threadblock__swizzle_8h_source.html">threadblock_swizzle.h</a>&gt;</code></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
@@ -96,6 +96,11 @@ Public Member Functions</h2></td></tr>
 <tr class="separator:af7c1b4e0afb08e893cd14a169a0b47cd"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a9be74716c0e3dc6a7f4cdd64cbb16211"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1RowMajorBlockSwizzle.html#a9be74716c0e3dc6a7f4cdd64cbb16211">get_batch_id</a> ()</td></tr>
 <tr class="separator:a9be74716c0e3dc6a7f4cdd64cbb16211"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aba2c62f525e46ba1e4e55bd60868b505"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1RowMajorBlockSwizzle.html#aba2c62f525e46ba1e4e55bd60868b505">is_last_partition</a> ()</td></tr>
+<tr class="memdesc:aba2c62f525e46ba1e4e55bd60868b505"><td class="mdescLeft">&#160;</td><td class="mdescRight">check if at the last partition  <a href="#aba2c62f525e46ba1e4e55bd60868b505">More...</a><br /></td></tr>
+<tr class="separator:aba2c62f525e46ba1e4e55bd60868b505"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a99077ff45f25146064d5061ee2a274da"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1RowMajorBlockSwizzle.html#a99077ff45f25146064d5061ee2a274da">get_threadblock_bounds</a> (<a class="el" href="structcutlass_1_1gemm_1_1GemmCoord.html">GemmCoord</a> const &amp;problem_size, int partitionK_range)</td></tr>
+<tr class="separator:a99077ff45f25146064d5061ee2a274da"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
 <a id="a4ed7847f8ddad11a6765d914b6f32fcd"></a>
@@ -191,6 +196,44 @@ template&lt;int groupRows, enum swizzleDirection::Kind swDirection&gt; </div>
 
 </div>
 </div>
+<a id="a99077ff45f25146064d5061ee2a274da"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a99077ff45f25146064d5061ee2a274da">&#9670;&nbsp;</a></span>get_threadblock_bounds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;int groupRows, enum swizzleDirection::Kind swDirection&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt;3&gt; <a class="el" href="structcutlass_1_1gemm_1_1RowMajorBlockSwizzle.html">cutlass::gemm::RowMajorBlockSwizzle</a>&lt; groupRows, swDirection &gt;::get_threadblock_bounds </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GemmCoord.html">GemmCoord</a> const &amp;&#160;</td>
+          <td class="paramname"><em>problem_size</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>partitionK_range</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="af7c1b4e0afb08e893cd14a169a0b47cd"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#af7c1b4e0afb08e893cd14a169a0b47cd">&#9670;&nbsp;</a></span>get_threadblock_offset()</h2>
 
@@ -207,6 +250,33 @@ template&lt;int groupRows, enum swizzleDirection::Kind swDirection&gt; </div>
           <td>(</td>
           <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;&#160;</td>
           <td class="paramname"><em>OutputTile</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="aba2c62f525e46ba1e4e55bd60868b505"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aba2c62f525e46ba1e4e55bd60868b505">&#9670;&nbsp;</a></span>is_last_partition()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;int groupRows, enum swizzleDirection::Kind swDirection&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE bool <a class="el" href="structcutlass_1_1gemm_1_1RowMajorBlockSwizzle.html">cutlass::gemm::RowMajorBlockSwizzle</a>&lt; groupRows, swDirection &gt;::is_last_partition </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
           <td></td>
         </tr>
       </table>
@@ -247,12 +317,12 @@ template&lt;int groupRows, enum swizzleDirection::Kind swDirection&gt; </div>
 </div>
 </div>
 <hr/>The documentation for this struct was generated from the following file:<ul>
-<li><a class="el" href="threadblock__swizzle_8h_source.html">threadblock_swizzle.h</a></li>
+<li><a class="el" href="gemm_2threadblock__swizzle_8h_source.html">gemm/threadblock_swizzle.h</a></li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:40 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -1,10 +1,10 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 1.1
+# CUTLASS 1.2
 
-_CUTLASS 1.1.0 - September 2018_
+_CUTLASS 1.2.0 - October 2018_
 
-CUTLASS 1.1 is a collection of CUDA C++ template abstractions for implementing
+CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
 It incorporates strategies for hierarchical decomposition and data movement similar
 to those used to implement cuBLAS.  CUTLASS decomposes these "moving parts" into
@@ -22,12 +22,19 @@ point (FP64) types.  Furthermore, CUTLASS demonstrates CUDA's WMMA API for targe
 the programmable, high-throughput _Tensor Cores_ provided by NVIDIA's Volta architecture
 and beyond.
 
-CUTLASS 1.1 is described in the [CUTLASS Documentation](CUTLASS.md) and the accompanying
+CUTLASS 1.2 is described in the [CUTLASS Documentation](CUTLASS.md) and the accompanying
 [Doxygen documentation](https://nvidia.github.io/cutlass).
 We describe the structure of an efficient GEMM in our talk at the
 [GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
 
+# What's New in CUTLASS 1.2
+_October 2018_
+* [Parallelized Reductions](CUTLASS.md#parallel-reductions-across-gemm-k)
+* Batched strided WMMA GEMM
+
+
 # What's New in CUTLASS 1.1
+_September 2018_
 
 * [CUTLASS Documentation](CUTLASS.md)
 * [Examples](examples/)

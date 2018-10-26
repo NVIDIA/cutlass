@@ -33,87 +33,11 @@
 #include "cutlass/tensor_view.h"
 #include "cutlass/gemm/gemm_coord.h"
 
+#include "tools/util/reference/detail/inner_product.h"
+
 namespace cutlass {
 namespace reference {
 namespace host {
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace detail {
-
-/// Template function to compute an inner product.
-template <typename Atype, typename Btype, typename Ctype>
-Ctype inner_product(Atype a, Btype b, Ctype c) {
-  return Ctype(a) * Ctype(b) + c;
-}
-
-/// Specialization for matrix multiplication with binary operands
-template <>
-inline int inner_product<Vector<bin1_t, 32>, Vector<bin1_t, 32>, int>(
-    Vector<bin1_t, 32> a,
-    Vector<bin1_t, 32> b,
-    int c) {
-
-  int accum = 0;
-  for (int bit = 0; bit < 32; bit++) {
-    accum += a[bit] ^ b[bit];
-  }
-  return accum + c;
-}
-
-/// Specialization for matrix multiplication with signed 4-bit integer operands
-template <> inline
-int inner_product<Vector<int4_t, 8>, Vector<int4_t, 8>, int>(
-    Vector<int4_t, 8> a,
-    Vector<int4_t, 8> b,
-    int c) {
-
-  int accum = 0;
-  for (int k = 0; k < 8; k++) {
-    accum += a[k] * b[k];
-  }
-  return accum + c;
-}
-
-/// Specialization for matrix multiplication with unsigned 4-bit integer operands
-template <> inline
-int inner_product<Vector<uint4_t, 8>, Vector<uint4_t, 8>, int>(
-    Vector<uint4_t, 8> a,
-    Vector<uint4_t, 8> b,
-    int c) {
-
-  int accum = 0;
-  for (int k = 0; k < 8; k++) {
-    accum += a[k] * b[k];
-  }
-  return accum + c;
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename SrcType, typename DstType>
-struct Cast {
-  // Default behavior: convert to the destination type
-  static inline DstType apply(SrcType src) { return static_cast<DstType>(src); };
-};
-
-template <>
-struct Cast<float, int8_t> {
-  static inline int8_t apply(float src) {
-    // Clamp to the range of signed 8-bit integers.
-    return static_cast<int8_t>(fmaxf(-128.f, fminf(127.f, src)));
-  };
-};
-
-template <>
-struct Cast<float, uint8_t> {
-  static inline uint8_t apply(float src) {
-    // Clamp to the range of signed 8-bit integers.
-    return static_cast<uint8_t>(fmaxf(0.f, fminf(255.f, src)));
-  };
-};
-
-} // namespace detail
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -178,7 +102,7 @@ void Gemm(
               AType a = tensor_a.at(MatrixCoord(row, k_block));
               BType b = tensor_b.at(MatrixCoord(k_block, col));
 
-              accum[i][j] = detail::inner_product(a, b, accum[i][j]);
+              accum[i][j] = cutlass::reference::detail::inner_product(a, b, accum[i][j]);
             }
           }
         }
@@ -192,7 +116,7 @@ void Gemm(
           MatrixCoord coord = MatrixCoord(row, col);
           if (row < M && col < N) {
 
-            tensor_c.at(coord) = detail::Cast<ScalarType, CType>::apply(
+            tensor_c.at(coord) = cutlass::reference::detail::Cast<ScalarType, CType>::apply(
               alpha * ScalarType(accum[i][j]) +
               beta * ScalarType(tensor_c.at(coord)));
           }
@@ -226,8 +150,15 @@ void Gemm(
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Batched GEMM
+//
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Computes a batch of GEMMs over a set of matrices of common dimension.
+//
+// TensorRefCollection* is a type satisfying the TensorRefCollection concept.
+//
 template <
   typename TensorRefCollectionA,
   typename TensorRefCollectionB,
@@ -235,14 +166,14 @@ template <
   typename ScalarType,
   typename AccumulatorType
 >
-void BatchGemm(
+void BatchedGemm(
   gemm::GemmCoord problem_size,
   ScalarType alpha,
   TensorRefCollectionA const& tensor_a,
   TensorRefCollectionB const& tensor_b,
   ScalarType beta,
   TensorRefCollectionC &tensor_c,
-  AccumulatorType initial_accum = AccumulatorType(0)) {
+  AccumulatorType initial_accum) {
 
   typename TensorRefCollectionA::ConstIterator tensor_a_it = tensor_a.begin();
   typename TensorRefCollectionB::ConstIterator tensor_b_it = tensor_b.begin();
@@ -261,6 +192,29 @@ void BatchGemm(
       *tensor_c_it,
       initial_accum);
   }
+}
+
+/// Computes a general matrix product among matrices (tensors of rank=2) pointed to by TensorRef
+/// objects.
+//
+// TensorRefCollection* is a type satisfying the TensorRefCollection concept.
+//
+template <
+  typename TensorRefCollectionA,
+  typename TensorRefCollectionB,
+  typename TensorRefCollectionC,
+  typename ScalarType,
+  typename AccumulatorType
+>
+void BatchedGemm(
+  gemm::GemmCoord problem_size,
+  ScalarType alpha,
+  TensorRefCollectionA const& tensor_a,
+  TensorRefCollectionB const& tensor_b,
+  ScalarType beta,
+  TensorRefCollectionC &tensor_c) {
+
+  BatchedGemm(problem_size, alpha, tensor_a, tensor_b, beta, tensor_c, ScalarType(0));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

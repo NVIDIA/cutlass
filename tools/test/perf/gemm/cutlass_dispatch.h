@@ -81,6 +81,32 @@ struct CutlassDispatch {
     params.initialize(m, n, k, alpha, d_a, lda, d_b, ldb, beta, d_c, ldc, d_d, ldd);
   }
 
+  /// Initializes batched strided params object
+  CutlassDispatch(Index m,
+                  Index n,
+                  Index k,
+                  ScalarEpilogue alpha,
+                  ScalarA const* d_a,
+                  Index lda, 
+                  long long int batch_stride_A,
+                  ScalarB const* d_b,
+                  Index ldb,
+                  long long int batch_stride_B,
+                  ScalarEpilogue beta,
+                  ScalarC const* d_c,
+                  Index ldc,
+                  long long int batch_stride_C,
+                  ScalarD* d_d,
+                  Index ldd,
+                  long long int batch_stride_D,
+                  Index batch_count) {
+    params.initialize(m, n, k, alpha, d_a, lda, batch_stride_A, 
+      d_b, ldb, batch_stride_B, 
+      beta, d_c, ldc, batch_stride_C,
+      d_d, ldd, batch_stride_D,
+      batch_count);
+  }
+
   /// Initializes params object
   CutlassDispatch(Params const& _params) : params(_params) {}
 

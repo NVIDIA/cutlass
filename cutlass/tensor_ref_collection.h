@@ -23,7 +23,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Introduces TensorRefCollection concept and defines TensorRefBatch and TensorRefArray. 
+    \brief Introduces TensorRefCollection concept and defines TensorRefBatch and TensorRefArray.
 */
 
 #pragma once
@@ -85,7 +85,7 @@ template <
   /// Index type used for offsets and pointer differences
   typename LongIndex_ = long long
 >
-struct TensorRefBatchStrided: 
+struct TensorRefBatchStrided:
   public TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_> {
 
   //
@@ -98,11 +98,15 @@ struct TensorRefBatchStrided:
   /// Storage type
   typedef typename Base::Storage Storage;
 
+  /// Rank of the logical tensor
+  static int const kRank = Rank_;
+
   /// Index type
   typedef Index_ Index;
 
   /// Typically, strides in memory can be very large
   typedef LongIndex_ LongIndex;
+
 
   /// Coordinate in logical tensor space
   typedef Coord<kRank> TensorCoord;
@@ -121,7 +125,7 @@ struct TensorRefBatchStrided:
     /// Reference to the parent TensorBatchRef object
     TensorRefBatchStrided const &ref_;
 
-    /// Offset from the base TensorRef pointer 
+    /// Offset from the base TensorRef pointer
     LongIndex offset_;
 
   public:
@@ -129,12 +133,12 @@ struct TensorRefBatchStrided:
     /// Constructs a ConstIterator from a parent TensorRefBatchStrided
     CUTLASS_HOST_DEVICE
     ConstIterator(
-      TensorRefBatchStrided const &ref, 
+      TensorRefBatchStrided const &ref,
       LongIndex offset = 0): ref_(ref), offset_(offset) { }
 
     /// Obtains a TensorRef pointed to by the iterator
     CUTLASS_HOST_DEVICE
-    TensorRef *operator() const {
+    TensorRef operator*() const {
       TensorRef ref(ref_);
       ref.add_pointer_offset(offset_);
       return ref;
@@ -158,7 +162,7 @@ struct TensorRefBatchStrided:
     /// Returns an iterator advanced by (idx) amount
     CUTLASS_HOST_DEVICE
     ConstIterator operator+(Index idx) {
-      return ConstIterator(ref, offset_ + ref_.tensor_stride * idx);
+      return ConstIterator(ref_, offset_ + ref_.tensor_stride * idx);
     }
 
     /// Advances this iterator by (idx) and returns a reference to self
@@ -198,7 +202,7 @@ struct TensorRefBatchStrided:
 
     /// Returns the difference in offset between two iterators
     CUTLASS_HOST_DEVICE
-    Stride operator-(ConstIterator const &it) {
+    LongIndex operator-(ConstIterator const &it) {
       return offset_ - it.offset_;
     }
   };
@@ -218,10 +222,10 @@ struct TensorRefBatchStrided:
   CUTLASS_HOST_DEVICE
   TensorRefBatchStrided(): tensor_stride(0) { }
 
-  // Constructs form a tensor reference and 
+  // Constructs form a tensor reference and
   CUTLASS_HOST_DEVICE
-  TensorRefBatchStrided(TensorRef const &ref, LongIndex _tensor_stride = 0): 
-    TensorRef(ref), 
+  TensorRefBatchStrided(TensorRef const &ref, LongIndex _tensor_stride = 0):
+    TensorRef(ref),
     tensor_stride(_tensor_stride) { }
 
   /// Gets the pointer offset
@@ -232,7 +236,7 @@ struct TensorRefBatchStrided:
 
   // Returns a reference
   CUTLASS_HOST_DEVICE
-  TensorRef at(Index idx) const {
+  TensorRef at(Index idx = 0) const {
     TensorRef ref(*this);
     ref.add_pointer_offset(get_pointer_offset(idx));
     return ref;
@@ -245,6 +249,30 @@ struct TensorRefBatchStrided:
   }
 };
 
+/// Helper to construct a TensorRefBatchStrided<> object using type deduction
+template <typename TensorRef_>
+CUTLASS_HOST_DEVICE
+TensorRefBatchStrided<
+  typename TensorRef_::Storage,
+  TensorRef_::kRank,
+  typename TensorRef_::MapFunc,
+  TensorRef_::kStorageGrank,
+  typename TensorRef_::Index,
+  typename TensorRef_::LongIndex
+> make_TensorRefBatchStrided(
+  TensorRef_ const &ref,
+  typename TensorRef_::LongIndex batch_stride = 0) {
+
+  return TensorRefBatchStrided<
+    typename TensorRef_::Storage,
+    TensorRef_::kRank,
+    typename TensorRef_::MapFunc,
+    TensorRef_::kStorageGrank,
+    typename TensorRef_::Index,
+    typename TensorRef_::LongIndex
+  >(ref, batch_stride);
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// This satisfies TensorRefCollection and stores a collection of TensorRef objects. This is a
@@ -253,7 +281,7 @@ struct TensorRefBatchStrided:
 /// Note, TensorRef maps a logical coordinate space to an n-D array with rank kStorageRank. It
 /// maintains a stride vector of similar rank, but the least significant rank is defined to be 1.
 ///
-/// The least significant stride of 1 is not stored, and therefore the number of stride arrays is 
+/// The least significant stride of 1 is not stored, and therefore the number of stride arrays is
 /// kStorageRank - 1.
 template <
   /// Data type of element stored within tensor
@@ -274,9 +302,6 @@ struct TensorRefArray {
   // Type definitions
   //
 
-  /// TensorRef type obtained from the TensorRefArray
-  typedef TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_> TensorRef;
-
   /// Element pointed to by the TensorRef
   typedef Storage_ Storage;
 
@@ -287,16 +312,17 @@ struct TensorRefArray {
   typedef LongIndex_ LongIndex;
 
   /// Rank of the stride vector
-  static int const kStorageRank = TensorRef::kStorageRank;
+  static int const kStorageRank = StorageRank_;
 
-  /// TensorRefIterator over TensorRef objects in TensorRefArray 
+  /// TensorRefIterator over TensorRef objects in TensorRefArray
   class ConstIterator {
   public:
 
-    /// TensorRef returned by the iterator
-    typedef Base TensorRef;
+    /// Containing class's tensor rev
+    typedef TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_> TensorRef;
 
   private:
+
     /// Reference to the TensorRefArray
     TensorRefArray const &ref_;
 
@@ -307,11 +333,11 @@ struct TensorRefArray {
 
     /// Constructs a ConstIterator over the TensorRef objects
     CUTLASS_HOST_DEVICE
-    ConstIterator(TensorArrayRef const &ref, int idx = 0): ref_(ref), idx_(idx) { }
+    ConstIterator(TensorRefArray const &ref, int idx = 0): ref_(ref), idx_(idx) { }
 
     /// Obtains a TensorRef pointed to by this iterator
     CUTLASS_HOST_DEVICE
-    TensorRef *operator() const {
+    TensorRef operator*() const {
       return ref_.reference(idx_);
     }
 
@@ -367,6 +393,9 @@ struct TensorRefArray {
     }
   };
 
+  /// TensorRef type obtained from the TensorRefArray
+  typedef TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_> TensorRef;
+
   //
   // Data members
   //
@@ -383,13 +412,13 @@ struct TensorRefArray {
 
   // Default ctor
   CUTLASS_HOST_DEVICE
-  TensorArrayRef() { }
+  TensorRefArray() { }
 
   // Construct from pointers to arrays to strides
   CUTLASS_HOST_DEVICE
-  TensorArrayRef(
+  TensorRefArray(
     Storage **_pointers,
-    Index _strides[kStorageRank - 1]): pointers(_pointers) { 
+    Index _strides[kStorageRank - 1]): pointers(_pointers) {
 
     // Copy pointers to strides arrays
     for (int i = 0; i < kStorageRank - 1; ++i) {
@@ -399,11 +428,11 @@ struct TensorRefArray {
 
   // Returns a TensorRef at the given index in the collection
   CUTLASS_HOST_DEVICE
-  TensorRef at(Index idx) const {
+  TensorRef at(Index idx = 0) const {
     Coord<kStorageRank - 1, Index> stride;
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kStorageRank - 1; ++i) {
-      stride[i] = stride_[idx][i];
+      stride[i] = strides[idx][i];
     }
     return TensorRef(pointers[idx], stride);
   }

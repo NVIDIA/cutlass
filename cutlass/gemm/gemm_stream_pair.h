@@ -111,7 +111,7 @@ struct GlobalLoadStreamPair {
   CUTLASS_DEVICE GlobalLoadStreamPair(Params const &params,
                                       SharedStorage &shared_storage,
                                       ThreadblockTileRef const &threadblock_tile_ref,
-                                      Coord<3> const &bounds,
+                                      Coord<3> const bounds,
                                       Coord<3> const &block_offset = make_Coord(0, 0, 0))
       : stream_a(params.stream_a,
                  shared_storage.stream_a,
@@ -128,6 +128,13 @@ struct GlobalLoadStreamPair {
   GlobalLoadStreamPair & operator+=(Coord<3> const offset) {
     stream_a += offset;
     stream_b += offset;
+    return *this;
+  }
+
+  CUTLASS_DEVICE
+  GlobalLoadStreamPair & add_batch_offset(int batch_id) {
+    stream_a.add_batch_offset(batch_id);
+    stream_b.add_batch_offset(batch_id);
     return *this;
   }
 

@@ -21,6 +21,8 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include_directories("external/googletest/googletest/include")
+
 add_subdirectory(external/googletest/googletest)
 add_subdirectory(test)
 add_subdirectory(nvrtc)
+

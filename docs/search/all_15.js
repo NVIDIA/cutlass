@@ -9,5 +9,9 @@ var searchData=
   ['wmma_5fgemm_5ftraits_2eh',['wmma_gemm_traits.h',['../wmma__gemm__traits_8h.html',1,'']]],
   ['wmma_5fmatrix_2eh',['wmma_matrix.h',['../wmma__matrix_8h.html',1,'']]],
   ['wmmagemmglobaliteratorcd',['WmmaGemmGlobalIteratorCd',['../structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html',1,'cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;'],['../structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#aa5c14e2a799249fe8bba14aa1dbe69dc',1,'cutlass::gemm::WmmaGemmGlobalIteratorCd::WmmaGemmGlobalIteratorCd()']]],
-  ['wmmagemmglobaliteratorcdtraits',['WmmaGemmGlobalIteratorCdTraits',['../structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCdTraits.html',1,'cutlass::gemm']]]
+  ['wmmagemmglobaliteratorcdtraits',['WmmaGemmGlobalIteratorCdTraits',['../structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCdTraits.html',1,'cutlass::gemm']]],
+  ['wmmareshapetile',['WmmaReshapeTile',['../structcutlass_1_1WmmaReshapeTile.html',1,'cutlass']]],
+  ['wmmareshapetile_3c_20tile_5f_2c_20kaccesssize_5f_2c_20kldsperaccess_5f_2c_20true_20_3e',['WmmaReshapeTile&lt; Tile_, kAccessSize_, kLdsPerAccess_, true &gt;',['../structcutlass_1_1WmmaReshapeTile_3_01Tile___00_01kAccessSize___00_01kLdsPerAccess___00_01true_01_4.html',1,'cutlass']]],
+  ['workspace_5fptr',['workspace_ptr',['../structcutlass_1_1gemm_1_1SplitkPIGemmTraits_1_1Params.html#a38de876c29aaccc45ec8d194814b102a',1,'cutlass::gemm::SplitkPIGemmTraits::Params']]],
+  ['workspace_5fsize',['workspace_size',['../structcutlass_1_1gemm_1_1SplitkPIGemmTraits_1_1Params.html#aff11608efe9ced3a4862ce78399aa86e',1,'cutlass::gemm::SplitkPIGemmTraits::Params']]]
 ];

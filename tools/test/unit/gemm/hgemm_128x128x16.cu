@@ -29,6 +29,8 @@
 #include "tools/test/unit/gemm/gemm_testbed.h"
 #include "tools/test/unit/gemm/run_gemm.h"
 
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 530
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(Hgemm_128x128x16, hgemm_128x128x16_nt) {
@@ -326,4 +328,5 @@ TEST(Hgemm_128x128x16, hgemm_124x126x32_ragged_alpha2_beta1_nt) {
   run_gemm<HgemmTraits>(124, 126, 32, cutlass::half_t(2), cutlass::half_t(1));
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+#endif
 

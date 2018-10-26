@@ -313,6 +313,56 @@ struct Coord {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Scalar multiplication
+template <typename T, int Rank, typename Index>
+CUTLASS_HOST_DEVICE
+Coord<Rank, Index> operator*(T s, Coord<Rank, Index> coord) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Rank; ++i) {
+    coord[i] *= s;
+  }
+  return coord;
+}
+
+/// Scalar multiplication
+template <typename T, int Rank, typename Index>
+CUTLASS_HOST_DEVICE
+Coord<Rank, Index> operator*(Coord<Rank, Index> coord, T s) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Rank; ++i) {
+    coord[i] *= s;
+  }
+  return coord;
+}
+
+/// Scalar division
+template <typename T, int Rank, typename Index>
+CUTLASS_HOST_DEVICE
+Coord<Rank, Index> operator/(T s, Coord<Rank, Index> coord) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Rank; ++i) {
+    coord[i] = s / coord[i];
+  }
+  return coord;
+}
+
+/// Scalar division
+template <typename T, int Rank, typename Index>
+CUTLASS_HOST_DEVICE
+Coord<Rank, Index> operator/(Coord<Rank, Index> coord, T s) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Rank; ++i) {
+    coord[i] /= s;
+  }
+  return coord;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Integer-valued make_Coord
+//
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Helper to make a 2-element coordinate
 CUTLASS_HOST_DEVICE
 Coord<1> make_Coord(int _0) {

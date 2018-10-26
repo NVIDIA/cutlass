@@ -127,6 +127,12 @@ struct GemmCoord : public Coord<4, int> {
   Coord<2> nm() const {
     return make_Coord(n(), m());
   }
+  
+  /// Obtains a Coord<2> from GemmCoord
+  CUTLASS_HOST_DEVICE
+  Coord<2> mn() const {
+    return make_Coord(m(), n());
+  }
 
   /// Obtains a Coord<2> from GemmCoord
   CUTLASS_HOST_DEVICE

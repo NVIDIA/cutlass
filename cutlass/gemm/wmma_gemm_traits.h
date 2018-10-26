@@ -46,7 +46,7 @@ namespace gemm {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <
+  template <
     /// The layout for A.
     MatrixLayout::Kind kLayoutA_,
     /// The layout for B.
@@ -68,7 +68,18 @@ template <
     /// The number of scalars per LDG for A.
     int kScalarsPerLdgA_,
     /// The number of scalars per LDG for B.
-    int kScalarsPerLdgB_>
+    int kScalarsPerLdgB_,
+    /// The number of scalars per LDS for A.
+    int KScalarsPerLdsA_,
+    /// The number of scalars per LDS for B.
+    int KscalarsPerLdsB_,
+    /// The number of scalars per LDG for C and STG for D.
+    int kScalarsPerLdgCAndStgD_,
+    /// The number of scalars per STS for D.
+    int kScalarsPerStsD_,
+    /// The number of scalars per LDS for D.
+    int kScalarsPerLdsD_
+>
 struct WmmaGemmConfig : public GemmConfig<
                             /// The scalar type for A.
                             ScalarA_,
@@ -94,19 +105,19 @@ struct WmmaGemmConfig : public GemmConfig<
                             /// The number of scalars per STS for A.
                             kScalarsPerLdgA_,
                             /// The number of scalars per LDS for A.
-                            8,
+                            KScalarsPerLdsA_,
                             /// The number of scalars per LDG for B.
                             kScalarsPerLdgB_,
                             /// The number of scalars per STS for B.
                             kScalarsPerLdgB_,
                             /// The number of scalars per LDS for B.
-                            8,
+                            KscalarsPerLdsB_,
                             /// The number of scalars per LDG for C and STG for D.
-                            16 / sizeof(ScalarC_),
+                            kScalarsPerLdgCAndStgD_,
                             /// The number of scalars per STS for D.
-                            16 / sizeof(Accumulator_),
+                            kScalarsPerStsD_,
                             /// The number of scalars per LDS for D.
-                            16 / sizeof(Accumulator_),
+                            kScalarsPerLdsD_,
                             /// The number of stages in shared memory.
                             1,
                             /// If true, residue is computed in mainloop. If false, separate loops are instantiated.
@@ -955,6 +966,16 @@ template <
     int kScalarsPerLdgA_,
     /// The number of halfs loaded in one LDG for B.
     int kScalarsPerLdgB_,
+    /// The number of scalars per LDS for A.
+    int KScalarsPerLdsA_,
+    /// The number of scalars per LDS for B.
+    int KscalarsPerLdsB_,
+    /// The number of scalars per LDG for C and STG for D.
+    int kScalarsPerLdgCAndStgD_,
+    /// The number of scalars per STS for D.
+    int kScalarsPerStsD_,
+    /// The number of scalars per LDS for D.
+    int kScalarsPerLdsD_,
     /// The index.
     typename Index_>
 struct WmmaGemmTraitsHelper {
@@ -969,7 +990,13 @@ struct WmmaGemmTraitsHelper {
                          WarpGemmShape_,
                          InstructionShape_,
                          kScalarsPerLdgA_,
-                         kScalarsPerLdgB_>
+                         kScalarsPerLdgB_,
+                         KScalarsPerLdsA_,
+                         KscalarsPerLdsB_,
+                         kScalarsPerLdgCAndStgD_,
+                         kScalarsPerStsD_,
+                         kScalarsPerLdsD_
+                       >
       GemmConfig;
 
   /// The GEMM config for A.
@@ -1042,7 +1069,7 @@ struct WmmaGemmTraitsHelper {
   typedef ClearAccumulators<typename MultiplyAdd::ScalarC> ClearAccumulators;
 
   /// The helper to create the epilogue traits.
-  typedef WmmaGemmEpilogueTraitsHelper<GemmConfig, EpilogueFunctor_, Index_> EpilogueTraitsHelper;
+  typedef WmmaGemmEpilogueTraitsHelper<GemmConfig, Accumulator_, EpilogueFunctor_, Index_> EpilogueTraitsHelper;
   /// The traits class for the epilogue.
   typedef SimplifiedGemmEpilogueTraits<GemmConfig, EpilogueFunctor_, Index_, EpilogueTraitsHelper>
       GemmEpilogueTraits;
@@ -1084,6 +1111,16 @@ template <
     int kScalarsPerLdgA_ = 8,
     /// The number of scalars per LDG for B.
     int kScalarsPerLdgB_ = 8,
+    /// The number of scalars per LDS for A.
+    int KScalarsPerLdsA_ = 8,
+    /// The number of scalars per LDS for B.
+    int KscalarsPerLdsB_ = 8,
+    /// The number of scalars per LDG for C and STG for D.
+    int kScalarsPerLdgCAndStgD_ = 16 / sizeof(ScalarC_),
+    /// The number of scalars per STS for D.
+    int kScalarsPerStsD_ = 16 / sizeof(Accumulator_),
+    /// The number of scalars per LDS for D.
+    int kScalarsPerLdsD_ = 16 / sizeof(Accumulator_),
     /// The index.
     typename Index_ = int,
     /// The helper class.
@@ -1099,6 +1136,11 @@ template <
                                             InstructionShape_,
                                             kScalarsPerLdgA_,
                                             kScalarsPerLdgB_,
+                                            KScalarsPerLdsA_,
+                                            KscalarsPerLdsB_,
+                                            kScalarsPerLdgCAndStgD_,
+                                            kScalarsPerStsD_,
+                                            kScalarsPerLdsD_,
                                             Index_> >
 struct WmmaGemmTraits : public GemmTraits<
                             // The config.

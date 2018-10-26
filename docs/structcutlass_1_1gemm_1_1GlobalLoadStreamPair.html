@@ -117,11 +117,13 @@ Public Types</h2></td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:ab97442e24a1d6d64727b6320ab901ad1"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#ab97442e24a1d6d64727b6320ab901ad1">GlobalLoadStreamPair</a> (<a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair_1_1Params.html">Params</a> const &amp;params, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair_1_1SharedStorage.html">SharedStorage</a> &amp;shared_storage, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a79b783f02eaa4cf8fc8f929448e121be">ThreadblockTileRef</a> const &amp;threadblock_tile_ref, <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;bounds, <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;block_offset=<a class="el" href="namespacecutlass.html#a7419519fa453a121dfa5f26bf87318d9">make_Coord</a>(0, 0, 0))</td></tr>
-<tr class="memdesc:ab97442e24a1d6d64727b6320ab901ad1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#ab97442e24a1d6d64727b6320ab901ad1">More...</a><br /></td></tr>
-<tr class="separator:ab97442e24a1d6d64727b6320ab901ad1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a946312383970b405c34878758c673628"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a946312383970b405c34878758c673628">GlobalLoadStreamPair</a> (<a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair_1_1Params.html">Params</a> const &amp;params, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair_1_1SharedStorage.html">SharedStorage</a> &amp;shared_storage, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a79b783f02eaa4cf8fc8f929448e121be">ThreadblockTileRef</a> const &amp;threadblock_tile_ref, <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const bounds, <a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;block_offset=<a class="el" href="namespacecutlass.html#a7419519fa453a121dfa5f26bf87318d9">make_Coord</a>(0, 0, 0))</td></tr>
+<tr class="memdesc:a946312383970b405c34878758c673628"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ctor.  <a href="#a946312383970b405c34878758c673628">More...</a><br /></td></tr>
+<tr class="separator:a946312383970b405c34878758c673628"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a769813dcffe1767aab49ac30b838a5f4"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html">GlobalLoadStreamPair</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a769813dcffe1767aab49ac30b838a5f4">operator+=</a> (<a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const offset)</td></tr>
 <tr class="separator:a769813dcffe1767aab49ac30b838a5f4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0c3d10d570da81a6b31b0637b5488259"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html">GlobalLoadStreamPair</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a0c3d10d570da81a6b31b0637b5488259">add_batch_offset</a> (int batch_id)</td></tr>
+<tr class="separator:a0c3d10d570da81a6b31b0637b5488259"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a5c0efc259bb3bd1675f5d395dab71e95"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a5c0efc259bb3bd1675f5d395dab71e95">copy</a> ()</td></tr>
 <tr class="memdesc:a5c0efc259bb3bd1675f5d395dab71e95"><td class="mdescLeft">&#160;</td><td class="mdescRight">Trigger the copies from shared memory to registers.  <a href="#a5c0efc259bb3bd1675f5d395dab71e95">More...</a><br /></td></tr>
 <tr class="separator:a5c0efc259bb3bd1675f5d395dab71e95"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -229,8 +231,8 @@ template&lt;typename StreamA_ , typename StreamB_ , bool kResidueInProlog_&gt; <
 </div>
 </div>
 <h2 class="groupheader">Constructor &amp; Destructor Documentation</h2>
-<a id="ab97442e24a1d6d64727b6320ab901ad1"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab97442e24a1d6d64727b6320ab901ad1">&#9670;&nbsp;</a></span>GlobalLoadStreamPair()</h2>
+<a id="a946312383970b405c34878758c673628"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a946312383970b405c34878758c673628">&#9670;&nbsp;</a></span>GlobalLoadStreamPair()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -261,7 +263,7 @@ template&lt;typename StreamA_ , typename StreamB_ , bool kResidueInProlog_&gt; <
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const &amp;&#160;</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1Coord.html">Coord</a>&lt; 3 &gt; const&#160;</td>
           <td class="paramname"><em>bounds</em>, </td>
         </tr>
         <tr>
@@ -286,6 +288,34 @@ template&lt;typename StreamA_ , typename StreamB_ , bool kResidueInProlog_&gt; <
 </div>
 </div>
 <h2 class="groupheader">Member Function Documentation</h2>
+<a id="a0c3d10d570da81a6b31b0637b5488259"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0c3d10d570da81a6b31b0637b5488259">&#9670;&nbsp;</a></span>add_batch_offset()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename StreamA_ , typename StreamB_ , bool kResidueInProlog_&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html">GlobalLoadStreamPair</a>&amp; <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html">cutlass::gemm::GlobalLoadStreamPair</a>&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;::add_batch_offset </td>
+          <td>(</td>
+          <td class="paramtype">int&#160;</td>
+          <td class="paramname"><em>batch_id</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a6699714c357f2714df011f58c1c48861"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a6699714c357f2714df011f58c1c48861">&#9670;&nbsp;</a></span>commit()</h2>
 
@@ -511,7 +541,7 @@ template&lt;typename StreamA_ , typename StreamB_ , bool kResidueInProlog_&gt; <
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:52 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:39 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

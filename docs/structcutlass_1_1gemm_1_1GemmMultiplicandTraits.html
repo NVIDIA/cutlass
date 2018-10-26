@@ -97,10 +97,10 @@ Static Public Attributes</h2></td></tr>
 <tr class="memitem:a962ffde3b3db78792b67dd1f57ab0a05"><td class="memItemLeft" align="right" valign="top">static <a class="el" href="structcutlass_1_1GemmOperand.html#ab209ea3de198efabe8e8707dfe8e0a0c">GemmOperand::Kind</a> const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a962ffde3b3db78792b67dd1f57ab0a05">kUsage</a> = Usage</td></tr>
 <tr class="memdesc:a962ffde3b3db78792b67dd1f57ab0a05"><td class="mdescLeft">&#160;</td><td class="mdescRight">Identifies multiplicand.  <a href="#a962ffde3b3db78792b67dd1f57ab0a05">More...</a><br /></td></tr>
 <tr class="separator:a962ffde3b3db78792b67dd1f57ab0a05"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a19076e58e60d296da74cf504e2a473fd"><td class="memItemLeft" align="right" valign="top">static <a class="el" href="structcutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2b">MatrixLayout::Kind</a> const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a19076e58e60d296da74cf504e2a473fd">kLayout</a> = Layout</td></tr>
+<tr class="memitem:a19076e58e60d296da74cf504e2a473fd"><td class="memItemLeft" align="right" valign="top">static <a class="el" href="namespacecutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2b">MatrixLayout::Kind</a> const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a19076e58e60d296da74cf504e2a473fd">kLayout</a> = Layout</td></tr>
 <tr class="memdesc:a19076e58e60d296da74cf504e2a473fd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Layout of tile.  <a href="#a19076e58e60d296da74cf504e2a473fd">More...</a><br /></td></tr>
 <tr class="separator:a19076e58e60d296da74cf504e2a473fd"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a1984c9ef6abfd029acbc3f702593ab85"><td class="memItemLeft" align="right" valign="top">static bool const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a1984c9ef6abfd029acbc3f702593ab85">kKstrided</a> = (<a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a962ffde3b3db78792b67dd1f57ab0a05">kUsage</a> == <a class="el" href="structcutlass_1_1GemmOperand.html#ab209ea3de198efabe8e8707dfe8e0a0cac2b9fe9e3679a059d1a6c946b2a2c31a">GemmOperand::kA</a> ^ <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a19076e58e60d296da74cf504e2a473fd">kLayout</a> == <a class="el" href="structcutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2ba6a287c17f9f5bf53528ae68296beeedb">MatrixLayout::kRowMajor</a>)</td></tr>
+<tr class="memitem:a1984c9ef6abfd029acbc3f702593ab85"><td class="memItemLeft" align="right" valign="top">static bool const&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a1984c9ef6abfd029acbc3f702593ab85">kKstrided</a> = (<a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a962ffde3b3db78792b67dd1f57ab0a05">kUsage</a> == <a class="el" href="structcutlass_1_1GemmOperand.html#ab209ea3de198efabe8e8707dfe8e0a0cac2b9fe9e3679a059d1a6c946b2a2c31a">GemmOperand::kA</a> ^ <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a19076e58e60d296da74cf504e2a473fd">kLayout</a> == <a class="el" href="namespacecutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2ba6a287c17f9f5bf53528ae68296beeedb">MatrixLayout::kRowMajor</a>)</td></tr>
 <tr class="separator:a1984c9ef6abfd029acbc3f702593ab85"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
@@ -154,7 +154,7 @@ template&lt;typename ThreadBlockTile_ , GemmOperand::Kind Usage, MatrixLayout::K
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname">bool const <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html">cutlass::gemm::GemmMultiplicandTraits</a>&lt; ThreadBlockTile_, Usage, Layout &gt;::kKstrided = (<a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a962ffde3b3db78792b67dd1f57ab0a05">kUsage</a> == <a class="el" href="structcutlass_1_1GemmOperand.html#ab209ea3de198efabe8e8707dfe8e0a0cac2b9fe9e3679a059d1a6c946b2a2c31a">GemmOperand::kA</a> ^ <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a19076e58e60d296da74cf504e2a473fd">kLayout</a> == <a class="el" href="structcutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2ba6a287c17f9f5bf53528ae68296beeedb">MatrixLayout::kRowMajor</a>)</td>
+          <td class="memname">bool const <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html">cutlass::gemm::GemmMultiplicandTraits</a>&lt; ThreadBlockTile_, Usage, Layout &gt;::kKstrided = (<a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a962ffde3b3db78792b67dd1f57ab0a05">kUsage</a> == <a class="el" href="structcutlass_1_1GemmOperand.html#ab209ea3de198efabe8e8707dfe8e0a0cac2b9fe9e3679a059d1a6c946b2a2c31a">GemmOperand::kA</a> ^ <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html#a19076e58e60d296da74cf504e2a473fd">kLayout</a> == <a class="el" href="namespacecutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2ba6a287c17f9f5bf53528ae68296beeedb">MatrixLayout::kRowMajor</a>)</td>
         </tr>
       </table>
   </td>
@@ -178,7 +178,7 @@ template&lt;typename ThreadBlockTile_ , GemmOperand::Kind Usage, MatrixLayout::K
   <td class="mlabels-left">
       <table class="memname">
         <tr>
-          <td class="memname"><a class="el" href="structcutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2b">MatrixLayout::Kind</a> const <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html">cutlass::gemm::GemmMultiplicandTraits</a>&lt; ThreadBlockTile_, Usage, Layout &gt;::kLayout = Layout</td>
+          <td class="memname"><a class="el" href="namespacecutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2b">MatrixLayout::Kind</a> const <a class="el" href="structcutlass_1_1gemm_1_1GemmMultiplicandTraits.html">cutlass::gemm::GemmMultiplicandTraits</a>&lt; ThreadBlockTile_, Usage, Layout &gt;::kLayout = Layout</td>
         </tr>
       </table>
   </td>
@@ -220,7 +220,7 @@ template&lt;typename ThreadBlockTile_ , GemmOperand::Kind Usage, MatrixLayout::K
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:52 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:39 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

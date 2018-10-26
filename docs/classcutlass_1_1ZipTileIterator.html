@@ -108,9 +108,12 @@ Public Types</h2></td></tr>
 <tr class="memitem:aa853fa2a2e73397d8950567f3f5b7a15"><td class="memItemLeft" align="right" valign="top">typedef First::PredicateVector&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classcutlass_1_1ZipTileIterator.html#aa853fa2a2e73397d8950567f3f5b7a15">PredicateVector</a></td></tr>
 <tr class="memdesc:aa853fa2a2e73397d8950567f3f5b7a15"><td class="mdescLeft">&#160;</td><td class="mdescRight">Predicate vector.  <a href="#aa853fa2a2e73397d8950567f3f5b7a15">More...</a><br /></td></tr>
 <tr class="separator:aa853fa2a2e73397d8950567f3f5b7a15"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ab48ad3cf2ffeec356d8592d94f6b81f0"><td class="memItemLeft" align="right" valign="top">typedef First::Index&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classcutlass_1_1ZipTileIterator.html#ab48ad3cf2ffeec356d8592d94f6b81f0">Index</a></td></tr>
-<tr class="memdesc:ab48ad3cf2ffeec356d8592d94f6b81f0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Index type.  <a href="#ab48ad3cf2ffeec356d8592d94f6b81f0">More...</a><br /></td></tr>
-<tr class="separator:ab48ad3cf2ffeec356d8592d94f6b81f0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2b054859fda34cba271e8a325ee7662f"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1platform_1_1Pair.html">platform::Pair</a>&lt; typename First::Index, typename Second::Index &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classcutlass_1_1ZipTileIterator.html#a2b054859fda34cba271e8a325ee7662f">Index</a></td></tr>
+<tr class="memdesc:a2b054859fda34cba271e8a325ee7662f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Index type.  <a href="#a2b054859fda34cba271e8a325ee7662f">More...</a><br /></td></tr>
+<tr class="separator:a2b054859fda34cba271e8a325ee7662f"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a2b37d5c256318aa7054858cf85c9bbf4"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1platform_1_1Pair.html">platform::Pair</a>&lt; typename First::LongIndex, typename Second::LongIndex &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classcutlass_1_1ZipTileIterator.html#a2b37d5c256318aa7054858cf85c9bbf4">LongIndex</a></td></tr>
+<tr class="memdesc:a2b37d5c256318aa7054858cf85c9bbf4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Long index type.  <a href="#a2b37d5c256318aa7054858cf85c9bbf4">More...</a><br /></td></tr>
+<tr class="separator:a2b37d5c256318aa7054858cf85c9bbf4"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a1dea96f5cf56aade14bd815aee91d09c"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1ZipTensorRef.html">ZipTensorRef</a>&lt; typename First::TensorRef, typename Second::TensorRef &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classcutlass_1_1ZipTileIterator.html#a1dea96f5cf56aade14bd815aee91d09c">TensorRef</a></td></tr>
 <tr class="memdesc:a1dea96f5cf56aade14bd815aee91d09c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Tensor reference.  <a href="#a1dea96f5cf56aade14bd815aee91d09c">More...</a><br /></td></tr>
 <tr class="separator:a1dea96f5cf56aade14bd815aee91d09c"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -208,9 +211,9 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:a7bae0f9b789e75bb154c5f37db50e14c"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="classcutlass_1_1ZipTileIterator.html">ZipTileIterator</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classcutlass_1_1ZipTileIterator.html#a7bae0f9b789e75bb154c5f37db50e14c">operator-=</a> (int count)</td></tr>
 <tr class="memdesc:a7bae0f9b789e75bb154c5f37db50e14c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Decrements to previous tile.  <a href="#a7bae0f9b789e75bb154c5f37db50e14c">More...</a><br /></td></tr>
 <tr class="separator:a7bae0f9b789e75bb154c5f37db50e14c"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a0752af296e110d9104a45ae24bd0a104"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classcutlass_1_1ZipTileIterator.html#a0752af296e110d9104a45ae24bd0a104">add_pointer_offset</a> (<a class="el" href="classcutlass_1_1ZipTileIterator.html#ab48ad3cf2ffeec356d8592d94f6b81f0">Index</a> offset)</td></tr>
-<tr class="memdesc:a0752af296e110d9104a45ae24bd0a104"><td class="mdescLeft">&#160;</td><td class="mdescRight">Adds an offset to both iterators.  <a href="#a0752af296e110d9104a45ae24bd0a104">More...</a><br /></td></tr>
-<tr class="separator:a0752af296e110d9104a45ae24bd0a104"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:affc3b73f32df6caa41a841a630ffdf81"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classcutlass_1_1ZipTileIterator.html#affc3b73f32df6caa41a841a630ffdf81">add_pointer_offset</a> (<a class="el" href="classcutlass_1_1ZipTileIterator.html#a2b37d5c256318aa7054858cf85c9bbf4">LongIndex</a> offset)</td></tr>
+<tr class="memdesc:affc3b73f32df6caa41a841a630ffdf81"><td class="mdescLeft">&#160;</td><td class="mdescRight">Adds an offset to both iterators.  <a href="#affc3b73f32df6caa41a841a630ffdf81">More...</a><br /></td></tr>
+<tr class="separator:affc3b73f32df6caa41a841a630ffdf81"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
@@ -254,8 +257,8 @@ template&lt;typename First_ , typename Second_ &gt; </div>
 
 </div>
 </div>
-<a id="ab48ad3cf2ffeec356d8592d94f6b81f0"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab48ad3cf2ffeec356d8592d94f6b81f0">&#9670;&nbsp;</a></span>Index</h2>
+<a id="a2b054859fda34cba271e8a325ee7662f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2b054859fda34cba271e8a325ee7662f">&#9670;&nbsp;</a></span>Index</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -263,7 +266,23 @@ template&lt;typename First_ , typename Second_ &gt; </div>
 template&lt;typename First_ , typename Second_ &gt; </div>
       <table class="memname">
         <tr>
-          <td class="memname">typedef First::Index <a class="el" href="classcutlass_1_1ZipTileIterator.html">cutlass::ZipTileIterator</a>&lt; First_, Second_ &gt;::<a class="el" href="classcutlass_1_1ZipTileIterator.html#ab48ad3cf2ffeec356d8592d94f6b81f0">Index</a></td>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1platform_1_1Pair.html">platform::Pair</a>&lt;typename First::Index, typename Second::Index&gt; <a class="el" href="classcutlass_1_1ZipTileIterator.html">cutlass::ZipTileIterator</a>&lt; First_, Second_ &gt;::<a class="el" href="classcutlass_1_1ZipTileIterator.html#a2b054859fda34cba271e8a325ee7662f">Index</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a2b37d5c256318aa7054858cf85c9bbf4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2b37d5c256318aa7054858cf85c9bbf4">&#9670;&nbsp;</a></span>LongIndex</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename First_ , typename Second_ &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1platform_1_1Pair.html">platform::Pair</a>&lt;typename First::LongIndex, typename Second::LongIndex&gt; <a class="el" href="classcutlass_1_1ZipTileIterator.html">cutlass::ZipTileIterator</a>&lt; First_, Second_ &gt;::<a class="el" href="classcutlass_1_1ZipTileIterator.html#a2b37d5c256318aa7054858cf85c9bbf4">LongIndex</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -489,8 +508,8 @@ template&lt;typename First_ , typename Second_ &gt; </div>
 </div>
 </div>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="a0752af296e110d9104a45ae24bd0a104"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a0752af296e110d9104a45ae24bd0a104">&#9670;&nbsp;</a></span>add_pointer_offset()</h2>
+<a id="affc3b73f32df6caa41a841a630ffdf81"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#affc3b73f32df6caa41a841a630ffdf81">&#9670;&nbsp;</a></span>add_pointer_offset()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -503,7 +522,7 @@ template&lt;typename First_ , typename Second_ &gt; </div>
         <tr>
           <td class="memname">CUTLASS_DEVICE void <a class="el" href="classcutlass_1_1ZipTileIterator.html">cutlass::ZipTileIterator</a>&lt; First_, Second_ &gt;::add_pointer_offset </td>
           <td>(</td>
-          <td class="paramtype"><a class="el" href="classcutlass_1_1ZipTileIterator.html#ab48ad3cf2ffeec356d8592d94f6b81f0">Index</a>&#160;</td>
+          <td class="paramtype"><a class="el" href="classcutlass_1_1ZipTileIterator.html#a2b37d5c256318aa7054858cf85c9bbf4">LongIndex</a>&#160;</td>
           <td class="paramname"><em>offset</em></td><td>)</td>
           <td></td>
         </tr>
@@ -1282,7 +1301,7 @@ template&lt;typename First_ , typename Second_ &gt; </div>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:35 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

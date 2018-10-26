@@ -97,6 +97,8 @@ struct GemmEpilogueTraits {
   typedef Functor_ Functor;
   /// The index.
   typedef Index_ Index;
+  /// The long index
+  typedef long long LongIndex;
 
   /// We do not support 3D or 4D shapes.
   static_assert(Iterations::kD == 1 && Iterations::kC == 1, "Unsupported 3D/4D shapes");
@@ -114,8 +116,16 @@ struct GemmEpilogueTraits {
     Index stride_h, stride_w;
     /// The params for the C iterator.
     typename GlobalLoadIteratorC::Params iterator_c;
+
+    /// Batch stride for C matrix
+    LongIndex batch_stride_C;
+
     /// The params for the D global iterator.
     typename GlobalStoreIteratorD::Params iterator_d;
+
+    /// Batch stride for C matrix
+    LongIndex batch_stride_D;
+
     /// The params for the D shared store iterator.
     typename SharedStoreIteratorD::Params shared_store_iterator_d;
     /// The params for the D shared load stream.
@@ -139,22 +149,29 @@ struct GemmEpilogueTraits {
       this->stride_w = 0;
       // Setup the params for the global memory iterator for C.
       error_code = iterator_c.initialize(desc.C.data(),
-                                         desc.batch_stride_C,
+                                         desc.C.leading_dim(),
                                          desc.C.leading_dim(),
                                          desc.problem_size[1],
                                          stride_w,
                                          Delta::kW);
+
+      batch_stride_C = desc.batch_stride_C;
+
       if (error_code) {
         return error_code;
       }
 
       // Setup the params for the global memory iterator for D.
-      return iterator_d.initialize(desc.D.data(),
-                                   desc.batch_stride_D,
+      error_code = iterator_d.initialize(desc.D.data(),
+                                   desc.D.leading_dim(),
                                    desc.D.leading_dim(),
                                    desc.problem_size[1],
                                    stride_w,
                                    Delta::kW);
+
+      batch_stride_D = desc.batch_stride_D;
+
+      return error_code;
     }
   };
 

@@ -85,6 +85,9 @@ $(function() {
 <li>fill()
 : <a class="el" href="structcutlass_1_1PredicateVector.html#a236bd1a822479750a809452fd58dd917">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;</a>
 </li>
+<li>first
+: <a class="el" href="structcutlass_1_1platform_1_1Pair.html#a0eed7c99e9385ff2877b03ab71efca48">cutlass::platform::Pair&lt; T1, T2 &gt;</a>
+</li>
 <li>First
 : <a class="el" href="structcutlass_1_1ZipConvert.html#a215173f8ac00f67848cae872db94c2f4">cutlass::ZipConvert&lt; First_, Second_ &gt;</a>
 </li>
@@ -96,13 +99,13 @@ $(function() {
 </li>
 <li>first
 : <a class="el" href="structcutlass_1_1ZipFragment.html#aea444ab3b52b6f0e994401cf2e0b7f3c">cutlass::ZipFragment&lt; First_, Second_ &gt;</a>
+, <a class="el" href="structcutlass_1_1ZipTensorRef.html#a535f0e6fc79d0e305f651efed099275c">cutlass::ZipTensorRef&lt; First_, Second_ &gt;</a>
 </li>
 <li>First
 : <a class="el" href="structcutlass_1_1ZipTensorRef.html#a44deb7a83049ee80dfd0419d4a0206d9">cutlass::ZipTensorRef&lt; First_, Second_ &gt;</a>
 </li>
 <li>first
-: <a class="el" href="structcutlass_1_1ZipTensorRef.html#a535f0e6fc79d0e305f651efed099275c">cutlass::ZipTensorRef&lt; First_, Second_ &gt;</a>
-, <a class="el" href="structcutlass_1_1ZipTileAllocation.html#a6c0f139eef549521763b36cb1e45a014">cutlass::ZipTileAllocation&lt; First_, Second_ &gt;</a>
+: <a class="el" href="structcutlass_1_1ZipTileAllocation.html#a6c0f139eef549521763b36cb1e45a014">cutlass::ZipTileAllocation&lt; First_, Second_ &gt;</a>
 </li>
 <li>First
 : <a class="el" href="structcutlass_1_1ZipTileAllocation.html#acbdbed808b27997a0e8c22adfa9cc9b2">cutlass::ZipTileAllocation&lt; First_, Second_ &gt;</a>
@@ -115,6 +118,9 @@ $(function() {
 </li>
 <li>first
 : <a class="el" href="structcutlass_1_1ZipTileIterator_1_1Params.html#a5dd69883d6b3f16fe28ebfe79235743e">cutlass::ZipTileIterator&lt; First_, Second_ &gt;::Params</a>
+</li>
+<li>first_type
+: <a class="el" href="structcutlass_1_1platform_1_1Pair.html#aa7e33bdd8f23ebe688ea8aaf20f99a17">cutlass::platform::Pair&lt; T1, T2 &gt;</a>
 </li>
 <li>Fragment
 : <a class="el" href="structcutlass_1_1FragmentConstIterator.html#acac5b62b365f36f370adb0fee11cea05">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
@@ -209,12 +215,25 @@ $(function() {
 </li>
 <li>Functor
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraitsHelper.html#a981134cf87d85aa28570a62d9e878b10">cutlass::gemm::GemmEpilogueTraitsHelper&lt; GemmConfig_, EpilogueFunctor_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1reduction_1_1BatchedReduction.html#a30605f35d51e4364fe80edb80eac5e80">cutlass::reduction::BatchedReduction&lt; BatchedReductionTraits_ &gt;</a>
+</li>
+<li>functor
+: <a class="el" href="structcutlass_1_1reduction_1_1BatchedReduction.html#a0f6b38c1b3a5800e6f29d9a2c6c1928d">cutlass::reduction::BatchedReduction&lt; BatchedReductionTraits_ &gt;</a>
+</li>
+<li>Functor
+: <a class="el" href="structcutlass_1_1reduction_1_1BatchedReductionTraits.html#af62fd99fae22a4e4d93cfa0560f1dcc5">cutlass::reduction::BatchedReductionTraits&lt; ScalarA_, ScalarC_, ScalarD_, ScalarAlphaBeta_, ScalarAccum_, ReductionSize_, OutputTile_, SubTile_, ThreadShape_, Index_, BlockSwizzle_, maxInReg_, maxOutReg_, Functor_ &gt;</a>
+</li>
+<li>functor_caller()
+: <a class="el" href="structcutlass_1_1reduction_1_1BatchedReduction.html#a7c1d173cbe3abd93bd7bd4c4bf0e0d26">cutlass::reduction::BatchedReduction&lt; BatchedReductionTraits_ &gt;</a>
+</li>
+<li>functorParams
+: <a class="el" href="structcutlass_1_1reduction_1_1BatchedReductionTraits_1_1Params.html#a11e54597165b66e3054c6b9f43210760">cutlass::reduction::BatchedReductionTraits&lt; ScalarA_, ScalarC_, ScalarD_, ScalarAlphaBeta_, ScalarAccum_, ReductionSize_, OutputTile_, SubTile_, ThreadShape_, Index_, BlockSwizzle_, maxInReg_, maxOutReg_, Functor_ &gt;::Params</a>
 </li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:41 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

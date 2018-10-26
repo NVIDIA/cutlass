@@ -28,7 +28,7 @@
 #include "tools/test/unit/gemm/gemm_testbed.h"
 #include "tools/test/unit/gemm/run_gemm.h"
 
-
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 530
 
 
 TEST(Fp16_sgemm_alphaFp32_fp32_128x128x16, fp16_sgemm_fp32_128x128x16_nn) {
@@ -172,3 +172,6 @@ TEST(Fp16_sgemm_alphaFp32_fp32_128x128x16, fp16_sgemm_fp32_128x112x17_tt) {
     SgemmTraits;
   run_gemm<SgemmTraits>(128, 112, 17);
 }
+
+#endif
+

@@ -103,9 +103,15 @@ Public Attributes</h2></td></tr>
 <tr class="memitem:a0745d33dd881f6ca78b168e05b133ff8"><td class="memItemLeft" align="right" valign="top">GlobalLoadIteratorC::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a0745d33dd881f6ca78b168e05b133ff8">iterator_c</a></td></tr>
 <tr class="memdesc:a0745d33dd881f6ca78b168e05b133ff8"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the C iterator.  <a href="#a0745d33dd881f6ca78b168e05b133ff8">More...</a><br /></td></tr>
 <tr class="separator:a0745d33dd881f6ca78b168e05b133ff8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4aa03c14de3f0c3c1cf46c3d5f52d802"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#af89096da16d4ec40cb2d388a28cc69be">LongIndex</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a4aa03c14de3f0c3c1cf46c3d5f52d802">batch_stride_C</a></td></tr>
+<tr class="memdesc:a4aa03c14de3f0c3c1cf46c3d5f52d802"><td class="mdescLeft">&#160;</td><td class="mdescRight">Batch stride for C matrix.  <a href="#a4aa03c14de3f0c3c1cf46c3d5f52d802">More...</a><br /></td></tr>
+<tr class="separator:a4aa03c14de3f0c3c1cf46c3d5f52d802"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:abbcccb203f9823e621caa4475aa3d346"><td class="memItemLeft" align="right" valign="top">GlobalStoreIteratorD::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#abbcccb203f9823e621caa4475aa3d346">iterator_d</a></td></tr>
 <tr class="memdesc:abbcccb203f9823e621caa4475aa3d346"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the D global iterator.  <a href="#abbcccb203f9823e621caa4475aa3d346">More...</a><br /></td></tr>
 <tr class="separator:abbcccb203f9823e621caa4475aa3d346"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5208998277daef204983989d24707008"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#af89096da16d4ec40cb2d388a28cc69be">LongIndex</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#a5208998277daef204983989d24707008">batch_stride_D</a></td></tr>
+<tr class="memdesc:a5208998277daef204983989d24707008"><td class="mdescLeft">&#160;</td><td class="mdescRight">Batch stride for C matrix.  <a href="#a5208998277daef204983989d24707008">More...</a><br /></td></tr>
+<tr class="separator:a5208998277daef204983989d24707008"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:adfdf3eca06ea4061fbfe016336a3f276"><td class="memItemLeft" align="right" valign="top">SharedStoreIteratorD::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1Params.html#adfdf3eca06ea4061fbfe016336a3f276">shared_store_iterator_d</a></td></tr>
 <tr class="memdesc:adfdf3eca06ea4061fbfe016336a3f276"><td class="mdescLeft">&#160;</td><td class="mdescRight">The params for the D shared store iterator.  <a href="#adfdf3eca06ea4061fbfe016336a3f276">More...</a><br /></td></tr>
 <tr class="separator:adfdf3eca06ea4061fbfe016336a3f276"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -148,6 +154,38 @@ template&lt;typename GemmDesc_ &gt; </div>
 </div>
 </div>
 <h2 class="groupheader">Member Data Documentation</h2>
+<a id="a4aa03c14de3f0c3c1cf46c3d5f52d802"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4aa03c14de3f0c3c1cf46c3d5f52d802">&#9670;&nbsp;</a></span>batch_stride_C</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#af89096da16d4ec40cb2d388a28cc69be">LongIndex</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::batch_stride_C</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a5208998277daef204983989d24707008"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5208998277daef204983989d24707008">&#9670;&nbsp;</a></span>batch_stride_D</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#af89096da16d4ec40cb2d388a28cc69be">LongIndex</a> <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::Params::batch_stride_D</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="adb04e5990ab7faae9e8c0b110d2e3bee"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#adb04e5990ab7faae9e8c0b110d2e3bee">&#9670;&nbsp;</a></span>functor</h2>
 
@@ -266,7 +304,7 @@ template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIte
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:39 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

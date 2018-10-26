@@ -125,13 +125,16 @@ struct GemmProblemRange {
   /// Range of sizes in GEMM K dimension
   Range K;
 
+  /// Range of sizes in batch dimeion
+  Range batch_count;
+
   //
   // Methods
   //
 
   /// Constructor to define a space of probelm sizes
-  GemmProblemRange(Range _M = Range(256), Range _N = Range(256), Range _K = Range(256))
-      : M(_M), N(_N), K(_K) {}
+  GemmProblemRange(Range _M = Range(256), Range _N = Range(256), Range _K = Range(256), Range _batch_count = Range(1))
+      : M(_M), N(_N), K(_K), batch_count(_batch_count) {}
 
   /// Parses a command line argument as a Range object
   static void get_range(Range &range,
@@ -155,6 +158,7 @@ struct GemmProblemRange {
     get_range(M, args, "m", Range(10240));
     get_range(N, args, "n", Range(4096));
     get_range(K, args, "k", Range(4096));
+    get_range(batch_count, args, "batch", Range(1));
   }
 };
 
@@ -368,7 +372,7 @@ struct TestbenchOptions {
 
   /// Number of iterations
   int iterations;
-  
+
   /// Defines how to run the benchmark
   ExecutionMode::Kind execution_mode;
 
@@ -598,6 +602,9 @@ struct TestbenchOptions {
 
         << "  --k=<depth>[:max depth[:step]]                "
         << "    Size of inner dimension of A and B. May specify a range with optional step size.\n"
+
+        << "  --batch=<batch>                               "
+        << "    Number of batches for a bached gemm. "
 
         << "  --kernels=<{s|d|h|i|wmma_|wmma_binary_|wmma_integer_}gemm_{nn,nt,tn,tt}>\n"
         << "                                                "

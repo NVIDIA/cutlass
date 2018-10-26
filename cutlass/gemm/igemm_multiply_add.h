@@ -71,6 +71,8 @@ struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, int8_t, int8_t, int>
                                    FragmentB const& b,
                                    Accumulators const& c,
                                    Accumulators& d) {
+
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 610)
     // The inputs.
     int const* a_int = reinterpret_cast<int const*>(&a[0]);
     int const* b_int = reinterpret_cast<int const*>(&b[0]);
@@ -82,6 +84,7 @@ struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, int8_t, int8_t, int>
                      : "r"(a_int[i]), "r"(b_int[j]), "r"(c[j * AccumulatorsPerThread::kW + i]));
       }
     }
+    #endif
   }
 };
 

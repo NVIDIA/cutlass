@@ -76,6 +76,15 @@ struct WmmaBinaryGemmDispatch {
     params.initialize(m, n, k * 32, alpha, d_a, lda, d_b, ldb, beta, d_c, ldc, d_d, ldd);
   }
 
+  /// batched strided bmma
+  WmmaBinaryGemmDispatch(int m, int n, int k, int alpha,
+    cutlass::Vector<cutlass::bin1_t, 32> const* d_a, int lda, long long int batch_stride_a, 
+    cutlass::Vector<cutlass::bin1_t, 32> const* d_b, int ldb, long long int batch_stride_b, int beta,
+    int const* d_c, int ldc, long long int batch_stride_c, int* d_d, int ldd, long long int batch_stride_d,
+    int batch_count) {
+    assert(0);
+  }
+
   /// Initializes params object
   WmmaBinaryGemmDispatch(Params const& _params) : params(_params) {}
 

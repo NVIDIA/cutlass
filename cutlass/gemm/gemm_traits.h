@@ -418,6 +418,9 @@ struct GemmTraits {
     /// GEMM problem size
     GemmCoord problem_size;
 
+    /// The K range for every partition except the last one
+    int partitionK_range;
+
     /// Parameters object for the global load stream
     typename GlobalLoadStream::Params global_to_shared_stream;
 
@@ -433,6 +436,8 @@ struct GemmTraits {
       // Set the problem size.
       problem_size = desc.problem_size;
 
+      // there is no partitionK in the default case
+      partitionK_range = problem_size[0];
       // Compute grid dimensions
       BlockSwizzle block_swizzle;
       this->block = dim3(GemmConfig::kThreads);
@@ -441,15 +446,18 @@ struct GemmTraits {
         make_Coord_from_shape<OutputTile>());
 
       // Compute offset to residue.
+      // partitionK_range <= problem_size[0]
       Index gemm_k = problem_size[0];
-      Index offset_to_residue = (gemm_k % OutputTile::kD) ? gemm_k - (gemm_k % OutputTile::kD) : 0;
+      Index offset_to_residue_last_partition = (gemm_k % OutputTile::kD) ? gemm_k - (gemm_k % OutputTile::kD) : 0;
+      Index offset_to_residue = (partitionK_range % OutputTile::kD) ? partitionK_range - (partitionK_range % OutputTile::kD) : 0;
 
       // Initialize parameters objects for
       int error_code = global_to_shared_stream.stream_a.initialize(
         desc.A.data(),
         desc.batch_stride_A,
         desc.A.leading_dim(),
-        offset_to_residue
+        offset_to_residue,
+        offset_to_residue_last_partition
       );
       if (error_code) {
         return error_code;
@@ -459,7 +467,8 @@ struct GemmTraits {
         desc.B.data(),
         desc.batch_stride_B,
         desc.B.leading_dim(),
-        offset_to_residue
+        offset_to_residue,
+        offset_to_residue_last_partition
       );
 
       if (error_code) {
@@ -516,7 +525,6 @@ struct GemmTraits {
                                        Index ldd,
                                        long long int batch_stride_D,
                                        Index batch_count) {
-
       GemmDesc<ScalarA, ScalarB, ScalarC, ScalarD, typename Epilogue::Scalar> desc(
         GemmCoord(k, n, m, batch_count),
         alpha,
@@ -532,6 +540,121 @@ struct GemmTraits {
       );
 
       return this->initialize(desc);
+    }
+
+    /// Helper to construct a partitionedK GEMM params
+    template <typename GemmDesc_>
+    CUTLASS_HOST_DEVICE int initialize(GemmDesc_ const& partitonK_desc, Index partitionK_count_) {
+      // partitionK GEMM is a specialized batched stried gemm with different K ranges per batch
+      // the problem_size of each batch is (lastK_size, n, m)
+      // add more comments here
+      // the k range for every batch excpet the last one
+      //assert(partitionK_count_ > 0);
+      partitionK_range = partitonK_desc.problem_size.k() / partitionK_count_;
+      // the k range of the last batch
+      // int lastK_range = (partitonK_desc.problem_size.k() % partitionK_range) + partitionK_range;
+      int lastK_range = partitonK_desc.problem_size.k() - partitionK_range * (partitionK_count_ - 1);
+      int k_size = lastK_range;
+      int lda = partitonK_desc.A.stride(0);
+      int ldb = partitonK_desc.B.stride(0);
+      int ldc = partitonK_desc.C.stride(0);
+      int ldd = partitonK_desc.D.stride(0);
+      int n = partitonK_desc.problem_size.n();
+
+
+      long long int batch_stride_A = (kLayoutA == cutlass::MatrixLayout::kColumnMajor) ? lda * partitionK_range : partitionK_range;
+      long long int batch_stride_B = (kLayoutB == cutlass::MatrixLayout::kColumnMajor) ? partitionK_range : partitionK_range * ldb;
+      long long int batch_stride_C = ldc * n;
+      long long int batch_stride_D = ldd * n;
+
+      GemmDesc<ScalarA, ScalarB, ScalarC, ScalarD, typename Epilogue::Scalar> desc(
+        //we pass lastK_size as per batch K. there is also a range that will match partitionK_size
+        GemmCoord(k_size, partitonK_desc.problem_size.n(), partitonK_desc.problem_size.m(), partitionK_count_),
+        partitonK_desc.alpha,
+        partitonK_desc.A,
+        batch_stride_A,
+        partitonK_desc.B,
+        batch_stride_B,
+        partitonK_desc.beta,
+        partitonK_desc.C,
+        batch_stride_C,
+        partitonK_desc.D,
+        batch_stride_D
+      );
+
+      // Set the problem size.
+      problem_size = desc.problem_size;
+
+      // Compute grid dimensions
+      BlockSwizzle block_swizzle;
+      this->block = dim3(GemmConfig::kThreads);
+      this->grid = block_swizzle.get_grid_layout(
+        problem_size,
+        make_Coord_from_shape<OutputTile>());
+
+      // Compute offset to residue.
+      // partitionK_range <= problem_size[0]
+      Index gemm_k = problem_size[0];
+      Index offset_to_residue_last_partition = (gemm_k % OutputTile::kD) ? gemm_k - (gemm_k % OutputTile::kD) : 0;
+      Index offset_to_residue = (partitionK_range % OutputTile::kD) ? partitionK_range - (partitionK_range % OutputTile::kD) : 0;
+
+      // Initialize parameters objects for
+      int error_code = global_to_shared_stream.stream_a.initialize(
+        desc.A.data(),
+        desc.batch_stride_A,
+        desc.A.leading_dim(),
+        offset_to_residue,
+        offset_to_residue_last_partition
+      );
+      if (error_code) {
+        return error_code;
+      }
+
+      error_code = global_to_shared_stream.stream_b.initialize(
+        desc.B.data(),
+        desc.batch_stride_B,
+        desc.B.leading_dim(),
+        offset_to_residue,
+        offset_to_residue_last_partition
+      );
+
+      if (error_code) {
+        return error_code;
+      }
+
+      // The epilogue.
+      return epilogue.initialize(desc);
+    }
+
+
+    /// Helper to construct a partitionedK GEMM params
+    CUTLASS_HOST_DEVICE int initialize(Index m,
+                                       Index n,
+                                       Index k,
+                                       typename Epilogue::Scalar alpha,
+                                       ScalarA const* d_a,
+                                       Index lda,
+                                       ScalarB const* d_b,
+                                       Index ldb,
+                                       typename Epilogue::Scalar beta,
+                                       ScalarC const* d_c,
+                                       Index ldc,
+                                       ScalarD* d_d,
+                                       Index ldd,
+                                       Index partitionK_count_) {
+
+      GemmDesc<ScalarA, ScalarB, ScalarC, ScalarD, typename Epilogue::Scalar> desc(
+        GemmCoord(k, n, m, 1),
+        alpha,
+        TensorRef<ScalarA const, 2>(d_a, lda),
+        TensorRef<ScalarB const, 2>(d_b, ldb),
+        beta,
+        TensorRef<ScalarC const, 2>(d_c, ldc),
+        TensorRef<ScalarD, 2>(d_d, ldd)
+      );
+
+
+      return this->initialize(desc, partitionK_count_);
     }
   };
 

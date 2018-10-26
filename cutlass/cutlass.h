@@ -32,7 +32,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #define CUTLASS_MAJOR 1
-#define CUTLASS_MINOR 1
+#define CUTLASS_MINOR 2
 #define CUTLASS_PATCH 0
 #define CUTLASS_VERSION ((CUTLASS_MAJOR)*100 + (CUTLASS_MINOR)*10 + CUTLASS_PATCH)
 
@@ -49,21 +49,7 @@
 
 #define CUTLASS_ASSERT(x) assert(x)
 
-// CUTLASS_PRAGMA_(UNROLL|NO_UNROLL) optimization directives for the CUDA compiler.
-#if defined(__CUDA_ARCH__)
-#if defined(_MSC_VER)
-#define CUTLASS_PRAGMA_UNROLL __pragma("unroll")
-#define CUTLASS_PRAGMA_NO_UNROLL __pragma("unroll 1")
-#else
-#define CUTLASS_PRAGMA_UNROLL _Pragma("unroll")
-#define CUTLASS_PRAGMA_NO_UNROLL _Pragma("unroll 1")
-#endif
-#else
-#define CUTLASS_PRAGMA_UNROLL
-#define CUTLASS_PRAGMA_NO_UNROLL
-#endif
-
-#define CUTLASS_GEMM_LOOP CUTLASS_PRAGMA_NO_UNROLL
+#include "cutlass/util/performance_tuning.h"
 
 // A small helper class to dump a type at compile time
 // Usage:: DumpType<Class>::Class

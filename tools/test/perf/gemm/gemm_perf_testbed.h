@@ -78,6 +78,7 @@ class GemmTestbed {
 
   /// Dispatch object to cuBLAS GEMM
   typedef CublasGemmDispatch<AType, BType, CType, Accumulator, Scalar> CublasDispatch;
+  typedef CublasBatchedStridedGemmDispatch<AType, BType, CType, Accumulator, Scalar> CublasBatchedStridedGemmDispatch;
 
   //
   // Type definitions
@@ -160,18 +161,20 @@ class GemmTestbed {
 
   /// Resizes each tensor
   void resize_helper(GemmProblem const &problem) {
-    resize_device_allocation(A,
-                             initial_distribution.dist_A,
-                             initial_distribution.seed,
-                             problem.m,
-                             problem.k,
-                             problem.layout_A);
+
+      resize_device_allocation(A,
+        initial_distribution.dist_A,
+        initial_distribution.seed,
+        problem.m,
+        problem.k * problem.batch_count,
+        problem.layout_A);
+
 
     resize_device_allocation(
         B,
         initial_distribution.dist_B,
         initial_distribution.seed + 17,  // compute distinct value from initial seed
-        problem.k,
+        problem.k * problem.batch_count,
         problem.n,
         problem.layout_B);
 
@@ -180,21 +183,21 @@ class GemmTestbed {
         initial_distribution.dist_C,
         initial_distribution.seed + 101,  // compute distinct value from initial seed
         problem.m,
-        problem.n,
+        problem.n * problem.batch_count,
         cutlass::MatrixLayout::kColumnMajor);
 
     resize_device_allocation(reference,
                              cutlass::Distribution(),
                              0,
                              problem.m,
-                             problem.n,
+                             problem.n * problem.batch_count,
                              cutlass::MatrixLayout::kColumnMajor);
 
     resize_device_allocation(experimental,
                              cutlass::Distribution(),
                              0,
                              problem.m,
-                             problem.n,
+                             problem.n * problem.batch_count,
                              cutlass::MatrixLayout::kColumnMajor);
   }
 
@@ -315,11 +318,17 @@ class GemmTestbed {
   /// Inner dimension of GEMM problem
   int K() const { return problem.k; }
 
+  /// batch count
+  int batch_count() const { return problem.batch_count; }
+
   /// Returns a pointer to the A operand
   ADeviceType *ptr_A() const { return A.get(); }
 
   /// Leading dimension of A
   int lda() const { return problem.lda(); }
+
+  ///
+  long long int batch_stride_a() const{ return problem.batch_stride_a(); }
 
   /// Returns a pointer to the B operand
   BDeviceType *ptr_B() const { return B.get(); }
@@ -327,11 +336,17 @@ class GemmTestbed {
   /// Leading dimension of B
   int ldb() const { return problem.ldb(); }
 
+  ///
+  long long int batch_stride_b() const{ return problem.batch_stride_b(); }
+
   /// Returns a pointer to the initial state of the result tensor in device memory
   CDeviceType *ptr_C_initial() const { return C_initial.get(); }
 
   /// Leading dimension of C
   int ldc() const { return problem.ldc(); }
+
+  ///
+  long long int batch_stride_c() const { return problem.batch_stride_c(); }
 
   /// Returns a pointer to the result tensor in device memory
   CDeviceType *ptr_experimental() const { return experimental.get(); }
@@ -341,7 +356,7 @@ class GemmTestbed {
 
   /// Returns the number of flops implied by the computation (1 multiply-accumulate = 2 flops)
   uint64_t flops() const {
-    return uint64_t(problem.m) * uint64_t(problem.n) * uint64_t(problem.k) * detail::ElementCount<AType>::kValue * 2ULL;
+    return uint64_t(problem.batch_count) * uint64_t(problem.m) * uint64_t(problem.n) * uint64_t(problem.k) * detail::ElementCount<AType>::kValue * 2ULL;
   }
 
   /// Computes the speed of the computation in GFLOPs/s
@@ -373,28 +388,59 @@ class GemmTestbed {
 
   /// Launches the cuBLAS GEMM - does not initialize output matrix
   cublasStatus_t launch_cublas(cublasGemmAlgo_t algo) {
-    CublasDispatch dispatch;
+    if (problem.batch_count == 1) {
+      CublasDispatch dispatch;
 
-    Scalar alpha(Scalar(problem.alpha));
-    Scalar beta(Scalar(problem.beta));
+      Scalar alpha(Scalar(problem.alpha));
+      Scalar beta(Scalar(problem.beta));
 
-    status = dispatch(handle,
-                      problem.layout_A,
-                      problem.layout_B,
-                      problem.m,
-                      problem.n,
-                      problem.k,
-                      alpha,
-                      ptr_A(),
-                      lda(),
-                      ptr_B(),
-                      ldb(),
-                      beta,
-                      ptr_reference(),
-                      ldc(),
-                      algo);
+      status = dispatch(handle,
+        problem.layout_A,
+        problem.layout_B,
+        problem.m,
+        problem.n,
+        problem.k,
+        alpha,
+        ptr_A(),
+        lda(),
+        ptr_B(),
+        ldb(),
+        beta,
+        ptr_reference(),
+        ldc(),
+        algo);
 
-    return status;
+      return status;
+    }
+    else {
+      // call batched strided cublas
+      CublasBatchedStridedGemmDispatch dispatch;
+
+      Scalar alpha(Scalar(problem.alpha));
+      Scalar beta(Scalar(problem.beta));
+
+      status = dispatch(handle,
+        problem.layout_A,
+        problem.layout_B,
+        problem.m,
+        problem.n,
+        problem.k,
+        alpha,
+        ptr_A(),
+        lda(),
+        batch_stride_a(),
+        ptr_B(),
+        ldb(),
+        batch_stride_b(),
+        beta,
+        ptr_reference(),
+        ldc(),
+        batch_stride_c(),
+        batch_count(),
+        algo);
+
+      return status;
+    }
   }
 
   /// Verifies the 'test' tensor with 'ref'

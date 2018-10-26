@@ -243,23 +243,27 @@ struct Gemm {
     // We may want to use shared memory to clear the registers.
     typedef typename Traits::ClearAccumulators ClearAccumulators;
 
+    // Get the bounds for each thread, it maybe different than problem_size
+    Coord<3> bounds = block_swizzle.get_threadblock_bounds(params.problem_size,
+                                                        params.partitionK_range);
+
     // The streams to read A/B from global memory to shared memory.
     typename Traits::GlobalLoadStream global_to_shared_stream(
         params.global_to_shared_stream,
         shared_storage.main_loop.global_to_shared_stream,
         shared_storage.main_loop.threadblock_tile.reference(),
-        params.problem_size.knm(),
+        bounds,
         threadblock_offset);
 
     // update A and B pointer offset based on batch_id and batch_stride_offset
-    //global_to_shared_stream.add_pointer_offset(block_swizzle.get_batch_id(), params.batch_stride_A, params.batch_stride_B);
-    global_to_shared_stream += make_Coord(block_swizzle.get_batch_id(), 0, 0);
+    global_to_shared_stream.add_batch_offset(block_swizzle.get_batch_id());
 
     // Create the accumulator clear.
     ClearAccumulators clear;
 
     // Deal with residue in prolog.
-    global_to_shared_stream.move_to_residue(params.problem_size[0], Traits::OutputTile::kD);
+    // global_to_shared_stream.move_to_residue(params.problem_size[0], Traits::OutputTile::kD);
+    global_to_shared_stream.move_to_residue(bounds[0], Traits::OutputTile::kD);
 
     // Fetch the fragments for A and B from global memory.
     global_to_shared_stream.copy();
@@ -271,7 +275,8 @@ struct Gemm {
     Traits::shared_store_fence(false);
 
     // Rollback to the beginning of the first tile (if residue exists).
-    global_to_shared_stream.rollback(params.problem_size[0] % Traits::OutputTile::kD);
+    // global_to_shared_stream.rollback(params.problem_size[0] % Traits::OutputTile::kD);
+    global_to_shared_stream.rollback(bounds[0] % Traits::OutputTile::kD);
 
     // The stream of data from shared memory to fragments.
     typename Traits::SharedStream shared_load_stream(
@@ -288,18 +293,17 @@ struct Gemm {
     clear.clear(accumulators);
 
     // Initial index
-    Index outer_k = params.problem_size[0] - Traits::OutputTile::kD;
-
+    // Index outer_k = params.problem_size[0] - Traits::OutputTile::kD;
+    // problem_size[0] might be bigger than bounds[0]
+    Index outer_k = bounds[0] - Traits::OutputTile::kD;
     // Check if we are computing residue in prolog or not.
     if (Traits::GemmConfig::kResidueInProlog) {
-
       // Execute all mainloop iterations but the last one.
 
       CUTLASS_GEMM_LOOP
       for (; outer_k > 0; outer_k -= Traits::OutputTile::kD) {
         consume_tile<false, false>(
             global_to_shared_stream, shared_load_stream, accumulators, outer_k);
-
       }
 
       // Don't load data for the last "residue" portion since we've already computed the residue.
@@ -307,7 +311,6 @@ struct Gemm {
       for (; outer_k > -Traits::OutputTile::kD; outer_k -= Traits::OutputTile::kD) {
         consume_tile<false, true>(
             global_to_shared_stream, shared_load_stream, accumulators, outer_k);
-
       }
     } else {
       // When kResidueSeparate = true, execute all mainloop iterations but the last two without any
@@ -319,17 +322,14 @@ struct Gemm {
         for (; outer_k > Traits::OutputTile::kD; outer_k -= Traits::OutputTile::kD) {
           consume_tile<false, false>(
               global_to_shared_stream, shared_load_stream, accumulators, outer_k);
-
         }
       }
 
       // Execute remaining tiles with K-residue predicate updates enabled.
-
       CUTLASS_GEMM_LOOP
       for (; outer_k > -Traits::OutputTile::kD; outer_k -= Traits::OutputTile::kD) {
         consume_tile<true, false>(
             global_to_shared_stream, shared_load_stream, accumulators, outer_k);
-
       }
     }
 

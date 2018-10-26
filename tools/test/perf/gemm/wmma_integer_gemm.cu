@@ -74,6 +74,15 @@ struct WmmaIntegerGemmDispatch {
     params.initialize(m, n, k, alpha, d_a, lda, d_b, ldb, beta, d_c, ldc, d_d, ldd);
   }
 
+  ///
+  WmmaIntegerGemmDispatch(int m, int n, int k, int alpha, 
+    ScalarA const* d_a, int lda, long long int batch_stride_a,
+    ScalarB const* d_b, int ldb, long long int batch_stride_b, int beta,
+    int const* d_c, int ldc, long long int batch_stride_c, int* d_d, int ldd, long long int batch_stride_d,
+    int batch_count) {
+    assert(0);
+  }
+
   /// Initializes params object
   WmmaIntegerGemmDispatch(Params const& _params) : params(_params) {}
 
@@ -125,6 +134,15 @@ struct WmmaIntegerGemmDispatch<Traits,
     params.initialize(m, n, k * 8, alpha, d_a, lda, d_b, ldb, beta, d_c, ldc, d_d, ldd);
   }
 
+  ///
+  WmmaIntegerGemmDispatch(int m, int n, int k, int alpha,
+    ScalarA const* d_a, int lda, long long int batch_stride_a,
+    ScalarB const* d_b, int ldb, long long int batch_stride_b, int beta,
+    int const* d_c, int ldc, long long int batch_stride_c, int* d_d, int ldd, long long int batch_stride_d,
+    int batch_count) {
+    assert(0);
+  }
+
   /// Initializes params object
   WmmaIntegerGemmDispatch(Params const& _params) : params(_params) {}
 
@@ -174,6 +192,15 @@ struct WmmaIntegerGemmDispatch<Traits,
                        int const* d_c, int ldc, int* d_d, int ldd) {
 
     params.initialize(m, n, k * 8, alpha, d_a, lda, d_b, ldb, beta, d_c, ldc, d_d, ldd);
+  }
+
+  ///
+  WmmaIntegerGemmDispatch(int m, int n, int k, int alpha,
+    ScalarA const* d_a, int lda, long long int batch_stride_a,
+    ScalarB const* d_b, int ldb, long long int batch_stride_b, int beta,
+    int const* d_c, int ldc, long long int batch_stride_c, int* d_d, int ldd, long long int batch_stride_d,
+    int batch_count) {
+    assert(0);
   }
 
   /// Initializes params object

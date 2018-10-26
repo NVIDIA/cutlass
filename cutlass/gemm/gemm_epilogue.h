@@ -131,20 +131,19 @@ struct GemmEpilogue {
           params.iterator_c, problem_size, block, pointer_offset, predicate_offset);
 
       // update C pointer offset based on batch_id and batch_stride_offset
-      //global_load_iterator.add_pointer_offset(batch_id * params.batch_stride_offset_c);
-      global_load_iterator += make_Coord(batch_id, 0, 0);
+      global_load_iterator.add_pointer_offset(batch_id * params.batch_stride_C);
 
       // The transformer for C.
       GlobalTransformerC transformer_c;
       // The transformer for D.
       GlobalTransformerD transformer_d;
+
       // The iterator to store into the D matrix.
       GlobalStoreIteratorD global_store_iterator(
           params.iterator_d, problem_size, block, pointer_offset, predicate_offset);
 
       // update D pointer offset based on batch_id and batch_stride_offset
-      //global_store_iterator.add_pointer_offset(batch_id * params.batch_stride_offset_d);
-      global_store_iterator += make_Coord(batch_id, 0, 0);
+      global_store_iterator.add_pointer_offset(batch_id * params.batch_stride_D);
 
       SharedStoreTransformerD shared_store_transformer;
       typename SharedStoreTransformerD::OutputFragment shared_store_transformed_d;
@@ -171,6 +170,7 @@ struct GemmEpilogue {
         int const offset = (h * Iterations::kW + w) * SharedStoreIteratorD::Fragment::kElements;
 
         shared_store_transformer.transform(accumulators, offset, shared_store_transformed_d);
+
         shared_store_iterator.store_post_increment(shared_store_transformed_d);
 
         // Make sure the data is in shared memory.
@@ -182,7 +182,6 @@ struct GemmEpilogue {
 
         // Do the math.
         typename GlobalTransformerD::InputFragment fragment_d;
-
         if (kSourceRequired) {
           // Transform C fragment.
           transformer_c.transform(fragment_c, transformed_c);

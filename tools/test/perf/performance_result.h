@@ -24,7 +24,7 @@
  **************************************************************************************************/
 
 #pragma once
-
+#include <assert.h>
 #include "cutlass/matrix_traits.h"
 #include "tools/util/command_line.h"
 #include "tools/test/perf/provider.h"
@@ -85,6 +85,7 @@ struct GemmProblem {
   int m;
   int n;
   int k;
+  int batch_count;
   cutlass::MatrixLayout::Kind layout_A;
   cutlass::MatrixLayout::Kind layout_B;
 
@@ -96,7 +97,7 @@ struct GemmProblem {
   //
 
   /// Static method to print GemmProblem headers
-  static std::string header() { return "M,N,K,Layout_A,Layout_B,Beta"; }
+  static std::string header() { return "M,N,K,Layout_A,Layout_B,Beta,batch_count"; }
 
   //
   // Methods
@@ -108,21 +109,24 @@ struct GemmProblem {
               cutlass::MatrixLayout::Kind _layout_A = cutlass::MatrixLayout::kColumnMajor,
               cutlass::MatrixLayout::Kind _layout_B = cutlass::MatrixLayout::kRowMajor,
               double _alpha = 1,
-              double _beta = 0)
-      : m(_m), n(_n), k(_k), layout_A(_layout_A), layout_B(_layout_B), alpha(_alpha), beta(_beta) {}
+              double _beta = 0,
+              int _batch_count = 1)
+      : m(_m), n(_n), k(_k), layout_A(_layout_A), layout_B(_layout_B), alpha(_alpha), beta(_beta), batch_count(_batch_count) {
+    assert(batch_count >= 1);
+  }
 
   /// leading dimension of A
   int lda() const {
     if (layout_A == cutlass::MatrixLayout::kColumnMajor) {
       return m;
     }
-    return k;
+    return k * batch_count;
   }
 
   /// leading dimension of B
   int ldb() const {
     if (layout_B == cutlass::MatrixLayout::kColumnMajor) {
-      return k;
+      return k * batch_count;
     }
     return n;
   }
@@ -130,10 +134,35 @@ struct GemmProblem {
   /// leading dimension of C
   int ldc() const { return m; }
 
+  /// batch_stride_a. only makes sense when batch_count > 1
+  long long int batch_stride_a() const {
+    assert(batch_count > 1);
+    if (layout_A == cutlass::MatrixLayout::kColumnMajor) {
+      return static_cast<long long int>(k) * static_cast<long long int>(lda());
+    }
+    return static_cast<long long int>(k);
+  }
+
+  /// batch_stride_b. only makes sense when batch_count > 1
+  long long int batch_stride_b() const {
+    assert(batch_count > 1);
+    if (layout_B == cutlass::MatrixLayout::kColumnMajor) {
+      return static_cast<long long int>(k);
+    }
+    return static_cast<long long int>(k) * static_cast<long long int>(ldb());
+  }
+
+  /// batch_stride_c. only makes sense when batch_count > 1
+  long long int batch_stride_c() const {
+    assert(batch_count > 1);
+    return static_cast<long long int>(n) * static_cast<long long int>(ldc());
+  }
+
+
   /// Pretty prints output
   std::ostream &pretty_print(std::ostream &out) const {
     out << m << "-by-" << n << "-by-" << k << ", A: " << layout_A << "-major, B: " << layout_B
-        << "-major, beta: " << beta;
+        << "-major, beta: " << beta << ", batch: " << batch_count;
 
     return out;
   }
@@ -142,7 +171,7 @@ struct GemmProblem {
 /// Prints a problem to an output stream
 inline std::ostream &operator<<(std::ostream &out, GemmProblem const &problem) {
   out << problem.m << "," << problem.n << "," << problem.k << "," << problem.layout_A << ","
-      << problem.layout_B << "," << problem.beta;
+      << problem.layout_B << "," << problem.beta << "," << problem.batch_count;
 
   return out;
 }
