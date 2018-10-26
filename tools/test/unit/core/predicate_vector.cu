@@ -124,120 +124,120 @@ TEST(PredicateVector, Count) {
   {
     typedef cutlass::PredicateVector<4, 8> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 1)
-      << "PredicateVector<4, 8> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<4, 8> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<4, 4> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 1)
-      << "PredicateVector<4, 4> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<4, 4> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<4, 2> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 1)
-      << "PredicateVector<4, 2> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<4, 2> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<4, 1> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 1)
-      << "PredicateVector<4, 1> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<4, 1> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<8, 8> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 1)
-      << "PredicateVector<8, 8> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<8, 8> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<8, 4> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 1)
-      << "PredicateVector<8, 4> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<8, 4> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<8, 2> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 1)
-      << "PredicateVector<8, 2> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<8, 2> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<8, 1> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 2)
-      << "PredicateVector<8, 1> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<8, 1> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<16, 8> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 1)
-      << "PredicateVector<16, 8> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<16, 8> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<16, 4> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 1)
-      << "PredicateVector<16, 4> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<16, 4> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<16, 2> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 2)
-      << "PredicateVector<16, 2> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<16, 2> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<16, 1> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 4)
-      << "PredicateVector<16, 1> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<16, 1> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<32, 8> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 1)
-      << "PredicateVector<32, 8> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<32, 8> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<32, 4> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 2)
-      << "PredicateVector<32, 4> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<32, 4> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<32, 2> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 4)
-      << "PredicateVector<32, 2> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<32, 2> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<32, 1> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 8)
-      << "PredicateVector<32, 1> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<32, 1> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<64, 8> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 2)
-      << "PredicateVector<64, 8> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<64, 8> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<64, 4> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 4)
-      << "PredicateVector<64, 4> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<64, 4> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<64, 2> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 8)
-      << "PredicateVector<64, 2> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<64, 2> word count: " << int(PredicateVector::kWordCount);
   }
 
   {
     typedef cutlass::PredicateVector<64, 1> PredicateVector;
     EXPECT_EQ(int(PredicateVector::kWordCount), 16)
-      << "PredicateVector<64, 1> word count: " << PredicateVector::kWordCount;
+        << "PredicateVector<64, 1> word count: " << int(PredicateVector::kWordCount);
   }
 }

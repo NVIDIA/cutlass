@@ -30,6 +30,7 @@
 #include "cutlass/shape.h"
 #include "cutlass/fragment.h"
 #include "cutlass/tensor_ref.h"
+#include "cutlass/tensor_view.h"
 #include "cutlass/zip_tensor_ref.h"
 
 namespace cutlass {
@@ -61,6 +62,12 @@ struct TileAllocation {
   /// Defines the tensor reference for this allocation
   typedef TensorRef<Scalar, 4> TensorRef;
 
+  /// View of memory
+  typedef TensorView<Scalar const, 4> ConstTensorView;
+
+  /// View of memory
+  typedef TensorView<Scalar, 4> TensorView;
+
   //
   // Data members
   //
@@ -90,6 +97,24 @@ struct TileAllocation {
   CUTLASS_DEVICE
   ConstTensorRef reference() const {
     return ConstTensorRef(data(), make_Coord(Strides::kD, Strides::kH, Strides::kW, Strides::kC));
+  }
+
+  /// Returns a TensorView object pointing to the data
+  CUTLASS_DEVICE
+  TensorView view() {
+    return TensorView(
+      data(),
+      make_Coord(Strides::kD, Strides::kH, Strides::kW, Strides::kC),
+      make_Coord(Shape::kD, Shape::kH, Shape::kW, Shape::kC));
+  }
+
+  /// Returns a TensorView object pointing to the data
+  CUTLASS_DEVICE
+  ConstTensorView view() const {
+    return TensorView(
+      data(),
+      make_Coord(Strides::kD, Strides::kH, Strides::kW, Strides::kC),
+      make_Coord(Shape::kD, Shape::kH, Shape::kW, Shape::kC));
   }
 };
 

@@ -103,18 +103,18 @@ struct WmmaGemmGlobalIteratorCd : public GemmGlobalIteratorCd<TileTraits_, Index
                                        Index epilogue_stride_w,
                                        Index epilogue_delta_w) {
       // The pointer.
-      BaseParams::pointer = pointer;
+      this->pointer = pointer;
       // Stride between GEMMs
-      BaseParams::stride_d = batch_stride;
+      this->stride_d = batch_stride;
       // Setup the base stride. One "group of threads" per column.
-      BaseParams::stride_h = ldm;
+      this->stride_h = ldm;
       // Each thread output 1 column per iteration. .
-      BaseParams::inc_h = ldm * TileTraits_::Threads::kH;
-      BaseParams::inc_advance = BaseParams::inc_h + epilogue_stride_w;
+      this->inc_h = ldm * TileTraits_::Threads::kH;
+      this->inc_advance = this->inc_h + epilogue_stride_w;
 
-      BaseParams::predicate_offset = n;
-      BaseParams::predicate_inc_h = TileTraits_::Threads::kH;
-      BaseParams::predicate_inc_advance = BaseParams::predicate_inc_h + epilogue_delta_w;
+      this->predicate_offset = n;
+      this->predicate_inc_h = TileTraits_::Threads::kH;
+      this->predicate_inc_advance = this->predicate_inc_h + epilogue_delta_w;
 
       return 0;
     }

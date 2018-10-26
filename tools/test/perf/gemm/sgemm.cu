@@ -25,10 +25,13 @@
 
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/sgemm_traits.h"
+#include "cutlass/reduction/batched_reduction_traits.h"
+#include "cutlass/gemm/device_gemm_traits.h"
 #include "tools/test/perf/cutlass_perf_test.h"
 #include "tools/test/perf/gemm/gemm_perf_testbed.h"
 #include "tools/test/perf/gemm/gemm_profiler.h"
 #include "tools/test/perf/gemm/cutlass_dispatch.h"
+#include "tools/test/perf/gemm/cutlass_dispatch_splitK_PI.h"
 #pragma warning( disable : 4503)
 
 namespace perf {
@@ -94,6 +97,1223 @@ int profile_sgemm_kernel(
 
     results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_tt", options, config, algo);
   }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_1_one_nt", options, config, algo + "_row_1_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_1_B_nt", options, config, algo + "_row_1_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_2_one_nt", options, config, algo + "_row_2_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_2_B_nt", options, config, algo + "_row_2_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_1_one_nt", options, config, algo + "_col_1_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_1_B_nt", options, config, algo + "_col_1_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_2_one_nt", options, config, algo + "_col_2_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_2_B_nt", options, config, algo + "_col_2_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_1_one_nn", options, config, algo + "_row_1_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_1_B_nn", options, config, algo + "_row_1_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_2_one_nn", options, config, algo + "_row_2_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_2_B_nn", options, config, algo + "_row_2_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_1_one_nn", options, config, algo + "_col_1_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_1_B_nn", options, config, algo + "_col_1_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_2_one_nn", options, config, algo + "_col_2_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_2_B_nn", options, config, algo + "_col_2_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_1_one_tt", options, config, algo + "_row_1_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_1_B_tt", options, config, algo + "_row_1_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_2_one_tt", options, config, algo + "_row_2_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_2_B_tt", options, config, algo + "_row_2_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_1_one_tt", options, config, algo + "_col_1_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_1_B_tt", options, config, algo + "_col_1_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_2_one_tt", options, config, algo + "_col_2_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_2_B_tt", options, config, algo + "_col_2_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_1_one_tn", options, config, algo + "_row_1_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_1_B_tn", options, config, algo + "_row_1_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_2_one_tn", options, config, algo + "_row_2_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::RowMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_row_2_B_tn", options, config, algo + "_row_2_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_1_one_tn", options, config, algo + "_col_1_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<1, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_1_B_tn", options, config, algo + "_col_1_B");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::OneDirection>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_2_one_tn", options, config, algo + "_col_2_one");
+  }
+
+  {
+    typedef int index;
+    typedef cutlass::gemm::SgemmConfig<OutputTile,
+        cutlass::Shape<8, 8, 8>/*ThreadGemmShape*/,
+        1/*kScalarsPerLdgA*/,
+        1/*kScalarsPerLdgB*/>
+      thisGemmConfig;
+    typedef cutlass::gemm::GemmTileTraitsHelperA<cutlass::MatrixLayout::kRowMajor, thisGemmConfig>
+      GemmTileTraitsHelperA;
+    typedef cutlass::gemm::GemmTileTraitsHelperB<cutlass::MatrixLayout::kColumnMajor, thisGemmConfig>
+      GemmTileTraitsHelperB;
+    typedef cutlass::gemm::SimplifiedGemmTraitsHelper<GemmTileTraitsHelperA, GemmTileTraitsHelperB, index>
+      Helper;
+    typedef cutlass::gemm::LinearScaling<float>
+      EpilogueFunctor;
+    typedef cutlass::gemm::SimplifiedGemmEpilogueTraits<thisGemmConfig, EpilogueFunctor, index>
+      GemmEpilogueTraits;
+    typedef cutlass::gemm::ClearAccumulators<typename thisGemmConfig::Accumulators::Element>
+      ClearAccumulators;
+
+    typedef cutlass::gemm::GemmTraits<
+      thisGemmConfig,
+      typename Helper::GlobalLoadStreamA,
+      typename Helper::GlobalLoadStreamB,
+      typename Helper::SharedLoadStreamA,
+      typename Helper::SharedLoadStreamB,
+      typename cutlass::gemm::GemmEpilogue<GemmEpilogueTraits>,
+      typename cutlass::gemm::ColumnMajorBlockSwizzle<2, cutlass::gemm::swizzleDirection::Boustrophedon>,
+      index,
+      ClearAccumulators
+    >
+        SgemmTraits;
+
+    typedef typename CutlassDispatchBasic<SgemmTraits>::Dispatch Dispatch;
+
+    results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_col_2_B_tn", options, config, algo + "_col_2_B");
+  }
+
   return results;
 }
 

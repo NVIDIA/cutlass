@@ -100,10 +100,13 @@ struct IgemmGlobalIteratorAb : public GemmGlobalIteratorAb<TileTraits_, Index_> 
 
   /// Constructor.
   CUTLASS_DEVICE IgemmGlobalIteratorAb(typename Base::Params const& _params,
-                                       const Coord<3>& bounds,
                                        const Coord<3>& threadblock_offset,
                                        ThreadOffset thread_offset_func = ThreadOffset())
-      : Base(_params, bounds, threadblock_offset, thread_offset_func), mask_(0xffffffff) {
+      : Base(_params, threadblock_offset, thread_offset_func), mask_(0xffffffff) { }
+
+  CUTLASS_DEVICE void initialize_predicates(const Coord<3>& bounds, const Coord<3>& threadblock_offset) {
+    
+    Base::initialize_predicates(bounds, threadblock_offset);
     // The number of elements read in a single iteration.
     int const kBlock = TileTraits_::Tile::kW;
     // The residue.

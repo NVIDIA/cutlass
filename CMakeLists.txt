@@ -141,6 +141,10 @@ else()
   string(APPEND NVCC_FLAGS " -lineinfo")
 endif()
 
+if (UNIX)
+  string(APPEND NVCC_FLAGS " -Xcompiler -Wconversion")
+endif()
+
 string(APPEND NVCC_FLAGS_DEBUG " -g")
 string(APPEND NVCC_FLAGS_RELWITHDEBINFO " -O3")
 string(APPEND NVCC_FLAGS_RELEASE " -O3")
@@ -169,6 +173,8 @@ file(GLOB CUTLASS_GEMM RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/gemm/*.h)
 file(GLOB CUTLASS_UTIL RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/util/*.h)
 file(GLOB CUTLASS_DEVICE RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/device/*.h)
 file(GLOB CUTLASS_CORE RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/*.h)
+file(GLOB CUTLASS_REDUCTION RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/reduction/*.h )
+
 ###################################################################################################
 #
 # Define build targets
@@ -178,6 +184,7 @@ file(GLOB CUTLASS_CORE RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/*.h)
 source_group("cutlass\\gemm" FILES ${CUTLASS_GEMM})
 source_group("cutlass\\util" FILES ${CUTLASS_UTIL})
 source_group("cutlass\\device" FILES ${CUTLASS_DEVICE})
+source_group("cutlass\\reduction" FILES ${CUTLASS_REDUCTION})
 source_group("cutlass" FILES ${CUTLASS_CORE})
 
 add_library(CUTLASS INTERFACE)
@@ -187,6 +194,7 @@ target_sources(CUTLASS INTERFACE
   ${CUTLASS_UTIL}
   ${CUTLASS_DEVICE}
   ${CUTLASS_CORE}
+  ${CUTLASS_REDUCTION}
 )
 
 target_include_directories(CUTLASS INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -197,6 +205,7 @@ add_custom_target(cutlass_ide SOURCES
   ${CUTLASS_UTIL}
   ${CUTLASS_DEVICE}
   ${CUTLASS_CORE}
+  ${CUTLASS_REDUCTION}
 )
 # Doxygen is available. Generate documentation
 if (DOXYGEN_FOUND)

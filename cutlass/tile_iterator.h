@@ -163,6 +163,9 @@ struct TileIteratorBase {
   /// Index type
   typedef Index_ Index;
 
+  /// Long index
+  typedef long long LongIndex;
+
   /// Skew quantity
   typedef Skew_ Skew;
 
@@ -216,15 +219,15 @@ struct TileIteratorBase {
     // Dat members
     //
 
-    long long stride_d;
+    Index stride_d;
     Index stride_h;
     Index stride_w;
 
-    long long inc_d;
+    Index inc_d;
     Index inc_h;
     Index inc_w;
 
-    long long inc_advance;
+    Index inc_advance;
 
     //
     // Methods
@@ -236,13 +239,13 @@ struct TileIteratorBase {
 
     /// Constructs params
     CUTLASS_HOST_DEVICE
-    Params(long long _stride_d,
+    Params(Index _stride_d,
            Index _stride_h,
            Index _stride_w,
-           long long _inc_d,
+           Index _inc_d,
            Index _inc_h,
            Index _inc_w,
-           long long _inc_advance)
+           Index _inc_advance)
         : stride_d(_stride_d),
           stride_h(_stride_h),
           stride_w(_stride_w),
@@ -259,13 +262,13 @@ struct TileIteratorBase {
 
     /// Initializes params
     CUTLASS_HOST_DEVICE
-    int initialize(long long _stride_d,
+    int initialize(Index _stride_d,
                    Index _stride_h,
                    Index _stride_w,
-                   long long _inc_d,
+                   Index _inc_d,
                    Index _inc_h,
                    Index _inc_w,
-                   long long _inc_advance) {
+                   Index _inc_advance) {
       stride_d = _stride_d;
       stride_h = _stride_h;
       stride_w = _stride_w;
@@ -286,14 +289,14 @@ struct TileIteratorBase {
 
     /// Initializes the parameters object from a vector of strides
     CUTLASS_HOST_DEVICE
-    int initialize(long long _stride_d, Index _stride_h, Index _stride_w) {
+    int initialize(Index _stride_d, Index _stride_h, Index _stride_w) {
       stride_d = _stride_d;
       stride_h = _stride_h;
       stride_w = _stride_w;
 
       inc_w = stride_w * Delta::kW;
       inc_h = stride_h * Delta::kH - stride_w * Delta::kW * (Iterations::kW - 1);
-      inc_d = stride_d * Delta::kD - stride_h * Delta::kH * (Iterations::kH - 1) -
+      inc_d = stride_h * Delta::kD - stride_h * Delta::kH * (Iterations::kH - 1) -
               stride_w * Delta::kW * (Iterations::kW - 1);
 
       inc_advance = 0;
@@ -310,7 +313,7 @@ struct TileIteratorBase {
         inc_advance = Tile::kD * stride_d;
       }
 
-      inc_advance -= stride_d * Delta::kD * (Iterations::kD - 1) +
+      inc_advance -= stride_h * Delta::kD * (Iterations::kD - 1) +
                      stride_h * Delta::kH * (Iterations::kH - 1) +
                      stride_w * Delta::kW * (Iterations::kW - 1);
 
@@ -436,6 +439,9 @@ struct TileLoadIterator : public TileIteratorBase<Traits_,
   /// Index type
   typedef typename Base::Index Index;
 
+  /// Index type
+  typedef typename Base::LongIndex LongIndex;
+
   /// Skew quantity
   typedef typename Base::Skew Skew;
 
@@ -513,10 +519,10 @@ struct TileLoadIterator : public TileIteratorBase<Traits_,
     /// Initialize params to access storage object
     CUTLASS_HOST_DEVICE
     Params(Scalar const *ptr,
-           long long _stride_d,
+           Index _stride_d,
            Index _stride_h,
            Index _stride_w,
-           long long _inc_d,
+           Index _inc_d,
            Index _inc_h,
            Index _inc_w,
            Index _inc_advance)
@@ -527,7 +533,7 @@ struct TileLoadIterator : public TileIteratorBase<Traits_,
 
     /// Initialize params to access storage object
     CUTLASS_HOST_DEVICE
-    Params(Scalar const *ptr, long long stride_d, Index stride_h, Index stride_w)
+    Params(Scalar const *ptr, Index stride_d, Index stride_h, Index stride_w)
         : pointer(ptr) {
       Base::Params::initialize(stride_d, stride_h, stride_w);
     }
@@ -557,7 +563,7 @@ struct TileLoadIterator : public TileIteratorBase<Traits_,
 
     /// Initializes params to access a raw pointer
     CUTLASS_HOST_DEVICE
-    int initialize(Scalar const *ptr, long long stride_d, Index stride_h, Index stride_w) {
+    int initialize(Scalar const *ptr, Index stride_d, Index stride_h, Index stride_w) {
       Base::Params::initialize(stride_d, stride_h, stride_w);
       pointer = ptr;
       return 0;
@@ -566,10 +572,10 @@ struct TileLoadIterator : public TileIteratorBase<Traits_,
     /// Initializes params
     CUTLASS_HOST_DEVICE
     int initialize(Scalar const *ptr,
-                   long long _stride_d,
+                   Index _stride_d,
                    Index _stride_h,
                    Index _stride_w,
-                   long long _inc_d,
+                   Index _inc_d,
                    Index _inc_h,
                    Index _inc_w,
                    Index _inc_advance) {
@@ -720,7 +726,7 @@ struct TileLoadIterator : public TileIteratorBase<Traits_,
   }
 
   /// Adds a raw offset to the pointer
-  CUTLASS_HOST_DEVICE void add_pointer_offset(Index offset) { params.pointer += offset; }
+  CUTLASS_HOST_DEVICE void add_pointer_offset(LongIndex offset) { params.pointer += offset; }
 
   CUTLASS_HOST_DEVICE Index stride_advance(void) {
     Index stride = params.stride_h;
@@ -734,7 +740,6 @@ struct TileLoadIterator : public TileIteratorBase<Traits_,
   template <typename Fragment, typename PredicateIterator>
   CUTLASS_HOST_DEVICE void load_post_increment(Fragment &fragment, PredicateIterator pred_it) {
     FragmentIterator frag_iterator(fragment);
-
     for (int d = 0; d < Iterations::kD; ++d) {
       for (int h = 0; h < Iterations::kH; ++h) {
         for (int w = 0; w < Iterations::kW; ++w, ++pred_it) {
@@ -876,6 +881,9 @@ struct TileStoreIterator : public TileIteratorBase<Traits_,
   /// Index type
   typedef typename Base::Index Index;
 
+  /// Long index type
+  typedef typename Base::LongIndex LongIndex;
+
   /// Skew quantity
   typedef typename Base::Skew Skew;
 
@@ -953,10 +961,10 @@ struct TileStoreIterator : public TileIteratorBase<Traits_,
     // Default constructor
     CUTLASS_HOST_DEVICE
     Params(Scalar *ptr,
-           long long _stride_d,
+           Index _stride_d,
            Index _stride_h,
            Index _stride_w,
-           long long _inc_d,
+           Index _inc_d,
            Index _inc_h,
            Index _inc_w,
            Index _inc_advance) {
@@ -979,7 +987,7 @@ struct TileStoreIterator : public TileIteratorBase<Traits_,
 
     /// Initializes params to access a raw pointer
     CUTLASS_HOST_DEVICE
-    int initialize(Scalar *ptr, long long stride_d, Index stride_h, Index stride_w) {
+    int initialize(Scalar *ptr, Index stride_d, Index stride_h, Index stride_w) {
       Base::Params::initialize(stride_d, stride_h, stride_w);
       pointer = ptr;
       return 0;
@@ -988,10 +996,10 @@ struct TileStoreIterator : public TileIteratorBase<Traits_,
     /// Initializes params
     CUTLASS_HOST_DEVICE
     int initialize(Scalar *ptr,
-                   long long _stride_d,
+                   Index _stride_d,
                    Index _stride_h,
                    Index _stride_w,
-                   long long _inc_d,
+                   Index _inc_d,
                    Index _inc_h,
                    Index _inc_w,
                    Index _inc_advance) {
@@ -1121,7 +1129,7 @@ struct TileStoreIterator : public TileIteratorBase<Traits_,
   }
 
   /// Adds a raw offset to the pointer
-  CUTLASS_HOST_DEVICE void add_pointer_offset(Index offset) { params.pointer += offset; }
+  CUTLASS_HOST_DEVICE void add_pointer_offset(LongIndex offset) { params.pointer += offset; }
 
   /// Stores a single fragment element into memory.
   CUTLASS_HOST_DEVICE void store_element(AccessType const &value, int d, int h, int w, int c) {

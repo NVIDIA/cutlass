@@ -1,9 +1,13 @@
 # NVIDIA CUTLASS Changelog
 
+## [1.2.0](https://github.com/NVIDIA/cutlass/releases/tag/v1.2.0) (2018-10-26)
+ * Parallelized reductions across threadblocks ("Split-K")
+   * Improved IGEMM performance
+ * Batched strided WMMA GEMMs
 
-## 1.1.0 (2018-09-19)
+## [1.1.0](https://github.com/NVIDIA/cutlass/releases/tag/v1.1.0) (2018-09-19)
   * Turing Features
-    * WMMA GEMM targeting TensorCores - INT8, INT4, 1-bit
+    * WMMA GEMM targeting TensorCores - INT8, INT4, INT1
   * Batched Strided GEMM
   * Threadblock rasterization strategies
     * Improved performance for adverse problem sizes and data layouts
@@ -16,13 +20,13 @@
   * Examples
     * Basic GEMM, tensor views, CUTLASS utilities, batched GEMM, WMMA GEMM
 
-## 1.0.1 (2018-06-11)
+## [1.0.1](https://github.com/NVIDIA/cutlass/releases/tag/v1.0.1) (2018-06-11)
 
   * Intra-threadblock reduction added for small threadblock tile sizes
     * sgemm_64x128x16, sgemm_128x128x16, sgemm_128x64x16, sgemm_128x32x16, sgemm_64x64x16, sgemm_64x32x16
     * igemm_32x32x128
   * GEMM _K_ residue handled during prologue prior to mainloop
-  * Replaced Google Test copy with submodule. Use `git submodule init`
+  * Replaced Google Test copy with submodule. Use `git submodule init --recursive --update`
 
 ## [1.0.0](https://github.com/NVIDIA/cutlass/commit/2028ebe120aab22bfd0b2baf8902d4c9627eb33f) (2018-05-16)
 

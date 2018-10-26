@@ -54,5 +54,21 @@ struct ReshapeTile<Tile_, kAccessSize_, true> {
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+template <typename Tile_, int kAccessSize_, int kLdsPerAccess_, bool = (Tile_::kC < (kAccessSize_ * kLdsPerAccess_))>
+struct WmmaReshapeTile {
+  typedef Tile_ Tile;
+};
+
+template <typename Tile_, int kAccessSize_, int kLdsPerAccess_>
+struct WmmaReshapeTile<Tile_, kAccessSize_, kLdsPerAccess_, true> {
+  // Make sure the W dimension of the tile is large enough.
+  static_assert(Tile_::kW >= (kAccessSize_ * kLdsPerAccess_), "The W dimension is too small");
+  // Make sure the dimension can be divided by the number of scalars.
+  static_assert(Tile_::kW % (kAccessSize_ * kLdsPerAccess_) == 0, "Not supported");
+  // Collapse the W dimension.
+  typedef Shape<Tile_::kD, Tile_::kH, Tile_::kW / (kAccessSize_ * kLdsPerAccess_), (kAccessSize_ * kLdsPerAccess_)> Tile;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace cutlass

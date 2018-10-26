@@ -45,6 +45,7 @@ struct TypeTraits {
   typedef T device_type;
   static inline T remove_negative_zero(T x) { return x; }
   static inline T to_print(T x) { return x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -56,6 +57,7 @@ struct TypeTraits<Vector<bin1_t, 32> > {
   typedef uint32_t unsigned_type;
   static inline uint32_t remove_negative_zero(uint32_t x) { return x; }
   static inline uint32_t to_print(uint32_t x) { return x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -67,6 +69,7 @@ struct TypeTraits< Vector<int4_t, 8> > {
   typedef uint32_t unsigned_type;
   static inline uint32_t remove_negative_zero(uint32_t x) { return x; }
   static inline uint32_t to_print(uint32_t x) { return x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -78,6 +81,7 @@ struct TypeTraits< Vector<uint4_t, 8> > {
   typedef uint32_t unsigned_type;
   static inline uint32_t remove_negative_zero(uint32_t x) { return x; }
   static inline uint32_t to_print(uint32_t x) { return x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -89,6 +93,7 @@ struct TypeTraits<int8_t> {
   typedef uint8_t unsigned_type;
   static inline int8_t remove_negative_zero(int8_t x) { return x; }
   static inline int to_print(int8_t x) { return (int)x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -100,6 +105,7 @@ struct TypeTraits<uint8_t> {
   typedef uint8_t unsigned_type;
   static inline uint8_t remove_negative_zero(uint8_t x) { return x; }
   static inline uint32_t to_print(uint8_t x) { return (uint32_t)x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -111,6 +117,7 @@ struct TypeTraits<int> {
   typedef uint32_t unsigned_type;
   static inline int32_t remove_negative_zero(int32_t x) { return x; }
   static inline int to_print(int x) { return x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -122,6 +129,7 @@ struct TypeTraits<unsigned> {
   typedef uint32_t unsigned_type;
   static inline uint32_t remove_negative_zero(uint32_t x) { return x; }
   static inline uint32_t to_print(uint32_t x) { return x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -140,6 +148,7 @@ struct TypeTraits<half> {
     return x;
   }
   static inline half to_print(half x) { return x; }
+  static inline device_type to_device(half x) { return reinterpret_cast<device_type const &>(x); }
 };
 
 template <>
@@ -151,6 +160,7 @@ struct TypeTraits<int64_t> {
   typedef uint64_t unsigned_type;
   static inline int64_t remove_negative_zero(int64_t x) { return x; }
   static inline int64_t to_print(int64_t x) { return x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -162,6 +172,7 @@ struct TypeTraits<uint64_t> {
   typedef uint64_t unsigned_type;
   static inline uint64_t remove_negative_zero(uint64_t x) { return x; }
   static inline uint64_t to_print(uint64_t x) { return x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -175,6 +186,7 @@ struct TypeTraits<cutlass::half_t> {
     return (x.raw() == 0x8000 ? half_t::bitcast(0) : x);
   }
   static inline half_t to_print(half_t x) { return x; }
+  static inline device_type to_device(cutlass::half_t x) { return reinterpret_cast<device_type const &>(x); }
 };
 
 template <>
@@ -186,6 +198,7 @@ struct TypeTraits<float> {
   typedef uint32_t unsigned_type;
   static inline float remove_negative_zero(float x) { return x == -0.f ? 0.f : x; }
   static inline float to_print(float x) { return x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 template <>
@@ -197,6 +210,7 @@ struct TypeTraits<double> {
   typedef uint64_t unsigned_type;
   static inline double remove_negative_zero(double x) { return x == -0.0 ? 0.0 : x; }
   static inline double to_print(double x) { return x; }
+  static inline device_type to_device(host_type x) { return x; }
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -212,6 +226,7 @@ struct TypeTraits<platform::complex<half> > {
   typedef platform::complex<half> device_type;
   typedef int16_t integer_type;
   typedef uint16_t unsigned_type;
+  static inline device_type to_device(platform::complex<half> x) { return reinterpret_cast<device_type const &>(x); }
 };
 
 template <>
@@ -228,6 +243,7 @@ struct TypeTraits<platform::complex<half_t> > {
     );
   }
   static inline platform::complex<half_t> to_print(platform::complex<half_t> x) { return x; }
+  static inline device_type to_device(platform::complex<half_t> x) { return reinterpret_cast<device_type const &>(x); }
 };
 
 template <>
@@ -247,6 +263,7 @@ struct TypeTraits<platform::complex<float> > {
   }
 
   static inline platform::complex<float> to_print(platform::complex<float> x) { return x; }
+  static inline device_type to_device(platform::complex<float> x) { return reinterpret_cast<device_type const &>(x); }
 };
 
 template <>
@@ -263,6 +280,7 @@ struct TypeTraits<platform::complex<double> > {
     );
   }
   static inline platform::complex<double> to_print(platform::complex<double> x) { return x; }
+  static inline device_type to_device(platform::complex<double> x) { return reinterpret_cast<device_type const &>(x); }
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

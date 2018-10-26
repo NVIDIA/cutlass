@@ -80,7 +80,7 @@ struct IdentityBlockSwizzle {
     return grid;
   }
 
-  ///
+  ///get threadblock offset, without considering tha batch dim
   CUTLASS_DEVICE Coord<3> get_threadblock_offset(Coord<3> const &OutputTile) {
     dim3 block = swizzle();
     Coord<3> threadblock_offset =
@@ -92,6 +92,26 @@ struct IdentityBlockSwizzle {
   CUTLASS_DEVICE int get_batch_id() {
     dim3 block = swizzle();
     return block.z;
+  }
+
+  /// check if at the last partition
+  CUTLASS_DEVICE bool is_last_partition() {
+    if (get_batch_id() == (gridDim.z - 1))
+      return true;
+    else
+      return false;
+  }
+
+  ///
+  CUTLASS_DEVICE Coord<3> get_threadblock_bounds(GemmCoord const &problem_size,
+                                                 int partitionK_range) {
+    // every partition except the last one has a smaller range
+    // partitionK_range is the bounds for every partition except the last one
+    // the last partition's bounds is the same with problem size
+    if(is_last_partition())
+      return problem_size.knm();
+    else
+      return make_Coord(partitionK_range, problem_size.n(), problem_size.m());
   }
 };
 
@@ -225,6 +245,26 @@ struct ColumnMajorBlockSwizzle {
   CUTLASS_DEVICE int get_batch_id() {
     dim3 block = swizzle();
     return block.z;
+  }
+
+  /// check if at the last partition
+  CUTLASS_DEVICE bool is_last_partition() {
+    if (get_batch_id() == (gridDim.z - 1))
+      return true;
+    else
+      return false;
+  }
+
+  ///
+  CUTLASS_DEVICE Coord<3> get_threadblock_bounds(GemmCoord const &problem_size,
+                                                 int partitionK_range) {
+    // every partition except the last one has a smaller range
+    // partitionK_range is the bounds for every partition except the last one
+    // the last partition's bounds is the same with problem size
+    if (is_last_partition())
+      return problem_size.knm();
+    else
+      return make_Coord(partitionK_range, problem_size.n(), problem_size.m());
   }
 };
 
@@ -378,6 +418,26 @@ struct RowMajorBlockSwizzle {
   CUTLASS_DEVICE int get_batch_id() {
     dim3 block = swizzle();
     return block.z;
+  }
+
+  /// check if at the last partition
+  CUTLASS_DEVICE bool is_last_partition() {
+    if (get_batch_id() == (gridDim.z - 1) )
+      return true;
+    else
+      return false;
+  }
+
+  ///
+  CUTLASS_DEVICE Coord<3> get_threadblock_bounds(GemmCoord const &problem_size,
+                                                 int partitionK_range) {
+    // every partition except the last one has a smaller range
+    // partitionK_range is the bounds for every partition except the last one
+    // the last partition's bounds is the same with problem size
+    if (is_last_partition())
+      return problem_size.knm();
+    else
+      return make_Coord(partitionK_range, problem_size.n(), problem_size.m());
   }
 };
 

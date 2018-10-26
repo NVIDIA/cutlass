@@ -92,7 +92,9 @@ struct SharedLoadStream {
   }
 
   /// Load the data from shared memory to the fetch fragment.
-  CUTLASS_DEVICE void copy() { iterator.load_post_increment(fetched[0]); }
+  CUTLASS_DEVICE void copy() { 
+    iterator.load_post_increment(fetched[0]);
+  }
 
   /// Load the data from shared memory to the fetch fragment.
   CUTLASS_DEVICE void copy(int step) { iterator.load(fetched[step % 2], step); }

@@ -32,6 +32,7 @@
 #include "cutlass/coord.h"
 #include "cutlass/zip_tensor_ref.h"
 #include "cutlass/zip_fragment.h"
+#include "cutlass/util/pair.h"
 
 namespace cutlass {
 
@@ -72,7 +73,10 @@ class ZipTileIterator {
   typedef typename First::PredicateVector PredicateVector;
 
   /// Index type
-  typedef typename First::Index Index;
+  typedef platform::Pair<typename First::Index, typename Second::Index> Index;
+
+  /// Long index type
+  typedef platform::Pair<typename First::LongIndex, typename Second::LongIndex> LongIndex;
 
   /// Tensor reference
   typedef ZipTensorRef<
@@ -276,9 +280,9 @@ class ZipTileIterator {
   CUTLASS_DEVICE ZipTileIterator &operator-=(int count) { return decrement(count); }
 
   /// Adds an offset to both iterators
-  CUTLASS_DEVICE void add_pointer_offset(Index offset) {
-    first.add_pointer_offset(offset);
-    second.add_pointer_offset(offset);
+  CUTLASS_DEVICE void add_pointer_offset(LongIndex offset) {
+    first.add_pointer_offset(offset.first);
+    second.add_pointer_offset(offset.second);
   }
 };
 

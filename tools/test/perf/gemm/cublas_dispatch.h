@@ -89,4 +89,76 @@ struct CublasGemmDispatch {
   }
 };
 
+/// Dispatcher for batched strided cuBLAS kernels
+template <typename AType, typename BType, typename CType, typename Accumulator, typename Scalar>
+struct CublasBatchedStridedGemmDispatch {
+  /// Type used for device-side allocations
+  typedef typename cutlass::TypeTraits<AType>::device_type ADeviceType;
+  typedef typename cutlass::TypeTraits<BType>::device_type BDeviceType;
+  typedef typename cutlass::TypeTraits<CType>::device_type CDeviceType;
+  typedef typename cutlass::TypeTraits<Accumulator>::device_type AccumulatorDeviceType;
+  typedef typename cutlass::TypeTraits<Scalar>::device_type ScalarDeviceType;
+
+  static cublasOperation_t convert(cutlass::MatrixLayout::Kind layout) {
+    switch (layout) {
+    case cutlass::MatrixLayout::kRowMajor:
+      return CUBLAS_OP_T;
+    case cutlass::MatrixLayout::kColumnMajor:
+      return CUBLAS_OP_N;
+    default:
+      break;
+    }
+    return CUBLAS_OP_N;
+  }
+
+  /// Launches a cuBLAS GEMM kernel
+  cublasStatus_t operator()(cublasHandle_t handle,
+    cutlass::MatrixLayout::Kind layout_a,
+    cutlass::MatrixLayout::Kind layout_b,
+    int m,
+    int n,
+    int k,
+    Scalar alpha,
+    const ADeviceType *A,
+    int lda,
+    long long int batch_stride_A,
+    const BDeviceType *B,
+    int ldb,
+    long long int batch_stride_B,
+    Scalar beta,
+    CDeviceType *C,
+    int ldc,
+    long long int batch_stride_C,
+    int batch_count,
+    cublasGemmAlgo_t algorithm) {
+#if defined(CUDA_VERSION) && CUDA_VERSION >= 9010
+    return cublasGemmStridedBatchedEx(handle,
+      convert(layout_a),
+      convert(layout_b),
+      m,
+      n,
+      k,
+      reinterpret_cast<ScalarDeviceType const *>(&alpha),
+      A,
+      cutlass::TypeTraits<ADeviceType>::cublas_type,
+      lda,
+      batch_stride_A,
+      B,
+      cutlass::TypeTraits<BDeviceType>::cublas_type,
+      ldb,
+      batch_stride_B,
+      reinterpret_cast<ScalarDeviceType const *>(&beta),
+      C,
+      cutlass::TypeTraits<CDeviceType>::cublas_type,
+      ldc,
+      batch_stride_C,
+      batch_count,
+      cutlass::TypeTraits<AccumulatorDeviceType>::cublas_type,
+      algorithm);
+#else
+    return CUBLAS_STATUS_NOT_SUPPORTED;
+#endif
+  }
+};
+
 }  // namespace perf

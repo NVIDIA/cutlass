@@ -188,6 +188,8 @@ struct GemmGlobalIteratorAb
   typedef typename TileTraits_::Threads Threads;
   /// The index.
   typedef Index_ Index;
+    /// Long index
+  typedef long long LongIndex;
   /// The thread offset
   typedef typename TileTraits_::ThreadOffset ThreadOffset;
   /// Specifies in which dimension post-increment accesses advance.
@@ -201,35 +203,9 @@ struct GemmGlobalIteratorAb
   struct Params : public BaseParams {
     /// Initializes params to load a strip-mined tile, given pointer and stride_h.
     CUTLASS_HOST_DEVICE int initialize(Scalar const* ptr,
-                                       long long stride_d,
+                                       Index stride_d,
                                        Index stride_h) {
-      Index inc_d = 0;
-      Index inc_advance = 0;
-      // Move by some columns for each iteration in the H dimension.
-      Index inc_h = Base::Delta::kH * stride_h;
-
-      // Move by some more columns in the number of iterations if the D dimension is > 1.
-      if (Base::Delta::kD > 0) {
-        inc_d = Base::Delta::kD * stride_h - (Base::Iterations::kH - 1) * inc_h;
-      }
-
-      // Move to the beginning of the next iteration.
-      if (kAdvance == IteratorAdvance::kH && Base::Delta::kD > 0) {
-        inc_advance = inc_d;
-      } else if (kAdvance == IteratorAdvance::kH) {
-        inc_advance = inc_h;
-      } else if (Base::Delta::kD > 0) {
-        inc_advance = (Base::Iterations::kW + 0) * ShapeCount<typename Base::Delta>::kWc -
-                      (Base::Iterations::kH - 1) * inc_h -
-                      (Base::Iterations::kD - 1) * Base::Delta::kD * stride_h;
-      } else {
-        inc_advance = (Base::Iterations::kW + 0) * ShapeCount<typename Base::Delta>::kWc -
-                      (Base::Iterations::kH - 1) * inc_h;
-      }
-
-      Base::Params::initialize(
-          ptr, stride_d, stride_h, 1, inc_d, inc_h, 0, inc_advance);
-      return 0;
+      return BaseParams::initialize(ptr, stride_d, stride_h, kAdvance == IteratorAdvance::kH ? 0 : 1);
     }
   };
 
@@ -268,7 +244,6 @@ struct GemmGlobalIteratorAb
 
   /// Ctor.
   CUTLASS_HOST_DEVICE GemmGlobalIteratorAb(Params const& _params,
-                                           const Coord<3>& bounds,
                                            const Coord<3>& threadblock_offset,
                                            ThreadOffset thread_offset_func = ThreadOffset())
       : params(_params) {
@@ -304,11 +279,6 @@ struct GemmGlobalIteratorAb
 
   /// That's the residue! Update the predicates.
   CUTLASS_HOST_DEVICE void residue(Index k) {
-    // The coordinates of the thread.
-    Index block_h = thread_offset[1];
-    // The contiguous dimension.
-    Index block_w = thread_offset[2];
-
     // Update the predicate vector.
     for (int d = 0; d < Base::Iterations::kD; ++d) {
       for (int h = 0; h < Base::Iterations::kH; ++h) {
@@ -316,9 +286,9 @@ struct GemmGlobalIteratorAb
           for (int c = 0; c < Base::Iterations::kC; ++c) {
             Index offset = 0;
             if (kAdvance == IteratorAdvance::kH) {
-              offset += block_h + h * Base::Delta::kH + d * Base::Delta::kD;
+              offset += thread_offset[1] + h * Base::Delta::kH + d * Base::Delta::kD;
             } else {
-              offset += block_w + w * Base::Delta::kW;
+              offset += thread_offset[2] + w * Base::Delta::kW;
             }
 
             int const bit = ComputeOffsetFromShape<typename Base::Iterations>::get(d, h, w, c);
@@ -340,7 +310,7 @@ struct GemmGlobalIteratorAb
   /// Adds a vector offset to the iterator
   CUTLASS_HOST_DEVICE GemmGlobalIteratorAb & operator+=(Coord<3> const &offset) {
 
-    long long _offset = offset.template dot<long long>(
+    LongIndex _offset = offset.template dot<LongIndex>(
       make_Coord(params.stride_d, params.stride_h, params.stride_w)
     );
 
@@ -419,6 +389,8 @@ struct GemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
   typedef typename TileTraits_::Threads Threads;
   /// The index.
   typedef Index_ Index;
+    /// The index.
+  typedef long long LongIndex;
   /// The thread offset
   typedef typename TileTraits_::ThreadOffset ThreadOffset;
 
@@ -439,7 +411,7 @@ struct GemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
 
     /// Setup the params.
     CUTLASS_HOST_DEVICE int initialize(Pointer pointer,
-                                       long long batch_stride,
+                                       int stride_d_,
                                        Index ldm,
                                        Index bound,
                                        Index epilogue_stride_w,
@@ -447,7 +419,7 @@ struct GemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
       // The pointer.
       this->pointer = pointer;
       // Stride per batch
-      stride_d = batch_stride;
+      stride_d = stride_d_;
       // Each column of the matrix.
       stride_h = TileTraits_::ThreadsDelta::kH * ldm;
       // Each thread output 1 column per iteration. The stride between columns is given by the
@@ -463,6 +435,21 @@ struct GemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
 
       return 0;
     }
+
+    CUTLASS_HOST_DEVICE int initialize(Pointer pointer, long long _stride_d, Index _stride_h, 
+            Index _inc_advance, Index _inc_h, Index _predicate_inc_advance, Index _predicate_inc_h,
+            Index _predicate_offset) {
+      this->pointer = pointer;
+      stride_d = _stride_d;
+      stride_h = _stride_h;
+      inc_advance = _inc_advance;
+      inc_h = _inc_h;
+      predicate_inc_advance = _predicate_inc_advance;
+      predicate_inc_h = _predicate_inc_h;
+      predicate_offset = _predicate_offset;
+
+      return 0;
+    }
   };
 
   /// Parameters.
@@ -471,20 +458,7 @@ struct GemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
   Coord<4> thread_offset;
   /// The predicates for the row.
   cutlass::PredicateVector<Base::Iterations::kW> predicates;
-
-  /// Ctor.
-  CUTLASS_HOST_DEVICE GemmGlobalIteratorCd(Params const& _params,
-                                           const Coord<3>& bounds,
-                                           const Coord<3>& block_offset,
-                                           ThreadOffset thread_offset_func = ThreadOffset())
-      : params(_params) {
-    thread_offset = thread_offset_func();
-    // Prepare the vector of predicates.
-    for (int i = 0; i < Base::Iterations::kW; ++i) {
-      predicates.set(i, thread_offset[2] + i * Base::Delta::kW < bounds[2]);
-    }
-  }
-
+  
   /// Ctor.
   CUTLASS_HOST_DEVICE GemmGlobalIteratorCd(Params const& _params,
                                            const Coord<3>& bounds,
@@ -527,7 +501,7 @@ struct GemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
 
   /// Adds a vector offset to the iterator
   CUTLASS_HOST_DEVICE GemmGlobalIteratorCd & operator+=(Coord<3> const &offset) {
-    long long _offset = offset.template dot<long long>(
+    LongIndex _offset = offset.template dot<LongIndex>(
       make_Coord(params.stride_d, params.stride_h, 1)
     );
     params.pointer += _offset;
@@ -568,7 +542,7 @@ struct GemmGlobalIteratorCd : public TileIteratorBase<TileTraits_,
   }
 
   /// add pointer offset
-  CUTLASS_HOST_DEVICE void add_pointer_offset(Index offset) { params.pointer += offset; }
+  CUTLASS_HOST_DEVICE void add_pointer_offset(LongIndex offset) { params.pointer += offset; }
 
   /// Loads and increments iterator
   template <typename Fragment>

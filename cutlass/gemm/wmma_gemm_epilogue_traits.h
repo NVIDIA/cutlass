@@ -45,7 +45,7 @@ namespace gemm {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename GemmConfig_, typename EpilogueFunctor_, typename Index_ = int>
+template <typename GemmConfig_, typename Accumulator_, typename EpilogueFunctor_, typename Index_ = int>
 struct WmmaGemmEpilogueTraitsHelper {
   /// The scalar.
   typedef typename EpilogueFunctor_::Scalar Scalar;
@@ -104,7 +104,10 @@ struct WmmaGemmEpilogueTraitsHelper {
       // The number of threads.
       Shape<1, ShapeCount<typename GemmConfig_::Warps>::kCount, GemmConfig_::kWarpSize>,
       // The number of scalars per LDS.
-      GemmConfig_::kScalarsPerLdsD>
+      GemmConfig_::kScalarsPerLdsD,
+      // this parameter helps with swizzling when accum is fp32 and output is fp16
+      sizeof(Accumulator_) / sizeof(typename GemmConfig_::ScalarD) 
+      >
       SharedLoadTileTraits;
 
   /// The iterator to load D from shared memory.

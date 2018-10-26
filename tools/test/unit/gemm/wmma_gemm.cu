@@ -53,6 +53,7 @@ TEST(WmmaGemm_16x16x32_f16, wmma_gemm_16x16x16_nn) {
   run_gemm<WmmaGemmTraits>(16, 16, 16);
 }
 
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(WmmaGemm_16x16x32_f16, wmma_gemm_16x16x32_nn) {
@@ -367,7 +368,5 @@ TEST(WmmaGemm_128x128x32, wmma_32x8x16_gemm_256x256x128_tn) {
   run_gemm<WmmaGemmTraits>(256, 256, 128);
 }
 #endif
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-
 #endif  // defined CUTLASS_USE_WMMA_API

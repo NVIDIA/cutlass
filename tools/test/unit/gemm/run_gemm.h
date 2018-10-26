@@ -25,8 +25,12 @@
 
 #pragma once
 
+#include <utility>
 #include "cutlass/cutlass.h"
 #include "tools/test/unit/gemm/gemm_testbed.h"
+#include "cutlass/gemm/device_gemm.h"
+#include "cutlass/gemm/device_gemm_traits.h"
+
 template <typename GemmTraits_>
 static void run_gemm(
     int m,
@@ -36,9 +40,9 @@ static void run_gemm(
     int ldb,
     int ldc,
     typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type alpha =
-        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1),
+        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1.0f),
     typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
-        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0)) {
+        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0.0f)) {
 
   typedef typename GemmTraits_::KernelClass Gemm;
   typename Gemm::Params params;
@@ -69,7 +73,9 @@ static void run_gemm(
 
   if (testbed.has_cublas_support()) {
     EXPECT_TRUE(testbed.verify_host_with_cublas());
+    EXPECT_TRUE(testbed.verify_reference_with_cublas());
   }
+
 
   params.initialize(testbed.M(),
                     testbed.N(),
@@ -137,6 +143,7 @@ static void run_gemm(
 
   if (testbed.has_cublas_support()) {
     EXPECT_TRUE(testbed.verify_host_with_cublas());
+    EXPECT_TRUE(testbed.verify_reference_with_cublas());
   }
 
   params.initialize(testbed.M(),
@@ -175,9 +182,9 @@ static void run_batched_strided_gemm(
     int k,
     int batch_count,
     typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type alpha =
-        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1),
+        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1.0f),
     typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
-        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0)) {
+        typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0.0f)) {
   //typedef cutlass::gemm::Gemm<GemmTraits_> Gemm;
   typedef typename GemmTraits_::KernelClass Gemm;
   typename Gemm::Params params;
@@ -242,3 +249,153 @@ static void run_batched_strided_gemm(
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename GemmTraits_, typename ReductionTraits_>
+static void run_splitK_gemm(int m,
+  int n,
+  int k,
+  typename test::GemmTestbedTraits<typename ReductionTraits_::ScalarAlphaBeta>::host_type alpha =
+      typename test::GemmTestbedTraits<typename ReductionTraits_::ScalarAlphaBeta>::host_type(1.0f),
+  typename test::GemmTestbedTraits<typename ReductionTraits_::ScalarAlphaBeta>::host_type beta =
+      typename test::GemmTestbedTraits<typename ReductionTraits_::ScalarAlphaBeta>::host_type(0.0f),
+  bool use_host_reference = false){
+
+  test::GemmTestbed<
+    typename test::GemmTestbedTraits<
+      typename GemmTraits_::GemmConfig::ScalarA>::host_type,  // AType
+    typename test::GemmTestbedTraits<
+      typename GemmTraits_::GemmConfig::ScalarB>::host_type,  // BType
+    typename test::GemmTestbedTraits<
+      typename ReductionTraits_::ScalarC>::host_type,  // CType
+    typename test::GemmTestbedTraits<
+      typename GemmTraits_::GemmConfig::ScalarD>::host_type,  // Workspace Accumulator
+    typename test::GemmTestbedTraits<typename ReductionTraits_::ScalarAlphaBeta>::host_type  // Scalar
+  >
+    testbed(m,
+      n,
+      k,
+      test::convert(GemmTraits_::kLayoutA),
+      test::convert(GemmTraits_::kLayoutB),
+      alpha,
+      beta);
+
+  testbed.initialize();
+
+  // create a device gemm
+  typedef cutlass::gemm::SplitkPIGemmTraits<GemmTraits_, ReductionTraits_> deviceGemmTraits;
+  typedef typename deviceGemmTraits::KernelClass deviceGemm;
+  typename deviceGemm::Params deviceGemmParams(testbed.M(), testbed.N(), testbed.K());
+
+  // query if workspace is needed
+  int workspace_size = deviceGemmParams.required_workspace_memory_in_byte();
+  typename test::GemmTestbedTraits<typename GemmTraits_::GemmConfig::ScalarD>::device_type
+    *workspace_ptr = 0;
+  if (workspace_size != 0) {
+    cudaError_t workspace_err = cudaMalloc(&workspace_ptr, workspace_size);
+    ASSERT_EQ(workspace_err, cudaSuccess) << "\nCUDA workspace malloc error: " << cudaGetErrorString(workspace_err)
+      << "\n";
+  }
+
+  deviceGemmParams.initialize(testbed.alpha,
+    testbed.ptr_A(),
+    testbed.lda(),
+    testbed.ptr_B(),
+    testbed.ldb(),
+    testbed.beta,
+    testbed.ptr_C_initial(),
+    testbed.ldc(),
+    testbed.ptr_computed(),
+    testbed.ldc(),
+    workspace_ptr);
+
+
+  deviceGemm::launch(deviceGemmParams);
+
+  cudaError_t result = cudaDeviceSynchronize();
+  ASSERT_EQ(result, cudaSuccess) << "\nCUDA kernel launch error: " << cudaGetErrorString(result)
+    << "\n";
+
+  if (workspace_size != 0) {
+    cudaError_t workspace_err = cudaFree(workspace_ptr);
+    ASSERT_EQ(workspace_err, cudaSuccess) << "\nCUDA workspace free error: " << cudaGetErrorString(workspace_err)
+      << "\n";
+  }
+
+  if (use_host_reference == true || testbed.has_cublas_support() == false) {
+    ASSERT_TRUE(testbed.verify_with_host());
+  }
+  else {
+    ASSERT_TRUE(testbed.verify_with_cublas());
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename GemmTraits_>
+static void run_partitioned_k_gemm(
+  int m,
+  int n,
+  int k,
+  int partitionK_count,
+  typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type alpha =
+  typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1.0f),
+  typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
+  typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0.0f)) {
+  //typedef cutlass::gemm::Gemm<GemmTraits_> Gemm;
+  typedef typename GemmTraits_::KernelClass Gemm;
+  typename Gemm::Params params;
+  test::GemmTestbed<
+    typename test::GemmTestbedTraits<
+    typename GemmTraits_::GemmConfig::ScalarA>::host_type,  // AType
+    typename test::GemmTestbedTraits<
+    typename GemmTraits_::GemmConfig::ScalarB>::host_type,  // BType
+    typename test::GemmTestbedTraits<
+    typename GemmTraits_::Epilogue::ScalarC>::host_type,  // CType
+    typename test::GemmTestbedTraits<
+    typename GemmTraits_::Epilogue::Accumulators::Element>::host_type,  // Accumulator
+    typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type  // Scalar
+  >
+    testbed(m,
+      n,
+      std::make_pair(k, partitionK_count),
+      test::convert(GemmTraits_::kLayoutA),
+      test::convert(GemmTraits_::kLayoutB),
+      alpha,
+      beta);
+
+  testbed.initialize();
+
+  // host support is not implemented for strided batched gemm
+  // if (testbed.has_cublas_support()) {
+  //  EXPECT_TRUE(testbed.verify_host_with_cublas());
+  //}
+
+  params.initialize(testbed.M(),
+    testbed.N(),
+    testbed.K(),
+    testbed.alpha,
+    testbed.ptr_A(),
+    testbed.lda(),
+    testbed.ptr_B(),
+    testbed.ldb(),
+    testbed.beta,
+    testbed.ptr_C_initial(),
+    testbed.ldc(),
+    testbed.ptr_computed(),
+    testbed.ldc(),
+    partitionK_count);
+
+  Gemm::launch(params);
+
+  cudaError_t result = cudaDeviceSynchronize();
+  ASSERT_EQ(result, cudaSuccess) << "\nCUDA kernel launch error: " << cudaGetErrorString(result)
+    << "\n";
+
+  if (testbed.has_cublas_support()) {
+    ASSERT_TRUE(testbed.verify_with_cublas());
+  }
+  else {
+    // ASSERT_TRUE(testbed.verify_with_host());
+    ASSERT_TRUE(false) << "host support is not implemented for strided batched gemm" << std::endl;
+  }
+}

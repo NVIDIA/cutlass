@@ -173,6 +173,7 @@ struct WmmaGemmSharedStoreTileDTraits {
   /// The strides in each dimension between different loads/stores.
   typedef Shape<0, 0, Warps::kW * WmmaShape_::kW, 0> ImmediateOffsetStrides;
 
+
   /// ThreadOffset
   struct ThreadOffset {
     CUTLASS_HOST_DEVICE
@@ -192,7 +193,7 @@ struct WmmaGemmSharedStoreTileDTraits {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Scalar_, typename Tile_, typename Threads_, int kScalarsPerLds_>
+template <typename Scalar_, typename Tile_, typename Threads_, int kScalarsPerLds_, int kLdsPerAccess_ = 1>
 struct WmmaGemmSharedLoadTileDTraits {
   /// The scalar.
   typedef Scalar_ Scalar;
@@ -201,7 +202,7 @@ struct WmmaGemmSharedLoadTileDTraits {
   /// The access size
   static int const kAccessSize = kScalarsPerLds_;
   /// The tile.
-  typedef typename ReshapeTile<Tile_, kScalarsPerLds_>::Tile Tile;
+  typedef typename WmmaReshapeTile<Tile_, kScalarsPerLds_, kLdsPerAccess_>::Tile Tile;
   /// The threads.
   typedef typename ReshapeThreads<Tile, Threads_>::Threads Threads;
   /// The threads strides.
@@ -212,11 +213,12 @@ struct WmmaGemmSharedLoadTileDTraits {
   /// The strides in each dimension between different loads/stores.
   typedef Shape<0, Threads::kH * ShapeCount<Tile>::kWc, Threads::kW * kScalarsPerLds_> Delta;
   /// The strides in each dimension between different loads/stores.
-  typedef Shape<0, Threads::kH * ShapeCount<Tile>::kWc, Threads::kW * kScalarsPerLds_>
+  typedef Shape<0, Threads::kH * ShapeCount<Tile>::kWc, Threads::kW * kScalarsPerLds_, kScalarsPerLds_>
       ImmediateOffsetStrides;
   /// The number of iterations needed to load/store the tile.
   typedef Shape<1, Tile::kH / Threads::kH, Tile::kW / Threads::kW, Tile::kC / kScalarsPerLds_>
       Iterations;
+
 
   /// ThreadOffset
   struct ThreadOffset {

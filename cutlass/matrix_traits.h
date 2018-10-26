@@ -153,7 +153,7 @@ struct MatrixCoord : public Coord<2, int> {
 //
 //   Coord<TensorRefMapFunc::kStorageRank> stride = TensorRefMapFunc::stride(leading_dim);
 //
-struct MatrixLayout {
+namespace MatrixLayout {
 
   /// Enumeration defining fundamental contiguous layouts.
   enum Kind { kRowMajor, kColumnMajor };
