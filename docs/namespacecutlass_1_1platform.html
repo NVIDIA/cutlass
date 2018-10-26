@@ -225,6 +225,9 @@ Classes</h2></td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1platform_1_1nullptr__t.html">nullptr_t</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">std::nullptr_t  <a href="structcutlass_1_1platform_1_1nullptr__t.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs an iterator from a pair of iterators.  <a href="structcutlass_1_1platform_1_1Pair.html#details">More...</a><br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1platform_1_1plus.html">plus</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="structcutlass_1_1platform_1_1plus.html" title="platform::plus ">platform::plus</a>  <a href="structcutlass_1_1platform_1_1plus.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -409,6 +412,34 @@ Functions</h2></td></tr>
 <tr class="memitem:a3c5dc10135c54b3b212c9e107ba1476a"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="classcutlass_1_1platform_1_1complex.html">complex</a>&lt; T &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1platform.html#a3c5dc10135c54b3b212c9e107ba1476a">sin</a> (<a class="el" href="classcutlass_1_1platform_1_1complex.html">complex</a>&lt; T &gt; const &amp;z)</td></tr>
 <tr class="memdesc:a3c5dc10135c54b3b212c9e107ba1476a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Computes the sin of complex z.  <a href="#a3c5dc10135c54b3b212c9e107ba1476a">More...</a><br /></td></tr>
 <tr class="separator:a3c5dc10135c54b3b212c9e107ba1476a"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab9c6c277b6c560f5b719502520fbe9f1"><td class="memTemplParams" colspan="2">template&lt;typename T1 , typename T2 &gt; </td></tr>
+<tr class="memitem:ab9c6c277b6c560f5b719502520fbe9f1"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1platform.html#ab9c6c277b6c560f5b719502520fbe9f1">make_Pair</a> (T1 const &amp;first, T2 const &amp;second)</td></tr>
+<tr class="memdesc:ab9c6c277b6c560f5b719502520fbe9f1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs a pair and deduces types.  <a href="#ab9c6c277b6c560f5b719502520fbe9f1">More...</a><br /></td></tr>
+<tr class="separator:ab9c6c277b6c560f5b719502520fbe9f1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4572b933f5d88de4714f761a7234ab92"><td class="memTemplParams" colspan="2">template&lt;typename T1 , typename T2 &gt; </td></tr>
+<tr class="memitem:a4572b933f5d88de4714f761a7234ab92"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1platform.html#a4572b933f5d88de4714f761a7234ab92">operator==</a> (<a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;lhs, <a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;rhs)</td></tr>
+<tr class="memdesc:a4572b933f5d88de4714f761a7234ab92"><td class="mdescLeft">&#160;</td><td class="mdescRight">Equality.  <a href="#a4572b933f5d88de4714f761a7234ab92">More...</a><br /></td></tr>
+<tr class="separator:a4572b933f5d88de4714f761a7234ab92"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a223ac1d2272e9324809d67182bdd24b6"><td class="memTemplParams" colspan="2">template&lt;typename T1 , typename T2 &gt; </td></tr>
+<tr class="memitem:a223ac1d2272e9324809d67182bdd24b6"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1platform.html#a223ac1d2272e9324809d67182bdd24b6">operator!=</a> (<a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;lhs, <a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;rhs)</td></tr>
+<tr class="memdesc:a223ac1d2272e9324809d67182bdd24b6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Inequality.  <a href="#a223ac1d2272e9324809d67182bdd24b6">More...</a><br /></td></tr>
+<tr class="separator:a223ac1d2272e9324809d67182bdd24b6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aba545c443b332f8d38fa8021e31deeb4"><td class="memTemplParams" colspan="2">template&lt;typename T1 , typename T2 &gt; </td></tr>
+<tr class="memitem:aba545c443b332f8d38fa8021e31deeb4"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1platform.html#aba545c443b332f8d38fa8021e31deeb4">operator&lt;</a> (<a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;lhs, <a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;rhs)</td></tr>
+<tr class="memdesc:aba545c443b332f8d38fa8021e31deeb4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Lexical comparison.  <a href="#aba545c443b332f8d38fa8021e31deeb4">More...</a><br /></td></tr>
+<tr class="separator:aba545c443b332f8d38fa8021e31deeb4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8ab8b5156f4bf6ec866cfee9ee3dbc01"><td class="memTemplParams" colspan="2">template&lt;typename T1 , typename T2 &gt; </td></tr>
+<tr class="memitem:a8ab8b5156f4bf6ec866cfee9ee3dbc01"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1platform.html#a8ab8b5156f4bf6ec866cfee9ee3dbc01">operator&lt;=</a> (<a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;lhs, <a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;rhs)</td></tr>
+<tr class="memdesc:a8ab8b5156f4bf6ec866cfee9ee3dbc01"><td class="mdescLeft">&#160;</td><td class="mdescRight">Lexical comparison.  <a href="#a8ab8b5156f4bf6ec866cfee9ee3dbc01">More...</a><br /></td></tr>
+<tr class="separator:a8ab8b5156f4bf6ec866cfee9ee3dbc01"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a67e66e652a38f03d48b442d401980daa"><td class="memTemplParams" colspan="2">template&lt;typename T1 , typename T2 &gt; </td></tr>
+<tr class="memitem:a67e66e652a38f03d48b442d401980daa"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1platform.html#a67e66e652a38f03d48b442d401980daa">operator&gt;</a> (<a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;lhs, <a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;rhs)</td></tr>
+<tr class="memdesc:a67e66e652a38f03d48b442d401980daa"><td class="mdescLeft">&#160;</td><td class="mdescRight">Lexical comparison.  <a href="#a67e66e652a38f03d48b442d401980daa">More...</a><br /></td></tr>
+<tr class="separator:a67e66e652a38f03d48b442d401980daa"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1df0f55188cb81ce74f4c7bf125356d4"><td class="memTemplParams" colspan="2">template&lt;typename T1 , typename T2 &gt; </td></tr>
+<tr class="memitem:a1df0f55188cb81ce74f4c7bf125356d4"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1platform.html#a1df0f55188cb81ce74f4c7bf125356d4">operator&gt;=</a> (<a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;lhs, <a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;rhs)</td></tr>
+<tr class="memdesc:a1df0f55188cb81ce74f4c7bf125356d4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Lexical comparison.  <a href="#a1df0f55188cb81ce74f4c7bf125356d4">More...</a><br /></td></tr>
+<tr class="separator:a1df0f55188cb81ce74f4c7bf125356d4"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a57c071d2a7305dd4ec60542e66b0c81c"><td class="memTemplParams" colspan="2">template&lt;typename T &gt; </td></tr>
 <tr class="memitem:a57c071d2a7305dd4ec60542e66b0c81c"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> <a class="el" href="platform_8h.html#a72f0657181cca64b44eb186b707eb380">constexpr</a> const T &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacecutlass_1_1platform.html#a57c071d2a7305dd4ec60542e66b0c81c">min</a> (const T &amp;a, const T &amp;b)</td></tr>
 <tr class="memdesc:a57c071d2a7305dd4ec60542e66b0c81c"><td class="mdescLeft">&#160;</td><td class="mdescRight">std::min  <a href="#a57c071d2a7305dd4ec60542e66b0c81c">More...</a><br /></td></tr>
@@ -532,148 +563,8 @@ template&lt;&gt; </div>
 
 </div>
 </div>
-<a id="a0bcb016704ec57f9499e662ba6156f98"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a0bcb016704ec57f9499e662ba6156f98">&#9670;&nbsp;</a></span>__align__() <span class="overload">[2/13]</span></h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;&gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">struct cutlass::platform::__align__ </td>
-          <td>(</td>
-          <td class="paramtype">2&#160;</td>
-          <td class="paramname"></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
-<a id="a71be5af25eeffa4077777f919e67d8da"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a71be5af25eeffa4077777f919e67d8da">&#9670;&nbsp;</a></span>__align__() <span class="overload">[3/13]</span></h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;&gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">struct cutlass::platform::__align__ </td>
-          <td>(</td>
-          <td class="paramtype">4&#160;</td>
-          <td class="paramname"></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
-<a id="a42440254a16d4b6b95b95cc3360ee372"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a42440254a16d4b6b95b95cc3360ee372">&#9670;&nbsp;</a></span>__align__() <span class="overload">[4/13]</span></h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;&gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">struct cutlass::platform::__align__ </td>
-          <td>(</td>
-          <td class="paramtype">8&#160;</td>
-          <td class="paramname"></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
-<a id="a91d5e970d6ebe619914f40a9510bdb1e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a91d5e970d6ebe619914f40a9510bdb1e">&#9670;&nbsp;</a></span>__align__() <span class="overload">[5/13]</span></h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;&gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">struct cutlass::platform::__align__ </td>
-          <td>(</td>
-          <td class="paramtype">16&#160;</td>
-          <td class="paramname"></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
-<a id="ae70bb5d14a66500b47d2e3f83063d4a5"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae70bb5d14a66500b47d2e3f83063d4a5">&#9670;&nbsp;</a></span>__align__() <span class="overload">[6/13]</span></h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;&gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">struct cutlass::platform::__align__ </td>
-          <td>(</td>
-          <td class="paramtype">512&#160;</td>
-          <td class="paramname"></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
-<a id="a210f4d360b1f9c3d074e71129fe4c0d9"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a210f4d360b1f9c3d074e71129fe4c0d9">&#9670;&nbsp;</a></span>__align__() <span class="overload">[7/13]</span></h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;&gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">struct cutlass::platform::__align__ </td>
-          <td>(</td>
-          <td class="paramtype">32&#160;</td>
-          <td class="paramname"></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
-<a id="ae792b1c7ada1a33e306cd552f583bdce"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae792b1c7ada1a33e306cd552f583bdce">&#9670;&nbsp;</a></span>__align__() <span class="overload">[8/13]</span></h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;&gt; </div>
-      <table class="memname">
-        <tr>
-          <td class="memname">struct cutlass::platform::__align__ </td>
-          <td>(</td>
-          <td class="paramtype">64&#160;</td>
-          <td class="paramname"></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-</div><div class="memdoc">
-
-</div>
-</div>
 <a id="a5712ec4fed335a9b7f863fb3abe3c5eb"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a5712ec4fed335a9b7f863fb3abe3c5eb">&#9670;&nbsp;</a></span>__align__() <span class="overload">[9/13]</span></h2>
+<h2 class="memtitle"><span class="permalink"><a href="#a5712ec4fed335a9b7f863fb3abe3c5eb">&#9670;&nbsp;</a></span>__align__() <span class="overload">[2/13]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -693,7 +584,7 @@ template&lt;&gt; </div>
 </div>
 </div>
 <a id="a595cc98db29fb4d59772d2e2f52e347a"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a595cc98db29fb4d59772d2e2f52e347a">&#9670;&nbsp;</a></span>__align__() <span class="overload">[10/13]</span></h2>
+<h2 class="memtitle"><span class="permalink"><a href="#a595cc98db29fb4d59772d2e2f52e347a">&#9670;&nbsp;</a></span>__align__() <span class="overload">[3/13]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -712,8 +603,28 @@ template&lt;&gt; </div>
 
 </div>
 </div>
+<a id="ae70bb5d14a66500b47d2e3f83063d4a5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae70bb5d14a66500b47d2e3f83063d4a5">&#9670;&nbsp;</a></span>__align__() <span class="overload">[4/13]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">struct cutlass::platform::__align__ </td>
+          <td>(</td>
+          <td class="paramtype">512&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a181e44e9c66f704175590727aaa9e5a1"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a181e44e9c66f704175590727aaa9e5a1">&#9670;&nbsp;</a></span>__align__() <span class="overload">[11/13]</span></h2>
+<h2 class="memtitle"><span class="permalink"><a href="#a181e44e9c66f704175590727aaa9e5a1">&#9670;&nbsp;</a></span>__align__() <span class="overload">[5/13]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -733,7 +644,7 @@ template&lt;&gt; </div>
 </div>
 </div>
 <a id="ae72c8fa997bb251d4140dceb03147154"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ae72c8fa997bb251d4140dceb03147154">&#9670;&nbsp;</a></span>__align__() <span class="overload">[12/13]</span></h2>
+<h2 class="memtitle"><span class="permalink"><a href="#ae72c8fa997bb251d4140dceb03147154">&#9670;&nbsp;</a></span>__align__() <span class="overload">[6/13]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -753,7 +664,7 @@ template&lt;&gt; </div>
 </div>
 </div>
 <a id="ada29683f1b408ae7b73cc8fbe2108628"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ada29683f1b408ae7b73cc8fbe2108628">&#9670;&nbsp;</a></span>__align__() <span class="overload">[13/13]</span></h2>
+<h2 class="memtitle"><span class="permalink"><a href="#ada29683f1b408ae7b73cc8fbe2108628">&#9670;&nbsp;</a></span>__align__() <span class="overload">[7/13]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -764,6 +675,126 @@ template&lt;&gt; </div>
           <td class="memname">struct cutlass::platform::__align__ </td>
           <td>(</td>
           <td class="paramtype">4096&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a0bcb016704ec57f9499e662ba6156f98"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0bcb016704ec57f9499e662ba6156f98">&#9670;&nbsp;</a></span>__align__() <span class="overload">[8/13]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">struct cutlass::platform::__align__ </td>
+          <td>(</td>
+          <td class="paramtype">2&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="ae792b1c7ada1a33e306cd552f583bdce"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae792b1c7ada1a33e306cd552f583bdce">&#9670;&nbsp;</a></span>__align__() <span class="overload">[9/13]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">struct cutlass::platform::__align__ </td>
+          <td>(</td>
+          <td class="paramtype">64&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a71be5af25eeffa4077777f919e67d8da"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a71be5af25eeffa4077777f919e67d8da">&#9670;&nbsp;</a></span>__align__() <span class="overload">[10/13]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">struct cutlass::platform::__align__ </td>
+          <td>(</td>
+          <td class="paramtype">4&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a42440254a16d4b6b95b95cc3360ee372"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a42440254a16d4b6b95b95cc3360ee372">&#9670;&nbsp;</a></span>__align__() <span class="overload">[11/13]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">struct cutlass::platform::__align__ </td>
+          <td>(</td>
+          <td class="paramtype">8&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a91d5e970d6ebe619914f40a9510bdb1e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a91d5e970d6ebe619914f40a9510bdb1e">&#9670;&nbsp;</a></span>__align__() <span class="overload">[12/13]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">struct cutlass::platform::__align__ </td>
+          <td>(</td>
+          <td class="paramtype">16&#160;</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a210f4d360b1f9c3d074e71129fe4c0d9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a210f4d360b1f9c3d074e71129fe4c0d9">&#9670;&nbsp;</a></span>__align__() <span class="overload">[13/13]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">struct cutlass::platform::__align__ </td>
+          <td>(</td>
+          <td class="paramtype">32&#160;</td>
           <td class="paramname"></td><td>)</td>
           <td></td>
         </tr>
@@ -1024,6 +1055,36 @@ template&lt;typename T &gt; </div>
 
 </div>
 </div>
+<a id="ab9c6c277b6c560f5b719502520fbe9f1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab9c6c277b6c560f5b719502520fbe9f1">&#9670;&nbsp;</a></span>make_Pair()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T1 , typename T2 &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt;T1, T2&gt; cutlass::platform::make_Pair </td>
+          <td>(</td>
+          <td class="paramtype">T1 const &amp;&#160;</td>
+          <td class="paramname"><em>first</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">T2 const &amp;&#160;</td>
+          <td class="paramname"><em>second</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a90ce74c7faa4e27c888ce56e957b73d5"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a90ce74c7faa4e27c888ce56e957b73d5">&#9670;&nbsp;</a></span>make_pair()</h2>
 
@@ -1134,8 +1195,38 @@ template&lt;typename T &gt; </div>
 
 </div>
 </div>
+<a id="a223ac1d2272e9324809d67182bdd24b6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a223ac1d2272e9324809d67182bdd24b6">&#9670;&nbsp;</a></span>operator!=() <span class="overload">[1/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T1 , typename T2 &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool cutlass::platform::operator!= </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>lhs</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>rhs</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a248f49adf09654d2cd04bd2760ab2566"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a248f49adf09654d2cd04bd2760ab2566">&#9670;&nbsp;</a></span>operator!=() <span class="overload">[1/2]</span></h2>
+<h2 class="memtitle"><span class="permalink"><a href="#a248f49adf09654d2cd04bd2760ab2566">&#9670;&nbsp;</a></span>operator!=() <span class="overload">[2/3]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -1165,7 +1256,7 @@ template&lt;class T1 , class T2 &gt; </div>
 </div>
 </div>
 <a id="aa8b8911c3529ee9d433b0c4d90bde50c"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#aa8b8911c3529ee9d433b0c4d90bde50c">&#9670;&nbsp;</a></span>operator!=() <span class="overload">[2/2]</span></h2>
+<h2 class="memtitle"><span class="permalink"><a href="#aa8b8911c3529ee9d433b0c4d90bde50c">&#9670;&nbsp;</a></span>operator!=() <span class="overload">[3/3]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -1584,8 +1675,38 @@ template&lt;typename T &gt; </div>
 
 </div>
 </div>
+<a id="aba545c443b332f8d38fa8021e31deeb4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aba545c443b332f8d38fa8021e31deeb4">&#9670;&nbsp;</a></span>operator&lt;() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T1 , typename T2 &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool cutlass::platform::operator&lt; </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>lhs</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>rhs</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a412dbdbc678ecd12b55fcad4ef4155bd"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a412dbdbc678ecd12b55fcad4ef4155bd">&#9670;&nbsp;</a></span>operator&lt;()</h2>
+<h2 class="memtitle"><span class="permalink"><a href="#a412dbdbc678ecd12b55fcad4ef4155bd">&#9670;&nbsp;</a></span>operator&lt;() <span class="overload">[2/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -1644,8 +1765,38 @@ template&lt;typename T &gt; </div>
 
 </div>
 </div>
+<a id="a8ab8b5156f4bf6ec866cfee9ee3dbc01"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8ab8b5156f4bf6ec866cfee9ee3dbc01">&#9670;&nbsp;</a></span>operator&lt;=() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T1 , typename T2 &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool cutlass::platform::operator&lt;= </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>lhs</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>rhs</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a41d573133357bd555f78d33afc1152d3"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a41d573133357bd555f78d33afc1152d3">&#9670;&nbsp;</a></span>operator&lt;=()</h2>
+<h2 class="memtitle"><span class="permalink"><a href="#a41d573133357bd555f78d33afc1152d3">&#9670;&nbsp;</a></span>operator&lt;=() <span class="overload">[2/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -1674,8 +1825,38 @@ template&lt;class T1 , class T2 &gt; </div>
 
 </div>
 </div>
+<a id="a4572b933f5d88de4714f761a7234ab92"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4572b933f5d88de4714f761a7234ab92">&#9670;&nbsp;</a></span>operator==() <span class="overload">[1/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T1 , typename T2 &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool cutlass::platform::operator== </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>lhs</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>rhs</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a043e8559161ee0fcaf943a1dfe1a9cbb"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a043e8559161ee0fcaf943a1dfe1a9cbb">&#9670;&nbsp;</a></span>operator==() <span class="overload">[1/2]</span></h2>
+<h2 class="memtitle"><span class="permalink"><a href="#a043e8559161ee0fcaf943a1dfe1a9cbb">&#9670;&nbsp;</a></span>operator==() <span class="overload">[2/3]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -1705,7 +1886,7 @@ template&lt;typename T &gt; </div>
 </div>
 </div>
 <a id="ab9b8306ae9dc21fa646c49b68fa8e197"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab9b8306ae9dc21fa646c49b68fa8e197">&#9670;&nbsp;</a></span>operator==() <span class="overload">[2/2]</span></h2>
+<h2 class="memtitle"><span class="permalink"><a href="#ab9b8306ae9dc21fa646c49b68fa8e197">&#9670;&nbsp;</a></span>operator==() <span class="overload">[3/3]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -1734,8 +1915,38 @@ template&lt;class T1 , class T2 &gt; </div>
 
 </div>
 </div>
+<a id="a67e66e652a38f03d48b442d401980daa"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a67e66e652a38f03d48b442d401980daa">&#9670;&nbsp;</a></span>operator&gt;() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T1 , typename T2 &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool cutlass::platform::operator&gt; </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>lhs</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>rhs</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a9e8e698d40b8df881991fde9ba2a1b12"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a9e8e698d40b8df881991fde9ba2a1b12">&#9670;&nbsp;</a></span>operator&gt;()</h2>
+<h2 class="memtitle"><span class="permalink"><a href="#a9e8e698d40b8df881991fde9ba2a1b12">&#9670;&nbsp;</a></span>operator&gt;() <span class="overload">[2/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -1764,8 +1975,38 @@ template&lt;class T1 , class T2 &gt; </div>
 
 </div>
 </div>
+<a id="a1df0f55188cb81ce74f4c7bf125356d4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1df0f55188cb81ce74f4c7bf125356d4">&#9670;&nbsp;</a></span>operator&gt;=() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T1 , typename T2 &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> bool cutlass::platform::operator&gt;= </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>lhs</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1platform_1_1Pair.html">Pair</a>&lt; T1, T2 &gt; const &amp;&#160;</td>
+          <td class="paramname"><em>rhs</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="ab0f21e67c0a4b5c6952042b502c6816f"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#ab0f21e67c0a4b5c6952042b502c6816f">&#9670;&nbsp;</a></span>operator&gt;=()</h2>
+<h2 class="memtitle"><span class="permalink"><a href="#ab0f21e67c0a4b5c6952042b502c6816f">&#9670;&nbsp;</a></span>operator&gt;=() <span class="overload">[2/2]</span></h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -2037,7 +2278,7 @@ template&lt;typename T , typename Deleter &gt; </div>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:40 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -135,6 +135,9 @@ Public Types</h2></td></tr>
 <tr class="memitem:a23b0e6a448e51f2e0837af95802c23b0"><td class="memItemLeft" align="right" valign="top">typedef Index_&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#a23b0e6a448e51f2e0837af95802c23b0">Index</a></td></tr>
 <tr class="memdesc:a23b0e6a448e51f2e0837af95802c23b0"><td class="mdescLeft">&#160;</td><td class="mdescRight">The index.  <a href="#a23b0e6a448e51f2e0837af95802c23b0">More...</a><br /></td></tr>
 <tr class="separator:a23b0e6a448e51f2e0837af95802c23b0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:af89096da16d4ec40cb2d388a28cc69be"><td class="memItemLeft" align="right" valign="top">typedef long long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#af89096da16d4ec40cb2d388a28cc69be">LongIndex</a></td></tr>
+<tr class="memdesc:af89096da16d4ec40cb2d388a28cc69be"><td class="mdescLeft">&#160;</td><td class="mdescRight">The long index.  <a href="#af89096da16d4ec40cb2d388a28cc69be">More...</a><br /></td></tr>
+<tr class="separator:af89096da16d4ec40cb2d388a28cc69be"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a8f15d59a7571d406d5ef593c342f0d4a"><td class="memItemLeft" align="right" valign="top">typedef Functor::Scalar&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#a8f15d59a7571d406d5ef593c342f0d4a">Scalar</a></td></tr>
 <tr class="memdesc:a8f15d59a7571d406d5ef593c342f0d4a"><td class="mdescLeft">&#160;</td><td class="mdescRight">We do not support 3D or 4D shapes.  <a href="#a8f15d59a7571d406d5ef593c342f0d4a">More...</a><br /></td></tr>
 <tr class="separator:a8f15d59a7571d406d5ef593c342f0d4a"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -291,6 +294,22 @@ template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIte
 
 </div>
 </div>
+<a id="af89096da16d4ec40cb2d388a28cc69be"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af89096da16d4ec40cb2d388a28cc69be">&#9670;&nbsp;</a></span>LongIndex</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIteratorC_, typename GlobalTransformerC_, typename GlobalTransformerD_, typename GlobalStoreIteratorD_, typename SharedStoreIteratorD_, typename SharedStoreTransformerD_, typename SharedLoadStreamD_, typename Iterations_, typename Delta_, typename Functor_, typename Index_ = int&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef long long <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html">cutlass::gemm::GemmEpilogueTraits</a>&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::<a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits.html#af89096da16d4ec40cb2d388a28cc69be">LongIndex</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="af4d17d3774382fc0ba63d329bd12772c"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#af4d17d3774382fc0ba63d329bd12772c">&#9670;&nbsp;</a></span>OutputTile</h2>
 
@@ -410,7 +429,7 @@ template&lt;typename OutputTile_, typename Accumulators_, typename GlobalLoadIte
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:39 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

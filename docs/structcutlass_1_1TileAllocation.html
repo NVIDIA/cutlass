@@ -107,6 +107,12 @@ Public Types</h2></td></tr>
 <tr class="memitem:aa0bf6caeab13dc004350c6c0cfe0df80"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileAllocation.html#aa0bf6caeab13dc004350c6c0cfe0df80">TensorRef</a>&lt; <a class="el" href="structcutlass_1_1TileAllocation.html#a98f1243dc279999e3ff083ef45dee3f6">Scalar</a>, 4 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileAllocation.html#aa0bf6caeab13dc004350c6c0cfe0df80">TensorRef</a></td></tr>
 <tr class="memdesc:aa0bf6caeab13dc004350c6c0cfe0df80"><td class="mdescLeft">&#160;</td><td class="mdescRight">Defines the tensor reference for this allocation.  <a href="#aa0bf6caeab13dc004350c6c0cfe0df80">More...</a><br /></td></tr>
 <tr class="separator:aa0bf6caeab13dc004350c6c0cfe0df80"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac39b045286bd3669042f3b223629d73e"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileAllocation.html#a759e998135d5f25e689afdc676d95141">TensorView</a>&lt; <a class="el" href="structcutlass_1_1TileAllocation.html#a98f1243dc279999e3ff083ef45dee3f6">Scalar</a> const, 4 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileAllocation.html#ac39b045286bd3669042f3b223629d73e">ConstTensorView</a></td></tr>
+<tr class="memdesc:ac39b045286bd3669042f3b223629d73e"><td class="mdescLeft">&#160;</td><td class="mdescRight">View of memory.  <a href="#ac39b045286bd3669042f3b223629d73e">More...</a><br /></td></tr>
+<tr class="separator:ac39b045286bd3669042f3b223629d73e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a759e998135d5f25e689afdc676d95141"><td class="memItemLeft" align="right" valign="top">typedef <a class="el" href="structcutlass_1_1TileAllocation.html#a759e998135d5f25e689afdc676d95141">TensorView</a>&lt; <a class="el" href="structcutlass_1_1TileAllocation.html#a98f1243dc279999e3ff083ef45dee3f6">Scalar</a>, 4 &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileAllocation.html#a759e998135d5f25e689afdc676d95141">TensorView</a></td></tr>
+<tr class="memdesc:a759e998135d5f25e689afdc676d95141"><td class="mdescLeft">&#160;</td><td class="mdescRight">View of memory.  <a href="#a759e998135d5f25e689afdc676d95141">More...</a><br /></td></tr>
+<tr class="separator:a759e998135d5f25e689afdc676d95141"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
@@ -122,6 +128,12 @@ Public Member Functions</h2></td></tr>
 <tr class="memitem:afcdc0be82acf0b4ae66468e2170c5a0d"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1TileAllocation.html#a122fa067390f45b29946286271654033">ConstTensorRef</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileAllocation.html#afcdc0be82acf0b4ae66468e2170c5a0d">reference</a> () const</td></tr>
 <tr class="memdesc:afcdc0be82acf0b4ae66468e2170c5a0d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns a <a class="el" href="classcutlass_1_1TensorRef.html">TensorRef</a> object pointing to the data.  <a href="#afcdc0be82acf0b4ae66468e2170c5a0d">More...</a><br /></td></tr>
 <tr class="separator:afcdc0be82acf0b4ae66468e2170c5a0d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6b8bef90ee0ce6f58f7971a4925d88c7"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1TileAllocation.html#a759e998135d5f25e689afdc676d95141">TensorView</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileAllocation.html#a6b8bef90ee0ce6f58f7971a4925d88c7">view</a> ()</td></tr>
+<tr class="memdesc:a6b8bef90ee0ce6f58f7971a4925d88c7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns a <a class="el" href="classcutlass_1_1TensorView.html" title="Defines a view into a logical tensor. ">TensorView</a> object pointing to the data.  <a href="#a6b8bef90ee0ce6f58f7971a4925d88c7">More...</a><br /></td></tr>
+<tr class="separator:a6b8bef90ee0ce6f58f7971a4925d88c7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a8d3befc0770f235d219bf77a0370fa4f"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1TileAllocation.html#ac39b045286bd3669042f3b223629d73e">ConstTensorView</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1TileAllocation.html#a8d3befc0770f235d219bf77a0370fa4f">view</a> () const</td></tr>
+<tr class="memdesc:a8d3befc0770f235d219bf77a0370fa4f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns a <a class="el" href="classcutlass_1_1TensorView.html" title="Defines a view into a logical tensor. ">TensorView</a> object pointing to the data.  <a href="#a8d3befc0770f235d219bf77a0370fa4f">More...</a><br /></td></tr>
+<tr class="separator:a8d3befc0770f235d219bf77a0370fa4f"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
@@ -140,6 +152,22 @@ template&lt;typename Scalar_ , typename Shape_ &gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef <a class="el" href="structcutlass_1_1TileAllocation.html#aa0bf6caeab13dc004350c6c0cfe0df80">TensorRef</a>&lt;<a class="el" href="structcutlass_1_1TileAllocation.html#a98f1243dc279999e3ff083ef45dee3f6">Scalar</a> const, 4&gt; <a class="el" href="structcutlass_1_1TileAllocation.html">cutlass::TileAllocation</a>&lt; Scalar_, Shape_ &gt;::<a class="el" href="structcutlass_1_1TileAllocation.html#a122fa067390f45b29946286271654033">ConstTensorRef</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="ac39b045286bd3669042f3b223629d73e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac39b045286bd3669042f3b223629d73e">&#9670;&nbsp;</a></span>ConstTensorView</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_ , typename Shape_ &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1TileAllocation.html#a759e998135d5f25e689afdc676d95141">TensorView</a>&lt;<a class="el" href="structcutlass_1_1TileAllocation.html#a98f1243dc279999e3ff083ef45dee3f6">Scalar</a> const, 4&gt; <a class="el" href="structcutlass_1_1TileAllocation.html">cutlass::TileAllocation</a>&lt; Scalar_, Shape_ &gt;::<a class="el" href="structcutlass_1_1TileAllocation.html#ac39b045286bd3669042f3b223629d73e">ConstTensorView</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -220,6 +248,22 @@ template&lt;typename Scalar_ , typename Shape_ &gt; </div>
       <table class="memname">
         <tr>
           <td class="memname">typedef <a class="el" href="structcutlass_1_1TileAllocation.html#aa0bf6caeab13dc004350c6c0cfe0df80">TensorRef</a>&lt;<a class="el" href="structcutlass_1_1TileAllocation.html#a98f1243dc279999e3ff083ef45dee3f6">Scalar</a>, 4&gt; <a class="el" href="structcutlass_1_1TileAllocation.html">cutlass::TileAllocation</a>&lt; Scalar_, Shape_ &gt;::<a class="el" href="structcutlass_1_1TileAllocation.html#aa0bf6caeab13dc004350c6c0cfe0df80">TensorRef</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a759e998135d5f25e689afdc676d95141"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a759e998135d5f25e689afdc676d95141">&#9670;&nbsp;</a></span>TensorView</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_ , typename Shape_ &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">typedef <a class="el" href="structcutlass_1_1TileAllocation.html#a759e998135d5f25e689afdc676d95141">TensorView</a>&lt;<a class="el" href="structcutlass_1_1TileAllocation.html#a98f1243dc279999e3ff083ef45dee3f6">Scalar</a>, 4&gt; <a class="el" href="structcutlass_1_1TileAllocation.html">cutlass::TileAllocation</a>&lt; Scalar_, Shape_ &gt;::<a class="el" href="structcutlass_1_1TileAllocation.html#a759e998135d5f25e689afdc676d95141">TensorView</a></td>
         </tr>
       </table>
 </div><div class="memdoc">
@@ -335,6 +379,60 @@ template&lt;typename Scalar_ , typename Shape_ &gt; </div>
 
 </div>
 </div>
+<a id="a6b8bef90ee0ce6f58f7971a4925d88c7"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6b8bef90ee0ce6f58f7971a4925d88c7">&#9670;&nbsp;</a></span>view() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_ , typename Shape_ &gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1TileAllocation.html#a759e998135d5f25e689afdc676d95141">TensorView</a> <a class="el" href="structcutlass_1_1TileAllocation.html">cutlass::TileAllocation</a>&lt; Scalar_, Shape_ &gt;::view </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="a8d3befc0770f235d219bf77a0370fa4f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8d3befc0770f235d219bf77a0370fa4f">&#9670;&nbsp;</a></span>view() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Scalar_ , typename Shape_ &gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1TileAllocation.html#ac39b045286bd3669042f3b223629d73e">ConstTensorView</a> <a class="el" href="structcutlass_1_1TileAllocation.html">cutlass::TileAllocation</a>&lt; Scalar_, Shape_ &gt;::view </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <h2 class="groupheader">Member Data Documentation</h2>
 <a id="a3c1ba61c511110b14558941367ad4604"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a3c1ba61c511110b14558941367ad4604">&#9670;&nbsp;</a></span>storage</h2>
@@ -358,7 +456,7 @@ template&lt;typename Scalar_ , typename Shape_ &gt; </div>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:51 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:35 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -18,5 +18,6 @@ var searchData=
   ['vectorizedtile',['VectorizedTile',['../structcutlass_1_1gemm_1_1GemmGlobalTileTraits.html#a6cb3196f1fe3958d1656ba8b493c82ac',1,'cutlass::gemm::GemmGlobalTileTraits']]],
   ['vectortraits',['VectorTraits',['../structcutlass_1_1VectorTraits.html',1,'cutlass']]],
   ['vectortraits_3c_20vector_3c_20t_2c_20lanes_20_3e_20_3e',['VectorTraits&lt; Vector&lt; T, Lanes &gt; &gt;',['../structcutlass_1_1VectorTraits_3_01Vector_3_01T_00_01Lanes_01_4_01_4.html',1,'cutlass']]],
-  ['vectortraits_3c_20vector_3c_20t_2c_20lanes_20_3e_20const_20_3e',['VectorTraits&lt; Vector&lt; T, Lanes &gt; const &gt;',['../structcutlass_1_1VectorTraits_3_01Vector_3_01T_00_01Lanes_01_4_01const_01_4.html',1,'cutlass']]]
+  ['vectortraits_3c_20vector_3c_20t_2c_20lanes_20_3e_20const_20_3e',['VectorTraits&lt; Vector&lt; T, Lanes &gt; const &gt;',['../structcutlass_1_1VectorTraits_3_01Vector_3_01T_00_01Lanes_01_4_01const_01_4.html',1,'cutlass']]],
+  ['view',['view',['../structcutlass_1_1TileAllocation.html#a6b8bef90ee0ce6f58f7971a4925d88c7',1,'cutlass::TileAllocation::view()'],['../structcutlass_1_1TileAllocation.html#a8d3befc0770f235d219bf77a0370fa4f',1,'cutlass::TileAllocation::view() const']]]
 ];

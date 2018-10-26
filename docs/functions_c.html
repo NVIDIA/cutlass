@@ -132,7 +132,7 @@ $(function() {
 </li>
 <li>ConstIterator()
 : <a class="el" href="classcutlass_1_1PredicateVector_1_1ConstIterator.html#a1216aab9c567ec0d4232019008ef3ea7">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;::ConstIterator</a>
-, <a class="el" href="classcutlass_1_1TensorRefArray_1_1ConstIterator.html#a45331031771aeb9f71d5c1abdf42e541">cutlass::TensorRefArray&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
+, <a class="el" href="classcutlass_1_1TensorRefArray_1_1ConstIterator.html#a9f9e68889c83c34365dded0173503044">cutlass::TensorRefArray&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
 , <a class="el" href="classcutlass_1_1TensorRefBatchStrided_1_1ConstIterator.html#a28da80c1ba56e354ddb9352b54b231ed">cutlass::TensorRefBatchStrided&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
 </li>
 <li>ConstPredicateTileAdapter()
@@ -150,6 +150,7 @@ $(function() {
 </li>
 <li>ConstTensorView
 : <a class="el" href="classcutlass_1_1TensorView.html#ab879a7b6552c879a81c49cbc0946d719">cutlass::TensorView&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileAllocation.html#ac39b045286bd3669042f3b223629d73e">cutlass::TileAllocation&lt; Scalar_, Shape_ &gt;</a>
 </li>
 <li>consume_tile()
 : <a class="el" href="structcutlass_1_1gemm_1_1Gemm.html#af8bb78ae198af4dccb0241da44428053">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;</a>
@@ -174,12 +175,12 @@ $(function() {
 <li>copy()
 : <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a3784dbb3efe0865ffa946419111c824a">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStreamPair.html#a5c0efc259bb3bd1675f5d395dab71e95">cutlass::gemm::GlobalLoadStreamPair&lt; StreamA_, StreamB_, kResidueInProlog_ &gt;</a>
-, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a99039d115a539fc99e2235c12ac57eed">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#a4b919d229e259909efbf994ff2c09339">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1SharedStreamPair.html#ad46887abb2e3136b635c3ef5be29cf69">cutlass::gemm::SharedStreamPair&lt; StreamA_, StreamB_ &gt;</a>
 , <a class="el" href="structcutlass_1_1PredicatedTileLoadStream.html#a60a03c95452fe627477933d60815f7cb">cutlass::PredicatedTileLoadStream&lt; Iterator_, PredicateFunctor_, Transformer_ &gt;</a>
 , <a class="el" href="structcutlass_1_1PredicatedTileStoreStream.html#ae84437a66097189406c2090d88a79350">cutlass::PredicatedTileStoreStream&lt; Iterator_, PredicateFunctor_, Transformer_ &gt;</a>
 , <a class="el" href="structcutlass_1_1TileLoadStream.html#aed4e6a6f1bc125ea40ae04fb120d6a23">cutlass::TileLoadStream&lt; Iterator_, Transformer_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileStoreStream.html#aa0f3c75e59054d6229de159474c9c978">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileStoreStream.html#a50b6b5bd08fd83baa36c3dc4461ca009">cutlass::TileStoreStream&lt; Iterator_, Transformer_ &gt;</a>
 </li>
 <li>count()
 : <a class="el" href="structcutlass_1_1Coord.html#ac0ac5f2aa2cbea3887d126645025e017">cutlass::Coord&lt; Rank_, Index_ &gt;</a>
@@ -191,7 +192,7 @@ $(function() {
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:41 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

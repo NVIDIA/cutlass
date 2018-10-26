@@ -73,10 +73,11 @@ $(function() {
 <h3><a id="index__"></a>- _ -</h3><ul>
 <li>__align__()
 : <a class="el" href="namespacecutlass.html#ae6ee3d9361526f859d737d9c68c13706">cutlass</a>
-, <a class="el" href="namespacecutlass_1_1platform.html#a71be5af25eeffa4077777f919e67d8da">cutlass::platform</a>
+, <a class="el" href="namespacecutlass_1_1platform.html#ae70bb5d14a66500b47d2e3f83063d4a5">cutlass::platform</a>
 </li>
 <li>__launch_bounds__()
 : <a class="el" href="namespacecutlass_1_1gemm.html#a01dd61085e2b3f578a7fc266b94fac55">cutlass::gemm</a>
+, <a class="el" href="namespacecutlass_1_1reduction.html#a9665e8f438a7b290d6e2eb640d93045f">cutlass::reduction</a>
 </li>
 </ul>
 
@@ -145,13 +146,26 @@ $(function() {
 : <a class="el" href="namespacecutlass_1_1platform.html#a18bc43cfdc4d066a6c10ad2002196ee6">cutlass::platform</a>
 </li>
 <li>is_zero()
-: <a class="el" href="namespacecutlass_1_1gemm.html#a4a12fcfae60f26efa47bf0a79483d8ac">cutlass::gemm</a>
+: <a class="el" href="namespacecutlass_1_1gemm.html#a3e30ae89e6f7501725028144cd2d88cb">cutlass::gemm</a>
 </li>
 <li>iterator_load()
 : <a class="el" href="namespacecutlass.html#a45dd7add04736cb5c3e69991d2f210be">cutlass</a>
 </li>
 <li>iterator_store()
 : <a class="el" href="namespacecutlass.html#a0cb5bdf7bef498705c51a9cdcbef71f9">cutlass</a>
+</li>
+</ul>
+
+
+<h3><a id="index_k"></a>- k -</h3><ul>
+<li>kColumnMajor
+: <a class="el" href="namespacecutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2bac15988acba79c11072d38b295f163a2b">cutlass::MatrixLayout</a>
+</li>
+<li>Kind
+: <a class="el" href="namespacecutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2b">cutlass::MatrixLayout</a>
+</li>
+<li>kRowMajor
+: <a class="el" href="namespacecutlass_1_1MatrixLayout.html#a97ef07af21b122c1804245b0c7784d2ba6a287c17f9f5bf53528ae68296beeedb">cutlass::MatrixLayout</a>
 </li>
 </ul>
 
@@ -176,11 +190,17 @@ $(function() {
 <li>make_Coord_from_shape()
 : <a class="el" href="namespacecutlass.html#a90028a415a05ce09073860e5c761aa6f">cutlass</a>
 </li>
+<li>make_Pair()
+: <a class="el" href="namespacecutlass_1_1platform.html#ab9c6c277b6c560f5b719502520fbe9f1">cutlass::platform</a>
+</li>
 <li>make_pair()
 : <a class="el" href="namespacecutlass_1_1platform.html#a90ce74c7faa4e27c888ce56e957b73d5">cutlass::platform</a>
 </li>
+<li>make_TensorRefBatchStrided()
+: <a class="el" href="namespacecutlass.html#a71f3c955edfa2b5574a1cbff780cdff6">cutlass</a>
+</li>
 <li>make_zero()
-: <a class="el" href="namespacecutlass.html#a55b5b15eadf125d5ddddee1ea22191ee">cutlass</a>
+: <a class="el" href="namespacecutlass.html#aa03883e612d292e1b53eedd46e08ccd1">cutlass</a>
 </li>
 <li>make_ZipConvert()
 : <a class="el" href="namespacecutlass.html#adad916101ca58fc9714362c611a0cad8">cutlass</a>
@@ -212,7 +232,8 @@ $(function() {
 : <a class="el" href="namespacecutlass_1_1platform.html#aa8b8911c3529ee9d433b0c4d90bde50c">cutlass::platform</a>
 </li>
 <li>operator*()
-: <a class="el" href="namespacecutlass_1_1platform.html#a34950f01ed89108b1d79c651aa58ecba">cutlass::platform</a>
+: <a class="el" href="namespacecutlass.html#a04d3e622868b4e08257ea498d2631219">cutlass</a>
+, <a class="el" href="namespacecutlass_1_1platform.html#a289b6e31bdc0be1302b8dbab55eb568c">cutlass::platform</a>
 </li>
 <li>operator*=()
 : <a class="el" href="namespacecutlass_1_1platform.html#a9a4928ab582beee4e7ddd337529d45ac">cutlass::platform</a>
@@ -230,29 +251,30 @@ $(function() {
 : <a class="el" href="namespacecutlass_1_1platform.html#abff9e10130849ea46f6245f4e8cc2cc9">cutlass::platform</a>
 </li>
 <li>operator/()
-: <a class="el" href="namespacecutlass_1_1platform.html#a4fe79c19fb599cd9b85d08676a711f9f">cutlass::platform</a>
+: <a class="el" href="namespacecutlass.html#a1b86c9f4140fcf8fa4810d6b3aa4cadf">cutlass</a>
+, <a class="el" href="namespacecutlass_1_1platform.html#a4fe79c19fb599cd9b85d08676a711f9f">cutlass::platform</a>
 </li>
 <li>operator/=()
 : <a class="el" href="namespacecutlass_1_1platform.html#ac594526ef64ecf364ae957753ce64b40">cutlass::platform</a>
 </li>
 <li>operator&lt;()
-: <a class="el" href="namespacecutlass_1_1platform.html#a412dbdbc678ecd12b55fcad4ef4155bd">cutlass::platform</a>
+: <a class="el" href="namespacecutlass_1_1platform.html#aba545c443b332f8d38fa8021e31deeb4">cutlass::platform</a>
 </li>
 <li>operator&lt;&lt;()
-: <a class="el" href="namespacecutlass.html#a30ddfc5e90b9103840cb30c9f9b96b49">cutlass</a>
+: <a class="el" href="namespacecutlass.html#afe231b125bbb1e9aa51307a8abdf9a60">cutlass</a>
 , <a class="el" href="namespacecutlass_1_1platform.html#ab4c3e4eabba020d7a9faf86ee6cf437a">cutlass::platform</a>
 </li>
 <li>operator&lt;=()
-: <a class="el" href="namespacecutlass_1_1platform.html#a41d573133357bd555f78d33afc1152d3">cutlass::platform</a>
+: <a class="el" href="namespacecutlass_1_1platform.html#a8ab8b5156f4bf6ec866cfee9ee3dbc01">cutlass::platform</a>
 </li>
 <li>operator==()
 : <a class="el" href="namespacecutlass_1_1platform.html#a043e8559161ee0fcaf943a1dfe1a9cbb">cutlass::platform</a>
 </li>
 <li>operator&gt;()
-: <a class="el" href="namespacecutlass_1_1platform.html#a9e8e698d40b8df881991fde9ba2a1b12">cutlass::platform</a>
+: <a class="el" href="namespacecutlass_1_1platform.html#a67e66e652a38f03d48b442d401980daa">cutlass::platform</a>
 </li>
 <li>operator&gt;=()
-: <a class="el" href="namespacecutlass_1_1platform.html#ab0f21e67c0a4b5c6952042b502c6816f">cutlass::platform</a>
+: <a class="el" href="namespacecutlass_1_1platform.html#a1df0f55188cb81ce74f4c7bf125356d4">cutlass::platform</a>
 </li>
 </ul>
 
@@ -298,7 +320,7 @@ $(function() {
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:40 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -79,7 +79,7 @@ $(function() {
 </li>
 <li>TensorRef
 : <a class="el" href="structcutlass_1_1gemm_1_1SharedLoadStream.html#aff5202428b0e7207456c97204d4d219a">cutlass::gemm::SharedLoadStream&lt; Iterator_, Transformer_ &gt;</a>
-, <a class="el" href="classcutlass_1_1TensorRefArray_1_1ConstIterator.html#ad19f348ecb951eae63a3ef2c47d34f4f">cutlass::TensorRefArray&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
+, <a class="el" href="classcutlass_1_1TensorRefArray_1_1ConstIterator.html#a8126b194210599b40b5c3ffaf16cb2d2">cutlass::TensorRefArray&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
 , <a class="el" href="structcutlass_1_1TensorRefArray.html#a066d684240f8a24e1ba621ae3904ec75">cutlass::TensorRefArray&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
 , <a class="el" href="classcutlass_1_1TensorRefBatchStrided_1_1ConstIterator.html#a5557f98c75b51751f834c4a7d6385efc">cutlass::TensorRefBatchStrided&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
 , <a class="el" href="structcutlass_1_1TensorRefBatchStrided.html#a0d5f100b9b87f881e7ecaced63bce9dd">cutlass::TensorRefBatchStrided&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
@@ -107,6 +107,9 @@ $(function() {
 <li>TensorRefD
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmDesc.html#a1f59ad60a529aa1db6e66ade3cb65052">cutlass::gemm::GemmDesc&lt; AType_, BType_, CType_, DType_, SType_, Index_ &gt;</a>
 </li>
+<li>TensorView
+: <a class="el" href="structcutlass_1_1TileAllocation.html#a759e998135d5f25e689afdc676d95141">cutlass::TileAllocation&lt; Scalar_, Shape_ &gt;</a>
+</li>
 <li>This_
 : <a class="el" href="structcutlass_1_1Fragment.html#a32f7ff86b73576a15c5ddaa40c4e0a95">cutlass::Fragment&lt; Element_, kElements_, kAlignment_ &gt;</a>
 , <a class="el" href="structcutlass_1_1FragmentConstIterator.html#add14f695231c2bdd6284bf22b1e66f8f">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
@@ -115,7 +118,10 @@ $(function() {
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorAb.html#a2892be253a3de5bffc3edcef2890d3a8">cutlass::gemm::GemmGlobalIteratorAb&lt; TileTraits_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#a6a745d66c4c7de352041f779e54e6b2b">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#aa6214a0ad09d155ed79feadc6647b989">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SplitkPIGemmTraits.html#a1f24afe5bfc7c5f529dab49c8297fd44">cutlass::gemm::SplitkPIGemmTraits&lt; GemmTraits_, ReductionTraits_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#aa8b453116c2d96ea2c56e08cb981346c">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1reduction_1_1BatchedReduction.html#ae0c48344c7457f17429e6ae7a76dba37">cutlass::reduction::BatchedReduction&lt; BatchedReductionTraits_ &gt;</a>
+, <a class="el" href="structcutlass_1_1reduction_1_1BatchedReductionTraits.html#acfeed4cb4e5eec9d8e1ae2b787cc88e2">cutlass::reduction::BatchedReductionTraits&lt; ScalarA_, ScalarC_, ScalarD_, ScalarAlphaBeta_, ScalarAccum_, ReductionSize_, OutputTile_, SubTile_, ThreadShape_, Index_, BlockSwizzle_, maxInReg_, maxOutReg_, Functor_ &gt;</a>
 , <a class="el" href="structcutlass_1_1ZipFragment.html#a2f038ddb37879cbc54dbadaeb7085fb1">cutlass::ZipFragment&lt; First_, Second_ &gt;</a>
 </li>
 <li>ThreadBlockTile
@@ -169,7 +175,8 @@ $(function() {
 , <a class="el" href="structcutlass_1_1gemm_1_1IgemmGlobalTileTraits.html#a160d1ecd86de4742f550d11bc281786b">cutlass::gemm::IgemmGlobalTileTraits&lt; kOperand_, kLayout_, Scalar_, Tile_, Threads_, kAccessSize_ &gt;</a>
 </li>
 <li>ThreadShape
-: <a class="el" href="structcutlass_1_1TileTraitsContiguousMajor.html#a33116b67e580292d4e354ca17ecd4167">cutlass::TileTraitsContiguousMajor&lt; Tile_, Threads &gt;</a>
+: <a class="el" href="structcutlass_1_1reduction_1_1BatchedReductionTraits.html#a29e8adec50bc7e5c0a91f975dff4a7f3">cutlass::reduction::BatchedReductionTraits&lt; ScalarA_, ScalarC_, ScalarD_, ScalarAlphaBeta_, ScalarAccum_, ReductionSize_, OutputTile_, SubTile_, ThreadShape_, Index_, BlockSwizzle_, maxInReg_, maxOutReg_, Functor_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileTraitsContiguousMajor.html#a33116b67e580292d4e354ca17ecd4167">cutlass::TileTraitsContiguousMajor&lt; Tile_, Threads &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsStrideMajor.html#a03567f41ce616ebb4cdb309c85820599">cutlass::TileTraitsStrideMajor&lt; Tile_, Threads &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsWarpRake.html#ad6619e0b5d876fafd51c78e39f2c029e">cutlass::TileTraitsWarpRake&lt; Tile_, Threads &gt;</a>
 </li>
@@ -207,6 +214,8 @@ $(function() {
 , <a class="el" href="structcutlass_1_1TileTraitsStandard.html#aee3fee526bc4d4820c03665a2f5f166b">cutlass::TileTraitsStandard&lt; Tile_, Threads &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsStrideMajor.html#afbb78ece048b868475d4a6802e6894ac">cutlass::TileTraitsStrideMajor&lt; Tile_, Threads &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsWarpRake.html#adcd658d9daf286368a9d51c8c1647f89">cutlass::TileTraitsWarpRake&lt; Tile_, Threads &gt;</a>
+, <a class="el" href="structcutlass_1_1WmmaReshapeTile.html#a62fad12013351dca5a1a78526f607558">cutlass::WmmaReshapeTile&lt; Tile_, kAccessSize_, kLdsPerAccess_, bool &gt;</a>
+, <a class="el" href="structcutlass_1_1WmmaReshapeTile_3_01Tile___00_01kAccessSize___00_01kLdsPerAccess___00_01true_01_4.html#a4c71fd7ca9040b57458f469a82a8c3f8">cutlass::WmmaReshapeTile&lt; Tile_, kAccessSize_, kLdsPerAccess_, true &gt;</a>
 </li>
 <li>TileWithoutSkew
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileATraits.html#a5a5a36fc570e1225b20ce0a48c89d213">cutlass::gemm::GemmSharedLoadTileATraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, InstructionShape_, kStages_, kScalarsPerLds_, kSkew_ &gt;</a>
@@ -222,9 +231,11 @@ $(function() {
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileBTraits.html#a69c7ec2a779718556e6d9119588e791c">cutlass::gemm::GemmSharedLoadTileBTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, InstructionShape_, kStages_, kScalarsPerLds_, kSkew_ &gt;</a>
 </li>
 <li>Traits
-: <a class="el" href="structcutlass_1_1gemm_1_1Gemm.html#a29f52e33e1f1cf150f5062d9ad2590ff">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;</a>
+: <a class="el" href="structcutlass_1_1gemm_1_1DeviceGemm.html#abc61ecd50d4a56b09c31b2118368c4dc">cutlass::gemm::DeviceGemm&lt; DeviceGemmTraits_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1Gemm.html#a29f52e33e1f1cf150f5062d9ad2590ff">cutlass::gemm::Gemm&lt; GemmTraits_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a645ab6e9e63163ee6bf536717a30fb1b">cutlass::gemm::GemmEpilogue&lt; GemmEpilogueTraits_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1WmmaGemmGlobalIteratorCd.html#af2b5682b8e6dd13590ec258a44636430">cutlass::gemm::WmmaGemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
+, <a class="el" href="structcutlass_1_1reduction_1_1BatchedReduction.html#aa50195fcf53f6d69ccfa37f44a524a99">cutlass::reduction::BatchedReduction&lt; BatchedReductionTraits_ &gt;</a>
 , <a class="el" href="structcutlass_1_1TileIteratorBase.html#aac9e5b7890a53d46e5d49912b254ded7">cutlass::TileIteratorBase&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1TileLoadIterator.html#a6a5d065939282fa1b9454b28a1e73948">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1TileStoreIterator.html#a5016bd7b24938026a2879ec0054eb3b6">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
@@ -284,7 +295,7 @@ $(function() {
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:41 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

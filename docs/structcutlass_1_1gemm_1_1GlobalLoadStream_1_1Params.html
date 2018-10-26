@@ -88,22 +88,56 @@ $(function() {
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:a054aee5b4bf288cc1f5945f2521ef835"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#a054aee5b4bf288cc1f5945f2521ef835">initialize</a> (<a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#ac4452df991f57f9bb0b86dfd380179b2">Pointer</a> pointer, long long batch_stride, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a> ldm, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a> _offset_to_residue)</td></tr>
-<tr class="memdesc:a054aee5b4bf288cc1f5945f2521ef835"><td class="mdescLeft">&#160;</td><td class="mdescRight">Setup the params.  <a href="#a054aee5b4bf288cc1f5945f2521ef835">More...</a><br /></td></tr>
-<tr class="separator:a054aee5b4bf288cc1f5945f2521ef835"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aeb306cd3cb97471774b425fb50a861ae"><td class="memItemLeft" align="right" valign="top"><a class="el" href="cutlass_8h.html#a28c2443a142676d3d71effdae1a986b1">CUTLASS_HOST_DEVICE</a> int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#aeb306cd3cb97471774b425fb50a861ae">initialize</a> (<a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#ac4452df991f57f9bb0b86dfd380179b2">Pointer</a> pointer, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#ae033a49a784964e75a5c1b6135b21e47">LongIndex</a> batch_stride_, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a> ldm, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a> offset_to_residue_, <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a> offset_to_residue_last_partition_)</td></tr>
+<tr class="memdesc:aeb306cd3cb97471774b425fb50a861ae"><td class="mdescLeft">&#160;</td><td class="mdescRight">Setup the params.  <a href="#aeb306cd3cb97471774b425fb50a861ae">More...</a><br /></td></tr>
+<tr class="separator:aeb306cd3cb97471774b425fb50a861ae"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9c0707b48565a522884cbd077aa299ee"><td class="memItemLeft" align="right" valign="top">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#a9c0707b48565a522884cbd077aa299ee">get_offset_to_residue</a> ()</td></tr>
+<tr class="separator:a9c0707b48565a522884cbd077aa299ee"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
 <tr class="memitem:a46f2546f9b88f4fc87f1396d0f08b065"><td class="memItemLeft" align="right" valign="top">LoadIterator::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#a46f2546f9b88f4fc87f1396d0f08b065">load_iterator</a></td></tr>
 <tr class="separator:a46f2546f9b88f4fc87f1396d0f08b065"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab5d9e5de9b1cc3462920ce7a8f52bbec"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#ae033a49a784964e75a5c1b6135b21e47">LongIndex</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#ab5d9e5de9b1cc3462920ce7a8f52bbec">batch_stride</a></td></tr>
+<tr class="memdesc:ab5d9e5de9b1cc3462920ce7a8f52bbec"><td class="mdescLeft">&#160;</td><td class="mdescRight">Batch stride in global memory.  <a href="#ab5d9e5de9b1cc3462920ce7a8f52bbec">More...</a><br /></td></tr>
+<tr class="separator:ab5d9e5de9b1cc3462920ce7a8f52bbec"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a289ac736c0c098ae6da6a21c9abfe63f"><td class="memItemLeft" align="right" valign="top">StoreIterator::Params&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#a289ac736c0c098ae6da6a21c9abfe63f">store_iterator</a></td></tr>
 <tr class="separator:a289ac736c0c098ae6da6a21c9abfe63f"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a73bb518f85aee62310b3c886a1fba3f1"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#a73bb518f85aee62310b3c886a1fba3f1">offset_to_residue</a></td></tr>
 <tr class="separator:a73bb518f85aee62310b3c886a1fba3f1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7cad4eeadacc7efbfe9d2442997eeb82"><td class="memItemLeft" align="right" valign="top"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#a7cad4eeadacc7efbfe9d2442997eeb82">offset_to_residue_last_partition</a></td></tr>
+<tr class="separator:a7cad4eeadacc7efbfe9d2442997eeb82"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table>
 <h2 class="groupheader">Member Function Documentation</h2>
-<a id="a054aee5b4bf288cc1f5945f2521ef835"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a054aee5b4bf288cc1f5945f2521ef835">&#9670;&nbsp;</a></span>initialize()</h2>
+<a id="a9c0707b48565a522884cbd077aa299ee"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9c0707b48565a522884cbd077aa299ee">&#9670;&nbsp;</a></span>get_offset_to_residue()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;GemmOperand::Kind Operand, typename LoadIterator_ , typename StoreIterator_ , typename Transformer_ &gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">CUTLASS_DEVICE <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a> <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">cutlass::gemm::GlobalLoadStream</a>&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;::Params::get_offset_to_residue </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+</div>
+</div>
+<a id="aeb306cd3cb97471774b425fb50a861ae"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aeb306cd3cb97471774b425fb50a861ae">&#9670;&nbsp;</a></span>initialize()</h2>
 
 <div class="memitem">
 <div class="memproto">
@@ -122,8 +156,8 @@ template&lt;GemmOperand::Kind Operand, typename LoadIterator_ , typename StoreIt
         <tr>
           <td class="paramkey"></td>
           <td></td>
-          <td class="paramtype">long long&#160;</td>
-          <td class="paramname"><em>batch_stride</em>, </td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#ae033a49a784964e75a5c1b6135b21e47">LongIndex</a>&#160;</td>
+          <td class="paramname"><em>batch_stride_</em>, </td>
         </tr>
         <tr>
           <td class="paramkey"></td>
@@ -135,7 +169,13 @@ template&lt;GemmOperand::Kind Operand, typename LoadIterator_ , typename StoreIt
           <td class="paramkey"></td>
           <td></td>
           <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a>&#160;</td>
-          <td class="paramname"><em>_offset_to_residue</em>&#160;</td>
+          <td class="paramname"><em>offset_to_residue_</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a>&#160;</td>
+          <td class="paramname"><em>offset_to_residue_last_partition_</em>&#160;</td>
         </tr>
         <tr>
           <td></td>
@@ -153,6 +193,22 @@ template&lt;GemmOperand::Kind Operand, typename LoadIterator_ , typename StoreIt
 </div>
 </div>
 <h2 class="groupheader">Member Data Documentation</h2>
+<a id="ab5d9e5de9b1cc3462920ce7a8f52bbec"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab5d9e5de9b1cc3462920ce7a8f52bbec">&#9670;&nbsp;</a></span>batch_stride</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;GemmOperand::Kind Operand, typename LoadIterator_ , typename StoreIterator_ , typename Transformer_ &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#ae033a49a784964e75a5c1b6135b21e47">LongIndex</a> <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">cutlass::gemm::GlobalLoadStream</a>&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;::Params::batch_stride</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a46f2546f9b88f4fc87f1396d0f08b065"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a46f2546f9b88f4fc87f1396d0f08b065">&#9670;&nbsp;</a></span>load_iterator</h2>
 
@@ -185,6 +241,22 @@ template&lt;GemmOperand::Kind Operand, typename LoadIterator_ , typename StoreIt
 
 </div>
 </div>
+<a id="a7cad4eeadacc7efbfe9d2442997eeb82"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7cad4eeadacc7efbfe9d2442997eeb82">&#9670;&nbsp;</a></span>offset_to_residue_last_partition</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;GemmOperand::Kind Operand, typename LoadIterator_ , typename StoreIterator_ , typename Transformer_ &gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#a7c46d6eb83b43e099d53784bb2a09f02">Index</a> <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html">cutlass::gemm::GlobalLoadStream</a>&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;::Params::offset_to_residue_last_partition</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+</div>
+</div>
 <a id="a289ac736c0c098ae6da6a21c9abfe63f"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a289ac736c0c098ae6da6a21c9abfe63f">&#9670;&nbsp;</a></span>store_iterator</h2>
 
@@ -207,7 +279,7 @@ template&lt;GemmOperand::Kind Operand, typename LoadIterator_ , typename StoreIt
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:52 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:39 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

@@ -81,12 +81,11 @@ $(function() {
 <li>offset_to_residue
 : <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#a73bb518f85aee62310b3c886a1fba3f1">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;::Params</a>
 </li>
+<li>offset_to_residue_last_partition
+: <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream_1_1Params.html#a7cad4eeadacc7efbfe9d2442997eeb82">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;::Params</a>
+</li>
 <li>OneDirection
 : <a class="el" href="structcutlass_1_1gemm_1_1swizzleDirection.html#aba1528de966f236380c5f55942802fb8a7c9f735f930f7acf8a16ef43c5fadda5">cutlass::gemm::swizzleDirection</a>
-</li>
-<li>operator()
-: <a class="el" href="classcutlass_1_1TensorRefArray_1_1ConstIterator.html#aa6e59a5ecb15c9842c5ee80cc168f679">cutlass::TensorRefArray&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
-, <a class="el" href="classcutlass_1_1TensorRefBatchStrided_1_1ConstIterator.html#ab0ea61995928c0935ec03c260463ef15">cutlass::TensorRefBatchStrided&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
 </li>
 <li>operator &amp;=()
 : <a class="el" href="structcutlass_1_1PredicateVector.html#a3dd9aeba8f3cbe7a8198d68d91a0bbb9">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;</a>
@@ -159,6 +158,8 @@ $(function() {
 , <a class="el" href="classcutlass_1_1PredicateVector_1_1ConstIterator.html#abbc2bceb6cf8d7f168b8a00eb48c0946">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;::ConstIterator</a>
 , <a class="el" href="classcutlass_1_1PredicateVector_1_1Iterator.html#a049b568e0f5de011ee76ce79bcedbab4">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;::Iterator</a>
 , <a class="el" href="structcutlass_1_1PredicateVector_1_1TrivialIterator.html#a78016158f99dd87e822a2a2cbd4cec78">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;::TrivialIterator</a>
+, <a class="el" href="classcutlass_1_1TensorRefArray_1_1ConstIterator.html#ad5ab7b50a709657cc988d139071b44d6">cutlass::TensorRefArray&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
+, <a class="el" href="classcutlass_1_1TensorRefBatchStrided_1_1ConstIterator.html#a361260c06994a39da799c8768559b45c">cutlass::TensorRefBatchStrided&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
 , <a class="el" href="structcutlass_1_1TileCoord.html#ab8fbb13cc5ea4f580a7fc32963de9553">cutlass::TileCoord&lt; Index_ &gt;</a>
 </li>
 <li>operator*=()
@@ -217,7 +218,7 @@ $(function() {
 </li>
 <li>operator--()
 : <a class="el" href="classcutlass_1_1PredicateVector_1_1ConstIterator.html#a2763012a9284e97650b14e20c5668286">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;::ConstIterator</a>
-, <a class="el" href="classcutlass_1_1PredicateVector_1_1Iterator.html#aad709a11f43b84c88e3ce3a0394f8e8a">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;::Iterator</a>
+, <a class="el" href="classcutlass_1_1PredicateVector_1_1Iterator.html#a69fb5b24eeb43331b7401768e8584e61">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;::Iterator</a>
 , <a class="el" href="classcutlass_1_1TensorRefArray_1_1ConstIterator.html#a0f395558e2c589ac48179447a23b59d8">cutlass::TensorRefArray&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
 , <a class="el" href="classcutlass_1_1TensorRefBatchStrided_1_1ConstIterator.html#ad5290f0e7814892cb4fff55e9518562b">cutlass::TensorRefBatchStrided&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;::ConstIterator</a>
 , <a class="el" href="classcutlass_1_1ZipTileIterator.html#a3d22dab34b2abd0d05c00668f8591151">cutlass::ZipTileIterator&lt; First_, Second_ &gt;</a>
@@ -256,7 +257,7 @@ $(function() {
 : <a class="el" href="structcutlass_1_1Coord.html#a9dc9f063be329d475f040afd449d304c">cutlass::Coord&lt; Rank_, Index_ &gt;</a>
 </li>
 <li>operator=()
-: <a class="el" href="classcutlass_1_1detail_1_1ScalarOrPointer.html#a3b29491782c3a129355fa4ef159cb970">cutlass::detail::ScalarOrPointer&lt; Scalar_ &gt;</a>
+: <a class="el" href="classcutlass_1_1detail_1_1ScalarOrPointer.html#a54357e2f1d52aa8355b2ae7796740ea3">cutlass::detail::ScalarOrPointer&lt; Scalar_ &gt;</a>
 , <a class="el" href="classcutlass_1_1TensorView.html#acf0c156efb9197bc7538f7e9057d8a68">cutlass::TensorView&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
 </li>
 <li>operator==()
@@ -266,17 +267,17 @@ $(function() {
 </li>
 <li>operator[]()
 : <a class="el" href="structcutlass_1_1Coord.html#a6e0967541a1d74edeb93897ea6069e24">cutlass::Coord&lt; Rank_, Index_ &gt;</a>
-, <a class="el" href="structcutlass_1_1Fragment.html#a77ba7cddf7822d64534b019c4ad9732e">cutlass::Fragment&lt; Element_, kElements_, kAlignment_ &gt;</a>
+, <a class="el" href="structcutlass_1_1Fragment.html#a7795c5cf4d5626ff125abd5e8f156e9b">cutlass::Fragment&lt; Element_, kElements_, kAlignment_ &gt;</a>
 , <a class="el" href="structcutlass_1_1FragmentConstIterator.html#a6216b58ffe6322f037f1e0a3ffa714c8">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
 , <a class="el" href="structcutlass_1_1FragmentIterator.html#ad665745f3d6a3a88d7894fe0fc1bbd3e">cutlass::FragmentIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
 , <a class="el" href="classcutlass_1_1platform_1_1unique__ptr.html#a5c7a204af07a7d325b0a8303e199a50d">cutlass::platform::unique_ptr&lt; T, Deleter &gt;</a>
 , <a class="el" href="structcutlass_1_1PredicateVector.html#a840985438ac8306ec680eb20edd4e5c5">cutlass::PredicateVector&lt; kPredicates_, kPredicatesPerByte_, kPredicateStart_ &gt;</a>
-, <a class="el" href="classcutlass_1_1TensorRef.html#ada832ce3a57aaf4919b1ed89192f1fa6">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
-, <a class="el" href="classcutlass_1_1TensorRef_3_01Storage___00_01Rank___00_01MapFunc___00_011_00_01Index___00_01LongIndex___01_4.html#a57f132816e51bbdb4c807d57c067b619">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, 1, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="classcutlass_1_1TensorRef.html#a207a0dabf6c368fa1edcb32baa2110e3">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="classcutlass_1_1TensorRef_3_01Storage___00_01Rank___00_01MapFunc___00_011_00_01Index___00_01LongIndex___01_4.html#a64a5e91e01555b8bfd22875543573d22">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, 1, Index_, LongIndex_ &gt;</a>
 , <a class="el" href="unioncutlass_1_1Vector.html#a69be4f85c1dac371fa6f1c6747724adc">cutlass::Vector&lt; Scalar_, kLanes_ &gt;</a>
 , <a class="el" href="unioncutlass_1_1Vector_3_01bin1__t_00_01kLanes___01_4.html#a8eda6e6181a5333ca8350977374708cb">cutlass::Vector&lt; bin1_t, kLanes_ &gt;</a>
-, <a class="el" href="unioncutlass_1_1Vector_3_01half_00_011_01_4.html#a1e6568c0f3f958db739074ab6978ff10">cutlass::Vector&lt; half, 1 &gt;</a>
-, <a class="el" href="unioncutlass_1_1Vector_3_01half_00_01kLanes___01_4.html#ad50b5d4acbd7ead82c128091c9db9113">cutlass::Vector&lt; half, kLanes_ &gt;</a>
+, <a class="el" href="unioncutlass_1_1Vector_3_01half_00_011_01_4.html#a12fa9366dd57fadb2d3f624ab7836dc8">cutlass::Vector&lt; half, 1 &gt;</a>
+, <a class="el" href="unioncutlass_1_1Vector_3_01half_00_01kLanes___01_4.html#a3891ce1c321a3e57e938c8864de9baf0">cutlass::Vector&lt; half, kLanes_ &gt;</a>
 , <a class="el" href="unioncutlass_1_1Vector_3_01int4__t_00_01kLanes___01_4.html#a2d5ec0b76daa136dae0b4aec1edf9e0b">cutlass::Vector&lt; int4_t, kLanes_ &gt;</a>
 , <a class="el" href="unioncutlass_1_1Vector_3_01uint4__t_00_01kLanes___01_4.html#ae2215fe7c2c223175b4172d73a6c7a82">cutlass::Vector&lt; uint4_t, kLanes_ &gt;</a>
 </li>
@@ -300,12 +301,13 @@ $(function() {
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#acb16feebdcad5bbebe9d4d3383c37899">cutlass::gemm::GemmSharedLoadTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreTileDTraits.html#ad52b81080731ee1f0d3c2c7eaba6f60d">cutlass::gemm::GemmSharedStoreTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kScalarsPerSts_, kSkew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a97d7ee63e5d180410b370f095648f367">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;</a>
+, <a class="el" href="structcutlass_1_1reduction_1_1BatchedReductionTraits.html#a3b0e98519b7e551ef6adac69e7406d8f">cutlass::reduction::BatchedReductionTraits&lt; ScalarA_, ScalarC_, ScalarD_, ScalarAlphaBeta_, ScalarAccum_, ReductionSize_, OutputTile_, SubTile_, ThreadShape_, Index_, BlockSwizzle_, maxInReg_, maxOutReg_, Functor_ &gt;</a>
 </li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:41 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

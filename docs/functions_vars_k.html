@@ -210,9 +210,11 @@ $(function() {
 </li>
 <li>kLayoutA
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#ac5bb5931a707ed7672f69267753ba41b">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SplitkPIGemmTraits.html#ae33c34c292562ffe3c460dbd7bd96654">cutlass::gemm::SplitkPIGemmTraits&lt; GemmTraits_, ReductionTraits_ &gt;</a>
 </li>
 <li>kLayoutB
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits.html#a078e8d9cfa1b182e1b96a2cc8c54b684">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SplitkPIGemmTraits.html#a08476ea584d90bab353f9c0ef84c3692">cutlass::gemm::SplitkPIGemmTraits&lt; GemmTraits_, ReductionTraits_ &gt;</a>
 </li>
 <li>kM
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmCoord.html#af1f5c03c35eaa406c6a63082da26bec3">cutlass::gemm::GemmCoord</a>
@@ -251,6 +253,7 @@ $(function() {
 : <a class="el" href="structcutlass_1_1Coord.html#a23e1b9a7f5fa8fd4afeadfb85de7c5c3">cutlass::Coord&lt; Rank_, Index_ &gt;</a>
 , <a class="el" href="classcutlass_1_1TensorRef.html#a429692d4ac03a3427fbd8fdfaac4ae31">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
 , <a class="el" href="classcutlass_1_1TensorRef_3_01Storage___00_01Rank___00_01MapFunc___00_011_00_01Index___00_01LongIndex___01_4.html#abff03af38d99413315824c476e9a7d78">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, 1, Index_, LongIndex_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TensorRefBatchStrided.html#adb5a794993083f02fab0d12f513bf4c1">cutlass::TensorRefBatchStrided&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
 </li>
 <li>kResidueInProlog
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#a600746def904eeca46d7f92a4b223b46">cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;</a>
@@ -351,6 +354,7 @@ $(function() {
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmConfig.html#acf461f0ba3067cc5d66a04f0a176308f">cutlass::gemm::GemmConfig&lt; ScalarA_, ScalarB_, ScalarC_, ScalarD_, OutputTile_, MultiplyAdd_, kScalarsPerLdgA_, kScalarsPerStsA_, kScalarsPerLdsA_, kScalarsPerLdgB_, kScalarsPerStsB_, kScalarsPerLdsB_, kScalarsPerLdgCAndStgD_, kScalarsPerStsD_, kScalarsPerLdsD_, kStages_, kResidueSeparate_, kResidueInProlog_, kLaunchBounds_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedLoadTileDTraits.html#a8325bc9d56155ecb6f2ddbd56f4ed23d">cutlass::gemm::GemmSharedLoadTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kTileH_, kScalarsPerLds_, kSkew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmSharedStoreTileDTraits.html#a05039ba8b7d9890903064b1a834dcd3e">cutlass::gemm::GemmSharedStoreTileDTraits&lt; Scalar_, OutputTile_, Warps_, ThreadsPerWarp_, kScalarsPerSts_, kSkew_ &gt;</a>
+, <a class="el" href="structcutlass_1_1reduction_1_1BatchedReductionTraits.html#ab35edeae5cd8767bd376fad5f6680e25">cutlass::reduction::BatchedReductionTraits&lt; ScalarA_, ScalarC_, ScalarD_, ScalarAlphaBeta_, ScalarAccum_, ReductionSize_, OutputTile_, SubTile_, ThreadShape_, Index_, BlockSwizzle_, maxInReg_, maxOutReg_, Functor_ &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsContiguousMajor.html#a53d10552356855bf7379632e72bbe0c9">cutlass::TileTraitsContiguousMajor&lt; Tile_, Threads &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsStandard.html#a9cbcbe09aa6e9465b63dd22d59435af1">cutlass::TileTraitsStandard&lt; Tile_, Threads &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsStrideMajor.html#a2b6ad449269a178018f02b8cc64ddb85">cutlass::TileTraitsStrideMajor&lt; Tile_, Threads &gt;</a>
@@ -406,7 +410,7 @@ $(function() {
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:41 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

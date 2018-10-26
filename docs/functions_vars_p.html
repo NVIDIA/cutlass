@@ -78,8 +78,12 @@ $(function() {
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmGlobalIteratorCd.html#ac368b1ea1c5ad2209a6ac6bec597600f">cutlass::gemm::GemmGlobalIteratorCd&lt; TileTraits_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GlobalLoadStream.html#ac8ff1a3e10b25c212cd3cf5ed997fc0e">cutlass::gemm::GlobalLoadStream&lt; Operand, LoadIterator_, StoreIterator_, Transformer_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1LinearScaling.html#a7bbf90dc0938698a0fa22468f9df315d">cutlass::gemm::LinearScaling&lt; Scalar_, FragmentMultiplyAdd_ &gt;</a>
+, <a class="el" href="structcutlass_1_1reduction_1_1BatchedReduction.html#a9c9d8378c735597f39927c6ab32519ef">cutlass::reduction::BatchedReduction&lt; BatchedReductionTraits_ &gt;</a>
 , <a class="el" href="structcutlass_1_1TileLoadIterator.html#a5561e676148200c2fc85a603847cc596">cutlass::TileLoadIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
 , <a class="el" href="structcutlass_1_1TileStoreIterator.html#a64e0c9fb1f7d8fcc77bf0a915445ee6d">cutlass::TileStoreIterator&lt; Traits_, Scalar_, Advance_, MemorySpace, Index_, FragmentElement_, FragmentElementType_, Skew_ &gt;</a>
+</li>
+<li>partitionK_range
+: <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html#a44b9a0d6210561d3b0d538b2c0a38886">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::Params</a>
 </li>
 <li>pointer
 : <a class="el" href="structcutlass_1_1FragmentConstIterator.html#aee37f8ea06127b94a304bb776945509b">cutlass::FragmentConstIterator&lt; Fragment_, Iterations_, AccessType_ &gt;</a>
@@ -110,12 +114,17 @@ $(function() {
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmDesc.html#a52a5538b1b5208090417cf98d8735e3f">cutlass::gemm::GemmDesc&lt; AType_, BType_, CType_, DType_, SType_, Index_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogue.html#a6bea57249e3645a4b08a11619cb1687e">cutlass::gemm::GemmEpilogue&lt; GemmEpilogueTraits_ &gt;</a>
 , <a class="el" href="structcutlass_1_1gemm_1_1GemmTraits_1_1Params.html#af2233a6ebf39788e27f051f8c614ab90">cutlass::gemm::GemmTraits&lt; GemmConfig_, GlobalLoadStreamA_, GlobalLoadStreamB_, SharedLoadStreamA_, SharedLoadStreamB_, Epilogue_, BlockSwizzle_, Index_, ClearAccumulators_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1gemm_1_1SplitkPIGemmTraits_1_1Params.html#a542a371bf39a9e58889d78e782af3aae">cutlass::gemm::SplitkPIGemmTraits&lt; GemmTraits_, ReductionTraits_ &gt;::Params</a>
+, <a class="el" href="structcutlass_1_1reduction_1_1BatchedReductionTraits_1_1Params.html#adbd0cf20c4f7033016d1b8fdaca6aeae">cutlass::reduction::BatchedReductionTraits&lt; ScalarA_, ScalarC_, ScalarD_, ScalarAlphaBeta_, ScalarAccum_, ReductionSize_, OutputTile_, SubTile_, ThreadShape_, Index_, BlockSwizzle_, maxInReg_, maxOutReg_, Functor_ &gt;::Params</a>
+</li>
+<li>problem_size_initialized
+: <a class="el" href="structcutlass_1_1gemm_1_1SplitkPIGemmTraits_1_1Params.html#a966f73ad90754f53eed5faf68fc77d87">cutlass::gemm::SplitkPIGemmTraits&lt; GemmTraits_, ReductionTraits_ &gt;::Params</a>
 </li>
 </ul>
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:41 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>

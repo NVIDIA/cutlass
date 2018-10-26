@@ -77,14 +77,26 @@ $(function() {
 <li>d()
 : <a class="el" href="structcutlass_1_1TileCoord.html#aec4ffcdc8fbf57a8b649fff38af55007">cutlass::TileCoord&lt; Index_ &gt;</a>
 </li>
+<li>d_a
+: <a class="el" href="structcutlass_1_1reduction_1_1BatchedReductionTraits_1_1Params.html#af1b12ba220602692e84616b420b00f1c">cutlass::reduction::BatchedReductionTraits&lt; ScalarA_, ScalarC_, ScalarD_, ScalarAlphaBeta_, ScalarAccum_, ReductionSize_, OutputTile_, SubTile_, ThreadShape_, Index_, BlockSwizzle_, maxInReg_, maxOutReg_, Functor_ &gt;::Params</a>
+</li>
+<li>d_c
+: <a class="el" href="structcutlass_1_1reduction_1_1BatchedReductionTraits_1_1Params.html#ac79830eaf080ea0ffddd2100db6cf3e1">cutlass::reduction::BatchedReductionTraits&lt; ScalarA_, ScalarC_, ScalarD_, ScalarAlphaBeta_, ScalarAccum_, ReductionSize_, OutputTile_, SubTile_, ThreadShape_, Index_, BlockSwizzle_, maxInReg_, maxOutReg_, Functor_ &gt;::Params</a>
+</li>
+<li>d_d
+: <a class="el" href="structcutlass_1_1reduction_1_1BatchedReductionTraits_1_1Params.html#abf9744373a72f3819a616b5a5b3bff22">cutlass::reduction::BatchedReductionTraits&lt; ScalarA_, ScalarC_, ScalarD_, ScalarAlphaBeta_, ScalarAccum_, ReductionSize_, OutputTile_, SubTile_, ThreadShape_, Index_, BlockSwizzle_, maxInReg_, maxOutReg_, Functor_ &gt;::Params</a>
+</li>
 <li>data()
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmEpilogueTraits_1_1SharedStorage.html#a0e05007f939b27e6a17dce5c2a49e3e0">cutlass::gemm::GemmEpilogueTraits&lt; OutputTile_, Accumulators_, GlobalLoadIteratorC_, GlobalTransformerC_, GlobalTransformerD_, GlobalStoreIteratorD_, SharedStoreIteratorD_, SharedStoreTransformerD_, SharedLoadStreamD_, Iterations_, Delta_, Functor_, Index_ &gt;::SharedStorage</a>
 , <a class="el" href="classcutlass_1_1TensorRef.html#ae1c80b524cd9491e2d499d703e1459f7">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, StorageRank_, Index_, LongIndex_ &gt;</a>
 , <a class="el" href="classcutlass_1_1TensorRef_3_01Storage___00_01Rank___00_01MapFunc___00_011_00_01Index___00_01LongIndex___01_4.html#a67b25cc51ce867b073feead7b94e6aa3">cutlass::TensorRef&lt; Storage_, Rank_, MapFunc_, 1, Index_, LongIndex_ &gt;</a>
-, <a class="el" href="structcutlass_1_1TileAllocation.html#acc3f2c29fe21316091a1405613083000">cutlass::TileAllocation&lt; Scalar_, Shape_ &gt;</a>
+, <a class="el" href="structcutlass_1_1TileAllocation.html#a69c43b27939e9ecebd23edb18ed3a9dc">cutlass::TileAllocation&lt; Scalar_, Shape_ &gt;</a>
 </li>
 <li>decrement()
 : <a class="el" href="classcutlass_1_1ZipTileIterator.html#a6f2f86a1d23ccbaed285550a1d1f92e6">cutlass::ZipTileIterator&lt; First_, Second_ &gt;</a>
+</li>
+<li>DefaultBlockSwizzle()
+: <a class="el" href="structcutlass_1_1reduction_1_1DefaultBlockSwizzle.html#a1ad8edda7b73d23fb5592a531f5736cc">cutlass::reduction::DefaultBlockSwizzle</a>
 </li>
 <li>deleter_type
 : <a class="el" href="classcutlass_1_1platform_1_1unique__ptr.html#a85cab9945c36dc56bd7d6adf30c0d252">cutlass::platform::unique_ptr&lt; T, Deleter &gt;</a>
@@ -113,11 +125,14 @@ $(function() {
 , <a class="el" href="structcutlass_1_1TileTraitsStrideMajor.html#a47404b4527b101e286347714aea687d5">cutlass::TileTraitsStrideMajor&lt; Tile_, Threads &gt;</a>
 , <a class="el" href="structcutlass_1_1TileTraitsWarpRake.html#a3ce218b223c5716af40c316899324bbe">cutlass::TileTraitsWarpRake&lt; Tile_, Threads &gt;</a>
 </li>
+<li>DeviceGemm()
+: <a class="el" href="structcutlass_1_1gemm_1_1DeviceGemm.html#a92a8c036506655623737eecca9aceeb8">cutlass::gemm::DeviceGemm&lt; DeviceGemmTraits_ &gt;</a>
+</li>
 <li>dhw()
 : <a class="el" href="structcutlass_1_1TileCoord.html#abe65d1a0ff3798b662376032d51e9713">cutlass::TileCoord&lt; Index_ &gt;</a>
 </li>
 <li>dot()
-: <a class="el" href="structcutlass_1_1Coord.html#ac8ec94703830ab2c62ee055533ea2184">cutlass::Coord&lt; Rank_, Index_ &gt;</a>
+: <a class="el" href="structcutlass_1_1Coord.html#a0acc37908acb6b879c37f54ff7ffc93d">cutlass::Coord&lt; Rank_, Index_ &gt;</a>
 </li>
 <li>DType
 : <a class="el" href="structcutlass_1_1gemm_1_1GemmDesc.html#a837a1c513f71ddb2729f8d2e6320b8cd">cutlass::gemm::GemmDesc&lt; AType_, BType_, CType_, DType_, SType_, Index_ &gt;</a>
@@ -129,7 +144,7 @@ $(function() {
 </div><!-- contents -->
 <!-- start footer part -->
 <hr class="footer"/><address class="footer"><small>
-Generated on Wed Sep 19 2018 13:58:53 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
+Generated on Fri Oct 26 2018 14:53:41 for Cutlass by &#160;<a href="http://www.doxygen.org/index.html">
 <img class="footer" src="doxygen.png" alt="doxygen"/>
 </a> 1.8.14
 </small></address>
