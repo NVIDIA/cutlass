@@ -2,7 +2,7 @@
 
 # CUTLASS 1.2
 
-_CUTLASS 1.2.0 - October 2018_
+_CUTLASS 1.2 - October 2018_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
