@@ -52,7 +52,6 @@ struct FragmentMultiplyAdd {
   /// Multiply : d = a*b.
   template <typename FragmentB_, typename FragmentCd_>
   CUTLASS_DEVICE void multiply(ScalarAlphaBeta a, FragmentB_ const& b, FragmentCd_& d) {
-#if defined(__CUDACC__) && __CUDA_ARCH__ >= 530
     int const kReduction = FragmentB_::kElements / FragmentCd_::kElements;
     for (int j = 0; j < FragmentCd_::kElements; ++j) {
       d[j] = b[j * kReduction + 0];
@@ -61,7 +60,6 @@ struct FragmentMultiplyAdd {
       }
       d[j] = a * ScalarAlphaBeta(d[j]);
     }
-#endif
   }
 
   /// Multiply : d = a*b + c.
@@ -70,7 +68,7 @@ struct FragmentMultiplyAdd {
                                    FragmentB_ const& b,
                                    FragmentCd_ const& c,
                                    FragmentCd_& d) {
-#if defined(__CUDACC__) && __CUDA_ARCH__ >= 530
+
     int const kReduction = FragmentB_::kElements / FragmentCd_::kElements;
     for (int j = 0; j < FragmentCd_::kElements; ++j) {
       d[j] = b[j * kReduction + 0];
@@ -79,7 +77,6 @@ struct FragmentMultiplyAdd {
       }
       d[j] = a * ScalarAlphaBeta(d[j]) + ScalarAlphaBeta(c[j]);
     }
-#endif
   }
 };
 
