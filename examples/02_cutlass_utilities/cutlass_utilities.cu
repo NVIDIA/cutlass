@@ -77,6 +77,8 @@
 #include <sstream>
 #include <vector>
 
+#if !defined(__CUDA_ARCH__) || (__CUDA_ARCH__) >= 530
+
 // CUTLASS includes needed for mixed-precision GEMM kernel
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/fp16_sgemm_traits.h"
@@ -313,6 +315,24 @@ cudaError_t TestCutlassGemm(int M, int N, int K, cutlass::half_t alpha, cutlass:
 int main(int argc, const char *arg[]) {
 
   //
+  // This example uses half-precision and is only suitable for devices with compute capabitliy 5.3 or greater.
+  //
+
+  cudaDeviceProp prop;
+  cudaError_t result = cudaGetDeviceProperties(&prop, 0);
+  
+  if (result != cudaSuccess) {
+    std::cerr << "Failed to query device properties with error " << cudaGetErrorString(result) << std::endl;
+    return -1;
+  }
+
+  if (!(prop.major > 5 || (prop.major == 5 && prop.minor >= 3))) {
+    std::cerr << "This example uses mixed precision and is only suitable for devices with compute capability 5.3 or greater.\n";
+    std::cerr << "You are using a CUDA device with compute capability " << prop.major << "." << prop.minor << std::endl;
+    return -1;
+  }
+
+  //
   // Parse the command line to obtain GEMM dimensions and scalar values.
   //
 
@@ -341,7 +361,7 @@ int main(int argc, const char *arg[]) {
   // Run the CUTLASS GEMM test.
   //
 
-  cudaError_t result = TestCutlassGemm(
+  result = TestCutlassGemm(
     problem[0],     // GEMM M dimension
     problem[1],     // GEMM N dimension
     problem[2],     // GEMM K dimension
@@ -358,3 +378,6 @@ int main(int argc, const char *arg[]) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+#endif
+

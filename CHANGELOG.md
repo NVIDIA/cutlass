@@ -1,5 +1,8 @@
 # NVIDIA CUTLASS Changelog
 
+## [1.2.1](https://github.com/NVIDIA/cutlass/releases/tag/v1.2.1) (2018-12-19)
+ * Resolved issue with sm50 and sm52 architectures
+
 ## [1.2.0](https://github.com/NVIDIA/cutlass/releases/tag/v1.2.0) (2018-10-26)
  * Parallelized reductions across threadblocks ("Split-K")
    * Improved IGEMM performance
