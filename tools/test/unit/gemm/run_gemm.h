@@ -44,7 +44,9 @@ static void run_gemm(
     typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
         typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0.0f)) {
 
-  typedef typename GemmTraits_::KernelClass Gemm;
+  //typedef typename GemmTraits_::KernelClass Gemm;
+  typedef cutlass::gemm::Gemm<GemmTraits_> Gemm;
+
   typename Gemm::Params params;
 
   test::GemmTestbed<
@@ -106,6 +108,8 @@ static void run_gemm(
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <typename GemmTraits_>
 static void run_gemm(
     int m,
@@ -115,8 +119,8 @@ static void run_gemm(
         typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1.0f),
     typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
         typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0.0f)) {
-  //typedef cutlass::gemm::Gemm<GemmTraits_> Gemm;
-  typedef typename GemmTraits_::KernelClass Gemm;
+  typedef cutlass::gemm::Gemm<GemmTraits_> Gemm;
+  //typedef typename GemmTraits_::KernelClass Gemm;
   typename Gemm::Params params;
 
   typedef test::GemmTestbed<
@@ -185,8 +189,8 @@ static void run_batched_strided_gemm(
         typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1.0f),
     typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
         typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0.0f)) {
-  //typedef cutlass::gemm::Gemm<GemmTraits_> Gemm;
-  typedef typename GemmTraits_::KernelClass Gemm;
+  typedef cutlass::gemm::Gemm<GemmTraits_> Gemm;
+  //typedef typename GemmTraits_::KernelClass Gemm;
   typename Gemm::Params params;
   test::GemmTestbed<
       typename test::GemmTestbedTraits<
@@ -254,6 +258,7 @@ template <typename GemmTraits_, typename ReductionTraits_>
 static void run_splitK_gemm(int m,
   int n,
   int k,
+  int partitionK_multiple = 1, /*requires each partition to be mulitple of partitionK_multiple*/
   typename test::GemmTestbedTraits<typename ReductionTraits_::ScalarAlphaBeta>::host_type alpha =
       typename test::GemmTestbedTraits<typename ReductionTraits_::ScalarAlphaBeta>::host_type(1.0f),
   typename test::GemmTestbedTraits<typename ReductionTraits_::ScalarAlphaBeta>::host_type beta =
@@ -283,11 +288,12 @@ static void run_splitK_gemm(int m,
 
   // create a device gemm
   typedef cutlass::gemm::SplitkPIGemmTraits<GemmTraits_, ReductionTraits_> deviceGemmTraits;
-  typedef typename deviceGemmTraits::KernelClass deviceGemm;
+  //typedef typename deviceGemmTraits::KernelClass deviceGemm;
+  typedef typename cutlass::gemm::DeviceGemm<deviceGemmTraits> deviceGemm;
   typename deviceGemm::Params deviceGemmParams(testbed.M(), testbed.N(), testbed.K());
 
   // query if workspace is needed
-  int workspace_size = deviceGemmParams.required_workspace_memory_in_byte();
+  size_t workspace_size = deviceGemmParams.required_workspace_memory_in_byte();
   typename test::GemmTestbedTraits<typename GemmTraits_::GemmConfig::ScalarD>::device_type
     *workspace_ptr = 0;
   if (workspace_size != 0) {
@@ -306,7 +312,8 @@ static void run_splitK_gemm(int m,
     testbed.ldc(),
     testbed.ptr_computed(),
     testbed.ldc(),
-    workspace_ptr);
+    workspace_ptr,
+    partitionK_multiple);
 
 
   deviceGemm::launch(deviceGemmParams);
@@ -337,12 +344,13 @@ static void run_partitioned_k_gemm(
   int n,
   int k,
   int partitionK_count,
+  int partitionK_multiple = 1, //requires each partition to be multiples of partitionK_multiple
   typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type alpha =
   typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(1.0f),
   typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type beta =
   typename test::GemmTestbedTraits<typename GemmTraits_::Epilogue::Scalar>::host_type(0.0f)) {
-  //typedef cutlass::gemm::Gemm<GemmTraits_> Gemm;
-  typedef typename GemmTraits_::KernelClass Gemm;
+  typedef cutlass::gemm::Gemm<GemmTraits_> Gemm;
+  //typedef typename GemmTraits_::KernelClass Gemm;
   typename Gemm::Params params;
   test::GemmTestbed<
     typename test::GemmTestbedTraits<
@@ -358,6 +366,7 @@ static void run_partitioned_k_gemm(
     testbed(m,
       n,
       std::make_pair(k, partitionK_count),
+      partitionK_multiple,
       test::convert(GemmTraits_::kLayoutA),
       test::convert(GemmTraits_::kLayoutB),
       alpha,
@@ -383,7 +392,8 @@ static void run_partitioned_k_gemm(
     testbed.ldc(),
     testbed.ptr_computed(),
     testbed.ldc(),
-    partitionK_count);
+    partitionK_count,
+    partitionK_multiple);
 
   Gemm::launch(params);
 

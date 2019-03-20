@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -29,6 +29,7 @@
 
 #include "cutlass/fragment.h"
 #include "cutlass/gemm/thread_multiply_add.h"
+
 namespace cutlass {
 namespace gemm {
 
@@ -69,8 +70,10 @@ struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, half, half, float> {
                                    FragmentB const& b,
                                    Accumulators const& c,
                                    Accumulators& d) {
+
     for (int j = 0; j < AccumulatorsPerThread::kH; ++j) {
       for (int i = 0; i < AccumulatorsPerThread::kW; ++i) {
+
         d[j * AccumulatorsPerThread::kW + i] = static_cast<ScalarC>(a[i]) * static_cast<ScalarC>(b[j]) + c[j * AccumulatorsPerThread::kW + i];
       }
     }

@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -27,3 +27,4 @@ add_subdirectory(03_strided_batched_gemm)
 add_subdirectory(04_tile_iterator)
 add_subdirectory(05_wmma_gemm)
 add_subdirectory(06_splitK_gemm)
+

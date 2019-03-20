@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -45,9 +45,9 @@ struct Config {
   // kernel to run
   std::vector<std::string> kernels;
 
-  /// Range of problem sizes
-  GemmProblemRange problem_range;
-
+  /// Range of problem sizes for GEMM
+  GemmProblemRange gemm_problem_range;
+  
   // Reference GFLOPs
   double gflops_ref;
 
@@ -121,8 +121,12 @@ struct TestbenchConfigs {
           if (item.compare("Kernel") == 0) kernel_idx = idx;
           if (item.compare("Beta") == 0) beta_idx = idx;
           if (item.compare("M") == 0) m_idx = idx;
-          if (item.compare("N") == 0) n_idx = idx;
-          if (item.compare("K") == 0) k_idx = idx;
+          if (item.compare("N") == 0) { 
+            n_idx = idx;
+          }
+          if (item.compare("K") == 0) { 
+            k_idx = idx; 
+          }
           if (item.compare("GFLOPs") == 0) gflops_idx = idx;
           if (item.compare("Runtime") == 0) runtime_idx = idx;
           if (item.compare("SOL") == 0) peak_throughput_idx = idx;
@@ -150,9 +154,9 @@ struct TestbenchConfigs {
           config.alpha = options.alpha;
           config.beta = strtod(tokens[beta_idx].c_str(), NULL);
           config.kernels.push_back(tokens[kernel_idx]);
-          config.problem_range.M = Range((int)strtol(tokens[m_idx].c_str(), NULL, 10));
-          config.problem_range.N = Range((int)strtol(tokens[n_idx].c_str(), NULL, 10));
-          config.problem_range.K = Range((int)strtol(tokens[k_idx].c_str(), NULL, 10));
+          config.gemm_problem_range.M = Range(tokens[m_idx]);
+          config.gemm_problem_range.N = Range(tokens[n_idx]);
+          config.gemm_problem_range.K = Range(tokens[k_idx]);
           config.gflops_ref = strtod(tokens[gflops_idx].c_str(), NULL);
           config.runtime_ref = strtod(tokens[runtime_idx].c_str(), NULL);
           config.peak_throughput_ref = strtod(tokens[peak_throughput_idx].c_str(), NULL);
@@ -172,7 +176,7 @@ struct TestbenchConfigs {
     for (int i = 0; i < options.kernels.size(); i++) {
       config.kernels.push_back(options.kernels[i]);
     }
-    config.problem_range = options.problem_range;
+    config.gemm_problem_range = options.gemm_problem_range;
     configs.push_back(config);
   }
 

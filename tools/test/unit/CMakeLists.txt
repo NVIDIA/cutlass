@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -43,11 +43,6 @@ set(CUTLASS_UNIT_TEST_HEADERS
   reduction/test_batched_reduction.h
 )
 
-set(CUTLASS_UNIT_TEST_SOURCES_BACKUP
-  cutlass_unit_test.cpp
-  gemm/batched_strided_sgemm_128x128x8.cu
-)
-
 set(CUTLASS_UNIT_TEST_SOURCES
   cutlass_unit_test.cpp
   tile_iterator_test.cu
@@ -85,6 +80,7 @@ set(CUTLASS_UNIT_TEST_SOURCES
   gemm/sgemm_64x64x16.cu
   gemm/sgemm_64x32x8.cu
   gemm/sgemm_64x32x16.cu
+  gemm/sgemm_32x128x8.cu
   gemm/fp16_sgemm_fp32_128x128x16.cu
   gemm/fp16_sgemm_fp16_128x128x16.cu
   gemm/wmma_gemm.cu
@@ -102,7 +98,13 @@ set(CUTLASS_UNIT_TEST_SOURCES
   gemm/batched_strided_hgemm_128x128x8.cu
   gemm/batched_strided_wmma_gemm.cu
   gemm/batched_strided_fp16_wmma_gemm_fp16.cu
+  gemm/batched_strided_volta884_hgemm.cu
   gemm/epilogue_functor.cu
+  gemm/volta884_gemm_epilogue.cu
+  gemm/volta884_h884gemm.cu
+  gemm/volta884_gemm.cu
+  gemm/volta884_gemm_threadblock_swizzle.cu
+  gemm/volta884_h884gemm_threadblock_swizzle.cu
   reduction/batched_reduction.cu
   reduction/mixed_batched_reduction.cu
   gemm/splitK_sgemm.cu
@@ -111,7 +113,9 @@ set(CUTLASS_UNIT_TEST_SOURCES
   gemm/splitK_dgemm.cu
   gemm/splitK_hgemm.cu
   gemm/splitK_wmma_gemm.cu
+  gemm/splitK_volta884_hgemm.cu
   gemm/partitionedK_sgemm_128x128x8.cu
+  gemm/partitionedK_volta884_hgemm.cu
 )
 
 if (CUTLASS_NVRTC_ENABLE)
@@ -144,6 +148,7 @@ if (CUTLASS_NVRTC_ENABLE)
   endif()
 endif()
 
-target_link_libraries(cutlass_unit_test ${CUBLAS_LIBRARY})
-
+if(CUTLASS_ENABLE_CUBLAS)
+    target_link_libraries(cutlass_unit_test ${CUBLAS_LIBRARY})
+endif()
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -106,7 +106,7 @@ struct WmmaGemmEpilogueTraitsHelper {
       // The number of scalars per LDS.
       GemmConfig_::kScalarsPerLdsD,
       // this parameter helps with swizzling when accum is fp32 and output is fp16
-      sizeof(Accumulator_) / sizeof(typename GemmConfig_::ScalarD) 
+      int(sizeof(Accumulator_)) / int(sizeof(typename GemmConfig_::ScalarD)) 
       >
       SharedLoadTileTraits;
 

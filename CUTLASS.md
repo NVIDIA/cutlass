@@ -14,7 +14,7 @@ CUTLASS core components, and to identify their role in implementing GEMM computa
 # <a name="S-design-patterns"></a> 1. Design Patterns
 
 CUTLASS strives to achieve the highest performance possible on NVIDIA GPUs while also offering a
-flexible composition that an be easily applied to solve new problems related to Deep Learning and
+flexible composition that can be easily applied to solve new problems related to Deep Learning and
 linear algebra. Though we intend to make CUTLASS as simple and straightforward as possible, given
 a tradeoff between simplicity and performance, CUTLASS chooses performance. Consequently, several
 design patterns are necessary to yield a composable structure while also satisfying these performance
@@ -31,7 +31,7 @@ CUTLASS embodies a design paradigm exemplified by the [CUB library](https://nvla
 
 ## <a name="S-patterns-tiles-iterators"></a> Tiles and Iterators
 
-Efficient dense linear algebra computations emphasize data movement to match the execution of mathemtical operators to the flow of data. Consequently, CUTLASS defines a rich set of primitives for partitioning a tile of data among participating threads, warps, and threadblocks. CUTLASS applies the familiar iterator design pattern to provide an abstraction layer to (1.) access these tile objects and (2.) traverse a sequence of objects embedded in a higher level data structure. These subpartitions are typically defined by compile-time constants
+Efficient dense linear algebra computations emphasize data movement to match the execution of mathematical operators to the flow of data. Consequently, CUTLASS defines a rich set of primitives for partitioning a tile of data among participating threads, warps, and threadblocks. CUTLASS applies the familiar iterator design pattern to provide an abstraction layer to (1.) access these tile objects and (2.) traverse a sequence of objects embedded in a higher level data structure. These subpartitions are typically defined by compile-time constants
 specifying element type, size, and data layout. CUTLASS refers to subpartitions as _tiles_.
 
 _Iterators_ are familiar design patterns in C++ that provide an abstraction for accessing individual
@@ -353,7 +353,7 @@ An example of splitK usage can be found [here](examples/06_splitK_gemm/splitK_ge
 
 # Copyright
 
-Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

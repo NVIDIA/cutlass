@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -254,6 +254,40 @@ union Vector<uint4_t, kLanes_> {
   /// Accessor to the ith lane.
   CUTLASS_HOST_DEVICE int operator[](uint32_t i) const {
     return registers[i / 8] >> (i % 8 * 4) & 0x0f;
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Vector definition for 4-bit signed integer datatype
+template <int kLanes_>
+union Vector<int8_t, kLanes_> {
+  /// The scalar type.
+  typedef int8_t Scalar;
+
+  /// The number of elements in the vector.
+  enum { kLanes = kLanes_ };
+  /// The size of the vector.
+  enum { kVectorSize = kLanes };
+  /// The number of registers needed to store the vector.
+  enum { kRegisters = kVectorSize < 4 ? 1 : (kVectorSize+3) / 4 };
+
+//  static_assert((kLanes >= 2) && !(kLanes % 2),
+//   "May only construct vectors of int8_t that are multiples of 8 bits.");
+
+  /// The aligned storage to make sure we have good alignment.
+  AlignedStruct<kVectorSize> aligned_;
+  /// The data in registers.
+  uint32_t registers[kRegisters];
+
+  /// Default Constructor
+  CUTLASS_HOST_DEVICE
+  Vector() {}
+  /// Constructor to convert from uint32_t type
+  CUTLASS_HOST_DEVICE Vector(uint32_t value) { registers[0] = value; }
+  /// Accessor to the ith lane.
+  CUTLASS_HOST_DEVICE int operator[](uint32_t i) const {
+    return (registers[i / 4] >> (i % 4 * 8) & 0xff);
   }
 };
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -29,11 +29,12 @@
 
 #pragma once
 
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #define CUTLASS_MAJOR 1
-#define CUTLASS_MINOR 2
-#define CUTLASS_PATCH 1
+#define CUTLASS_MINOR 3
+#define CUTLASS_PATCH 0
 #define CUTLASS_VERSION ((CUTLASS_MAJOR)*100 + (CUTLASS_MINOR)*10 + CUTLASS_PATCH)
 
 #ifdef __NVCC__
@@ -47,9 +48,31 @@
 // CUTLASS_DEVICE is an error if not compiling device code
 #endif
 
+// CUDA 10.1 introduces the mma instruction
+#if !defined(CUTLASS_ENABLE_TENSOR_CORE_MMA)
+#define CUTLASS_ENABLE_TENSOR_CORE_MMA 0
+#endif
+
+// CUTLASS assert
 #define CUTLASS_ASSERT(x) assert(x)
 
-#include "cutlass/util/performance_tuning.h"
+// CUTLASS_PRAGMA_(UNROLL|NO_UNROLL) optimization directives for the CUDA compiler.
+#if defined(__CUDA_ARCH__)
+    #define CUTLASS_PRAGMA_UNROLL #pragma unroll
+    #define CUTLASS_PRAGMA_NO_UNROLL #pragma unroll 1
+
+    #define CUTLASS_GEMM_LOOP CUTLASS_PRAGMA_NO_UNROLL
+
+        #define CUTLASS_GEMM_LOOP_HEADER                \
+            asm volatile (".pragma \"nounroll\";\n");
+#else
+
+    #define CUTLASS_PRAGMA_UNROLL
+    #define CUTLASS_PRAGMA_NO_UNROLL
+    #define CUTLASS_GEMM_LOOP_HEADER
+    #define CUTLASS_GEMM_LOOP
+
+#endif
 
 // A small helper class to dump a type at compile time
 // Usage:: DumpType<Class>::Class

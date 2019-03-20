@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -23,7 +23,7 @@
  *
  **************************************************************************************************/
 #include "cutlass/wmma_matrix.h"
-#ifdef CUTLASS_USE_SUBBYTE_WMMA
+#ifdef CUTLASS_USE_WMMA_API
 
 #include "cutlass_unit_test.h"
 #include "cutlass/gemm/gemm.h"
@@ -44,6 +44,7 @@
       - Shapes should be specified as MxNxK (opposite to the Shape<> definition which is KxNxM)
 */
 
+#ifdef CUTLASS_USE_SUBBYTE_WMMA
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 //    S4 Integer GEMM Unit Tests
@@ -112,6 +113,8 @@ TEST(WmmaInt4Gemm_32x32x64_8x8x32_u4, wmma_integer_gemm_32x32x64) {
       WmmaGemmTraits;
   run_integer_gemm<WmmaGemmTraits>(32, 32, 64);
 }
+#endif //ifdef CUTLASS_USE_SUBBYTE_WMMA
+#ifdef CUTLASS_USE_INT_WMMA
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -627,4 +630,5 @@ TEST(WmmaInt8Gemm_32x32x32_8x32x16_u8_nn, wmma_integer_gemm_32x32x32) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#endif // ifdef CUTLASS_USE_SUBBYTE_WMMA
+#endif // ifdef CUTLASS_USE_INT_WMMA
+#endif // ifdef CUTLASS_USE_WMMA_API

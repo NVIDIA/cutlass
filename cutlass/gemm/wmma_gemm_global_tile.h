@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -103,7 +103,7 @@ struct WmmaGemmGlobalIteratorCd : public GemmGlobalIteratorCd<TileTraits_, Index
                                        Index epilogue_stride_w,
                                        Index epilogue_delta_w) {
       // The pointer.
-      this->pointer = pointer;
+      BaseParams::pointer = pointer;
       // Stride between GEMMs
       this->stride_d = batch_stride;
       // Setup the base stride. One "group of threads" per column.

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -114,29 +114,29 @@ class HostTensor : public HostTensorView<
   typedef typename DeviceTensorView::ConstTensorView ConstDeviceTensorView;
 
   /// Tensor reference to host memory
-  typedef typename Base::TensorRef TensorRef;
+  typedef typename Base::TensorRef_t TensorRef_t;
 
   /// Tensor view to host memory
-  typedef TensorView<
+  typedef HostTensorView<
     typename TypeTraits<T>::host_type,
     Rank_,
     MapFunc_,
     StorageRank_,
     Index_,
-    LongIndex_> HostTensorView;
+    LongIndex_> HostTensorView_t;
 
   /// Tensor view to host memory
-  typedef typename HostTensorView::ConstTensorView ConstHostTensorView;
+  typedef typename HostTensorView_t::ConstTensorView ConstHostTensorView;
 
   /// Coordinate in logical tensor space
-  typedef typename TensorRef::TensorCoord TensorCoord;
+  typedef typename TensorRef_t::TensorCoord TensorCoord;
 
   /// Coordinate in storage n-D array
-  typedef typename TensorRef::StorageCoord StorageCoord;
+  typedef typename TensorRef_t::StorageCoord StorageCoord;
 
   /// Stride vector in storage coordinate space
   /// Least significant stride is = 1 and not stored
-  typedef typename TensorRef::StrideVector StrideVector;
+  typedef typename TensorRef_t::StrideVector StrideVector;
 
   /// Rank of internal storage.
   static int const kStorageRank = Base::kStorageRank;
@@ -216,14 +216,14 @@ class HostTensor : public HostTensorView<
     host_.resize(_capacity);
     device_.reset(_device_memory, _capacity);
 
-    Base::reset(TensorRef(host_.data(), stride), size);
+    Base::reset(TensorRef_t(host_.data(), stride), size);
   }
 
   /// Accesses the tensor reference pointing to data
-  TensorRef host_ref() { return Base::ref(); }
+  TensorRef_t host_ref() { return Base::ref(); }
 
   /// Accesses the tensor reference pointing to data
-  TensorRef host_ref() const { return Base::ref(); }
+  TensorRef_t host_ref() const { return Base::ref(); }
 
   /// Accesses the tensor reference pointing to data
   DeviceTensorRef device_ref() const {
@@ -231,13 +231,13 @@ class HostTensor : public HostTensorView<
   }
 
   /// Accesses the tensor reference pointing to data
-  HostTensorView host_view() {
-    return HostTensorView(host_data(), this->stride(), this->size());
+  HostTensorView_t host_view() {
+    return HostTensorView_t(host_data(), this->stride(), this->size());
   }
 
   /// Accesses the tensor reference pointing to data
   ConstHostTensorView host_view() const {
-    return HostTensorView(host_data(), this->stride(), this->size());
+    return HostTensorView_t(host_data(), this->stride(), this->size());
   }
 
   /// Accesses the tensor reference pointing to data

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -29,7 +29,6 @@
 #pragma once
 
 #include "cutlass/fragment.h"
-
 #include "cutlass/gemm/thread_multiply_add.h"
 
 namespace cutlass {
@@ -66,6 +65,8 @@ struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, half, half, half> {
   /// Make sure there's an even number of elements in both dimensions.
   static_assert(AccumulatorsPerThread::kH % 2 == 0, "Invalid size");
   static_assert(AccumulatorsPerThread::kW % 2 == 0, "Invalid size");
+  static_assert(AccumulatorsPerThread::kH >= 2 && AccumulatorsPerThread::kW >= 2,
+    "HGEMM expects at least 2x2 accmulator tiles per thread.");
 
   /// Ctor.
   CUTLASS_DEVICE ThreadMultiplyAdd() {}
@@ -84,7 +85,10 @@ struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, half, half, half> {
     // The output.
     __half2* d_half2 = reinterpret_cast<__half2*>(&d[0]);
 
+    CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < AccumulatorsPerThread::kH / 2; ++j) {
+
+      CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < AccumulatorsPerThread::kW / 2; ++i) {
         // The offsets in the output fragment.
         int const k0 = (2 * j + 0) * (AccumulatorsPerThread::kW / 2) + i;

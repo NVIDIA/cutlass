@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -39,7 +39,7 @@
 #include "cutlass/gemm/igemm_epilogue.h"
 #include "cutlass/gemm/igemm_global_tile.h"
 #include "cutlass/gemm/igemm_multiply_add.h"
-#include "cutlass/gemm/igemm_swizzle.h"
+#include "cutlass/layout/thread/transform.h"
 #include "cutlass/reshape_tile.h"
 
 namespace cutlass {
@@ -90,9 +90,10 @@ struct IgemmConfig : public GemmConfig<
                          /// kResidueSeparate
                          false,
                          /// kResidueInPrologue
-                         false,
+                         true,
                          /// kLaunchBounds
-                         false> {};
+                         false>
+{};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -380,7 +381,8 @@ struct IgemmTransformerA<MatrixLayout::kRowMajor, Iterator_> {
 
 template <typename Iterator_>
 struct IgemmTransformerA<MatrixLayout::kColumnMajor, Iterator_> {
-  typedef IgemmSwizzle<Iterator_> Transformer;
+  typedef typename Iterator_::FragmentShape FragmentShape;
+  typedef cutlass::layout::thread::Transform<FragmentShape, 2, int8_t, cutlass::MatrixLayout::RowMajor, int8_t, cutlass::MatrixLayout::ColumnMajor > Transformer;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -395,7 +397,8 @@ struct IgemmTransformerB<MatrixLayout::kColumnMajor, Iterator_> {
 
 template <typename Iterator_>
 struct IgemmTransformerB<MatrixLayout::kRowMajor, Iterator_> {
-  typedef IgemmSwizzle<Iterator_> Transformer;
+  typedef typename Iterator_::FragmentShape FragmentShape;
+  typedef cutlass::layout::thread::Transform<FragmentShape, 2, int8_t, cutlass::MatrixLayout::RowMajor, int8_t, cutlass::MatrixLayout::ColumnMajor > Transformer;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

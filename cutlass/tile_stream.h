@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -272,6 +272,9 @@ struct PredicatedTileLoadStream : public TileLoadStream<Iterator_, Transformer_>
 
   /// Parameters object used to construct generic load stream
   typedef typename Base::Params Params;
+  
+  ///
+  typedef typename Iterator::Scalar Scalar;
 
   //
   // Data members
@@ -330,6 +333,9 @@ struct PredicatedTileStoreStream : public TileStoreStream<Iterator_, Transformer
 
   /// Parameters object used to construct generic load stream
   typedef typename Base::Params Params;
+
+  ///
+  typedef typename Iterator::Scalar Scalar;
 
   //
   // Data members

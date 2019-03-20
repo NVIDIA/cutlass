@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -63,12 +63,7 @@ struct IdentityTensorMapFunc {
   and assumptions about vectorizing memory accesses throughout CUTLASS. It also matches various
   BLAS conventions in which only the "leading dimension" or most significant stride of a rank=2
   matrix is provided.
-
-  This does affect the ability of constructing arbitrary "sparse" 2-D matrices in memory where all
-  stride elements are > 1. This can be overcome by defining a custom mapping function and a
-  StorageRank of 3 or more.
-
-
+  
   Examples:
 
   (These examples use helpers for matrix layouts defined in cutlass/matrix_traits.h)
@@ -85,7 +80,7 @@ struct IdentityTensorMapFunc {
 
     TensorRef<int8_t, 2, MatrixLayout::ColumnMajorInterleaved<32> > C;
 
-  4. Defining a sparse matrix with arbitrary strides in each dimension
+  4. Defining a matrix with arbitrary strides in each dimension
 
     struct ContiguousLayout {
 
@@ -544,6 +539,10 @@ class TensorRef<Storage_, Rank_, MapFunc_, 1, Index_, LongIndex_> {
   /// Returns the pointer to referenced data
   CUTLASS_HOST_DEVICE
   Storage * data() const { return ptr_; }
+
+  /// Returns the pointer to referenced data at the given coordinate
+  CUTLASS_HOST_DEVICE
+  Storage * data(TensorCoord const& coord) const { return ptr_ + offset(coord); }
 
   /// Returns the stride of the tensor
   CUTLASS_HOST_DEVICE

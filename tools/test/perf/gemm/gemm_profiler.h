@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -146,22 +146,23 @@ class GemmProfiler {
       , kernel_name
       , problem
     );
-
+    
+    result.disposition = Disposition::NotVerified;
+    
     if (options.dry_run) {
       result.disposition = Disposition::NotRun;
       return result;
     }
 
     if (CutlassDispatch::kRunCuBLAS) {
+#if CUTLASS_ENABLE_CUBLAS
       testbed.compute_reference(algorithm);
 
       if (cudaDeviceSynchronize() != cudaSuccess) {
         result.disposition = Disposition::NotVerified;
         return result;
       }
-    }
-    else {
-      result.disposition = Disposition::Passed;
+#endif
     }
 
     CutlassDispatch *dispatch_ptr;
@@ -214,11 +215,13 @@ class GemmProfiler {
     }
 
     if (CutlassDispatch::kRunCuBLAS) {
+#if CUTLASS_ENABLE_CUBLAS
       if (testbed.verify_with_reference()) {
         result.disposition = Disposition::Passed;
       } else {
         result.disposition = Disposition::Incorrect;
       }
+#endif
     }
 
     if (options.save_workspace(result.disposition == Disposition::Passed)) {
@@ -270,11 +273,34 @@ class GemmProfiler {
     result.runtime = double(average_ms) / double(options.iterations);
     result.gflops = testbed.GFLOPs_per_sec(result.runtime);
 
-    if (result.disposition != Disposition::Passed) {
-      std::cout << "[\033[1;31mFAILED\033[0m]: " << kernel_name
-                << " failed with disposition: " << result.disposition << "\n";
+    if (result.disposition == Disposition::Unknown) {
+      std::cout << "[\033[1;30mUnknown\033[0m]: " << kernel_name
+                << " with disposition: " << result.disposition << "\n";
     }
-
+    if (result.disposition == Disposition::NotRun) {
+      std::cout << "[\033[1;33mNotRun\033[0m]: " << kernel_name
+                << " with disposition: " << result.disposition << "\n";
+    }
+    if (result.disposition == Disposition::Passed) {
+      std::cout << "[\033[1;32mPassed\033[0m]: " << kernel_name
+                << " with disposition: " << result.disposition << "\n";
+    }
+    if (result.disposition == Disposition::Incorrect) {
+      std::cout << "[\033[1;31mIncorrect\033[0m]: " << kernel_name
+                << " with disposition: " << result.disposition << "\n";
+    }
+    if (result.disposition == Disposition::Failed) {
+      std::cout << "[\033[1;31mFailed\033[0m]: " << kernel_name
+                << " with disposition: " << result.disposition << "\n";
+    }
+    if (result.disposition == Disposition::NotVerified) {
+      std::cout << "[\033[1;34mNotVerified\033[0m]: " << kernel_name
+                << " with disposition: " << result.disposition << "\n";
+    }
+    if (result.disposition == Disposition::Invalid) {
+      std::cout << "[\033[1;36mInvalid\033[0m]: " << kernel_name
+                << " with disposition: " << result.disposition << "\n";
+    }
     delete dispatch_ptr;
     return result;
   }
@@ -299,7 +325,7 @@ class GemmProfiler {
 
     std::vector<PerformanceResult<GemmProblem> > results;
 
-    results.push_back(execute_cutlass<CutlassDispatch>(problem, algorithm));
+      results.push_back(execute_cutlass<CutlassDispatch>(problem, algorithm));
     // cool-down period
     if (!options.dry_run) {
       pause(options.sleep_time);
@@ -402,10 +428,10 @@ int profile_gemm(TestbenchOutput<GemmProblem> &output,
     GemmProfiler perf(output, kernel, cutlass_algo, options, config);
     if (options.peak_performance) {
       perf.template peak<Dispatch>(
-          config.problem_range.M, config.problem_range.N, config.problem_range.K);
+          config.gemm_problem_range.M, config.gemm_problem_range.N, config.gemm_problem_range.K);
     } else {
       perf.template schmoo<Dispatch>(
-          config.problem_range.M, config.problem_range.N, config.problem_range.K, config.problem_range.batch_count);
+          config.gemm_problem_range.M, config.gemm_problem_range.N, config.gemm_problem_range.K, config.gemm_problem_range.batch_count);
     }
   }
 

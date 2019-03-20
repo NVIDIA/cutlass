@@ -1,5 +1,5 @@
 /***************************************************************************************************
-* Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+* Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification, are permitted
 * provided that the following conditions are met:
@@ -40,8 +40,13 @@ template <typename KernelClass_,
     typename Compute_,
     typename ScalarEpilogue_,
     bool ThreadMultiplyAdd_,
-    bool RunCuBLAS_ = true>
-  struct CutlassDispatchSplitKPIGemm {
+    #if CUTLASS_ENABLE_CUBLAS
+    bool RunCuBLAS_ = true
+    #else
+    bool RunCuBLAS_ = false
+    #endif
+>
+struct CutlassDispatchSplitKPIGemm {
   typedef typename KernelClass_::Params Params;
   typedef KernelClass_ KernelClass;
   typedef Index_ Index;
@@ -87,8 +92,21 @@ template <typename KernelClass_,
     ScalarD* d_d,
     Index ldd) {
     params.init_problem(m, n, k);
-    int workspace_size_in_byte = params.required_workspace_memory_in_byte();
-    
+    size_t workspace_size_in_byte = params.required_workspace_memory_in_byte();
+    size_t available_device_memory_in_byte = 0;
+    size_t device_memory_in_byte = 0;
+    cudaError_t cudaMemGetInfo_err = cudaMemGetInfo(&available_device_memory_in_byte, &device_memory_in_byte);
+    if (cudaMemGetInfo_err != cudaSuccess) {
+      std::cout << "\ncudaMemGetInfo error: " << cudaGetErrorString(cudaMemGetInfo_err)
+        << "\n";
+    }
+
+    if (workspace_size_in_byte > available_device_memory_in_byte) {
+      std::cout << "reqested workspace memory size("<< workspace_size_in_byte << 
+                   ") is larger than available memory size("<< available_device_memory_in_byte << "). Abort." << std::endl;
+      throw std::runtime_error("reqested workspace memory size is larger than available memory size. Abort.");
+    }
+
     cudaError_t workspace_err = cudaMalloc(&workspace_ptr, workspace_size_in_byte);
     if (workspace_err != cudaSuccess) {
       std::cout << "\nCUDA workspace malloc error: " << cudaGetErrorString(workspace_err)
@@ -153,8 +171,6 @@ struct CutlassDispatchSplitKPIGemmBasic {
   typedef typename Traits::ScalarC ScalarC;
   /// The scalar for D.
   typedef typename Traits::ScalarD ScalarD;
-
-  // TODO - support alternative accumulator and scalar types
   typedef ScalarD Compute;
   typedef Compute ScalarEpilogue;
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -33,7 +33,12 @@ template <typename Gemm_,
           typename Compute_,
           typename ScalarEpilogue_,
           bool ThreadMultiplyAdd_,
-          bool RunCuBLAS_ = true>
+          #if CUTLASS_ENABLE_CUBLAS
+          bool RunCuBLAS_ = true
+          #else
+          bool RunCuBLAS_ = false
+          #endif
+>
 struct CutlassDispatch {
   typedef typename Gemm_::Params Params;
   typedef Gemm_ Gemm;
@@ -131,8 +136,6 @@ struct CutlassDispatchBasic {
   typedef typename Traits::ScalarC ScalarC;
   /// The scalar for D.
   typedef typename Traits::ScalarD ScalarD;
-
-  // TODO - support alternative accumulator and scalar types
   typedef ScalarD Compute;
   typedef Compute ScalarEpilogue;
 

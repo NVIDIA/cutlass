@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -38,8 +38,10 @@ namespace perf {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+/// Profile simple gemm kernels
 template <typename OutputTile>
-int profile_sgemm_kernel(
+int profile_simple_sgemm_kernel(
   TestbenchOutput<GemmProblem> &output,
   TestbenchOptions const &options,
   Config const &config,
@@ -97,6 +99,24 @@ int profile_sgemm_kernel(
 
     results |= profile_gemm<Dispatch, SGemmProfiler>(output, name + "_tt", options, config, algo);
   }
+
+  return results;
+}
+
+
+
+/// Profile swizzle-raster gemm kernels
+template <typename OutputTile>
+int profile_swizzle_sgemm_kernel(
+  TestbenchOutput<GemmProblem> &output,
+  TestbenchOptions const &options,
+  Config const &config,
+  std::string const &name,
+  std::string const &algo) {
+
+  typedef perf::GemmProfiler<float, float, float, float, float> SGemmProfiler;
+
+  int results = 0;
 
   {
     typedef int index;
@@ -1321,7 +1341,11 @@ int profile_sgemm_kernel(
 int profile_sgemm(TestbenchOutput<GemmProblem> &output, TestbenchOptions const &options, Config const &config) {
   int results = 0;
 
-  results |= profile_sgemm_kernel<cutlass::Shape<8, 128, 128> >(output, options, config, "sgemm", "128x128");
+  results |= profile_simple_sgemm_kernel<cutlass::Shape<8, 128, 128> >(output, options, config, "sgemm", "128x128");
+
+#ifdef EXHAUSTIVE_PROF
+  results |= profile_swizzle_sgemm_kernel<cutlass::Shape<8, 128, 128> >(output, options, config, "sgemm", "128x128");
+#endif // defined EXHAUSTIVE_PROF
 
   return results;
 }

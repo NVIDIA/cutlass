@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -38,9 +38,13 @@ namespace cutlass {
 template <typename InputIterator, typename Fragment>
 CUTLASS_HOST_DEVICE void iterator_load(InputIterator &iterator, Fragment &fragment) {
   typename InputIterator::FragmentIterator frag_iterator(fragment);
+  CUTLASS_PRAGMA_UNROLL
   for (int d = 0; d < InputIterator::Iterations::kD; ++d) {
+    CUTLASS_PRAGMA_UNROLL
     for (int h = 0; h < InputIterator::Iterations::kH; ++h) {
+      CUTLASS_PRAGMA_UNROLL
       for (int w = 0; w < InputIterator::Iterations::kW; ++w) {
+        CUTLASS_PRAGMA_UNROLL
         for (int c = 0; c < InputIterator::Iterations::kC; ++c) {
           if (iterator.valid(d, h, w, c)) {
             iterator.load_element(reinterpret_cast<typename InputIterator::AccessType &>(
@@ -69,9 +73,13 @@ CUTLASS_HOST_DEVICE void iterator_load(InputIterator &iterator, Fragment &fragme
 template <typename OutputIterator, typename Fragment>
 CUTLASS_HOST_DEVICE void iterator_store(OutputIterator &iterator, Fragment &fragment) {
   typename OutputIterator::FragmentIterator frag_iterator(fragment);
+  CUTLASS_PRAGMA_UNROLL
   for (int d = 0; d < OutputIterator::Iterations::kD; ++d) {
+    CUTLASS_PRAGMA_UNROLL
     for (int h = 0; h < OutputIterator::Iterations::kH; ++h) {
+      CUTLASS_PRAGMA_UNROLL
       for (int w = 0; w < OutputIterator::Iterations::kW; ++w) {
+        CUTLASS_PRAGMA_UNROLL
         for (int c = 0; c < OutputIterator::Iterations::kC; ++c) {
           if (iterator.valid(d, h, w, c)) {
             iterator.store_element(reinterpret_cast<typename OutputIterator::AccessType &>(

@@ -1,5 +1,5 @@
 /***************************************************************************************************
-* Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+* Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification, are permitted
 * provided that the following conditions are met:
@@ -69,7 +69,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFloat_128x128x8_splits16, sgemm_128x256x512
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -103,7 +103,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFloat_128x128x8_splits16, sgemm_128x256x512
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -136,7 +136,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFloat_128x128x8_splits16, sgemm_128x256x512
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -170,7 +170,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFloat_128x128x8_splits16, sgemm_128x256x512
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -204,7 +204,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFloat_128x128x8_splits16, sgemm_128x256x500
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -238,7 +238,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFloat_128x128x8_splits16, sgemm_128x256x500
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -271,7 +271,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFloat_128x128x8_splits16, sgemm_128x256x500
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -305,7 +305,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFloat_128x128x8_splits16, sgemm_128x256x500
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -339,7 +339,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFp16_128x128x8_splits16, sgemm_128x256x512_
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -373,7 +373,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFp16_128x128x8_splits16, sgemm_128x256x512_
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -406,7 +406,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFp16_128x128x8_splits16, sgemm_128x256x512_
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -440,7 +440,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFp16_128x128x8_splits16, sgemm_128x256x512_
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -474,7 +474,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFp16_128x128x8_splits16, sgemm_128x256x500_
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -508,7 +508,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFp16_128x128x8_splits16, sgemm_128x256x500_
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -541,7 +541,7 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFp16_128x128x8_splits16, sgemm_128x256x500_
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -575,5 +575,5 @@ TEST(SplitK_fp16_sgemm_fp16_alphabetaFp16_128x128x8_splits16, sgemm_128x256x500_
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<SgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }

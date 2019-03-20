@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -131,7 +131,7 @@ struct TileTraitsContiguousMajor {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Tiling in which warps rake across the contiguous dimension
-template <typename Tile_, int Threads>
+template <typename Tile_, int Threads, int AccessSize = 1>
 struct TileTraitsWarpRake {
   /// Shape of tile
   typedef Tile_ Tile;
@@ -163,10 +163,10 @@ struct TileTraitsWarpRake {
   typedef Shape<1, kWarpsStrided, kWarpsContiguous * kWarpSize> ThreadShape;
 
   /// The same warp rakes along the contiguous dimension
-  typedef Shape<1, kWarpsStrided, kWarpSize> Delta;
+  typedef Shape<1, kWarpsStrided, kWarpSize * AccessSize> Delta;
 
   /// Number of iterations
-  typedef Shape<1, Tile::kH / Delta::kH, Tile::kW / ThreadShape::kW> Iterations;
+  typedef Shape<1, Tile::kH / Delta::kH, (Tile::kW / AccessSize) / ThreadShape::kW> Iterations;
 
   /// Computes the thread offset in (H, W) based on thread ID
   struct ThreadOffset {
@@ -182,7 +182,7 @@ struct TileTraitsWarpRake {
       int warp_w = (warp % kWarpsContiguous);
       int warp_h = (warp / kWarpsContiguous);
 
-      return make_Coord(0, warp_h, lane + kWarpSpanContiguous * warp_w, 0);
+      return make_Coord(0, warp_h, AccessSize * (lane + kWarpSpanContiguous * warp_w), 0);
     }
   };
 };

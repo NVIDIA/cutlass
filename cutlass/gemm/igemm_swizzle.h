@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -60,6 +60,7 @@ struct IgemmSwizzle {
 
   /// Transform a fragment.
   CUTLASS_DEVICE void transform(Fragment const& src, Fragment& dst) {
+
     // Expose src/dst as int arrays.
     int const* src_int = reinterpret_cast<int const*>(&src[0]);
     int* dst_int = reinterpret_cast<int*>(&dst[0]);

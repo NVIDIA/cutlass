@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -28,8 +28,9 @@
 */
 #pragma once
 
-#include "cutlass/fragment.h"
+#if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 610))
 
+#include "cutlass/fragment.h"
 #include "cutlass/gemm/thread_multiply_add.h"
 
 namespace cutlass {
@@ -44,6 +45,11 @@ struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, int8_t, int8_t, int>
   typedef Shape<4, 1, 1> InstructionShape;
   /// Shape of the thread-level GEMM (K-by-N-by-M)
   typedef ThreadGemmShape_ ThreadGemmShape;
+  
+  /// Thread-level GEMM (N-by-M) must be a multiple of 32.
+  static_assert((ThreadGemmShape::kH * ThreadGemmShape::kW) % 32 == 0, 
+          "Thread-level GEMM (N-by-M) must be multiple of 32");
+
   /// Aliased for compatibility. Will be removed in CUTLASS v2.0
   typedef ThreadGemmShape AccumulatorsPerThread;
   /// The number of threads per warp.
@@ -72,19 +78,18 @@ struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, int8_t, int8_t, int>
                                    Accumulators const& c,
                                    Accumulators& d) {
 
-    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 610)
     // The inputs.
     int const* a_int = reinterpret_cast<int const*>(&a[0]);
     int const* b_int = reinterpret_cast<int const*>(&b[0]);
 
     for (int j = 0; j < AccumulatorsPerThread::kH; ++j) {
       for (int i = 0; i < AccumulatorsPerThread::kW; ++i) {
+
         asm volatile("dp4a.s32.s32 %0, %1, %2, %3;"
                      : "=r"(d[j * AccumulatorsPerThread::kW + i])
                      : "r"(a_int[i]), "r"(b_int[j]), "r"(c[j * AccumulatorsPerThread::kW + i]));
       }
     }
-    #endif
   }
 };
 
@@ -92,3 +97,5 @@ struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, int8_t, int8_t, int>
 
 }  // namespace gemm
 }  // namespace cutlass
+
+#endif // if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 610))

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -98,9 +98,9 @@ struct StorageType<1> {
 template <typename Element_, int kElements_, size_t kAlignment_ = 16>
 struct Fragment : public AlignedStruct<kAlignment_> {
   /// Make sure the alignment makes sense wrt the size of elements.
-  static_assert(kAlignment_ == 16 || kAlignment_ >= sizeof(Element_), "Alignment is too small");
+  static_assert(int(kAlignment_) == 16 || int(kAlignment_) >= sizeof(Element_), "Alignment is too small");
   /// Alignment must be a power of two
-  static_assert(is_pow2<kAlignment_>::value, "Alignment must be a power of two");
+  static_assert(is_pow2<int(kAlignment_)>::value, "Alignment must be a power of two");
 
   /// This class.
   typedef Fragment<Element_, kElements_> This_;
@@ -109,27 +109,31 @@ struct Fragment : public AlignedStruct<kAlignment_> {
   /// The number of elements.
   static int const kElements = kElements_;
   /// Alignment
-  static int const kAlignment = kAlignment_;
+  static int const kAlignment = int(kAlignment_);
 
   /// Clear a fragment.
   CUTLASS_HOST_DEVICE void clear() {
     // Avoid element-wise access for sub 32b element type
     if (kAlignment_ >= 8 && (kElements * sizeof(Element)) % 8 == 0) {
       uint64_t* ptr = reinterpret_cast<uint64_t*>(storage);
+      CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < (kElements * sizeof(Element)) / 8; ++i) {
         ptr[i] = uint64_t(0);
       }
     } else if (kAlignment_ >= 4 && (kElements * sizeof(Element)) % 4 == 0) {
       uint32_t* ptr = reinterpret_cast<uint32_t*>(storage);
+      CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < (kElements * sizeof(Element)) / 4; ++i) {
         ptr[i] = uint32_t(0);
       }
     } else if (kAlignment_ >= 2 && (kElements * sizeof(Element)) % 2 == 0) {
       uint16_t* ptr = reinterpret_cast<uint16_t*>(storage);
+      CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < (kElements * sizeof(Element)) / 2; ++i) {
         ptr[i] = uint16_t(0);
       }
     } else {
+      CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < kElements; ++i) {
         storage[i] = 0;
       }
@@ -146,7 +150,7 @@ struct Fragment : public AlignedStruct<kAlignment_> {
 
  private:
   /// Storage type to use for Elements
-  typedef typename StorageType<kAlignment_>::Type StorageType;
+  typedef typename StorageType<int(kAlignment_)>::Type StorageType;
 
   /// Number of elements in the storage
   static int const kStorageCount =

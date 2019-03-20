@@ -1,5 +1,5 @@
 /***************************************************************************************************
-* Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+* Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification, are permitted
 * provided that the following conditions are met:
@@ -33,6 +33,8 @@
 
 #include "cutlass/coord.h"
 #include "cutlass/util/platform.h"
+#include "cutlass/gemm/gemm.h"
+
 namespace cutlass {
 namespace gemm {
 
@@ -47,7 +49,8 @@ struct DeviceGemm {
 #if !defined(__CUDACC_RTC__)
   /// Launch the kernels in order
   static __host__ cudaError_t launch(Params const& params) {
-    Traits::GemmTraits::KernelClass::launch(params.GemmParams);
+    //Traits::GemmTraits::KernelClass::launch(params.GemmParams);
+    Gemm<typename Traits::GemmTraits>::launch(params.GemmParams);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)
       return err;

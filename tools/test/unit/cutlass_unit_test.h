@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -29,3 +29,7 @@
 #include <gtest/gtest.h>
 #pragma diag_warning boolean_controlling_expr_is_constant
 #pragma warning( disable : 4503)
+
+#if !defined(CUTLASS_ENABLE_CUBLAS)
+#define CUTLASS_ENABLE_CUBLAS 0
+#endif

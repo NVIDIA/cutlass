@@ -1,8 +1,8 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 1.2
+# CUTLASS 1.3
 
-_CUTLASS 1.2 - October 2018_
+_CUTLASS 1.3.0 - March 2019_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
@@ -20,12 +20,17 @@ multiply-accumulate abstractions for 8-bit integer, half-precision floating
 point (FP16), single-precision floating point (FP32), and double-precision floating
 point (FP64) types.  Furthermore, CUTLASS demonstrates CUDA's WMMA API for targeting
 the programmable, high-throughput _Tensor Cores_ provided by NVIDIA's Volta architecture
-and beyond.
+and beyond. Even faster performance on Volta is possible via direct access to
+Volta Tenor Cores via `mma.sync` (added in CUDA 10.1).
 
-CUTLASS 1.2 is described in the [CUTLASS Documentation](CUTLASS.md) and the accompanying
+CUTLASS 1.3 is described in the [CUTLASS Documentation](CUTLASS.md) and the accompanying
 [Doxygen documentation](https://nvidia.github.io/cutlass).
 We describe the structure of an efficient GEMM in our talk at the
 [GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
+
+# What's New in CUTLASS 1.3
+_March 2019_
+* CUTLASS 1.3 includes an efficient GEMM implementation with the `mma.sync` instruction added in CUDA 10.1.
 
 # What's New in CUTLASS 1.2
 _October 2018_
@@ -63,8 +68,8 @@ when compiled with CUDA 10.0.
 
 # Compatibility
 
-CUTLASS performs best when compiled with the [CUDA 10.0 Toolkit](ttps://developer.nvidia.com/cuda-toolkit).
-It is compatible with CUDA 9.0, 9.1, and 9.2, but these versions of the CUDA Toolkit do not support new Turing WMMA features.
+CUTLASS performs best when compiled with the [CUDA 10.1 Toolkit](ttps://developer.nvidia.com/cuda-toolkit).
+It is also compatible with CUDA 9.0, 9.1, 9.2, and 10.0.
 
 We have tested the following environments.
 
@@ -77,7 +82,7 @@ We have tested the following environments.
 | Ubuntu 18.04 | GCC 7.3.0 |
 
 CUTLASS runs successfully on the following NVIDIA GPUs, and it is expected to be efficient on
-any Maxwell-, Pascal-, or Volta-architecture NVIDIA GPU.
+any Maxwell-, Pascal-, Volta-, and Turing-architecture NVIDIA GPUs.
 
 |**GPU**|
 |---|
@@ -220,6 +225,9 @@ Program usage:
 
   # Varies GEMM K dimension for SGEMM and IGEMM with column-major multiplicands
   $ ./tools/test/perf/cutlass_perf_test --m=10240 --n=4096 --k=1024:8192:128 --kernels=sgemm_nn,igemm_nn
+
+  # Executes GEMM kernel on Volta Tensor Cores
+  $ ./tools/test/perf/cutlass_perf_test --kernels=s884gemm_nt
 ```
 
 # About
@@ -230,7 +238,7 @@ CUTLASS is released by NVIDIA Corporation as Open Source software under the
 
 # Copyright
 
-Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -253,4 +261,3 @@ Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
   STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
-

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -39,7 +39,6 @@ using ::cutlass::TileTraits;
 using ::testing::Test;
 
 
-// TODO: Move the following to standard test helper infrastructure
 // Returns randomly initialized array
 //
 // Caller is responsible for deallocation.
@@ -90,10 +89,6 @@ TEST(TileIteratorTest, BasicCpuSideIterateTile) {
               TileThreadOffset, /*AccessSize=*/1>,
     float, IteratorAdvance::kH, MemorySpace::kGlobal> GlobalTileLoader;
   typedef GlobalTileLoader::Fragment BufferType;
-  //
-  // TODO: The following loop should probably be refactored out into standard test helper code for
-  // tile iteration.
-  //
   // Iterate: gridDim(1, 1, kDimX / kDimXPerWarp), blockDim(1, kDimXPerWarp, kDimYPerWarp)
   for (int blockIdx_x = 0; blockIdx_x < kDimX / kDimXPerWarp; blockIdx_x++) {
     for (int threadIdx_x = 0; threadIdx_x < kDimXPerWarp; threadIdx_x++) {

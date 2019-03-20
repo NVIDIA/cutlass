@@ -1,5 +1,5 @@
 /***************************************************************************************************
-* Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+* Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification, are permitted
 * provided that the following conditions are met:
@@ -54,7 +54,7 @@ TEST(SplitK_dgemm_128x128x8_splits16, dgemm_128x256x512_nn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f);
+  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -81,7 +81,7 @@ TEST(SplitK_dgemm_128x128x8_splits16, dgemm_128x256x512_nt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f);
+  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -108,7 +108,7 @@ TEST(SplitK_dgemm_128x128x8_splits16, dgemm_128x256x512_tn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f);
+  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -135,7 +135,7 @@ TEST(SplitK_dgemm_128x128x8_splits16, dgemm_128x256x512_tt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f);
+  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -162,7 +162,7 @@ TEST(SplitK_dgemm_128x128x8_splits16, dgemm_128x256x500_nn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f);
+  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -189,7 +189,7 @@ TEST(SplitK_dgemm_128x128x8_splits16, dgemm_128x256x500_nt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f);
+  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -216,7 +216,7 @@ TEST(SplitK_dgemm_128x128x8_splits16, dgemm_128x256x500_tn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f);
+  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -243,5 +243,5 @@ TEST(SplitK_dgemm_128x128x8_splits16, dgemm_128x256x500_tt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f);
+  run_splitK_gemm<DgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f);
 }

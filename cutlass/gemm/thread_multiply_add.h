@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -73,16 +73,27 @@ struct ThreadMultiplyAdd {
                                    FragmentB const& b,
                                    Accumulators const& c,
                                    Accumulators& d) {
+
     if(kLayout_ == MatrixLayout::kColumnMajor) {
+
+      CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < AccumulatorsPerThread::kH; ++j) {
+
+        CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < AccumulatorsPerThread::kW; ++i) {
+
           d[j * AccumulatorsPerThread::kW + i] = a[i] * b[j] + c[j * AccumulatorsPerThread::kW + i];
         }
       }
     }
     else {
+
+      CUTLASS_PRAGMA_UNROLL
       for(int i = 0; i < AccumulatorsPerThread::kW; ++i) {
+
+        CUTLASS_PRAGMA_UNROLL
         for(int j = 0; j < AccumulatorsPerThread::kH; ++j) {
+
           d[i * AccumulatorsPerThread::kH + j] = a[i] * b[j] + c[i * AccumulatorsPerThread::kH + j];
         }
       }

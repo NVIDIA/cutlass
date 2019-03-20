@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -38,7 +38,7 @@ namespace perf {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename OutputTile, int splits_count>
+template <typename OutputTile, typename threadGemmShape, typename threadReductionShape, int splits_count>
 int profile_sgemm_splitkpi_kernel(
   TestbenchOutput<GemmProblem> &output,
   TestbenchOptions const &options,
@@ -53,7 +53,8 @@ int profile_sgemm_splitkpi_kernel(
   {
     /*batched sgemm traits*/
     typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-      cutlass::MatrixLayout::kColumnMajor, OutputTile>
+      cutlass::MatrixLayout::kColumnMajor, OutputTile,
+      cutlass::gemm::LinearScaling<float>, threadGemmShape>
       SgemmTraits;
     /*batched reduction traits*/
     typedef cutlass::reduction::BatchedReductionTraits<float,
@@ -64,7 +65,7 @@ int profile_sgemm_splitkpi_kernel(
       splits_count,
       cutlass::Shape<1, 1, 128>,
       cutlass::Shape<1, 1, 64>,
-      cutlass::Shape<1, 1, 2> >
+      threadReductionShape >
       BatchedReductionTraits;
 
     // create a device gemm 
@@ -77,7 +78,8 @@ int profile_sgemm_splitkpi_kernel(
   {
     /*batched sgemm traits*/
     typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kColumnMajor,
-      cutlass::MatrixLayout::kRowMajor, OutputTile>
+      cutlass::MatrixLayout::kRowMajor, OutputTile,
+      cutlass::gemm::LinearScaling<float>, threadGemmShape>
       SgemmTraits;
     /*batched reduction traits*/
     typedef cutlass::reduction::BatchedReductionTraits<float,
@@ -88,7 +90,7 @@ int profile_sgemm_splitkpi_kernel(
       splits_count,
       cutlass::Shape<1, 1, 128>,
       cutlass::Shape<1, 1, 64>,
-      cutlass::Shape<1, 1, 2> >
+      threadReductionShape >
       BatchedReductionTraits;
 
     // create a device gemm 
@@ -101,7 +103,8 @@ int profile_sgemm_splitkpi_kernel(
   {
     /*batched sgemm traits*/
     typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-      cutlass::MatrixLayout::kColumnMajor, OutputTile>
+      cutlass::MatrixLayout::kColumnMajor, OutputTile,
+      cutlass::gemm::LinearScaling<float>, threadGemmShape>
       SgemmTraits;
     /*batched reduction traits*/
     typedef cutlass::reduction::BatchedReductionTraits<float,
@@ -112,7 +115,7 @@ int profile_sgemm_splitkpi_kernel(
       splits_count,
       cutlass::Shape<1, 1, 128>,
       cutlass::Shape<1, 1, 64>,
-      cutlass::Shape<1, 1, 2> >
+      threadReductionShape >
       BatchedReductionTraits;
 
     // create a device gemm 
@@ -125,7 +128,8 @@ int profile_sgemm_splitkpi_kernel(
   {
     /*batched sgemm traits*/
     typedef cutlass::gemm::SgemmTraits<cutlass::MatrixLayout::kRowMajor,
-      cutlass::MatrixLayout::kRowMajor, OutputTile>
+      cutlass::MatrixLayout::kRowMajor, OutputTile,
+      cutlass::gemm::LinearScaling<float>, threadGemmShape>
       SgemmTraits;
     /*batched reduction traits*/
     typedef cutlass::reduction::BatchedReductionTraits<float,
@@ -136,7 +140,7 @@ int profile_sgemm_splitkpi_kernel(
       splits_count,
       cutlass::Shape<1, 1, 128>,
       cutlass::Shape<1, 1, 64>,
-      cutlass::Shape<1, 1, 2> >
+      threadReductionShape >
       BatchedReductionTraits;
 
     // create a device gemm 
@@ -153,25 +157,143 @@ int profile_sgemm_splitkpi_kernel(
 /// Profiles all SGEMM tile sizes
 int profile_sgemm_splitkpi(TestbenchOutput<GemmProblem> &output, TestbenchOptions const &options, Config const &config) {
   int results = 0;
+  /*128x128x8*/
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 5 >(output, options, config, "sgemm_128x128x8_splitk_pi_split5", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 8 >(output, options, config, "sgemm_128x128x8_splitk_pi_split8", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 10 >(output, options, config, "sgemm_128x128x8_splitk_pi_split10", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 16 >(output, options, config, "sgemm_128x128x8_splitk_pi_split16", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 20 >(output, options, config, "sgemm_128x128x8_splitk_pi_split20", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 24 >(output, options, config, "sgemm_128x128x8_splitk_pi_split24", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 28 >(output, options, config, "sgemm_128x128x8_splitk_pi_split28", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 32 >(output, options, config, "sgemm_128x128x8_splitk_pi_split32", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 40 >(output, options, config, "sgemm_128x128x8_splitk_pi_split40", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 48 >(output, options, config, "sgemm_128x128x8_splitk_pi_split48", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 56 >(output, options, config, "sgemm_128x128x8_splitk_pi_split56", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 64 >(output, options, config, "sgemm_128x128x8_splitk_pi_split64", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 72 >(output, options, config, "sgemm_128x128x8_splitk_pi_split72", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 80 >(output, options, config, "sgemm_128x128x8_splitk_pi_split80", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 88 >(output, options, config, "sgemm_128x128x8_splitk_pi_split88", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 96 >(output, options, config, "sgemm_128x128x8_splitk_pi_split96", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 104 >(output, options, config, "sgemm_128x128x8_splitk_pi_split104", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 112 >(output, options, config, "sgemm_128x128x8_splitk_pi_split112", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 120 >(output, options, config, "sgemm_128x128x8_splitk_pi_split120", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 128 >(output, options, config, "sgemm_128x128x8_splitk_pi_split128", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 136 >(output, options, config, "sgemm_128x128x8_splitk_pi_split136", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 144 >(output, options, config, "sgemm_128x128x8_splitk_pi_split144", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 152 >(output, options, config, "sgemm_128x128x8_splitk_pi_split152", "128x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 160 >(output, options, config, "sgemm_128x128x8_splitk_pi_split160", "128x128");
 
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 128>, 32 >(output, options, config, "sgemm_128x128x8_splitk_pi_split32", "128x128");
-
+#ifdef EXHAUSTIVE_PROF
   /*128x64x8*/
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, 8 >(output, options, config, "sgemm_128x64x8_splitk_pi_split8", "128x64");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, 16 >(output, options, config, "sgemm_128x64x8_splitk_pi_split16", "128x64");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, 20 >(output, options, config, "sgemm_128x64x8_splitk_pi_split20", "128x64");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, 24 >(output, options, config, "sgemm_128x64x8_splitk_pi_split24", "128x64");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, 28 >(output, options, config, "sgemm_128x64x8_splitk_pi_split28", "128x64");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, 32 >(output, options, config, "sgemm_128x64x8_splitk_pi_split32", "128x64");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, 64 >(output, options, config, "sgemm_128x64x8_splitk_pi_split64", "128x64");
-  /*128x32x8*/
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, 8 >(output, options, config, "sgemm_128x32x8_splitk_pi_split8", "128x32");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, 16 >(output, options, config, "sgemm_128x32x8_splitk_pi_split16", "128x32");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, 20 >(output, options, config, "sgemm_128x32x8_splitk_pi_split20", "128x32");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, 24 >(output, options, config, "sgemm_128x32x8_splitk_pi_split24", "128x32");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, 28 >(output, options, config, "sgemm_128x32x8_splitk_pi_split28", "128x32");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, 32 >(output, options, config, "sgemm_128x32x8_splitk_pi_split32", "128x32");
-  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, 64 >(output, options, config, "sgemm_128x32x8_splitk_pi_split64", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 5 >(output, options, config, "sgemm_128x64x8_splitk_pi_split5", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 8 >(output, options, config, "sgemm_128x64x8_splitk_pi_split8", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 10 >(output, options, config, "sgemm_128x64x8_splitk_pi_split10", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 16 >(output, options, config, "sgemm_128x64x8_splitk_pi_split16", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 20 >(output, options, config, "sgemm_128x64x8_splitk_pi_split20", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 24 >(output, options, config, "sgemm_128x64x8_splitk_pi_split24", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 28 >(output, options, config, "sgemm_128x64x8_splitk_pi_split28", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 32 >(output, options, config, "sgemm_128x64x8_splitk_pi_split32", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 40 >(output, options, config, "sgemm_128x64x8_splitk_pi_split40", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 48 >(output, options, config, "sgemm_128x64x8_splitk_pi_split48", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 56 >(output, options, config, "sgemm_128x64x8_splitk_pi_split56", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 64 >(output, options, config, "sgemm_128x64x8_splitk_pi_split64", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 72 >(output, options, config, "sgemm_128x64x8_splitk_pi_split72", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 80 >(output, options, config, "sgemm_128x64x8_splitk_pi_split80", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 88 >(output, options, config, "sgemm_128x64x8_splitk_pi_split88", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 96 >(output, options, config, "sgemm_128x64x8_splitk_pi_split96", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 104 >(output, options, config, "sgemm_128x64x8_splitk_pi_split104", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 112 >(output, options, config, "sgemm_128x64x8_splitk_pi_split112", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 120 >(output, options, config, "sgemm_128x64x8_splitk_pi_split120", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 128 >(output, options, config, "sgemm_128x64x8_splitk_pi_split128", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 136 >(output, options, config, "sgemm_128x64x8_splitk_pi_split136", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 144 >(output, options, config, "sgemm_128x64x8_splitk_pi_split144", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 152 >(output, options, config, "sgemm_128x64x8_splitk_pi_split152", "128x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 160 >(output, options, config, "sgemm_128x64x8_splitk_pi_split160", "128x64");
+
+  /*128x32x8*/ 
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 5  >(output, options, config, "sgemm_128x32x8_splitk_pi_split5", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 8  >(output, options, config, "sgemm_128x32x8_splitk_pi_split8", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 10 >(output, options, config, "sgemm_128x32x8_splitk_pi_split10", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 16 >(output, options, config, "sgemm_128x32x8_splitk_pi_split16", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 20 >(output, options, config, "sgemm_128x32x8_splitk_pi_split20", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 24 >(output, options, config, "sgemm_128x32x8_splitk_pi_split24", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 28 >(output, options, config, "sgemm_128x32x8_splitk_pi_split28", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 32 >(output, options, config, "sgemm_128x32x8_splitk_pi_split32", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 40 >(output, options, config, "sgemm_128x32x8_splitk_pi_split40", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 48 >(output, options, config, "sgemm_128x32x8_splitk_pi_split48", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 56 >(output, options, config, "sgemm_128x32x8_splitk_pi_split56", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 64 >(output, options, config, "sgemm_128x32x8_splitk_pi_split64", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 72 >(output, options, config, "sgemm_128x32x8_splitk_pi_split72", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 80 >(output, options, config, "sgemm_128x32x8_splitk_pi_split80", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 88 >(output, options, config, "sgemm_128x32x8_splitk_pi_split88", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 96 >(output, options, config, "sgemm_128x32x8_splitk_pi_split96", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 104 >(output, options, config, "sgemm_128x32x8_splitk_pi_split104", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 112 >(output, options, config, "sgemm_128x32x8_splitk_pi_split112", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 120 >(output, options, config, "sgemm_128x32x8_splitk_pi_split120", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 128 >(output, options, config, "sgemm_128x32x8_splitk_pi_split128", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 136 >(output, options, config, "sgemm_128x32x8_splitk_pi_split136", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 144 >(output, options, config, "sgemm_128x32x8_splitk_pi_split144", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 152 >(output, options, config, "sgemm_128x32x8_splitk_pi_split152", "128x32");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 32, 128>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 160 >(output, options, config, "sgemm_128x32x8_splitk_pi_split160", "128x32");
+  
+  /*64x128*/
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 5 >(output, options, config, "sgemm_64x128x8_splitk_pi_split5", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 8 >(output, options, config, "sgemm_64x128x8_splitk_pi_split8", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 10 >(output, options, config, "sgemm_64x128x8_splitk_pi_split10", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 16 >(output, options, config, "sgemm_64x128x8_splitk_pi_split16", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 20 >(output, options, config, "sgemm_64x128x8_splitk_pi_split20", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 24 >(output, options, config, "sgemm_64x128x8_splitk_pi_split24", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 28 >(output, options, config, "sgemm_64x128x8_splitk_pi_split28", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 32 >(output, options, config, "sgemm_64x128x8_splitk_pi_split32", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 40 >(output, options, config, "sgemm_64x128x8_splitk_pi_split40", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 48 >(output, options, config, "sgemm_64x128x8_splitk_pi_split48", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 56 >(output, options, config, "sgemm_64x128x8_splitk_pi_split56", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 64 >(output, options, config, "sgemm_64x128x8_splitk_pi_split64", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 72 >(output, options, config, "sgemm_64x128x8_splitk_pi_split72", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 80 >(output, options, config, "sgemm_64x128x8_splitk_pi_split80", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 88 >(output, options, config, "sgemm_64x128x8_splitk_pi_split88", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 96 >(output, options, config, "sgemm_64x128x8_splitk_pi_split96", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 104 >(output, options, config, "sgemm_64x128x8_splitk_pi_split104", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 112 >(output, options, config, "sgemm_64x128x8_splitk_pi_split112", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 120 >(output, options, config, "sgemm_64x128x8_splitk_pi_split120", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 128 >(output, options, config, "sgemm_64x128x8_splitk_pi_split128", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 136 >(output, options, config, "sgemm_64x128x8_splitk_pi_split136", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 144 >(output, options, config, "sgemm_64x128x8_splitk_pi_split144", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 152 >(output, options, config, "sgemm_64x128x8_splitk_pi_split152", "64x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 1>, 160 >(output, options, config, "sgemm_64x128x8_splitk_pi_split160", "64x128");
+  
+  /*32x128*/
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 5 >(output, options, config, "sgemm_32x128x8_splitk_pi_split5", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 8 >(output, options, config, "sgemm_32x128x8_splitk_pi_split8", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 10 >(output, options, config, "sgemm_32x128x8_splitk_pi_split10", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 16 >(output, options, config, "sgemm_32x128x8_splitk_pi_split16", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 20 >(output, options, config, "sgemm_32x128x8_splitk_pi_split20", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 24 >(output, options, config, "sgemm_32x128x8_splitk_pi_split24", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 28 >(output, options, config, "sgemm_32x128x8_splitk_pi_split28", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 32 >(output, options, config, "sgemm_32x128x8_splitk_pi_split32", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 40 >(output, options, config, "sgemm_32x128x8_splitk_pi_split40", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 48 >(output, options, config, "sgemm_32x128x8_splitk_pi_split48", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 56 >(output, options, config, "sgemm_32x128x8_splitk_pi_split56", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 64 >(output, options, config, "sgemm_32x128x8_splitk_pi_split64", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 72 >(output, options, config, "sgemm_32x128x8_splitk_pi_split72", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 2>, 80 >(output, options, config, "sgemm_32x128x8_splitk_pi_split80", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 1>, 88 >(output, options, config, "sgemm_32x128x8_splitk_pi_split88", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 1>, 96 >(output, options, config, "sgemm_32x128x8_splitk_pi_split96", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 1>, 104 >(output, options, config, "sgemm_32x128x8_splitk_pi_split104", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 1>, 112 >(output, options, config, "sgemm_32x128x8_splitk_pi_split112", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 1>, 120 >(output, options, config, "sgemm_32x128x8_splitk_pi_split120", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 1>, 128 >(output, options, config, "sgemm_32x128x8_splitk_pi_split128", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 1>, 136 >(output, options, config, "sgemm_32x128x8_splitk_pi_split136", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 1>, 144 >(output, options, config, "sgemm_32x128x8_splitk_pi_split144", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 1>, 152 >(output, options, config, "sgemm_32x128x8_splitk_pi_split152", "32x128");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 128, 32>, cutlass::Shape<8, 8, 4>, cutlass::Shape<1, 1, 1>, 160 >(output, options, config, "sgemm_32x128x8_splitk_pi_split160", "32x128");
+
+  /*64x64*/
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 5 >(output, options, config, "sgemm_64x64x8_splitk_pi_split5", "64x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 8 >(output, options, config, "sgemm_64x64x8_splitk_pi_split8", "64x64");
+  results |= profile_sgemm_splitkpi_kernel<cutlass::Shape<8, 64, 64>, cutlass::Shape<8, 8, 8>, cutlass::Shape<1, 1, 2>, 10 >(output, options, config, "sgemm_64x64x8_splitk_pi_split10", "64x64");
+
+#endif //#ifdef EXHAUSTIVE_PROF
 
   return results;
 }

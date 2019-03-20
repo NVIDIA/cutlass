@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -47,8 +47,10 @@
 // CUTLASS includes needed for WMMA GEMM kernel
 #include "cutlass/wmma_matrix.h"
 
+#pragma warning( disable : 4503)
+
 // This example works only when this MACRO is defined in "cutlass/wmma_matrix.h"
-#ifdef CUTLASS_USE_SUBBYTE_WMMA
+#ifdef CUTLASS_USE_INT_WMMA
 
 // Defines cutlass::gemm::Gemm, the generic Gemm computation template class.
 #include "cutlass/gemm/gemm.h"
@@ -273,7 +275,7 @@ cudaError_t TestCutlassGemm(int M, int N, int K, int alpha, int beta) {
   // Passed error check
   return cudaSuccess;
 }
-#endif // defined CUTLASS_USE_SUBBYTE_WMMA
+#endif // defined CUTLASS_USE_INT_WMMA
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -285,7 +287,7 @@ cudaError_t TestCutlassGemm(int M, int N, int K, int alpha, int beta) {
 //
 int main(int argc, const char *arg[]) {
 
-#ifdef CUTLASS_USE_SUBBYTE_WMMA
+#ifdef CUTLASS_USE_INT_WMMA
   // Properties of CUDA device
   cudaDeviceProp device_properties;
 
@@ -299,8 +301,8 @@ int main(int argc, const char *arg[]) {
     return -1;
   }
 
-  if ((device_properties.major * 10 +  device_properties.minor) < 75) {
-    std::cerr << "This example needs to run on a Turing device." << std::endl;
+  if ((device_properties.major * 10 +  device_properties.minor) < 72) {
+    std::cerr << "This example needs to run on a device which has at least 7.2 compute capability." << std::endl;
     return -1;
   }
 
@@ -344,9 +346,9 @@ int main(int argc, const char *arg[]) {
   return result == cudaSuccess ? 0 : -1;
 
 #else
-  std::cerr << "CUTLASS WMMA GEMM targeting Turing Tensor Cores features requires CUDA 10." << std::endl;
+  std::cerr << "CUTLASS WMMA GEMM targeting Turing Tensor Cores features requires compute capability 7.2." << std::endl;
   return -1;
-#endif // defined CUTLASS_USE_SUBBYTE_WMMA
+#endif // defined CUTLASS_USE_INT_WMMA
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

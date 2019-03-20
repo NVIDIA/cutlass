@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -22,6 +22,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+
+#if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 610))
+
 #include "cutlass_unit_test.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/igemm_traits.h"
@@ -358,3 +361,5 @@ TEST(Igemm_128x32x32, igemm_256x128x32_tt) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#endif // if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 610))

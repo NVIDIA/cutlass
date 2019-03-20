@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -66,6 +66,11 @@ struct Load {
     dst = *reinterpret_cast<AccessType const*>(pointer + offset);
   }
 
+  /// The clear function.
+  static CUTLASS_HOST_DEVICE void clear(AccessType& dst) {
+    dst = 0;
+  }
+
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -79,6 +84,11 @@ struct Load<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_
   /// The load function.
   static CUTLASS_HOST_DEVICE void load(AccessType& dst, Scalar_ const* pointer, int offset) {
     reinterpret_cast<uint16_t&>(dst) = reinterpret_cast<uint16_t const*>(&pointer[offset])[0];
+  }
+
+  /// The clear function.
+  static CUTLASS_HOST_DEVICE void clear(AccessType& dst) {
+    dst = uint16_t(0);
   }
 };
 
@@ -94,6 +104,10 @@ struct Load<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_
     dst.registers[0] = reinterpret_cast<uint32_t const*>(&pointer[offset])[0];
   }
 
+  /// The clear function.
+  static CUTLASS_HOST_DEVICE void clear(AccessType& dst) {
+    dst.registers[0] = uint32_t(0);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -109,6 +123,13 @@ struct Load<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_
     dst.registers[0] = tmp.x;
     dst.registers[1] = tmp.y;
   }
+
+  /// The clear function.
+  static CUTLASS_HOST_DEVICE void clear(AccessType& dst) {
+    uint2 const zero = make_uint2(0, 0);
+    dst.registers[0] = zero.x;
+    dst.registers[1] = zero.y;
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -123,6 +144,13 @@ struct Load<double, 2, Memory_, FragmentElementType::kScalar, double, kStride, 1
     double2 tmp = reinterpret_cast<double2 const*>(&pointer[offset])[0];
     dst[0] = tmp.x;
     dst[1] = tmp.y;
+  }
+
+  /// The clear function.
+  static CUTLASS_HOST_DEVICE void clear(AccessType& dst) {
+    double2 zero = make_double2(0, 0);
+    dst[0] = zero.x;
+    dst[1] = zero.y;
   }
 };
 
@@ -145,6 +173,15 @@ struct Load<half, 8, Memory_, FragmentElementType::kScalar, half, kStride, 16> {
     dst.registers[2] = tmp.x;
     dst.registers[3] = tmp.y;
   }
+
+  /// The clear function.
+  static CUTLASS_HOST_DEVICE void clear(AccessType& dst) {
+    int2 zero = make_int2(0,0);
+    dst.registers[0] = zero.x;
+    dst.registers[1] = zero.y;
+    dst.registers[2] = zero.x;
+    dst.registers[3] = zero.y;
+  }
 };
 
 #endif
@@ -163,6 +200,15 @@ struct Load<Scalar_, kAccessSize, Memory_, FragmentElementType::kScalar, Scalar_
     dst.registers[1] = tmp.y;
     dst.registers[2] = tmp.z;
     dst.registers[3] = tmp.w;
+  }
+
+  /// The clear function.
+  static CUTLASS_HOST_DEVICE void clear(AccessType& dst) {
+    uint4 zero = make_uint4(0, 0, 0, 0);
+    dst.registers[0] = zero.x;
+    dst.registers[1] = zero.y;
+    dst.registers[2] = zero.z;
+    dst.registers[3] = zero.w;
   }
 };
 

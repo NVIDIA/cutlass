@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -284,10 +284,14 @@ class GemmTestbed {
   /// Constructs a basic workspace
   GemmTestbed(InitialDistribution const &_dist = InitialDistribution())
       : initial_distribution(_dist) {
+    #if CUTLASS_ENABLE_CUBLAS
     status = cublasCreate(&handle);
     if (status != CUBLAS_STATUS_SUCCESS) {
       throw cutlass::cuda_exception("Failed to create CUBLAS handle");
     }
+    #else
+    status = CUBLAS_STATUS_NOT_INITIALIZED;
+    #endif
   }
 
   /// Constructs a workspace for verifying GEMM, assumes
@@ -296,15 +300,26 @@ class GemmTestbed {
               cublasGemmAlgo_t algorithm_ = CUBLAS_GEMM_DEFAULT,
               InitialDistribution const &_dist = InitialDistribution())
       : problem(_problem), initial_distribution(_dist) {
+    #if CUTLASS_ENABLE_CUBLAS
     status = cublasCreate(&handle);
     if (status != CUBLAS_STATUS_SUCCESS) {
       throw cutlass::cuda_exception("Failed to create CUBLAS handle");
     }
+    #else
+    status = CUBLAS_STATUS_NOT_INITIALIZED;
+    #endif
 
     resize(problem);
   }
 
-  ~GemmTestbed() { status = cublasDestroy(handle); }
+  /// Destructs the GEMM testbed
+  ~GemmTestbed() {
+    #if CUTLASS_ENABLE_CUBLAS
+    if (status != CUBLAS_STATUS_NOT_INITIALIZED) {
+      status = cublasDestroy(handle);
+    }
+    #endif
+  }
 
   /// Returns true if the last CUBLAS call returned successfully
   bool good() const { return status == CUBLAS_STATUS_SUCCESS; }
@@ -388,6 +403,7 @@ class GemmTestbed {
 
   /// Launches the cuBLAS GEMM - does not initialize output matrix
   cublasStatus_t launch_cublas(cublasGemmAlgo_t algo) {
+    #if CUTLASS_ENABLE_CUBLAS
     if (problem.batch_count == 1) {
       CublasDispatch dispatch;
 
@@ -441,6 +457,9 @@ class GemmTestbed {
 
       return status;
     }
+    #else
+    return CUBLAS_STATUS_NOT_SUPPORTED;
+    #endif
   }
 
   /// Verifies the 'test' tensor with 'ref'

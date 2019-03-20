@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -42,7 +42,7 @@
 #include "cutlass/gemm/gemm_operand.h"
 #include "cutlass/gemm/gemm_shared_stream.h"
 #include "cutlass/gemm/threadblock_swizzle.h"
-#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/gemm_mainloop.h"
 namespace cutlass {
 namespace gemm {
 
@@ -359,7 +359,7 @@ struct GemmTraits {
     ClearAccumulators_> This_;
 
   /// The struct that consumes this Traits
-  typedef typename cutlass::gemm::Gemm<This_> KernelClass;
+  typedef typename cutlass::gemm::GemmMainloop<This_> KernelClass;
 
   /// The configuration.
   typedef GemmConfig_ GemmConfig;
@@ -544,16 +544,26 @@ struct GemmTraits {
 
     /// Helper to construct a partitionedK GEMM params
     template <typename GemmDesc_>
-    CUTLASS_HOST_DEVICE int initialize(GemmDesc_ const& partitonK_desc, Index partitionK_count_) {
+    CUTLASS_HOST_DEVICE int initialize(GemmDesc_ const& partitonK_desc,
+      Index partitionK_count_,
+      Index partitionK_multiple_ = 1 // each partition will be mulitples of partitionK_multiple_
+    ) {
       // partitionK GEMM is a specialized batched stried gemm with different K ranges per batch
       // the problem_size of each batch is (lastK_size, n, m)
       // add more comments here
       // the k range for every batch excpet the last one
       //assert(partitionK_count_ > 0);
       partitionK_range = partitonK_desc.problem_size.k() / partitionK_count_;
+      partitionK_range = partitionK_range - (partitionK_range % partitionK_multiple_);
       // the k range of the last batch
       // int lastK_range = (partitonK_desc.problem_size.k() % partitionK_range) + partitionK_range;
       int lastK_range = partitonK_desc.problem_size.k() - partitionK_range * (partitionK_count_ - 1);
+
+      assert((partitionK_range % partitionK_multiple_) == 0);
+      assert(partitionK_range > 0);
+      assert((lastK_range % partitionK_multiple_) == 0);
+      assert(lastK_range > 0);
+
       int k_size = lastK_range;
       int lda = partitonK_desc.A.stride(0);
       int ldb = partitonK_desc.B.stride(0);
@@ -641,7 +651,8 @@ struct GemmTraits {
                                        Index ldc,
                                        ScalarD* d_d,
                                        Index ldd,
-                                       Index partitionK_count_) {
+                                       Index partitionK_count_,
+                                       Index partitionK_multiple_ = 1) {
 
       GemmDesc<ScalarA, ScalarB, ScalarC, ScalarD, typename Epilogue::Scalar> desc(
         GemmCoord(k, n, m, 1),
@@ -654,7 +665,7 @@ struct GemmTraits {
       );
 
 
-      return this->initialize(desc, partitionK_count_);
+      return this->initialize(desc, partitionK_count_, partitionK_multiple_);
     }
   };
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -29,8 +29,8 @@
 
 #include "cutlass/wmma_matrix.h"
 #ifdef CUTLASS_USE_WMMA_API
-#ifdef CUTLASS_USE_SUBBYTE_WMMA
-
+#ifdef CUTLASS_USE_INT_WMMA
+#pragma warning( disable : 4503)
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/wmma_gemm_traits.h"
 #include "tools/test/perf/gemm/cutlass_dispatch.h"
@@ -92,6 +92,7 @@ struct WmmaIntegerGemmDispatch {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#ifdef CUTLASS_USE_SUBBYTE_WMMA
 template<typename Traits>
 struct WmmaIntegerGemmDispatch<Traits,
                                cutlass::Vector<cutlass::int4_t, 8>,
@@ -209,6 +210,7 @@ struct WmmaIntegerGemmDispatch<Traits,
   /// Launches kernel
   cudaError_t operator()() { return Gemm::launch(params); }
 };
+#endif //ifdef CUTLASS_USE_SUBBYTE_WMMA
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -221,7 +223,7 @@ int profile_wmma_integer_gemm(TestbenchOutput<GemmProblem> &output, TestbenchOpt
   int results = 0;
 
   // compute capability check
-  if (!options.compute_capability(7, 5)) {
+  if (!options.compute_capability(7, 2)) {
     return 0;
   }
 
@@ -398,6 +400,7 @@ int profile_wmma_integer_gemm(TestbenchOutput<GemmProblem> &output, TestbenchOpt
     return 0;
   }
 
+#ifdef CUTLASS_USE_SUBBYTE_WMMA
   {
     typedef cutlass::gemm::WmmaGemmTraits<cutlass::MatrixLayout::kRowMajor,
                                           cutlass::MatrixLayout::kColumnMajor,
@@ -451,6 +454,7 @@ int profile_wmma_integer_gemm(TestbenchOutput<GemmProblem> &output, TestbenchOpt
 
     results |= profile_gemm<Dispatch, GemmProfiler>(output, "wmma_integer_gemm_u4_tn", options, config);
   }
+#endif //ifdef CUTLASS_USE_SUBBYTE_WMMA
 
   return results;
 }
@@ -461,7 +465,7 @@ int profile_wmma_integer_gemm(TestbenchOutput<GemmProblem> &output, TestbenchOpt
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#else // ! CUTLASS_USE_SUBBYTE_WMMA
+#else // ! CUTLASS_USE_INT_WMMA
 
 namespace perf {
 

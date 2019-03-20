@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -68,7 +68,6 @@ struct FragmentMultiplyAdd {
                                    FragmentB_ const& b,
                                    FragmentCd_ const& c,
                                    FragmentCd_& d) {
-
     int const kReduction = FragmentB_::kElements / FragmentCd_::kElements;
     for (int j = 0; j < FragmentCd_::kElements; ++j) {
       d[j] = b[j * kReduction + 0];

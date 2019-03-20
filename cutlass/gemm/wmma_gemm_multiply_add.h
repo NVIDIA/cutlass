@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -85,7 +85,10 @@ struct WmmaGemmMultiplyAdd {
                                    FragmentB const& b,
                                    Accumulators const& c,
                                    Accumulators& d) {
+
+    CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Iterations::kH; ++j) {
+      CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < Iterations::kW; ++i) {
         // The input elements.
         ElementA const& elt_a = a[i];
@@ -164,7 +167,10 @@ struct WmmaGemmMultiplyAdd <MatrixLayout::kRowMajor,
                                    FragmentB const& b,
                                    Accumulators const& c,
                                    Accumulators& d) {
+
+    CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Iterations::kH; ++j) {
+      CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < Iterations::kW; ++i) {
         // The input elements.
         ElementA const& elt_a = a[i];
@@ -249,7 +255,10 @@ struct WmmaGemmMultiplyAdd <MatrixLayout::kRowMajor,
                                    FragmentB const& b,
                                    Accumulators const& c,
                                    Accumulators& d) {
+
+    CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Iterations::kH; ++j) {
+      CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < Iterations::kW; ++i) {
         // The input elements.
         ElementA const& elt_a = a[i];
@@ -329,7 +338,10 @@ struct WmmaGemmMultiplyAdd <MatrixLayout::kRowMajor,
                                    FragmentB const& b,
                                    Accumulators const& c,
                                    Accumulators& d) {
+
+    CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Iterations::kH; ++j) {
+      CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < Iterations::kW; ++i) {
         // The input elements.
         ElementA const& elt_a = a[i];

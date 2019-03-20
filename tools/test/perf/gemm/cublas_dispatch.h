@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -67,6 +67,7 @@ struct CublasGemmDispatch {
                             CDeviceType *C,
                             int ldc,
                             cublasGemmAlgo_t algorithm) {
+    #if CUTLASS_ENABLE_CUBLAS
     return cublasGemmEx(handle,
                         convert(layout_a),
                         convert(layout_b),
@@ -86,6 +87,9 @@ struct CublasGemmDispatch {
                         ldc,
                         cutlass::TypeTraits<AccumulatorDeviceType>::cublas_type,
                         algorithm);
+    #else
+    return CUBLAS_STATUS_NOT_SUPPORTED;
+    #endif
   }
 };
 
@@ -131,7 +135,7 @@ struct CublasBatchedStridedGemmDispatch {
     long long int batch_stride_C,
     int batch_count,
     cublasGemmAlgo_t algorithm) {
-#if defined(CUDA_VERSION) && CUDA_VERSION >= 9010
+    #if CUTLASS_ENABLE_CUBLAS && defined(CUDA_VERSION) && CUDA_VERSION >= 9010
     return cublasGemmStridedBatchedEx(handle,
       convert(layout_a),
       convert(layout_b),
@@ -155,9 +159,9 @@ struct CublasBatchedStridedGemmDispatch {
       batch_count,
       cutlass::TypeTraits<AccumulatorDeviceType>::cublas_type,
       algorithm);
-#else
+    #else
     return CUBLAS_STATUS_NOT_SUPPORTED;
-#endif
+    #endif
   }
 };
 

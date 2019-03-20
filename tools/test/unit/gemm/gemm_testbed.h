@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -204,7 +204,7 @@ struct GemmTestbed {
   struct RandomBitGenerator {
     RandomBitGenerator(int seed = -1) { srand(seed); }
 
-    T operator()() {
+     T operator()() {
       uint32_t val = 0;
       for (int i = 0; i < 32; i++) {
         val |= rand() % 2;
@@ -268,7 +268,10 @@ struct GemmTestbed {
 
   /// partitionK count
   int partitionK_count;
-  
+
+  /// each partition should be mulitples of partitionK_multiple
+  int partitionK_multiple;
+
   /// distance between A[i] and A[i+1] for strided batched gemm
   long long int batch_stride_A;
 
@@ -316,13 +319,19 @@ struct GemmTestbed {
         algorithm(algorithm_),
         batch_count(1),
         partitionK_count(1),
+        partitionK_multiple(1),
         batch_stride_A(static_cast<long long int>(0)),
         batch_stride_B(static_cast<long long int>(0)),
         batch_stride_C(static_cast<long long int>(0)) {
+
+    #if CUTLASS_ENABLE_CUBLAS
     status = cublasCreate(&handle);
     if (status != CUBLAS_STATUS_SUCCESS) {
       throw cutlass::cuda_exception("Failed to create CUBLAS handle");
     }
+    #else
+    status = CUBLAS_STATUS_NOT_INITIALIZED;
+    #endif
 
     resize(A, M_, K_, layout_a);
     resize(B, K_, N_, layout_b);
@@ -355,6 +364,7 @@ struct GemmTestbed {
         algorithm(algorithm_),
         batch_count(1),
         partitionK_count(1),
+        partitionK_multiple(1),
         batch_stride_A(static_cast<long long int>(0)),
         batch_stride_B(static_cast<long long int>(0)),
         batch_stride_C(static_cast<long long int>(0)) {
@@ -389,13 +399,19 @@ struct GemmTestbed {
         algorithm(algorithm_),
         batch_count(1),
         partitionK_count(1),
+        partitionK_multiple(1),
         batch_stride_A(static_cast<long long int>(0)),
         batch_stride_B(static_cast<long long int>(0)),
         batch_stride_C(static_cast<long long int>(0)) {
+    
+    #if CUTLASS_ENABLE_CUBLAS
     status = cublasCreate(&handle);
     if (status != CUBLAS_STATUS_SUCCESS) {
       throw cutlass::cuda_exception("Failed to create CUBLAS handle");
     }
+    #else
+    status = CUBLAS_STATUS_NOT_INITIALIZED;
+    #endif
 
     resize(A, M_, K_, layout_a, lda);
     resize(B, K_, N_, layout_b, ldb);
@@ -428,6 +444,7 @@ struct GemmTestbed {
         algorithm(algorithm_),
         batch_count(1),
         partitionK_count(1),
+        partitionK_multiple(1),
         batch_stride_A(static_cast<long long int>(0)),
         batch_stride_B(static_cast<long long int>(0)),
         batch_stride_C(static_cast<long long int>(0)) {
@@ -462,12 +479,17 @@ struct GemmTestbed {
         beta(beta_),
         algorithm(algorithm_),
         batch_count(batch_count_),
-        partitionK_count(1) {
+        partitionK_count(1),
+        partitionK_multiple(1) {
 
+    #if CUTLASS_ENABLE_CUBLAS
     status = cublasCreate(&handle);
     if (status != CUBLAS_STATUS_SUCCESS) {
       throw cutlass::cuda_exception("Failed to create CUBLAS handle");
     }
+    #else
+    status = CUBLAS_STATUS_NOT_INITIALIZED;
+    #endif
 
     resize(A, M_, K_ * batch_count, layout_a);
     resize(B, K_ * batch_count, N_, layout_b);
@@ -491,6 +513,7 @@ struct GemmTestbed {
   GemmTestbed(int M_,
               int N_,
               std::pair<int, int> K_pair_, /*(k, partitionK_count)*/
+              int partitionK_multiple_, /*each partition should be mulitiple of partitionK_multiple*/
               cublasOperation_t layout_a,
               cublasOperation_t layout_b,
               Scalar alpha_ = Scalar(1),
@@ -504,12 +527,18 @@ struct GemmTestbed {
     beta(beta_),
     algorithm(algorithm_),
     batch_count(1),
-    partitionK_count(K_pair_.second) {
+    partitionK_count(K_pair_.second),
+    partitionK_multiple(partitionK_multiple_) {
 
+    #if CUTLASS_ENABLE_CUBLAS
     status = cublasCreate(&handle);
     if (status != CUBLAS_STATUS_SUCCESS) {
       throw cutlass::cuda_exception("Failed to create CUBLAS handle");
     }
+    #else
+    status = CUBLAS_STATUS_NOT_INITIALIZED;
+    #endif
+
     resize(A, M_, K_pair_.first, layout_a);
     resize(B, K_pair_.first, N_, layout_b);
     resize(C_initial, M_, N_ * partitionK_count, layout_c);
@@ -521,6 +550,7 @@ struct GemmTestbed {
     // we can use a combination of batched stried gemm and regular gemm
     // to simulation partitionedK, which is what we will do for reference code
     int partitionK_size = K() / partitionK_count;
+    partitionK_size = partitionK_size - (partitionK_size % partitionK_multiple);
     batch_stride_A = (layout_a == CUBLAS_OP_N) ? M_ * partitionK_size : partitionK_size;
     batch_stride_B = (layout_b == CUBLAS_OP_N) ? partitionK_size : partitionK_size * N_;
     batch_stride_C = M_ * N_;
@@ -528,9 +558,11 @@ struct GemmTestbed {
 
   /// Destructs the GEMM testbed
   ~GemmTestbed() {
+    #if CUTLASS_ENABLE_CUBLAS
     if (status != CUBLAS_STATUS_NOT_INITIALIZED) {
       status = cublasDestroy(handle);
     }
+    #endif
   }
 
   /// Returns true if the last CUBLAS call returned successfully
@@ -623,15 +655,16 @@ struct GemmTestbed {
     // Initialize the source matrix with a uniform distribution
     cutlass::Distribution dist;
     dist.set_uniform(-8, 8);
-    
+
     cutlass::reference::host::TensorInitialize(A.host_view(), seed, dist);
     cutlass::reference::host::TensorInitialize(B.host_view(), seed + 11, dist);
     cutlass::reference::host::TensorInitialize(C_initial.host_view(), seed + 13, dist);
-    
+
     A.sync_device();
     B.sync_device();
     C_initial.sync_device();
 
+    computed.fill(0);
   }
 
   /// Initializes binary data
@@ -673,6 +706,7 @@ struct GemmTestbed {
 
   /// Excutes an equivalent GEMM using cuBLAS
   bool execute_cublas() {
+    #if CUTLASS_ENABLE_CUBLAS
     if (partitionK_count == 1) {
         if (batch_count == 1) {
           status = cublasGemmEx(handle,
@@ -727,6 +761,7 @@ struct GemmTestbed {
       //first call strided batched gemm
 
       int partitionK_size = K() / partitionK_count;
+      partitionK_size = partitionK_size - (partitionK_size % partitionK_multiple);
       //int lastK_size = (K() % partitionK_size) + partitionK_size;
       int lastK_size = K() - partitionK_size * (partitionK_count - 1);
       status = cublasGemmStridedBatchedTemplate(handle,
@@ -770,6 +805,9 @@ struct GemmTestbed {
       return status == CUBLAS_STATUS_SUCCESS;
 
     }
+    #else
+    return false;
+    #endif
   }
 
   /// Helper function to use cublasGemmStridedBatched
@@ -892,31 +930,43 @@ struct GemmTestbed {
 
   /// Verifies the contents of computed equal cuBLAS
   bool verify_with_cublas(bool save_on_error = true, bool always_print = false) {
+
+    bool passed = false;
+
+    #if CUTLASS_ENABLE_CUBLAS
     compute_cublas();
 
     ref_cublas.sync_host();
     computed.sync_host();
 
-
-    bool passed = computed.bit_equals(ref_cublas);
+    passed = computed.bit_equals(ref_cublas);
 
     if ((!passed && save_on_error) || always_print) {
       save_workspace(computed, ref_cublas);
     }
+
+    #endif
     return passed;
   }
 
   /// Verifies the host computation with cuBLAS
   bool verify_host_with_cublas(bool save_on_error = true, bool always_print = false) {
+
+    bool passed = false;
+
+    #if CUTLASS_ENABLE_CUBLAS
+
     compute_host();
     compute_cublas();
     ref_cublas.sync_host();
 
-    bool passed = ref_host.bit_equals(ref_cublas);
+    passed = ref_host.bit_equals(ref_cublas);
 
     if ((!passed && save_on_error) || always_print) {
       save_workspace(ref_host, ref_cublas);
     }
+
+    #endif
 
     return passed;
   }
@@ -924,17 +974,21 @@ struct GemmTestbed {
   /// Verifies the reference implementation with cuBLAS
   bool verify_reference_with_cublas(bool save_on_error = true, bool always_print = false) {
 
+    bool passed = false;
+
+    #if CUTLASS_ENABLE_CUBLAS
     compute_device_reference();
     ref_device.sync_host();
 
     compute_cublas();
     ref_cublas.sync_host();
 
-    bool passed = ref_device.bit_equals(ref_cublas);
+    passed = ref_device.bit_equals(ref_cublas);
 
     if ((!passed && save_on_error) || always_print) {
       save_workspace(ref_device, ref_cublas);
     }
+    #endif
 
     return passed;
   }
@@ -948,15 +1002,26 @@ struct GemmTestbed {
     // verify on host
     passed = (passed && verify_with_host());
 
+    #if CUTLASS_ENABLE_CUBLAS
     // verify with cublas
     passed = (passed && verify_with_cublas());
+    #endif
 
     return passed;
   }
 
-  bool has_cublas_support() const { return cutlass::platform::is_same<Accumulator, Scalar>::value; }
+  bool has_cublas_support() const {
+    #if CUTLASS_ENABLE_CUBLAS
+    return cutlass::platform::is_same<Accumulator, Scalar>::value;
+    #else
+    return false;
+    #endif
+  }
 };
 
+//////////////////////////////////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////////////////////////////////////////////////
 //
 //specialization for cublasGemmStridedBatchedTemplate
 template<> inline cublasStatus_t GemmTestbed<float, float, float, float, float>::cublasGemmStridedBatchedTemplate(cublasHandle_t handle,
@@ -977,6 +1042,7 @@ template<> inline cublasStatus_t GemmTestbed<float, float, float, float, float>:
                                                                                                     int ldc,
                                                                                                     long long int stride_C,
                                                                                                     int batchCount) {
+  #if CUTLASS_ENABLE_CUBLAS
   return cublasSgemmStridedBatched(handle,
     transa,
     transb,
@@ -993,6 +1059,9 @@ template<> inline cublasStatus_t GemmTestbed<float, float, float, float, float>:
     ldc,
     stride_C,
     batchCount);
+  #else
+  return CUBLAS_STATUS_NOT_SUPPORTED;
+  #endif
 }
 
 template<> inline cublasStatus_t GemmTestbed<double, double, double, double, double>::cublasGemmStridedBatchedTemplate(cublasHandle_t handle,
@@ -1013,6 +1082,7 @@ template<> inline cublasStatus_t GemmTestbed<double, double, double, double, dou
                                                                                                                 int ldc,
                                                                                                                 long long int stride_C,
                                                                                                                 int batchCount) {
+  #if CUTLASS_ENABLE_CUBLAS
   return cublasDgemmStridedBatched(handle,
     transa,
     transb,
@@ -1029,6 +1099,9 @@ template<> inline cublasStatus_t GemmTestbed<double, double, double, double, dou
     ldc,
     stride_C,
     batchCount);
+  #else
+  return CUBLAS_STATUS_NOT_SUPPORTED;
+  #endif
 }
 
 template<> inline cublasStatus_t GemmTestbed<cutlass::half_t, cutlass::half_t, cutlass::half_t, cutlass::half_t, cutlass::half_t>::cublasGemmStridedBatchedTemplate(cublasHandle_t handle,
@@ -1049,6 +1122,7 @@ template<> inline cublasStatus_t GemmTestbed<cutlass::half_t, cutlass::half_t, c
                                                                                                       int ldc,
                                                                                                       long long int stride_C,
                                                                                                       int batchCount) {
+  #if CUTLASS_ENABLE_CUBLAS
   half temp_alpha = alpha->operator half();
   half temp_beta = beta->operator half();
   return cublasHgemmStridedBatched(handle,
@@ -1067,6 +1141,9 @@ template<> inline cublasStatus_t GemmTestbed<cutlass::half_t, cutlass::half_t, c
     ldc,
     stride_C,
     batchCount);
+  #else
+  return CUBLAS_STATUS_NOT_SUPPORTED;
+  #endif
 }
 
 template<> inline cublasStatus_t GemmTestbed<cutlass::half_t, cutlass::half_t, cutlass::half_t, float, float>::cublasGemmStridedBatchedTemplate(cublasHandle_t handle,
@@ -1087,6 +1164,7 @@ template<> inline cublasStatus_t GemmTestbed<cutlass::half_t, cutlass::half_t, c
                                                                                                       int ldc,
                                                                                                       long long int stride_C,
                                                                                                       int batchCount) {
+  #if CUTLASS_ENABLE_CUBLAS
   return cublasGemmStridedBatchedEx(handle,
     transa,
     transb,
@@ -1108,5 +1186,8 @@ template<> inline cublasStatus_t GemmTestbed<cutlass::half_t, cutlass::half_t, c
     batchCount,
     cutlass::TypeTraits<float>::cublas_type,
     CUBLAS_GEMM_DEFAULT);
+  #else
+  return CUBLAS_STATUS_NOT_SUPPORTED;
+  #endif
 }
 }  // namespace test

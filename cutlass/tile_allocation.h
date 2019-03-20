@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -48,7 +48,7 @@ struct TileAllocation {
   typedef Scalar_ Scalar;
 
   /// The actual storage (may differ from the scalar type)
-  typedef typename StorageType<sizeof(Scalar)>::Type Storage;
+  typedef typename StorageType<int(sizeof(Scalar))>::Type Storage;
 
   /// Size of the allocation in units of scalars
   typedef Shape_ Shape;
@@ -161,6 +161,64 @@ struct ZipTileAllocation {
   /// Returns a TensorRef object pointing to the data
   CUTLASS_DEVICE
   ConstTensorRef reference() const { return ConstTensorRef(first.reference(), second.reference()); }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Manages a pair of tile allocations as if they are one allocation
+template <typename First_, typename Second_, typename Third_>
+struct ZipTileAllocationTriple {
+  //
+  // Type definitions
+  //
+
+  /// First tensor allocation
+  typedef First_ First;
+
+  /// Second tensor allocation
+  typedef Second_ Second;
+
+  /// meta data tensor allocation
+  typedef Third_ Third;
+
+  /// Defines the tensor reference for this allocation
+  typedef Zip3TensorRef<typename First::TensorRef, 
+                        typename Second::TensorRef,
+                        typename Third::TensorRef> TensorRef;
+
+  /// Defines the tensor reference for this allocation
+  typedef Zip3TensorRef<typename First::ConstTensorRef, 
+                        typename Second::ConstTensorRef,
+                        typename Third::ConstTensorRef>
+      ConstTensorRef;
+
+  //
+  // Data members
+  //
+
+  /// First tensor allocation
+  First first;
+
+  /// Second tensor allocation
+  Second second;
+
+  /// meta data tensor
+  Third third;
+  //
+  // Methods
+  //
+
+  /// Returns a TensorRef object pointing to the data
+  CUTLASS_DEVICE
+  TensorRef reference() { 
+    return TensorRef(first.reference(), second.reference(), third.reference()); 
+  }
+
+  /// Returns a TensorRef object pointing to the data
+  CUTLASS_DEVICE
+  ConstTensorRef reference() const { 
+    return ConstTensorRef(first.reference(), second.reference(), third.reference()); 
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
