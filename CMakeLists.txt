@@ -197,11 +197,9 @@ else()
   string(APPEND NVCC_FLAGS " -lineinfo")
 endif()
 
-# Works around conversion warnings in GTest
-#
-#if (UNIX)
-#  string(APPEND NVCC_FLAGS " -Xcompiler -Wconversion")
-#endif()
+if (UNIX)
+  string(APPEND NVCC_FLAGS " -Xcompiler -Wconversion")
+endif()
 
 string(APPEND NVCC_FLAGS_DEBUG " -g")
 string(APPEND NVCC_FLAGS_RELWITHDEBINFO " -O3")
