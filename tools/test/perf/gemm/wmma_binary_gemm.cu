@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -30,7 +30,7 @@
 #include "cutlass/wmma_matrix.h"
 #ifdef CUTLASS_USE_WMMA_API
 #ifdef CUTLASS_USE_SUBBYTE_WMMA
-
+#pragma warning( disable : 4503)
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "cutlass/gemm/gemm.h"

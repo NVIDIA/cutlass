@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -84,7 +84,6 @@
  *           - \p aligned_storage
  *
  *   (4) Functions and types that are STL-like (but aren't in the STL):
- *           - \p TODO: min and max functors?
  *
  * The idea is that, as we drop support for older compilers, we can simply #define
  * the \p __NV_STD_XYZ macros and \p platform namespace to alias their C++

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -91,8 +91,16 @@ struct SharedLoadStream {
     transformer = Transformer();
   }
 
+  /// Clears the fragment
+  CUTLASS_DEVICE void clear() {
+    fetched[0].clear();
+    fetched[1].clear();
+    transformed[0].clear();
+    transformed[1].clear();
+  }
+
   /// Load the data from shared memory to the fetch fragment.
-  CUTLASS_DEVICE void copy() { 
+  CUTLASS_DEVICE void copy() {
     iterator.load_post_increment(fetched[0]);
   }
 

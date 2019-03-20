@@ -1,7 +1,7 @@
 # NVIDIA CUTLASS Changelog
 
-## [1.2.1](https://github.com/NVIDIA/cutlass/releases/tag/v1.2.1) (2018-12-19)
- * Resolved issue with sm50 and sm52 architectures
+## [1.3.0](https://github.com/NVIDIA/cutlass/releases/tag/v1.3.0) (2019-03-20)
+ * Efficient GEMM kernel targeting Volta Tensor Cores via `mma.sync` instruction added in CUDA 10.1.
 
 ## [1.2.0](https://github.com/NVIDIA/cutlass/releases/tag/v1.2.0) (2018-10-26)
  * Parallelized reductions across threadblocks ("Split-K")

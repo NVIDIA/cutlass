@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -139,7 +139,6 @@ struct MatrixCoord : public Coord<2, int> {
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Defines data layouts of various matrix formats usable by TensorRef and other classes.
 //
 // The following define classes satisfying the TensorRefMapFunc concept. These must support the
@@ -367,6 +366,12 @@ struct MatrixTransform {
   };
 };
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Tensor layout
+namespace TensorLayout {
+
+  enum Kind { kNHWC, kNCHW };
+};
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace cutlass

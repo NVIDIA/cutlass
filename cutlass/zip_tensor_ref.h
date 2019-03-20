@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -70,6 +70,57 @@ template <typename First, typename Second>
 CUTLASS_HOST_DEVICE
 ZipTensorRef<First, Second> make_ZipTensorRef(First const &first, Second const &second) {
   return ZipTensorRef<First, Second>(first, second);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Any simple way to do so?
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename First_, typename Second_, typename Third_>
+struct Zip3TensorRef {
+  /// First tensor ref
+  typedef First_ First;
+
+  /// Second tensor ref
+  typedef Second_ Second;
+
+  /// Third tensor ref
+  typedef Third_ Third;
+
+  //
+  // Data members
+  //
+
+  /// First TensorRef
+  First first;
+
+  /// Second TensorRef
+  Second second;
+
+  /// Third TensorRef
+  Third third;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  Zip3TensorRef() {}
+
+  CUTLASS_HOST_DEVICE
+  Zip3TensorRef(First const& _first, Second const& _second, Third const& _third) : 
+    first(_first), second(_second), third(_third) {}
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Constructs a ZipTensorRef
+template <typename First, typename Second, typename Third>
+CUTLASS_HOST_DEVICE
+Zip3TensorRef<First, Second, Third> make_Zip3TensorRef(First const &first, 
+                                                       Second const &second,
+                                                       Third const &third) {
+  return Zip3TensorRef<First, Second, Third>(first, second, third);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -84,9 +84,9 @@ void set_gtest_flag() {
     { "*wmma*",                     70, false },
     { "WmmaInt8*",                  72, false },
     { "*wmmaInt8*",                 72, false },
-    { "WmmaInt4*",                  75, true  },
+    { "WmmaInt4*",                  75, true },
     { "*wmmaInt4*",                 75, true },
-    { "WmmaBinary*",                75, true  },
+    { "WmmaBinary*",                75, true },
     { "*wmmaBinary*",               75, true },
     { 0, 0, false }
   };

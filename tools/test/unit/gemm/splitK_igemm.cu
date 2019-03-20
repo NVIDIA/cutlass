@@ -1,5 +1,5 @@
 /***************************************************************************************************
-* Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+* Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification, are permitted
 * provided that the following conditions are met:
@@ -22,6 +22,9 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *
 **************************************************************************************************/
+
+#if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 610))
+
 #include "cutlass_unit_test.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/igemm_traits.h"
@@ -83,7 +86,7 @@ TEST(SplitK_igemm_128x128x32_splits16, igemm_128x256x512_nt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 2, 1, true /*use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2, 1, true /*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -111,7 +114,7 @@ TEST(SplitK_igemm_128x128x32_splits16, igemm_128x256x512_tn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 2, 1, true /*use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2, 1, true /*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -139,7 +142,7 @@ TEST(SplitK_igemm_128x128x32_splits16, igemm_128x256x512_tt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 2, 1, true /*use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2, 1, true /*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -167,7 +170,7 @@ TEST(SplitK_igemm_128x128x32_splits16, igemm_1024x64x4096_nn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1, 0, false /*not use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1, 0, false /*not use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -195,7 +198,7 @@ TEST(SplitK_igemm_128x128x32_splits16, igemm_1024x64x4096_nt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1, 0, false /*not use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1, 0, false /*not use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -223,7 +226,7 @@ TEST(SplitK_igemm_128x128x32_splits16, igemm_1024x64x4096_tn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1, 0, false /*not use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1, 0, false /*not use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -251,7 +254,7 @@ TEST(SplitK_igemm_128x128x32_splits16, igemm_1024x64x4096_tt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1, 0, false /*not use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1, 0, false /*not use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -279,7 +282,7 @@ TEST(SplitK_igemm_128x32x32_splits16, igemm_1024x64x4096_nn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1, 0, false /*not use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1, 0, false /*not use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -307,7 +310,7 @@ TEST(SplitK_igemm_128x32x32_splits16, igemm_1024x64x4096_nt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1, 0, false /*not use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1, 0, false /*not use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -335,7 +338,7 @@ TEST(SplitK_igemm_128x32x32_splits16, igemm_1024x64x4096_tn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1, 0, false /*not use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1, 0, false /*not use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -363,5 +366,7 @@ TEST(SplitK_igemm_128x32x32_splits16, igemm_1024x64x4096_tt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1, 0, false /*not use host reference*/);
+  run_splitK_gemm<IgemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1, 0, false /*not use host reference*/);
 }
+
+#endif // if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 610))

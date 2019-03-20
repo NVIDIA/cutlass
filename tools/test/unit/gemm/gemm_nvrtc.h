@@ -88,8 +88,6 @@ static __host__ void run_gemm_nvrtc(
 
   std::string type_name;
 #if 0
-  // TODO Ideally we'd use nvrtcGetTypeName to determine the type, but it cannot resolve enum symbol names
-  // As altername solution we might want to implement to_string<GemmTraits>() to get the traits string.
   nvrtcGetTypeName<typename GemmTraits_>(&type_name);
 #else
   type_name = gemm_traits;

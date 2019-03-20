@@ -1,5 +1,5 @@
 /***************************************************************************************************
-* Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+* Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification, are permitted
 * provided that the following conditions are met:
@@ -73,7 +73,7 @@ struct SplitkPIGemmTraits {
     /// The pointer to workspace memory
     ScalarAccum *workspace_ptr;
     ///
-    int workspace_size;
+    size_t workspace_size;
     /// The Params for the first kernel
     typename GemmTraits::Params GemmParams;
     /// The Params for the second kernel
@@ -112,7 +112,8 @@ struct SplitkPIGemmTraits {
                    Index ldc_,
                    ScalarD* d_d_,
                    Index ldd_,
-                   ScalarAccum *workspace_ptr_) {
+                   ScalarAccum *workspace_ptr_,
+                   Index partitionK_multiple = 1) {
 
       workspace_ptr = workspace_ptr_;
 
@@ -133,7 +134,7 @@ struct SplitkPIGemmTraits {
           TensorRef<typename GemmTraits::ScalarC const, 2>(workspace_ptr, problem_size.m()), /*m = ldc, workspace is not transposed and is packed*/
           TensorRef<typename GemmTraits::ScalarD, 2>(workspace_ptr, problem_size.m()) /*m = ldd, workspace is not transposed and is packed*/
         );
-      GemmParams.initialize(desc, ReductionTraits::ReductionSize);
+      GemmParams.initialize(desc, ReductionTraits::ReductionSize, partitionK_multiple);
      
 
       //call batched reduction (second kernel) param
@@ -155,9 +156,12 @@ struct SplitkPIGemmTraits {
     // workspace will be used to store D (output) from the first gemm kernel (not D of the entire gemm)
     // note typedef typename GemmTraits::ScalarD ScalarAccum;
     // workspace of size of M * N * Reduction
-    int required_workspace_memory_in_byte(){
+    size_t required_workspace_memory_in_byte(){
       assert(problem_size_initialized == true);
-      workspace_size = problem_size.n() * problem_size.m() * ReductionTraits::ReductionSize * static_cast<int>(sizeof(ScalarAccum));
+      workspace_size = static_cast<size_t>(problem_size.n()) * 
+                       static_cast<size_t>(problem_size.m()) * 
+                       static_cast<size_t>(ReductionTraits::ReductionSize) * 
+                       sizeof(ScalarAccum);
       return workspace_size;
     }
 

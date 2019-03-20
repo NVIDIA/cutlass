@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -32,6 +32,8 @@ set(CUTLASS_PERF_TEST_HEADERS
   gemm/cutlass_dispatch_splitK_PI.h
   gemm/gemm_perf_testbed.h
   gemm/gemm_profiler.h
+  gemm/cutlass_volta884_dispatch.h
+  gemm/cutlass_volta884_dispatch_splitK_PI.h
 )
 
 set(CUTLASS_PERF_TEST_SOURCES
@@ -43,8 +45,14 @@ set(CUTLASS_PERF_TEST_SOURCES
   gemm/igemm.cu
   gemm/igemm_splitK.cu
   gemm/wmma_gemm.cu
-  gemm/wmma_binary_gemm.cu
-  gemm/wmma_integer_gemm.cu
+  gemm/volta884_gemm.cu                       
+  gemm/volta884_gemm_splitK.cu
+  gemm/volta884_gemm_cta_rasterization_tn.cu
+  gemm/volta884_gemm_cta_rasterization_tt.cu
+  gemm/volta884_gemm_cta_rasterization_nn.cu
+  gemm/volta884_gemm_cta_rasterization_nt.cu
+  gemm/wmma_binary_gemm.cu                         
+  gemm/wmma_integer_gemm.cu                        
 )
 
 source_group("Source\ Files" FILES ${CUTLASS_PERF_TEST_SOURCES})
@@ -62,5 +70,7 @@ cutlass_add_executable(
     ${CUTLASS_PERF_TEST_HEADERS}
 )
 
-target_link_libraries(cutlass_perf_test ${CUBLAS_LIBRARY})
+if(CUTLASS_ENABLE_CUBLAS)
+  target_link_libraries(cutlass_perf_test ${CUBLAS_LIBRARY})
+endif()
 

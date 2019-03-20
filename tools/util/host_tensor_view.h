@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -61,21 +61,21 @@ class HostTensorView :
   /// Storage type
   typedef typename Base::Storage Storage;
 
-  /// Alias for underlying TensorRef
-  typedef typename Base::TensorRef TensorRef;
+  /// Alias for underlying TensorRef_t
+  typedef typename Base::TensorRef_t TensorRef_t;
 
   /// Index type
   typedef typename Base::Index Index;
 
   /// Coordinate in logical tensor space
-  typedef typename TensorRef::TensorCoord TensorCoord;
+  typedef typename TensorRef_t::TensorCoord TensorCoord;
 
   /// Coordinate in storage n-D array
-  typedef typename TensorRef::StorageCoord StorageCoord;
+  typedef typename TensorRef_t::StorageCoord StorageCoord;
 
   /// Stride vector in storage coordinate space
   /// Least significant stride is = 1 and not stored
-  typedef typename TensorRef::StrideVector StrideVector;
+  typedef typename TensorRef_t::StrideVector StrideVector;
 
   /// Long index type for pointer offsets
   typedef typename Base::LongIndex LongIndex;
@@ -121,18 +121,18 @@ class HostTensorView :
     Storage_ *_ptr,
     StrideVector const &_stride,
     TensorCoord const& _size
-  ) : Base(TensorRef(_ptr, _stride), _size) {}
+  ) : Base(TensorRef_t(_ptr, _stride), _size) {}
 
   /// Helper to construct from pointer, stride, and size
   HostTensorView(
     Storage_ *_ptr,
     StorageCoord const &_stride,
     TensorCoord const& _size
-  ) : Base(TensorRef(_ptr, _stride), _size) {}
+  ) : Base(TensorRef_t(_ptr, _stride), _size) {}
 
-  /// Constructs a Tensor_view from a TensorRef and size assuming dense packing
+  /// Constructs a Tensor_view from a TensorRef_t and size assuming dense packing
   HostTensorView(
-    TensorRef const& _ref,
+    TensorRef_t const& _ref,
     TensorCoord const& _size) : Base(_ref, _size) {}
 
   /// Assigns a tensor view
@@ -149,22 +149,22 @@ class HostTensorView :
     return result;
   }
 
-  /// Returns a TensorRef offset by a given amount
+  /// Returns a TensorRef_t offset by a given amount
   CUTLASS_HOST_DEVICE
   HostTensorView& operator+=(TensorCoord const& b) {
     this->add_pointer_offset(this->offset(b));
     return *this;
   }
 
-  /// Returns a TensorRef offset by a given amount
+  /// Returns a TensorRef_t offset by a given amount
   CUTLASS_HOST_DEVICE
   HostTensorView operator-(TensorCoord const& b) const {
-    TensorRef result(*this);
+    TensorRef_t result(*this);
     result.add_pointer_offset(-this->offset(b));
     return result;
   }
 
-  /// Returns a TensorRef offset by a given amount
+  /// Returns a TensorRef_t offset by a given amount
   CUTLASS_HOST_DEVICE
   HostTensorView& operator-=(TensorCoord const& b) {
     this->add_pointer_offset(-this->offset(b));
@@ -474,7 +474,7 @@ class HostTensorView :
 
     void operator()(Storage const& element) {
       double value(element);
-      double conj(element);  // TODO - conjugates for complex
+      double conj(element);  
 
       sum += value * conj;
     }

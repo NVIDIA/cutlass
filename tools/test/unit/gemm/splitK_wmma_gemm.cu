@@ -1,5 +1,5 @@
 /***************************************************************************************************
-* Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+* Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification, are permitted
 * provided that the following conditions are met:
@@ -64,7 +64,7 @@ TEST(SplitK_wmma_gemm_16x16x32_splits16, wmma_gemm_128x256x512_nn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<WmmaGemmTraits, BatchedReductionTraits>(m, n, k, 2.0f, 1.0f, true/*use host reference*/);
+  run_splitK_gemm<WmmaGemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 2.0f, 1.0f, true/*use host reference*/);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -99,7 +99,7 @@ TEST(SplitK_wmma_gemm_16x16x32_splits16, wmma_gemm_128x256x512_nt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<WmmaGemmTraits, BatchedReductionTraits>(m, n, k, 1.0f, 0.0f);
+  run_splitK_gemm<WmmaGemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1.0f, 0.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -134,7 +134,7 @@ TEST(SplitK_wmma_gemm_16x16x32_splits16, wmma_gemm_128x256x512_tn) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<WmmaGemmTraits, BatchedReductionTraits>(m, n, k, 1.0f, 0.0f);
+  run_splitK_gemm<WmmaGemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1.0f, 0.0f);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -169,7 +169,7 @@ TEST(SplitK_wmma_gemm_16x16x32_splits16, wmma_gemm_128x256x512_tt) {
     cutlass::Shape<1, 1, 2> >
     BatchedReductionTraits;
 
-  run_splitK_gemm<WmmaGemmTraits, BatchedReductionTraits>(m, n, k, 1.0f, 0.0f);
+  run_splitK_gemm<WmmaGemmTraits, BatchedReductionTraits>(m, n, k, 1/*partitionK_multiple*/, 1.0f, 0.0f);
 }
 
 #endif

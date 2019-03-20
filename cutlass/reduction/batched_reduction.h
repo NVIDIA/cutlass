@@ -1,5 +1,5 @@
 /***************************************************************************************************
-* Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+* Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without modification, are permitted
 * provided that the following conditions are met:
@@ -80,14 +80,16 @@ struct BatchedReduction {
 
     typename Traits::ScalarA inRegs[Traits::maxInReg];
     typename Traits::ScalarAccum AccumRegs[Traits::maxOutReg];
-
+#pragma unroll
     for (int subTile = 0; subTile < tileSize; subTile += subTileSize) {
       int tileOffset = subTileBase + subTileOffset;
       // Init AccumRegs
+#pragma unroll
       for (int i = 0; i < Traits::ThreadShape::kW; i++)
         AccumRegs[i] = static_cast<typename Traits::ScalarAccum>(0.0f);
       // Fetch c0
       typename Traits::ScalarAccum c0[Traits::ThreadShape::kW];
+#pragma unroll
       for (int i = 0; i< Traits::ThreadShape::kW; i++)
         c0[i] = static_cast<typename Traits::ScalarAccum>(params.d_c[tileOffset + i]);
 
@@ -131,11 +133,13 @@ struct BatchedReduction {
   template<bool ThreadShapeMultiple2>
   CUTLASS_DEVICE void functor_caller(typename Traits::ScalarAccum const *accum, typename Traits::ScalarAccum const *old, typename Traits::ScalarAccum *output) {
     if (ThreadShapeMultiple2 == true) {
+#pragma unroll
       for (int i = 0; i < Traits::ThreadShape::kW / 2; i++) {
         functor.template evaluate<typename Traits::ScalarAccum, typename Traits::ScalarAccum, 2>(&accum[2 * i], &old[2 * i], &output[2 * i]);
       }
     }
     else {
+#pragma unroll
       for (int i = 0; i < Traits::ThreadShape::kW; i++) {
         functor.template evaluate<typename Traits::ScalarAccum, typename Traits::ScalarAccum, 1>(&accum[i], &old[i], &output[i]);
       }

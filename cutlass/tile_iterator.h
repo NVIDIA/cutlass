@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -293,12 +293,10 @@ struct TileIteratorBase {
       stride_d = _stride_d;
       stride_h = _stride_h;
       stride_w = _stride_w;
-
       inc_w = stride_w * Delta::kW;
       inc_h = stride_h * Delta::kH - stride_w * Delta::kW * (Iterations::kW - 1);
       inc_d = stride_h * Delta::kD - stride_h * Delta::kH * (Iterations::kH - 1) -
               stride_w * Delta::kW * (Iterations::kW - 1);
-
       inc_advance = 0;
 
       if (kAdvance == IteratorAdvance::kH) {
@@ -740,9 +738,13 @@ struct TileLoadIterator : public TileIteratorBase<Traits_,
   template <typename Fragment, typename PredicateIterator>
   CUTLASS_HOST_DEVICE void load_post_increment(Fragment &fragment, PredicateIterator pred_it) {
     FragmentIterator frag_iterator(fragment);
+    CUTLASS_PRAGMA_UNROLL
     for (int d = 0; d < Iterations::kD; ++d) {
+      CUTLASS_PRAGMA_UNROLL
       for (int h = 0; h < Iterations::kH; ++h) {
+        CUTLASS_PRAGMA_UNROLL
         for (int w = 0; w < Iterations::kW; ++w, ++pred_it) {
+          CUTLASS_PRAGMA_UNROLL
           for (int c = 0; c < Iterations::kC; ++c) {
             if (*pred_it) {
               load_element(
@@ -789,8 +791,11 @@ struct TileLoadIterator : public TileIteratorBase<Traits_,
   template <typename Fragment>
   CUTLASS_HOST_DEVICE void load(Fragment &fragment, int d) {
     FragmentIterator frag_iterator(fragment);
+    CUTLASS_PRAGMA_UNROLL
     for (int h = 0; h < Iterations::kH; ++h) {
+      CUTLASS_PRAGMA_UNROLL
       for (int w = 0; w < Iterations::kW; ++w) {
+        CUTLASS_PRAGMA_UNROLL
         for (int c = 0; c < Iterations::kC; ++c) {
           load_element(reinterpret_cast<AccessType &>(frag_iterator.at(0, h, w, c)), d, h, w, c);
         }
@@ -1076,7 +1081,6 @@ struct TileStoreIterator : public TileIteratorBase<Traits_,
                     ThreadOffset thread_offset_func = ThreadOffset())
       : params(_params), stage(0) {
     thread_offset = thread_offset_func();
-
     params.pointer += (block_offset[0] + thread_offset[0]) * params.stride_d +
                       (block_offset[1] + thread_offset[1]) * params.stride_h +
                       (block_offset[2] + thread_offset[2]) * params.stride_w;
@@ -1148,10 +1152,13 @@ struct TileStoreIterator : public TileIteratorBase<Traits_,
   template <typename Fragment, typename PredicateIterator>
   CUTLASS_HOST_DEVICE void store_post_increment(Fragment const &fragment, PredicateIterator pred_it) {
     FragmentConstIterator frag_iterator(fragment);
-
+    CUTLASS_PRAGMA_UNROLL
     for (int d = 0; d < Iterations::kD; ++d) {
+      CUTLASS_PRAGMA_UNROLL
       for (int h = 0; h < Iterations::kH; ++h) {
+        CUTLASS_PRAGMA_UNROLL
         for (int w = 0; w < Iterations::kW; ++w, ++pred_it) {
+          CUTLASS_PRAGMA_UNROLL
           for (int c = 0; c < Iterations::kC; ++c) {
             if (*pred_it) {
               store_element(
@@ -1213,9 +1220,13 @@ struct TileStoreIterator : public TileIteratorBase<Traits_,
   CUTLASS_HOST_DEVICE void load_post_increment(Fragment &fragment, PredicateIterator pred_it) {
     FragmentIterator frag_iterator(fragment);
 
+    CUTLASS_PRAGMA_UNROLL
     for (int d = 0; d < Iterations::kD; ++d) {
+      CUTLASS_PRAGMA_UNROLL
       for (int h = 0; h < Iterations::kH; ++h) {
+        CUTLASS_PRAGMA_UNROLL
         for (int w = 0; w < Iterations::kW; ++w, ++pred_it) {
+          CUTLASS_PRAGMA_UNROLL
           for (int c = 0; c < Iterations::kC; ++c) {
             if (*pred_it) {
               load_element(
@@ -1262,8 +1273,11 @@ struct TileStoreIterator : public TileIteratorBase<Traits_,
   template <typename Fragment>
   CUTLASS_HOST_DEVICE void load(Fragment &fragment, int d) {
     FragmentIterator frag_iterator(fragment);
+    CUTLASS_PRAGMA_UNROLL
     for (int h = 0; h < Iterations::kH; ++h) {
+      CUTLASS_PRAGMA_UNROLL
       for (int w = 0; w < Iterations::kW; ++w) {
+        CUTLASS_PRAGMA_UNROLL
         for (int c = 0; c < Iterations::kC; ++c) {
           load_element(reinterpret_cast<AccessType &>(frag_iterator.at(0, h, w, c)), d, h, w, c);
         }

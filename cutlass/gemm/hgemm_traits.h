@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -38,7 +38,7 @@
 #include "cutlass/gemm/gemm_traits.h"
 #include "cutlass/gemm/hgemm_global_tile.h"
 #include "cutlass/gemm/hgemm_multiply_add.h"
-#include "cutlass/gemm/hgemm_swizzle.h"
+#include "cutlass/layout/thread/transform.h"
 
 namespace cutlass {
 namespace gemm {
@@ -107,7 +107,8 @@ struct HgemmTransformerA<MatrixLayout::kColumnMajor, Iterator_> {
 
 template <typename Iterator_>
 struct HgemmTransformerA<MatrixLayout::kRowMajor, Iterator_> {
-  typedef HgemmSwizzle<Iterator_> Transformer;
+  typedef typename Iterator_::FragmentShape FragmentShape;
+  typedef cutlass::layout::thread::Transform<FragmentShape, 2, half, cutlass::MatrixLayout::RowMajor, half, cutlass::MatrixLayout::ColumnMajor > Transformer;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -122,7 +123,8 @@ struct HgemmTransformerB<MatrixLayout::kRowMajor, Iterator_> {
 
 template <typename Iterator_>
 struct HgemmTransformerB<MatrixLayout::kColumnMajor, Iterator_> {
-  typedef HgemmSwizzle<Iterator_> Transformer;
+  typedef typename Iterator_::FragmentShape FragmentShape;
+  typedef cutlass::layout::thread::Transform<FragmentShape, 2, half, cutlass::MatrixLayout::RowMajor, half, cutlass::MatrixLayout::ColumnMajor > Transformer;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

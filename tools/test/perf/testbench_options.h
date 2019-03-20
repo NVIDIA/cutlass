@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -65,6 +65,11 @@ struct Range {
 
   Range(int _start, int _end, int _increment = 1, Operator _op = Add)
       : start(_start), end(_end), increment(_increment), increment_op(_op) {}
+
+  Range(std::string _start) : increment(1), increment_op(Add) {
+    start = end = (int)strtol(_start.c_str(), NULL, 10);
+  }
+
 
   /// Returns the next item in series
   int next(int val) const {
@@ -161,8 +166,6 @@ struct GemmProblemRange {
     get_range(batch_count, args, "batch", Range(1));
   }
 };
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Defines a vector of string pairs
 typedef std::vector<std::pair<std::string, std::string> > KeyValueVector;
@@ -391,8 +394,8 @@ struct TestbenchOptions {
   /// Scalar value for GEMM
   double beta;
 
-  /// Range of problem sizes
-  GemmProblemRange problem_range;
+  /// Range of GEMM problem sizes
+  GemmProblemRange gemm_problem_range;
 
   /// If true, kernels are not executed, and no sleep waits are inserted
   bool dry_run;
@@ -418,7 +421,7 @@ struct TestbenchOptions {
       : initial_distribution(args),
         execution_mode(ExecutionMode::Profile),
         save_workspace_mode(WorkspaceSaveMode::Never),
-        problem_range(args),
+        gemm_problem_range(args),
         dry_run(false),
         sleep_time(1) {
 
@@ -473,6 +476,8 @@ struct TestbenchOptions {
         "igemm",
         "wmma_gemm",
         "wmma_gemm_f16",
+        "s884gemm",
+        "h884gemm",
         "wmma_binary_gemm",
         "wmma_integer_gemm",
         0
@@ -480,7 +485,8 @@ struct TestbenchOptions {
       char const *layouts[] = {"nn", "nt", "tn", "tt", 0};
       for (int i = 0; gemms[i]; ++i) {
         for (int j = 0; layouts[j]; ++j) {
-          if ((std::string(gemms[i]).compare("wmma_binary_gemm") == 0 ||
+          if ((
+               std::string(gemms[i]).compare("wmma_binary_gemm") == 0 ||
                std::string(gemms[i]).compare("wmma_integer_gemm") == 0)
                && std::string(layouts[j]).compare("tn") != 0) {
             continue;
@@ -488,7 +494,7 @@ struct TestbenchOptions {
           kernels.push_back(std::string(gemms[i]) + "_" + layouts[j]);
         }
       }
-
+      
     }
   }
 
@@ -596,15 +602,14 @@ struct TestbenchOptions {
         << "    Height of GEMM problem (number of rows of C). May specify a range with optional "
            "step size.\n"
 
-        << "  --n=<width>[:max width[:step]]                "
+        << "  --n=<width>[:max width[:step]] (GEMM-specific)"
         << "    Width of GEMM problem (number of columns of C). May specify a range with optional "
            "step size.\n"
 
-        << "  --k=<depth>[:max depth[:step]]                "
+        << "  --k=<depth>[:max depth[:step]] (GEMM-specific)"
         << "    Size of inner dimension of A and B. May specify a range with optional step size.\n"
-
         << "  --batch=<batch>                               "
-        << "    Number of batches for a bached gemm. "
+        << "    Number of batches for a batched gemm.\n"
 
         << "  --kernels=<{s|d|h|i|wmma_|wmma_binary_|wmma_integer_}gemm_{nn,nt,tn,tt}>\n"
         << "                                                "
@@ -641,13 +646,14 @@ struct TestbenchOptions {
     out << "\n\n"
         << "Example usage:\n\n"
 
-        << "# Runs one problem size for all kernels\n"
+        << "# Runs one problem size for all GEMM kernels\n"
         << "./tools/test/perf/cutlass_perf_test --m=10240 --n=1024 --k=1024\n\n"
 
         << "# Varies GEMM K dimension for SGEMM and IGEMM with column-major multiplicands\n"
         << "./tools/test/perf/cutlass_perf_test --m=10240 --n=4096 --k=1024:8192:128 "
            "--kernels=sgemm_nn,igemm_nn\n\n"
-
+        << " # Executes GEMM kernel on Volta Tensor Cores\n"
+        << " $ ./tools/test/perf/cutlass_perf_test --kernels=s884gemm_nt\n\n"
         << std::flush;
   }
 };

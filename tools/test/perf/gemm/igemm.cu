@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -23,6 +23,8 @@
  *
  **************************************************************************************************/
 
+#if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 610))
+
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/igemm_traits.h"
 #include "tools/test/perf/cutlass_perf_test.h"
@@ -36,6 +38,7 @@ namespace perf {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <typename DummyT>
 int profile_igemm(TestbenchOutput<GemmProblem> &output, TestbenchOptions const &options, Config const &config) {
 
   typedef perf::GemmProfiler<int8_t, int8_t, int, int, int> GemmProfiler;
@@ -91,6 +94,21 @@ int profile_igemm(TestbenchOutput<GemmProblem> &output, TestbenchOptions const &
     results |= profile_gemm<Dispatch, GemmProfiler>(output, "igemm_tt", options, config);
   }
 
+  return results;
+}
+
+template <typename DummyT>
+int profile_igemm_32x32x128(TestbenchOutput<GemmProblem> &output, TestbenchOptions const &options, Config const &config) {
+
+  typedef perf::GemmProfiler<int8_t, int8_t, int, int, int> GemmProfiler;
+
+  // compute capability check
+  if (!options.compute_capability(6, 1)) {
+    return 0;
+  }
+
+  int results = 0;
+
   {
     typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kColumnMajor,
             cutlass::MatrixLayout::kColumnMajor, cutlass::Shape<128, 32, 32>, int,
@@ -138,8 +156,18 @@ int profile_igemm(TestbenchOutput<GemmProblem> &output, TestbenchOptions const &
   return results;
 }
 
+
+
 struct IgemmRegistrar {
-  IgemmRegistrar() { RegisterGemmProfileFunc(profile_igemm); }
+  IgemmRegistrar()
+  {
+    RegisterGemmProfileFunc(profile_igemm<void>);
+
+#ifdef EXHAUSTIVE_PROF
+    RegisterGemmProfileFunc(profile_igemm_32x32x128<void>);
+#endif // defined EXHAUSTIVE_PROF
+
+  }
 };
 
 volatile IgemmRegistrar _IgemmRegistrar;
@@ -147,3 +175,5 @@ volatile IgemmRegistrar _IgemmRegistrar;
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace perf
+
+#endif // if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 610))

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -75,7 +75,7 @@ class TensorView : public TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Ind
     LongIndex_> ConstTensorRef;
 
   /// Base tensor reference
-  typedef Base TensorRef;
+  typedef Base TensorRef_t;
 
   /// Storage type
   typedef typename Base::Storage Storage;
@@ -84,14 +84,14 @@ class TensorView : public TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Ind
   typedef typename Base::Index Index;
 
   /// Coordinate in logical tensor space
-  typedef typename TensorRef::TensorCoord TensorCoord;
+  typedef typename TensorRef_t::TensorCoord TensorCoord;
 
   /// Coordinate in storage n-D array
-  typedef typename TensorRef::StorageCoord StorageCoord;
+  typedef typename TensorRef_t::StorageCoord StorageCoord;
 
   /// Stride vector in storage coordinate space
   /// Least significant stride is = 1 and not stored
-  typedef typename TensorRef::StrideVector StrideVector;
+  typedef typename TensorRef_t::StrideVector StrideVector;
 
   /// TensorView of constant value
   typedef TensorView<
@@ -115,11 +115,8 @@ class TensorView : public TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Ind
   /// Type used to compute the offset of an element to the base of a tensor
   typedef typename Base::LongIndex Offset_t;
 
-  /// Base class
-  typedef TensorRef TensorRef_t;
-
   /// TensorRef to const-valued type
-  typedef typename TensorRef::ConstTensorRef ConstTensorRef_t;
+  typedef typename TensorRef_t::ConstTensorRef ConstTensorRef_t;
 
  private:
   //
@@ -195,13 +192,45 @@ class TensorView : public TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Ind
     return true;
   }
 
-  /// Returns a TensorRef pointing to the first element of the tensor.
+  /// Determines the order of dims of the tensor (e.g., CHW versus HWC)
   CUTLASS_HOST_DEVICE
-  TensorRef ref() const {
-    return TensorRef(*this);
+  void getStrideOrder(int order[]) const {
+    for (int i = 0; i < Rank_; i++) order[i] = i;
+    // Bubble sort
+    for (int start = 0; start < Rank_ - 1; start++) {
+      for (int i = start; i < Rank_ - 1; i++) {
+        if (this->stride(order[i]) < this->stride(order[i + 1])) {
+          int temp = order[i];
+          order[i] = order[i + 1];
+          order[i + 1] = temp;
+        }
+      }
+    }
+    // post-condition: this->stride(ord[i]) >= this->stride(ord[i+1]) for i from [0,Rank_-2]
+  }
+
+  /// Determines if the values in the tensor are contiguous
+  CUTLASS_HOST_DEVICE
+  bool isPacked() const {
+    if (Rank_ <= 0) return true;
+    int ord[Rank_];
+    getStrideOrder(ord);
+    // first check if the slowest dimension has a stride of 1
+    if (this->stride(ord[Rank_ - 1]) != 1) return false;
+      // now check that there are no gaps between strides
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < Rank_; i++)
+        if (this->stride(ord[i]) != this->stride(ord[i + 1]) * size_[ord[i + 1]]) return false;
+    return true;
   }
 
   /// Returns a TensorRef pointing to the first element of the tensor.
+  CUTLASS_HOST_DEVICE
+  TensorRef_t ref() const {
+    return TensorRef_t(*this);
+  }
+
+  /// Returns a TensorRef_t pointing to the first element of the tensor.
   CUTLASS_HOST_DEVICE
   ConstTensorRef const_ref() const {
     return ConstTensorRef(*this);
@@ -238,22 +267,22 @@ class TensorView : public TensorRef<Storage_, Rank_, MapFunc_, StorageRank_, Ind
     return result;
   }
 
-  /// Returns a TensorRef offset by a given amount
+  /// Returns a TensorRef_t offset by a given amount
   CUTLASS_HOST_DEVICE
   TensorView& operator+=(TensorCoord const& b) {
     this->add_pointer_offset(this->offset(b));
     return *this;
   }
 
-  /// Returns a TensorRef offset by a given amount
+  /// Returns a TensorRef_t offset by a given amount
   CUTLASS_HOST_DEVICE
   TensorView operator-(TensorCoord const& b) const {
-    TensorRef result(*this);
+    TensorRef_t result(*this);
     result.add_pointer_offset(-this->offset(b));
     return result;
   }
 
-  /// Returns a TensorRef offset by a given amount
+  /// Returns a TensorRef_t offset by a given amount
   CUTLASS_HOST_DEVICE
   TensorView& operator-=(TensorCoord const& b) {
     this->add_pointer_offset(-this->offset(b));

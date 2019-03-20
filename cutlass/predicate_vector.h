@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -186,9 +186,9 @@ struct PredicateVector {
     CUTLASS_HOST_DEVICE
     ConstIterator(ConstIterator const &it) : vec_(it.vec_), bit_(it.bit_) {}
 
-    ///
+    /// Copy ctor
     CUTLASS_HOST_DEVICE
-    ConstIterator(PredicateVector const &_vec, int _start = 0) : vec_(_vec), bit_(_start) {}
+    ConstIterator(PredicateVector const &vec, int _start = 0) : vec_(vec), bit_(_start) {}
 
     /// Pre-increment
     CUTLASS_HOST_DEVICE
@@ -197,10 +197,24 @@ struct PredicateVector {
       return *this;
     }
 
+    /// Increment
+    CUTLASS_HOST_DEVICE
+    ConstIterator &operator+=(int offset) {
+      bit_ += offset;
+      return *this;
+    }
+
     /// Pre-decrement
     CUTLASS_HOST_DEVICE
     ConstIterator &operator--() {
       --bit_;
+      return *this;
+    }
+
+    /// Decrement
+    CUTLASS_HOST_DEVICE
+    ConstIterator &operator-=(int offset) {
+      bit_ -= offset;
       return *this;
     }
 
@@ -220,6 +234,22 @@ struct PredicateVector {
       return ret;
     }
 
+    /// Iterator advances by some amount
+    CUTLASS_HOST_DEVICE
+    ConstIterator operator+(int offset) {
+      ConstIterator ret(*this);
+      ret.bit_ += offset;
+      return ret;
+    }
+
+    /// Iterator recedes by some amount
+    CUTLASS_HOST_DEVICE
+    ConstIterator operator-(int offset) {
+      ConstIterator ret(*this);
+      ret.bit_ -= offset;
+      return ret;
+    }
+
     /// Returns true if iterators point to the same bit
     CUTLASS_HOST_DEVICE
     bool operator==(ConstIterator const &it) const { return bit_ == it.bit_; }
@@ -230,7 +260,15 @@ struct PredicateVector {
 
     /// Dereferences iterator
     CUTLASS_HOST_DEVICE
-    bool operator*() const { return vec_[bit_]; }
+    bool operator*() const { return vec_.at(bit_); }
+
+    /// Gets the bit at the pointed to location
+    CUTLASS_HOST_DEVICE
+    bool get() const { return vec_.at(bit_); }
+
+    /// Gets the bit at the pointed to location
+    CUTLASS_HOST_DEVICE
+    bool at() const { return vec_.at(bit_); }
   };
 
   /**
@@ -252,7 +290,7 @@ struct PredicateVector {
 
     /// Constructs an iterator from a PredicateVector
     CUTLASS_HOST_DEVICE
-    Iterator(PredicateVector &_vec, int _start = 0) : vec_(_vec), bit_(_start) {}
+    Iterator(PredicateVector &vec, int _start = 0) : vec_(vec), bit_(_start) {}
 
     /// Pre-increment
     CUTLASS_HOST_DEVICE
@@ -261,10 +299,24 @@ struct PredicateVector {
       return *this;
     }
 
+    /// Increment
+    CUTLASS_HOST_DEVICE
+    Iterator &operator+=(int offset) {
+      bit_ += offset;
+      return *this;
+    }
+
     /// Pre-decrement
     CUTLASS_HOST_DEVICE
     Iterator &operator--() {
       --bit_;
+      return *this;
+    }
+
+    /// Decrement
+    CUTLASS_HOST_DEVICE
+    Iterator &operator-=(int offset) {
+      bit_ -= offset;
       return *this;
     }
 
@@ -284,6 +336,22 @@ struct PredicateVector {
       return ret;
     }
 
+    /// Iterator advances by some amount
+    CUTLASS_HOST_DEVICE
+    Iterator operator+(int offset) {
+      Iterator ret(*this);
+      ret.bit_ += offset;
+      return ret;
+    }
+
+    /// Iterator recedes by some amount
+    CUTLASS_HOST_DEVICE
+    Iterator operator-(int offset) {
+      ConstIterator ret(*this);
+      ret.bit_ -= offset;
+      return ret;
+    }
+
     /// Returns true if iterators point to the same bit
     CUTLASS_HOST_DEVICE
     bool operator==(Iterator const &it) const { return bit_ == it.bit_; }
@@ -294,11 +362,15 @@ struct PredicateVector {
 
     /// Gets the bit at the pointed to location
     CUTLASS_HOST_DEVICE
-    bool get() { return vec_[bit_]; }
+    bool get() { return vec_.at(bit_); }
+
+    /// Gets the bit at the pointed to location
+    CUTLASS_HOST_DEVICE
+    bool at() const { return vec_.at(bit_); }
 
     /// Dereferences iterator
     CUTLASS_HOST_DEVICE
-    bool operator*() const { return vec_[bit_]; }
+    bool operator*() const { return at(); }
 
     /// Sets the bit at the pointed to location
     CUTLASS_HOST_DEVICE

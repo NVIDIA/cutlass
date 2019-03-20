@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -70,6 +70,23 @@ struct Shape {
   static int const kW = kW_;
   /// The number of scalars per element.
   static int const kC = kC_;
+};
+
+
+/**
+* @brief A Shape implementing \ref layout_concept describing the dimensions of a cube.
+* @concept{layout_concept}
+*/
+template <int kH_, int kW_>
+struct Shape<1, kH_, kW_, 1> {
+  /// The depth of the cube.
+  static int const kD = 1;
+  /// The height of the cube.
+  static int const kH = kH_;
+  /// The width of the cube.
+  static int const kW = kW_;
+  /// The number of scalars per element.
+  static int const kC = 1;
 };
 
 /**

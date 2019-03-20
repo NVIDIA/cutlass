@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -31,6 +31,14 @@
 
 #include "tools/test/perf/testbench_output.h"
 #include "tools/test/perf/gemm/gemm_profiler.h"
+
+#if !defined(CUTLASS_ENABLE_CUBLAS)
+#define CUTLASS_ENABLE_CUBLAS 0
+#endif
+
+#if !defined(CUTLASS_ENABLE_CUDNN)
+#define CUTLASS_ENABLE_CUDNN 0
+#endif
 
 namespace perf {
 

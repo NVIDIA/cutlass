@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -84,11 +84,7 @@ cudaError_t cutlass_splitK_sgemm_nn(float const *A,
   typename deviceGemm::Params deviceGemmParams(m, n, k);
 
   // query if workspace is needed. the workspace size is sizeof(accumulateType) * M * N * splits_count
-  int workspace_size = deviceGemmParams.required_workspace_memory_in_byte();
-  if (workspace_size <= 0) {
-    std::cerr << "splitK workspace_size is smaller than 0" << std::endl;
-    return cudaErrorInvalidValue;
-  }
+  size_t workspace_size = deviceGemmParams.required_workspace_memory_in_byte();
 
   // allocate workspace memory
   float *workspace_ptr;
