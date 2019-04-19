@@ -1,5 +1,8 @@
 # NVIDIA CUTLASS Changelog
 
+## [1.3.1](https://github.com/NVIDIA/cutlass/releases/tag/v1.3.1) (2019-04-09)
+ * Corrected NVRTC unit tests.
+
 ## [1.3.0](https://github.com/NVIDIA/cutlass/releases/tag/v1.3.0) (2019-03-20)
  * Efficient GEMM kernel targeting Volta Tensor Cores via `mma.sync` instruction added in CUDA 10.1.
 

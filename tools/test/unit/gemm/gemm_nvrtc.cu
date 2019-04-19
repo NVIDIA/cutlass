@@ -43,6 +43,8 @@ TEST(Dgemm_nvrtc_64x32x8, dgemm_nvrtc_64x32x8_nt) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 610))
+
 TEST(Igemm__nvrtc_128x128x32, igemm_nvrtc_256x256x64_tt) {
   typedef cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor,
     cutlass::MatrixLayout::kRowMajor,
@@ -51,6 +53,8 @@ TEST(Igemm__nvrtc_128x128x32, igemm_nvrtc_256x256x64_tt) {
   static char const *gemm_traits = "cutlass::gemm::IgemmTraits<cutlass::MatrixLayout::kRowMajor, cutlass::MatrixLayout::kRowMajor, cutlass::Shape<32, 128, 128>, int, cutlass::gemm::LinearScaling<int> >";
   run_gemm_nvrtc<IgemmTraits>(gemm_traits, 256, 256, 64);
 }
+
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
