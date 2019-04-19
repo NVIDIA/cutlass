@@ -33,7 +33,6 @@
 
 #include "cutlass/coord.h"
 #include "cutlass/util/platform.h"
-#include <cstdio>
 namespace cutlass {
 namespace gemm {
 
@@ -84,6 +83,7 @@ void gemm_kernel_nolb(typename Gemm_::Params params) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if !defined(__CUDACC_RTC__)
 /// Partial specialization for launching the GEMM kernel with or without launch bounds
 template <typename Gemm, bool WithLaunchBounds>
 struct Launch {
@@ -152,7 +152,51 @@ struct Launch<Gemm, false> {
       smem_size,
       stream >>>(params);
   }
+
+  // Use device API to launch kernel
+  Launch(cudaError_t &result, CUfunction kernel,
+         typename Gemm::Params params, dim3 grid, dim3 block, CUstream stream = CU_STREAM_LEGACY) {
+    void* params_[] = {const_cast<void*>(reinterpret_cast<void const*>(&params))};
+
+    int smem_size = int(sizeof(typename Gemm::SharedStorage));
+    if (smem_size >= (48 << 10)) {
+
+      result = cudaFuncSetAttribute(
+        kernel,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        smem_size
+      );
+
+      if (result != cudaSuccess) {
+        return;
+      }
+
+      result = cudaFuncSetAttribute(
+        kernel,
+        cudaFuncAttributePreferredSharedMemoryCarveout,
+        100);
+
+      if (result != cudaSuccess) {
+        return;
+      }
+    }
+
+    CUresult launch_result = cuLaunchKernel(
+        kernel,
+        grid.x, grid.y, grid.z,
+        block.x, block.y, block.z,
+        smem_size, stream, params_, 0);
+
+    if (launch_result != CUDA_SUCCESS) {
+      result = cudaErrorLaunchFailure;
+      return;
+    }
+
+    result = cudaSuccess;
+    return;
+  }
 };
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -188,20 +232,13 @@ struct Gemm {
   static __host__ cudaError_t launch(CUfunction kernel,
                                      Params const& params,
                                      CUstream stream = CU_STREAM_LEGACY) {
+    cudaError_t result;
 
     // Launch the kernel.
-    void* params_[] = {const_cast<void*>(reinterpret_cast<void const*>(&params))};
+    Launch<KernelClass, Traits::GemmConfig::kLaunchBounds>(
+      result, kernel, params, params.grid, params.block, stream);
 
-    CUresult result = cuLaunchKernel(
-        kernel,
-        params.grid.x, params.grid.y, params.grid.z,
-        params.block.x, params.block.y, params.block.z,
-        0, stream, params_, 0);
-
-    if (result != CUDA_SUCCESS) {
-      return cudaErrorLaunchFailure;
-    }
-    return cudaSuccess;
+    return result;
   }
 
 #endif

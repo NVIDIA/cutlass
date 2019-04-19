@@ -34,7 +34,7 @@
 
 #define CUTLASS_MAJOR 1
 #define CUTLASS_MINOR 3
-#define CUTLASS_PATCH 0
+#define CUTLASS_PATCH 1
 #define CUTLASS_VERSION ((CUTLASS_MAJOR)*100 + (CUTLASS_MINOR)*10 + CUTLASS_PATCH)
 
 #ifdef __NVCC__
@@ -58,8 +58,13 @@
 
 // CUTLASS_PRAGMA_(UNROLL|NO_UNROLL) optimization directives for the CUDA compiler.
 #if defined(__CUDA_ARCH__)
+#ifdef __NVCC__
     #define CUTLASS_PRAGMA_UNROLL #pragma unroll
     #define CUTLASS_PRAGMA_NO_UNROLL #pragma unroll 1
+#elif defined(__CUDACC_RTC__)
+    #define CUTLASS_PRAGMA_UNROLL _Pragma("unroll")
+    #define CUTLASS_PRAGMA_NO_UNROLL _Pragma("unroll 1")
+#endif
 
     #define CUTLASS_GEMM_LOOP CUTLASS_PRAGMA_NO_UNROLL
 
@@ -80,6 +85,7 @@ template <typename T>
 struct DebugType {};
 
 template <typename T>
+CUTLASS_HOST_DEVICE
 void DebugTypeFunc(T const& t) {
   T::t;
 }

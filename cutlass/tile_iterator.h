@@ -34,7 +34,6 @@
 #include "cutlass/load_store.h"
 #include "cutlass/predicate_vector.h"
 #include "cutlass/vector.h"
-#include <cstdio>
 
 namespace cutlass {
 

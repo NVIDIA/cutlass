@@ -30,6 +30,7 @@
 #include <nvrtc.h>
 #include "tools/nvrtc/cutlass/nvrtc/environment.h"
 #include <string>
+#include <sstream>
 
 static inline bool check_nvrtc_error(nvrtcResult error) {
   if (error != NVRTC_SUCCESS) {
@@ -67,31 +68,36 @@ static __host__ void run_gemm_nvrtc(
       testbed(m,
               n,
               k,
-              cutlass::convert(GemmTraits_::kLayoutA),
-              cutlass::convert(GemmTraits_::kLayoutB),
+              test::convert(GemmTraits_::kLayoutA),
+              test::convert(GemmTraits_::kLayoutB),
               alpha,
               beta);
+
+  int currentDevice;
+  cudaGetDevice(&currentDevice);
+
+  // generate the architecture string for the nvrtc conmpiler
+  cudaDeviceProp deviceProperties;
+  cudaGetDeviceProperties(&deviceProperties, currentDevice);
+  std::stringstream arch;
+  arch << "-arch=compute_" << deviceProperties.major << deviceProperties.minor;
 
   // Instantiate gemm_kernel
   nvrtcResult result_nvrtc;
   nvrtcProgram program;
   static char const *src =
-      "#include "cutlass/gemm/gemm.h"\n"
-      "#include "cutlass/gemm/sgemm_traits.h"\n"
-      "#include "cutlass/gemm/dgemm_traits.h"\n"
-      "#include "cutlass/gemm/igemm_traits.h"\n"
+      "#include \"cutlass/gemm/gemm.h\"\n"
+      "#include \"cutlass/gemm/sgemm_traits.h\"\n"
+      "#include \"cutlass/gemm/dgemm_traits.h\"\n"
+      "#include \"cutlass/gemm/igemm_traits.h\"\n"
 #if defined(CUTLASS_NVRTC_HAS_FP16)
-      "#include "cutlass/gemm/hgemm_traits.h"\n"
-      "#include "cutlass/gemm/wmma_gemm_traits.h"\n"
+      "#include \"cutlass/gemm/hgemm_traits.h\"\n"
+      "#include \"cutlass/gemm/wmma_gemm_traits.h\"\n"
 #endif
       ;
 
   std::string type_name;
-#if 0
-  nvrtcGetTypeName<typename GemmTraits_>(&type_name);
-#else
-  type_name = gemm_traits;
-#endif
+  nvrtcGetTypeName<GemmTraits_>(&type_name);
 
   result_nvrtc = nvrtcCreateProgram(&program,
                                     src,
@@ -102,10 +108,22 @@ static __host__ void run_gemm_nvrtc(
   check_nvrtc_error(result_nvrtc);
 
   std::string gemm_kernel_instantiation =
-      "cutlass::gemm::gemm_kernel<cutlass::gemm::Gemm< " + type_name + " > >";
+      "cutlass::gemm::gemm_kernel<cutlass::gemm::Gemm< " + type_name + " >::KernelClass >";
   nvrtcAddNameExpression(program, gemm_kernel_instantiation.c_str());
 
-  result_nvrtc = nvrtcCompileProgram(program, 0, NULL);
+  // generate option list to genereate kernel for the underlying GPU
+  std::vector<std::string> options;
+  std::vector<const char*> c_options;
+
+  options.push_back(arch.str());
+
+  // convert option list into a c-string list for the nvrtc interface
+  for (std::vector<std::string>::const_iterator i = options.begin(); i != options.end(); ++i) {
+      c_options.push_back(i->c_str());
+  }
+
+  // compile
+  result_nvrtc = nvrtcCompileProgram(program, int(c_options.size()), c_options.data());
   if (result_nvrtc != NVRTC_SUCCESS) {
     size_t logSize;
     nvrtcGetProgramLogSize(program, &logSize);
@@ -118,11 +136,13 @@ static __host__ void run_gemm_nvrtc(
   }
 
   // The lowered name is the name of the template instantiation in the generated PTX code.
-  char const *gemm_kernel_lowered_name;
-  nvrtcGetLoweredName(program, gemm_kernel_instantiation.c_str(), &gemm_kernel_lowered_name);
+  char const *temp_gemm_kernel_lowered_name;
+  nvrtcGetLoweredName(program, gemm_kernel_instantiation.c_str(), &temp_gemm_kernel_lowered_name);
   if (!check_nvrtc_error(result_nvrtc)) {
     ASSERT_TRUE(false);
   }
+  // the ponter we got from nvrtcGetLoweredName is valid only as long as the program is valid. create a copy.
+  std::string gemm_kernel_lowered_name(temp_gemm_kernel_lowered_name);
 
   // Query the size of the genereated PTX so that we can allocate storage and retrieve it afterwards
   size_t ptx_size;
@@ -134,22 +154,32 @@ static __host__ void run_gemm_nvrtc(
   std::vector<char> ptx(ptx_size);
   result_nvrtc = nvrtcGetPTX(program, ptx.data());
   if (!check_nvrtc_error(result_nvrtc)) {
+      std::cerr << "failed to get ptx" << std::endl;
     ASSERT_TRUE(false);
   }
 
   // we do not need the nvrtc program anymore
   nvrtcDestroyProgram(&program);
 
+  // Now load the module
   CUmodule module;
   CUresult result_cuda;
+
   result_cuda = cuModuleLoadDataEx(&module, ptx.data(), 0, 0, 0);
   if (result_cuda != CUDA_SUCCESS) {
+    const char *msg;
+    cuGetErrorName(result_cuda, &msg);
+    std::cerr << "\ncuModuleLoadDataEx error: failed with error " << msg << std::endl;
     ASSERT_TRUE(false);
   }
 
+  // and retrieve the function
   CUfunction kernel;
-  result_cuda = cuModuleGetFunction(&kernel, module, gemm_kernel_lowered_name);
+  result_cuda = cuModuleGetFunction(&kernel, module, gemm_kernel_lowered_name.c_str());
   if (result_cuda != CUDA_SUCCESS) {
+    const char *msg;
+    cuGetErrorName(result_cuda, &msg);
+    std::cerr << "\ncuModuleGetFunction error: failed with error " << msg << std::endl;
     ASSERT_TRUE(false);
   }
 
@@ -173,16 +203,23 @@ static __host__ void run_gemm_nvrtc(
                     testbed.ptr_computed(),
                     testbed.ldc());
 
-  // Gemm::launch(params);
   Gemm::launch(kernel, params);
 
   cudaError_t result = cudaDeviceSynchronize();
   ASSERT_EQ(result, cudaSuccess) << "\nCUDA kernel launch error: " << cudaGetErrorString(result)
-                                 << "\n";
+                                 << std::endl;
 
   if (testbed.has_cublas_support()) {
     ASSERT_TRUE(testbed.verify_with_cublas());
   } else {
     ASSERT_TRUE(testbed.verify_with_host());
+  }
+
+  result_cuda = cuModuleUnload(module);
+  if (result_cuda != CUDA_SUCCESS) {
+    const char *msg;
+    cuGetErrorName(result_cuda, &msg);
+    std::cerr << "\ncuModuleUnload error: failed with error " << msg << std::endl;
+    ASSERT_TRUE(false);
   }
 }

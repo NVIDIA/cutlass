@@ -88,6 +88,8 @@ union Vector {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if !defined(__CUDACC_RTC__) || defined(CUTLASS_NVRTC_HAS_FP16)
+
 template <>
 union Vector<half, 1> {
   /// The scalar type.
@@ -118,7 +120,6 @@ union Vector<half, 1> {
   }
 };
 
-#if !defined(__CUDACC_RTC__) || defined(CUTLASS_NVRTC_HAS_FP16)
 
 template <int kLanes_>
 union Vector<half, kLanes_> {

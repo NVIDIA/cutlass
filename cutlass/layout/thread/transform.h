@@ -77,6 +77,7 @@ struct Copy {
   }
 };
 
+#if !defined(__CUDACC_RTC__) || defined(CUTLASS_NVRTC_HAS_FP16)
 template <int rank>
 struct Copy<half, half, rank, cutlass::MatrixLayout::RowMajor, cutlass::MatrixLayout::RowMajor> {
   CUTLASS_DEVICE void copy(cutlass::TensorView<half, rank, cutlass::MatrixLayout::RowMajor> dst,
@@ -140,6 +141,7 @@ struct Copy<half, half, 2, cutlass::MatrixLayout::RowMajor, cutlass::MatrixLayou
     }
   }
 };
+#endif
 
 /// igemm swizzle
 /// Transform a fragment.
@@ -239,6 +241,7 @@ struct Transform {
   }
 };
 
+#if !defined(__CUDACC_RTC__) || defined(CUTLASS_NVRTC_HAS_FP16)
 template <typename Shape, int Rank, typename DstLayout, typename SrcLayout>
 struct Transform<Shape, Rank, half, DstLayout, half, SrcLayout> {
   typedef Fragment<half, ShapeCount<Shape>::kCount> DstFragment;
@@ -266,6 +269,7 @@ struct Transform<Shape, Rank, half, DstLayout, half, SrcLayout> {
     Transformer.copy(dstView, srcView);
   }
 };
+#endif
 
 template <typename Shape, int Rank, typename DstLayout, typename SrcLayout>
 struct Transform<Shape, Rank, int8_t, DstLayout, int8_t, SrcLayout> {

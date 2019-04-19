@@ -36,8 +36,6 @@
 
 #pragma once
 
-#include <cmath>
-
 #include "cutlass/cutlass.h"
 #include "cutlass/tensor_ref.h"
 
