@@ -66,7 +66,8 @@ struct LinearScaling {
 
     // Constructor
     CUTLASS_HOST_DEVICE
-    Params(Scalar _alpha = 0, Scalar _beta = 0) : alpha(_alpha), beta(_beta) {}
+    Params(Scalar _alpha = 0.0f, Scalar _beta = 0.0f)
+        : alpha(_alpha), beta(_beta) {}
 
     /// Initialize the parameters
     CUTLASS_HOST_DEVICE int initialize(Scalar _alpha, Scalar _beta) {

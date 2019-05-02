@@ -35,7 +35,7 @@ struct DefaultBlockSwizzle {
   CUTLASS_HOST_DEVICE DefaultBlockSwizzle() {}
 
   /// Swizzle the block index.
-  CUTLASS_DEVICE dim3 swizzle() { return blockIdx; }
+  CUTLASS_DEVICE dim3 swizzle() { return {blockIdx.x, blockIdx.y, blockIdx.z}; }
 
   /// 
   CUTLASS_HOST_DEVICE dim3 get_grid_layout(Coord<3> const &problem_size,

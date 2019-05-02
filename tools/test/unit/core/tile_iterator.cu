@@ -42,9 +42,7 @@ __global__ void load_store_global(
             typename cutlass::TileStoreIterator<Traits, Scalar, cutlass::IteratorAdvance::kH,
             cutlass::MemorySpace::kGlobal>::Scalar *output,
             int kW,
-            int kH,
-            typename cutlass::TileStoreIterator<Traits, Scalar, cutlass::IteratorAdvance::kH,
-            cutlass::MemorySpace::kGlobal>::Scalar identity = 0
+            int kH
         ) {
 
     /// Load iterator

@@ -70,7 +70,7 @@ struct BatchedReduction {
     // Swizzle the IDs of the block 
     typename Traits::BlockSwizzle block_swizzle;
     Coord<3> threadblock_offset =
-      block_swizzle.get_threadblock_offset(make_Coord_from_shape<Traits::SubTile>());
+      block_swizzle.get_threadblock_offset(make_Coord_from_shape<typename Traits::SubTile>());
 
     int subTileSize = gridDim.x * Traits::SubTile::kW;
     int tileSize = params.problem_size[1] * params.problem_size[2];

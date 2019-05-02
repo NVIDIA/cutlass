@@ -82,7 +82,9 @@ struct ThreadMultiplyAdd<ThreadGemmShape_, ThreadsPerWarp_, int8_t, int8_t, int>
     int const* a_int = reinterpret_cast<int const*>(&a[0]);
     int const* b_int = reinterpret_cast<int const*>(&b[0]);
 
+#pragma unroll
     for (int j = 0; j < AccumulatorsPerThread::kH; ++j) {
+#pragma unroll
       for (int i = 0; i < AccumulatorsPerThread::kW; ++i) {
 
         asm volatile("dp4a.s32.s32 %0, %1, %2, %3;"

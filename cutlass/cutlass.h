@@ -37,7 +37,7 @@
 #define CUTLASS_PATCH 1
 #define CUTLASS_VERSION ((CUTLASS_MAJOR)*100 + (CUTLASS_MINOR)*10 + CUTLASS_PATCH)
 
-#ifdef __NVCC__
+#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
 #define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
 #define CUTLASS_DEVICE __forceinline__ __device__
 #elif defined(__CUDACC_RTC__)
@@ -61,7 +61,7 @@
 #ifdef __NVCC__
     #define CUTLASS_PRAGMA_UNROLL #pragma unroll
     #define CUTLASS_PRAGMA_NO_UNROLL #pragma unroll 1
-#elif defined(__CUDACC_RTC__)
+#elif defined(__CUDACC_RTC__) || (defined(__clang__) && defined(__CUDA__))
     #define CUTLASS_PRAGMA_UNROLL _Pragma("unroll")
     #define CUTLASS_PRAGMA_NO_UNROLL _Pragma("unroll 1")
 #endif

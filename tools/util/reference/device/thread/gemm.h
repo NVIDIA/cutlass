@@ -142,7 +142,7 @@ struct Gemm {
   }
 
   /// Performs linear scaling of matrix product and updates output tensor
-  CUTLASS_HOST_DEVICE
+  __device__
   Gemm & epilogue(
     gemm::GemmCoord problem_size,
     ScalarType alpha,

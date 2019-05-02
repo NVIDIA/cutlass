@@ -86,7 +86,7 @@ class half_t {
   half_t operator+(half_t const&) const;
   half_t operator-() const;
   half_t operator-(half_t const&) const;
-  half_t operator*(half_t const&)const;
+  half_t operator*(half_t const&) const;
   half_t operator/(half_t const&) const;
 
   half_t& operator+=(half_t const&);
@@ -106,6 +106,12 @@ class half_t {
 
   uint16_t& raw() { return x; }
   uint16_t raw() const { return x; }
+
+#if defined(__clang__)
+  __device__ half_t operator+(half_t const&) const;
+  __device__ half_t operator*(half_t const&) const;
+  __device__ operator float() const;  /// conversion to fp32
+#endif
 
   //
   // Stream interactions
@@ -209,7 +215,7 @@ std::string lexical_cast<std::string>(cutlass::half_t const& arg);
 
 #define HLF_MANT_DIG 10
 
-namespace std {
+namespace cutlass {
 
 cutlass::half_t abs(cutlass::half_t const&);  /// absolute value
 
@@ -229,7 +235,10 @@ int fpclassify(cutlass::half_t const&);  /// returns a flag classifying floating
 bool signbit(cutlass::half_t const&);  /// returns true if negative, false if positive
 
 cutlass::half_t sqrt(cutlass::half_t const&);  /// square root of half_t
+cutlass::half_t copysign(cutlass::half_t const&, cutlass::half_t const&);
+}
 
+namespace std {
 /// Numeric limits
 template <>
 struct numeric_limits<cutlass::half_t> {
@@ -696,8 +705,7 @@ std::string lexical_cast<std::string>(cutlass::half_t const& arg) {
 // Standard Library Operations
 //
 
-// std
-namespace std {
+namespace cutlass {
 
 inline cutlass::half_t abs(cutlass::half_t const& h) {
   return cutlass::half_t::bitcast(h.x & 0x7fff);
@@ -736,5 +744,9 @@ inline bool signbit(cutlass::half_t const& h) { return h.signbit(); }
 
 inline cutlass::half_t sqrt(cutlass::half_t const& h) {
   return cutlass::half_t(std::sqrt(float(h)));
+}
+inline cutlass::half_t copysign(cutlass::half_t const& a,
+                                cutlass::half_t const& b) {
+  return cutlass::half_t(std::copysign(float(a), float(b)));
 }
 }  // namespace std

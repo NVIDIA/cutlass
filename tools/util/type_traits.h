@@ -140,7 +140,7 @@ struct TypeTraits<half> {
   typedef int16_t integer_type;
   typedef uint16_t unsigned_type;
   static inline half remove_negative_zero(half x) {
-    integer_type h_int = reinterpret_cast<integer_type const&>(x);
+    unsigned_type h_int = reinterpret_cast<unsigned_type const&>(x);
     if (h_int == 0x8000) {
       h_int = 0;
     }

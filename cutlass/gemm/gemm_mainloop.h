@@ -167,7 +167,7 @@ struct GemmMainloop {
     // Swizzle the IDs of the block (to enable better cache behavior).
     typename Traits::BlockSwizzle block_swizzle;
     Coord<3> threadblock_offset =
-        block_swizzle.get_threadblock_offset(make_Coord_from_shape<Traits::OutputTile>());
+        block_swizzle.get_threadblock_offset(make_Coord_from_shape<typename Traits::OutputTile>());
 
     // We may want to use shared memory to clear the registers.
     typedef typename Traits::ClearAccumulators ClearAccumulators;
