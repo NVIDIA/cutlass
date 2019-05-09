@@ -235,7 +235,9 @@ int fpclassify(cutlass::half_t const&);  /// returns a flag classifying floating
 bool signbit(cutlass::half_t const&);  /// returns true if negative, false if positive
 
 cutlass::half_t sqrt(cutlass::half_t const&);  /// square root of half_t
+#if __cplusplus >= 201103L
 cutlass::half_t copysign(cutlass::half_t const&, cutlass::half_t const&);
+#endif
 }
 
 namespace std {
@@ -745,8 +747,11 @@ inline bool signbit(cutlass::half_t const& h) { return h.signbit(); }
 inline cutlass::half_t sqrt(cutlass::half_t const& h) {
   return cutlass::half_t(std::sqrt(float(h)));
 }
+
+#if __cplusplus >= 201103L
 inline cutlass::half_t copysign(cutlass::half_t const& a,
                                 cutlass::half_t const& b) {
   return cutlass::half_t(std::copysign(float(a), float(b)));
 }
+#endif
 }  // namespace std

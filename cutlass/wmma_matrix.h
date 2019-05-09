@@ -40,11 +40,7 @@
 
 #include "stdio.h"
 
-#if CUDA_VERSION >= 10000
 #include <mma.h>
-#else
-#include <mma.h>
-#endif
 #include "cutlass/fragment.h"
 #include "cutlass/matrix_traits.h"
 #include "cutlass/shape.h"
