@@ -94,7 +94,9 @@ class Layout {
 }
 
 /// Implemented in layout_verification.cu
+namespace std {
 std::ostream& operator<<(std::ostream& out, test::Layout::Coordinate const& coord);
+}
 
 namespace test {
 

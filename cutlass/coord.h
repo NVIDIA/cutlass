@@ -103,10 +103,10 @@ struct Coord {
     Coord<Slice> result;
     for (int i = 0; i < Slice; ++i) {
       if (i + start < kRank) {
-        slice[i] = idx[i + start];
+        result[i] = idx[i + start];
       }
       else {
-        slice[i] = identity;
+        result[i] = identity;
       }
     }
     return result;

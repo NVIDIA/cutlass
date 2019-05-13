@@ -142,12 +142,17 @@ int Layout::operator()(Layout::Coordinate const &_coord) const {
 
 }
 
+// test::Layout::Coordinate is actually a std::vector<>, so for ADL lookup to
+// work, the operator<< must be in std::. GCC does look it up in global
+// namespace, but that's a bug.
+namespace std {
 std::ostream & operator<<(std::ostream &out, test::Layout::Coordinate const &coord) {
     for (int i = 0; i < coord.size(); ++i) {
         out << (i ? ", " : "") << coord.at(i);
     }
     return out;
 }
+} // namespace std
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 

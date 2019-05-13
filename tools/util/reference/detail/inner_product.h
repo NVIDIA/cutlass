@@ -45,6 +45,12 @@ Ctype inner_product(Atype a, Btype b, Ctype c) {
   return Ctype(a) * Ctype(b) + c;
 }
 
+#if defined(__clang__) && defined(__CUDA__)
+__device__ __forceinline__ __half inner_product(__half a, __half b, __half c) {
+  return a * b + c;
+}
+#endif
+
 /// Specialization for matrix multiplication with binary operands
 template <>
 CUTLASS_HOST_DEVICE
@@ -124,4 +130,3 @@ struct Cast<float, uint8_t> {
 } // namespace detail
 } // namespace reference
 } // namespace cutlass
-

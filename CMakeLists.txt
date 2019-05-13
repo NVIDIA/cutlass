@@ -24,8 +24,9 @@ cmake_minimum_required(VERSION 3.3.0 FATAL_ERROR)
 
 set(CUTLASS_LANGUAGES CXX)
 
+if( CUDA_COMPILER STREQUAL "clang" )
 # CMake 3.9.0 has native support for CUDA without the need of the CUDA package. Use it!
-if(WIN32 AND NOT ${CMAKE_VERSION} VERSION_LESS "3.9.0")
+elseif(WIN32 AND NOT ${CMAKE_VERSION} VERSION_LESS "3.9.0")
   list(APPEND CUTLASS_LANGUAGES CUDA)
   set(CUTLASS_NATIVE_CUDA TRUE)
 
@@ -47,6 +48,32 @@ else()
 endif()
 
 project(CUTLASS ${CUTLASS_LANGUAGES})
+
+if( CUDA_COMPILER STREQUAL "clang" )
+  if( NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
+    message(FATAL_ERROR "C++ compiler must be Clang. Currently it's ${CMAKE_CXX_COMPILER_ID}" )
+  endif()
+  string(APPEND CLANG_FLAGS " --std=c++11")
+  string(APPEND CLANG_FLAGS " --cuda-path=${CUDA_TOOLKIT_ROOT_DIR}")
+  string(APPEND CLANG_FLAGS " -mllvm -pragma-unroll-threshold=100000")
+  string(APPEND CLANG_FLAGS " -mllvm -unroll-threshold=5000")
+  string(APPEND CLANG_FLAGS " -Wno-unused-command-line-argument")
+  # needed for libcublasLt.so in case it's installed in the same location as libcudart.so
+  # dynamic linker can find it if linker sets RPATH (forced by --disable-new-tags)
+  # Otherwise linker uses RUNPATH and that does not propagate to loaded libs.
+  string(APPEND CLANG_FLAGS " -Wl,--disable-new-dtags")
+
+  link_libraries(${CUDA_CUDART_LIBRARY})
+  # Treat CUDA files as C++ files
+  macro(cutlass_add_executable)
+    foreach(File ${ARGN})
+      if(${File} MATCHES ".*\.cu$")
+        set_source_files_properties(${File} PROPERTIES LANGUAGE CXX)
+      endif()
+    endforeach()
+    add_executable(${ARGN})
+  endmacro()
+endif()
 
 # check if the configuration is supported
 if( NOT CMAKE_SIZEOF_VOID_P EQUAL 8 )
@@ -167,6 +194,7 @@ endif()
 
 # Set NVCC arguments
 foreach(ARCH ${CUTLASS_NVCC_ARCHS})
+  string(APPEND CLANG_FLAGS " --cuda-gpu-arch=sm_${ARCH}")
   if(CUTLASS_NVCC_EMBED_CUBIN)
     string(APPEND NVCC_FLAGS " -gencode arch=compute_${ARCH},code=sm_${ARCH}")
   endif()
@@ -175,12 +203,16 @@ foreach(ARCH ${CUTLASS_NVCC_ARCHS})
   endif()
 endforeach()
 
+if(CUTLASS_NVCC_EMBED_PTX)
+  string(APPEND CLANG_FLAGS " --cuda-include-ptx=all")
+endif()
+
 if (CUTLASS_ENABLE_TENSOR_CORE_MMA)
-  string(APPEND NVCC_FLAGS " -DCUTLASS_ENABLE_TENSOR_CORE_MMA=1")
+  string(APPEND COMMON_FLAGS " -DCUTLASS_ENABLE_TENSOR_CORE_MMA=1")
 endif()
 
 if (CUTLASS_ENABLE_CUBLAS)
-  string(APPEND NVCC_FLAGS " -DCUTLASS_ENABLE_CUBLAS=1")
+  string(APPEND COMMON_FLAGS " -DCUTLASS_ENABLE_CUBLAS=1")
 endif()
 
 if (CUTLASS_EXHAUSTIVE_PERFORMANCE_TEST)
@@ -189,6 +221,7 @@ endif()
 
 if (CUTLASS_NVCC_KEEP)
     string(APPEND NVCC_FLAGS " -keep")
+    string(APPEND CLANG_FLAGS " -save-temps=obj")
 endif()
 
 if (WIN32 AND CUTLASS_NATIVE_CUDA)
@@ -196,28 +229,34 @@ if (WIN32 AND CUTLASS_NATIVE_CUDA)
 else()
   string(APPEND NVCC_FLAGS " -lineinfo")
 endif()
+string(APPEND CLANG_FLAGS " -gmlt")
 
 if (UNIX)
   string(APPEND NVCC_FLAGS " -Xcompiler -Wconversion")
 endif()
 
-string(APPEND NVCC_FLAGS_DEBUG " -g")
-string(APPEND NVCC_FLAGS_RELWITHDEBINFO " -O3")
-string(APPEND NVCC_FLAGS_RELEASE " -O3")
+string(APPEND COMMON_FLAGS_DEBUG " -g")
+string(APPEND COMMON_FLAGS_RELWITHDEBINFO " -O3")
+string(APPEND COMMON_FLAGS_RELEASE " -O3")
 
 # define NDEBUG for release mode to disable assertions
 string(APPEND NVCC_FLAGS_RELEASE " -DNDEBUG")
 
-if (CUTLASS_NATIVE_CUDA)
-  set(CMAKE_CUDA_FLAGS "${NVCC_FLAGS}")
-  set(CMAKE_CUDA_FLAGS_RELEASE "${NVCC_FLAGS_RELEASE}")
-  set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${NVCC_FLAGS_RELWITHDEBINFO}")
-  set(CMAKE_CUDA_FLAGS_DEBUG "${NVCC_FLAGS_DEBUG}")
+if( CUDA_COMPILER STREQUAL "clang" )
+  set(CMAKE_CXX_FLAGS "${COMMON_FLAGS} ${CLANG_FLAGS}")
+  set(CMAKE_CXX_FLAGS_RELEASE "${COMMON_FLAGS_RELEASE}")
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${COMMON_FLAGS_RELWITHDEBINFO}")
+  set(CMAKE_CXX_FLAGS_DEBUG "${COMMON_FLAGS_DEBUG}")
+elseif (CUTLASS_NATIVE_CUDA)
+  set(CMAKE_CUDA_FLAGS "${COMMON_FLAGS} ${NVCC_FLAGS}")
+  set(CMAKE_CUDA_FLAGS_RELEASE "${COMMON_FLAGS_RELEASE}")
+  set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${COMMON_FLAGS_RELWITHDEBINFO}")
+  set(CMAKE_CUDA_FLAGS_DEBUG "${COMMON_FLAGS_DEBUG}")
 else()
-  set(CUDA_NVCC_FLAGS ${NVCC_FLAGS})
-  set(CUDA_NVCC_FLAGS_DEBUG ${NVCC_FLAGS_DEBUG})
-  set(CUDA_NVCC_FLAGS_RELWITHDEBINFO ${NVCC_FLAGS_RELWITHDEBINFO})
-  set(CUDA_NVCC_FLAGS_RELEASE ${NVCC_FLAGS_RELEASE})
+  set(CUDA_NVCC_FLAGS "${COMMON_FLAGS} ${NVCC_FLAGS}")
+  set(CUDA_NVCC_FLAGS_DEBUG ${COMMON_FLAGS_DEBUG})
+  set(CUDA_NVCC_FLAGS_RELWITHDEBINFO ${COMMON_FLAGS_RELWITHDEBINFO})
+  set(CUDA_NVCC_FLAGS_RELEASE ${COMMON_FLAGS_RELEASE})
 endif()
 
 #

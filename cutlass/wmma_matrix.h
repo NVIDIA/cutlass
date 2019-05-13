@@ -30,21 +30,17 @@
 #if defined(__CUDACC__) && (!defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 700)
 #define CUTLASS_USE_WMMA_API
 
-#if defined(__CUDACC__) && (__CUDACC_VER_MAJOR__ >= 10) && (!defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 720)
+#if defined(__CUDACC__) && (CUDA_VERSION >= 10000) && (!defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 720)
 #define CUTLASS_USE_INT_WMMA
 #endif
 
-#if defined(__CUDACC__) && (__CUDACC_VER_MAJOR__ >= 10) && (!defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 750)
+#if defined(__CUDACC__) && (CUDA_VERSION >= 10000) && (!defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 750)
 #define CUTLASS_USE_SUBBYTE_WMMA
 #endif
 
 #include "stdio.h"
 
-#if __CUDACC_VER_MAJOR__ >= 10
 #include <mma.h>
-#else
-#include <crt/mma.h>
-#endif
 #include "cutlass/fragment.h"
 #include "cutlass/matrix_traits.h"
 #include "cutlass/shape.h"
