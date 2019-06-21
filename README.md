@@ -21,7 +21,7 @@ point (FP16), single-precision floating point (FP32), and double-precision float
 point (FP64) types.  Furthermore, CUTLASS demonstrates CUDA's WMMA API for targeting
 the programmable, high-throughput _Tensor Cores_ provided by NVIDIA's Volta architecture
 and beyond. Even faster performance on Volta is possible via direct access to
-Volta Tenor Cores via `mma.sync` (added in CUDA 10.1).
+Volta Tensor Cores via `mma.sync` (added in CUDA 10.1).
 
 CUTLASS 1.3 is described in the [CUTLASS Documentation](CUTLASS.md) and the accompanying
 [Doxygen documentation](https://nvidia.github.io/cutlass).
