@@ -237,6 +237,12 @@ struct Volta884ThreadblockMultiplicandStoreIterator<GemmOperand::kA,
       Coord<4> offset = offset_func(ptr_idx);
       pointer[ptr_idx] = _params.pointer + (_block_offset + offset).template dot<int>(stride);
     }
+  
+    if (((threadIdx.x >> 5) * Iterations::kD) & 2) {
+      Scalar *tmp = pointer[0];
+      pointer[0] = pointer[1];
+      pointer[1] = tmp;
+    }
   }
 
   /// Stores a fragment
@@ -254,16 +260,12 @@ struct Volta884ThreadblockMultiplicandStoreIterator<GemmOperand::kA,
         CUTLASS_PRAGMA_UNROLL
         for (int w = 0; w < Iterations::kW; ++w) {  // 2x STS operations per LDG
 
-          int warp_id = (threadIdx.x >> 5);
-
-          int ldg_idx = d + warp_id * Iterations::kD;
           int k_idx = w + h * 8;
           int smem_row = (d >> 1);
 
           // Two store pointers
-          int ptr_idx = ((ldg_idx & 1) ^ ((ldg_idx >> 1) & 1));
-
-          Scalar *_pointer = pointer[ptr_idx];
+          Scalar *_pointer = pointer[(d & 1) ^ ((d >> 1) & 1)];
+          
           Coord<4> sts_offset = make_Coord(k_idx, smem_row, 0, 0);
 
           Store<typename Fragment::Element, kAccessSize, kMemorySpace>::store(
@@ -277,6 +279,7 @@ struct Volta884ThreadblockMultiplicandStoreIterator<GemmOperand::kA,
 
   /// Increments store iterator to next tile
   __device__ Volta884ThreadblockMultiplicandStoreIterator &increment(int count = 1) {
+    CUTLASS_PRAGMA_UNROLL
     for (int ptr_idx = 0; ptr_idx < kPointerCount; ++ptr_idx) {
       pointer[ptr_idx] +=
           make_Coord(VectorizedShape::kD * count, 0, 0, 0).template dot<int>(stride);
@@ -293,6 +296,7 @@ struct Volta884ThreadblockMultiplicandStoreIterator<GemmOperand::kA,
 
   /// Increments store iterator to previous tile
   __device__ Volta884ThreadblockMultiplicandStoreIterator &decrement(int count = 1) {
+    CUTLASS_PRAGMA_UNROLL 
     for (int ptr_idx = 0; ptr_idx < kPointerCount; ++ptr_idx) {
       pointer[ptr_idx] -=
           make_Coord(VectorizedShape::kD * count, 0, 0, 0).template dot<int>(stride);
