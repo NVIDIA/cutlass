@@ -57,7 +57,7 @@ _September 2018_
   * [Reference implementations](tools/util/reference) for tensor operations in [host](tools/util/reference/host) and [device](tools/util/reference/device) code
   * Added `HostMatrix<>` for simplified matrix creation
 
-For all updates, see the [CHANGELOG.md](CUTLASS changelog).
+For all updates, see the [CUTLASS changelog](CHANGELOG.md).
 
 # Performance
 
