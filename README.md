@@ -28,10 +28,6 @@ CUTLASS 1.3 is described in the [CUTLASS Documentation](CUTLASS.md) and the acco
 We describe the structure of an efficient GEMM in our talk at the
 [GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
 
-# What's New in CUTLASS 1.3.1
-_April 2019_
-* CUTLASS 1.3.1 corrected NVRTC unit tests..
-
 # What's New in CUTLASS 1.3
 _March 2019_
 * CUTLASS 1.3 includes an efficient GEMM implementation with the `mma.sync` instruction added in CUDA 10.1.
