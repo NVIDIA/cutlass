@@ -2,7 +2,7 @@
 
 # CUTLASS 1.3
 
-_CUTLASS 1.3.1 - April 2019_
+_CUTLASS 1.3.2 - July 2019_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
@@ -28,9 +28,6 @@ CUTLASS 1.3 is described in the [CUTLASS Documentation](CUTLASS.md) and the acco
 We describe the structure of an efficient GEMM in our talk at the
 [GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
 
-# What's New in CUTLASS 1.3.1
-_April 2019_
-* CUTLASS 1.3.1 corrected NVRTC unit tests..
 
 # What's New in CUTLASS 1.3
 _March 2019_
@@ -59,6 +56,8 @@ _September 2018_
 * Enhanced CUTLASS utilities
   * [Reference implementations](tools/util/reference) for tensor operations in [host](tools/util/reference/host) and [device](tools/util/reference/device) code
   * Added `HostMatrix<>` for simplified matrix creation
+
+For all updates, see the [CUTLASS changelog](CHANGELOG.md).
 
 # Performance
 
