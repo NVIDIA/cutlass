@@ -1,5 +1,8 @@
 # NVIDIA CUTLASS Changelog
 
+## [1.3.2](https://github.com/NVIDIA/cutlass/releases/tag/v1.3.2) (2019-07-09)
+ * Performance improvement for Volta Tensor Cores TN and TT layouts.
+
 ## [1.3.1](https://github.com/NVIDIA/cutlass/releases/tag/v1.3.1) (2019-04-09)
  * Corrected NVRTC unit tests.
 

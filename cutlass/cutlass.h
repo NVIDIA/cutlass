@@ -34,7 +34,7 @@
 
 #define CUTLASS_MAJOR 1
 #define CUTLASS_MINOR 3
-#define CUTLASS_PATCH 1
+#define CUTLASS_PATCH 2
 #define CUTLASS_VERSION ((CUTLASS_MAJOR)*100 + (CUTLASS_MINOR)*10 + CUTLASS_PATCH)
 
 #if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
