@@ -99,14 +99,27 @@ tools/
       manifest.py
 
     src/
-    
-
 ```
 
 When CMake is executed, the CUTLASS Instance Library generator scripts are executed to construct a set of
 instantiations in `build/tools/library/generated/`.
 
+### CUTLASS Profiler
+
 The CUTLASS Profiler is designed to load the CUTLASS Instance Library and execute all operations contained therein.
+This command-line driven application constructs an execution environment for evaluating functionality and performance. 
+It is implemented in
+```
+tools/
+  profiler/
+```
+
+and may be built as follows.
+```
+$ make cutlass_profiler -j
+```
+
+[Further details about the CUTLASS Profiler are described here.](media/docs/profiler.md)
 
 ### CUTLASS Utilities
 
@@ -136,21 +149,6 @@ tools/
 
 [More details about CUTLASS Utilities may be found here.](media/docs/utilities.md)
 
-### CUTLASS Profiler
-
-This is application constructs an execution environment for evaluating the functionality and performance of
-CUTLASS components. It is implemented in
-```
-tools/
-  profiler/
-```
-
-and may be built as follows.
-```
-$ make cutlass_profiler -j
-```
-
-[Further details about the CUTLASS Profiler are described here.](media/docs/profiler.md)
 
 ## Examples
 
