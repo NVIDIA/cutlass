@@ -173,7 +173,8 @@ struct Mma {
   /// Fragment object loaded from IteratorB (concept: Array<ElementB, ..>)
   struct FragmentB;
 
-  /// Iterator of C operand in shared memory - satisfies: ReadableRandomAccessTileIteratorConcept | WriteableRandomAccessTileIteratorConcept
+  /// Iterator of C operand in shared memory - 
+  ///    satisfies: ReadableRandomAccessTileIteratorConcept | WriteableRandomAccessTileIteratorConcept
   struct IteratorC;
 
   /// Fragment object loaded from IteratorC (concept: Array<ElementC, ..>)
@@ -322,7 +323,8 @@ struct Mma {
   /// Fragment object loaded from IteratorB (concept: Array<ElementB, ..>)
   struct FragmentB;
 
-  /// Iterator of C operand in shared memory - satisfies: ReadableRandomAccessTileIteratorConcept | WriteableRandomAccessTileIteratorConcept
+  /// Iterator of C operand in shared memory - 
+  ///     satisfies: ReadableRandomAccessTileIteratorConcept | WriteableRandomAccessTileIteratorConcept
   struct IteratorC;
 
   /// Fragment object loaded from IteratorC (concept: Array<ElementC, ..>)

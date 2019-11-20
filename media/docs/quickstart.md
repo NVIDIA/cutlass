@@ -90,8 +90,35 @@ $ make test_unit -j
 [  PASSED  ] 946 tests.
 $
 ```
+The exact number of tests run is subject to change as we add more functionality.
 
-No tests should fail.
+No tests should fail. Unit tests automatically construct the appropriate runtime filters
+to avoid executing on architectures that do not support all features under test.
+
+The unit tests are arranged hierarchically mirroring the CUTLASS Template Library. This enables
+parallelism in building and running tests as well as reducing compilation times when a specific
+set of tests are desired.
+
+For example, the following executes strictly the warp-level GEMM tests.
+```bash
+$ make test_unit_gemm_warp -j
+...
+...
+[----------] 3 tests from SM75_warp_gemm_tensor_op_congruous_f16
+[ RUN      ] SM75_warp_gemm_tensor_op_congruous_f16.128x128x8_32x128x8_16x8x8
+[       OK ] SM75_warp_gemm_tensor_op_congruous_f16.128x128x8_32x128x8_16x8x8 (0 ms)
+[ RUN      ] SM75_warp_gemm_tensor_op_congruous_f16.128x128x32_64x64x32_16x8x8
+[       OK ] SM75_warp_gemm_tensor_op_congruous_f16.128x128x32_64x64x32_16x8x8 (2 ms)
+[ RUN      ] SM75_warp_gemm_tensor_op_congruous_f16.128x128x32_32x32x32_16x8x8
+[       OK ] SM75_warp_gemm_tensor_op_congruous_f16.128x128x32_32x32x32_16x8x8 (1 ms)
+[----------] 3 tests from SM75_warp_gemm_tensor_op_congruous_f16 (3 ms total)
+...
+...
+[----------] Global test environment tear-down
+[==========] 104 tests from 32 test cases ran. (294 ms total)
+[  PASSED  ] 104 tests.
+[100%] Built target test_unit_gemm_warp
+```
 
 ## Using CUTLASS within other applications
 

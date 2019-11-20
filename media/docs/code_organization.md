@@ -82,35 +82,44 @@ scripts to span the design space.
 ```
 tools/
   library/                   # static/dynamic library containing all kernel instantiations of interest
-                             # (with some build-level filter switches to compile specific subsets, perhaps by architecture)
+                             # (with some build-level filter switches to compile specific subsets)
 
     include/
       cutlass/
-        library/                      # header files for CUTLASS Deliverables Library (in cutlass::library:: namespace)
+        library/             # header files for CUTLASS Deliverables Library (in cutlass::library:: namespace)
 
-          library.h                   # defines enums and structs to describe the tiled structure of operator instances          
-          manifest.h                  # collection of all instances
+          library.h          # defines enums and structs to describe the tiled structure of operator instances          
+          manifest.h         # collection of all instances
 
-    scripts/                          # scripts to procedurally generate CUTLASS template instances
+    scripts/                 # scripts to procedurally generate CUTLASS template instances
 
       gemm_operations.py
       library.py
-      generator.py                    # entry point of procedural generation scripts - invoked by cmake
+      generator.py           # entry point of procedural generation scripts - invoked by cmake
       manifest.py
 
     src/
-    
-
 ```
-
-## Examples
-
-To demonstrate CUTLASS components, several SDK examples are implemented in `examples/`. 
 
 When CMake is executed, the CUTLASS Instance Library generator scripts are executed to construct a set of
 instantiations in `build/tools/library/generated/`.
 
-The CUTLASS Profiler is designed to initialize the CUTLASS Instance Library and execute all operations contained therein.
+### CUTLASS Profiler
+
+The CUTLASS Profiler is designed to load the CUTLASS Instance Library and execute all operations contained therein.
+This command-line driven application constructs an execution environment for evaluating functionality and performance. 
+It is implemented in
+```
+tools/
+  profiler/
+```
+
+and may be built as follows.
+```
+$ make cutlass_profiler -j
+```
+
+[Further details about the CUTLASS Profiler are described here.](/media/docs/profiler.md)
 
 ### CUTLASS Utilities
 
@@ -122,9 +131,13 @@ tools/
     include/
       cutlass/
         util/                   # CUTLASS Utility companion library
-          reference/            #   reference implementation of CUTLASS operators - minimal consideration for performance
+
+          reference/            #  functional reference implementation of CUTLASS operators
+                                #    (minimal consideration for performance)
+            
             detail/
               *
+
             device/             #  device-side reference implementations of CUTLASS operators
               thread/
               kernel/
@@ -134,27 +147,35 @@ tools/
           *
 ```
 
-[More details about CUTLASS Utilities may be found here.](media/docs/utilities.md)
+[More details about CUTLASS Utilities may be found here.](/media/docs/utilities.md)
 
-### CUTLASS Profiler
-
-This is application constructs an execution environment for evaluating the functionality and performance of
-CUTLASS components. It is implemented in
-```
-tools/
-  profiler/
-```
-
-and may be built as follows.
-```
-$ make cutlass_profiler -j
-```
-
-[Further details about the CUTLASS Profiler are described here.](media/docs/profiler.md)
 
 ## Examples
 
 To demonstrate CUTLASS components, several SDK examples are implemented in `examples/`. 
+
+CUTLASS SDK examples apply CUTLASS templates to implement basic computations.
+
+```
+examples/
+  00_basic_gemm/             # launches a basic GEMM with single precision inputs and outputs
+
+  01_cutlass_utilities/      # demonstrates CUTLASS Utilities for allocating and initializing tensors
+  
+  02_dump_reg_smem/          # debugging utilities for printing register and shared memory contents
+  
+  03_visualize_layout/       # utility for visualizing all layout functions in CUTLASS
+
+  04_tile_iterator/          # example demonstrating an iterator over tiles in memory
+
+  05_batched_gemm/           # example demonstrating CUTLASS's batched strided GEMM operation
+
+  06_splitK_gemm/            # exmaple demonstrating CUTLASS's Split-K parallel reduction kernel
+
+  07_volta_tensorop_gemm/    # example demonstrating mixed precision GEMM using Volta Tensor Cores
+
+  08_turing_tensorop_gemm/   # example demonstrating integer GEMM using Turing Tensor Cores
+```
 
 ## Media
 

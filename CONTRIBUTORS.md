@@ -30,6 +30,7 @@ Fei Hu
 Alan Kaatz  
 Tina Li  
 Timmy Liu  
+Piotr Majcher  
 Duane Merrill  
 Kevin Siu  
 Markus Tavenrath  

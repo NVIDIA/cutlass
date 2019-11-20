@@ -91,6 +91,7 @@ CUTLASS 2.0 is described in the following documents and the accompanying
 - [GEMM API](media/docs/gemm_api.md) - describes the CUTLASS GEMM model and C++ template concepts 
 - [Code Organization](media/docs/code_organization.md) - describes the organization and contents of the CUTLASS project
 - [Terminology](media/docs/terminology.md) - describes terms used in the code
+- [Programming Guidelines](media/docs/programming_guidelines.md) - guidelines for writing efficient modern CUDA C++
 - [Fundamental types](media/docs/fundamental_types.md) - describes basic C++ classes used in CUTLASS to represent numeric quantities and arrays
 - [Layouts](media/docs/layout.md) - describes layouts of matrices and tensors in memory
 - [Tile Iterators](media/docs/tile_iterator_concept.md) - describes C++ concepts for iterating over tiles of matrices in memory
