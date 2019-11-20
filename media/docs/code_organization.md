@@ -119,7 +119,7 @@ and may be built as follows.
 $ make cutlass_profiler -j
 ```
 
-[Further details about the CUTLASS Profiler are described here.](media/docs/profiler.md)
+[Further details about the CUTLASS Profiler are described here.](/media/docs/profiler.md)
 
 ### CUTLASS Utilities
 
@@ -147,7 +147,7 @@ tools/
           *
 ```
 
-[More details about CUTLASS Utilities may be found here.](media/docs/utilities.md)
+[More details about CUTLASS Utilities may be found here.](/media/docs/utilities.md)
 
 
 ## Examples
