@@ -43,9 +43,7 @@ enum class MatrixLayout {
 /// Transformation applied to matrix operands
 enum class MatrixTransform {
   kNone,       /// no operation
-  kTranspose,  /// transpose operation
-  kConjugate,  /// conjugate
-  kHermitian   /// conjugate transpose
+  kTranspose   /// transpose operation
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
