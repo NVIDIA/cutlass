@@ -1,9 +1,12 @@
 var searchData=
 [
-  ['igemm_5fepilogue_2eh',['igemm_epilogue.h',['../igemm__epilogue_8h.html',1,'']]],
-  ['igemm_5fglobal_5ftile_2eh',['igemm_global_tile.h',['../igemm__global__tile_8h.html',1,'']]],
-  ['igemm_5fmultiply_5fadd_2eh',['igemm_multiply_add.h',['../igemm__multiply__add_8h.html',1,'']]],
-  ['igemm_5fswizzle_2eh',['igemm_swizzle.h',['../igemm__swizzle_8h.html',1,'']]],
-  ['igemm_5ftraits_2eh',['igemm_traits.h',['../igemm__traits_8h.html',1,'']]],
-  ['iterator_5faccess_2eh',['iterator_access.h',['../iterator__access_8h.html',1,'']]]
+  ['gemm_5fpipelined_2eh',['gemm_pipelined.h',['../gemm__pipelined_8h.html',1,'']]],
+  ['gemv_2eh',['gemv.h',['../gemv_8h.html',1,'']]],
+  ['gemv_5fbatched_5fstrided_2eh',['gemv_batched_strided.h',['../gemv__batched__strided_8h.html',1,'']]],
+  ['mma_2eh',['mma.h',['../gemm_2thread_2mma_8h.html',1,'']]],
+  ['mma_2eh',['mma.h',['../gemm_2warp_2mma_8h.html',1,'']]],
+  ['mma_5fsm50_2eh',['mma_sm50.h',['../gemm_2thread_2mma__sm50_8h.html',1,'']]],
+  ['mma_5fsm60_2eh',['mma_sm60.h',['../gemm_2thread_2mma__sm60_8h.html',1,'']]],
+  ['mma_5fsm61_2eh',['mma_sm61.h',['../gemm_2thread_2mma__sm61_8h.html',1,'']]],
+  ['threadblock_5fswizzle_2eh',['threadblock_swizzle.h',['../gemm_2threadblock_2threadblock__swizzle_8h.html',1,'']]]
 ];

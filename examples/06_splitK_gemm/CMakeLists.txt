@@ -20,19 +20,8 @@
 # STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
-set(EXAMPLES_SPLITK_GEMM_SOURCES
-  splitK_gemm.cu
-)
-
-if (NOT CUTLASS_NATIVE_CUDA)
-  # cuda_add_executable does not take interface include directories into account
-  # Let's fetch them and pass them to CUDA.
-  get_target_property(CUTLASS_INCLUDES CUTLASS INTERFACE_INCLUDE_DIRECTORIES)
-  include_directories("${CUTLASS_INCLUDES}")
-endif()
-
-cutlass_add_executable(
+cutlass_example_add_executable(
   06_splitK_gemm
-  ${EXAMPLES_SPLITK_GEMM_SOURCES}
-)
+  splitk_gemm.cu
+  )
+

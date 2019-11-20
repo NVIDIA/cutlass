@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['additive',['Additive',['../structcutlass_1_1Identity.html#a37966282c824c6d0e32b432275ea8375a77d7cc80ec0c3ff42ca9b2aff98a1646',1,'cutlass::Identity']]]
+  ['gaussian',['Gaussian',['../structcutlass_1_1Distribution.html#a499f4023e0d42356ce71d38cc32bf92aa39890d8be86d514207259b1b5dca3ed5',1,'cutlass::Distribution']]]
 ];

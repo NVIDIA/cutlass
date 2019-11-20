@@ -20,72 +20,96 @@
 # STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cmake_minimum_required(VERSION 3.3.0 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.12.4 FATAL_ERROR)
 
-set(CUTLASS_LANGUAGES CXX)
-
-if( CUDA_COMPILER STREQUAL "clang" )
-# CMake 3.9.0 has native support for CUDA without the need of the CUDA package. Use it!
-elseif(WIN32 AND NOT ${CMAKE_VERSION} VERSION_LESS "3.9.0")
-  list(APPEND CUTLASS_LANGUAGES CUDA)
-  set(CUTLASS_NATIVE_CUDA TRUE)
-
-  macro(cutlass_add_executable)
-    add_executable(${ARGN})
-  endmacro()
+if(cutlass_LOADED)
+  # If CUTLASS has been previously fetched and loaded, don't do it again.
+  return()
 else()
-  # FindCUDA fails to detect VS 2017 due to a changed directory format of the toolkits.
-  # For this configuration we need CMake >= 3.9.0 to use the native CUDA support.
-  if (WIN32 AND MSVC_VERSION GREATER 1800)
-    message(SEND_ERROR "Please upgrade CMake to version >= 3.9.0 to support Visual Studio 2017 or higher")
-    cmake_minimum_required(VERSION 3.9.0 FATAL_ERROR)
-  endif()
-
-  # Fall back to the FindCUDA version to create an executable with CUDA files
-  macro(cutlass_add_executable)
-    cuda_add_executable(${ARGN})
-  endmacro()
+  set(cutlass_LOADED ON)
+  set(CUTLASS_DIR ${CMAKE_CURRENT_SOURCE_DIR} CACHE PATH "CUTLASS Repository Directory")
 endif()
 
-project(CUTLASS ${CUTLASS_LANGUAGES})
+message(STATUS "CMake Version: ${CMAKE_VERSION}")
 
-if( CUDA_COMPILER STREQUAL "clang" )
-  if( NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
-    message(FATAL_ERROR "C++ compiler must be Clang. Currently it's ${CMAKE_CXX_COMPILER_ID}" )
-  endif()
-  string(APPEND CLANG_FLAGS " --std=c++11")
-  string(APPEND CLANG_FLAGS " --cuda-path=${CUDA_TOOLKIT_ROOT_DIR}")
-  string(APPEND CLANG_FLAGS " -mllvm -pragma-unroll-threshold=100000")
-  string(APPEND CLANG_FLAGS " -mllvm -unroll-threshold=5000")
-  string(APPEND CLANG_FLAGS " -Wno-unused-command-line-argument")
-  # needed for libcublasLt.so in case it's installed in the same location as libcudart.so
-  # dynamic linker can find it if linker sets RPATH (forced by --disable-new-tags)
-  # Otherwise linker uses RUNPATH and that does not propagate to loaded libs.
-  string(APPEND CLANG_FLAGS " -Wl,--disable-new-dtags")
+project(CUTLASS VERSION 2.0.0 LANGUAGES CXX)
+include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
-  link_libraries(${CUDA_CUDART_LIBRARY})
-  # Treat CUDA files as C++ files
-  macro(cutlass_add_executable)
-    foreach(File ${ARGN})
-      if(${File} MATCHES ".*\.cu$")
-        set_source_files_properties(${File} PROPERTIES LANGUAGE CXX)
-      endif()
-    endforeach()
-    add_executable(${ARGN})
-  endmacro()
+find_package(Doxygen QUIET)
+
+#
+# CUTLASS 2.0 requires C++11
+#
+
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(CUTLASS_NATIVE_CUDA)
+  set(CMAKE_CUDA_STANDARD 11)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+else()
+  string(APPEND NVCC_FLAGS " --std=c++11")
 endif()
+
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(CMAKE_INSTALL_PREFIX install CACHE PATH "Default installation location." FORCE)
+endif()
+
+message(STATUS "Default Install Location: ${CMAKE_INSTALL_PREFIX}")
+
+if(${CMAKE_PROJECT_NAME} MATCHES ${PROJECT_NAME})
+  set(_CUTLASS_ENABLE_TESTS ON)
+else()
+  set(_CUTLASS_ENABLE_TESTS OFF)
+endif()
+
+set(CUTLASS_ENABLE_TESTS ${_CUTLASS_ENABLE_TESTS} CACHE BOOL "Enable CUTLASS Tests")
+
+if (CUTLASS_ENABLE_TESTS)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake)
+endif()
+
+set(CUTLASS_NVCC_ARCHS_SUPPORTED "")
+if (NOT CUDA_VERSION VERSION_LESS 7.5)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 50)
+endif()
+if (NOT CUDA_VERSION VERSION_LESS 8.0)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 60 61)
+endif()
+if (NOT CUDA_VERSION VERSION_LESS 9.0)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 70)
+endif()
+if (NOT CUDA_VERSION VERSION_LESS 9.2)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 72)
+endif()
+if (NOT CUDA_VERSION VERSION_LESS 10.0)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 75)
+endif()
+
+if(CUDA_COMPILER MATCHES "[Cc]lang")
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" )
+    message(FATAL_ERROR "Clang CUDA compilation requires Clang CXX compilation. Currently CMAKE_CXX_COMPILER is ${CMAKE_CXX_COMPILER_ID}" )
+  endif()
+  if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0)
+    message(FATAL_ERROR "Clang 7.0+ required for GPU compilation")
+  endif()
+endif()
+    
+set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
+set(CUTLASS_NVCC_ARCHS_ENABLED ${CUTLASS_NVCC_ARCHS} CACHE STRING "The SM architectures to build code for.")
+
+# Special policy introduced in CMake 3.13
+if (POLICY CMP0076)
+  cmake_policy(SET CMP0076 NEW)
+endif() 
 
 # check if the configuration is supported
-if( NOT CMAKE_SIZEOF_VOID_P EQUAL 8 )
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "CUTLASS requires a 64-bit compiler!")
 endif()
 
-find_package(CUDA REQUIRED)
-include_directories(SYSTEM ${CUDA_INCLUDE_DIRS})
-# Some platforms (e.g. Visual Studio) don't add the CUDA include directories to the system include
-# paths by default, so we add it explicitly here.
-
-find_package(Doxygen QUIET)
+include(GNUInstallDirs)
 
 ###################################################################################################
 #
@@ -93,23 +117,11 @@ find_package(Doxygen QUIET)
 #
 ###################################################################################################
 
-#
-# Conditionally enable cuBLAS
-#
-set(CUTLASS_ENABLE_CUBLAS ON CACHE BOOL "Enable CUTLASS Tests to build with cuBLAS library.")
+message(STATUS "CUDA Compilation Architectures: ${CUTLASS_NVCC_ARCHS_ENABLED}")
 
-if(CUTLASS_ENABLE_CUBLAS)
-
-  find_library(CUBLAS_LIBRARY cublas HINTS
-                                   ${CUDA_TOOLKIT_ROOT_DIR}/lib64
-                                   ${CUDA_TOOLKIT_ROOT_DIR}/lib/x64)
-endif()
-
-
-# By default we want to build in Release mode to ensure that we're getting best performance
 if (NOT (CMAKE_BUILD_TYPE OR CONFIGURATION_TYPES))
+  # By default we want to build in Release mode to ensure that we're getting best performance. 
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose build level" FORCE)
-  # We do support Debug or Release builds
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "RelWithDebInfo" "Release")
 endif()
 
@@ -127,47 +139,35 @@ if (WIN32)
 
   # Disable excess x86 floating point precision that can lead to results being labeled incorrectly
   string(APPEND NVCC_FLAGS " -Xcompiler /fp:strict")
-
-  # Verbose option
-  if (${CUTLASS_NVCC_VERBOSE})
-    string(APPEND NVCC_FLAGS " -v")
-  endif()
 endif(WIN32)
 
-set(CUTLASS_NVCC_ARCHS_DEFAULT "")
-if(NOT CUDA_VERSION VERSION_LESS 7.5)
-  list(APPEND CUTLASS_NVCC_ARCHS_DEFAULT 50)
+if (${CUTLASS_NVCC_VERBOSE})
+  string(APPEND NVCC_FLAGS " -v")
 endif()
-if(NOT CUDA_VERSION VERSION_LESS 8.0)
-  list(APPEND CUTLASS_NVCC_ARCHS_DEFAULT 60 61)
-endif()
-if(NOT CUDA_VERSION VERSION_LESS 9.0)
-  list(APPEND CUTLASS_NVCC_ARCHS_DEFAULT 70)
-endif()
-if(NOT CUDA_VERSION VERSION_LESS 9.2)
-  list(APPEND CUTLASS_NVCC_ARCHS_DEFAULT 72)
-endif()
-if(NOT CUDA_VERSION VERSION_LESS 10.0)
-  list(APPEND CUTLASS_NVCC_ARCHS_DEFAULT 75)
-endif()
-set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_DEFAULT} CACHE STRING "The SM architectures to build code for.")
 
 set(CUTLASS_NVCC_EMBED_CUBIN ON CACHE BOOL "Embed compiled CUDA kernel binaries into executables.")
 set(CUTLASS_NVCC_EMBED_PTX ON CACHE BOOL "Embed compiled PTX into executables.")
 set(CUTLASS_NVCC_KEEP OFF CACHE BOOL "Keep intermediate files generated by NVCC.")
+set(CUTLASS_ENABLE_F16C ON CACHE BOOL "Enable F16C x86 extensions in host code.")
+set(CUTLASS_LIBRARY_KERNELS "128x128" CACHE STRING "Comma delimited list of kernel name filters. Default '' means all kernels are enabled.")
 
+# Test Levels L0, L1, L2
+set(CUTLASS_TEST_LEVEL "0" CACHE STRING "Level of tests to compile.")
+set_property(CACHE CUTLASS_TEST_LEVEL PROPERTY STRINGS 0 1 2)
+string(APPEND NVCC_FLAGS " -DCUTLASS_TEST_LEVEL=${CUTLASS_TEST_LEVEL}")
+
+#
 # CUDA 10.1 introduces "mma" in PTX performing collective matrix multiply operations.
+#
+
 if (CUDA_VERSION VERSION_LESS 10.1)
   set(CUTLASS_ENABLE_TENSOR_CORE_MMA_DEFAULT OFF)
 else()
   set(CUTLASS_ENABLE_TENSOR_CORE_MMA_DEFAULT ON)
 endif()
 
-set(CUTLASS_ENABLE_TENSOR_CORE_MMA ${CUTLASS_ENABLE_TENSOR_CORE_MMA_DEFAULT} CACHE BOOL
+set(CUTLASS_ENABLE_TENSOR_CORE_MMA ${CUTLASS_ENABLE_TENSOR_CORE_MMA_DEFAULT} CACHE BOOL 
   "Enable PTX mma instruction for collective matrix multiply operations.")
-
-set(CUTLASS_EXHAUSTIVE_PERFORMANCE_TEST ${CUTLASS_EXHAUSTIVE_PERFORMANCE_TEST} CACHE BOOL 
-  "Enable more kernels instantiated in the perf suite. This might result in longer compiler time. ")
 
 #
 # NOTE: running with asan and CUDA requires the following environment variable:
@@ -192,15 +192,14 @@ endif()
 #
 ###################################################################################################
 
-# Set NVCC arguments
-foreach(ARCH ${CUTLASS_NVCC_ARCHS})
-  string(APPEND CLANG_FLAGS " --cuda-gpu-arch=sm_${ARCH}")
+foreach(ARCH ${CUTLASS_NVCC_ARCHS_ENABLED})
   if(CUTLASS_NVCC_EMBED_CUBIN)
-    string(APPEND NVCC_FLAGS " -gencode arch=compute_${ARCH},code=sm_${ARCH}")
+    string(APPEND NVCC_GENCODE_FLAGS " -gencode=arch=compute_${ARCH},code=sm_${ARCH}")
   endif()
   if(CUTLASS_NVCC_EMBED_PTX)
-    string(APPEND NVCC_FLAGS " -gencode arch=compute_${ARCH},code=compute_${ARCH}")
+    string(APPEND NVCC_GENCODE_FLAGS " -gencode=arch=compute_${ARCH},code=compute_${ARCH}")
   endif()
+  string(APPEND CLANG_FLAGS " --cuda-gpu-arch=sm_${ARCH}")
 endforeach()
 
 if(CUTLASS_NVCC_EMBED_PTX)
@@ -211,52 +210,61 @@ if (CUTLASS_ENABLE_TENSOR_CORE_MMA)
   string(APPEND COMMON_FLAGS " -DCUTLASS_ENABLE_TENSOR_CORE_MMA=1")
 endif()
 
-if (CUTLASS_ENABLE_CUBLAS)
-  string(APPEND COMMON_FLAGS " -DCUTLASS_ENABLE_CUBLAS=1")
+if (NOT MSVC AND CUTLASS_NVCC_KEEP)
+  # MSVC flow handles caching already, but for other generators we handle it here.
+  set(CUTLASS_NVCC_KEEP_DIR ${CMAKE_CURRENT_BINARY_DIR}/tmp CACHE PATH "Location to store NVCC scratch files")
+  file(MAKE_DIRECTORY ${CUTLASS_NVCC_KEEP_DIR})
+  string(APPEND NVCC_FLAGS " --keep") # --keep-dir may not work with nvcc for some directories.
+  string(APPEND CLANG_FLAGS " -save-temps=${CUTLASS_NVCC_KEEP_DIR}")
 endif()
 
-if (CUTLASS_EXHAUSTIVE_PERFORMANCE_TEST)
-    add_definitions(-DEXHAUSTIVE_PROF)
+if (CUTLASS_ENABLE_F16C)
+  string(APPEND COMPILER_FLAGS " -DCUTLASS_ENABLE_F16C=1")
+  if ((CMAKE_CXX_COMPILER_ID MATCHES "GNU") OR (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+    string(APPEND NVCC_FLAGS " -Xcompiler -mf16c")
+  elseif((CMAKE_CXX_COMPILER_ID MATCHES "MSVC"))
+    string(APPEND NVCC_FLAGS " -Xcompiler /arch:AVX2")
+  endif()
 endif()
 
-if (CUTLASS_NVCC_KEEP)
-    string(APPEND NVCC_FLAGS " -keep")
-    string(APPEND CLANG_FLAGS " -save-temps=obj")
-endif()
+string(APPEND NVCC_FLAGS " -lineinfo")
 
-if (WIN32 AND CUTLASS_NATIVE_CUDA)
-  string(APPEND NVCC_FLAGS_RELEASE " -lineinfo")
-else()
-  string(APPEND NVCC_FLAGS " -lineinfo")
-endif()
 string(APPEND CLANG_FLAGS " -gmlt")
 
 if (UNIX)
   string(APPEND NVCC_FLAGS " -Xcompiler -Wconversion")
+  string(APPEND NVCC_FLAGS " -Xcompiler -fno-strict-aliasing")
 endif()
 
-string(APPEND COMMON_FLAGS_DEBUG " -g")
-string(APPEND COMMON_FLAGS_RELWITHDEBINFO " -O3")
-string(APPEND COMMON_FLAGS_RELEASE " -O3")
+if(CUDA_COMPILER MATCHES "[Cc]lang")
+  string(APPEND CLANG_FLAGS " --cuda-path=${CUDA_TOOLKIT_ROOT_DIR}")
+  string(APPEND CLANG_FLAGS " -mllvm -pragma-unroll-threshold=100000")
+  string(APPEND CLANG_FLAGS " -mllvm -unroll-threshold=5000")
+  string(APPEND CLANG_FLAGS " -Wno-unused-command-line-argument")
 
-# define NDEBUG for release mode to disable assertions
-string(APPEND NVCC_FLAGS_RELEASE " -DNDEBUG")
+  # needed for libcublasLt.so in case it's installed in the same location as libcudart.so
+  # dynamic linker can find it if linker sets RPATH (forced by --disable-new-tags)
+  # Otherwise linker uses RUNPATH and that does not propagate to loaded libs.
+  string(APPEND CLANG_FLAGS " -Wl,--disable-new-dtags")
 
-if( CUDA_COMPILER STREQUAL "clang" )
-  set(CMAKE_CXX_FLAGS "${COMMON_FLAGS} ${CLANG_FLAGS}")
-  set(CMAKE_CXX_FLAGS_RELEASE "${COMMON_FLAGS_RELEASE}")
-  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${COMMON_FLAGS_RELWITHDEBINFO}")
-  set(CMAKE_CXX_FLAGS_DEBUG "${COMMON_FLAGS_DEBUG}")
+  link_libraries(nvidia::cudart)
+endif()
+
+if(CUDA_COMPILER MATCHES "[Cc]lang")
+  string(APPEND CMAKE_CXX_FLAGS "${COMMON_FLAGS} ${CLANG_FLAGS}")
+  string(APPEND CMAKE_CXX_FLAGS_RELEASE "${COMMON_FLAGS_RELEASE} ${CLANG_FLAGS_RELEASE}")
+  string(APPEND CMAKE_CXX_FLAGS_RELWITHDEBINFO "${COMMON_FLAGS_RELWITHDEBINFO} ${CLANG_FLAGS_RELWITHDEBINFO}")
+  string(APPEND CMAKE_CXX_FLAGS_DEBUG "${COMMON_FLAGS_DEBUG} ${CLANG_FLAGS_DEBUG}")
 elseif (CUTLASS_NATIVE_CUDA)
-  set(CMAKE_CUDA_FLAGS "${COMMON_FLAGS} ${NVCC_FLAGS}")
-  set(CMAKE_CUDA_FLAGS_RELEASE "${COMMON_FLAGS_RELEASE}")
-  set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${COMMON_FLAGS_RELWITHDEBINFO}")
-  set(CMAKE_CUDA_FLAGS_DEBUG "${COMMON_FLAGS_DEBUG}")
+  string(APPEND CMAKE_CUDA_FLAGS "${COMMON_FLAGS} ${NVCC_FLAGS} ${NVCC_GENCODE_FLAGS}")
+  string(APPEND CMAKE_CUDA_FLAGS_RELEASE "${COMMON_FLAGS_RELEASE} ${NVCC_FLAGS_RELEASE}")
+  string(APPEND CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${COMMON_FLAGS_RELWITHDEBINFO} ${NVCC_FLAGS_RELWITHDEBINFO}")
+  string(APPEND CMAKE_CUDA_FLAGS_DEBUG "${COMMON_FLAGS_DEBUG} ${NVCC_FLAGS_DEBUG}")
 else()
-  set(CUDA_NVCC_FLAGS "${COMMON_FLAGS} ${NVCC_FLAGS}")
-  set(CUDA_NVCC_FLAGS_DEBUG ${COMMON_FLAGS_DEBUG})
-  set(CUDA_NVCC_FLAGS_RELWITHDEBINFO ${COMMON_FLAGS_RELWITHDEBINFO})
-  set(CUDA_NVCC_FLAGS_RELEASE ${COMMON_FLAGS_RELEASE})
+  string(APPEND CUDA_NVCC_FLAGS "${COMMON_FLAGS} ${NVCC_FLAGS} ${NVCC_GENCODE_FLAGS}")
+  string(APPEND CUDA_NVCC_FLAGS_RELEASE "${COMMON_FLAGS_RELEASE} ${NVCC_FLAGS_RELEASE}")
+  string(APPEND CUDA_NVCC_FLAGS_RELWITHDEBINFO "${COMMON_FLAGS_RELWITHDEBINFO} ${NVCC_FLAGS_RELWITHDEBINFO}")
+  string(APPEND CUDA_NVCC_FLAGS_DEBUG "${COMMON_FLAGS_DEBUG} ${NVCC_FLAGS_DEBUG}")
 endif()
 
 #
@@ -264,12 +272,9 @@ endif()
 #
 
 # GLOB for CUTLASS header files. Should we use a static list instead?
-file(GLOB CUTLASS_GEMM RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/gemm/*.h)
-file(GLOB CUTLASS_UTIL RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/util/*.h)
-file(GLOB CUTLASS_DEVICE RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/device/*.h)
-file(GLOB CUTLASS_CORE RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/*.h)
-file(GLOB CUTLASS_REDUCTION RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/reduction/*.h )
-file(GLOB CUTLASS_LAYOUT_THREAD RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/layout/thread/*.h)
+file(GLOB_RECURSE CUTLASS_INCLUDE RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} include/cutlass/*.h)
+file(GLOB_RECURSE CUTLASS_CUTLASS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/include include/cutlass/*.h)
+file(GLOB_RECURSE CUTLASS_NVRTC RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test test/unit/nvrtc/kernel/*.h)
 
 ###################################################################################################
 #
@@ -277,41 +282,71 @@ file(GLOB CUTLASS_LAYOUT_THREAD RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} cutlass/lay
 #
 ###################################################################################################
 
-source_group("cutlass\\gemm" FILES ${CUTLASS_GEMM})
-source_group("cutlass\\util" FILES ${CUTLASS_UTIL})
-source_group("cutlass\\device" FILES ${CUTLASS_DEVICE})
-source_group("cutlass\\reduction" FILES ${CUTLASS_REDUCTION})
-source_group("cutlass\\layout\\thread" FILES ${CUTLASS_LAYOUT_THREAD})
-source_group("cutlass" FILES ${CUTLASS_CORE})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/include REGULAR_EXPRESSION ".*\.h")
 
 add_library(CUTLASS INTERFACE)
-include_directories("${CMAKE_CURRENT_SOURCE_DIR}")
+add_library(nvidia::cutlass::cutlass ALIAS CUTLASS)
+set_target_properties(CUTLASS PROPERTIES EXPORT_NAME cutlass)
 
-# Special policy introduced in CMake 3.13
-if (POLICY CMP0076)
-  cmake_policy(SET CMP0076 NEW)
+set(CUTLASS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE PATH "CUTLASS Header Library")
+
+set(CUTLASS_GENERATOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/library/)
+
+# The following utility directory is needed even if the tools build is disabled, so it exists here.
+set(CUTLASS_TOOLS_UTIL_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/util/include CACHE INTERNAL "")
+
+include_directories(${CUTLASS_INCLUDE_DIR})
+
+target_compile_features(CUTLASS INTERFACE cxx_std_11)
+
+if (NOT DEFINED CUTLASS_REVISION)
+
+  find_package(Git QUIET)
+
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+    RESULT_VARIABLE CUTLASS_REVISION_RESULT
+    OUTPUT_VARIABLE CUTLASS_REVISION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+
+  if (CUTLASS_REVISION_RESULT)
+    message(STATUS "CUTLASS Revision: Unable to detect, Git returned code ${CUTLASS_REVISION_RESULT}.")
+  else()
+    message(STATUS "CUTLASS Revision: ${CUTLASS_REVISION}")
+  endif()
+
 endif()
 
-target_sources(CUTLASS INTERFACE
-  ${CUTLASS_GEMM}
-  ${CUTLASS_UTIL}
-  ${CUTLASS_DEVICE}
-  ${CUTLASS_CORE}
-  ${CUTLASS_REDUCTION}
-  ${CUTLASS_LAYOUT_THREAD}
-)
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.h.in 
+  ${CMAKE_CURRENT_BINARY_DIR}/include/cutlass/version.h 
+  @ONLY)
 
-target_include_directories(CUTLASS INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(
+  CUTLASS
+  INTERFACE
+  $<INSTALL_INTERFACE:include>
+  $<BUILD_INTERFACE:${CUTLASS_INCLUDE_DIR}>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+  $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include>
+  )
 
-# Create a custom target to ensure that the CUTLASS sources are visible in an IDE
-add_custom_target(cutlass_ide SOURCES
-  ${CUTLASS_GEMM}
-  ${CUTLASS_UTIL}
-  ${CUTLASS_DEVICE}
-  ${CUTLASS_CORE}
-  ${CUTLASS_REDUCTION}
-  ${CUTLASS_LAYOUT_THREAD}
-)
+install(
+  DIRECTORY 
+  ${CUTLASS_INCLUDE_DIR}/ 
+  ${CMAKE_CURRENT_BINARY_DIR}/include/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+
+install(
+  TARGETS CUTLASS
+  EXPORT NvidiaCutlass
+  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
+
+################################################################################
+
 # Doxygen is available. Generate documentation
 if (DOXYGEN_FOUND)
     # DOT is available. Enable graph generation in the documentation
@@ -337,5 +372,76 @@ if (DOXYGEN_FOUND)
     )
 endif()
 
-add_subdirectory(tools)
-add_subdirectory(examples)
+if(NOT WIN32)
+  # Add common library search paths so executables and libraries can load and run
+  # without LD_LIBRARY_PATH being set.
+  link_libraries(
+    "-Wl,-rpath,'$ORIGIN'"
+    "-Wl,-rpath,'$ORIGIN/../lib64'"
+    "-Wl,-rpath,'$ORIGIN/../lib'"
+    "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib64'"
+    "-Wl,-rpath,'${CUDA_TOOLKIT_ROOT_DIR}/lib'"
+    )
+endif()
+
+################################################################################
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/cuBLAS.cmake)
+
+if (CUTLASS_ENABLE_CUBLAS)
+  target_compile_definitions(CUTLASS INTERFACE CUTLASS_ENABLE_CUBLAS=1)
+endif()
+
+################################################################################
+
+set(CUTLASS_ENABLE_HEADERS_ONLY OFF CACHE BOOL "Enable only the header library")
+
+if(CUTLASS_ENABLE_HEADERS_ONLY)
+  set(CUTLASS_ENABLE_EXAMPLES_INIT OFF)
+  set(CUTLASS_ENABLE_TOOLS_INIT OFF)
+else()
+  set(CUTLASS_ENABLE_EXAMPLES_INIT ON)
+  set(CUTLASS_ENABLE_TOOLS_INIT ON)
+endif()
+
+set(CUTLASS_ENABLE_EXAMPLES ${CUTLASS_ENABLE_EXAMPLES_INIT} CACHE BOOL "Enable CUTLASS Examples")
+set(CUTLASS_ENABLE_TOOLS ${CUTLASS_ENABLE_TOOLS_INIT} CACHE BOOL "Enable CUTLASS Tools")
+
+if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
+  set(CUTLASS_ENABLE_TESTS_INIT ${CUTLASS_ENABLE_TOOLS_INIT})
+else()
+  set(CUTLASS_ENABLE_TESTS_INIT OFF)
+endif()
+
+set(CUTLASS_ENABLE_TESTS ${CUTLASS_ENABLE_TESTS_INIT} CACHE BOOL "Enable CUTLASS Tests")
+
+if(CUTLASS_ENABLE_TOOLS)
+  add_subdirectory(tools)
+endif()
+if(CUTLASS_ENABLE_EXAMPLES)
+  add_subdirectory(examples)
+endif()
+
+if(CUTLASS_ENABLE_TESTS)
+  include(CTest)
+  enable_testing()
+  add_subdirectory(test)
+endif()
+
+################################################################################
+
+install(
+  FILES ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NvidiaCutlassConfig.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/
+  )
+
+install(
+  EXPORT NvidiaCutlass
+  NAMESPACE nvidia::cutlass::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/
+  FILE NvidiaCutlassTargets.cmake
+  )
+
+################################################################################
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/NvidiaCutlassPackageConfig.cmake)

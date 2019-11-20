@@ -20,11 +20,48 @@
 # STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-add_subdirectory(00_basic_gemm)
-add_subdirectory(01_tensor_view)
-add_subdirectory(02_cutlass_utilities)
-add_subdirectory(03_strided_batched_gemm)
-add_subdirectory(04_tile_iterator)
-add_subdirectory(05_wmma_gemm)
-add_subdirectory(06_splitK_gemm)
+set(CUTLASS_EXAMPLES_COMMON_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
 
+function(cutlass_example_add_executable)
+
+  set(options)
+  set(oneValueArgs)
+  set(multiValueArgs)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  cutlass_add_executable(${__UNPARSED_ARGUMENTS})
+
+  list(GET __UNPARSED_ARGUMENTS 0 NAME)
+
+  target_link_libraries(
+    ${NAME}
+    PRIVATE
+    CUTLASS
+    cutlass_tools_util_includes
+    )
+
+  target_include_directories(
+    ${NAME}
+    PRIVATE
+    ${CUTLASS_EXAMPLES_COMMON_SOURCE_DIR}
+    )
+
+endfunction()
+
+add_custom_target(cutlass_examples)
+
+foreach(EXAMPLE
+  00_basic_gemm
+  01_cutlass_utilities
+  02_dump_reg_shmem
+  03_visualize_layout
+  04_tile_iterator
+  05_batched_gemm
+  06_splitK_gemm
+  07_volta_tensorop_gemm
+  08_turing_tensorop_gemm)
+
+  add_subdirectory(${EXAMPLE})
+  add_dependencies(cutlass_examples ${EXAMPLE})
+
+endforeach()

@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['onedirection',['OneDirection',['../structcutlass_1_1gemm_1_1swizzleDirection.html#aba1528de966f236380c5f55942802fb8a7c9f735f930f7acf8a16ef43c5fadda5',1,'cutlass::gemm::swizzleDirection']]]
+  ['sequential',['Sequential',['../structcutlass_1_1Distribution.html#a499f4023e0d42356ce71d38cc32bf92aa39d3cf55e90573c8d1dfb483cfb410dc',1,'cutlass::Distribution']]]
 ];

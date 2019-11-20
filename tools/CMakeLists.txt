@@ -20,9 +20,7 @@
 # STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-include_directories("external/googletest/googletest/include")
-
-add_subdirectory(external/googletest/googletest)
-add_subdirectory(test)
-add_subdirectory(nvrtc)
+add_subdirectory(util)
+add_subdirectory(library)
+add_subdirectory(profiler)
 

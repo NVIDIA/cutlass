@@ -6,12 +6,14 @@
 
 #MSearchBox {
     white-space : nowrap;
+    position: absolute;
     float: none;
+    display: inline;
     margin-top: 8px;
     right: 0px;
     width: 170px;
-    height: 24px;
     z-index: 102;
+    background-color: white;
 }
 
 #MSearchBox .left
@@ -46,13 +48,12 @@
     height:19px;
     background:url('search_m.png') repeat-x;
     border:none;
-    width:115px;
+    width:111px;
     margin-left:20px;
     padding-left:4px;
     color: #909090;
     outline: none;
     font: 9pt Arial, Verdana, sans-serif;
-    -webkit-border-radius: 0px;
 }
 
 #FSearchBox #MSearchField {
@@ -63,7 +64,7 @@
     display:block;
     position:absolute;
     right:10px;
-    top:8px;
+    top:0px;
     width:20px;
     height:19px;
     background:url('search_r.png') no-repeat;
@@ -99,9 +100,9 @@
     display: none;
     position: absolute;
     left: 0; top: 0;
-    border: 1px solid #B7CE90;
-    background-color: #FBFCF9;
-    z-index: 10001;
+    border: 1px solid #AABFA0;
+    background-color: #FAFBFA;
+    z-index: 1;
     padding-top: 4px;
     padding-bottom: 4px;
     -moz-border-radius: 4px;
@@ -144,7 +145,7 @@ a.SelectItem:active {
 
 a.SelectItem:hover {
     color: #FFFFFF;
-    background-color: #6F8C3D;
+    background-color: #5E7851;
     outline-style: none;
     text-decoration: none;
     cursor: pointer;
@@ -163,8 +164,7 @@ iframe#MSearchResults {
     position: absolute;
     left: 0; top: 0;
     border: 1px solid #000;
-    background-color: #F4F7EE;
-    z-index:10000;
+    background-color: #F2F5F0;
 }
 
 /* ----------------------------------- */
@@ -199,7 +199,7 @@ body.SRPage {
 
 .SRSymbol {
     font-weight: bold; 
-    color: #789742;
+    color: #658257;
     font-family: Arial, Verdana, sans-serif;
     text-decoration: none;
     outline: none;
@@ -207,7 +207,7 @@ body.SRPage {
 
 a.SRScope {
     display: block;
-    color: #789742; 
+    color: #658257; 
     font-family: Arial, Verdana, sans-serif;
     text-decoration: none;
     outline: none;
@@ -240,7 +240,7 @@ DIV.searchresults {
 /*---------------- External search page results */
 
 .searchresult {
-    background-color: #F5F8F0;
+    background-color: #F3F6F2;
 }
 
 .pages b {

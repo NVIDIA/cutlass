@@ -20,19 +20,7 @@
 # STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
-set(EXAMPLES_BASIC_CUTLASS_GEMM_SOURCES
-  tile_iterator.cu
-)
-
-if (NOT CUTLASS_NATIVE_CUDA)
-  # cuda_add_executable does not take interface include directories into account
-  # Let's fetch them and pass them to CUDA.
-  get_target_property(CUTLASS_INCLUDES CUTLASS INTERFACE_INCLUDE_DIRECTORIES)
-  include_directories("${CUTLASS_INCLUDES}")
-endif()
-
-cutlass_add_executable(
+cutlass_example_add_executable(
   04_tile_iterator
-  ${EXAMPLES_BASIC_CUTLASS_GEMM_SOURCES}
-)
+  tile_iterator.cu
+  )

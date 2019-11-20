@@ -1,5 +1,31 @@
 # NVIDIA CUTLASS Changelog
 
+# CUTLASS 2.0
+
+## [2.0.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.0.0) (2019-11-19)
+ * Substantially refactored for
+    * Better performance, particularly for native Turing Tensor Cores
+    * Robust and durable templates spanning the design space
+    * Encapsulated functionality embodying modern C++11 programming techniques
+    * Optimized containers and data types for efficient, generic, portable device code
+  * Updates to:
+    * [Quick start guide](/media/docs/quickstart.md)
+    * [Documentation](/README.md#documentation)
+    * [Utilities](/media/docs/utilities.md)
+    * [CUTLASS Profiler](/media/docs/profiler.md)
+ * Native Turing Tensor Cores
+    * Efficient GEMM kernels targeting Turing Tensor Cores
+    * Mixed-precision floating point, 8-bit integer, 4-bit integer, and binarized operands
+ * Coverage of existing CUTLASS functionality
+    * GEMM kernels targeting CUDA and Tensor Cores in NVIDIA GPUs
+    * Volta Tensor Cores through native mma.sync and through WMMA API
+    * Optimizations such as parallel reductions, threadblock rasterization, and intra-threadblock reductions
+    * Batched GEMM operations
+    * Complex-valued GEMMs
+ * Note: a host compiler supporting C++11 or greater is required.
+
+# CUTLASS 1.x
+
 ## [1.3.2](https://github.com/NVIDIA/cutlass/releases/tag/v1.3.2) (2019-07-09)
  * Performance improvement for Volta Tensor Cores TN and TT layouts.
 
@@ -50,7 +76,7 @@
 
 ## Copyright
 
-Copyright (c) 2017-2018, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted
