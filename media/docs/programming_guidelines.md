@@ -90,14 +90,15 @@ is able to unroll the loop bodies, map array elements to registers, and construc
 All loops expected to be unrolled should be annotated with `CUTLASS_PRAGMA_UNROLL` to explicitly direct the compiler
 to unroll them. 
 
-```
+```c++
 int const kN = 8;
-Array<float, kN> x;                               // Array we would like to store in registers
+Array<float, kN> x;                       // Array we would like to store in registers
 
-CUTLASS_PRAGMA_UNROLL                            // Directs the CUDA compiler to unroll this loop.
-for (int idx = 0; idx < kN; ++idx) {             // Loop has constant number of iterations
+CUTLASS_PRAGMA_UNROLL                     // Directs the CUDA compiler to unroll this loop.
+for (int idx = 0; idx < kN; ++idx) {      // Loop has constant number of iterations.
 
-  x[i] = float(idx);                             // Indirect access by induction variable results in direct register access
+  x[i] = float(idx);                      // Indirect access by induction variable results in 
+                                          // direct register access.
 }
 ```
 

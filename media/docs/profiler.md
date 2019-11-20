@@ -7,27 +7,27 @@
 The CUTLASS Profiler is a command-line driven test and profiling environment for CUTLASS computations
 defined in the CUTLASS Instance Library.
 
-The CUTLASS Profiler sources are stored in 
-```
-tools/
-  profiler/
-```
-
-and may be compiled as follows.
-```
+The CUTLASS Profiler may be compiled with:
+```bash
 $ make cutlass_profiler -j
 ```
 
 To limit compilation time, only one tile size (128x128) is instantiated for each data type, math instruction, and layout.
 To instantiate all sizes, set the following environment variable when running CMake from an empty `build/` directory.
-```
+```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=all
 ...
 $ make cutlass_profiler -j
 ```
 
-The CUTLASS Profiler usage statement may be obtained by executing `cutlass_profiler --help` and appears as follows.
+The CUTLASS Profiler sources are stored in 
+```bash
+tools/
+  profiler/
 ```
+
+The CUTLASS Profiler usage statement may be obtained by executing `cutlass_profiler --help` and appears as follows.
+```bash
 CUTLASS Performance Tool
 usage:
     cutlass_profiler [options]
@@ -122,7 +122,7 @@ Example:
 The complete set of arguments available to each operation may be viewed by specifying the operation name
 in addition to `--help`. The argument flags and their aliases usable for GEMM appear as follows.
 
-```
+```bash
 $ ./tools/profiler/cutlass_profiler --operation=gemm --help
 
 GEMM
@@ -190,7 +190,7 @@ Test your changes to gemm kernels with a quick functional test and save results 
 ## Example SGEMM
 
 Example command line for profiling SGEMM kernels is as follows:
-```
+```bash
 $ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=4352 --n=4096 --k=4096
 
 =============================
@@ -202,9 +202,9 @@ $ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=4352 --n=4096 --k=4096
  Disposition: Passed
       Status: Success
 
-   Arguments:  --m=4352 --n=4096 --k=4096 --A=f32:column --B=f32:column --C=f32:column --alpha=1 --beta=0  \
+   Arguments:  --m=4352 --n=4096 --k=4096 --A=f32:column --B=f32:column --C=f32:column --alpha=1 --beta=0        \
                --split_k_slices=1 --batch_count=1 --op_class=simt --accum=f32 --cta_m=128 --cta_n=128 --cta_k=8  \
-               --stages=2 --warps_m=2 --warps_n=2 --warps_k=1 --inst_m=1 --inst_n=1 --inst_k=1 --min_cc=50  \
+               --stages=2 --warps_m=2 --warps_n=2 --warps_k=1 --inst_m=1 --inst_n=1 --inst_k=1 --min_cc=50       \
                --max_cc=1024
 
        Bytes: 52428800  bytes
@@ -223,7 +223,7 @@ Note, the arguments which appear in the output may be used as command line param
 
 To execute kernels targeting Tensor Core operations, supply the flag `--op_class=tensorop` in the command line.
 
-```
+```bash
 $ ./tools/profiler/cutlass_profiler --op_class=tensorop
 
 =============================
@@ -235,9 +235,10 @@ $ ./tools/profiler/cutlass_profiler --op_class=tensorop
  Disposition: Passed
       Status: Success
 
-   Arguments:  --m=4352 --n=4096 --k=4096 --A=f16:column --B=f16:row --C=f16:column --alpha=1 --beta=0 --split_k_slices=1  \
-               --batch_count=1 --op_class=tensorop --accum=f16 --cta_m=128 --cta_n=128 --cta_k=32 --stages=2  \
-               --warps_m=2 --warps_n=2 --warps_k=1 --inst_m=16 --inst_n=8 --inst_k=8 --min_cc=75 --max_cc=1024  \
+   Arguments:  --m=4352 --n=4096 --k=4096 --A=f16:column --B=f16:row --C=f16:column --alpha=1 --beta=0   \
+               --op_class=tensorop --accum=f16 --cta_m=128 --cta_n=128 --cta_k=32 --stages=2             \
+               --warps_m=2 --warps_n=2 --warps_k=1 --inst_m=16 --inst_n=8 --inst_k=8                     \
+               --min_cc=75 --max_cc=1024
 
 
        Bytes: 52428800  bytes
@@ -258,7 +259,7 @@ as an inclusive range with the following syntax `start:end:increment` or simply 
 For example, the following sweeps over the range of the GEMM K dimension from 8 to 4096 in increments
 of 8 elements.
 
-```
+```bash
 $ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sgemm_128x128_nn --m=4352 --n=4096 --k=8:4096:8
 ```
 
@@ -268,17 +269,18 @@ By default, runtime and computed GFLOP/s are reported for each operation and pro
 a table of comma separated values are reported at the end of the execution. This may be output to a file
 with the `--output=<filename.csv>` command line option as shown:
 
-```
-$ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sgemm_128x128_nn --m=4352 --n=4096 --k=8:4096:8 --output=report.csv
+```bash
+$ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sgemm_128x128_nn            \
+                                    --m=4352 --n=4096 --k=8:4096:8 --output=report.csv
 ```
 
 To faclitate generation of pivot tables and charts, additional columns may be prepended with the
 `--tags=<column>:<value>` option. One or more tags may be specified using a comma-delimited list.
 
-```
-$ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sgemm_128x128_nn \
-  --m=4352 --n=4096 --k=8:4096:8 --output=report.csv \
-  --tags=cutlass:2.0,date:2019-11-19
+```bash
+$ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sgemm_128x128_nn            \
+                                    --m=4352 --n=4096 --k=8:4096:8 --output=report.csv \
+                                    --tags=cutlass:2.0,date:2019-11-19
 ```  
 
 # Copyright

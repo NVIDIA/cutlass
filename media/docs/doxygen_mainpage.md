@@ -1,5 +1,3 @@
-![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "CUTLASS 2.0")
-
 # CUTLASS 2.0
 
 _CUTLASS 2.0 - November 2019_
