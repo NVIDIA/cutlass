@@ -29,7 +29,8 @@ Markus Hohnerbach
 Fei Hu  
 Alan Kaatz  
 Tina Li  
-Timmy Liu  
+Timmy Liu
+Piotr Majcher  
 Duane Merrill  
 Kevin Siu  
 Markus Tavenrath  
