@@ -9,7 +9,7 @@
 CUTLASS requires:
 - NVIDIA CUDA Toolkit (9.2 or later required, 10.2 recommended)
 - CMake 3.12+
-- C++11 host compiler (g++ 7.3.0 or Microsoft Visual Studio 2015 recommended)
+- host compiler supporting C++11 or greater (g++ 7.3.0 or Microsoft Visual Studio 2015 recommended)
 - Python 3.5+
 
 ## Initial build steps
@@ -96,7 +96,7 @@ No tests should fail.
 ## Using CUTLASS within other applications
 
 Applications should list [`/include`](/include) within their include paths. They must be
-compiled as C++11.
+compiled as C++11 or greater.
 
 **Example:** print the contents of a variable storing half-precision data.
 ```c++

@@ -21,7 +21,8 @@
     * Volta Tensor Cores through native mma.sync and through WMMA API
     * Optimizations such as parallel reductions, threadblock rasterization, and intra-threadblock reductions
     * Batched GEMM operations
-    * Complex-valued GEMMs using interleaved and planar complex data repesentations
+    * Complex-valued GEMMs
+ * Note: a host compiler supporting C++11 or greater is required.
 
 # CUTLASS 1.x
 
