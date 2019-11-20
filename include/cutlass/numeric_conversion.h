@@ -46,7 +46,6 @@ enum class FloatRoundStyle {
   round_to_nearest,             ///< round to nearest even
   round_toward_infinity,        ///< round toward infinity
   round_toward_neg_infinity,    ///< round toward negative infinity
-  round_half_ulp_truncate       ///< add 0.5ulp to integer representation then round toward zero
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -269,7 +268,44 @@ struct NumericConverterClamp {
     result_type const kClamp_min = -kClamp_max - 1;
     bool is_int_min = !(s > kClamp_min);
     bool is_int_max = !(s < kClamp_max);
-    return is_int_min ? kClamp_min : (is_int_max ? kClamp_max : convert_op(s));
+
+    return (is_int_min ? kClamp_min : (is_int_max ? kClamp_max : convert_op(s)));
+  }
+
+  CUTLASS_HOST_DEVICE
+    result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for clamping from a single-precision float.
+template <
+  typename T
+>
+struct NumericConverterClamp<T, float> {
+
+  using result_type = T;
+  using source_type = float;
+
+  static_assert((platform::is_same<result_type, int32_t>::value ||
+                 platform::is_same<result_type, int8_t>::value ||
+                 platform::is_same<result_type, cutlass::int4b_t>::value),
+                "Clamp is only needed for integer types");
+
+  CUTLASS_HOST_DEVICE
+    static result_type convert(source_type const & s) {
+
+    NumericConverter<result_type, source_type> convert_op;
+
+    float kClamp_max = float((1 << (sizeof_bits<result_type>::value - 1)) - 1);
+    float kClamp_min = -kClamp_max - 1;
+
+    float source = s;
+
+    source = fmaxf(source, kClamp_min);
+    source = fminf(source, kClamp_max);
+
+    return convert_op(source);
   }
 
   CUTLASS_HOST_DEVICE
