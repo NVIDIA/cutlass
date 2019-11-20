@@ -242,6 +242,11 @@ if(CUDA_COMPILER MATCHES "[Cc]lang")
   string(APPEND CLANG_FLAGS " -mllvm -unroll-threshold=5000")
   string(APPEND CLANG_FLAGS " -Wno-unused-command-line-argument")
 
+  string(REPLACE "." ";" CUDA_VERSION_PARTS ${CMAKE_CUDA_COMPILER_VERSION})
+  list(GET CUDA_VERSION_PARTS 0 CUDA_VERSION_MAJOR)
+  list(GET CUDA_VERSION_PARTS 1 CUDA_VERSION_MINOR)
+  string(APPEND CLANG_FLAGS " -D__CUDACC_VER_MAJOR__=${CUDA_VERSION_MAJOR} -D__CUDACC_VER_MINOR__=${CUDA_VERSION_MINOR}")
+
   # needed for libcublasLt.so in case it's installed in the same location as libcudart.so
   # dynamic linker can find it if linker sets RPATH (forced by --disable-new-tags)
   # Otherwise linker uses RUNPATH and that does not propagate to loaded libs.
