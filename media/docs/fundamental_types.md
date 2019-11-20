@@ -224,19 +224,19 @@ struct Tensor4DCoord : public Coord<4> {
 };
 ```
 
-### PredicateArray<int Bits>
+### PredicateVector<int Bits>
 
-`PredicateArray<int Bits>` contains a statically sized array of hardware predicates packed into registers to enable efficient access within unrolled loops. 
+`PredicateVector<int Bits>` contains a statically sized array of hardware predicates packed into registers to enable efficient access within unrolled loops. 
 
 This container is optimized for sequential access through iterators, though these are only efficient when used within fully unrolled loops.
 
-Moreover, instances of `PredicateArray<>` are not guaranteed to be updated until any non-const iterator objects have gone out of scope. This is because iterators are effectively caches that update the `PredicateArray<>` instance's internal storage as a batch.
+Moreover, instances of `PredicateVector<>` are not guaranteed to be updated until any non-const iterator objects have gone out of scope. This is because iterators are effectively caches that update the `PredicateVector<>` instance's internal storage as a batch.
 
 **Example:** Managing an array of predicates.
 ```c++
 
 unsigned mask;
-PredicateArray<kBits> predicates;
+PredicateVector<kBits> predicates;
 
 // Nested scope to update predicates via an iterator
 {
@@ -262,7 +262,7 @@ for (int access = 0; access < kAccesses; ++access, ++pred_it) {
 
 ```
 
-Note: `PredicateArray<>` is not efficient when accessed via dynamic random access. If an array of bits is needed with dynamic random access (in contrast with access via _constexpr_ indices), then `Array<bin1_t, N>` should be used instead.
+Note: `PredicateVector<>` is not efficient when accessed via dynamic random access. If an array of bits is needed with dynamic random access (in contrast with access via _constexpr_ indices), then `Array<bin1_t, N>` should be used instead.
 
 ## Functional
 
