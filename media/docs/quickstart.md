@@ -10,7 +10,7 @@ CUTLASS requires:
 - NVIDIA CUDA Toolkit (9.2 or later required, 10.2 recommended)
 - CMake 3.12+
 - host compiler supporting C++11 or greater (g++ 7.3.0 or Microsoft Visual Studio 2015 recommended)
-- Python 3.5+
+- Python 3.6+
 
 ## Initial build steps
 
