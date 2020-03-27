@@ -22,7 +22,7 @@
 
 include(GNUInstallDirs)
 
-find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
+find_package(Python3 3.6 COMPONENTS Interpreter REQUIRED)
 
 add_library(cutlass_library_includes INTERFACE)
 add_library(nvidia::cutlass::library::includes ALIAS cutlass_library_includes)
