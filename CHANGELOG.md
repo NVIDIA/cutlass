@@ -1,6 +1,14 @@
 # NVIDIA CUTLASS Changelog
 
-# CUTLASS 2.0
+# CUTLASS 2.x
+
+## [2.1.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.1.0) (2020-04-06)
+ * BLAS-style host-side API added to [CUTLASS Library](/media/docs/quickstart.md#cutlass-library)
+    * API to launch compiled kernel instances for GEMM and planar complex GEMM
+ * Planar Complex GEMM kernels targeting Volta and Turing Tensor Cores
+    * Computes complex matrix products on matrices stored as disjoint real and imaginary parts
+    * [SDK Examples of Planar Complex GEMMs](/examples/10_planar_complex/planar_complex.cu)
+ * Minor enhancements and bug fixes
 
 ## [2.0.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.0.0) (2019-11-19)
  * Substantially refactored for
@@ -22,7 +30,7 @@
     * Optimizations such as parallel reductions, threadblock rasterization, and intra-threadblock reductions
     * Batched GEMM operations
     * Complex-valued GEMMs
- * Note: a host compiler supporting C++11 or greater is required.
+ * **Note: a host compiler supporting C++11 or greater is required.**
 
 # CUTLASS 1.x
 
@@ -76,7 +84,7 @@
 
 ## Copyright
 
-Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

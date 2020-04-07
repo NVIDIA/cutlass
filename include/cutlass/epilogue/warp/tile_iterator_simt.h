@@ -100,12 +100,28 @@ public:
   /// Padding quantity
   using Padding = MatrixShape<
     0,
-    4 * Policy::kElementsPerAccess>;
+    4 * Policy::kElementsPerAccess
+#if CUTLASS_SIMT_EPILOGUE_USE_SCALAR_STORES
+    + 1
+#endif
+  >;
 
 private:
 
+#if CUTLASS_SIMT_EPILOGUE_USE_SCALAR_STORES
   /// Storage type for accessing memory
-  using AccessType = AlignedArray<Element, Policy::kElementsPerAccess>;
+  using AccessType = AlignedArray<
+    Element, 
+    1
+  >;
+
+#else
+  /// Storage type for accessing memory
+  using AccessType = AlignedArray<
+    Element, 
+    Policy::kElementsPerAccess
+  >;
+#endif
 
   //
   // Data members
@@ -130,18 +146,21 @@ public:
     unsigned lane_id
   ):
     pointer_(reinterpret_cast<AccessType *>(ref.data())),
-    layout_(ref.stride()[0] / Policy::kElementsPerAccess) { 
+    layout_(ref.stride()[0] / AccessType::kElements) { 
 
     auto lane_layout = Policy::MmaSimtPolicy::get_lane_layout();
     MatrixCoord lane_offset = lane_layout.inverse(lane_id);
 
-    pointer_ += layout_(lane_offset);
+    pointer_ += layout_({
+      lane_offset.row(),
+      lane_offset.column() * Policy::kElementsPerAccess / int(AccessType::kElements)
+    });
   }
 
   /// Adds a pointer offset
   CUTLASS_HOST_DEVICE
   TileIteratorSimt & add_pointer_offset(Index pointer_offset) {
-    pointer_ += pointer_offset / Policy::kElementsPerAccess;
+    pointer_ += pointer_offset / AccessType::kElements;
     return *this;
   }
 
@@ -151,7 +170,7 @@ public:
 
     pointer_ += layout_({
       tile_offset.row() * Shape::kRow, 
-      (tile_offset.column() * Shape::kColumn / Policy::kElementsPerAccess)
+      (tile_offset.column() * Shape::kColumn / int(AccessType::kElements))
     });
 
     return *this;
@@ -173,7 +192,7 @@ public:
       // de-vectorized stores
       using ScalarAccessType = AlignedArray<Element, 1>;
       ScalarAccessType const *scalarFragPtr = reinterpret_cast<ScalarAccessType const *>(&frag);
-      ScalarAccessType *scalarPointer = reinterpret_cast<ScalarAccessType *>(pointer_);
+      ScalarAccessType *scalarPointer = reinterpret_cast<ScalarAccessType *>(pointer_) + pointer_offset;
 
       CUTLASS_PRAGMA_UNROLL
       for (int n = 0; n < Policy::kAccessesPerIteration; ++n) {
@@ -187,7 +206,7 @@ public:
     AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
     CUTLASS_PRAGMA_UNROLL
     for (int n = 0; n < Policy::kAccessesPerIteration; ++n) {
-      pointer_[n * Policy::MmaSimtPolicy::WarpShape::kColumn] = frag_ptr[n];
+      pointer_[n * Policy::MmaSimtPolicy::WarpShape::kColumn + pointer_offset / int(AccessType::kElements)] = frag_ptr[n];
     }
 #endif
   }
@@ -206,7 +225,7 @@ public:
 
     CUTLASS_PRAGMA_UNROLL
     for (int n = 0; n < Policy::kAccessesPerIteration; ++n) {
-      frag_ptr[n] = pointer_[n * Policy::MmaSimtPolicy::WarpShape::kColumn];
+      frag_ptr[n] = pointer_[n * Policy::MmaSimtPolicy::WarpShape::kColumn + pointer_offset / int(AccessType::kElements)];
     }
   }
 

@@ -29,7 +29,11 @@
 */
 #pragma once
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cstdint>
+#else
 #include <cstdint>
+#endif
 
 #include "cutlass/platform/platform.h"
 
@@ -48,7 +52,7 @@ struct integer_subbyte {
   static bool const kSigned = Signed;
 
   /// External type
-  using T = typename std::conditional<kSigned, int, unsigned>::type;
+  using T = typename platform::conditional<kSigned, int, unsigned>::type;
 
   /// Storage type
   using Storage = uint8_t;

@@ -38,4 +38,4 @@ add_custom_target(
   test_unit_epilogue_thread
   test_unit_epilogue_warp
   test_unit_epilogue_threadblock
-  )
+ )

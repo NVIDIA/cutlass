@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -68,6 +68,10 @@ enum class LayoutTypeID {
   kRowMajorInterleavedK4,
   kColumnMajorInterleavedK16,
   kRowMajorInterleavedK16,
+  kColumnMajorInterleavedK32,
+  kRowMajorInterleavedK32,
+  kColumnMajorInterleavedK64,
+  kRowMajorInterleavedK64,
   kTensorNCHW,
   kTensorNHWC,
   kInvalid
@@ -110,8 +114,20 @@ enum class NumericTypeID {
 /// Enumeraed type describing a transformation on a complex value.
 enum class ComplexTransform {
   kNone,
-  kConjugate
+  kConjugate,
+  kInvalid
 };
+
+/// Providers
+enum class Provider {
+  kCUTLASS,
+  kReferenceHost,
+  kReferenceDevice,
+  kCUBLAS,
+  kInvalid
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Enumeration indicating the kind of operation
 enum class OperationKind {
@@ -143,6 +159,14 @@ enum class OpcodeClassID {
   kInvalid
 };
 
+enum class MathOperationID {
+  kMultiplyAdd,
+  kMultiplyAddSaturate,
+  kMultiplyAddComplex,
+  kXorPopc,
+  kInvalid
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Enumeration indicating what kind of GEMM operation to perform
@@ -150,88 +174,20 @@ enum class GemmKind {
   kGemm,
   kBatched,
   kArray,
+  kUniversal,
   kPlanarComplex,
-  kPlanarComplexBatched,
+  kPlanarComplexArray,
   kInvalid
 };
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Lexical cast from string
-template <typename T> T from_string(std::string const &);
-
-/// Converts a NumericType enumerant to a string
-char const *to_string(OperationKind type, bool pretty = false);
-
-/// Parses a NumericType enumerant from a string
-template <> OperationKind from_string<OperationKind>(std::string const &str);
-
-/// Converts a NumericType enumerant to a string
-char const *to_string(NumericTypeID type, bool pretty = false);
-
-/// Parses a NumericType enumerant from a string
-template <> NumericTypeID from_string<NumericTypeID>(std::string const &str);
-
-/// Returns the size of a data type in bits
-int sizeof_bits(NumericTypeID type);
-
-/// Returns true if the numeric type is a complex data type or false if real-valued.
-bool is_complex_type(NumericTypeID type);
-
-/// Returns the real-valued type underlying a type (only different from 'type' if complex)
-NumericTypeID get_real_type(NumericTypeID type);
-
-/// Returns true if numeric type is integer
-bool is_integer_type(NumericTypeID type);
-
-/// Returns true if numeric type is signed
-bool is_signed_type(NumericTypeID type);
-
-/// Returns true if numeric type is a signed integer
-bool is_signed_integer(NumericTypeID type);
-
-/// returns true if numeric type is an unsigned integer
-bool is_unsigned_integer(NumericTypeID type);
-
-/// Returns true if numeric type is floating-point type
-bool is_float_type(NumericTypeID type);
-
-/// To string method for cutlass::Status
-char const *to_string(Status status, bool pretty = false);
-
-/// Converts a LayoutTypeID enumerant to a string
-char const *to_string(LayoutTypeID layout, bool pretty = false);
-
-/// Parses a LayoutType enumerant from a string
-template <> LayoutTypeID from_string<LayoutTypeID>(std::string const &str);
-
-/// Returns the rank of a layout's stride base on the LayoutTypeID
-int get_layout_stride_rank(LayoutTypeID layout_id);
-
-/// Converts a OpcodeClassID enumerant to a string
-char const *to_string(OpcodeClassID type, bool pretty = false);
-
-/// Converts a OpcodeClassID enumerant from a string
-template <>
-OpcodeClassID from_string<OpcodeClassID>(std::string const &str);
-
-/// Lexical cast from int64_t to string
-std::string lexical_cast(int64_t int_value);
-
-/// Lexical cast a string to a byte array. Returns true if cast is successful or false if invalid.
-bool lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type, std::string const &str);
-
-/// Lexical cast TO a string FROM a byte array. Returns true if cast is successful or false if invalid.
-std::string lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type);
-
-/// Casts from a signed int64 to the destination type. Returns true if successful.
-bool cast_from_int64(std::vector<uint8_t> &bytes, NumericTypeID type, int64_t src);
-
-/// Casts from an unsigned int64 to the destination type. Returns true if successful.
-bool cast_from_uint64(std::vector<uint8_t> &bytes, NumericTypeID type, uint64_t src);
-
-/// Casts from a real value represented as a double to the destination type. Returns true if successful.
-bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double src);
+/// Mode of GEMM
+enum class GemmUniversalMode {
+  kGemm,
+  kGemmSplitKParallel,
+  kBatched,
+  kArray,
+  kInvalid
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -246,6 +202,9 @@ struct MathInstructionDescription {
   /// Classification of math instruction
   OpcodeClassID opcode_class;
 
+  /// Type of math operation performed
+  MathOperationID math_operation;
+
   //
   // Methods
   //
@@ -253,9 +212,13 @@ struct MathInstructionDescription {
   MathInstructionDescription(
     cutlass::gemm::GemmCoord instruction_shape = cutlass::gemm::GemmCoord(),
     NumericTypeID element_accumulator = NumericTypeID::kInvalid,
-    OpcodeClassID opcode_class = OpcodeClassID::kInvalid
+    OpcodeClassID opcode_class = OpcodeClassID::kInvalid,
+    MathOperationID math_operation = MathOperationID::kMultiplyAdd
   ):
-    instruction_shape(instruction_shape), element_accumulator(element_accumulator), opcode_class(opcode_class) {}
+    instruction_shape(instruction_shape), 
+    element_accumulator(element_accumulator), 
+    opcode_class(opcode_class),
+    math_operation(math_operation) {}
 
 };
 
@@ -306,6 +269,9 @@ struct OperationDescription {
   /// Unique identifier describing the operation
   char const * name;
 
+  /// Operation provider
+  Provider provider;
+
   /// Kind of operation
   OperationKind kind;
 
@@ -317,6 +283,7 @@ struct OperationDescription {
   //
   OperationDescription(
     char const * name = "unknown",
+    Provider Provider = Provider::kInvalid,
     OperationKind kind = OperationKind::kInvalid, 
     TileDescription const & tile_description = TileDescription()
   ):
@@ -340,10 +307,11 @@ struct TensorDescription {
 
   /// log2() of the maximum value each relevant stride may have
   int log_stride_range;
-
+  
   //
   // Methods
   //
+
   TensorDescription(
     NumericTypeID element = NumericTypeID::kInvalid,
     LayoutTypeID layout = LayoutTypeID::kInvalid,
@@ -355,7 +323,7 @@ struct TensorDescription {
     layout(layout), 
     alignment(alignment), 
     log_extent_range(log_extent_range), 
-    log_stride_range(log_stride_range) { }
+    log_stride_range(log_stride_range)  { }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -414,7 +382,7 @@ struct GemmDescription : public OperationDescription {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Base class for all device-wide operations
+/// Base class for all operations
 class Operation {
 public:
 
@@ -435,7 +403,7 @@ public:
   virtual Status initialize(
     void const *configuration, 
     void *host_workspace, 
-    void *device_workspace, 
+    void *device_workspace = nullptr, 
     cudaStream_t stream = nullptr) const = 0;
 
   virtual Status run(
@@ -443,6 +411,7 @@ public:
     void *host_workspace, 
     void *device_workspace = nullptr, 
     cudaStream_t stream = nullptr) const = 0;
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -551,11 +520,18 @@ using GemmBatchedArguments = GemmArguments;
 struct GemmArrayConfiguration {
 
   gemm::GemmCoord problem_size;
+  
+  /// Leading dimension of A matrix
+  int64_t lda;
 
-  int64_t const *lda;
-  int64_t const *ldb;
-  int64_t const *ldc;
-  int64_t const *ldd;
+  /// Leading dimension of B matrix
+  int64_t ldb;
+
+  /// Leading dimension of C matrix
+  int64_t ldc;
+
+  /// Leading dimension of D matrix
+  int64_t ldd;
 
   int batch_count;
 };
@@ -580,49 +556,98 @@ struct GemmArrayArguments {
 
 struct GemmPlanarComplexConfiguration {
 
+  GemmUniversalMode mode;
   gemm::GemmCoord problem_size;
+  int batch_count;
 
-  int64_t lda;
-  int64_t ldb;
-  int64_t ldc;
-  int64_t ldd;
+  int64_t lda_real;
+  int64_t lda_imag;
 
-  int64_t imag_stride_A;
-  int64_t imag_stride_B;
-  int64_t imag_stride_C;
-  int64_t imag_stride_D;
+  int64_t ldb_real;
+  int64_t ldb_imag;
+
+  int64_t ldc_real;
+  int64_t ldc_imag;
+
+  int64_t ldd_real;
+  int64_t ldd_imag;
 };
 
-using GemmPlanarComplexArgments = GemmArguments;
+/// Arguments for planar complex GEMMs
+struct GemmPlanarComplexArguments {
+
+  void const *A_real;
+  void const *A_imag;
+
+  void const *B_real;
+  void const *B_imag;
+
+  void const *C_real;
+  void const *C_imag;
+
+  void *D_real;
+  void *D_imag;
+
+  void const *alpha;
+  void const *beta;
+  ScalarPointerMode pointer_mode;
+
+  int64_t batch_stride_A_real;
+  int64_t batch_stride_A_imag;
+
+  int64_t batch_stride_B_real;
+  int64_t batch_stride_B_imag;
+
+  int64_t batch_stride_C_real;
+  int64_t batch_stride_C_imag;
+
+  int64_t batch_stride_D_real;
+  int64_t batch_stride_D_imag;
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Batched complex valued GEMM in which real and imaginary parts are separated by a stride
-//
-// OperationKind: Gemm
-// GemmKind:      Planar complex batched
-//
-struct GemmPlanarComplexBatchedConfiguration {
+/// This is a special form of planar complex which loads pointers and problem size
+/// from memory.
+struct GemmPlanarComplexArrayConfiguration {
 
   gemm::GemmCoord problem_size;
+  int batch_count;
 
-  int64_t lda;
-  int64_t ldb;
-  int64_t ldc;
-  int64_t ldd;
+  int64_t lda_real;
+  int64_t lda_imag;
 
-  int64_t imag_stride_A;
-  int64_t imag_stride_B;
-  int64_t imag_stride_C;
-  int64_t imag_stride_D;
+  int64_t ldb_real;
+  int64_t ldb_imag;
 
-  int64_t batched_stride_A;
-  int64_t batched_stride_B;
-  int64_t batched_stride_C;
-  int64_t batched_stride_D;
+  int64_t ldc_real;
+  int64_t ldc_imag;
+
+  int64_t ldd_real;
+  int64_t ldd_imag;
 };
 
-using GemmPlanarComplexBatchedArguments = GemmArguments;
+/// Arguments for planar complex GEMMs
+struct GemmPlanarComplexArrayArguments {
+
+  int const *M;
+  int const *N;
+  int const *K;
+
+  void const * const * A_real;
+  void const * const * A_imag;
+  void const * const * B_real;
+  void const * const * B_imag;
+  void const * const * C_real;
+  void const * const * C_imag;
+  void * const * D_real;
+  void * const * D_imag;
+
+  void const * alpha;
+  void const * beta;
+  ScalarPointerMode pointer_mode;
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

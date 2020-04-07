@@ -33,6 +33,7 @@
 #include "cutlass/arch/arch.h"
 #include "cutlass/arch/wmma.h"
 
+#include "cutlass/layout/matrix.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator_2dthreadtile.h"
 #include "cutlass/gemm/threadblock/default_mma_core_sm70.h"
@@ -143,8 +144,9 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
       layout::RowMajor, typename MmaCore::MmaPolicy>;
 };
 
+////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization for row-major output (OperatorClass Simt)
+/// Specialization for row-major output (OperatorClass TensorOp)
 template <
     /// Element type for A matrix operand
     typename ElementA,
@@ -199,8 +201,8 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
       IteratorB, typename MmaCore::SmemIteratorB, ElementAccumulator,
       layout::RowMajor, typename MmaCore::MmaPolicy>;
 };
-////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
 /// Specialization for column-major-interleaved output
 template <
     /// Element type for A matrix operand
@@ -268,7 +270,9 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+
 ////////////////////////////////////////////////////////////////////////////////
+
 /// Specialization for SIMT IDP4A Kernels
 template <
     /// Layout type for A matrix operand
@@ -325,6 +329,8 @@ struct DefaultMma<int8_t, LayoutA, kAlignmentA, int8_t, LayoutB, kAlignmentB,
       IteratorB, typename MmaCore::SmemIteratorB, ElementAccumulator,
       layout::RowMajor, typename MmaCore::MmaPolicy>;
 };
+
+////////////////////////////////////////////////////////////////////////////////
 
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
 /// Specialization for Wmma TensorOp operator with 2 staged pipeline
@@ -384,6 +390,8 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
       LayoutC, typename MmaCore::MmaPolicy>;
 };
 
+////////////////////////////////////////////////////////////////////////////////
+
 /// Specialization for Wmma TensorOp operator with 1 staged pipeline
 template <
     ///< Element type for A matrix operand
@@ -440,6 +448,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
       IteratorB, typename MmaCore::SmemIteratorB, ElementAccumulator,
       LayoutC, typename MmaCore::MmaPolicy>;
 };
+
 ////////////////////////////////////////////////////////////////////////////////
 #endif //CUTLASS_ARCH_WMMA_ENABLED
 

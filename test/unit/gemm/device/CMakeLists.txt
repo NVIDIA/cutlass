@@ -23,9 +23,13 @@
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device
 
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
   gemm_f16t_f16n_f16t_tensor_op_f16_sm75.cu
   gemm_f16n_f16t_f16t_tensor_op_f16_sm75.cu
-  gemm_f16n_f16t_f16t_tensor_op_f16_sm75_slicedk.cu
+  gemm_f16n_f16t_f16t_tensor_op_f16_slicedk_sm75.cu
+  gemm_f16t_f16n_f16t_tensor_op_f16_slicedk_sm75.cu
 
   gemm_f16n_f16n_f16t_tensor_op_f32_sm75.cu
 
@@ -90,6 +94,7 @@ cutlass_test_unit_add_executable(
   simt_zgemm_tn_sm50.cu
   simt_zgemm_tt_sm50.cu
 
+  gemm_splitk_serial_tensor_op_sm75.cu
   gemm_splitk_tensor_op_sm75.cu
   gemm_splitk_tensor_op_sm70.cu
   gemm_splitk_simt_sm50.cu
@@ -145,5 +150,3 @@ cutlass_test_unit_add_executable(
 
   gemm_f16t_f16n_f32t_singlestage_wmma_tensor_op_f32_sm70.cu
 )
-
-

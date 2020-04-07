@@ -26,6 +26,8 @@
     \brief Tests for device-wide GEMM interface
 */
 
+#pragma once
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -90,6 +92,7 @@ struct TestbedComplex : public Testbed<Gemm> {
       this->tensor_B.host_ref(), 
       Gemm::kTransformB,
       beta, 
+      this->tensor_C.host_ref(), 
       this->reference_D.host_ref(), 
       ElementAccumulator(0)
     );

@@ -85,7 +85,13 @@ struct ReduceAdd {
 
     plus<FragmentAccumulator> op;
 
-    return op(accumulator, element);
+    NumericArrayConverter<
+      ElementAccumulator, 
+      Element, 
+      kCount, 
+      PreferredRoundingMode<ElementAccumulator, Element>::kRound> converter;
+
+    return op(accumulator, converter(element));
   }
 };
 

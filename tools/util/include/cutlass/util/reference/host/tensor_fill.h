@@ -38,6 +38,8 @@
 #include "cutlass/complex.h"
 #include "cutlass/array.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/tensor_view.h"
+#include "cutlass/tensor_view_planar_complex.h"
 
 #include "cutlass/util/distribution.h"
 #include "tensor_foreach.h"
@@ -99,6 +101,18 @@ void TensorFill(
     dst.extent(),
     func
   );
+}
+
+/// Fills a tensor with a uniform value
+template <
+  typename Element,                                                   ///< Element type
+  typename Layout>                                                    ///< Layout function
+void TensorFill(
+  TensorViewPlanarComplex<Element, Layout> dst,                       ///< destination tensor 
+  cutlass::complex<Element> val = cutlass::complex<Element>(0)) {     ///< value to uniformly fill it with
+
+  TensorFill(dst.view_real(), val.real());
+  TensorFill(dst.view_imag(), val.imag());
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -266,6 +280,23 @@ void TensorFillRandomGaussian(
     dst.extent(),
     func
   );
+}
+
+/// Fills a tensor with random values with a Gaussian distribution.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillRandomGaussian(
+  TensorViewPlanarComplex<Element, Layout> dst,        ///< destination tensor
+  uint64_t seed,                                       ///< seed for RNG
+  double mean = 0,                                     ///< Gaussian distribution's mean
+  double stddev = 1,                                   ///< Gaussian distribution's standard deviation
+  int bits = -1) {                                     ///< If non-negative, specifies number of fractional bits that 
+                                                       ///  are not truncated to zero. Permits reducing precision of
+                                                       ///  data.
+  
+  TensorFillRandomGaussian(dst.view_real(), seed, mean, stddev, bits);
+  TensorFillRandomGaussian(dst.view_imag(), ~seed, mean, stddev, bits);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -459,6 +490,23 @@ void TensorFillRandomUniform(
     dst.extent(),
     func
   );
+}
+
+/// Fills a tensor with random values with a uniform random distribution.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillRandomUniform(
+  TensorViewPlanarComplex<Element, Layout> dst,        ///< destination tensor
+  uint64_t seed,                                       ///< seed for RNG
+  double max = 1,                                      ///< upper bound of distribution
+  double min = 0,                                      ///< lower bound for distribution
+  int bits = -1) {                                     ///< If non-negative, specifies number of fractional bits that 
+                                                       ///  are not truncated to zero. Permits reducing precision of
+                                                       ///  data.                 
+  
+  TensorFillRandomUniform(dst.view_real(), seed, max, min, bits);
+  TensorFillRandomUniform(dst.view_imag(), ~seed, max, min, bits);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -770,6 +818,27 @@ void BlockFillSequential(
                                         8)>::get(ptr, i) = s;
 
     s = Element(s + v);
+    ++i;
+  }
+}
+
+/// Fills a block of data with sequential elements
+template <
+  typename Element
+>
+void BlockFillSequentialModN(
+  Element *ptr,
+  int64_t capacity,
+  int64_t mod,
+  int64_t v = int64_t(1),
+  int64_t s = int64_t(0)) {
+  int i = 0;
+
+  while (i < capacity) {
+    cutlass::ReferenceFactory<Element, (cutlass::sizeof_bits<Element>::value <
+                                        8)>::get(ptr, i) = Element(s);
+
+    s = int64_t(s + v) % mod;
     ++i;
   }
 }

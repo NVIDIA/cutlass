@@ -26,6 +26,8 @@
     \brief Tests for device-wide GEMM interface
 */
 
+#pragma once
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -41,20 +43,7 @@
 #include "cutlass/util/reference/host/tensor_norm.h"
 #include "cutlass/util/reference/host/gemm.h"
 
-inline char const *to_string(cutlass::Status status) {
-
-  switch (status) {
-    case cutlass::Status::kSuccess: return "kSuccess";
-    case cutlass::Status::kErrorMisalignedOperand: return "kErrorMisalignedOperand";
-    case cutlass::Status::kErrorInvalidLayout: return "kErrorInvalidLayout";
-    case cutlass::Status::kErrorInvalidProblem: return "kErrorInvalidProblem";
-    case cutlass::Status::kErrorNotSupported: return "kErrorNotSupported";
-    case cutlass::Status::kErrorWorkspaceNull: return "kErrorWorkspaceNull";
-    case cutlass::Status::kErrorInternal: return "kErrorInternal";
-    case cutlass::Status::kInvalid: return "kInvalid";
-  }
-  return "invalid";
-}
+#include "testbed_utils.h"
 
 namespace test {
 namespace gemm {
@@ -185,9 +174,12 @@ struct Testbed {
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_A.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_C.host_view()), 0);
-    
-    EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_D.host_view()), 0);
-    EXPECT_GT(cutlass::reference::host::TensorNorm(reference_D.host_view()), 0);
+
+    if (tensor_D.size() > 1)
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_D.host_view()), 0);
+
+    if (reference_D.size() > 1)
+      EXPECT_GT(cutlass::reference::host::TensorNorm(reference_D.host_view()), 0);
 
     bool passed = cutlass::reference::host::TensorEquals(reference_D.host_view(), tensor_D.host_view());
 
@@ -341,18 +333,12 @@ bool TestAllGemm() {
                           (cutlass::platform::is_same<typename Gemm::LayoutA, cutlass::layout::RowMajor>::value ||
                           cutlass::platform::is_same<typename Gemm::LayoutB, cutlass::layout::ColumnMajor>::value) ? 4 : kAlignment;
 
-  
-  int problem_size_m[] = {
-    kAlignmentM, 512 - 3*kAlignmentM
-  };
+  int problem_size_m[] = {kAlignmentM, 512 - 3 * kAlignmentM};
 
-  int problem_size_n[] = {
-    kAlignmentN, 512 - 2*kAlignmentN
-  };
+  int problem_size_n[] = {kAlignmentN, 512 - 2 * kAlignmentN};
 
   int problem_size_k[] = {
-    kAlignmentK, Gemm::ThreadblockShape::kK * Gemm::kStages - kAlignmentK
-  };
+      kAlignmentK, Gemm::ThreadblockShape::kK * (Gemm::kStages + 1) - kAlignmentK};
 
   int split_k_slices[] = {
     1, 2, 3
@@ -376,6 +362,10 @@ bool TestAllGemm() {
         for (int split_k : split_k_slices) {
 
           if (!Gemm::kSplitKSerial && split_k > 1) {
+            continue;
+          }
+
+          if (split_k > 1 && k / Gemm::ThreadblockShape::kK < split_k) {
             continue;
           }
 

@@ -28,7 +28,11 @@
 
 #pragma once
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cassert>
+#else
 #include <assert.h>
+#endif
 
 #include "cutlass/arch/wmma.h"
 
@@ -93,6 +97,7 @@ struct Mma<
   using FragmentC = Array<half_t, 4>;
 
   using Operator = OpMultiplyAdd;
+  using ArchTag = arch::Sm75;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -154,6 +159,7 @@ struct Mma<
   using FragmentC = Array<float, 4>;
 
   using Operator = OpMultiplyAdd;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -215,6 +221,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAdd;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -271,6 +278,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAdd;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -327,6 +335,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAdd;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -384,6 +393,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAdd;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -446,6 +456,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAddSaturate;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -502,6 +513,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAddSaturate;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -558,6 +570,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAddSaturate;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -614,6 +627,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAddSaturate;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -676,6 +690,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAdd;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -732,6 +747,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAdd;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -788,6 +804,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAdd;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -844,6 +861,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAdd;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -906,6 +924,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAddSaturate;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -962,6 +981,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAddSaturate;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -1018,6 +1038,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAddSaturate;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -1074,6 +1095,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpMultiplyAddSaturate;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE
@@ -1136,6 +1158,7 @@ struct Mma<
   using FragmentC = Array<int, 2>;
 
   using Operator = OpXorPopc;
+  using ArchTag = arch::Sm75;
 
   /// Computes multiply-add
   CUTLASS_HOST_DEVICE

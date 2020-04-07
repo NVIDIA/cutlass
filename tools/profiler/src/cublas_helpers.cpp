@@ -39,14 +39,14 @@ namespace profiler {
 /// Converts a cuBLAS status to cutlass::Status
 Status get_cutlass_status(cublasStatus_t cublas) {
 
-  if (cublas == CUBLAS_STATUS_SUCCESS) {
-    return Status::kSuccess;
-  }
-  else if (cublas == CUBLAS_STATUS_INVALID_VALUE) {
-    return Status::kErrorInvalidProblem;
-  }
-  if (cublas == CUBLAS_STATUS_NOT_SUPPORTED) {
-    return Status::kErrorNotSupported;
+  switch (cublas) {
+    case CUBLAS_STATUS_SUCCESS: 
+      return Status::kSuccess;
+    case CUBLAS_STATUS_INVALID_VALUE:
+      return Status::kErrorInvalidProblem;
+    case CUBLAS_STATUS_NOT_SUPPORTED:
+      return Status::kErrorNotSupported;
+    default: break;
   }
   return Status::kErrorInternal;
 }
@@ -141,6 +141,13 @@ Status cublas_satisfies(library::GemmDescription const &desc) {
 
   if (math_instruction.element_accumulator == library::NumericTypeID::kS32 && 
     math_instruction.opcode_class == library::OpcodeClassID::kTensorOp) {
+
+    return Status::kErrorNotSupported;
+  }
+
+  // output type S4 and S8 not supported in cuBLAS
+  if (desc.C.element == library::NumericTypeID::kS4 || 
+    desc.C.element == library::NumericTypeID::kS8) {
 
     return Status::kErrorNotSupported;
   }

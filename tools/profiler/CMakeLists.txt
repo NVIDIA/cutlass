@@ -33,7 +33,7 @@ set(CUTLASS_TOOLS_PROFILER_SOURCES
   src/gpu_timer.cpp
   src/device_allocation.cu
   src/device_context.cu
-  src/cublas_helpers.cpp
+  src/cublas_helpers.cpp             
   src/problem_space.cpp
   src/operation_profiler.cu
   src/gemm_operation_profiler.cu
@@ -54,11 +54,11 @@ set_target_properties(cutlass_profiler PROPERTIES EXPORT_NAME profiler)
 # Include paths
 #
 
-target_include_directories(cutlass_profiler
+target_include_directories(
+  cutlass_profiler
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src                         # Source directory
-    ../../tools/util/include
-)
+  )
 
 #
 # Library dependencies
@@ -68,8 +68,8 @@ target_link_libraries(
   cutlass_profiler
   PRIVATE 
   cutlass_lib
-  $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:cublas>
-  gtest
+  cutlass_tools_util_includes
+  $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
   cudart
   )
 

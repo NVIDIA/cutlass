@@ -106,6 +106,15 @@ public:
   /// Shape of the warp in units of thread (concept: MmaTensorOpPolicy)
   using Policy = Policy_;
 
+  /// Underlying architecture tag
+  using ArchTag = typename Policy::Operator::ArchTag;
+
+  /// Complex transform on A operand
+  static ComplexTransform const kTransformA = ComplexTransform::kNone;
+
+  /// Complex transform on B operand
+  static ComplexTransform const kTransformB = ComplexTransform::kNone;
+
   /// Indicates class of matrix operator
   using OperatorClass = arch::OpClassTensorOp;
 
@@ -193,7 +202,6 @@ public:
       }
     }  
   }
-
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

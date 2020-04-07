@@ -32,7 +32,11 @@
 
 #include "cutlass/cutlass.h"
 
+// CUTLASS Profiler includes
 #include "enumerated_types.h"
+
+// CUTLASS Library includes
+#include "cutlass/library/library.h"
 
 namespace cutlass {
 namespace profiler {
@@ -45,14 +49,21 @@ struct PerformanceResult {
   /// Index of problem
   size_t problem_index;
 
-  /// Provider
-  Provider provider;
+  /// library::Provider
+  library::Provider provider;
 
-  /// Outcome of test
-  Disposition disposition;
+  /// Operation kind
+  library::OperationKind op_kind;
 
-  /// CUTLASS status result from kernels
+  /// CUTLASS status result from kernels (success or failure)
+  // Status does information on verification
   Status status;
+
+  /// Outcome of verification (worst case verification result)
+  Disposition disposition;
+  
+  /// Outcome of verification (all verification results)
+  DispositionMap verification_map;
 
   /// Operation object
   std::string operation_name;
@@ -76,7 +87,8 @@ struct PerformanceResult {
   /// Ctor
   PerformanceResult(): 
     problem_index(0),
-    provider(Provider::kInvalid), 
+    op_kind(library::OperationKind::kInvalid),
+    provider(library::Provider::kInvalid), 
     disposition(Disposition::kNotRun),
     status(Status::kInvalid),
     bytes(0), 

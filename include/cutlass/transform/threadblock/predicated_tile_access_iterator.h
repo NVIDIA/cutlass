@@ -128,13 +128,13 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
     int stride_;
     /// amount (in byte) to increment pointer to move to next access along
     /// strided dimension
-    int inc_strided_;
+    LongIndex inc_strided_;
     /// amount (in byte) to increment pointer from last access to first access
     /// of next tile
-    int inc_next_;
+    LongIndex inc_next_;
     /// amount (in byte) to increment pointer from first access of current tile
     /// to first access of next tile
-    int inc_advance_;
+    LongIndex inc_advance_;
 
    public:
 
@@ -145,20 +145,20 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
     Params(Layout const &layout) : stride_(layout.stride(0)) {
-      inc_strided_ = (stride_ * ThreadMap::Delta::kStrided) *
+      inc_strided_ = (LongIndex(stride_) * ThreadMap::Delta::kStrided) *
                      sizeof_bits<Element>::value / 8;
 
       if (kAdvanceRank) {
         // advance along strided dimension
         inc_advance_ =
-            Shape::kStrided * stride_ * sizeof_bits<Element>::value / 8;
+            Shape::kStrided * LongIndex(stride_) * sizeof_bits<Element>::value / 8;
       } else {
         // advance along contiguous dimension
         inc_advance_ = Shape::kContiguous * sizeof_bits<Element>::value / 8;
       }
 
-      inc_next_ = inc_advance_ - (ThreadMap::Iterations::kStrided - 1) *
-                                     ThreadMap::Delta::kStrided * stride_ *
+      inc_next_ = inc_advance_ - LongIndex(ThreadMap::Iterations::kStrided - 1) *
+                                     ThreadMap::Delta::kStrided * LongIndex(stride_) *
                                      sizeof_bits<Element>::value / 8;
     };
   };
@@ -280,7 +280,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
     TensorCoord residue_extent;
     if (kAdvanceRank) {
 
-      Index residue_size = (extent_[kAdvanceRank] % Shape::kStrided);
+      Index residue_size = (extent_[kAdvanceRank] - threadblock_offset.strided()) % Shape::kStrided;
       if (!residue_size) {
         residue_size = Shape::kStrided;
       }
@@ -288,18 +288,19 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
       residue_offset_ = make_Coord(0, residue_size);
       residue_extent = make_Coord(
         extent_.contiguous(), 
-        min(threadblock_offset.strided() + residue_offset_.strided(), extent_.strided())
+        min(threadblock_offset.strided() + residue_size, extent_.strided())
       );
-
     } else {
       
-      Index residue_size = (extent_[kAdvanceRank] % Shape::kContiguous);
+      Index residue_size = (extent_[kAdvanceRank] - threadblock_offset.contiguous()) % Shape::kContiguous;
       if (!residue_size) {
         residue_size = Shape::kContiguous;
       }
+
       residue_offset_ = make_Coord(residue_size, 0);
+      
       residue_extent = make_Coord(
-        min(extent_.contiguous(), threadblock_offset.contiguous() + residue_offset_.contiguous()),
+        min(extent_.contiguous(), threadblock_offset.contiguous() + residue_size),
         extent_.strided()
       );
     }
@@ -362,18 +363,18 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
       compute_predicates_(extent_, true);
 
       if (kAdvanceRank) {
-        pointer_ += params_.inc_advance_ * (tile_offset.strided() - 1);
+        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided() - 1);
         pointer_ += Shape::kContiguous * tile_offset.contiguous();
       } else {
-        pointer_ += params_.inc_advance_ * (tile_offset.contiguous() - 1);
+        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous() - 1);
         pointer_ += Shape::kStrided * tile_offset.strided();
       }
     } else {
       if (kAdvanceRank) {
-        pointer_ += params_.inc_advance_ * tile_offset.strided();
+        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided());
         pointer_ += Shape::kContiguous * tile_offset.contiguous();
       } else {
-        pointer_ += params_.inc_advance_ * tile_offset.contiguous();
+        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous());
         pointer_ += Shape::kStrided * tile_offset.strided();
       }
     }

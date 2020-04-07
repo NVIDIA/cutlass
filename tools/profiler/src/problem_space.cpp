@@ -27,9 +27,10 @@
 */
 
 #include <string>
-#include <iostream>
 #include <stdexcept>
 #include <sstream>
+
+#include "cutlass/library/util.h"
 
 #include "problem_space.h"
 
@@ -849,17 +850,16 @@ bool arg_as_OpcodeClassID(
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Lexically casts an argument to a given type stored in a byte array. Returns true if not null.
 bool arg_as_scalar(
   std::vector<uint8_t> &bytes,
   library::NumericTypeID numeric_type,
   KernelArgument::Value const *value_ptr) {
-  
+
   if (value_ptr->not_null) {
     if (value_ptr->argument->description->type == ArgumentTypeID::kInteger) {
       int64_t int_value = static_cast<IntegerArgument::IntegerValue const *>(value_ptr)->value;
-
+      
       // TODO - convert int64_t => destination type
     }
     else if (value_ptr->argument->description->type == ArgumentTypeID::kScalar) {

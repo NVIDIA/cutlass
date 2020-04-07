@@ -100,6 +100,16 @@ public:
   /// Indicates class of matrix operator
   using OperatorClass = arch::OpClassSimt;
 
+  /// Hard-coded for now
+  using ArchTag = arch::Sm50;
+
+  /// Complex transform on A operand
+  static ComplexTransform const kTransformA = ComplexTransform::kNone;
+
+  /// Complex transform on B operand
+  static ComplexTransform const kTransformB = ComplexTransform::kNone;
+
+  /// Layout of threads
   using ThreadLayoutA = typename platform::conditional< platform::is_same< layout::ColumnMajorInterleaved<4>, LayoutA >::value,
                   layout::ColumnMajor,
                   typename platform::conditional < platform::is_same< layout::RowMajorInterleaved<4>, LayoutA >::value,
@@ -153,6 +163,9 @@ public:
   /// Storage for A tile
   using FragmentA = typename IteratorA::Fragment;
 
+  /// Storage for transformed A tile
+  using TransformedFragmentA = FragmentA;
+
   /// Iterates over the B operand in memory
   using IteratorB = MmaSimtTileIterator<
     MatrixShape<Policy::LaneMmaShape::kK, Shape::kN>,
@@ -166,6 +179,9 @@ public:
 
   /// Storage for B tile
   using FragmentB = typename IteratorB::Fragment;
+
+  /// Storage for transformed A tile
+  using TransformedFragmentB = FragmentB;
 
   /// Iterates over the C operand in memory
   using IteratorC = MmaSimtTileIterator<
@@ -200,6 +216,15 @@ public:
     ThreadMma mma;
 
     mma(d, a, b, c);
+  }
+
+  /// Transform the mma operands to the required types
+  CUTLASS_DEVICE
+  void transform(TransformedFragmentA &dst_A, TransformedFragmentB &dst_B,
+                 FragmentA const &A, FragmentB const &B) const {
+    //TODO: Implement this
+    dst_A = A;
+    dst_B = B;
   }
 };
 

@@ -1,7 +1,8 @@
 
 message(STATUS "Configuring cublas ...")
 
-if(DEFINED CUTLASS_ENABLE_CUBLAS AND NOT CUTLASS_ENABLE_CUBLAS)
+if((DEFINED CUTLASS_ENABLE_CUBLAS AND NOT CUTLASS_ENABLE_CUBLAS) OR
+   (DEFINED CUBLAS_ENABLED AND NOT CUBLAS_ENABLED))
   
   # Don't add cuBLAS if it's defined and false, assume it's not found.
 
@@ -59,10 +60,12 @@ endif()
 if(CUTLASS_ENABLE_CUBLAS AND NOT TARGET cublas)
 
   if(WIN32)
-    add_library(cublas STATIC IMPORTED)
+    add_library(cublas STATIC IMPORTED GLOBAL)
   else()
-    add_library(cublas SHARED IMPORTED)
+    add_library(cublas SHARED IMPORTED GLOBAL)
   endif()
+
+  add_library(nvidia::cublas ALIAS cublas)
 
   set_property(
     TARGET cublas
@@ -88,23 +91,20 @@ if(CUTLASS_ENABLE_CUBLAS AND NOT TARGET cublas)
     ${CUBLAS_PATH}/lib/x64
     /usr/lib/x86_64-linux-gnu)
 
-  if(_CUBLASLT_LIBRARY)
+  if(_CUBLASLT_LIBRARY AND NOT TARGET cublasLt)
 
     if(WIN32)
-      add_library(cublasLt STATIC IMPORTED)
+      add_library(cublasLt STATIC IMPORTED GLOBAL)
     else()
-      add_library(cublasLt SHARED IMPORTED)
+      add_library(cublasLt SHARED IMPORTED GLOBAL)
     endif()
     
     set_property(
       TARGET cublasLt
       PROPERTY IMPORTED_LOCATION
       ${_CUBLASLT_LIBRARY})
-    
-    target_link_libraries(
-      cublas
-      INTERFACE
-      cublasLt)
+  
+    add_library(nvidia::cublasLt ALIAS cublasLt)
 
   endif()
 

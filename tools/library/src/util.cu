@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -25,13 +25,14 @@
 
 #include <iosfwd>
 #include <complex>
-
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/complex.h"
 
-#include "cutlass/library/library.h"
 #include "cutlass/layout/matrix.h"
+
+#include "cutlass/library/library.h"
+#include "cutlass/library/util.h"
 
 namespace cutlass {
 namespace library {
@@ -41,10 +42,57 @@ namespace library {
 static struct {
   char const *text;
   char const *pretty;
+  Provider enumerant;
+}
+Provider_enumerants[] = {
+  {"cutlass", "CUTLASS", Provider::kCUTLASS},
+  {"host", "reference_host", Provider::kReferenceHost},
+  {"device", "reference_device", Provider::kReferenceDevice},
+  {"cublas", "cuBLAS", Provider::kCUBLAS},
+};
+
+/// Converts a Provider enumerant to a string
+char const *to_string(Provider provider, bool pretty) {
+
+  for (auto const & possible : Provider_enumerants) {
+    if (provider == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+  
+  return pretty ? "Invalid" : "invalid";
+}
+
+/// Parses a Provider enumerant from a string
+template <>
+Provider from_string<Provider>(std::string const &str) {
+
+  for (auto const & possible : Provider_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return Provider::kInvalid;
+}
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
   OperationKind enumerant;
 }
 OperationKind_enumerants[] = {
-  {"gemm", "Gemm", OperationKind::kGemm},
+  {"gemm", "Gemm", OperationKind::kGemm},               
 };
 
 /// Converts a Status enumerant to a string
@@ -203,6 +251,9 @@ int sizeof_bits(NumericTypeID type) {
     case NumericTypeID::kF16: return 16;
     case NumericTypeID::kF32: return 32;
     case NumericTypeID::kF64: return 64;
+    case NumericTypeID::kCF16: return 32;
+    case NumericTypeID::kCF32: return 64;
+    case NumericTypeID::kCF64: return 128;
     case NumericTypeID::kS4: return 4;
     case NumericTypeID::kS8: return 8;
     case NumericTypeID::kS16: return 16;
@@ -291,6 +342,9 @@ bool is_float_type(NumericTypeID type) {
   case NumericTypeID::kF16: return true;
   case NumericTypeID::kF32: return true;
   case NumericTypeID::kF64: return true;
+  case NumericTypeID::kCF16: return true;
+  case NumericTypeID::kCF32: return true;
+  case NumericTypeID::kCF64: return true;
   default: break;
   }
   return false;
@@ -309,8 +363,18 @@ layout_aliases[] = {
   {LayoutTypeID::kColumnMajor, "column"},
   {LayoutTypeID::kColumnMajor, "col"},
   {LayoutTypeID::kColumnMajor, "n"},
+  
+  {LayoutTypeID::kColumnMajorInterleavedK16, "nk16"},
+  {LayoutTypeID::kRowMajorInterleavedK16, "tk16"},
+  
+  {LayoutTypeID::kColumnMajorInterleavedK32, "nk32"},
+  {LayoutTypeID::kRowMajorInterleavedK32, "tk32"},
+
+  {LayoutTypeID::kColumnMajorInterleavedK64, "nk64"},
+  {LayoutTypeID::kRowMajorInterleavedK64, "tk64"},
+
   {LayoutTypeID::kTensorNCHW, "nchw"},
-  {LayoutTypeID::kTensorNHWC, "packed_nhwc"},
+  {LayoutTypeID::kTensorNHWC, "nhwc"},
   {LayoutTypeID::kUnknown, "*"},
   {LayoutTypeID::kInvalid, nullptr}
 };
@@ -344,7 +408,12 @@ int get_layout_stride_rank(LayoutTypeID layout_id) {
     case LayoutTypeID::kColumnMajorInterleavedK4:
     case LayoutTypeID::kRowMajorInterleavedK4:
     case LayoutTypeID::kColumnMajorInterleavedK16:
-    case LayoutTypeID::kRowMajorInterleavedK16: return 1;
+    case LayoutTypeID::kRowMajorInterleavedK16:
+    case LayoutTypeID::kColumnMajorInterleavedK32:
+    case LayoutTypeID::kRowMajorInterleavedK32:
+    case LayoutTypeID::kColumnMajorInterleavedK64:
+    case LayoutTypeID::kRowMajorInterleavedK64:
+      return 1;
     case LayoutTypeID::kTensorNCHW:
     case LayoutTypeID::kTensorNHWC: return 3;
     default : throw std::runtime_error("Unsupported LayoutTypeID in LayoutType::get_stride_rank");
@@ -396,8 +465,51 @@ OpcodeClassID from_string<OpcodeClassID>(std::string const &str) {
   return OpcodeClassID::kInvalid;
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
+static struct {
+  char const *text;
+  char const *pretty;
+  ComplexTransform enumerant;
+}
+ComplexTransform_enumerants[] = {
+  {"n", "none", ComplexTransform::kNone},
+  {"c", "conj", ComplexTransform::kConjugate}
+};
+
+/// Converts a ComplexTransform enumerant to a string
+char const *to_string(ComplexTransform type, bool pretty) {
+
+  for (auto const & possible : ComplexTransform_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+/// Converts a ComplexTransform enumerant from a string
+template <>
+ComplexTransform from_string<ComplexTransform>(std::string const &str) {
+
+  for (auto const & possible : ComplexTransform_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return ComplexTransform::kInvalid;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 /// Lexical cast a string to a byte array. Returns true if cast is successful or false if invalid.
 bool lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type, std::string const &str) {
   int size_bytes = sizeof_bits(type) / 8;
@@ -574,25 +686,36 @@ std::string lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type) {
     break;
   case NumericTypeID::kCF16:
   {
-    std::complex<float> tmp;
-    
     cutlass::complex<half_t> const *x = 
       reinterpret_cast<cutlass::complex<half_t> const *>(bytes.data());
 
-    tmp.real(x->real());
-    tmp.imag(x->imag());
+    ss << float(x->real());
 
-    ss << tmp;
+    if (x->imag() != cutlass::half_t()) {
+      ss << "+i" << float(x->imag());
+    }
   }
     break;
   case NumericTypeID::kCF32:
   {
-    ss << *reinterpret_cast<std::complex<float>*>(bytes.data());
+    cutlass::complex<float> const * x = reinterpret_cast<cutlass::complex<float> const *>(bytes.data());
+
+    ss << x->real();
+
+    if (x->imag() != float()) {
+      ss << "+i" << x->imag();
+    }
   }
     break;
   case NumericTypeID::kCF64:
   {
-    ss << *reinterpret_cast<std::complex<double>*>(bytes.data());
+    cutlass::complex<double> const * x = reinterpret_cast<cutlass::complex<double> const *>(bytes.data());
+    
+    ss << x->real();
+
+    if (x->imag() != double()) {
+      ss << "+i" << x->imag();
+    }
   }
     break;
   default:

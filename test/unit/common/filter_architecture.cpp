@@ -64,37 +64,22 @@ void FilterArchitecture() {
 
     /// Maximum compute capability for which the kernels are enabled 
     int max_compute_capability;
-
-    /// If true, architecture is assumed to be silicon
-    bool silicon;
-
   } 
   test_filters[] = {
-    { "SM50*",                      50, kMaxDevice, true},
-    { "SM60*",                      60, kMaxDevice, true},
-    { "SM61*",                      61, kMaxDevice, true},
-    { "SM70*",                      70, 75, true},
-    { "SM75*",                      75, kMaxDevice, true},
+    { "SM50*",                      50, kMaxDevice},
+    { "SM60*",                      60, kMaxDevice},
+    { "SM61*",                      61, kMaxDevice},
+    { "SM70*",                      70, 75},
+    { "SM75*",                      75, kMaxDevice},
     { 0, 0, false }
   };
-
-  bool running_on_silicon = false;
-  for (int i = 0; test_filters[i].filter; ++i) {
-    if (deviceMajorMinor == test_filters[i].min_compute_capability) {
-      running_on_silicon = test_filters[i].silicon;
-      break;
-    }
-  }
 
   // Set negative test filters
   std::stringstream ss;
   ss << "-";
   for (int i = 0, j = 0; test_filters[i].filter; ++i) {
 
-    if (!running_on_silicon && deviceMajorMinor != test_filters[i].min_compute_capability) {
-      ss << (j++ ? ":" : "") << test_filters[i].filter;
-    }
-    else if (deviceMajorMinor < test_filters[i].min_compute_capability ||
+    if (deviceMajorMinor < test_filters[i].min_compute_capability ||
         deviceMajorMinor > test_filters[i].max_compute_capability) {
 
       ss << (j++ ? ":" : "") << test_filters[i].filter;

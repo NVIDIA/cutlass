@@ -74,16 +74,34 @@ DeviceAllocation *DeviceContext::allocate_tensor(
     allocate_tensor(name, type, layout_id, extent, stride);
 
   if (options.initialization.enabled) {
+    Distribution data_distribution = options.initialization.data_distribution; 
 
-    if (options.initialization.provider == Provider::kReferenceDevice) {
+    // check if data distribution is allowed to change
+    if(!options.initialization.fix_data_distribution) {
+      // change data distribution based on bit width
+      switch(type) {
+        case library::NumericTypeID::kB1:
+          data_distribution.set_uniform(0, 2, 0);
+          break;          
+        case library::NumericTypeID::kS8:
+          data_distribution.set_uniform(-2, 2, 0);
+          break;
+        case library::NumericTypeID::kU8:
+          data_distribution.set_uniform(0, 4, 0);
+          break;
+        default: break;
+      }
+    }
+
+    if (options.initialization.provider == library::Provider::kReferenceDevice) {
       allocation->initialize_random_device(
         options.initialization.seed, 
-        options.initialization.data_distribution); 
+        data_distribution); 
     }
-    else if (options.initialization.provider == Provider::kReferenceHost) {
+    else if (options.initialization.provider == library::Provider::kReferenceHost) {
       allocation->initialize_random_host(
         options.initialization.seed, 
-        options.initialization.data_distribution);  
+        data_distribution);  
     }
   }
 

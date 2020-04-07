@@ -30,5 +30,4 @@ cutlass_test_unit_add_executable(
   wmma_sm70.cu
   wmma_sm72.cu
   wmma_sm75.cu
-  testbed.h
 )

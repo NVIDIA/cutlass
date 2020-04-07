@@ -173,13 +173,34 @@ using Gemm = cutlass::gemm::device::GemmSplitKParallel<ElementInputA,
                                                        EpilogueOp>;
 
 int main() {
+
+  //
+  // Volta Tensor Core operations exposed with mma.sync are first available in CUDA 10.1.
+  //
+  // CUTLASS must be compiled with CUDA 10.1 Toolkit to run these examples.
+  //
+  if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 1))) {
+    std::cerr << "Volta Tensor Core operations must be compiled with CUDA 10.1 Toolkit or later." << std::endl;
+    return -1;
+  }
+
   cudaDeviceProp props;
-  CUDA_CHECK(cudaGetDeviceProperties(&props, 0));
+
+  cudaError_t error = cudaGetDeviceProperties(&props, 0);
+  if (error != cudaSuccess) {
+    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
+    return -1;
+  }
+
   if (!(props.major >= 7)) {
     std::cerr << "Volta Tensor Ops must be run on a machine with compute capability at least 70."
               << std::endl;
-    return 0;
+    return -1;
   }
+
+  //
+  // Define problem size
+  //
 
   const int length_m = 5120;
   const int length_n = 4096;

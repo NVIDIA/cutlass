@@ -28,6 +28,7 @@ Hyperlinks to relevant unit tests demonstrate how specific template instances ma
 | **TensorOp**        | 75                 |  10.2+           | `s4 * s4 + s32 => {s32, s4}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s4t_s4n_s32n_tensor_op_s32_sm75.cu) |
 | **TensorOp**        | 75                 |  10.2+           | `b1 ^ b1 + s32 => {s32, b1}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_b1t_b1n_s32n_tensor_op_s32_sm75.cu) |
 
+
 ## Warp-level Matrix Multiply with Tensor Cores
 
 The following table summarizes supported warp level shapes for each TensorOp instruction.

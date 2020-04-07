@@ -31,6 +31,12 @@ target_include_directories(
   $<BUILD_INTERFACE:${CUTLASS_TOOLS_UTIL_INCLUDE_DIR}>
   )
 
+target_link_libraries(
+  cutlass_tools_util_includes
+  INTERFACE
+ 	$<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:cublas>
+  )
+
 install(
   DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/
@@ -40,3 +46,4 @@ install(
   TARGETS cutlass_tools_util_includes
   EXPORT NvidiaCutlass
   )
+

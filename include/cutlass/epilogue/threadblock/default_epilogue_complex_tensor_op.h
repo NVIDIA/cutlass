@@ -58,16 +58,25 @@ namespace cutlass {
 namespace epilogue {
 namespace threadblock {
 
-////////////////////////////////////////////////////////////////////////////////
-
-/// Defines sensible defaults for epilogues for TensorOps.
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Specialization and defines sensible defaults for epilogues for complex*complex case
+//  4 real-valued mma operations (Complex)
+//  A = (ar + j ai), B (br +j bi), D = AB
+//  D = dr + j di = (ar*br - ai*bi) + j (ar*bi + ai*br) 
+/////////////////////////////////////////////////////////////////////////////////////////////////
 template <
+  /// Epilouge Shape
   typename Shape_,
+  /// Warp-level mma operator
   typename WarpMmaTensorOp_,
+  /// Number of k partitions
   int PartitionsK,
+  /// Epilogue output operator
   typename OutputOp_,
-  int ElementsPerAccess
->
+  /// Elements accessed by inner-most loop of AccumulatorFragmentIterator::load()
+  int ElementsPerAccess,
+  /// Multiply-add operator 
+  typename Operator_ = arch::OpMultiplyAddComplex> 
 struct DefaultEpilogueComplexTensorOp {
 
   using Shape = Shape_;
@@ -75,6 +84,7 @@ struct DefaultEpilogueComplexTensorOp {
   static int const kPartitionsK = PartitionsK;
   using OutputOp = OutputOp_;
   static int const kElementsPerAccess = ElementsPerAccess;
+  using Operator = Operator_;
 
   using ElementOutput = typename OutputOp::ElementOutput;
   using LayoutC = typename WarpMmaTensorOp::LayoutC;

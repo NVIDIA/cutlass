@@ -72,6 +72,7 @@ void GemmComplex(
   ComplexTransform transform_b,
   ScalarType beta,
   TensorRef<ElementC, LayoutC> tensor_c,
+  TensorRef<ElementC, LayoutC> tensor_d,
   ComputeType initial_accum) {
 
   static_assert(
@@ -138,7 +139,7 @@ void GemmComplex(
 
           if (row < M && col < N) {
 
-            tensor_c.at(coord) = convert_op(
+            tensor_d.at(coord) = convert_op(
               alpha * ScalarType(accum[i][j]) + 
               beta * ScalarType(tensor_c.at(coord)));
           }
@@ -171,9 +172,10 @@ void GemmComplex(
   TensorRef<ElementB, LayoutB> tensor_b,
   ComplexTransform transform_b,
   ScalarType beta,
-  TensorRef<ElementC, LayoutC> tensor_c) {
+  TensorRef<ElementC, LayoutC> tensor_c,
+  TensorRef<ElementC, LayoutC> tensor_d) {
 
-  GemmComplex(problem_size, alpha, tensor_a, transform_a, tensor_b, transform_b, beta, tensor_c, ScalarType(0));
+  GemmComplex(problem_size, alpha, tensor_a, transform_a, tensor_b, transform_b, beta, tensor_c, tensor_d, ScalarType(0));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

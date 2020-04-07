@@ -28,7 +28,11 @@
 
 #pragma once
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cassert>
+#else
 #include <assert.h>
+#endif
 #include "cutlass/layout/matrix.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -68,6 +72,7 @@ struct Wmma<
   using ElementC = ElementC_;
   using LayoutC = LayoutC_;
   using Operator = cutlass::arch::OpMultiplyAdd;
+  using ArchTag = arch::Sm70;
 
   // check supported wmma shape for the given multiplicand data types
   static_assert(

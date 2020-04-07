@@ -35,6 +35,7 @@
 
 // CUTLASS Library includes
 #include "cutlass/library/library.h"
+#include "cutlass/library/util.h"
 #include "cutlass/library/manifest.h"
 
 // Profiler includes
@@ -43,6 +44,7 @@
 #include "performance_result.h"
 #include "performance_report.h"
 #include "problem_space.h"
+#include "debug.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -192,8 +194,8 @@ public:
     DeviceContext &device_context,
     Options const &options,
     library::OperationDescription const &desc,
-    Provider provider,
-    Provider verification_provider = Provider::kInvalid);
+    library::Provider provider,
+    library::Provider verification_provider = library::Provider::kInvalid);
 
 protected:
 

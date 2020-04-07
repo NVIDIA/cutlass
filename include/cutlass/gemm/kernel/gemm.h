@@ -83,7 +83,7 @@ struct Gemm {
     //
 
     CUTLASS_HOST_DEVICE
-    Params() { }
+    Params(): semaphore(0), gemm_k_iterations(0), gemm_k_size(0) { }
 
     CUTLASS_HOST_DEVICE
     Params(
@@ -94,7 +94,7 @@ struct Gemm {
       typename Epilogue::OutputTileIterator::TensorRef ref_C,
       typename Epilogue::OutputTileIterator::TensorRef ref_D,
       typename OutputOp::Params output_op = typename OutputOp::Params(),
-      int *semaphore = nullptr
+      int *workspace = nullptr
     ):
       problem_size(problem_size),
       grid_tiled_shape(grid_tiled_shape),
@@ -106,13 +106,14 @@ struct Gemm {
       ref_C(ref_C),
       params_D(ref_D.layout()),
       ref_D(ref_D),
-      output_op(output_op),
-      semaphore(semaphore) {
+      output_op(output_op) {
 
       int total_gemm_k_iterations = (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
       int gemm_k_iterations = (total_gemm_k_iterations + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
       
       gemm_k_size = gemm_k_iterations * Mma::Shape::kK;
+
+    semaphore = workspace;
     }
   };
 
@@ -220,7 +221,9 @@ struct Gemm {
       thread_idx,
       tb_offset_B);
 
-    int warp_idx = threadIdx.x / 32;
+    // Broadcast the warp_id computed by lane 0 to ensure dependent code
+    // is compiled as warp-uniform.
+    int warp_idx = __shfl_sync(0x1f, threadIdx.x / 32, 0);
     int lane_idx = threadIdx.x % 32;
 
     //

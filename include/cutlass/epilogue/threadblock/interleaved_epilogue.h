@@ -85,9 +85,6 @@ class InterleavedEpilogue {
   using OutputTileIterator = OutputTileIterator_;
   using OutputOp = OutputOp_;
 
-  /// Output layout is always row-major
-  using Layout = layout::ColumnMajorInterleaved<InterleavedK>;
-
   /// The complete warp-level accumulator tile
   using AccumulatorTile = typename AccumulatorFragmentIterator::AccumulatorTile;
 

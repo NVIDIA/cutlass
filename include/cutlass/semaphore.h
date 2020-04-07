@@ -66,8 +66,9 @@ public:
   /// Permit fetching the synchronization mechanism early
   CUTLASS_DEVICE
   void fetch() {
-
-    asm volatile ("ld.global.cg.s32 %0, [%1];\n" : "=r"(state) : "l"(lock));
+    if (wait_thread) {
+      asm volatile ("ld.global.cg.b32 %0, [%1];\n" : "=r"(state) : "l"(lock));  
+    }
   }
 
   /// Gets the internal state
@@ -80,14 +81,8 @@ public:
   CUTLASS_DEVICE
   void wait(int status = 0) {
 
-    if (wait_thread) {
-      while (state != status) {
-
-        fetch();
-
-        __syncwarp(0x01);
-
-      };
+    while( __syncthreads_and(state != status) ) {
+      fetch();
     }
 
     __syncthreads();
@@ -99,8 +94,7 @@ public:
     __syncthreads();
 
     if (wait_thread) {
-
-      asm volatile ("st.global.cg.s32 [%0], %1;\n" : : "l"(lock), "r"(status));
+      asm volatile ("st.global.cg.b32 [%0], %1;\n" : : "l"(lock), "r"(status));
     }
   }
 };

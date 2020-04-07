@@ -30,7 +30,9 @@
 
 #include <string>
 #include <vector>
+#include <map>
 #include <iostream>
+#include "cutlass/library/library.h"
 
 #define TRACE(x) { std::cout << __FILE__ << ":" << __LINE__ << "  " << x << std::endl; }
 
@@ -79,26 +81,6 @@ AlgorithmMode from_string<AlgorithmMode>(std::string const &str);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Providers
-enum class Provider {
-  kCUTLASS,
-  kReferenceHost,
-  kReferenceDevice,
-  kCUBLAS,
-  kInvalid
-};
-
-using ProviderVector = std::vector<Provider>;
-
-/// Converts a Provider enumerant to a string
-char const *to_string(Provider provider, bool pretty = false);
-
-/// Parses a Provider enumerant from a string
-template <>
-Provider from_string<Provider>(std::string const &str);
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Outcome of a performance test
 enum class Disposition {
   kPassed,
@@ -106,12 +88,13 @@ enum class Disposition {
   kNotRun,
   kIncorrect,
   kNotVerified,
+  kInvalidProblem,
   kNotSupported,
   kInvalid
 };
 
 /// Converts a Disposition enumerant to a string
-char const *to_string(Disposition provider, bool pretty = false);
+char const *to_string(Disposition disposition, bool pretty = false);
 
 /// Parses a Disposition enumerant from a string
 template <>
@@ -159,6 +142,21 @@ char const *to_string(ArgumentTypeID type, bool pretty = false);
 template <>
 ArgumentTypeID from_string<ArgumentTypeID>(std::string const &str);
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Profiler typedefs
+using ProviderVector = std::vector<library::Provider>;
+using DispositionMap = std::map<library::Provider, Disposition>;
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Print vector for the report
+template <typename T>
+std::ostream& operator<< (std::ostream& out, const std::vector<T>& v) {
+  for(int i = 0; i < v.size(); ++i) {
+    out << to_string(v[i], true) << (i+1 != v.size() ? "," : "");
+  }
+  return out;
+}
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace profiler

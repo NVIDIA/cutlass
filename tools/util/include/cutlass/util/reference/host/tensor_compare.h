@@ -33,6 +33,9 @@
 
 // Cutlass includes
 #include "cutlass/cutlass.h"
+#include "cutlass/tensor_view.h"
+#include "cutlass/tensor_view_planar_complex.h"
+
 #include "cutlass/util/distribution.h"
 //#include "cutlass/util/type_traits.h"
 #include "tensor_foreach.h"
@@ -112,6 +115,46 @@ bool TensorEquals(
   return bool(func);
 }
 
+/// Returns true if two tensor views are equal.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+bool TensorEquals(
+  TensorViewPlanarComplex<Element, Layout> const &lhs, 
+  TensorViewPlanarComplex<Element, Layout> const &rhs) {
+
+  // Extents must be identical
+  if (lhs.extent() != rhs.extent()) {
+    return false;
+  }
+
+  detail::TensorEqualsFunc<Element, Layout> real_func(
+    {lhs.data(), lhs.layout(), lhs.extent()}, 
+    {rhs.data(), rhs.layout(), rhs.extent()}
+  );
+
+  TensorForEach(
+    lhs.extent(),
+    real_func
+  );
+
+  if (!bool(real_func)) {
+    return false;
+  }
+
+  detail::TensorEqualsFunc<Element, Layout> imag_func(
+    {lhs.data() + lhs.imaginary_stride(), lhs.layout(), lhs.extent()}, 
+    {rhs.data() + rhs.imaginary_stride(), rhs.layout(), rhs.extent()}
+    );
+
+  TensorForEach(
+    lhs.extent(),
+    imag_func
+  );
+
+  return bool(imag_func);
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -135,6 +178,17 @@ bool TensorNotEquals(
   );
 
   return !bool(func);
+}
+
+/// Returns true if two tensor views are equal.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+bool TensorNotEquals(
+  TensorViewPlanarComplex<Element, Layout> const &lhs, 
+  TensorViewPlanarComplex<Element, Layout> const &rhs) {
+
+  return !TensorEquals(lhs, rhs);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

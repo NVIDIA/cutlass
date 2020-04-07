@@ -23,4 +23,5 @@
 cutlass_test_unit_add_executable(
   cutlass_test_unit_epilogue_thread
   linear_combination.cu
-  )
+  linear_combination_planar_complex.cu
+)

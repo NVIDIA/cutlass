@@ -26,6 +26,8 @@
 
 #include "cutlass/core_io.h"
 #include "cutlass/tensor_view.h"
+#include "cutlass/tensor_view_planar_complex.h"
+#include "cutlass/complex.h"
 
 namespace cutlass {
 
@@ -87,14 +89,84 @@ inline std::ostream & TensorView_WriteRank(
     coord[rank] = idx;
 
     if (rank + 2 == Layout::kRank) {
-      // Write least significant ranks asa matrix with rows delimited by ";\n"
-      out << (idx ? ";\n" : "");
+      // Write least significant ranks asa matrix with rows delimited by "\n"
+      out << (idx ? ",\n" : "");
       TensorView_WriteLeastSignificantRank(out, view, coord, rank + 1, width);
     }
     else {
       // Higher ranks are separated by newlines
-      out << (idx ? "\n" : "");
+      out << (idx ? ",\n\n" : "");
       TensorView_WriteRank(out, view, coord, rank + 1, width);
+    }
+  }
+
+  return out;
+}
+
+/// Helper to write the least significant rank of a TensorView
+template <
+  typename Element,
+  typename Layout
+>
+inline std::ostream & TensorViewPlanarComplex_WriteLeastSignificantRank(
+  std::ostream& out, 
+  TensorViewPlanarComplex<Element, Layout> const& view,
+  Coord<Layout::kRank> const &start_coord,
+  int rank,
+  std::streamsize width) {
+
+  for (int idx = 0; idx < view.extent(rank); ++idx) {
+
+    Coord<Layout::kRank> coord(start_coord);
+    coord[rank] = idx;
+
+    if (idx) {
+      out.width(0);
+      out << ", ";
+    }
+    if (idx || coord) {
+      out.width(width);
+    }
+
+    complex<Element> x = view.at(coord);
+    out << x;
+  }
+
+  return out;
+}
+
+/// Helper to write a rank of a TensorView
+template <
+  typename Element,
+  typename Layout
+>
+inline std::ostream & TensorViewPlanarComplex_WriteRank(
+  std::ostream& out, 
+  TensorViewPlanarComplex<Element, Layout> const& view,
+  Coord<Layout::kRank> const &start_coord,
+  int rank,
+  std::streamsize width) {
+
+  // If called on the least significant rank, write the result as a row
+  if (rank + 1 == Layout::kRank) {
+    return TensorViewPlanarComplex_WriteLeastSignificantRank(out, view, start_coord, rank, width);
+  }
+
+  // Otherwise, write a sequence of rows and newlines
+  for (int idx = 0; idx < view.extent(rank); ++idx) {
+
+    Coord<Layout::kRank> coord(start_coord);
+    coord[rank] = idx;
+
+    if (rank + 2 == Layout::kRank) {
+      // Write least significant ranks asa matrix with rows delimited by ";\n"
+      out << (idx ? ";\n" : "");
+      TensorViewPlanarComplex_WriteLeastSignificantRank(out, view, coord, rank + 1, width);
+    }
+    else {
+      // Higher ranks are separated by newlines
+      out << (idx ? "\n" : "");
+      TensorViewPlanarComplex_WriteRank(out, view, coord, rank + 1, width);
     }
   }
 
@@ -131,6 +203,44 @@ template <
 inline std::ostream& operator<<(
   std::ostream& out, 
   TensorView<Element, Layout> const& view) {
+
+  // Prints a TensorView according to the following conventions:
+  //   - least significant rank is printed as rows separated by ";\n"
+  //   - all greater ranks are delimited with newlines
+  //
+  // The result is effectively a whitespace-delimited series of 2D matrices.
+
+  return TensorViewWrite(out, view);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Prints human-readable representation of a TensorView to an ostream
+template <
+  typename Element,
+  typename Layout
+>
+inline std::ostream& TensorViewWrite(
+  std::ostream& out, 
+  TensorViewPlanarComplex<Element, Layout> const& view) {
+
+  // Prints a TensorView according to the following conventions:
+  //   - least significant rank is printed as rows separated by ";\n"
+  //   - all greater ranks are delimited with newlines
+  //
+  // The result is effectively a whitespace-delimited series of 2D matrices.
+
+  return detail::TensorViewPlanarComplex_WriteRank(out, view, Coord<Layout::kRank>(), 0, out.width());
+}
+
+/// Prints human-readable representation of a TensorView to an ostream
+template <
+  typename Element,
+  typename Layout
+>
+inline std::ostream& operator<<(
+  std::ostream& out, 
+  TensorViewPlanarComplex<Element, Layout> const& view) {
 
   // Prints a TensorView according to the following conventions:
   //   - least significant rank is printed as rows separated by ";\n"

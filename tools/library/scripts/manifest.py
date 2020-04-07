@@ -114,6 +114,16 @@ class Manifest:
     self.args = args
     self.compute_capabilities = [int(x) for x in args.architectures.split(';')]
     
+    if args.operations == 'all':
+      self.operations_enabled = []
+    else:
+
+      operations_list = [
+        OperationKind.Gemm
+      ] 
+
+      self.operations_enabled = [x for x in operations_list if OperationKindNames[x] in args.operations.split(',')]
+
     if args.kernels == 'all':
       self.kernel_names = []
     else:
@@ -142,6 +152,16 @@ void initialize_all(Manifest &manifest) {
 } // namespace cutlass
 
 '''
+  #
+  def _filter_string_matches(self, filter_string, haystack):
+    ''' Returns true if all substrings appear in the haystack in order'''
+    substrings = filter_string.split('*')
+    for sub in substrings:
+      idx = haystack.find(sub)
+      if idx < 0:
+        return False
+      haystack = haystack[idx + len(sub):]
+    return True
 
   #
   def filter(self, operation):
@@ -159,6 +179,9 @@ void initialize_all(Manifest &manifest) {
     if not enabled:
       return False
 
+    if len(self.operations_enabled) and not operation.operation_kind in self.operations_enabled:
+      return False
+
     # eliminate duplicates
     if operation.procedural_name() in self.operations_by_name.keys():
       return False
@@ -168,11 +191,10 @@ void initialize_all(Manifest &manifest) {
       name = operation.procedural_name()
       enabled = False
       for name_substr in self.kernel_names:
-        if name_substr in name:
+        if self._filter_string_matches(name_substr, name):
           enabled = True
           break
 
-    # todo: filter based on operation kind
     # todo: filter based on compute data type
     return enabled
   #
@@ -255,10 +277,11 @@ void initialize_all(Manifest &manifest) {
     manifest_path = os.path.join(generated_path, "manifest.cmake")
     with open(manifest_path, "w") as manifest_file:
 
-      target_name = 'cutlass_lib'
+      target_name = 'cutlass_library_objs'
 
       target_text = SubstituteTemplate("""cutlass_target_sources(
   ${target_name}
+  BATCH_SOURCES ON
   PRIVATE
 """, { 'target_name': target_name})
 

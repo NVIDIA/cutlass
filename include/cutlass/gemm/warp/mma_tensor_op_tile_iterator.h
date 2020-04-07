@@ -199,7 +199,8 @@ public:
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads>;
+ using Fragment =
+     Array<Element, Shape::kContiguous * InstructionShape::kStrided / kThreads>;
 
 private:
 
@@ -516,7 +517,7 @@ class MmaTensorOpMultiplicandTileIterator<
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads>;
+  using Fragment = typename Base::Fragment;
 
 private:
 
@@ -747,7 +748,7 @@ class MmaTensorOpMultiplicandTileIterator<
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads>;
+  using Fragment = typename Base::Fragment;
 
 private:
 
@@ -1023,7 +1024,8 @@ class MmaTensorOpMultiplicandTileIterator<
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads>;
+  using Fragment = Array<Element, Shape::kStrided *
+                                      InstructionShape::kContiguous / kThreads>;
 
  private:
 
@@ -1151,7 +1153,8 @@ class MmaTensorOpMultiplicandTileIterator<
     int k_groups_delta = tile_offset.contiguous() % Policy::kGroupsPerTile;
 
     byte_offset_ ^= k_groups_delta * sizeof_bits<Element>::value *
-                    Layout::kElementsPerAccess / 8;
+                    Layout::kElementsPerAccess *
+                    Policy::LdsmShape::kContiguous / 8;
     pointer_ +=
         tile_offset.strided() * stride_ * Shape::kStrided / Layout::kFactor +
         whole_tiles * stride_ / sections_;
@@ -1406,7 +1409,7 @@ class MmaTensorOpMultiplicandTileIterator<
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads>;
+  using Fragment = typename Base::Fragment;
 
  private:
   /// Underlying tile iterator
@@ -1636,7 +1639,7 @@ class MmaTensorOpMultiplicandTileIterator<
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads>;
+  using Fragment = typename Base::Fragment;
 
  private:
   /// Underlying tile iterator

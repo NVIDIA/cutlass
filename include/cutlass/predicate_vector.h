@@ -28,10 +28,13 @@
 */
 #pragma once
 
-#if !defined(__CUDACC_RTC__)
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cassert>
+#include <cuda/std/cstdint>
+#else
 #include <assert.h>
-#endif
 #include <stdint.h>
+#endif
 
 #include "cutlass/cutlass.h"
 

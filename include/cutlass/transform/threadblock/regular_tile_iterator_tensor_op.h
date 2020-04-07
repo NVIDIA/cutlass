@@ -149,6 +149,12 @@ public:
   /// Loads a fragment from memory
   CUTLASS_DEVICE
   void load_with_pointer_offset(Fragment &frag, Index pointer_offset) {
+    load_with_byte_offset(frag, pointer_offset * sizeof_bits<Element>::value / 8);
+  }
+
+  /// Loads a fragment from memory
+  CUTLASS_DEVICE
+  void load_with_byte_offset(Fragment &frag, Index byte_offset) {
     address_iterator_.set_iteration_index(0);
     AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
 
@@ -157,7 +163,11 @@ public:
       CUTLASS_PRAGMA_UNROLL
       for (int c = 0; c < ThreadMap::Iterations::kContiguous; ++c) {
         int access_idx = c + s * ThreadMap::Iterations::kContiguous;
-        frag_ptr[access_idx] = *(address_iterator_.get() + pointer_offset);
+
+        char const *byte_ptr = reinterpret_cast<char const *>(address_iterator_.get()) + byte_offset;
+        AccessType const *access_ptr = reinterpret_cast<AccessType const *>(byte_ptr);
+
+        frag_ptr[access_idx] = *access_ptr;
         ++address_iterator_;
       }
     }
@@ -172,6 +182,11 @@ public:
   /// Store a fragment to memory
   CUTLASS_DEVICE
   void store_with_pointer_offset(Fragment const &frag, Index pointer_offset) {
+    store_with_byte_offset(frag, pointer_offset * sizeof_bits<Element>::value / 8);
+  }
+
+  CUTLASS_DEVICE
+  void store_with_byte_offset(Fragment const &frag, Index byte_offset) {  
     address_iterator_.set_iteration_index(0);
     AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
 
@@ -180,7 +195,11 @@ public:
       CUTLASS_PRAGMA_UNROLL
       for (int c = 0; c < ThreadMap::Iterations::kContiguous; ++c) {
         int access_idx = c + s * ThreadMap::Iterations::kContiguous;
-        *(address_iterator_.get() + pointer_offset) = frag_ptr[access_idx];
+
+        char *byte_ptr = reinterpret_cast<char *>(address_iterator_.get()) + byte_offset;
+        AccessType *access_ptr = reinterpret_cast<AccessType *>(byte_ptr);
+
+        *access_ptr = frag_ptr[access_idx];
         ++address_iterator_;
       }
     }
@@ -189,7 +208,7 @@ public:
   /// Store a fragment to memory
   CUTLASS_DEVICE
   void store(Fragment const &frag) {
-    store_with_pointer_offset(frag, 0);
+    store_with_byte_offset(frag, 0);
   }
 };
 
@@ -567,6 +586,11 @@ class RegularTileIterator<Shape_, Element_,
   /// Store a fragment to memory
   CUTLASS_DEVICE
   void store_with_pointer_offset(Fragment const &frag, Index pointer_offset) {
+    store_with_byte_offset(frag, pointer_offset * sizeof_bits<Element>::value / 8);
+  }
+
+  CUTLASS_DEVICE
+  void store_with_byte_offset(Fragment const &frag, Index byte_offset) {  
     address_iterator_.set_iteration_index(0);
     AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
 
@@ -575,7 +599,11 @@ class RegularTileIterator<Shape_, Element_,
       CUTLASS_PRAGMA_UNROLL
       for (int c = 0; c < ThreadMap::Iterations::kContiguous; ++c) {
         int access_idx = c + s * ThreadMap::Iterations::kContiguous;
-        *(address_iterator_.get() + pointer_offset) = frag_ptr[access_idx];
+
+        char *byte_ptr = reinterpret_cast<char *>(address_iterator_.get()) + byte_offset;
+        AccessType *access_ptr = reinterpret_cast<AccessType *>(byte_ptr);
+
+        *access_ptr = frag_ptr[access_idx];
         ++address_iterator_;
       }
     }
@@ -806,3 +834,5 @@ class RegularTileIterator<Shape_, Element_,
 } // namespace threadblock
 } // namespace transform
 } // namespace cutlass
+
+/////////////////////////////////////////////////////////////////////////////////////////////////

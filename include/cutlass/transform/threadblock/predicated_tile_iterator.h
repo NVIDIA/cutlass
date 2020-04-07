@@ -296,7 +296,12 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
 
   CUTLASS_DEVICE
   void load_with_pointer_offset(Fragment &frag, Index pointer_offset) {
-    
+    load_with_byte_offset(frag, pointer_offset * sizeof_bits<Element>::value / 8);
+  }
+
+  CUTLASS_DEVICE
+  void load_with_byte_offset(Fragment &frag, LongIndex byte_offset) {
+
     AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
 
     CUTLASS_PRAGMA_UNROLL
@@ -310,10 +315,12 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
           int idx = v + kAccessesPerVector * (c + s * ThreadMap::Iterations::kContiguous);
           
           address_iterator_.set_iteration_index(idx);
-          auto ptr = (address_iterator_.get() + pointer_offset);
+          char const *byte_ptr = reinterpret_cast<char const *>(address_iterator_.get()) + byte_offset;
+
+          AccessType const *access_ptr = reinterpret_cast<AccessType const *>(byte_ptr);
 
           if (address_iterator_.valid()) {
-              frag_ptr[idx] = *ptr;
+              frag_ptr[idx] = *access_ptr;
           }
           ++address_iterator_;
         }
@@ -323,11 +330,17 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
 
   /// Loads a fragment from memory
   CUTLASS_DEVICE
-  void load(Fragment &frag) { load_with_pointer_offset(frag, 0); }
+  void load(Fragment &frag) { load_with_byte_offset(frag, 0); }
 
   /// Store a fragment to memory
   CUTLASS_DEVICE
   void store_with_pointer_offset(Fragment const &frag, Index pointer_offset) {
+    store_with_byte_offset(frag, pointer_offset * sizeof_bits<Element>::value / 8);
+  }
+
+  /// Store a fragment to memory
+  CUTLASS_DEVICE
+  void store_with_byte_offset(Fragment const &frag, LongIndex byte_offset) {
     address_iterator_.set_iteration_index(0);
     AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
 
@@ -340,8 +353,11 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
 
           int idx = v + kAccessesPerVector * (c + s * ThreadMap::Iterations::kContiguous);
 
+          char *byte_ptr = reinterpret_cast<char *>(address_iterator_.get()) + byte_offset;
+          AccessType *access_ptr = reinterpret_cast<AccessType *>(byte_ptr);
+
           if (address_iterator_.valid()) {
-            *(address_iterator_.get() + pointer_offset) = frag_ptr[idx];
+            *access_ptr = frag_ptr[idx];
           }
           ++address_iterator_;
         }
@@ -351,7 +367,7 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
 
   /// Store a fragment to memory
   CUTLASS_DEVICE
-  void store(Fragment const &frag) { store_with_pointer_offset(frag, 0); }
+  void store(Fragment const &frag) { store_with_byte_offset(frag, 0); }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -530,6 +546,12 @@ public:
 
   /// Loads a fragment from memory
   CUTLASS_DEVICE
+  void load_with_byte_offset(Fragment &frag, LongIndex byte_offset) {
+    iterator_.load_with_byte_offset(frag, byte_offset);
+  }
+
+  /// Loads a fragment from memory
+  CUTLASS_DEVICE
   void load(Fragment &frag) {
     load_with_pointer_offset(frag, 0);
   }
@@ -538,6 +560,12 @@ public:
   CUTLASS_DEVICE
   void store_with_pointer_offset(Fragment const &frag, Index pointer_offset) {
     iterator_.store_with_pointer_offset(frag, pointer_offset);
+  }
+
+  /// Store a fragment to memory
+  CUTLASS_DEVICE
+  void store_with_byte_offset(Fragment const &frag, LongIndex byte_offset) {
+    iterator_.store_with_byte_offset(frag, byte_offset);
   }
 
   /// Store a fragment to memory
@@ -723,6 +751,12 @@ public:
 
   /// Loads a fragment from memory
   CUTLASS_DEVICE
+  void load_with_byte_offset(Fragment &frag, LongIndex byte_offset) {
+    iterator_.load_with_byte_offset(frag, byte_offset);
+  }
+
+  /// Loads a fragment from memory
+  CUTLASS_DEVICE
   void load(Fragment &frag) {
     load_with_pointer_offset(frag, 0);
   }
@@ -731,6 +765,12 @@ public:
   CUTLASS_DEVICE
   void store_with_pointer_offset(Fragment const &frag, Index pointer_offset) {
     iterator_.store_with_pointer_offset(frag, pointer_offset);
+  }
+  
+  /// Store a fragment to memory
+  CUTLASS_DEVICE
+  void store_with_byte_offset(Fragment const &frag, LongIndex byte_offset) {
+    iterator_.store_with_byte_offset(frag, byte_offset);
   }
 
   /// Store a fragment to memory

@@ -167,23 +167,23 @@ public:
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
 
     /// Clamping constant value
-    ElementCompute const kClamp = ElementCompute(1 << (sizeof_bits<ElementOutput>::value - 1));
-    
-    intermediate = max_accumulator(intermediate, -kClamp);
-    intermediate = min_accumulator(intermediate, kClamp - ElementCompute(1));
+    ElementCompute const kClamp =
+        ElementCompute((1U << (sizeof_bits<ElementOutput>::value - 1)) - 1);
+
+    intermediate = max_accumulator(intermediate, -kClamp - ElementCompute(1));
+    intermediate = min_accumulator(intermediate, kClamp);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
 
     return destination_converter(intermediate);
   }
-
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Conditional guards to enable partial specialization for packed integers
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 720) && (__CUDACC_VER_MAJOR__ >= 10) && (__CUDACC_VER_MINOR__ >= 2)
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 720) && ((__CUDACC_VER_MAJOR__ > 10) || ((__CUDACC_VER_MAJOR__ >= 10) && (__CUDACC_VER_MINOR__ >= 2)))
 
 /// Applies a linear combination operator to an array of elements then clamps the output before
 /// converting to the output element type.
@@ -320,7 +320,142 @@ public:
 
 #endif // Conditional guards to enable partial specialization for packed integers
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+/// Applies a linear combination operator to an array of elements then clamps
+/// the output before converting to the output element type.
+///
+/// D = alpha * accumulator + beta * source + uniform
+///
+/// Note: The below method only works for small k dimensions.  The default
+/// approach is above
+/// TODO: Add logic to fallback to the default approach
+template <
+    /// Data type used to load and store< tensors
+    typename ElementOutput_,
+    /// Number of elements computed per operation
+    int Count,
+    /// Rounding mode
+    FloatRoundStyle Round = FloatRoundStyle::round_to_nearest>
+class FastLinearCombinationClamp {
+ public:
+  using ElementOutput = ElementOutput_;
+  using ElementAccumulator = int;
+  using ElementCompute = float;
+
+  static int const kCount = Count;
+
+  using FragmentOutput = Array<ElementOutput, kCount>;
+  using FragmentAccumulator = Array<ElementAccumulator, kCount>;
+  using ComputeFragment = Array<ElementCompute, kCount>;
+
+  static FloatRoundStyle const kRound = Round;
+
+  /// Host-constructable parameters structure
+  struct Params {
+    /// scales accumulators
+    ElementCompute alpha;
+    /// scales source tensor
+    ElementCompute beta;
+    /// pointer to accumulator scalar - if not null, loads it from memory
+    ElementCompute const *alpha_ptr;
+    /// pointer to source scalar - if not null, loads it from memory
+    ElementCompute const *beta_ptr;
+
+    //
+    // Methods
+    //
+
+    CUTLASS_HOST_DEVICE
+    Params()
+        : alpha(ElementCompute(1)),
+          beta(ElementCompute(0)),
+          alpha_ptr(nullptr),
+          beta_ptr(nullptr) {}
+
+    CUTLASS_HOST_DEVICE
+    Params(ElementCompute alpha, ElementCompute beta)
+        : alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {}
+
+    CUTLASS_HOST_DEVICE
+    Params(ElementCompute const *alpha_ptr, ElementCompute const *beta_ptr)
+        : alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {}
+  };
+
+ private:
+  //
+  // Data members
+  //
+
+  ElementCompute alpha_;
+  ElementCompute beta_;
+
+ public:
+  /// Constructs the function object, possibly loading from pointers in host
+  /// memory
+  CUTLASS_HOST_DEVICE
+  FastLinearCombinationClamp(Params const &params) {
+    alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
+    beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
+  }
+
+  /// Returns true if source is needed
+  CUTLASS_HOST_DEVICE
+  bool is_source_needed() const { return beta_ != ElementCompute(0); }
+
+  /// Functionally required for serial reduction in the epilogue
+  CUTLASS_HOST_DEVICE
+  void set_k_partition(int k_partition) {
+    if (k_partition) {
+      beta_ = ElementCompute(1);
+    }
+  }
+
+  /// Computes linear scaling: D = alpha * accumulator + beta * source
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(FragmentAccumulator const &accumulator,
+                            FragmentOutput const &source,
+                            ElementCompute uniform = ElementCompute(0)) const {
+    // Convert source to interal compute numeric type
+    FastNumericArrayConverter<ElementCompute, ElementOutput, kCount, Round>
+        source_converter;
+    FastNumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round>
+        accumulator_converter;
+
+    ComputeFragment converted_source = source_converter(source);
+    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+
+    // Compute linear scaling in floating point
+    ComputeFragment intermediate;
+
+    multiplies<ComputeFragment> mul_add_source;
+    multiply_add<ComputeFragment> mul_add_accumulator;
+
+    minimum<ComputeFragment> min_accumulator;
+    maximum<ComputeFragment> max_accumulator;
+
+    // Float min-max
+    intermediate =
+        mul_add_source(beta_, converted_source);  // X =  beta * C + uniform
+    intermediate = mul_add_accumulator(alpha_, converted_accumulator,
+                                       intermediate);  // D = alpha * Accum + X
+
+    /// Clamping constant value
+    ElementCompute const kClamp =
+        ElementCompute(1 << (sizeof_bits<ElementOutput>::value - 1));
+
+    intermediate = max_accumulator(intermediate, -kClamp);
+    intermediate = min_accumulator(intermediate, kClamp - ElementCompute(1));
+
+    // Convert to destination numeric type
+    FastNumericArrayConverter<ElementOutput, ElementCompute, kCount, Round>
+        destination_converter;
+
+    return destination_converter(intermediate);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////
 
 } // namespace thread
 } // namespace epilogue

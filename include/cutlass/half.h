@@ -78,6 +78,10 @@ enum
 
 #include <immintrin.h>
 
+#if defined(__i386__) || defined(__x86_64__)
+#include <intrin.h>
+#endif
+
 #define F16C_ROUND_NEAREST 0
 
 #if !defined(__CUDA_ARCH__)
@@ -110,9 +114,51 @@ __inline unsigned short _cvtss_sh (float __F, const int) {
 
 // Linux
 #include <x86intrin.h>
+
+#if defined(__i386__) || defined(__x86_64__)
+#include <cpuid.h>
+#endif
+
 #define F16C_ROUND_NEAREST (_MM_FROUND_TO_NEAREST_INT |_MM_FROUND_NO_EXC)
 
-#endif
+#endif // _MSC_VER
+
+class CpuId {
+
+  bool f16c_enabled;
+
+  CpuId() {
+  #if defined(__i386__) || defined(__x86_64__)
+    #if defined(_MSC_VER)
+      int exx[4];
+
+      __cpuid (exx, 1); 
+      f16c_enabled = exx[2] & 0x20000000;
+
+    #else 
+    // GCC / Clang
+       int eax, ebx, ecx, edx;
+
+      __cpuid (1 , eax, ebx, ecx, edx); 
+      f16c_enabled = ecx & 0x20000000;
+    #endif
+  #else 
+  // Arm / PowerPC etc.
+    f16c_enabled = false;
+  #endif
+  }
+
+public:
+
+  bool is_f16c_supported() const {
+    return f16c_enabled;
+  } 
+
+  static const CpuId& instance() {
+      static CpuId cpu;
+      return cpu;
+  }
+};
 #endif // !defined(__CUDA_ARCH__) && CUTLASS_ENABLE_F16C
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -154,10 +200,15 @@ struct alignas(2) half_t {
   static half_t convert(float const& flt) {
   #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)
     return half_t(__float2half_rn(flt));
-  #elif !defined(__CUDA_ARCH__) && CUTLASS_ENABLE_F16C
-    unsigned short u = _cvtss_sh(flt, F16C_ROUND_NEAREST);
-    return bitcast(u);
   #else
+
+    #if !defined(__CUDA_ARCH__) && CUTLASS_ENABLE_F16C
+      if( CpuId::instance().is_f16c_supported() ) {
+        unsigned short u = _cvtss_sh(flt, F16C_ROUND_NEAREST);
+        return bitcast(u);
+      }
+    #endif
+
     // software implementation rounds toward nearest even
     unsigned const& s = reinterpret_cast<unsigned const &>(flt);
     uint16_t sign = uint16_t((s >> 16) & 0x8000);
@@ -248,10 +299,15 @@ struct alignas(2) half_t {
   static float convert(half_t const& x) {
   #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 530)
     return __half2float(x.to_half());
-  #elif !defined(__CUDA_ARCH__) && CUTLASS_ENABLE_F16C
-    unsigned short u = x.storage;
-    return _cvtsh_ss(u);
   #else
+
+    #if !defined(__CUDA_ARCH__) && CUTLASS_ENABLE_F16C
+      if( CpuId::instance().is_f16c_supported() ) {
+        unsigned short u = x.storage;
+        return _cvtsh_ss(u);
+      }
+    #endif
+
     uint16_t const &h = x.storage;
     int sign = ((h >> 15) & 1);
     int exp = ((h >> 10) & 0x1f);

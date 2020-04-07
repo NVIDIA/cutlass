@@ -192,7 +192,8 @@ template <
         OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
         ElementAccumulator_>::EpilogueOutputOp,
     /// Threadblock-level swizzling operator
-    typename ThreadblockSwizzle_ = threadblock::GemmIdentityThreadblockSwizzle,
+    typename ThreadblockSwizzle_ =
+        typename threadblock::GemmCohortThreadblockSwizzle<LayoutA_, LayoutB_>,
     /// Number of stages used in the pipelined mainloop
     int Stages =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
@@ -241,6 +242,8 @@ class Gemm {
   static int const kAlignmentC = EpilogueOutputOp::kCount;
   static bool const kSplitKSerial = SplitKSerial;
   static bool const kIsBetaZero = IsBetaZero;
+  static ComplexTransform const kTransformA = ComplexTransform::kNone;
+  static ComplexTransform const kTransformB = ComplexTransform::kNone;
 
   /// Define the kernel
   using GemmKernel = typename kernel::DefaultGemm<
@@ -348,21 +351,23 @@ public:
 
   /// Gets the workspace size
   static size_t get_workspace_size(Arguments const &args) {
+    
+    size_t bytes = 0;
 
+    // Determine grid shape
+    ThreadblockSwizzle threadblock_swizzle;
+
+    cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
+      args.problem_size, 
+      {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
+      args.split_k_slices);
+    
     if (kSplitKSerial && args.split_k_slices > 1) {
 
-      // Determine grid shape
-      ThreadblockSwizzle threadblock_swizzle;
-
-      cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
-        args.problem_size, 
-        {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
-        args.split_k_slices);
-
-      return sizeof(int) * size_t(tiled_shape.m()) * size_t(tiled_shape.n());
+      bytes += sizeof(int) * size_t(tiled_shape.m()) * size_t(tiled_shape.n());
     }
 
-    return 0;
+    return bytes;
   }
 
   /// Initializes GEMM state from arguments.
@@ -426,6 +431,7 @@ public:
     params_.ref_B.reset(args.ref_B.non_const_ref().data());
     params_.ref_C.reset(args.ref_C.non_const_ref().data());
     params_.ref_D.reset(args.ref_D.data());
+    params_.output_op = args.epilogue;
     params_.semaphore = static_cast<int *>(workspace);
 
     return Status::kSuccess;
@@ -560,6 +566,8 @@ class Gemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
   static int const kStages = Stages;
   static int const kAlignmentA = AlignmentA;
   static int const kAlignmentB = AlignmentB;
+  static ComplexTransform const kTransformA = ComplexTransform::kNone;
+  static ComplexTransform const kTransformB = ComplexTransform::kNone;
   static bool const kSplitKSerial = SplitKSerial;
   static bool const kIsBetaZero = IsBetaZero;
 

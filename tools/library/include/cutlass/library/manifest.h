@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -55,10 +55,14 @@ using OperationVector = std::vector<std::unique_ptr<Operation>>;
 class Manifest {
 private:
 
+  /// Operation provider 
+  Provider provider_;
+
   /// Global list of operations
   OperationVector operations_;
 
 public:
+  Manifest (Provider provider = library::Provider::kCUTLASS) : provider_(provider) { }
 
   /// Top-level initialization
   Status initialize();

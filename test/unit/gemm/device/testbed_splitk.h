@@ -26,6 +26,8 @@
     \brief Tests for device-wide GEMM interface
 */
 
+#pragma once
+
 #include <iostream>
 #include <fstream>
 #include <sstream>

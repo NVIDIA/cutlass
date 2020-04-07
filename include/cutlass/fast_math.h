@@ -25,7 +25,12 @@
 
 #pragma once
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cstdint>
+#else
 #include <cstdint>
+#endif
+
 #include "cutlass/cutlass.h"
 
 /**
@@ -199,6 +204,18 @@ void fast_divmod(int& quo, int64_t& rem, int64_t src, int div, unsigned int mul,
   #endif
   // The remainder.
   rem = src - (quo * div);
+}
+
+/// Returns the smallest value in the half-open range [a, a+b) that is a multiple of b
+CUTLASS_HOST_DEVICE
+int round_up(int a, int b) {
+  return ((a + b - 1) / b) * b;
+}
+
+/// Returns the ceiling of (a / b)
+CUTLASS_HOST_DEVICE
+int ceil_div(int a, int b) {
+  return (a + b - 1) / b;
 }
 
 /******************************************************************************

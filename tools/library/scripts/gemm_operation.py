@@ -22,7 +22,9 @@ from library import *
 #
 class GemmOperation:
   #
-  def __init__(self, gemm_kind, arch, tile_description, A, B, C, element_epilogue):
+  def __init__(self, gemm_kind, arch, tile_description, A, B, C, element_epilogue, \
+      epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Cohort):
+
     self.operation_kind = OperationKind.Gemm
     self.arch = arch
     self.tile_description = tile_description
@@ -31,29 +33,75 @@ class GemmOperation:
     self.B = B
     self.C = C
     self.element_epilogue = element_epilogue
+    self.epilogue_functor = epilogue_functor
+    self.swizzling_functor = swizzling_functor
+
+  #
+  def is_complex(self):
+    complex_operators = [
+      MathOperation.multiply_add_complex, 
+    ]
+    return self.tile_description.math_instruction.math_operation in complex_operators
+
+  #
+  def is_planar_complex(self):
+    return self.gemm_kind in (GemmKind.PlanarComplex, GemmKind.PlanarComplexArray)
+
+  #
+  def accumulator_type(self):
+    accum = self.tile_description.math_instruction.element_accumulator
+
+    if self.is_complex():
+      return get_complex_from_real(accum)
+
+    return accum
+
+  #
+  def short_math_name(self):
+    return ShortDataTypeNames[self.accumulator_type()]
+
 
   #
   def core_name(self):
     ''' The basic operation kind is prefixed with a letter indicating the accumulation type. '''
+    
+    inst_shape = ''
+    inst_operation = ''
+    intermediate_type = ''
+
+    math_operations_map = {
+      MathOperation.xor_popc: 'xor',
+    }
+
     if self.tile_description.math_instruction.opcode_class == OpcodeClass.TensorOp or \
       self.tile_description.math_instruction.opcode_class == OpcodeClass.WmmaTensorOp:
-      inst_shape = "%d%d%d" % tuple(self.tile_description.math_instruction.instruction_shape)
-    else:
-      inst_shape = ''
 
-    return "%s%s%s" % (ShortDataTypeNames[self.tile_description.math_instruction.element_accumulator], inst_shape, GemmKindNames[self.gemm_kind])
+      math_op = self.tile_description.math_instruction.math_operation
+      math_op_string = math_operations_map[math_op] if math_op in math_operations_map.keys() else ''
+
+      inst_shape = "%d%d%d" % tuple(self.tile_description.math_instruction.instruction_shape)
+      inst_shape += math_op_string
+
+      if self.tile_description.math_instruction.element_a != self.A.element and \
+        self.tile_description.math_instruction.element_a != self.tile_description.math_instruction.element_accumulator:
+        intermediate_type = DataTypeNames[self.tile_description.math_instruction.element_a]
+
+    return "%s%s%s%s" % (self.short_math_name(), inst_shape, intermediate_type, GemmKindNames[self.gemm_kind])
 
   #
   def extended_name(self):
     ''' Append data types if they differ from compute type. '''
-    if self.C.element != self.tile_description.math_instruction.element_accumulator and \
-      self.A.element != self.tile_description.math_instruction.element_accumulator:
-      extended_name = "${element_c}_${core_name}_${element_a}"
-    elif self.C.element == self.tile_description.math_instruction.element_accumulator and  \
-      self.A.element != self.tile_description.math_instruction.element_accumulator:
-      extended_name = "${core_name}_${element_a}"
-    else:
+    if self.is_complex():
       extended_name = "${core_name}"
+    else:
+      if self.C.element != self.tile_description.math_instruction.element_accumulator and \
+        self.A.element != self.tile_description.math_instruction.element_accumulator:
+        extended_name = "${element_c}_${core_name}_${element_a}"
+      elif self.C.element == self.tile_description.math_instruction.element_accumulator and  \
+        self.A.element != self.tile_description.math_instruction.element_accumulator:
+        extended_name = "${core_name}_${element_a}"
+      else:
+        extended_name = "${core_name}"
 
     extended_name = SubstituteTemplate(extended_name, {
       'element_a': DataTypeNames[self.A.element],
@@ -64,27 +112,31 @@ class GemmOperation:
     return extended_name
 
   #
+  def layout_name(self):
+    if self.is_complex() or self.is_planar_complex():
+      return "%s%s" % (
+        ShortComplexLayoutNames[(self.A.layout, self.A.complex_transform)], 
+        ShortComplexLayoutNames[(self.B.layout, self.B.complex_transform)]
+      )
+    return "%s%s" % (ShortLayoutTypeNames[self.A.layout], ShortLayoutTypeNames[self.B.layout])
+
+  #
   def procedural_name(self):
     ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
-    if self.tile_description.stages > 2:
-      threadblock = "%dx%d_%dx%d" % (
-        self.tile_description.threadblock_shape[0], 
-        self.tile_description.threadblock_shape[1],
-        self.tile_description.threadblock_shape[2],
-        self.tile_description.stages
-      )
-    else:
-      threadblock = "%dx%d" % (self.tile_description.threadblock_shape[0], self.tile_description.threadblock_shape[1])
+    threadblock = self.tile_description.procedural_name()
 
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
 
+    alignment = max([self.A.alignment, self.B.alignment, self.C.alignment])
+
     return SubstituteTemplate(
-      "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}",
+      "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_align${alignment}",
       {
         'opcode_class': opcode_class_name,
         'extended_name': self.extended_name(),
         'threadblock': threadblock,
-        'layout': "%s%s" % (ShortLayoutTypeNames[self.A.layout], ShortLayoutTypeNames[self.B.layout]),
+        'layout': self.layout_name(),
+        'alignment': "%d" % self.A.alignment,
       }
     )
 
@@ -104,7 +156,7 @@ class EmitGemmInstance:
   ''' Responsible for emitting a CUTLASS template definition'''
 
   def __init__(self):
-    self.template = """
+    self.gemm_template = """
   // Gemm operator ${operation_name}
   using Operation_${operation_name} = cutlass::gemm::device::Gemm<
     ${element_a}, ${layout_a},
@@ -116,14 +168,45 @@ class EmitGemmInstance:
     cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
     cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k}>,
     cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
-    cutlass::epilogue::thread::LinearCombination<
+    ${epilogue_functor}<
       ${element_c},
       ${epilogue_vector_length},
       ${element_accumulator},
       ${element_epilogue}
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
-    ${stages}
+    ${swizzling_functor},
+    ${stages},
+    ${align_a},
+    ${align_b},
+    false,
+    ${math_operation}
+    ${residual}
+  >;
+"""
+    self.gemm_complex_template = """
+  // Gemm operator ${operation_name}
+  using Operation_${operation_name} = cutlass::gemm::device::GemmComplex<
+    ${element_a}, ${layout_a},
+    ${element_b}, ${layout_b},
+    ${element_c}, ${layout_c},
+    ${element_accumulator},
+    ${opcode_class},
+    ${arch},
+    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+    cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k}>,
+    cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
+    ${epilogue_functor}<
+      ${element_c},
+      ${epilogue_vector_length},
+      ${element_accumulator},
+      ${element_epilogue}
+    >,
+    ${swizzling_functor},
+    ${stages},
+    ${transform_a},
+    ${transform_b},
+    ${math_operation}
+    ${residual}
   >;
 """
 
@@ -135,6 +218,8 @@ class EmitGemmInstance:
 
     epilogue_vector_length = int(min(operation.C.alignment * DataTypeSize[operation.C.element], 128) / DataTypeSize[operation.C.element])
 
+    residual = ''
+    
     values = {
       'operation_name': operation.procedural_name(),
       'element_a': DataTypeTag[operation.A.element],
@@ -143,7 +228,7 @@ class EmitGemmInstance:
       'layout_b': LayoutTag[operation.B.layout],
       'element_c': DataTypeTag[operation.C.element],
       'layout_c': LayoutTag[operation.C.layout],
-      'element_accumulator': DataTypeTag[operation.tile_description.math_instruction.element_accumulator],
+      'element_accumulator': DataTypeTag[operation.accumulator_type()],
       'opcode_class': OpcodeClassTag[operation.tile_description.math_instruction.opcode_class],
       'arch': "cutlass::arch::Sm%d" % operation.arch,
       'threadblock_shape_m': str(operation.tile_description.threadblock_shape[0]),
@@ -157,57 +242,72 @@ class EmitGemmInstance:
       'instruction_shape_k': str(operation.tile_description.math_instruction.instruction_shape[2]),
       'epilogue_vector_length': str(epilogue_vector_length),
       'element_epilogue': str(DataTypeTag[operation.element_epilogue]),
-      'stages': str(operation.tile_description.stages)
+      'epilogue_functor': EpilogueFunctorTag[operation.epilogue_functor],
+      'swizzling_functor': SwizzlingFunctorTag[operation.swizzling_functor],
+      'stages': str(operation.tile_description.stages),
+      'align_a': str(operation.A.alignment),
+      'align_b': str(operation.B.alignment),
+      'transform_a': ComplexTransformTag[operation.A.complex_transform],
+      'transform_b': ComplexTransformTag[operation.B.complex_transform],
+      'math_operation': MathOperationTag[operation.tile_description.math_instruction.math_operation],
+      'residual': residual
     }
 
-    return SubstituteTemplate(self.template, values)
+    template = self.gemm_complex_template if operation.is_complex() else self.gemm_template
+
+    return SubstituteTemplate(template, values)
 
 ###################################################################################################
 
 #
-class EmitGemmBatchedInstance:
+class EmitGemmPlanarComplexInstance:
   ''' Responsible for emitting a CUTLASS template definition'''
 
   def __init__(self):
     self.template = """
   // Gemm operator ${operation_name}
-  using Operation_${operation_name} = cutlass::gemm::device::GemmBatched<
-    ${element_a}, ${layout_a},
-    ${element_b}, ${layout_b},
-    ${element_c}, ${layout_c},
+  using Operation_${operation_name} = typename cutlass::gemm::kernel::DefaultGemmPlanarComplexUniversal<
+    ${element_a}, ${layout_a}, ${transform_a}, ${alignment_a},
+    ${element_b}, ${layout_b}, ${transform_b}, ${alignment_b},
+    ${element_c}, cutlass::layout::RowMajor,
     ${element_accumulator},
     ${opcode_class},
     ${arch},
     cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
     cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k}>,
     cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
-    cutlass::epilogue::thread::LinearCombination<
+    cutlass::epilogue::thread::LinearCombinationPlanarComplex<
       ${element_c},
-      ${epilogue_vector_length},
+      ${alignment_c},
       ${element_accumulator},
       ${element_epilogue}
     >,
-    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
     ${stages},
-    ${align_a},
-    ${align_b}
-  >;
+    ${math_operator}
+  >::GemmKernel;
+
+  struct ${operation_name} : public Operation_${operation_name} { };
 """
 
   def emit(self, operation):
 
     warp_shape = [operation.tile_description.threadblock_shape[idx] // operation.tile_description.warp_count[idx] for idx in range(3)]
-    #warp_shape[2] = operation.tile_description.math_instruction.instruction_shape[2]
-    warp_shape[2] = operation.tile_description.threadblock_shape[2]
 
-    epilogue_vector_length = int(min(operation.C.alignment * DataTypeSize[operation.C.element], 128) / DataTypeSize[operation.C.element])
+    # exchange and transpose A and B types, layouts, and complex transforms since the C layout is row-major
+    transposed_layout_A = TransposedLayout[operation.A.layout]
+    transposed_layout_B = TransposedLayout[operation.B.layout]
 
     values = {
       'operation_name': operation.procedural_name(),
-      'element_a': DataTypeTag[operation.A.element],
-      'layout_a': LayoutTag[operation.A.layout],
-      'element_b': DataTypeTag[operation.B.element],
-      'layout_b': LayoutTag[operation.B.layout],
+      'element_a': DataTypeTag[operation.B.element],
+      'layout_a': LayoutTag[transposed_layout_B],
+      'transform_a': ComplexTransformTag[operation.B.complex_transform],
+      'alignment_a': str(operation.B.alignment),
+      'element_b': DataTypeTag[operation.A.element],
+      'layout_b': LayoutTag[transposed_layout_A],
+      'transform_b': ComplexTransformTag[operation.A.complex_transform],
+      'alignment_b': str(operation.A.alignment),
       'element_c': DataTypeTag[operation.C.element],
       'layout_c': LayoutTag[operation.C.layout],
       'element_accumulator': DataTypeTag[operation.tile_description.math_instruction.element_accumulator],
@@ -222,139 +322,89 @@ class EmitGemmBatchedInstance:
       'instruction_shape_m': str(operation.tile_description.math_instruction.instruction_shape[0]),
       'instruction_shape_n': str(operation.tile_description.math_instruction.instruction_shape[1]),
       'instruction_shape_k': str(operation.tile_description.math_instruction.instruction_shape[2]),
-      'epilogue_vector_length': str(epilogue_vector_length),
+      'alignment_c': str(operation.C.alignment),
       'element_epilogue': str(DataTypeTag[operation.element_epilogue]),
       'stages': str(operation.tile_description.stages),
-      'align_a': str(operation.A.alignment),
-      'align_b': str(operation.B.alignment),
+      'math_operator': 'cutlass::arch::OpMultiplyAdd'
     }
 
     return SubstituteTemplate(self.template, values)
 
 ###################################################################################################
+
 #
-# Generator functions for all layouts
-#
+class EmitGemmPlanarComplexArrayInstance:
+  ''' Responsible for emitting a CUTLASS template definition'''
+
+  def __init__(self):
+    self.template = """
+  // Gemm operator ${operation_name}
+  using Operation_${operation_name} = typename cutlass::gemm::kernel::DefaultGemmPlanarComplexUniversal<
+    ${element_a}, ${layout_a}, ${transform_a}, ${alignment_a},
+    ${element_b}, ${layout_b}, ${transform_b}, ${alignment_b},
+    ${element_c}, cutlass::layout::RowMajor,
+    ${element_accumulator},
+    ${opcode_class},
+    ${arch},
+    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+    cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k}>,
+    cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
+    cutlass::epilogue::thread::LinearCombinationPlanarComplex<
+      ${element_c},
+      ${alignment_c},
+      ${element_accumulator},
+      ${element_epilogue}
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    ${stages},
+    ${math_operator}
+  >::GemmArrayKernel;
+
+  struct ${operation_name} : public Operation_${operation_name} { };
+"""
+
+  def emit(self, operation):
+
+    warp_shape = [operation.tile_description.threadblock_shape[idx] // operation.tile_description.warp_count[idx] for idx in range(3)]
+
+    # exchange and transpose A and B types, layouts, and complex transforms since the C layout is row-major
+    transposed_layout_A = TransposedLayout[operation.A.layout]
+    transposed_layout_B = TransposedLayout[operation.B.layout]
+
+    values = {
+      'operation_name': operation.procedural_name(),
+      'element_a': DataTypeTag[operation.B.element],
+      'layout_a': LayoutTag[transposed_layout_B],
+      'transform_a': ComplexTransformTag[operation.B.complex_transform],
+      'alignment_a': str(operation.B.alignment),
+      'element_b': DataTypeTag[operation.A.element],
+      'layout_b': LayoutTag[transposed_layout_A],
+      'transform_b': ComplexTransformTag[operation.A.complex_transform],
+      'alignment_b': str(operation.A.alignment),
+      'element_c': DataTypeTag[operation.C.element],
+      'layout_c': LayoutTag[operation.C.layout],
+      'element_accumulator': DataTypeTag[operation.tile_description.math_instruction.element_accumulator],
+      'opcode_class': OpcodeClassTag[operation.tile_description.math_instruction.opcode_class],
+      'arch': "cutlass::arch::Sm%d" % operation.arch,
+      'threadblock_shape_m': str(operation.tile_description.threadblock_shape[0]),
+      'threadblock_shape_n': str(operation.tile_description.threadblock_shape[1]),
+      'threadblock_shape_k': str(operation.tile_description.threadblock_shape[2]),
+      'warp_shape_m': str(warp_shape[0]),
+      'warp_shape_n': str(warp_shape[1]),
+      'warp_shape_k': str(warp_shape[2]),
+      'instruction_shape_m': str(operation.tile_description.math_instruction.instruction_shape[0]),
+      'instruction_shape_n': str(operation.tile_description.math_instruction.instruction_shape[1]),
+      'instruction_shape_k': str(operation.tile_description.math_instruction.instruction_shape[2]),
+      'alignment_c': str(operation.C.alignment),
+      'element_epilogue': str(DataTypeTag[operation.element_epilogue]),
+      'stages': str(operation.tile_description.stages),
+      'math_operator': 'cutlass::arch::OpMultiplyAdd'
+    }
+
+    return SubstituteTemplate(self.template, values)
+
 ###################################################################################################
 
-#
-def GenerateGemmSimt(gemm_kind, manifest, tile_descriptions, min_cc):
-  layouts = [
-    (LayoutType.ColumnMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
-    (LayoutType.ColumnMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
-    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
-    (LayoutType.RowMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
-  ]
-
-  # for each tile configuration, emit a GEMM
-  for tile in tile_descriptions:
-    for layout in layouts:
-
-      A = TensorDescription(tile.math_instruction.element_a, layout[0], 1)
-      B = TensorDescription(tile.math_instruction.element_b, layout[1], 1)
-      C = TensorDescription(tile.math_instruction.element_accumulator, layout[2], 1)
-
-      manifest.append(GemmOperation(gemm_kind, 50, tile, A, B, C, tile.math_instruction.element_accumulator))
-
-#
-def GenerateGemmTensorOp(gemm_kind, manifest, tile_descriptions, min_cc, minimum_alignment = [128,]):
-
-  # Canonical matrix layouts
-  canonical_layouts = [
-    (LayoutType.ColumnMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
-    (LayoutType.ColumnMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
-    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
-    (LayoutType.RowMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
-  ]
-
-  # Interleaved matrix layouts
-  interleaved_layouts = {
-    8: [
-      #(LayoutType.ColumnMajorInterleaved32, LayoutType.RowMajorInterleaved32, LayoutType.ColumnMajorInterleaved32),
-      (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
-    ],
-    4: [
-      #(LayoutType.ColumnMajorInterleaved64, LayoutType.RowMajorInterleaved64, LayoutType.ColumnMajorInterleaved64),
-      (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
-    ]
-  }
-
-  # for each tile configuration, emit a GEMM
-  for align in minimum_alignment:
-    for tile in tile_descriptions:
-
-      min_input_size = min(DataTypeSize[tile.math_instruction.element_a], DataTypeSize[tile.math_instruction.element_a])
-
-      # If the data type is large enough, use canonical layouts.
-      if min_input_size >= 16:
-        layouts = canonical_layouts
-      else:
-        layouts = interleaved_layouts[min_input_size]
-
-      for layout in layouts:
-
-        # 
-        output_types = [tile.math_instruction.element_a, tile.math_instruction.element_accumulator] \
-          if DataTypeSize[tile.math_instruction.element_accumulator] == 32 \
-          else [tile.math_instruction.element_accumulator,]
-
-        align_a = align // DataTypeSize[tile.math_instruction.element_a]
-        align_b = align // DataTypeSize[tile.math_instruction.element_b]
-
-
-        for output_type in output_types:
-
-          rows_per_warp = 8 // tile.warp_count[1]
-          align_c = min(int(align / DataTypeSize[output_type]), tile.threadblock_shape[1] * rows_per_warp // 32)
-
-          A = TensorDescription(tile.math_instruction.element_a, layout[0], align_a)
-          B = TensorDescription(tile.math_instruction.element_b, layout[1], align_b)
-          C = TensorDescription(output_type, layout[2], max(1, align_c))
-
-          element_epilogue = DataType.f32 if tile.math_instruction.element_accumulator == DataType.s32 \
-            else tile.math_instruction.element_accumulator
-
-          manifest.append(GemmOperation(gemm_kind, min_cc, tile, A, B, C, element_epilogue))
-
-
-#
-def GenerateGemmWmmaTensorOp(gemm_kind, manifest, tile_descriptions, min_cc, minimum_alignment = [128,]):
-
-  # Wmma supported matrix layouts
-  layouts = [
-    (LayoutType.ColumnMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
-    (LayoutType.ColumnMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
-    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
-    (LayoutType.RowMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
-  ]
-
-  # for each tile configuration, emit a GEMM
-  for align in minimum_alignment:
-    for tile in tile_descriptions:
-      for layout in layouts:
-
-        # 
-        output_types = [tile.math_instruction.element_a, tile.math_instruction.element_accumulator] \
-          if DataTypeSize[tile.math_instruction.element_accumulator] == 32 \
-          else [tile.math_instruction.element_accumulator,]
-
-        align_a = align // DataTypeSize[tile.math_instruction.element_a]
-        align_b = align // DataTypeSize[tile.math_instruction.element_b]
-
-
-        for output_type in output_types:
-
-          rows_per_warp = 8 // tile.warp_count[1]
-          align_c = min(int(align / DataTypeSize[output_type]), tile.threadblock_shape[1] * rows_per_warp // 32)
-
-          A = TensorDescription(tile.math_instruction.element_a, layout[0], align_a)
-          B = TensorDescription(tile.math_instruction.element_b, layout[1], align_b)
-          C = TensorDescription(output_type, layout[2], max(1, align_c))
-
-          element_epilogue = DataType.f32 if tile.math_instruction.element_accumulator == DataType.s32 \
-            else tile.math_instruction.element_accumulator
-
-          manifest.append(GemmOperation(gemm_kind, min_cc, tile, A, B, C, element_epilogue))
 
 ###################################################################################################
 #
@@ -369,21 +419,40 @@ class EmitGemmConfigurationLibrary:
 
     self.instance_emitter = {
       GemmKind.Gemm: EmitGemmInstance,
-      GemmKind.Batched: EmitGemmBatchedInstance
+      GemmKind.PlanarComplex: EmitGemmPlanarComplexInstance,
+      GemmKind.PlanarComplexArray: EmitGemmPlanarComplexArrayInstance
     }
 
     self.gemm_kind_wrappers = {
       GemmKind.Gemm: 'GemmOperation',
-      GemmKind.Batched: 'GemmBatchedOperation',
+      GemmKind.PlanarComplex: 'GemmPlanarComplexOperation',
+      GemmKind.PlanarComplexArray: 'GemmPlanarComplexArrayOperation'
     }
 
     self.wmma_guard_start = "#if defined(CUTLASS_ARCH_WMMA_SM${sm_number}_ENABLED)"
 
-    self.instance_template = """
+    self.instance_template = {
+      GemmKind.Gemm: """
 ${compile_guard_start}
   manifest.append(new ${gemm_kind}<Operation_${operation_name}>("${operation_name}"));
 ${compile_guard_end}
+""",
+      GemmKind.PlanarComplex: """
+${compile_guard_start}
+  manifest.append(new ${gemm_kind}<
+    cutlass::gemm::device::GemmUniversalAdapter<${operation_name}>
+  >("${operation_name}"));
+${compile_guard_end}
+""",
+      GemmKind.PlanarComplexArray: """
+${compile_guard_start}
+  manifest.append(new ${gemm_kind}<
+    cutlass::gemm::device::GemmUniversalAdapter<${operation_name}>
+  >("${operation_name}"));
+${compile_guard_end}
 """
+    }
+
     self.header_template = """
 /*
   Generated by gemm_operation.py - Do not edit.
@@ -397,6 +466,14 @@ ${compile_guard_end}
 
 #include "library_internal.h"
 #include "gemm_operation.h"
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+"""
+
+    self.initialize_function_template = """
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace library {
@@ -421,9 +498,11 @@ void initialize_${configuration_name}(Manifest &manifest) {
 
   def __enter__(self):
     self.configuration_file = open(self.configuration_path, "w")
-    self.configuration_file.write(SubstituteTemplate(self.header_template, {
-      'configuration_name': self.configuration_name
-      }))
+    self.configuration_file.write(self.header_template)
+
+    self.instance_definitions = []
+    self.instance_wrappers = []
+
     self.operations = []
     return self
 
@@ -431,8 +510,10 @@ void initialize_${configuration_name}(Manifest &manifest) {
     emitter = self.instance_emitter[operation.gemm_kind]()
 
     self.operations.append(operation)
-    self.configuration_file.write(emitter.emit(operation))
-    self.configuration_file.write(SubstituteTemplate(self.instance_template, {
+
+    self.instance_definitions.append(emitter.emit(operation))
+
+    self.instance_wrappers.append(SubstituteTemplate(self.instance_template[operation.gemm_kind], {
       'configuration_name': self.configuration_name,
       'operation_name': operation.procedural_name(),
       'gemm_kind': self.gemm_kind_wrappers[operation.gemm_kind],
@@ -443,6 +524,19 @@ void initialize_${configuration_name}(Manifest &manifest) {
       }))
 
   def __exit__(self, exception_type, exception_value, traceback):
+
+    # Write instance definitions in top-level namespace
+    for instance_definition in self.instance_definitions:
+      self.configuration_file.write(instance_definition)
+
+    # Add wrapper objects within initialize() function
+    self.configuration_file.write(SubstituteTemplate(self.initialize_function_template, {
+      'configuration_name': self.configuration_name
+      }))
+   
+    for instance_wrapper in self.instance_wrappers:
+      self.configuration_file.write(instance_wrapper) 
+
     self.configuration_file.write(self.epilogue_template)
     self.configuration_file.close()
 

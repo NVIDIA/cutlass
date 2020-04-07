@@ -35,6 +35,7 @@
 
 // CUTLASS Library includes
 #include "cutlass/library/library.h"
+#include "cutlass/library/util.h"
 #include "cutlass/library/manifest.h"
 
 // Profiler includes

@@ -123,53 +123,6 @@ AlgorithmMode from_string<AlgorithmMode>(std::string const &str) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-static struct {
-  char const *text;
-  char const *pretty;
-  Provider enumerant;
-}
-Provider_enumerants[] = {
-  {"cutlass", "CUTLASS", Provider::kCUTLASS},
-  {"host", "reference_host", Provider::kReferenceHost},
-  {"device", "reference_device", Provider::kReferenceDevice},
-  {"cublas", "cuBLAS", Provider::kCUBLAS},
-};
-
-/// Converts a Provider enumerant to a string
-char const *to_string(Provider provider, bool pretty) {
-
-  for (auto const & possible : Provider_enumerants) {
-    if (provider == possible.enumerant) {
-      if (pretty) {
-        return possible.pretty;
-      }
-      else {
-        return possible.text;
-      }
-    }
-  }
-  
-  return pretty ? "Invalid" : "invalid";
-}
-
-/// Parses a Provider enumerant from a string
-template <>
-Provider from_string<Provider>(std::string const &str) {
-
-  for (auto const & possible : Provider_enumerants) {
-    if ((str.compare(possible.text) == 0) ||
-        (str.compare(possible.pretty) == 0)) {
-      return possible.enumerant;
-    }
-  }
-
-  return Provider::kInvalid;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-
 static struct {
   char const *text;
   char const *pretty;
@@ -180,6 +133,7 @@ Disposition_enumerants[] = {
   {"failed", "Failed", Disposition::kFailed},
   {"not_run", "Not run", Disposition::kNotRun},
   {"not_verified", "Not verified", Disposition::kNotVerified},
+  {"invalid_problem", "Invalid problem", Disposition::kInvalidProblem},
   {"not_supported", "Not supported", Disposition::kNotSupported},
   {"incorrect", "Incorrect", Disposition::kIncorrect}
 };

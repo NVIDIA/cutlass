@@ -33,7 +33,7 @@ target_link_libraries(
   PUBLIC
   CUTLASS
   cutlass_tools_util_includes
-  $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:cublas>
+  $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
   gtest
   )
 
@@ -48,6 +48,8 @@ target_link_libraries(
   PUBLIC
   cutlass_test_unit_infra
   )
+
+set(CUTLASS_INSTALL_TESTS ON CACHE BOOL "Install test executables")
   
 function(cutlass_test_unit_add_executable)
 
@@ -65,7 +67,7 @@ function(cutlass_test_unit_add_executable)
     PRIVATE
     cutlass_test_unit_infra
     cutlass_test_unit_infra_lib
-    )
+  )
 
   string(REGEX REPLACE cutlass_ "" NAME_STEM ${NAME})
 
@@ -79,7 +81,14 @@ function(cutlass_test_unit_add_executable)
     ${NAME}
     )
 
-  # message(STATUS "cutlass_test_unit_add_executable(${NAME} c${NAME_STEM} ${NAME_STEM})")
+  if (CUTLASS_INSTALL_TESTS)
+
+    install(
+      TARGETS ${NAME}
+      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+      )
+
+  endif()
 
 endfunction()
 

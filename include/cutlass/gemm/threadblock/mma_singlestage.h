@@ -168,7 +168,6 @@ public:
     // Perform accumulation in the 'd' output operand
     accum = src_accum;
 
-
     FragmentA tb_frag_A;
     FragmentB tb_frag_B;
 
@@ -183,8 +182,9 @@ public:
     ++iterator_B;
 
     // Pair of fragments used to overlap shared memory loads and math instructions
-    WarpFragmentA warp_frag_A[2];
-    WarpFragmentB warp_frag_B[2];
+    WarpFragmentA warp_frag_A;
+    WarpFragmentB warp_frag_B;
+
     Operator warp_mma;
 
     // Avoid reading out of bounds
@@ -192,7 +192,6 @@ public:
       iterator_A.clear_mask();
       iterator_B.clear_mask();
     }
-
 
     //
     // Mainloop
@@ -202,7 +201,6 @@ public:
     for (; gemm_k_iterations > 0; --gemm_k_iterations) {
       this->smem_iterator_A_.store(tb_frag_A);
       this->smem_iterator_B_.store(tb_frag_B);
-
 
       __syncthreads();
 
@@ -216,16 +214,16 @@ public:
         // Load warp-level tiles from shared memory, wrapping to k offset if this is the last group
         // as the case may be.
         
-        this->warp_tile_iterator_A_.set_kgroup_index((warp_mma_k) % Base::kWarpGemmIterations);
-        this->warp_tile_iterator_B_.set_kgroup_index((warp_mma_k) % Base::kWarpGemmIterations);
+        this->warp_tile_iterator_A_.set_kgroup_index(warp_mma_k % Base::kWarpGemmIterations);
+        this->warp_tile_iterator_B_.set_kgroup_index(warp_mma_k % Base::kWarpGemmIterations);
 
-        this->warp_tile_iterator_A_.load(warp_frag_A[(warp_mma_k) % 2]);
-        this->warp_tile_iterator_B_.load(warp_frag_B[(warp_mma_k) % 2]);
+        this->warp_tile_iterator_A_.load(warp_frag_A);
+        this->warp_tile_iterator_B_.load(warp_frag_B);
 
         ++this->warp_tile_iterator_A_;
         ++this->warp_tile_iterator_B_;
 
-        warp_mma(accum, warp_frag_A[warp_mma_k % 2], warp_frag_B[warp_mma_k % 2], accum);
+        warp_mma(accum, warp_frag_A, warp_frag_B, accum);
       }
 
       // Add negative offsets to return smem load iterators to the 'start' of the shared memory
