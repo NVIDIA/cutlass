@@ -379,6 +379,7 @@ template <
   typename Element,
   typename Layout
 >
+CUTLASS_HOST_DEVICE
 bool TensorRef_aligned(TensorRef<Element, Layout> const &ref, int alignment) {
 
   int const kStrideRank = Layout::kStrideRank;

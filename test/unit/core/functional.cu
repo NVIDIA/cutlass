@@ -347,13 +347,13 @@ TEST(Functional, divides_f16x17) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <int kN>
-void Functional_multiply_add_f16xN() {
+template <typename T, int kN>
+void Functional_multiply_add_TxN() {
 
-  using Element = cutlass::Array<cutlass::half_t, kN>;
+  using Element = cutlass::Array<T, kN>;
   using Operator = cutlass::multiply_add<Element>;
 
-  using Tensor = cutlass::HostTensor<cutlass::half_t, cutlass::layout::RowMajor>;
+  using Tensor = cutlass::HostTensor<T, cutlass::layout::RowMajor>;
 
   Tensor D({1, kN});
   Tensor A({1, kN});
@@ -361,10 +361,10 @@ void Functional_multiply_add_f16xN() {
   Tensor C({1, kN});
 
   for (int i = 0; i < kN; ++i) {
-    A.host_data()[i] = cutlass::half_t((i * 2 + 1) % 5);
-    B.host_data()[i] = cutlass::half_t((i * 4 + 8) % 7);
-    C.host_data()[i] = cutlass::half_t((i * 3 + 11) % 11);
-    D.host_data()[i] = cutlass::half_t(0);
+    A.host_data()[i] = T((i * 2 + 1) % 5);
+    B.host_data()[i] = T((i * 4 + 8) % 7);
+    C.host_data()[i] = T((i * 3 + 11) % 11);
+    D.host_data()[i] = T(0);
   }
 
   D.sync_device();
@@ -399,12 +399,15 @@ void Functional_multiply_add_f16xN() {
   EXPECT_TRUE(some_d_nonzero);
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 TEST(Functional, multiply_add_f16x16) {
-  Functional_multiply_add_f16xN<16>();
+  Functional_multiply_add_TxN<cutlass::half_t, 16>();
 }
 
 TEST(Functional, multiply_add_f16x17) {
-  Functional_multiply_add_f16xN<17>();
+  Functional_multiply_add_TxN<cutlass::half_t, 17>();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+

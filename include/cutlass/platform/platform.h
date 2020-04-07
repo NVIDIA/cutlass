@@ -95,7 +95,11 @@
 // Dependencies
 //-----------------------------------------------------------------------------
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cstdint>
+#else
 #include <stdint.h>
+#endif
 
 #if !defined(__CUDACC_RTC__)
 //-----------------------------------------------------------------------------

@@ -32,7 +32,11 @@
 
 #pragma once
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cassert>
+#else
 #include <assert.h>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/matrix_shape.h"
@@ -58,7 +62,7 @@ namespace threadblock {
 /// Base class for epilogues defining warp-level 
 template <
   typename Shape_,                          ///< Shape of threadblock tile (concept: GemmShape)
-  typename WarpMmaOperator_,                ///< Warp-level MMA operator (concept: gemm::warp::MmaTensorOp)
+  typename WarpShape_,                      ///< Warp-level MMA operator (concept: gemm::warp::MmaTensorOp)
   int PartitionsK,                          ///< Number of partitions of the K dimension
   typename AccumulatorFragmentIterator_,    ///< Fragment iterator selecting accumulators
   typename WarpTileIterator_,               ///< Warp-scoped tile iterator writing accumulators to SMEM
@@ -68,7 +72,7 @@ class EpilogueBase {
 public:
 
   using Shape = Shape_;
-  using WarpMmaOperator = WarpMmaOperator_;
+  using WarpShape = WarpShape_;
   static int const kPartitionsK = PartitionsK;
   using AccumulatorFragmentIterator = AccumulatorFragmentIterator_;
   using WarpTileIterator = WarpTileIterator_;
@@ -83,11 +87,10 @@ public:
   /// Accumulator element
   using ElementAccumulator = typename AccumulatorTile::Element;
 
-  
   /// Number of warps
   using WarpCount = gemm::GemmShape<
-    Shape::kM / WarpMmaOperator::Shape::kM,
-    Shape::kN / WarpMmaOperator::Shape::kN,
+    Shape::kM / WarpShape::kM,
+    Shape::kN / WarpShape::kN,
     kPartitionsK
   >;
 
@@ -143,24 +146,6 @@ public:
       return TensorRef(
         storage.data(), 
         Layout::packed({StorageShape::kRow, StorageShape::kColumn}));
-    }
-
-    CUTLASS_DEVICE
-    void debug_print() {
-      if (threadIdx.x == 0) {
-
-        #pragma unroll 1
-        for (int r = 0; r < Shape::kRow; ++r) {
-
-          #pragma unroll 1
-          for (int c = 0; c < Shape::kColumn; ++c) {
-
-            printf("%d  ", int(storage.data()[r * StorageShape::kColumn + c]));
-          }
-          printf("\n");
-        }
-      }
-      __syncthreads();
     }
   };
 

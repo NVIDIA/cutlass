@@ -42,6 +42,7 @@
 
 #include "testbed_splitk.h"
 
+// These tests cannot run unless CUDA 10.1 Toolkit or later is used.
 #if defined(CUTLASS_ARCH_MMA_SM70_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

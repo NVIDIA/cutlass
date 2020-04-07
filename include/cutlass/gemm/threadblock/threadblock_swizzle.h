@@ -30,7 +30,8 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
-
+#include "cutlass/layout/matrix.h"
+#include "cutlass/platform/platform.h"
 #include "cutlass/gemm/gemm.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -141,6 +142,55 @@ struct GemmIdentityThreadblockSwizzle {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// A special version of GemmIdentityThreadblockSwizzle. See the choice of kTile below. 
+template <typename LayoutA_, typename LayoutB_>
+struct GemmCohortThreadblockSwizzle
+{
+  const int kTile =
+      (platform::is_same<LayoutA_, cutlass::layout::RowMajor>::value ||
+       platform::is_same<LayoutB_, cutlass::layout::ColumnMajor>::value)
+          ? 4
+          : 1;
+
+  CUTLASS_HOST_DEVICE
+  GemmCohortThreadblockSwizzle() { }
+
+  /// Returns the shape of the problem in units of logical tiles
+  CUTLASS_HOST_DEVICE
+  GemmCoord get_tiled_shape(
+    GemmCoord problem_size,
+    GemmCoord tile_size,
+    int split_k_slices) const {
+
+    return GemmCoord(
+      (problem_size.m() + tile_size.m() - 1) / tile_size.m(),
+      (problem_size.n() + tile_size.n() - 1) / tile_size.n(),
+      split_k_slices);
+  }
+
+  /// Computes CUDA grid dimensions given a size in units of logical tiles
+  CUTLASS_HOST_DEVICE
+  dim3 get_grid_shape(GemmCoord tiled_shape) const {
+    return dim3(tiled_shape.m() * kTile, (tiled_shape.n() + kTile - 1) / kTile, tiled_shape.k());
+  }
+
+  /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
+  CUTLASS_DEVICE
+  GemmCoord get_tile_offset() const {
+
+    int block_idx_x = RematerializeBlockIdxX();
+    int block_idx_y = RematerializeBlockIdxY();
+
+    return GemmCoord{
+      (block_idx_x / kTile),
+      (block_idx_y * kTile) + (block_idx_x % kTile),
+      RematerializeBlockIdxZ()
+    };
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Threadblock swizzling function for GEMMs
 struct GemmHorizontalThreadblockSwizzle {
 
@@ -186,8 +236,8 @@ struct GemmBatchedIdentityThreadblockSwizzle {
   CUTLASS_HOST_DEVICE
   GemmCoord get_tiled_shape(
     GemmCoord problem_size,
-    int batch_count,
-    GemmCoord tile_size) const {
+    GemmCoord tile_size,
+    int batch_count) const {
 
     return GemmCoord(
       (problem_size.m() + tile_size.m() - 1) / tile_size.m(),
@@ -207,7 +257,7 @@ struct GemmBatchedIdentityThreadblockSwizzle {
     return GemmCoord{
       RematerializeBlockIdxX(),
       RematerializeBlockIdxY(),
-      0
+      RematerializeBlockIdxZ()
     };
   }
 

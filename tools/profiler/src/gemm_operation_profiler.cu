@@ -140,7 +140,6 @@ Status GemmOperationProfiler::initialize_configuration(
     return Status::kErrorInvalidProblem;
   }
 
-
   if (!arg_as_int(problem_.m, "m", problem_space, problem)) {
     // default value
     problem_.m = 1024;
@@ -201,7 +200,7 @@ Status GemmOperationProfiler::initialize_configuration(
       return Status::kErrorInternal;
     }
   }
-
+  
   problem_.lda = DeviceAllocation::get_packed_layout(
     operation_desc.A.layout, {int(problem_.m), int(problem_.k)}).front();
 
@@ -240,7 +239,7 @@ void GemmOperationProfiler::initialize_result_(
   library::GemmDescription const &operation_desc,
   ProblemSpace const &problem_space) {
 
-  result.provider = Provider::kCUTLASS;
+  result.provider = library::Provider::kCUTLASS;
   result.disposition = Disposition::kNotRun;
   result.status = Status::kSuccess;
   result.operation_name = operation_desc.name;
@@ -277,8 +276,16 @@ void GemmOperationProfiler::initialize_result_(
     int64_t(library::sizeof_bits(operation_desc.C.element) * problem_.m / 8) * problem_.n * 2;
 
   result.flops = 2 * (problem_.m * problem_.n * problem_.k + problem_.m * problem_.n);
-
   result.runtime = 0;
+
+  // complex-valued support
+  switch (operation_desc.tile_description.math_instruction.math_operation) {
+  case library::MathOperationID::kMultiplyAddComplex:
+    result.flops *= 4;
+    break;
+ 
+  default: break;
+  }
 
 }
 
@@ -290,7 +297,7 @@ Status GemmOperationProfiler::initialize_workspace(
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
-
+  
   library::GemmDescription const &operation_desc = 
     static_cast<library::GemmDescription const &>(operation->description());
 
@@ -348,7 +355,7 @@ Status GemmOperationProfiler::initialize_workspace(
   //
   Status status = Status::kSuccess;
 
-  if (options.profiling.provider_enabled(Provider::kCUTLASS)) {
+  if (options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
 
     if (options.execution_mode != ExecutionMode::kDryRun) {
 
@@ -368,8 +375,12 @@ Status GemmOperationProfiler::initialize_workspace(
     // If CUTLASS is enabled, generate a result for it
     //
     results_.push_back(model_result_);
-    results_.back().provider = Provider::kCUTLASS;
+    results_.back().provider = library::Provider::kCUTLASS;
+    results_.back().op_kind = library::OperationKind::kGemm;
     results_.back().disposition = Disposition::kNotRun;
+    for(auto &verification_provider : options.verification.providers) {
+      results_.back().verification_map[verification_provider] = Disposition::kNotRun;
+    }
   }
 
   return status;
@@ -386,7 +397,7 @@ bool GemmOperationProfiler::verify_cutlass(
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
 
-  if (!options.profiling.provider_enabled(Provider::kCUTLASS)) {
+  if (!options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
     return true;
   }
 
@@ -423,197 +434,61 @@ bool GemmOperationProfiler::verify_cutlass(
     return false;
   }
 
+  // CUTLASS op ran the but not yet verified against any verification provider
   results_.back().disposition = Disposition::kNotVerified;
+
+  //
+  // Run verification providers
+  //
 
   if (options.verification.enabled) {
 
 #if CUTLASS_ENABLE_CUBLAS
-    if (options.verification.provider_enabled(Provider::kCUBLAS)) {
+    if (options.verification.provider_enabled(library::Provider::kCUBLAS)) {
 
       // Guard against unsupported cases
       auto const & gemm_desc = static_cast<library::GemmDescription const &>(operation->description());
 
-      if (cublas_satisfies(gemm_desc) != Status::kSuccess) {
-        return true;
-      }
+      if (cublas_satisfies(gemm_desc) == Status::kSuccess) {
 
-      return verify_with_cublas_(
-        options,
-        report,
-        device_context,
-        operation,
-        problem_space,
-        problem);
+        // call cublas verification if supported
+        verify_with_cublas_(
+          options,
+          report,
+          device_context,
+          operation,
+          problem_space,
+          problem);
+        }
+
+      else {
+        // set verification map for cublas to not supported
+        results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kNotSupported;
+      }
     }
 #endif // #if CUTLASS_ENABLE_CUBLAS
     
+    // Update disposition to worst case verification outcome among all 
+    // verification providers which are supported
+    bool is_any_verification_run_passed = false;
+    for(auto &m : results_.back().verification_map) {
+      if(m.second == Disposition::kFailed || m.second == Disposition::kIncorrect) {
+        results_.back().disposition = m.second;
+        return true;
+      }
+      if(!is_any_verification_run_passed && m.second == Disposition::kPassed) {
+        is_any_verification_run_passed = true;
+      }
+    }
+
+    if(is_any_verification_run_passed) {
+      results_.back().disposition = Disposition::kPassed;
+    }
   }
 
+  // Return true means continue profiling
   return true;
 }
-
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-#if CUTLASS_ENABLE_CUBLAS
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace detail {
-
-/// Selects one or more cuBLAS algorithms.
-static void select_cublas_algorithms(
-  std::vector<cublasGemmAlgo_t> &algorithms,
-  Options const &options, 
-  library::GemmDescription const &op_desc) {
-
-  library::OpcodeClassID const & opcode_class = 
-    op_desc.tile_description.math_instruction.opcode_class;
-
-  switch (options.library.algorithm_mode) {
-    case AlgorithmMode::kMatching:
-    {
-      algorithms.push_back(get_cublas_gemm_algo(
-        op_desc.tile_description.threadblock_shape.m(), 
-        op_desc.tile_description.threadblock_shape.n(), 
-        op_desc.tile_description.threadblock_shape.k(), 
-        opcode_class));
-      break;
-    }
-
-    case AlgorithmMode::kBest:
-    {
-      // Choose first enumerated mode. If none are enumerated, choose based on opcode class
-      // and evaluate all of them.
-
-      if (options.library.algorithms.empty()) {
-        // Enumerate all algorithms
-        if (opcode_class == library::OpcodeClassID::kSimt) {
-          
-          for (int algo = CUBLAS_GEMM_DEFAULT; 
-            algo <= CUBLAS_GEMM_ALGO23; 
-            ++algo) {
-
-            algorithms.push_back(cublasGemmAlgo_t(algo));
-          }
-        }
-        else {
-          
-          for (int algo = CUBLAS_GEMM_DEFAULT_TENSOR_OP; 
-            algo <= CUBLAS_GEMM_ALGO15_TENSOR_OP; 
-            ++algo) {
-
-            algorithms.push_back(cublasGemmAlgo_t(algo));
-          }
-        }
-      }
-      else {
-        // Use the listed algorithms
-        algorithms.reserve(options.library.algorithms.size());
-
-        for (int algo : options.library.algorithms) {
-          algorithms.push_back(reinterpret_cast<cublasGemmAlgo_t const &>(algo));
-        }
-      }
-
-      break;
-    }
-
-    case AlgorithmMode::kDefault:
-    {
-
-      // Use the library's default algorithm
-      algorithms.push_back((opcode_class == library::OpcodeClassID::kSimt ? 
-        CUBLAS_GEMM_DEFAULT : CUBLAS_GEMM_DEFAULT_TENSOR_OP)); 
-
-      break;
-    }
-    default:
-    {
-      break;
-    }
-  }
-}
-
-/// Dispatcher to cublasGemmEx() 
-struct cublasGemmExDispatcher {
-
-  //
-  // Data members
-  //
-  library::GemmConfiguration configuration;
-  library::GemmArguments arguments;
-
-  cublasOperation_t trans_A;
-  cublasOperation_t trans_B;
-  cudaDataType_t data_type_A;
-  cudaDataType_t data_type_B;
-  cudaDataType_t data_type_C;
-  cudaDataType_t compute_type;
-  cublasGemmAlgo_t algo;
-  Status status;
-  
-  //
-  // Methods
-  //
-
-  cublasGemmExDispatcher( 
-    library::GemmDescription const &op_desc,
-    library::GemmConfiguration configuration_,
-    library::GemmArguments arguments_,
-    cublasGemmAlgo_t algorithm = CUBLAS_GEMM_DFALT
-  ):
-    configuration(configuration_), arguments(arguments_), algo(algorithm), status(Status::kSuccess) {
-
-    trans_A = get_cublas_transpose_operation(op_desc.A.layout);
-    trans_B = get_cublas_transpose_operation(op_desc.B.layout);
-
-    bool good = true;
-    good = (good && get_cublas_datatype(data_type_A, op_desc.A.element));
-    good = (good && get_cublas_datatype(data_type_B, op_desc.B.element));
-    good = (good && get_cublas_datatype(data_type_C, op_desc.C.element));
-
-    good = (good && get_cublas_datatype(
-      compute_type, 
-      op_desc.tile_description.math_instruction.element_accumulator));
-
-    if (!good) {
-      status = Status::kErrorNotSupported;
-    }
-  }
-
-  /// Executes GEMM using these arguments
-  cublasStatus_t operator()(cublasHandle_t handle) {
-
-    return cublasGemmEx(
-      handle,
-      trans_A,
-      trans_B,
-      configuration.problem_size.m(),
-      configuration.problem_size.n(),
-      configuration.problem_size.k(),
-      arguments.alpha,
-      arguments.A,
-      data_type_A,
-      int(configuration.lda),
-      arguments.B,
-      data_type_B,
-      int(configuration.ldb),
-      arguments.beta,
-      arguments.D,
-      data_type_C,
-      int(configuration.ldc),
-      compute_type,
-      algo
-    );
-  }
-};
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-} // namespace detail
-
-#endif // CUTLASS_ENABLE_CUBLAS
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -632,14 +507,16 @@ bool GemmOperationProfiler::verify_with_cublas_(
   library::GemmDescription const &gemm_desc = 
     static_cast<library::GemmDescription const &>(operation->description());
 
+  //
+  // Construct cuBLAS operators
+  //
+    
   CublasCreate handle;
   cublasStatus_t status = handle.get_cublas_create_status();
 
   if (status != CUBLAS_STATUS_SUCCESS) {
 
-    results_.back().status = get_cutlass_status(status);
-    results_.back().disposition = Disposition::kFailed;
-    
+    results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kFailed;
     return true;
   }
 
@@ -682,7 +559,8 @@ bool GemmOperationProfiler::verify_with_cublas_(
     );
 
     if (gemm_op.status != Status::kSuccess) {
-      results_.back().disposition = Disposition::kNotVerified;
+
+      results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kFailed;
       return true;
     }
 
@@ -692,8 +570,8 @@ bool GemmOperationProfiler::verify_with_cublas_(
 
     // Handle errors
     if (status != CUBLAS_STATUS_SUCCESS) {
-      results_.back().status = get_cutlass_status(status);
-      results_.back().disposition = Disposition::kNotVerified;
+
+      results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kFailed;
       return true;
     }
 
@@ -701,7 +579,7 @@ bool GemmOperationProfiler::verify_with_cublas_(
     // Verify results
     //
 
-    results_.back().disposition = compare_tensors(
+    results_.back().verification_map[library::Provider::kCUBLAS] = compare_tensors(
       options,
       *gemm_workspace_.Computed,
       *gemm_workspace_.Reference
@@ -709,19 +587,18 @@ bool GemmOperationProfiler::verify_with_cublas_(
 
     // Save workspace if incorrect
     if (options.verification.save_workspace == SaveWorkspace::kIncorrect && 
-      results_.back().disposition == Disposition::kIncorrect) {
+      results_.back().verification_map[library::Provider::kCUBLAS] == Disposition::kIncorrect) {
 
       save_workspace(
         device_context,
         options,
         gemm_desc,
-        Provider::kCUTLASS,
-        Provider::kCUBLAS);
+        library::Provider::kCUTLASS,
+        library::Provider::kCUBLAS);
     }
   }
   catch (...) {
-    results_.back().disposition = Disposition::kFailed;
-    results_.back().status = Status::kErrorNotSupported;
+    results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kFailed;
   }
 
 #endif
@@ -741,7 +618,7 @@ bool GemmOperationProfiler::profile(
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
 
-  if (options.profiling.provider_enabled(Provider::kCUTLASS)) {
+  if (options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
 
     // Initialize structure containing GEMM arguments
     gemm_workspace_.arguments.A = gemm_workspace_.A->data();

@@ -225,7 +225,7 @@ int OperationProfiler::profile_all(
   ProblemSpace problem_space(arguments_, options.cmdline);
 
   // 1. Construct performance report
-  PerformanceReport report(options, problem_space.argument_names());
+  PerformanceReport report(options, problem_space.argument_names(), kind_);
 
   // 2. For each problem in problem space
   ProblemSpace::Iterator problem_it = problem_space.begin();
@@ -269,7 +269,7 @@ int OperationProfiler::profile_all(
         if (!filtered_by_name || !satisfies(operation->description(), problem_space, problem)) {
           continue;
         }
-
+      
         // A. Initialize configuration
         Status status = this->initialize_configuration(
           options,
@@ -278,7 +278,7 @@ int OperationProfiler::profile_all(
           operation,
           problem_space,
           problem);
-
+        
         if (status == Status::kErrorInternal) {
           // Stop profiling if there was an internal error
           return false;
@@ -341,7 +341,7 @@ int OperationProfiler::profile_all(
             device_context,
             options,
             operation->description(),
-            Provider::kCUTLASS);
+            library::Provider::kCUTLASS);
         }
 
         //
@@ -434,8 +434,8 @@ void OperationProfiler::save_workspace(
   DeviceContext &device_context,
   Options const &options,
   library::OperationDescription const &desc,
-  Provider provider,
-  Provider verification_provider) {
+  library::Provider provider,
+  library::Provider verification_provider) {
 
   for (auto const & named_allocation : device_context) {
 
@@ -443,10 +443,10 @@ void OperationProfiler::save_workspace(
     
     std::stringstream filename;
 
-    filename << desc.name << "_" << to_string(provider) << "_";
+    filename << desc.name << "_" << library::to_string(provider) << "_";
 
-    if (verification_provider != Provider::kInvalid) {
-      filename << "verified_by_" << to_string(verification_provider) << "_";
+    if (verification_provider != library::Provider::kInvalid) {
+      filename << "verified_by_" << library::to_string(verification_provider) << "_";
     }
 
     filename << named_allocation.first + ".mat";
@@ -454,6 +454,7 @@ void OperationProfiler::save_workspace(
     std::ofstream out(filename.str());
 
     allocation->write_tensor_csv(out);
+    out << "\n";
 
     if (options.report.verbose) {
       std::cout << "wrote '" << filename.str() << "'" << std::endl;

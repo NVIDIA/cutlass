@@ -39,23 +39,27 @@ if(CUTLASS_NATIVE_CUDA)
 
   enable_language(CUDA)
 
+  if(NOT CUDA_VERSION)
+    set(CUDA_VERSION ${CMAKE_CUDA_COMPILER_VERSION})
+  endif()
+  if(NOT CUDA_TOOLKIT_ROOT_DIR)
+    get_filename_component(CUDA_TOOLKIT_ROOT_DIR "${CMAKE_CUDA_COMPILER}/../.." ABSOLUTE)
+  endif()
+
 else()
 
   find_package(CUDA REQUIRED)
+  # We workaround missing variables with the native flow by also finding the CUDA toolkit the old way.
 
-endif()
+  if(NOT CMAKE_CUDA_COMPILER_VERSION)
+    set(CMAKE_CUDA_COMPILER_VERSION ${CUDA_VERSION})
+  endif()
 
-if(NOT CUDA_VERSION)
-  set(CUDA_VERSION ${CMAKE_CUDA_COMPILER_VERSION})
-endif()
-if(NOT CUDA_TOOLKIT_ROOT_DIR)
-  get_filename_component(CUDA_TOOLKIT_ROOT_DIR "${CMAKE_CUDA_COMPILER}/../.." ABSOLUTE)
 endif()
 
 if (CUDA_VERSION VERSION_LESS 9.2)
   message(FATAL_ERROR "CUDA 9.2+ Required, Found ${CUDA_VERSION}.")
 endif()
-
 if(NOT CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "[Cc]lang")
   set(CMAKE_CUDA_COMPILER ${CUDA_TOOLKIT_ROOT_DIR}/bin/nvcc)
   message(STATUS "CUDA Compiler: ${CMAKE_CUDA_COMPILER}")
@@ -74,7 +78,7 @@ find_library(
   # in the CUDA toolkit we're building against.
   )
 
-if(CUDART_LIBRARY)
+if(NOT TARGET cudart AND CUDART_LIBRARY)
 
   message(STATUS "CUDART: ${CUDART_LIBRARY}")
 
@@ -94,6 +98,10 @@ if(CUDART_LIBRARY)
     PROPERTY IMPORTED_LOCATION
     ${CUDART_LIBRARY}
     )
+
+elseif(TARGET cudart)
+
+  message(STATUS "CUDART: Already Found")
 
 else()
 
@@ -116,7 +124,7 @@ find_library(
   # in the CUDA toolkit we're building against.
   )
 
-if(CUDA_DRIVER_LIBRARY)
+if(NOT TARGET cuda_driver AND CUDA_DRIVER_LIBRARY)
 
   message(STATUS "CUDA Driver: ${CUDA_DRIVER_LIBRARY}")
 
@@ -137,6 +145,10 @@ if(CUDA_DRIVER_LIBRARY)
     ${CUDA_DRIVER_LIBRARY}
     )
 
+elseif(TARGET cuda_driver)
+
+  message(STATUS "CUDA Driver: Already Found")
+
 else()
 
   message(STATUS "CUDA Driver: Not Found")
@@ -156,7 +168,7 @@ find_library(
   # in the CUDA toolkit we're building against.
   )
 
-if(NVRTC_LIBRARY)
+if(NOT TARGET nvrtc AND NVRTC_LIBRARY)
 
   message(STATUS "NVRTC: ${NVRTC_LIBRARY}")
 
@@ -176,6 +188,10 @@ if(NVRTC_LIBRARY)
     PROPERTY IMPORTED_LOCATION
     ${NVRTC_LIBRARY}
     )
+
+elseif(TARGET nvrtc)
+
+  message(STATUS "NVRTC: Already Found")
 
 else()
 
@@ -197,48 +213,137 @@ function(cutlass_correct_source_file_language_property)
   endif()
 endfunction()
 
-function(cutlass_add_library)
+set(CUTLASS_UNITY_BUILD_ENABLED ON CACHE BOOL "Enable combined source compilation")
+set(CUTLASS_UNITY_BUILD_BATCH_SIZE 16 CACHE STRING "Batch size for unified source files")
 
-  set(options INTERFACE STATIC SHARED OBJECT)
-  set(oneValueArgs)
+function(cutlass_unify_source_files TARGET_ARGS_VAR)
+
+  set(options)
+  set(oneValueArgs BATCH_SOURCES BATCH_SIZE)
   set(multiValueArgs)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-  if(CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "clang" OR __INTERFACE)
-    cutlass_correct_source_file_language_property(${ARGN})
-    add_library(${ARGN})
-  else()
-    set(CUDA_LINK_LIBRARIES_KEYWORD PRIVATE)
-    cuda_add_library(${ARGN})
+  if (NOT DEFINED TARGET_ARGS_VAR)
+    message(FATAL_ERROR "TARGET_ARGS_VAR parameter is required")
   endif()
+
+  if (__BATCH_SOURCES AND NOT DEFINED __BATCH_SIZE)
+    set(__BATCH_SIZE ${CUTLASS_UNITY_BUILD_BATCH_SIZE})
+  endif()
+
+  if (CUTLASS_UNITY_BUILD_ENABLED AND DEFINED __BATCH_SIZE AND __BATCH_SIZE GREATER 1)
+
+    set(CUDA_FILE_ARGS)
+    set(TARGET_SOURCE_ARGS)
+    
+    foreach(ARG ${__UNPARSED_ARGUMENTS})
+      if(${ARG} MATCHES ".*\.cu$")
+        list(APPEND CUDA_FILE_ARGS ${ARG})
+      else()
+        list(APPEND TARGET_SOURCE_ARGS ${ARG})
+      endif()
+    endforeach()
+    
+    list(LENGTH CUDA_FILE_ARGS NUM_CUDA_FILE_ARGS)
+    while(NUM_CUDA_FILE_ARGS GREATER 0)
+      list(SUBLIST CUDA_FILE_ARGS 0 ${__BATCH_SIZE} CUDA_FILE_BATCH)
+      string(SHA256 CUDA_FILE_BATCH_HASH "${CUDA_FILE_BATCH}")
+      string(SUBSTRING ${CUDA_FILE_BATCH_HASH} 0 12 CUDA_FILE_BATCH_HASH)
+      set(BATCH_FILE ${CMAKE_CURRENT_BINARY_DIR}/${NAME}.unity.${CUDA_FILE_BATCH_HASH}.cu)
+      message(STATUS "Generating ${BATCH_FILE}")
+      file(WRITE ${BATCH_FILE} "// Unity File - Auto Generated!\n")
+      foreach(CUDA_FILE ${CUDA_FILE_BATCH})
+        get_filename_component(CUDA_FILE_ABS_PATH ${CUDA_FILE} ABSOLUTE)
+        file(APPEND ${BATCH_FILE} "#include \"${CUDA_FILE_ABS_PATH}\"\n")
+      endforeach()
+      list(APPEND TARGET_SOURCE_ARGS ${BATCH_FILE})
+      if (NUM_CUDA_FILE_ARGS LESS_EQUAL __BATCH_SIZE)
+        break()
+      endif()
+      list(SUBLIST CUDA_FILE_ARGS ${__BATCH_SIZE} -1 CUDA_FILE_ARGS)
+      list(LENGTH CUDA_FILE_ARGS NUM_CUDA_FILE_ARGS)
+    endwhile()
+
+  else()
+
+    set(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
+
+  endif()
+
+  set(${TARGET_ARGS_VAR} ${TARGET_SOURCE_ARGS} PARENT_SCOPE)
 
 endfunction()
 
-function(cutlass_add_executable)
+function(cutlass_add_library NAME)
 
   set(options)
-  set(oneValueArgs)
+  set(oneValueArgs EXPORT_NAME)
   set(multiValueArgs)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  cutlass_unify_source_files(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
 
   if(CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "clang")
-    cutlass_correct_source_file_language_property(${ARGN})
-    add_executable(${ARGN})
+    cutlass_correct_source_file_language_property(${TARGET_SOURCE_ARGS})
+    add_library(${NAME} ${TARGET_SOURCE_ARGS})
   else()
     set(CUDA_LINK_LIBRARIES_KEYWORD PRIVATE)
-    cuda_add_executable(${ARGN})
+    cuda_add_library(${NAME} ${TARGET_SOURCE_ARGS})
+  endif()
+
+  cutlass_apply_standard_compile_options(${NAME})
+  cutlass_apply_cuda_gencode_flags(${NAME})
+
+  target_compile_features(
+   ${NAME}
+   INTERFACE
+   cxx_std_11
+   )
+
+  if(__EXPORT_NAME)
+    add_library(nvidia::cutlass::${__EXPORT_NAME} ALIAS ${NAME})
+    set_target_properties(${NAME} PROPERTIES EXPORT_NAME ${__EXPORT_NAME})
   endif()
 
 endfunction()
 
-function(cutlass_target_sources)
+function(cutlass_add_executable NAME)
 
   set(options)
   set(oneValueArgs)
   set(multiValueArgs)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-  cutlass_correct_source_file_language_property(${ARGN})
-  target_sources(${ARGN})
+  cutlass_unify_source_files(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
+
+  if(CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "clang")
+    cutlass_correct_source_file_language_property(${TARGET_SOURCE_ARGS})
+    add_executable(${NAME} ${TARGET_SOURCE_ARGS})
+  else()
+    set(CUDA_LINK_LIBRARIES_KEYWORD PRIVATE)
+    cuda_add_executable(${NAME} ${TARGET_SOURCE_ARGS})
+  endif()
+
+  cutlass_apply_standard_compile_options(${NAME})
+  cutlass_apply_cuda_gencode_flags(${NAME})
+
+  target_compile_features(
+   ${NAME}
+   INTERFACE
+   cxx_std_11
+   )
+
+endfunction()
+
+function(cutlass_target_sources NAME)
+
+  set(options)
+  set(oneValueArgs)
+  set(multiValueArgs)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  cutlass_unify_source_files(TARGET_SOURCE_ARGS ${__UNPARSED_ARGUMENTS})
+  cutlass_correct_source_file_language_property(${TARGET_SOURCE_ARGS})
+  target_sources(${NAME} ${TARGET_SOURCE_ARGS})
 
 endfunction()

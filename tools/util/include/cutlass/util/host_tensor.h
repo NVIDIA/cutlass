@@ -99,7 +99,7 @@ public:
   using ConstReference = typename ConstTensorRef::Reference;
 
   /// Used to handle packing of subbyte elements
-  static int const kElementsPerStoredItem = (sizeof_bits<Element>::value < 8 ? sizeof(Element) * 8 / sizeof_bits<Element>::value : 1);
+  static int const kElementsPerStoredItem = (sizeof_bits<Element>::value < 8 ? (8 / sizeof_bits<Element>::value) : 1);
 
  private:
 
@@ -232,7 +232,7 @@ public:
 
   /// Returns the logical capacity based on extent and layout. May differ from size().
   LongIndex capacity() const {
-    return layout_.capacity(extent_) * kElementsPerStoredItem;
+    return layout_.capacity(extent_);
   }
 
   /// Gets pointer to host data

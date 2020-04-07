@@ -38,7 +38,6 @@
 #include "cutlass/layout/matrix.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/layout/tensor.h"
-#include "cutlass/layout/tensor_nhwc.h"
 #include "cutlass/layout/vector.h"
 
 #include "cutlass/layout/tensor_op_multiplicand_sm70.h"

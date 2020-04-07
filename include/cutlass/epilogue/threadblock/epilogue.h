@@ -32,7 +32,11 @@
 
 #pragma once
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cassert>
+#else
 #include <assert.h>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
@@ -74,7 +78,7 @@ template <
 class Epilogue : 
   public EpilogueBase<
     Shape_, 
-    WarpMmaOperator_, 
+    typename WarpMmaOperator_::Shape, 
     PartitionsK, 
     AccumulatorFragmentIterator_, 
     WarpTileIterator_, 
@@ -84,7 +88,7 @@ public:
 
   using Base = EpilogueBase<
     Shape_, 
-    WarpMmaOperator_, 
+    typename WarpMmaOperator_::Shape, 
     PartitionsK, 
     AccumulatorFragmentIterator_, 
     WarpTileIterator_, 
@@ -171,8 +175,9 @@ public:
     OutputOp const &output_op,                    ///< Output operator
     OutputTileIterator destination_iterator,      ///< Tile iterator for destination
     AccumulatorTile const &accumulators,          ///< Complete warp-level accumulator tile
-    OutputTileIterator source_iterator) {         ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
-
+    OutputTileIterator source_iterator,           ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
+    int64_t imag_stride_dest = 0,                 ///< Arguments required for planar complex case - not used in real-valued case
+    int64_t imag_stride_src = 0) {                ///<
 
     typename OutputTileIterator::Fragment source_fragment;
 

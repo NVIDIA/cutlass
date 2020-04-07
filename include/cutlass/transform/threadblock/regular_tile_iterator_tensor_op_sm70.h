@@ -1146,7 +1146,7 @@ class RegularTileIterator<
   void load_with_pointer_offset(Fragment &frag, Index pointer_offset) {
     AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
 
-    Index vec_pointer_offset = pointer_offset / ThreadMap::kElementsPerAccess;
+    Index vec_pointer_offset = pointer_offset / Layout::kElementsPerAccess;
 
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
@@ -1185,13 +1185,14 @@ class RegularTileIterator<
   void store_with_pointer_offset(Fragment const &frag, Index pointer_offset) {
     AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
 
-    Index vec_pointer_offset = pointer_offset / ThreadMap::kElementsPerAccess;
+    Index vec_pointer_offset = pointer_offset / Layout::kElementsPerAccess;
 
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
+
       AccessType *access_ptr = pointer_[(s & 1) ^ ((s >> 1) & 1)];
 
-      access_ptr += 16 * (s / 2);
+      access_ptr += 16 * (s / 2) + vec_pointer_offset;
 
       CUTLASS_PRAGMA_UNROLL
       for (int c = 0; c < ThreadMap::Iterations::kContiguous; ++c) {
@@ -1199,8 +1200,7 @@ class RegularTileIterator<
         for(int i = 0; i < Detail::kIterarionsPerAccess; ++i) {
 
           int access_offset = 
-            c * ThreadMap::Delta::kContiguous / Detail::kContiguousElementsPerLine * line_size +
-            vec_pointer_offset + i * line_size;
+            c * ThreadMap::Delta::kContiguous / Detail::kContiguousElementsPerLine * line_size + i * line_size;
 
           int access_idx = (c + s * ThreadMap::Iterations::kContiguous) *
             Detail::kIterarionsPerAccess + i;

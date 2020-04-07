@@ -31,6 +31,8 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/version.h"
 
+#include "cutlass/library/util.h"
+
 #include "options.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -161,24 +163,30 @@ Options::Initialization::Initialization(cutlass::CommandLine const &cmdline) {
   if (cmdline.check_cmd_line_flag("initialization-provider")) {
     std::string str;
     cmdline.get_cmd_line_argument("initialization-provider", str);
-    provider = from_string<Provider>(str);
-    if (provider == Provider::kInvalid) {
+    provider = library::from_string<library::Provider>(str);
+    if (provider == library::Provider::kInvalid) {
       enabled = false;
     }
-    else if (provider != Provider::kReferenceHost && provider != Provider::kReferenceDevice) {
+    else if (provider != library::Provider::kReferenceHost && provider != library::Provider::kReferenceDevice) {
       throw std::runtime_error("Unsupported intialization provider specified."); 
     }
   }
   else {
-    provider = Provider::kReferenceDevice;
+    provider = library::Provider::kReferenceDevice;
   }
 
   cmdline.get_cmd_line_argument("seed", seed, 2019);
 
   if (cmdline.check_cmd_line_flag("dist")) {
+    // user has set the data distribution (fix data distribution once set)
+    fix_data_distribution = true;
+    // set user provided data distribution
     get_distribution(cmdline, "dist", data_distribution);
   }
   else {
+    // profiler choosen data distribution (allowed to change based on numeric types)
+    fix_data_distribution = false;
+    // set uniform data distribution with range [-4, 4] 
     data_distribution.set_uniform(-4, 4, 0);
   }
 
@@ -372,12 +380,12 @@ Options::Profiling::Profiling(cutlass::CommandLine const &cmdline) {
     providers.clear();
 
     for (auto const &token : tokens) {
-      providers.push_back(from_string<Provider>(token));
+      providers.push_back(library::from_string<library::Provider>(token));
     }
   }
   else {
-    providers.push_back(Provider::kCUTLASS);
-    providers.push_back(Provider::kCUBLAS);
+    providers.push_back(library::Provider::kCUTLASS);
+    providers.push_back(library::Provider::kCUBLAS);
   }
 }
 
@@ -412,18 +420,18 @@ void Options::Profiling::print_options(std::ostream &out, int indent) const {
 
   int j = 0;
   for (auto const & provider : providers) {
-    out << (j++ ? ", " : "") << to_string(provider);
+    out << (j++ ? ", " : "") << library::to_string(provider);
   }
   out << "]\n";
 }
 
 /// Returns true if a provider is enabled
-bool Options::Profiling::provider_enabled(Provider provider) const {
+bool Options::Profiling::provider_enabled(library::Provider provider) const {
   return std::find(providers.begin(), providers.end(), provider) != providers.end();
 }
 
 /// Returns the index of a provider if its enabled
-size_t Options::Profiling::index(Provider provider) const {
+size_t Options::Profiling::index(library::Provider provider) const {
   size_t idx = 0;
   for (auto const & x : providers) {
     if (x == provider) {
@@ -461,14 +469,14 @@ Options::Verification::Verification(cutlass::CommandLine const &cmdline) {
     providers.clear();
 
     for (auto const &token : tokens) {
-      Provider provider = from_string<Provider>(token);
-      if (provider != Provider::kInvalid) {
+      library::Provider provider = library::from_string<library::Provider>(token);
+      if (provider != library::Provider::kInvalid) {
         providers.push_back(provider);
       }
     }
   }
   else {
-    providers.push_back(Provider::kCUBLAS);
+    providers.push_back(library::Provider::kCUBLAS);
   }
 }
 
@@ -504,18 +512,18 @@ void Options::Verification::print_options(std::ostream &out, int indent) const {
 
   int j = 0;
   for (auto const & provider : providers) {
-    out << (j++ ? ", " : "") << to_string(provider);
+    out << (j++ ? ", " : "") << library::to_string(provider);
   }
   out << "]\n";
 }
 
 /// Returns true if a provider is enabled
-bool Options::Verification::provider_enabled(Provider provider) const {
+bool Options::Verification::provider_enabled(library::Provider provider) const {
   return std::find(providers.begin(), providers.end(), provider) != providers.end();
 }
 
 /// Returns the index of a provider if its enabled
-size_t Options::Verification::index(Provider provider) const {
+size_t Options::Verification::index(library::Provider provider) const {
   size_t idx = 0;
   for (auto const & x : providers) {
     if (x == provider) {
@@ -658,7 +666,7 @@ Options::Options(cutlass::CommandLine const &cmdline):
 
   // Prevent launches on the device for anything other than CUTLASS operation
   if (execution_mode == ExecutionMode::kTrace) {
-    initialization.provider = Provider::kReferenceHost;
+    initialization.provider = library::Provider::kReferenceHost;
     verification.enabled = false;
     profiling.enabled = false;
   }

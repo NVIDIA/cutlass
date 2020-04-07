@@ -103,6 +103,15 @@ public:
   /// Indicates class of matrix operator
   using OperatorClass = arch::OpClassTensorOp;
 
+  /// Architecture tag
+  using ArchTag = arch::Sm70;
+
+  /// Complex transform on A operand
+  static ComplexTransform const kTransformA = ComplexTransform::kNone;
+
+  /// Complex transform on B operand
+  static ComplexTransform const kTransformB = ComplexTransform::kNone;
+
   /// Number of threads participating in warp-level matrix product
   static int const kThreadCount = 32;
 

@@ -98,7 +98,7 @@ public:
   /// Assumes coordinate has convention (row, column)
   CUTLASS_HOST_DEVICE
   LongIndex operator()(MatrixCoord const &coord) const {
-    return coord.row() * stride_[0] + coord.column();
+    return LongIndex(coord.row()) * LongIndex(stride_[0]) + coord.column();
   }
 
   /// Inverse of layout function, mapping linear offset to logical coordinate
@@ -134,7 +134,7 @@ public:
   /// Compute the number of contiguous elements needed to store a tensor with the given size
   CUTLASS_HOST_DEVICE
   LongIndex capacity(MatrixCoord const &extent) const {
-    return extent.row() * stride_[0];
+    return LongIndex(extent.row()) * LongIndex(stride_[0]);
   }
 };
 
@@ -191,7 +191,7 @@ public:
   /// Assumes coordinate has convention (row, column)
   CUTLASS_HOST_DEVICE
   LongIndex operator()(MatrixCoord const &coord) const {
-    return coord.row() + coord.column() * stride_[0];
+    return LongIndex(coord.column()) * LongIndex(stride_[0]) + coord.row();
   }
 
   /// Inverse of layout function, mapping linear offset to logical coordinate
@@ -227,7 +227,7 @@ public:
   /// Compute the number of contiguous elements needed to store a tensor with the given size
   CUTLASS_HOST_DEVICE
   LongIndex capacity(MatrixCoord const &extent) const {
-    return extent.column() * stride_[0];
+    return LongIndex(extent.column()) * LongIndex(stride_[0]);
   }
 };
 
@@ -290,7 +290,7 @@ public:
   LongIndex operator()(MatrixCoord const &coord) const {
     Index row_major = coord.row() / kInterleave;
     Index row_minor = coord.row() % kInterleave;
-    return row_major * stride_[0] + coord.column() * kInterleave + row_minor;
+    return LongIndex(row_major) * LongIndex(stride_[0]) + LongIndex(coord.column()) * kInterleave + row_minor;
   }
 
   /// Inverse of layout function, mapping linear offset to logical coordinate
@@ -397,7 +397,7 @@ public:
   LongIndex operator()(MatrixCoord const &coord) const {
     Index column_major = coord.column() / kInterleave;
     Index column_minor = coord.column() % kInterleave;
-    return column_major * stride_[0] + coord.row() * kInterleave + column_minor;
+    return LongIndex(column_major) * LongIndex(stride_[0]) + LongIndex(coord.row()) * kInterleave + column_minor;
   }
 
   /// Inverse of layout function, mapping linear offset to logical coordinate

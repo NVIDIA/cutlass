@@ -31,7 +31,9 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
+#include "cutlass/platform/platform.h"
 
+#include "cutlass/numeric_conversion.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/matrix_shape.h"
 
@@ -48,6 +50,60 @@
 namespace cutlass {
 namespace gemm {
 namespace warp {
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+template <typename T, typename S, int N, FloatRoundStyle Round>
+struct ConvertAndPack {
+
+  using Converter = NumericArrayConverter<T, S, N, Round>;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<S, N> const &source) {
+    Converter converter;
+
+    return converter(source);
+  }
+};
+
+template <typename T, int N, FloatRoundStyle Round>
+struct ConvertAndPack<T, T, N, Round> {
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &source) {
+		return source;
+  }
+};
+
+template <int N, FloatRoundStyle Round>
+struct ConvertAndPack<half_t, float, N, Round> {
+
+  using Converter = NumericArrayConverter<half_t, float, N, Round>;
+
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(Array<float, N> const &source) {
+    Converter converter;
+
+    Array<float, N> tmp;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      int idx = (((i << 1) & 2) | ((i >> 1) & 1) | (i & 0xfffffffc));
+      tmp[i] = source[idx];
+    }
+
+    return converter(tmp);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+} // namespace detail
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -105,8 +161,17 @@ public:
   /// Shape of the warp in units of thread (concept: MmaLanePolicySimt)
   using Policy = Policy_;
 
+  /// Architecture tag from underlying instruction
+  using ArchTag = typename Policy::Operator::ArchTag;
+
   /// Indicates class of matrix operator
   using OperatorClass = arch::OpClassTensorOp;
+
+  /// Complex transform on A operand
+  static ComplexTransform const kTransformA = ComplexTransform::kNone;
+
+  /// Complex transform on B operand
+  static ComplexTransform const kTransformB = ComplexTransform::kNone;
 
   /// Number of threads participating in warp-level matrix product
   static int const kThreadCount = 32;
@@ -128,6 +193,10 @@ public:
   /// Storage for A tile
   using FragmentA = typename IteratorA::Fragment;
 
+  /// Storage for transformed A tile
+  using TransformedFragmentA =
+      Array<typename Policy::Operator::ElementA, FragmentA::kElements>;
+
   /// Iterates over the B operand in memory
   using IteratorB = MmaTensorOpMultiplicandTileIterator<
       MatrixShape<Shape::kK, Shape::kN>, Operand::kB, ElementB, LayoutB,
@@ -136,6 +205,10 @@ public:
 
   /// Storage for B tile
   using FragmentB = typename IteratorB::Fragment;
+
+  /// Storage for transformed B tile
+  using TransformedFragmentB =
+      Array<typename Policy::Operator::ElementB, FragmentB::kElements>;
 
   /// Iterates over the C operand in memory
   using IteratorC = MmaTensorOpAccumulatorTileIterator<
@@ -179,8 +252,8 @@ public:
   CUTLASS_DEVICE
   void operator()(
     FragmentC &D, 
-    FragmentA const &A, 
-    FragmentB const &B, 
+    TransformedFragmentA const &A, 
+    TransformedFragmentB const &B, 
     FragmentC const &C,
     int const &partitionN_idx = 0) const {
 
@@ -221,6 +294,44 @@ public:
         }
       }
   }
+
+  /// Transform the mma operands to the required types
+  CUTLASS_DEVICE
+  void transform(TransformedFragmentA &dst_A, TransformedFragmentB &dst_B,
+                 FragmentA const &A, FragmentB const &B) const {
+    bool midway_depstage =
+        !(platform::is_same<typename Policy::Operator::ElementA,
+                           ElementA>::value &&
+         platform::is_same<typename Policy::Operator::ElementB,
+                           ElementB>::value);
+
+    //
+    // Define conversions from source type to instruction type
+    //
+    FloatRoundStyle const kRoundA =
+        PreferredRoundingMode<typename Policy::Operator::ElementA,
+                              ElementA>::kRound;
+    FloatRoundStyle const kRoundB =
+        PreferredRoundingMode<typename Policy::Operator::ElementB,
+                              ElementB>::kRound;
+      detail::ConvertAndPack<typename Policy::Operator::ElementA, ElementA,
+                            FragmentA::kElements, kRoundA>
+          convert_A;
+      NumericArrayConverter<typename Policy::Operator::ElementB, ElementB,
+                            FragmentB::kElements / 2, kRoundB>
+          convert_B;
+      Array<ElementB, FragmentB::kElements / 2> const *ptr_B =
+          reinterpret_cast<Array<ElementB, FragmentB::kElements / 2> const *>(&B);
+      Array<typename Policy::Operator::ElementB, FragmentB::kElements / 2> *
+          ptr_dst_B = reinterpret_cast<Array<typename Policy::Operator::ElementB,
+                                             FragmentB::kElements / 2> *>(&dst_B);
+  
+      dst_A = convert_A(A);
+  
+      ptr_dst_B[0] = convert_B(ptr_B[0]);
+      ptr_dst_B[1] = convert_B(ptr_B[1]);
+
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -228,3 +339,5 @@ public:
 } // namespace warp
 } // namespace gemm
 } // namespace cutlass
+
+/////////////////////////////////////////////////////////////////////////////////////////////////

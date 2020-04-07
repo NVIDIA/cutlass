@@ -187,7 +187,8 @@ public:
         int access = access_idx % 2;
 
         int ptr_offset = tile_idx * InterleavedTileShape::kN / Policy::kElementsPerAccess +
-          access_quad * Detail::kAccessQuadDelta / Policy::kElementsPerAccess  + access;
+          access_quad * Detail::kAccessQuadDelta / Policy::kElementsPerAccess + 
+          access + pointer_offset / Policy::kElementsPerAccess;
 
         int frag_idx = tile_idx * Policy::kAccessesPerInterleavedTile + access_idx;
 
@@ -219,7 +220,9 @@ public:
         int access_quad = access_idx / 2;
         int access = access_idx % 2;
 
-        int ptr_offset = tile_idx * Detail::kTileDelta + access_quad * Detail::kAccessQuadDelta + access;
+        int ptr_offset = tile_idx * Detail::kTileDelta + access_quad * Detail::kAccessQuadDelta + 
+          access + pointer_offset / Policy::kElementsPerAccess;
+
         int frag_idx = tile_idx * Policy::kAccessesPerInterleavedTile + access_idx;
 
         frag_ptr[frag_idx] = pointer_[ptr_offset];
@@ -382,7 +385,7 @@ public:
 
         int ptr_row_offset = row_idx * 2;
 
-        int ptr_offset = layout_({ptr_row_offset, ptr_column_offset});
+        int ptr_offset = layout_({ptr_row_offset, ptr_column_offset}) + pointer_offset / Policy::kElementsPerAccess;
 
         pointer_[ptr_offset] = frag_ptr[frag_idx];
       }

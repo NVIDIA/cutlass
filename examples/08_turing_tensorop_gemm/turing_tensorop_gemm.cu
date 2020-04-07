@@ -29,7 +29,7 @@ provided by CUTLASS using tensor cores; which we run on a NVIDIA Turing GPU.
 
 Writing a single high performance matrix multiplication kernel is hard but do-able. Whereas writing
 high performance kernels at scale which works for multiple problem sizes with good abstractions is
-really hard. CUTLASS solves this problem by providing simplified abstractions (knobs) to compose
+really hard. CUTLASS solves this problem by providing simplified abstractions to compose
 multiple sections of gemm kernel. When used properly, the kernels can hit peak performance of GPU
 easily.
 
@@ -187,13 +187,28 @@ using Gemm = cutlass::gemm::device::Gemm<ElementInputA,
                                          NumStages>;
 
 int main() {
-  cudaDeviceProp props;
-  CUDA_CHECK(cudaGetDeviceProperties(&props, 0));
 
-  if (!(props.major >= 7 && props.minor >= 5)) {
-    std::cerr << "Turing Tensor Ops must be run on a machine with compute capability at least 75."
+  // Turing Tensor Core operations exposed with mma.sync and ldmatrix are first available
+  // in CUDA 10.2. 
+  //
+  // CUTLASS must be compiled with CUDA 10.2 Toolkit to run these examples.
+  if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2))) {
+    std::cerr << "Turing Tensor Core operations must be compiled with CUDA 10.2 Toolkit or later." << std::endl;
+    return -1;
+  }
+
+  cudaDeviceProp props;
+
+  cudaError_t error = cudaGetDeviceProperties(&props, 0);
+  if (error != cudaSuccess) {
+    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
+    return -1;
+  }
+
+  if (!((props.major * 10 + props.minor) >= 75)) {
+    std::cerr << "Turing Tensor Core operations must be run on a machine with compute capability at least 75."
               << std::endl;
-    return 0;
+    return -1;
   }
 
   const int length_m = 5120;

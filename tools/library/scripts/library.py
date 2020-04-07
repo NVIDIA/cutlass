@@ -154,6 +154,68 @@ DataTypeSize = {
 ###################################################################################################
 
 #
+class ComplexTransform(enum.Enum):
+  none = enum.auto()
+  conj = enum.auto()
+
+#
+ComplexTransformTag = {
+  ComplexTransform.none: 'cutlass::ComplexTransform::kNone',
+  ComplexTransform.conj: 'cutlass::ComplexTransform::kConjugate',
+}
+
+#
+RealComplexBijection = [
+  (DataType.f16, DataType.cf16),
+  (DataType.f32, DataType.cf32),
+  (DataType.f64, DataType.cf64),
+]
+
+#
+def is_complex(data_type):
+  for r, c in RealComplexBijection:
+    if data_type == c:
+      return True
+  return False
+
+#
+def get_complex_from_real(real_type):
+  for r, c in RealComplexBijection:
+    if real_type == r:
+      return c
+  return DataType.invalid
+
+#
+def get_real_from_complex(complex_type):
+  for r, c in RealComplexBijection:
+    if complex_type == c:
+      return r
+  return DataType.invalid
+
+#
+class ComplexMultiplyOp(enum.Enum):
+  multiply_add = enum.auto()
+  gaussian = enum.auto()
+
+###################################################################################################
+
+#
+class MathOperation(enum.Enum):
+  multiply_add = enum.auto()
+  multiply_add_saturate = enum.auto()
+  xor_popc = enum.auto()
+  multiply_add_complex = enum.auto()
+#
+MathOperationTag = {
+  MathOperation.multiply_add: 'cutlass::arch::OpMultiplyAdd', 
+  MathOperation.multiply_add_saturate: 'cutlass::arch::OpMultiplyAddSaturate',
+  MathOperation.xor_popc: 'cutlass::arch::OpXorPopc',
+  MathOperation.multiply_add_complex: 'cutlass::arch::OpMultiplyAddComplex',
+}
+
+###################################################################################################
+
+#
 class LayoutType(enum.Enum):
   ColumnMajor = enum.auto()
   RowMajor = enum.auto()
@@ -183,6 +245,17 @@ LayoutTag = {
 }
 
 #
+TransposedLayout = {
+  LayoutType.ColumnMajor: LayoutType.RowMajor,
+  LayoutType.RowMajor: LayoutType.ColumnMajor,
+  LayoutType.ColumnMajorInterleaved32: LayoutType.RowMajorInterleaved32,
+  LayoutType.RowMajorInterleaved32: LayoutType.ColumnMajorInterleaved32,
+  LayoutType.ColumnMajorInterleaved64: LayoutType.RowMajorInterleaved64,
+  LayoutType.RowMajorInterleaved64: LayoutType.ColumnMajorInterleaved64,
+  LayoutType.TensorNHWC: LayoutType.TensorNHWC
+}
+
+#
 ShortLayoutTypeNames = {
   LayoutType.ColumnMajor: 'n',
   LayoutType.ColumnMajorInterleaved32: 'n32',
@@ -195,6 +268,14 @@ ShortLayoutTypeNames = {
   LayoutType.TensorNGHWC: 'nghwc',
   LayoutType.TensorNCxHW32: 'ncxhw32',
   LayoutType.TensorNCxHW64: 'ncxhw64'
+}
+
+#
+ShortComplexLayoutNames = {
+  (LayoutType.ColumnMajor, ComplexTransform.none): 'n',
+  (LayoutType.ColumnMajor, ComplexTransform.conj): 'c',
+  (LayoutType.RowMajor, ComplexTransform.none): 't',
+  (LayoutType.RowMajor, ComplexTransform.conj): 'h'
 }
 
 ###################################################################################################
@@ -244,9 +325,15 @@ ArchitectureNames = {
 #
 def SubstituteTemplate(template, values):
   text = template
-  for key, value in values.items():
-    regex = "\\$\\{%s\\}" % key
-    text = re.sub(regex, value, text)
+  changed = True
+  while changed:
+    changed = False
+    for key, value in values.items():
+      regex = "\\$\\{%s\\}" % key
+      newtext = re.sub(regex, value, text)
+      if newtext != text:
+        changed = True
+      text = newtext
   return text
 
 ###################################################################################################
@@ -256,28 +343,52 @@ class GemmKind(enum.Enum):
   Gemm = enum.auto()
   Batched = enum.auto()
   Array = enum.auto()
+  Universal = enum.auto()
   PlanarComplex = enum.auto()
-  PlanarComplexBatched = enum.auto()
+  PlanarComplexArray = enum.auto()
 
 #
 GemmKindNames = {
   GemmKind.Gemm: "gemm",
   GemmKind.Batched: "gemm_batched",
   GemmKind.Array: "gemm_array",
+  GemmKind.Universal: "gemm_universal",
   GemmKind.PlanarComplex: "gemm_planar_complex",
-  GemmKind.PlanarComplexBatched: "gemm_planar_complex_batched",
+  GemmKind.PlanarComplexArray: "gemm_planar_complex_array",
 }
 
+#
+class EpilogueFunctor(enum.Enum):
+  LinearCombination = enum.auto()
+  LinearCombinationClamp = enum.auto()
+
+#
+EpilogueFunctorTag = {
+  EpilogueFunctor.LinearCombination: 'cutlass::epilogue::thread::LinearCombination',
+  EpilogueFunctor.LinearCombinationClamp: 'cutlass::epilogue::thread::LinearCombinationClamp',
+}
+
+#
+class SwizzlingFunctor(enum.Enum):
+  Cohort = enum.auto()
+  Identity = enum.auto()
+
+#
+SwizzlingFunctorTag = {
+  SwizzlingFunctor.Cohort: 'cutlass::gemm::threadblock::GemmCohortThreadblockSwizzle<${layout_a}, ${layout_b}>',
+  SwizzlingFunctor.Identity: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle',
+}
 ###################################################################################################
 
 #
 class MathInstruction:
-  def __init__(self, instruction_shape, element_a, element_b, element_accumulator, opcode_class):
+  def __init__(self, instruction_shape, element_a, element_b, element_accumulator, opcode_class, math_operation = MathOperation.multiply_add):
     self.instruction_shape = instruction_shape
     self.element_a = element_a
     self.element_b = element_b
     self.element_accumulator = element_accumulator
     self.opcode_class = opcode_class
+    self.math_operation = math_operation
 
 
 #
@@ -292,16 +403,14 @@ class TileDescription:
     self.maximum_compute_capability = max_compute
 
   def procedural_name(self):
-    if self.stages == 2:
-      return "%dx%dx%d" % self.threadblock_shape
-    elif self.stages > 2:
-      return "%dx%d_%dx%d" % (self.threadblock_shape[0], self.threadblock_shape[1], self.threadblock_shape[2], self.stages)
+    return "%dx%d_%dx%d" % (self.threadblock_shape[0], self.threadblock_shape[1], self.threadblock_shape[2], self.stages)
 
 #
 class TensorDescription:
-  def __init__(self, element, layout, alignment = 1):
+  def __init__(self, element, layout, alignment = 1, complex_transform = ComplexTransform.none):
     self.element = element
     self.layout = layout
     self.alignment = alignment
+    self.complex_transform = complex_transform
 
 ###################################################################################################

@@ -46,51 +46,58 @@ inline __device__ void ldsm(Array<unsigned, MatrixCount> & D, void const* ptr);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
-// Specializations
+// Determine the appropriate way to target PTX's "ldmatrix" instruction.
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-#if (__CUDACC_VER_MAJOR__ == 10) && (__CUDACC_VER_MINOR__ == 2)
-  #define CUDA_NVVM_GET_SHARED_POINTER_SUPPORTED 1
-#else
-  #define CUDA_NVVM_GET_SHARED_POINTER_SUPPORTED 0
-#endif
-
-#if ! defined(CUDA_NVVM_GET_SHARED_POINTER_ENABLED)
-  #define CUDA_NVVM_GET_SHARED_POINTER_ENABLED (CUDA_NVVM_GET_SHARED_POINTER_SUPPORTED)
-#endif
 
 #if ! defined(CUDA_LDMATRIX_SUPPORTED)
   #define CUDA_LDMATRIX_SUPPORTED ((__CUDACC_VER_MAJOR__ == 10) && (__CUDACC_VER_MINOR__ >= 2))
 #endif
 
 #if ! defined(CUDA_LDMATRIX_ENABLED)
-  #define CUDA_LDMATRIX_ENABLED (CUDA_LDMATRIX_SUPPORTED)
+  #define CUDA_LDMATRIX_ENABLED CUDA_LDMATRIX_SUPPORTED
 #endif
 
-#if (CUDA_LDMATRIX_ENABLED && defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 750))
+#if CUDA_LDMATRIX_ENABLED && defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 750)
   #define CUDA_LDMATRIX_ACTIVATED 1
-#else
-  #define CUDA_LDMATRIX_ACTIVATED 0
 #endif
 
-#if defined(CUTLASS_GET_SMEM_POINTER)
-  // Use the existing implementation
-#elif CUDA_NVVM_GET_SHARED_POINTER_ENABLED
-  #if ! defined(NVVM_GET_SMEM_POINTER)
-    #define NVVM_GET_SMEM_POINTER
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+#if ! defined(CUDA_NVVM_GET_SMEM_POINTER_SUPPORTED)
+  #define CUDA_NVVM_GET_SMEM_POINTER_SUPPORTED ((__CUDACC_VER_MAJOR__ == 10) && (__CUDACC_VER_MINOR__ >= 1))
+#endif
+
+#if ! defined(CUDA_NVVM_GET_SMEM_POINTER_ENABLED)
+  #define CUDA_NVVM_GET_SMEM_POINTER_ENABLED CUDA_NVVM_GET_SMEM_POINTER_SUPPORTED
+#endif
+
+#if CUDA_NVVM_GET_SMEM_POINTER_ENABLED
   extern "C" {
-    //
-    // This NVVM intrinsic is subject to change in future versions of CUDA.
-    // Clients should not call it directly. Rather, they should use the 
-    // cutlass::arch::ldsm<>() template.
-    //
-    __device__ uint32_t __nvvm_get_smem_pointer(void*);
+  //
+  // This NVVM intrinsic is subject to change in future versions of CUDA.
+  // Clients should not call it directly. Rather, they should use the 
+  // cutlass::arch::ldsm<>() template.
+  //
+  __device__ uint32_t __nvvm_get_smem_pointer(void *);
   }
-  #endif
-  #define CUTLASS_GET_SMEM_POINTER(ptr) __nvvm_get_smem_pointer((void*)ptr)
 #endif
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+#if CUDA_NVVM_GET_SMEM_POINTER_ENABLED
+
+  /// CUTLASS helper to get SMEM pointer
+  inline __device__ unsigned cutlass_get_smem_pointer(void const *ptr) {
+    return __nvvm_get_smem_pointer(const_cast<void *>(ptr));
+  }
+
+  /// CUTLASS helper to get SMEM pointer
+  inline __device__ unsigned cutlass_get_smem_pointer(void *ptr) {
+    return __nvvm_get_smem_pointer(ptr);
+  }
+
+#endif
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <>
@@ -98,9 +105,9 @@ inline __device__ void ldsm<layout::RowMajor, 1>(
     Array<unsigned, 1> & D,
     void const* ptr) {
 
-  #if CUDA_LDMATRIX_ACTIVATED
+  #if defined(CUDA_LDMATRIX_ACTIVATED)
 
-    unsigned addr = CUTLASS_GET_SMEM_POINTER(ptr);
+    unsigned addr = cutlass_get_smem_pointer(ptr);
 
     int x;
     asm volatile ("ldmatrix.sync.aligned.x1.m8n8.shared.b16 {%0}, [%1];" : "=r"(x) : "r"(addr));
@@ -120,9 +127,9 @@ inline __device__ void ldsm<layout::RowMajor, 2>(
     Array<unsigned, 2> & D,
     void const* ptr) {
 
-  #if CUDA_LDMATRIX_ACTIVATED
+  #if defined(CUDA_LDMATRIX_ACTIVATED)
 
-    unsigned addr = CUTLASS_GET_SMEM_POINTER(ptr);
+    unsigned addr = cutlass_get_smem_pointer(ptr);
 
     int x, y;
     asm volatile ("ldmatrix.sync.aligned.x2.m8n8.shared.b16 {%0, %1}, [%2];" : "=r"(x), "=r"(y) : "r"(addr));
@@ -142,9 +149,9 @@ inline __device__ void ldsm<layout::RowMajor, 4>(
     Array<unsigned, 4> & D,
     void const* ptr) {
 
-  #if CUDA_LDMATRIX_ACTIVATED
+  #if defined(CUDA_LDMATRIX_ACTIVATED)
 
-    unsigned addr = CUTLASS_GET_SMEM_POINTER(ptr);
+    unsigned addr = cutlass_get_smem_pointer(ptr);
 
     int x, y, z, w;
     asm volatile ("ldmatrix.sync.aligned.x4.m8n8.shared.b16 {%0, %1, %2, %3}, [%4];" : "=r"(x), "=r"(y), "=r"(z), "=r"(w) : "r"(addr));
@@ -167,9 +174,10 @@ template <>
 inline __device__ void ldsm<layout::ColumnMajor, 1>(
     Array<unsigned, 1> & D,
     void const* ptr) {
+
   #if CUDA_LDMATRIX_ACTIVATED
 
-    unsigned addr = CUTLASS_GET_SMEM_POINTER(ptr);
+    unsigned addr = cutlass_get_smem_pointer(ptr);
 
     int x;
     asm volatile ("ldmatrix.sync.aligned.x1.trans.m8n8.shared.b16 {%0}, [%1];" : "=r"(x) : "r"(addr));
@@ -189,9 +197,9 @@ inline __device__ void ldsm<layout::ColumnMajor, 2>(
     Array<unsigned, 2> & D,
     void const* ptr) {
 
-  #if CUDA_LDMATRIX_ACTIVATED
+  #if defined(CUDA_LDMATRIX_ACTIVATED)
 
-    unsigned addr = CUTLASS_GET_SMEM_POINTER(ptr);
+    unsigned addr = cutlass_get_smem_pointer(ptr);
 
     int x, y;
     asm volatile ("ldmatrix.sync.aligned.x2.trans.m8n8.shared.b16 {%0, %1}, [%2];" : "=r"(x), "=r"(y) : "r"(addr));
@@ -211,9 +219,9 @@ inline __device__ void ldsm<layout::ColumnMajor, 4>(
     Array<unsigned, 4> & D,
     void const* ptr) {
 
-  #if CUDA_LDMATRIX_ACTIVATED
+  #if defined(CUDA_LDMATRIX_ACTIVATED)
 
-    unsigned addr = CUTLASS_GET_SMEM_POINTER(ptr);
+    unsigned addr = cutlass_get_smem_pointer(ptr);
 
     int x, y, z, w;
     asm volatile ("ldmatrix.sync.aligned.x4.trans.m8n8.shared.b16 {%0, %1, %2, %3}, [%4];" : "=r"(x), "=r"(y), "=r"(z), "=r"(w) : "r"(addr));

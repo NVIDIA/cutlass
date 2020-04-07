@@ -43,12 +43,12 @@
 #endif
 
 // CUDA includes
-#include <cublas_v2.h>
 #include <curand_kernel.h>
 
 // Cutlass includes
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
+#include "cutlass/complex.h"
 #include "cutlass/tensor_view.h"
 
 #include "cutlass/util/reference/device/tensor_foreach.h"
@@ -169,6 +169,95 @@ struct RandomGaussianFunc {
   }
 };
 
+
+template <typename Real>
+struct RandomGaussianFunc<complex<Real>> {
+
+  using Element = complex<Real>;
+  using FloatType = typename std::conditional<(sizeof(Real) > 4), double, float>::type;
+  using IntType = typename std::conditional<(sizeof(Real) > 4), int64_t, int>::type;
+
+  /// Parameters structure
+  struct Params {
+
+    //
+    // Data members
+    //
+
+    uint64_t seed;
+    FloatType mean;
+    FloatType stddev;
+    int int_scale;
+
+    //
+    // Methods
+    //
+
+    /// Construction of Gaussian RNG functor.
+    Params(
+      uint64_t seed_ = 0,
+      Real mean_ = 0, 
+      Real stddev_ = 1,
+      int int_scale_ = -1
+    ):
+      seed(seed_), 
+      mean(static_cast<FloatType>(mean_)), 
+      stddev(static_cast<FloatType>(stddev_)), 
+      int_scale(int_scale_) {
+
+    }
+  };
+
+  //
+  // Data members
+  //
+
+  /// Parameters object
+  Params params;
+
+  /// RNG state object
+  curandState_t rng_state;
+
+  //
+  // Methods
+  //
+
+  /// Device-side initialization of RNG
+  CUTLASS_DEVICE
+  RandomGaussianFunc(Params const &params): params(params) {
+
+    uint64_t gtid = threadIdx.x + blockIdx.x * blockDim.x;
+
+    curand_init(params.seed, gtid, 0, &rng_state);
+  }
+
+  /// Compute random value and update RNG state
+  CUTLASS_DEVICE
+  Element operator()() {
+
+    FloatType rnd_r = random_normal_float<FloatType>(&rng_state);
+    FloatType rnd_i = random_normal_float<FloatType>(&rng_state);
+    rnd_r = params.mean + params.stddev * rnd_r;
+    rnd_i = params.mean + params.stddev * rnd_i;
+
+    Element result;
+    if (params.int_scale >= 0) {
+      rnd_r = FloatType(IntType(rnd_r * FloatType(IntType(1) << params.int_scale)));
+      rnd_i = FloatType(IntType(rnd_i * FloatType(IntType(1) << params.int_scale)));
+
+      result = {
+        Real(rnd_r / FloatType(IntType(1) << params.int_scale)),
+        Real(rnd_i / FloatType(IntType(1) << params.int_scale))
+      };
+    }
+    else {
+      result = Element(Real(rnd_r), Real(rnd_i));
+    }
+
+    return result;
+  }
+};
+
 /// Computes a random Gaussian distribution
 template <
   typename Element,               ///< Element type
@@ -269,12 +358,12 @@ template <typename Element>               ///< Element type
 void BlockFillRandomGaussian(
   Element *ptr,
   size_t capacity,
-  uint64_t seed,                          ///< seed for RNG
-  Element mean = Element(0),              ///< Gaussian distribution's mean
-  Element stddev = Element(1),            ///< Gaussian distribution's standard deviation
-  int bits = -1) {                        ///< If non-negative, specifies number of fractional bits that 
-                                          ///  are not truncated to zero. Permits reducing precision of
-                                          ///  data.
+  uint64_t seed,                              ///< seed for RNG
+  typename RealType<Element>::Type mean,      ///< Gaussian distribution's mean
+  typename RealType<Element>::Type stddev,    ///< Gaussian distribution's standard deviation
+  int bits = -1) {                            ///< If non-negative, specifies number of fractional bits that 
+                                              ///  are not truncated to zero. Permits reducing precision of
+                                              ///  data.
   
   using RandomFunc = detail::RandomGaussianFunc<Element>;
 
@@ -377,6 +466,111 @@ struct RandomUniformFunc {
     }
     else {
       result = Element(rnd);
+    }
+
+    return result;
+  }
+};
+
+/// Computes a random Gaussian distribution
+template <typename Real>                ///< Layout function
+struct RandomUniformFunc<complex<Real>> {
+
+  using Element = complex<Real>;
+
+  using FloatType = typename std::conditional<
+    (sizeof(Real) > 4),
+    double,
+    float>::type;
+
+  using IntType = typename std::conditional<
+    (sizeof(Real) > 4),
+    int64_t,
+    int>::type;
+
+  /// Parameters structure
+  struct Params {
+
+    //
+    // Data members
+    //
+
+    uint64_t seed;
+    FloatType range;
+    FloatType min;
+    int int_scale;
+
+    /// Default ctor
+    CUTLASS_HOST_DEVICE
+    Params() { }
+
+    //
+    // Methods
+    //
+
+    /// Construction of Gaussian RNG functor.
+    Params(
+      uint64_t seed_ = 0, 
+      FloatType max = 1,
+      FloatType min_ = 0,
+      int int_scale_ = -1
+    ):
+      seed(seed_), 
+      range(static_cast<FloatType>(max - min_)), 
+      min(static_cast<FloatType>(min_)), 
+      int_scale(int_scale_) {
+
+    }
+  };
+
+  //
+  // Data members
+  //
+
+  /// Parameters object
+  Params params;
+
+  /// RNG state object
+  curandState_t rng_state;
+
+  //
+  // Methods
+  //
+
+  /// Device-side initialization of RNG
+  CUTLASS_DEVICE
+  RandomUniformFunc(Params const &params): params(params) {
+
+    uint64_t gtid = threadIdx.x + blockIdx.x * blockDim.x;
+
+    curand_init(params.seed, gtid, 0, &rng_state);
+  }
+
+  /// Compute random value and update RNG state
+  CUTLASS_DEVICE
+  Element operator()() {
+
+    FloatType rnd_r = random_uniform_float<FloatType>(&rng_state);
+    FloatType rnd_i = random_uniform_float<FloatType>(&rng_state);
+
+    rnd_r = params.min + params.range * rnd_r;
+    rnd_i = params.min + params.range * rnd_i;
+
+    // Random values are cast to integer after scaling by a power of two to facilitate error
+    // testing
+    Element result;
+
+    if (params.int_scale >= 0) {
+      rnd_r = FloatType(IntType(rnd_r * FloatType(IntType(1) << params.int_scale)));
+      rnd_i = FloatType(IntType(rnd_i * FloatType(IntType(1) << params.int_scale)));
+
+      result = {
+        Real(rnd_r / FloatType(IntType(1) << params.int_scale)),
+        Real(rnd_i / FloatType(IntType(1) << params.int_scale))
+      };
+    }
+    else {
+      result = Element(Real(rnd_r), Real(rnd_i));
     }
 
     return result;
@@ -489,8 +683,8 @@ void BlockFillRandomUniform(
   Element *ptr,
   size_t capacity,
   uint64_t seed,                          ///< seed for RNG
-  Element max = Element(1),               ///< upper bound of distribution
-  Element min = Element(0),               ///< lower bound for distribution
+  typename RealType<Element>::Type max,   ///< upper bound of distribution
+  typename RealType<Element>::Type min,   ///< lower bound for distribution
   int bits = -1) {                        ///< If non-negative, specifies number of fractional bits that 
                                           ///  are not truncated to zero. Permits reducing precision of
                                           ///  data.                 
@@ -976,13 +1170,15 @@ void BlockFillRandom(
   uint64_t seed,
   Distribution dist) {
 
+  using Real = typename RealType<Element>::Type;
+
   if (dist.kind == Distribution::Gaussian) {
     BlockFillRandomGaussian<Element>(
       ptr, 
       capacity, 
       seed, 
-      static_cast<Element>(dist.gaussian.mean), 
-      static_cast<Element>(dist.gaussian.stddev), 
+      static_cast<Real>(dist.gaussian.mean), 
+      static_cast<Real>(dist.gaussian.stddev), 
       dist.int_scale);
   }
   else if (dist.kind == Distribution::Uniform) {
@@ -990,8 +1186,8 @@ void BlockFillRandom(
       ptr, 
       capacity, 
       seed, 
-      static_cast<Element>(dist.uniform.max),
-      static_cast<Element>(dist.uniform.min), 
+      static_cast<Real>(dist.uniform.max),
+      static_cast<Real>(dist.uniform.min), 
       dist.int_scale);
   }
 }

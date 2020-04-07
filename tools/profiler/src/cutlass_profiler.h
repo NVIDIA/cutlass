@@ -27,6 +27,9 @@
 */
 
 #pragma once
+// CUTLASS Library includes
+#include "cutlass/library/library.h"
+#include "cutlass/library/manifest.h"
 
 #include "options.h"
 #include "operation_profiler.h"

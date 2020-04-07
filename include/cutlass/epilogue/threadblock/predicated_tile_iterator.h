@@ -36,9 +36,9 @@
 #include "cutlass/numeric_types.h"
 #include "cutlass/array.h"
 #include "cutlass/layout/matrix.h"
+#include "cutlass/layout/tensor.h"
 #include "cutlass/matrix_shape.h"
 #include "cutlass/tensor_ref.h"
-
 #include "cutlass/transform/pitch_linear_thread_map.h"
 #include "cutlass/epilogue/threadblock/output_tile_thread_map.h"
 
@@ -107,16 +107,16 @@ public:
     // Data members
     //
 
-    Index stride;               ///< stride in bytes between rows
+    LongIndex stride;               ///< stride in bytes between rows
 
-    Index increment_row;        ///< increment quantity (in bytes) to advance when moving between rows
-    Index increment_group;      ///< increment quantity (in bytes) to advance when moving to the next group
-    Index increment_cluster;    ///< increment quantity (in bytes) to advance when moving to the next cluster
+    LongIndex increment_row;        ///< increment quantity (in bytes) to advance when moving between rows
+    LongIndex increment_group;      ///< increment quantity (in bytes) to advance when moving to the next group
+    LongIndex increment_cluster;    ///< increment quantity (in bytes) to advance when moving to the next cluster
 
-    Index advance_row;          ///< amount to add to move to the next 'row' position
-    Index advance_group;        ///< amount to add to move to the next 'group' position
-    Index advance_cluster;      ///< amount to add to move to the next 'cluster' position
-    Index advance_tile;         ///< amount to add to move to the next 'tile'
+    LongIndex advance_row;          ///< amount to add to move to the next 'row' position
+    LongIndex advance_group;        ///< amount to add to move to the next 'group' position
+    LongIndex advance_cluster;      ///< amount to add to move to the next 'cluster' position
+    LongIndex advance_tile;         ///< amount to add to move to the next 'tile'
 
     //
     // Methods
@@ -125,7 +125,7 @@ public:
     CUTLASS_HOST_DEVICE
     Status initialize(Index stride_) {
       
-      stride = stride_;
+      stride = LongIndex(stride_);
 
       increment_row = stride * ThreadMap::Delta::kRow;
 
@@ -261,8 +261,8 @@ public:
 
     // Initialize pointer
     byte_pointer_ = reinterpret_cast<uint8_t *>(pointer) + 
-      thread_offset.row() * params_.stride + 
-      thread_offset.column() * sizeof(AccessType) / kElementsPerAccess;
+      LongIndex(thread_offset.row()) * LongIndex(params_.stride) + 
+      LongIndex(thread_offset.column()) * sizeof(AccessType) / kElementsPerAccess;
 
     // Initialize internal state counter
     state_[0] = state_[1] = state_[2] = 0;
@@ -276,7 +276,7 @@ public:
 
   /// Loads a fragment from memory
   CUTLASS_DEVICE
-  void load(Fragment &frag) {
+  void load_with_byte_offset(Fragment &frag, int64_t byte_offset) {
 
     uint8_t *byte_pointer = byte_pointer_;
     AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
@@ -299,7 +299,7 @@ public:
 
           bool row_guard = ((row_offset + thread_start_row_) < extent_row_);
 
-          AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer);
+          AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset);
 
           CUTLASS_PRAGMA_UNROLL
           for (int column = 0; column < ThreadMap::Iterations::kColumn; ++column) {
@@ -328,9 +328,15 @@ public:
     }
   }
 
+  /// Loads a fragment from memory
+  CUTLASS_DEVICE
+  void load(Fragment &frag) {
+    load_with_byte_offset(frag, 0);
+  }
+
   /// Stores a fragment to memory
   CUTLASS_DEVICE
-  void store(Fragment const &frag) {
+  void store_with_byte_offset(Fragment const &frag, int64_t byte_offset) {
     uint8_t *byte_pointer = byte_pointer_;
     AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
 
@@ -352,7 +358,7 @@ public:
 
           bool row_guard = ((row_offset + thread_start_row_) < extent_row_);
 
-          AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer);
+          AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset);
 
           CUTLASS_PRAGMA_UNROLL
           for (int column = 0; column < ThreadMap::Iterations::kColumn; ++column) {
@@ -380,6 +386,12 @@ public:
         byte_pointer += params_.increment_cluster;
       }
     }
+  }
+
+  /// Stores a fragment to memory
+  CUTLASS_DEVICE
+  void store(Fragment const &frag) {
+    store_with_byte_offset(frag, 0);
   }
 
   /// Advances to the next position to load or store
@@ -440,6 +452,7 @@ public:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+
 /// Tile iterator used to load output tile from shared memory in epilogue.
 ///
 /// Satisfies: ReadableTileIterator | InterleavedPredicatedTileIterator | ForwardTileIterator
@@ -447,7 +460,7 @@ public:
 template <
   typename ThreadMap_,       ///< Thread map (conept: OutputTileThreadMap)
   typename Element_,         ///< Element data type
-  int InterleavedK           ///< Number of Interleaved K
+  int InterleavedN           ///< Number of Interleaved N 
 >
 class InterleavedPredicatedTileIterator {
 public:
@@ -455,7 +468,7 @@ public:
 
   using Element = Element_;
 
-  using Layout = layout::ColumnMajorInterleaved<InterleavedK>;
+  using Layout = layout::ColumnMajorInterleaved<InterleavedN>;
   using TensorRef = TensorRef<Element, Layout>;
   using ConstTensorRef = typename TensorRef::ConstTensorRef;
 
@@ -483,10 +496,10 @@ public:
     // Data members
     //
 
-    Index stride;               ///< stride in bytes between columns
+    LongIndex stride;               ///< stride in bytes between columns
 
-    Index advance_row;          ///< amount to add to move to the next 'row' position
-    Index advance_column;       ///< amount to add to move to the next 'column' position
+    LongIndex advance_row;          ///< amount to add to move to the next 'row' position
+    LongIndex advance_column;       ///< amount to add to move to the next 'column' position
 
     //
     // Methods
@@ -494,14 +507,16 @@ public:
 
     CUTLASS_HOST_DEVICE
     Status initialize(Index stride_) {
-      stride = stride_;
+
+      stride = LongIndex(stride_);
 
       advance_row =
           ThreadMap::Delta::kContiguous * sizeof_bits<Element>::value / 8;
 
-      advance_column =
-          stride_ - ThreadMap::Iterations::kContiguous * kElementsPerAccess *
-                        sizeof_bits<Element>::value * ThreadMap::kWarpSize / 8;
+      advance_column = LongIndex(stride_) - ThreadMap::Iterations::kContiguous *
+                                                kElementsPerAccess *
+                                                sizeof_bits<Element>::value *
+                                                ThreadMap::kWarpSize / 8;
 
       return Status::kSuccess;
     }
@@ -602,10 +617,10 @@ public:
   ):
     params_(params) {
     TensorCoord thread_offset = ThreadMap::initial_offset(thread_idx) +
-                                TensorCoord(threadblock_offset.contiguous() * InterleavedK,
-                                 threadblock_offset.strided() / InterleavedK);
+                                TensorCoord(threadblock_offset.contiguous() * InterleavedN,
+                                 threadblock_offset.strided() / InterleavedN);
 
-    extent_col_ = extent.strided() / InterleavedK;
+    extent_col_ = extent.strided() / InterleavedN;
     thread_start_col_ = thread_offset.strided();
 
     // Initialize predicates
@@ -613,13 +628,13 @@ public:
     for (int c = 0; c < ThreadMap::Iterations::kContiguous; ++c) {
       mask_.predicates[c] =
           ((thread_offset.contiguous() + ThreadMap::Delta::kContiguous * c) <
-           (extent.contiguous() * InterleavedK));
+           (extent.contiguous() * InterleavedN));
     }
 
     // Initialize pointer
     byte_pointer_ = reinterpret_cast<uint8_t *>(pointer) + 
-      thread_offset.strided() * params_.stride + 
-      thread_offset.contiguous() * sizeof(AccessType) / kElementsPerAccess;
+      LongIndex(thread_offset.strided()) * LongIndex(params_.stride) + 
+      LongIndex(thread_offset.contiguous()) * sizeof(AccessType) / kElementsPerAccess;
 
     // Initialize internal state counter
     iteration_contiguous_ = iteration_strided_ = 0;
@@ -634,6 +649,7 @@ public:
   /// Loads a fragment from memory
   CUTLASS_DEVICE
   void load(Fragment &frag) {
+
     uint8_t *byte_pointer = byte_pointer_;
     AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
     AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer);

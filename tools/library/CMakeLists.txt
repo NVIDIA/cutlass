@@ -52,13 +52,15 @@ install(
 #
 
 cutlass_add_library(
-  cutlass_lib
-  SHARED
-  src/library.cu
+  cutlass_library_objs
+  OBJECT
+  src/handle.cu
   src/manifest.cpp
+  src/operation_table.cu
+  src/singleton.cu
+  src/util.cu
+  
   )
-add_library(nvidia::cutlass::library ALIAS cutlass_lib)
-set_target_properties(cutlass_lib PROPERTIES EXPORT_NAME library)
 
 file(GLOB_RECURSE GENERATOR_PYTHON_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py)
 
@@ -66,16 +68,19 @@ file(GLOB_RECURSE GENERATOR_PYTHON_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOU
 # auto-instantiation of CUTLASS kernels
 #
 
+# set cutlass generator compiler version to filter kernels in the generator not supported by a specific toolkit. 
+set(CUTLASS_GENERATOR_CUDA_COMPILER_VERSION ${CMAKE_CUDA_COMPILER_VERSION})
+
 execute_process(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/scripts
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generator.py
-    --operations all 
+    --operations "${CUTLASS_LIBRARY_OPERATIONS}" 
     --build-dir ${PROJECT_BINARY_DIR}
     --curr-build-dir ${CMAKE_CURRENT_BINARY_DIR}
     --generator-target library
     --architectures "${CUTLASS_NVCC_ARCHS_ENABLED}"
     --kernels "${CUTLASS_LIBRARY_KERNELS}"
-    --cuda-version "${CMAKE_CUDA_COMPILER_VERSION}"
+    --cuda-version "${CUTLASS_GENERATOR_CUDA_COMPILER_VERSION}"
   RESULT_VARIABLE cutlass_lib_INSTANCE_GENERATION_RESULT
   OUTPUT_VARIABLE cutlass_lib_INSTANCE_GENERATION_OUTPUT
   OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/library_instance_generation.log
@@ -95,35 +100,70 @@ else()
 endif()
 
 target_include_directories(
-  cutlass_lib
+  cutlass_library_objs
   PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${CMAKE_CURRENT_BINARY_DIR}/include
   )
 
-set_target_properties(
-  cutlass_lib
-  PROPERTIES
-  OUTPUT_NAME cutlass
-  WINDOWS_EXPORT_ALL_SYMBOLS 1
-  )
-
 target_link_libraries(
-  cutlass_lib 
+  cutlass_library_objs 
   PUBLIC 
+  cutlass_library_includes
+  )
+
+function(cutlass_add_cutlass_library)
+
+  set(options)
+  set(oneValueArgs NAME TYPE EXPORT_NAME)
+  set(multiValueArgs)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  cutlass_add_library(
+    ${__NAME} 
+    ${__TYPE}
+    EXPORT_NAME ${__EXPORT_NAME}
+    $<TARGET_OBJECTS:cutlass_library_objs>
+    )
+
+  target_link_libraries(
+    ${__NAME}
+    PUBLIC 
     cutlass_library_includes
+    )
+
+  set_target_properties(${__NAME} PROPERTIES DEBUG_POSTFIX ${CUTLASS_LIBRARY_DEBUG_POSTFIX})
+  
+  set(OUTPUT_NAME cutlass)
+
+  if (WIN32 AND ${__TYPE} STREQUAL "STATIC")
+    set(OUTPUT_NAME "${OUTPUT_NAME}.static")
+  endif()
+
+  set_target_properties(
+    ${__NAME}
+    PROPERTIES
+    OUTPUT_NAME ${OUTPUT_NAME}
+    WINDOWS_EXPORT_ALL_SYMBOLS 1
+    )
+
+endfunction()
+
+cutlass_add_cutlass_library(NAME cutlass_lib TYPE SHARED EXPORT_NAME library)
+cutlass_add_cutlass_library(NAME cutlass_library_static TYPE STATIC EXPORT_NAME library_static)
+
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   )
 
 install(
-  DIRECTORY
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/
-  DESTINATION
-    ${CMAKE_INSTALL_INCLUDEDIR}
-  )
-
-install(
-  TARGETS cutlass_lib cutlass_library_includes
+  TARGETS 
+    cutlass_lib
+    cutlass_library_static
+    cutlass_library_includes
   EXPORT NvidiaCutlass
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )

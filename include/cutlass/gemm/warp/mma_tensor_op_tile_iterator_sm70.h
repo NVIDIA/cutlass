@@ -165,7 +165,8 @@ public:
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads * 2>;
+ using Fragment = Array<Element, Shape::kContiguous *
+                                     InstructionShape::kStrided / kThreads * 2>;
 
 private:
 
@@ -473,7 +474,8 @@ public:
   //
 
   /// Fragment object holding a thread's part of a tile, needs on more time number of registers
-  using Fragment = Array<Element, Shape::kCount / kThreads * 2>;
+ using Fragment = Array<Element, Shape::kContiguous *
+                                     InstructionShape::kStrided / kThreads * 2>;
 
 private:
 
@@ -738,7 +740,7 @@ class MmaVoltaTensorOpMultiplicandTileIterator<
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads * 2>;
+  using Fragment = typename Base::Fragment;
 
 private:
 
@@ -962,7 +964,7 @@ class MmaVoltaTensorOpMultiplicandTileIterator<
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads * 2>;
+  using Fragment = typename Base::Fragment;
 
 private:
 
@@ -1557,7 +1559,9 @@ class MmaVoltaTensorOpMultiplicandTileIterator<
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads * 2>;
+  using Fragment =
+      Array<Element,
+            Shape::kStrided * InstructionShape::kContiguous / kThreads * 2>;
 
  private:
 
@@ -1869,7 +1873,7 @@ class MmaVoltaTensorOpMultiplicandTileIterator<
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads * 2>;
+  using Fragment = typename Base::Fragment;
 
  private:
   /// Underlying tile iterator
@@ -2097,7 +2101,7 @@ class MmaVoltaTensorOpMultiplicandTileIterator<
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads * 2>;
+  using Fragment = typename Base::Fragment;
 
  private:
   /// Underlying tile iterator

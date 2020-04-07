@@ -23,7 +23,7 @@
  *
  **************************************************************************************************/
 /*! \file
-  \brief Epilogue for threadblock scoped GEMMs using Tensor Ops.
+  \brief Epilogue for threadblock scoped GEMMs using WMMA.
 
   The epilogue rearranges the result of a matrix product through shared memory to match canonical
   tensor layouts in global memory. Epilogues support conversion and reduction operations.

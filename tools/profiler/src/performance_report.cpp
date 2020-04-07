@@ -29,9 +29,15 @@
 #include <iostream>
 #include <stdexcept>
 #include <iomanip>
+#include <algorithm>
+#include <cstring>
+
+#include "cutlass/library/util.h"
+
+#include "cutlass/library/util.h"
 
 #include "performance_report.h"
-
+#include "debug.h"
 namespace cutlass {
 namespace profiler {
 
@@ -57,12 +63,17 @@ namespace profiler {
 
 PerformanceReport::PerformanceReport(
   Options const &options,
-  std::vector<std::string> const &argument_names
+  std::vector<std::string> const &argument_names,
+  library::OperationKind const &op_kind
 ):
-  options_(options), argument_names_(argument_names), problem_index_(0), good_(true) {
+  options_(options), argument_names_(argument_names), problem_index_(0), good_(true), op_kind_(op_kind) {
+
+  std::string file_name = options_.report.output_path.substr(0, options_.report.output_path.rfind("."));
+  std::string file_extension = options_.report.output_path.substr(options_.report.output_path.rfind(".") + 1);
+  op_file_name_ = file_name + "." + to_string(op_kind_) + "." + file_extension;
 
   //
-  // Open output file
+  // Open output file for operation of PerformanceReport::op_kind
   //
   if (!options_.report.output_path.empty()) {
 
@@ -70,17 +81,17 @@ PerformanceReport::PerformanceReport(
 
     if (options_.report.append) {
 
-      std::ifstream test_output_file(options_.report.output_path.c_str());
+      std::ifstream test_output_file(op_file_name_);
       
       if (test_output_file.is_open()) {
         print_header = false;
         test_output_file.close();
       }
 
-      output_file_.open(options_.report.output_path.c_str(), std::ios::app);
+      output_file_.open(op_file_name_, std::ios::app);
     }
     else {
-      output_file_.open(options_.report.output_path.c_str());
+      output_file_.open(op_file_name_);
     }
 
     if (!output_file_.good()) {
@@ -148,7 +159,7 @@ void PerformanceReport::close() {
     }
   }
   else if (output_file_.is_open() && options_.report.verbose) {
-    std::cout << "\n\nWrote results to '" << options_.report.output_path << "'" << std::endl;
+    std::cout << "\n\nWrote results to '" << op_file_name_ << "'" << std::endl;
   }
 }
 
@@ -184,19 +195,30 @@ std::ostream & PerformanceReport::print_result_pretty_(
 
   out
     << "\n"
-    << "    Provider: " << SHELL_COLOR_BRIGHT() << to_string(result.provider, true) << SHELL_COLOR_END() << "\n"
-    << "   Operation: " << result.operation_name << "\n\n"
-    << " Disposition: " << disposition_status_color(result.disposition) << to_string(result.disposition, true) << SHELL_COLOR_END() << "\n"
-    << "      Status: " << SHELL_COLOR_BRIGHT() << library::to_string(result.status, true) << SHELL_COLOR_END() << "\n";
+    << "              Provider: " << SHELL_COLOR_BRIGHT() << library::to_string(result.provider, true) << SHELL_COLOR_END() << "\n"
+    << "             Operation: " << result.operation_name << "\n\n"
+    << "                Status: " << SHELL_COLOR_BRIGHT() << library::to_string(result.status, true) << SHELL_COLOR_END() << "\n"
+    << "          Verification: " << SHELL_COLOR_BRIGHT() << (options_.verification.enabled ? "ON":"OFF") << SHELL_COLOR_END() << "\n"
+    << "           Disposition: " << disposition_status_color(result.disposition) << to_string(result.disposition, true) << SHELL_COLOR_END() << "\n\n";
+
+  // Display individual verification results for each verification-provider
+  if (options_.verification.enabled) {
+
+    static int const indent_spaces = 22;
+
+    for(auto & m : result.verification_map) {
+      out  << std::right << std::setw(indent_spaces) << library::to_string(m.first, true) << ": " << to_string(m.second, true) << "\n";  
+    }
+  }
 
   out
-    << "\n   Arguments: ";
+    << "\n            Arguments: ";
 
   int column_idx = 0;
   for (auto const &arg : result.arguments) {
     if (!arg.second.empty()) {
       out << " --" << arg.first << "=" << arg.second; 
-      column_idx += 4 + arg.first.size() + arg.second.size();
+      column_idx += int(4 + arg.first.size() + arg.second.size());
       if (column_idx > 90) {
         out << "  \\\n              ";
         column_idx = 0;
@@ -206,15 +228,15 @@ std::ostream & PerformanceReport::print_result_pretty_(
   out << "\n\n";
 
   out 
-    << "       Bytes: " << result.bytes << "  bytes\n"
-    << "       FLOPs: " << result.flops << "  flops\n\n";
+    << "                 Bytes: " << result.bytes << "  bytes\n"
+    << "                 FLOPs: " << result.flops << "  flops\n\n";
 
   if (result.good()) {
 
     out
-      << "     Runtime: " << result.runtime << "  ms\n"
-      << "      Memory: " << result.gbytes_per_sec() << " GiB/s\n"
-      << "\n        Math: " << result.gflops_per_sec() << " GFLOP/s\n";
+      << "             Runtime: " << result.runtime << "  ms\n"
+      << "              Memory: " << result.gbytes_per_sec() << " GiB/s\n"
+      << "\n              Math: " << result.gflops_per_sec() << " GFLOP/s\n";
 
   }
 

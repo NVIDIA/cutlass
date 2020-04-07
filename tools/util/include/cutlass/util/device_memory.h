@@ -40,10 +40,14 @@ namespace device_memory {
 /// Allocate a buffer of \p count elements of type \p T on the current CUDA device
 template <typename T>
 T* allocate(size_t count = 1) {
+
   T* ptr = 0;
-  size_t bytes = sizeof(T) * count;
+  size_t bytes = 0;
+
+  bytes = count * sizeof(T);
 
   cudaError_t cuda_error = cudaMalloc((void**)&ptr, bytes);
+
   if (cuda_error != cudaSuccess) {
     throw cuda_exception("Failed to allocate memory", cuda_error);
   }
@@ -111,13 +115,16 @@ void insert_to_device(T* device_begin, InputIterator begin, InputIterator end) {
   copy_to_device(device_begin, &*begin, elements);
 }
 
-/******************************************************************************
- * "Smart" device memory allocation
- ******************************************************************************/
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Device allocation abstraction that tracks size and capacity
+}  // namespace device_memory
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <typename T>
-struct allocation {
+class DeviceAllocation {
+public:
+
   /// Delete functor for CUDA device memory
   struct deleter {
     void operator()(T* ptr) {
@@ -130,6 +137,7 @@ struct allocation {
     }
   };
 
+public:
   //
   // Data members
   //
@@ -140,23 +148,55 @@ struct allocation {
   /// Smart pointer
   platform::unique_ptr<T, deleter> smart_ptr;
 
+public:
+
+  //
+  // Static methods
+  //
+
+  /// Static member to compute the number of bytes needed for a given number of elements
+  static size_t bytes(size_t elements) {
+    if (sizeof_bits<T>::value < 8) {
+      size_t const kElementsPerByte = 8 / sizeof_bits<T>::value;
+      return elements / kElementsPerByte;
+    }
+    else {
+      size_t const kBytesPerElement = sizeof_bits<T>::value / 8;
+      return elements * kBytesPerElement;
+    }
+  }
+
+public:
+
   //
   // Methods
   //
 
   /// Constructor: allocates no memory
-  allocation() : capacity(0) {}
+  DeviceAllocation() : capacity(0) {}
 
   /// Constructor: allocates \p capacity elements on the current CUDA device
-  allocation(size_t _capacity) : smart_ptr(allocate<T>(_capacity)), capacity(_capacity) {}
+  DeviceAllocation(size_t _capacity) : 
+    smart_ptr(device_memory::allocate<T>(_capacity)), capacity(_capacity) {}
+
+  /// Constructor: allocates \p capacity elements on the current CUDA device taking ownership of the allocation
+  DeviceAllocation(T *ptr, size_t _capacity) : smart_ptr(ptr), capacity(_capacity) {}
 
   /// Copy constructor
-  allocation(allocation const &p): smart_ptr(allocate<T>(p.capacity)), capacity(p.capacity) {
-    copy_device_to_device(smart_ptr.get(), p.get(), capacity);
+  DeviceAllocation(DeviceAllocation const &p): 
+    smart_ptr(device_memory::allocate<T>(p.capacity)), capacity(p.capacity) {
+
+    device_memory::copy_device_to_device(smart_ptr.get(), p.get(), capacity);
+  }
+
+  /// Move constructor
+  DeviceAllocation(DeviceAllocation &&p): capacity(0) {
+    std::swap(smart_ptr, p.smart_ptr);
+    std::swap(capacity, p.capacity);
   }
 
   /// Destructor
-  ~allocation() { reset(); }
+  ~DeviceAllocation() { reset(); }
 
   /// Returns a pointer to the managed object
   T* get() const { return smart_ptr.get(); }
@@ -173,10 +213,39 @@ struct allocation {
     smart_ptr.reset();
   }
 
+  /// Deletes managed object, if owned, and allocates a new object
+  void reset(size_t _capacity) {
+    reset(device_memory::allocate<T>(_capacity), _capacity);
+  }
+
   /// Deletes managed object, if owned, and replaces its reference with a given pointer and capacity
   void reset(T* _ptr, size_t _capacity) {
     smart_ptr.reset(_ptr);
     capacity = _capacity;
+  }
+
+  /// Allocates a new buffer and copies the old buffer into it. The old buffer is then released.
+  void reallocate(size_t new_capacity) {
+    
+    platform::unique_ptr<T, deleter> new_allocation(device_memory::allocate<T>(new_capacity));
+
+    device_memory::copy_device_to_device(
+      new_allocation.get(), 
+      smart_ptr.get(), 
+      std::min(new_capacity, capacity));
+
+    std::swap(smart_ptr, new_allocation);
+    std::swap(new_capacity, capacity);
+  }
+
+  /// Returns the number of elements
+  size_t size() const {
+    return capacity;
+  }
+
+  /// Returns the number of bytes needed to store the allocation
+  size_t bytes() const {
+    return bytes(capacity);
   }
 
   /// Returns a pointer to the object owned by *this
@@ -189,15 +258,69 @@ struct allocation {
   const deleter& get_deleter() const { return smart_ptr.get_deleter(); }
 
   /// Copies a device-side memory allocation
-  allocation & operator=(allocation const &p) {
+  DeviceAllocation & operator=(DeviceAllocation const &p) {
     if (capacity != p.capacity) {
-      smart_ptr.reset(allocate<T>(p.capacity));
+      smart_ptr.reset(device_memory::allocate<T>(p.capacity));
       capacity = p.capacity;
     }
     copy_device_to_device(smart_ptr.get(), p.get(), capacity);
     return *this;
   }
+
+  /// Move assignment
+  DeviceAllocation & operator=(DeviceAllocation && p) {
+    std::swap(smart_ptr, p.smart_ptr);
+    std::swap(capacity, p.capacity);
+    return *this;
+  }
+
+  /// Copies the entire allocation from another location in device memory.
+  void copy_from_device(T const *ptr) const {
+    copy_from_device(ptr, capacity);
+  }
+
+  /// Copies a given number of elements from device memory
+  void copy_from_device(T const *ptr, size_t elements) const {
+    device_memory::copy_device_to_device(get(), ptr, elements);
+  }
+
+  void copy_to_device(T *ptr) const {
+    copy_to_device(ptr, capacity);
+  }
+
+  void copy_to_device(T *ptr, size_t elements) const {
+    device_memory::copy_device_to_device(ptr, get(), elements);
+  }
+
+  void copy_from_host(T const *ptr) const {
+    copy_from_host(ptr, capacity);
+  }
+
+  void copy_from_host(T const *ptr, size_t elements) const {
+    device_memory::copy_to_device(get(), ptr, elements);
+  }
+
+  void copy_to_host(T *ptr) const {
+    copy_to_host(ptr, capacity);
+  }
+
+  void copy_to_host(T *ptr, size_t elements) const {
+    device_memory::copy_to_host(ptr, get(), elements); 
+  }
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace device_memory {
+
+/// Device allocation abstraction that tracks size and capacity
+template <typename T>
+using allocation = cutlass::DeviceAllocation<T>;
+
 }  // namespace device_memory
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 }  // namespace cutlass
+
+/////////////////////////////////////////////////////////////////////////////////////////////////

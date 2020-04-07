@@ -119,6 +119,16 @@ struct CommandLine {
       val = !(value == "0" || value == "false");
     }
   }
+  
+  /**
+   * Obtains the value specified for a given commandline parameter --<flag>=<value>
+   */
+  template <typename value_t>
+  void get_cmd_line_argument(const char* arg_name,
+                             value_t& val) const {
+
+    get_cmd_line_argument(arg_name, val, val);
+  }
 
   /**
    * Obtains the value specified for a given commandline parameter --<flag>=<value>
@@ -126,7 +136,7 @@ struct CommandLine {
   template <typename value_t>
   void get_cmd_line_argument(const char* arg_name,
                              value_t& val,
-                             value_t const& _default = value_t()) const {
+                             value_t const& _default) const {
     using namespace std;
 
     val = _default;

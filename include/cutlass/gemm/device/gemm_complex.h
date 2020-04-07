@@ -201,6 +201,8 @@ template <
     ComplexTransform TransformA = ComplexTransform::kNone,
     /// Complex elementwise transformation on B operand
     ComplexTransform TransformB = ComplexTransform::kNone,
+    /// Multiply-add operator 
+    typename Operator_ = arch::OpMultiplyAddComplex,
     /// If true, kernel supports split-K with serial reduction
     bool SplitKSerial = false
 >
@@ -228,7 +230,11 @@ class GemmComplex {
   static int const kStages = Stages;
   static ComplexTransform const kTransformA = TransformA;
   static ComplexTransform const kTransformB = TransformB;
+  using Operator = Operator_;
   static bool const kSplitKSerial = SplitKSerial;
+  static int const kAlignmentA = 1;
+  static int const kAlignmentB = 1;
+  static int const kAlignmentC = EpilogueOutputOp::kCount;
 
   /// Define the kernel
   using GemmKernel = typename kernel::DefaultGemmComplex<
@@ -249,6 +255,7 @@ class GemmComplex {
     kStages,
     kTransformA,
     kTransformB,
+    Operator,
     kSplitKSerial
   >::GemmKernel;
 
@@ -498,6 +505,8 @@ template <
   ComplexTransform TransformA,
   /// Complex elementwise transformation on B operand
   ComplexTransform TransformB,
+  /// Multiply-add operator 
+  typename Operator_,
   /// If true, kernel supports split-K as a serial reduction
   bool SplitKSerial
 >
@@ -519,6 +528,7 @@ class GemmComplex<
   Stages,
   TransformA,
   TransformB,
+  Operator_,
   SplitKSerial
 > {
 public:
@@ -542,6 +552,7 @@ public:
   using EpilogueOutputOp = EpilogueOutputOp_;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
   static int const kStages = Stages;
+  using Operator = Operator_;
   static bool const kSplitKSerial = SplitKSerial;
 
   using UnderlyingOperator = GemmComplex< 
@@ -562,8 +573,15 @@ public:
     Stages,
     TransformA,
     TransformB,
+    Operator,
     SplitKSerial
   >;
+  
+  static int const kAlignmentA = UnderlyingOperator::kAlignmentB;
+  static int const kAlignmentB = UnderlyingOperator::kAlignmentA;
+  static int const kAlignmentC = UnderlyingOperator::kAlignmentC;
+  static ComplexTransform const kTransformA = UnderlyingOperator::kTransformB;
+  static ComplexTransform const kTransformB = UnderlyingOperator::kTransformA;
 
   using UnderlyingArguments = typename UnderlyingOperator::Arguments;
   using GemmKernel = typename UnderlyingOperator::GemmKernel;

@@ -29,14 +29,9 @@
 #include <iostream>
 #include <stdexcept>
 
-// CUTLASS Library includes
-#include "cutlass/library/library.h"
-#include "cutlass/library/manifest.h"
-
 // Profiler includes
 #include "cutlass_profiler.h"
 #include "gemm_operation_profiler.h"
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -49,7 +44,8 @@ CutlassProfiler::CutlassProfiler(
 ): 
   options_(options) {
 
-  operation_profilers_.emplace_back(new GemmOperationProfiler); 
+  operation_profilers_.emplace_back(new GemmOperationProfiler);
+
 }
 
 CutlassProfiler::~CutlassProfiler() {
@@ -112,7 +108,7 @@ void CutlassProfiler::enumerate_() {
 /// Profiles all operations
 int CutlassProfiler::profile_() {
 
-  library::Manifest manifest;
+  library::Manifest manifest(library::Provider::kCUTLASS);
   Status status = manifest.initialize();
 
   if (status != Status::kSuccess) {
@@ -165,7 +161,8 @@ void CutlassProfiler::print_usage_(std::ostream &out) {
   }
 
   out << "\n\nFor details about a particular function, specify the function name with --help.\n\nExample:\n\n"
-    << "  $ cutlass_profiler --operation=Gemm --help\n\n";
+    << "  $ cutlass_profiler --operation=Gemm --help\n\n"
+  ;
 }
 
 /// Prints usage

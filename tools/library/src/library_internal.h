@@ -57,6 +57,10 @@ namespace library {
 
 template <typename T> struct NumericTypeMap;
 
+template <> struct NumericTypeMap<cutlass::uint1b_t> {
+  static NumericTypeID const kId = NumericTypeID::kB1;
+};
+
 template <> struct NumericTypeMap<cutlass::int4b_t> {
   static NumericTypeID const kId = NumericTypeID::kS4;
 };
@@ -123,6 +127,28 @@ template <> struct NumericTypeMap<cutlass::complex<double> > {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <typename T> struct MathOperationMap {
+  static MathOperationID const kId = MathOperationID::kInvalid;
+};
+
+template <> struct MathOperationMap<cutlass::arch::OpMultiplyAdd> {
+  static MathOperationID const kId = MathOperationID::kMultiplyAdd;
+};
+
+template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddSaturate> {
+  static MathOperationID const kId = MathOperationID::kMultiplyAddSaturate;
+};
+
+template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddComplex> {
+  static MathOperationID const kId = MathOperationID::kMultiplyAddComplex;
+};
+
+template <> struct MathOperationMap<cutlass::arch::OpXorPopc> {
+  static MathOperationID const kId = MathOperationID::kXorPopc;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <typename T> struct LayoutMap;
 
 template <> struct LayoutMap<cutlass::layout::ColumnMajor> {
@@ -131,6 +157,34 @@ template <> struct LayoutMap<cutlass::layout::ColumnMajor> {
 
 template <> struct LayoutMap<cutlass::layout::RowMajor> {
   static LayoutTypeID const kId = LayoutTypeID::kRowMajor;
+};
+
+template <> struct LayoutMap<cutlass::layout::ColumnMajorInterleaved<16>> {
+  static LayoutTypeID const kId = LayoutTypeID::kColumnMajorInterleavedK16;
+};
+
+template <> struct LayoutMap<cutlass::layout::RowMajorInterleaved<16>> {
+  static LayoutTypeID const kId = LayoutTypeID::kRowMajorInterleavedK16;
+};
+
+template <> struct LayoutMap<cutlass::layout::ColumnMajorInterleaved<32>> {
+  static LayoutTypeID const kId = LayoutTypeID::kColumnMajorInterleavedK32;
+};
+
+template <> struct LayoutMap<cutlass::layout::RowMajorInterleaved<32>> {
+  static LayoutTypeID const kId = LayoutTypeID::kRowMajorInterleavedK32;
+};
+
+template <> struct LayoutMap<cutlass::layout::ColumnMajorInterleaved<64>> {
+  static LayoutTypeID const kId = LayoutTypeID::kColumnMajorInterleavedK64;
+};
+
+template <> struct LayoutMap<cutlass::layout::RowMajorInterleaved<64>> {
+  static LayoutTypeID const kId = LayoutTypeID::kRowMajorInterleavedK64;
+};
+
+template <> struct LayoutMap<cutlass::layout::TensorNHWC> {
+  static LayoutTypeID const kId = LayoutTypeID::kTensorNHWC;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -148,6 +202,19 @@ template <> struct OpcodeClassMap<arch::OpClassTensorOp> {
 template <> struct OpcodeClassMap<arch::OpClassWmmaTensorOp> {
   static OpcodeClassID const kId = OpcodeClassID::kWmmaTensorOp;
 };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <cutlass::ComplexTransform Transform> struct ComplexTransformMap;
+
+template <> struct ComplexTransformMap<cutlass::ComplexTransform::kNone> {
+  static cutlass::library::ComplexTransform const kId = cutlass::library::ComplexTransform::kNone;
+};
+
+template <> struct ComplexTransformMap<cutlass::ComplexTransform::kConjugate> {
+  static cutlass::library::ComplexTransform const kId = cutlass::library::ComplexTransform::kConjugate;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T> struct ArchMap;

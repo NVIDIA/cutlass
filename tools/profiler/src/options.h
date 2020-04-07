@@ -105,11 +105,15 @@ public:
     /// allocating tensors.
     bool enabled;
 
+    /// If true, data distribution is set by the user and is not allowed to change
+    /// If false, data distribution is allowed to change based on element_type (library::NumericTypeID)
+    bool fix_data_distribution;
+
     /// Data distribution for input tensors
     Distribution data_distribution;
 
     /// Source of random tensor elements
-    Provider provider;
+    library::Provider provider;
 
     /// Random number generator seed.
     int seed;
@@ -162,10 +166,10 @@ public:
     void print_options(std::ostream &out, int indent = 0) const;
 
     /// Returns true if a provider is enabled
-    bool provider_enabled(Provider provider) const;
+    bool provider_enabled(library::Provider provider) const;
     
     /// Returns the index of a provider if its enabled
-    size_t index(Provider provider) const;
+    size_t index(library::Provider provider) const;
   };
 
   /// Options related to profiling
@@ -196,10 +200,10 @@ public:
     void print_options(std::ostream &out, int indent = 0) const;
 
     /// Returns true if a provider is enabled
-    bool provider_enabled(Provider provider) const;
+    bool provider_enabled(library::Provider provider) const;
 
     /// Returns the index of a provider if its enabled
-    size_t index(Provider provider) const;
+    size_t index(library::Provider provider) const;
   };
   
   /// Options related to reporting

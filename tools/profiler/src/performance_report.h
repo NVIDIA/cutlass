@@ -31,9 +31,13 @@
 #include <vector>
 #include <fstream>
 
+// CUTLASS Profiler includes
 #include "options.h"
 #include "enumerated_types.h"
 #include "performance_result.h"
+
+// CUTLASS Library includes
+#include "cutlass/library/library.h"
 
 namespace cutlass {
 namespace profiler {
@@ -45,6 +49,12 @@ private:
 
   /// Reference to options
   Options const &options_;
+
+  /// Operation kind
+  library::OperationKind op_kind_;
+
+  /// Operation file name containing performance report of op_kind
+  std::string op_file_name_;
 
   /// Output file containing results
   std::ofstream output_file_;
@@ -63,7 +73,7 @@ private:
 
 public:
 
-  PerformanceReport(Options const &options, std::vector<std::string> const &argument_names);
+  PerformanceReport(Options const &options, std::vector<std::string> const &argument_names, library::OperationKind const &op_kind);
 
   bool good() const { return good_; }
 
