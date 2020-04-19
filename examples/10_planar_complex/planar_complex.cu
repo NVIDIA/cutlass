@@ -186,12 +186,10 @@ struct Options {
 
   /// Compute performance in GFLOP/s
   double gflops(double runtime_s) const {
+    // Number of real-valued multiply-adds. Each complex multiply has 4 real multiplies and 2 real adds.
+    int64_t ops = (8 * (problem_size.m() * problem_size.n() * problem_size.k()) - 2.0 * (problem_size.m() * problem_size.n())) * batch_count;
 
-    // Number of real-valued multiply-adds 
-    int64_t fmas = problem_size.product() * batch_count * 4;
-    
-    // Two flops per multiply-add
-    return 2.0 * double(fmas) / double(1.0e9) / runtime_s;
+    return double(ops) / double(1.0e9) / runtime_s;
   }
 };
 
