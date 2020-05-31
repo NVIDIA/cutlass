@@ -37,6 +37,7 @@ endif()
 
 if(CUTLASS_NATIVE_CUDA)
 
+  set(CMAKE_CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER})
   enable_language(CUDA)
 
   if(NOT CUDA_VERSION)
