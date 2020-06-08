@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -60,10 +60,7 @@ template <
     int PartitionsK = 1,
     /// Store the accumulators in row major or column major.  Row major is used
     /// when output layout is interleaved.
-    bool AccumulatorsInRowMajor = false,
-    /// Number of partitions along N dimension per warp
-    int PartitionsN = 1
->
+    bool AccumulatorsInRowMajor = false>
 struct DefaultMmaTensorOp;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -92,9 +89,7 @@ template <
     int PartitionsK,
     /// Store the accumulators in row major or column major.  Row major is used
     /// when output layout is interleaved.
-    bool AccumulatorsInRowMajor,
-    /// Number of partitions along N dimension per warp
-    int PartitionsN>
+    bool AccumulatorsInRowMajor>
 struct DefaultMmaTensorOp {
   using Policy = cutlass::gemm::warp::MmaTensorOpPolicy<
       cutlass::arch::Mma<InstructionShape_, 32, ElementA,
@@ -106,7 +101,7 @@ struct DefaultMmaTensorOp {
   // Define the warp-level tensor op
   using Type = cutlass::gemm::warp::MmaTensorOp<
       WarpShape_, ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC,
-      Policy, PartitionsK, AccumulatorsInRowMajor, PartitionsN>;
+      Policy, PartitionsK, AccumulatorsInRowMajor>;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -117,3 +112,6 @@ struct DefaultMmaTensorOp {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include "default_mma_tensor_op_sm80.h"
+
+/////////////////////////////////////////////////////////////////////////////////////////////////

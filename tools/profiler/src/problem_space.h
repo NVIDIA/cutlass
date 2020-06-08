@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -807,6 +807,17 @@ bool arg_as_OpcodeClassID(library::OpcodeClassID &opcode_class, KernelArgument::
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_OpcodeClassID(
   library::OpcodeClassID &opcode_class,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem);
+
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_SplitKModeID(library::SplitKMode &split_k_mode, KernelArgument::Value const *value_ptr);
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_SplitKModeID(
+  library::SplitKMode &split_k_mode,
   char const *name,
   ProblemSpace const &problem_space, 
   ProblemSpace::Problem const &problem);

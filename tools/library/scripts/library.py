@@ -4,14 +4,32 @@
 # \brief Generates the CUTLASS Library's instances
 #
 
-import enum
 import re
+
+###################################################################################################
+
+import enum
+
+# The following block implements enum.auto() for Python 3.5 variants that don't include it such
+# as the default 3.5.2 on Ubuntu 16.04.
+# 
+# https://codereview.stackexchange.com/questions/177309/reimplementing-pythons-enum-auto-for-compatibility
+
+try:
+  from enum import auto as enum_auto
+except ImportError: 
+  __cutlass_library_auto_enum = 0
+  def enum_auto() -> int:
+    global __cutlass_library_auto_enum
+    i = __cutlass_library_auto_enum
+    __cutlass_library_auto_enum += 1
+    return i
 
 ###################################################################################################
 
 #
 class GeneratorTarget(enum.Enum):
-  Library = enum.auto()
+  Library = enum_auto()
 #
 GeneratorTargetNames = {
   GeneratorTarget.Library: 'library'
@@ -22,33 +40,37 @@ GeneratorTargetNames = {
 
 #
 class DataType(enum.Enum):
-  b1 = enum.auto()
-  u4 = enum.auto()
-  u8 = enum.auto()
-  u16 = enum.auto()
-  u32 = enum.auto()
-  u64 = enum.auto()
-  s4 = enum.auto()
-  s8 = enum.auto()
-  s16 = enum.auto()
-  s32 = enum.auto()
-  s64 = enum.auto()
-  f16 = enum.auto()
-  f32 = enum.auto()
-  f64 = enum.auto()
-  cf16 = enum.auto()
-  cf32 = enum.auto()
-  cf64 = enum.auto()
-  cs4 = enum.auto()
-  cs8 = enum.auto()
-  cs16 = enum.auto()
-  cs32 = enum.auto()
-  cs64 = enum.auto()
-  cu4 = enum.auto()
-  cu8 = enum.auto()
-  cu16 = enum.auto()
-  cu32 = enum.auto()
-  cu64 = enum.auto()
+  b1 = enum_auto()
+  u4 = enum_auto()
+  u8 = enum_auto()
+  u16 = enum_auto()
+  u32 = enum_auto()
+  u64 = enum_auto()
+  s4 = enum_auto()
+  s8 = enum_auto()
+  s16 = enum_auto()
+  s32 = enum_auto()
+  s64 = enum_auto()
+  f16 = enum_auto()
+  bf16 = enum_auto()
+  f32 = enum_auto()
+  tf32 = enum_auto()
+  f64 = enum_auto()
+  cf16 = enum_auto()
+  cbf16 = enum_auto()
+  cf32 = enum_auto()
+  ctf32 = enum_auto()
+  cf64 = enum_auto()
+  cs4 = enum_auto()
+  cs8 = enum_auto()
+  cs16 = enum_auto()
+  cs32 = enum_auto()
+  cs64 = enum_auto()
+  cu4 = enum_auto()
+  cu8 = enum_auto()
+  cu16 = enum_auto()
+  cu32 = enum_auto()
+  cu64 = enum_auto()
 
 #
 ShortDataTypeNames = {
@@ -74,10 +96,14 @@ DataTypeNames = {
   DataType.s32: "s32",
   DataType.s64: "s64",
   DataType.f16: "f16",
+  DataType.bf16: "bf16",
   DataType.f32: "f32",
+  DataType.tf32: "tf32",
   DataType.f64: "f64",
   DataType.cf16: "cf16",
+  DataType.cbf16: "cbf16",
   DataType.cf32: "cf32",
+  DataType.ctf32: "ctf32",
   DataType.cf64: "cf64",
   DataType.cu4: "cu4",
   DataType.cu8: "cu8",
@@ -104,10 +130,14 @@ DataTypeTag = {
   DataType.s32: "int32_t",
   DataType.s64: "int64_t",
   DataType.f16: "cutlass::half_t",
+  DataType.bf16: "cutlass::bfloat16_t",
   DataType.f32: "float",
+  DataType.tf32: "cutlass::tfloat32_t",
   DataType.f64: "double",
   DataType.cf16: "cutlass::complex<cutlass::half_t>",
+  DataType.cbf16: "cutlass::complex<cutlass::bfloat16_t>",
   DataType.cf32: "cutlass::complex<float>",
+  DataType.ctf32: "cutlass::complex<cutlass::tfloat32_t>",
   DataType.cf64: "cutlass::complex<double>",
   DataType.cu4: "cutlass::complex<cutlass::uint4b_t>",
   DataType.cu8: "cutlass::complex<cutlass::uint8_t>",
@@ -134,10 +164,14 @@ DataTypeSize = {
   DataType.s32: 32,
   DataType.s64: 64,
   DataType.f16: 16,
+  DataType.bf16: 16,
   DataType.f32: 32,
+  DataType.tf32: 32,
   DataType.f64: 64,
   DataType.cf16: 32,
+  DataType.cbf16: 32,
   DataType.cf32: 64,
+  DataType.ctf32: 32,
   DataType.cf64: 128,
   DataType.cu4: 8,
   DataType.cu8: 16,
@@ -155,8 +189,8 @@ DataTypeSize = {
 
 #
 class ComplexTransform(enum.Enum):
-  none = enum.auto()
-  conj = enum.auto()
+  none = enum_auto()
+  conj = enum_auto()
 
 #
 ComplexTransformTag = {
@@ -194,40 +228,47 @@ def get_real_from_complex(complex_type):
 
 #
 class ComplexMultiplyOp(enum.Enum):
-  multiply_add = enum.auto()
-  gaussian = enum.auto()
+  multiply_add = enum_auto()
+  gaussian = enum_auto()
 
 ###################################################################################################
 
 #
 class MathOperation(enum.Enum):
-  multiply_add = enum.auto()
-  multiply_add_saturate = enum.auto()
-  xor_popc = enum.auto()
-  multiply_add_complex = enum.auto()
+  multiply_add = enum_auto()
+  multiply_add_saturate = enum_auto()
+  xor_popc = enum_auto()
+  multiply_add_fast_bf16 = enum_auto()
+  multiply_add_fast_f16 = enum_auto()
+  multiply_add_complex = enum_auto()
+  multiply_add_complex_gaussian = enum_auto()
+
 #
 MathOperationTag = {
   MathOperation.multiply_add: 'cutlass::arch::OpMultiplyAdd', 
   MathOperation.multiply_add_saturate: 'cutlass::arch::OpMultiplyAddSaturate',
   MathOperation.xor_popc: 'cutlass::arch::OpXorPopc',
+  MathOperation.multiply_add_fast_bf16: 'cutlass::arch::OpMultiplyAddFastBF16',
+  MathOperation.multiply_add_fast_f16: 'cutlass::arch::OpMultiplyAddFastF16',
   MathOperation.multiply_add_complex: 'cutlass::arch::OpMultiplyAddComplex',
+  MathOperation.multiply_add_complex_gaussian: 'cutlass::arch::OpMultiplyAddGaussianComplex',
 }
 
 ###################################################################################################
 
 #
 class LayoutType(enum.Enum):
-  ColumnMajor = enum.auto()
-  RowMajor = enum.auto()
-  ColumnMajorInterleaved32 = enum.auto()
-  RowMajorInterleaved32 = enum.auto()
-  ColumnMajorInterleaved64 = enum.auto()
-  RowMajorInterleaved64 = enum.auto()
-  TensorNHWC = enum.auto()
-  TensorNCHW = enum.auto()
-  TensorNGHWC = enum.auto()
-  TensorNCxHW32 = enum.auto()
-  TensorNCxHW64 = enum.auto()
+  ColumnMajor = enum_auto()
+  RowMajor = enum_auto()
+  ColumnMajorInterleaved32 = enum_auto()
+  RowMajorInterleaved32 = enum_auto()
+  ColumnMajorInterleaved64 = enum_auto()
+  RowMajorInterleaved64 = enum_auto()
+  TensorNHWC = enum_auto()
+  TensorNCHW = enum_auto()
+  TensorNGHWC = enum_auto()
+  TensorNCxHW32 = enum_auto()
+  TensorNCxHW64 = enum_auto()
 
 #
 LayoutTag = {
@@ -282,9 +323,9 @@ ShortComplexLayoutNames = {
 
 #
 class OpcodeClass(enum.Enum):
-  Simt = enum.auto()
-  TensorOp = enum.auto()
-  WmmaTensorOp = enum.auto()
+  Simt = enum_auto()
+  TensorOp = enum_auto()
+  WmmaTensorOp = enum_auto()
 
 OpcodeClassNames = {
   OpcodeClass.Simt: 'simt',
@@ -302,7 +343,7 @@ OpcodeClassTag = {
 
 #
 class OperationKind(enum.Enum):
-  Gemm = enum.auto()
+  Gemm = enum_auto()
 #
 OperationKindNames = {
   OperationKind.Gemm: 'gemm'
@@ -310,7 +351,7 @@ OperationKindNames = {
 
 # 
 class Target(enum.Enum):
-  library = enum.auto()
+  library = enum_auto()
 
 ArchitectureNames = {
   50: 'maxwell',
@@ -318,6 +359,7 @@ ArchitectureNames = {
   61: 'pascal',
   70: 'volta',
   75: 'turing',
+  80: 'ampere',
 }
 
 ###################################################################################################
@@ -340,27 +382,27 @@ def SubstituteTemplate(template, values):
 
 #
 class GemmKind(enum.Enum):
-  Gemm = enum.auto()
-  Batched = enum.auto()
-  Array = enum.auto()
-  Universal = enum.auto()
-  PlanarComplex = enum.auto()
-  PlanarComplexArray = enum.auto()
+  Gemm = enum_auto()
+  Batched = enum_auto()
+  Array = enum_auto()
+  Universal = enum_auto()
+  PlanarComplex = enum_auto()
+  PlanarComplexArray = enum_auto()
 
 #
 GemmKindNames = {
   GemmKind.Gemm: "gemm",
   GemmKind.Batched: "gemm_batched",
   GemmKind.Array: "gemm_array",
-  GemmKind.Universal: "gemm_universal",
+  GemmKind.Universal: "gemm",
   GemmKind.PlanarComplex: "gemm_planar_complex",
   GemmKind.PlanarComplexArray: "gemm_planar_complex_array",
 }
 
 #
 class EpilogueFunctor(enum.Enum):
-  LinearCombination = enum.auto()
-  LinearCombinationClamp = enum.auto()
+  LinearCombination = enum_auto()
+  LinearCombinationClamp = enum_auto()
 
 #
 EpilogueFunctorTag = {
@@ -370,13 +412,17 @@ EpilogueFunctorTag = {
 
 #
 class SwizzlingFunctor(enum.Enum):
-  Cohort = enum.auto()
-  Identity = enum.auto()
+  Identity1 = enum_auto()
+  Identity2 = enum_auto()
+  Identity4 = enum_auto()
+  Identity8 = enum_auto()
 
 #
 SwizzlingFunctorTag = {
-  SwizzlingFunctor.Cohort: 'cutlass::gemm::threadblock::GemmCohortThreadblockSwizzle<${layout_a}, ${layout_b}>',
-  SwizzlingFunctor.Identity: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle',
+  SwizzlingFunctor.Identity1: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>',
+  SwizzlingFunctor.Identity2: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<2>',
+  SwizzlingFunctor.Identity4: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<4>',
+  SwizzlingFunctor.Identity8: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<8>',
 }
 ###################################################################################################
 

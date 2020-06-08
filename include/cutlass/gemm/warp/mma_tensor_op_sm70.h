@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -106,6 +106,9 @@ public:
   /// Architecture tag
   using ArchTag = arch::Sm70;
 
+  /// Underlying instruction shape
+  using InstructionShape = typename Policy::Operator::Shape;
+
   /// Complex transform on A operand
   static ComplexTransform const kTransformA = ComplexTransform::kNone;
 
@@ -210,8 +213,7 @@ public:
     FragmentC &D, 
     FragmentA const &A, 
     FragmentB const &B, 
-    FragmentC const &C,
-    int const &partitionN_idx = 0)  {
+    FragmentC const &C)  {
 
     using MmaOperandA = typename Policy::Operator::FragmentA;
     using MmaOperandB = typename Policy::Operator::FragmentB;

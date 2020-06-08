@@ -127,7 +127,7 @@ class Manifest:
     if args.kernels == 'all':
       self.kernel_names = []
     else:
-      self.kernel_names = args.kernels.split(',')
+      self.kernel_names = [x for x in args.kernels.split(',') if x != '']
 
     self.operation_count = 0
     self.operations_by_name = {}

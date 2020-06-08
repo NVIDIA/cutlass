@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -52,6 +52,10 @@ struct Sm72 {
 struct Sm75 {
   static int const kMinComputeCapability = 75;
 };
+struct Sm80 {
+  static int const kMinComputeCapability = 80; 
+};
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace arch

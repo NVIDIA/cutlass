@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -70,7 +70,7 @@ TEST(SM75_Device_Gemm_f16t_f16n_f16t_tensor_op_f16_sliced_k, 64x64x64_64x32x32) 
       ElementAccumulator,
       ElementAccumulator
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     2
   >;
 

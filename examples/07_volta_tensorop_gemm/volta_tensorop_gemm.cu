@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -156,7 +156,7 @@ using ShapeMMAWarp = cutlass::gemm::GemmShape<64, 64, 32>;  // <- warp tile M = 
 using ShapeMMAOp = cutlass::gemm::GemmShape<8, 8, 4>;  // <- MMA Op tile M = 8, N = 8, K = 4
 
 // This code section describes how threadblocks are scheduled on GPU
-using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle;  // <- ??
+using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;  // <- ??
 
 // This code section describes ?
 using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
@@ -188,15 +188,7 @@ using Gemm = cutlass::gemm::device::Gemm<ElementInputA,
                                          SwizzleThreadBlock,
                                          NumStages>;
 
-int main() {
-
-  // Volta Tensor Core operations exposed with mma.sync are first available in CUDA 10.1.
-  //
-  // CUTLASS must be compiled with CUDA 10.1 Toolkit to run these examples.
-  if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 1))) {
-    std::cerr << "Volta Tensor Core operations must be compiled with CUDA 10.1 Toolkit or later." << std::endl;
-    return -1;
-  }
+int run() {
 
   cudaDeviceProp props;
 
@@ -223,7 +215,7 @@ int main() {
   cutlass::HostTensor<ElementInputA, LayoutInputA> tensor_a(
       problem_size.mk());  // <- Create matrix A with dimensions M x K
   cutlass::HostTensor<ElementInputB, LayoutInputB> tensor_b(
-      problem_size.nk());  // <- Create matrix B with dimensions N x K
+      problem_size.kn());  // <- Create matrix B with dimensions K x N
   cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_c(
       problem_size.mn());  // <- Create matrix C with dimensions M x N
   cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_d(
@@ -326,12 +318,28 @@ int main() {
   tensor_ref_d.sync_host();
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
-  std::cout << (cutlass::reference::host::TensorEquals(tensor_d.host_view(),
-                                                       tensor_ref_d.host_view())
-                    ? "Passed"
-                    : "Failed")
-            << std::endl;
+  bool passed = cutlass::reference::host::TensorEquals(
+    tensor_d.host_view(),
+    tensor_ref_d.host_view());
 
-  CUTLASS_CHECK(status);
-  return 0;
+  std::cout << (passed ? "Passed" : "Failed") << std::endl;
+
+  return (passed ? 0  : -1);
 }
+
+int main() {
+
+  // Volta Tensor Core operations exposed with mma.sync are first available in CUDA 10.1.
+  //
+  // CUTLASS must be compiled with CUDA 10.1 Toolkit to run these examples.
+  if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 1))) {
+    std::cerr << "Volta Tensor Core operations must be compiled with CUDA 10.1 Toolkit or later." << std::endl;
+
+    // Returning zero when built on older Toolkits so tests pass. The actions of this SDK example are no-op.
+    return 0;
+  }
+  else {
+    return run();
+  }
+}
+

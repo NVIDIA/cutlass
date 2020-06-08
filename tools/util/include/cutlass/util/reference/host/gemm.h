@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -37,10 +37,40 @@
 #include "cutlass/tensor_view.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/arch/mma.h"
+#include "cutlass/util/host_tensor.h"
 
 namespace cutlass {
 namespace reference {
 namespace host {
+
+template<typename Out, typename In>
+struct CastIfScalar {
+  static Out cast(In in) {
+    return Out(in);
+  }
+};
+
+template<typename OutScalar, typename In>
+struct CastIfScalar<cutlass::complex<OutScalar>, In> {
+  typedef cutlass::complex<OutScalar> Out;
+  static Out cast(In in) {
+    return Out(static_cast<OutScalar>(in));
+  }
+};
+
+template<typename OutScalar, typename InScalar>
+struct CastIfScalar<cutlass::complex<OutScalar>, cutlass::complex<InScalar>> {
+  typedef cutlass::complex<OutScalar> Out;
+  typedef cutlass::complex<InScalar> In;
+  static Out cast(In in) {
+    return Out(in);
+  }
+};
+
+template<typename Out, typename In>
+Out cast_if_scalar(In in) {
+  return CastIfScalar<Out, In>::cast(in);
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -107,7 +137,10 @@ void compute_gemm(
               ElementA a = tensor_a.at(MatrixCoord(row, k_block));
               ElementB b = tensor_b.at(MatrixCoord(k_block, col));
 
-              accum[i][j] = inner_product_op(ComputeType(a), ComputeType(b),  accum[i][j]);
+              ComputeType compute_a(cast_if_scalar<ComputeType>(a));
+              ComputeType compute_b(cast_if_scalar<ComputeType>(b));
+
+              accum[i][j] = inner_product_op(compute_a, compute_b, accum[i][j]);
             }
           }
         }

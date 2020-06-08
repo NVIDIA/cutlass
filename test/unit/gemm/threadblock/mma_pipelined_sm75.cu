@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -231,6 +231,7 @@ TEST(SM75_gemm_threadblock_congruous,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
 TEST(SM75_gemm_threadblock_crosswise, tensor_op_64x64x32_64x64x32_16x8x8) {
   using ElementA = cutlass::half_t;
   using LayoutA = cutlass::layout::RowMajor;
@@ -562,6 +563,7 @@ TEST(SM75_gemm_threadblock_crosswise,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
 TEST(SM75_gemm_threadblock_interleaved, tensor_op_32x32x64_16x16x64_8x8x16) {
   using ElementA = uint8_t;
   using LayoutA = cutlass::layout::ColumnMajorInterleaved<32>;
@@ -1785,4 +1787,337 @@ TEST(SM75_gemm_threadblock_interleaved,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_gemm_threadblock_crosswise, tensor_op_64x64x512_64x64x512_8x8x128) {
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using ElementC = int32_t;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  cutlass::gemm::GemmCoord problem_size(64, 64, 2048);
+
+  using ThreadBlockShape = cutlass::gemm::GemmShape<64, 64, 512>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 64, 512>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;
+
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  // Define the MmaCore components
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadBlockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementC, LayoutC, cutlass::arch::OpClassTensorOp, 2,
+      cutlass::arch::OpXorPopc>;
+
+  dim3 grid(1, 1);
+  dim3 block(32, 1, 1);
+
+  test::gemm::threadblock::Testbed<MmaCore>(problem_size.m(), problem_size.n(),
+                                            problem_size.k(), alpha, beta)
+      .run(grid, block);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_gemm_threadblock_crosswise, tensor_op_32x32x512_16x16x512_8x8x128) {
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using ElementC = int32_t;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  cutlass::gemm::GemmCoord problem_size(32, 32, 2048);
+
+  using ThreadBlockShape = cutlass::gemm::GemmShape<32, 32, 512>;
+  using WarpShape = cutlass::gemm::GemmShape<16, 16, 512>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;
+
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  // Define the MmaCore components
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadBlockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementC, LayoutC, cutlass::arch::OpClassTensorOp, 2,
+      cutlass::arch::OpXorPopc>;
+
+  dim3 grid(1, 1);
+  dim3 block(32, 4, 1);
+
+  test::gemm::threadblock::Testbed<MmaCore>(problem_size.m(), problem_size.n(),
+                                            problem_size.k(), alpha, beta)
+      .run(grid, block);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_gemm_threadblock_crosswise, tensor_op_64x32x512_32x16x512_8x8x128) {
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using ElementC = int32_t;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  cutlass::gemm::GemmCoord problem_size(64, 32, 2048);
+
+  using ThreadBlockShape = cutlass::gemm::GemmShape<64, 32, 512>;
+  using WarpShape = cutlass::gemm::GemmShape<32, 16, 512>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;
+
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  // Define the MmaCore components
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadBlockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementC, LayoutC, cutlass::arch::OpClassTensorOp, 2,
+      cutlass::arch::OpXorPopc>;
+
+  dim3 grid(1, 1);
+  dim3 block(32, 4, 1);
+
+  test::gemm::threadblock::Testbed<MmaCore>(problem_size.m(), problem_size.n(),
+                                            problem_size.k(), alpha, beta)
+      .run(grid, block);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_gemm_threadblock_crosswise, tensor_op_32x64x512_16x32x512_8x8x128) {
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using ElementC = int32_t;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  cutlass::gemm::GemmCoord problem_size(32, 64, 2048);
+
+  using ThreadBlockShape = cutlass::gemm::GemmShape<32, 64, 512>;
+  using WarpShape = cutlass::gemm::GemmShape<16, 32, 512>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;
+
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  // Define the MmaCore components
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadBlockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementC, LayoutC, cutlass::arch::OpClassTensorOp, 2,
+      cutlass::arch::OpXorPopc>;
+
+  dim3 grid(1, 1);
+  dim3 block(32, 4, 1);
+
+  test::gemm::threadblock::Testbed<MmaCore>(problem_size.m(), problem_size.n(),
+                                            problem_size.k(), alpha, beta)
+      .run(grid, block);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_gemm_threadblock_crosswise, tensor_op_64x64x512_32x32x512_8x8x128) {
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using ElementC = int32_t;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  cutlass::gemm::GemmCoord problem_size(64, 64, 2048);
+
+  using ThreadBlockShape = cutlass::gemm::GemmShape<64, 64, 512>;
+  using WarpShape = cutlass::gemm::GemmShape<32, 32, 512>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;
+
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  // Define the MmaCore components
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadBlockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementC, LayoutC, cutlass::arch::OpClassTensorOp, 2,
+      cutlass::arch::OpXorPopc>;
+
+  dim3 grid(1, 1);
+  dim3 block(32, 4, 1);
+
+  test::gemm::threadblock::Testbed<MmaCore>(problem_size.m(), problem_size.n(),
+                                            problem_size.k(), alpha, beta)
+      .run(grid, block);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_gemm_threadblock_crosswise, tensor_op_128x64x512_64x32x512_8x8x128) {
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using ElementC = int32_t;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  cutlass::gemm::GemmCoord problem_size(128, 64, 2048);
+
+  using ThreadBlockShape = cutlass::gemm::GemmShape<128, 64, 512>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 32, 512>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;
+
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  // Define the MmaCore component
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadBlockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementC, LayoutC, cutlass::arch::OpClassTensorOp, 2,
+      cutlass::arch::OpXorPopc>;
+
+  dim3 grid(1, 1);
+  dim3 block(32, 4, 1);
+
+  test::gemm::threadblock::Testbed<MmaCore>(problem_size.m(), problem_size.n(),
+                                            problem_size.k(), alpha, beta)
+      .run(grid, block);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_gemm_threadblock_crosswise, tensor_op_64x128x512_32x64x512_8x8x128) {
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using ElementC = int32_t;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  cutlass::gemm::GemmCoord problem_size(64, 128, 2048);
+
+  using ThreadBlockShape = cutlass::gemm::GemmShape<64, 128, 512>;
+  using WarpShape = cutlass::gemm::GemmShape<32, 64, 512>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;
+
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  // Define the MmaCore components
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadBlockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementC, LayoutC, cutlass::arch::OpClassTensorOp, 2,
+      cutlass::arch::OpXorPopc>;
+
+  dim3 grid(1, 1);
+  dim3 block(32, 4, 1);
+
+  test::gemm::threadblock::Testbed<MmaCore>(problem_size.m(), problem_size.n(),
+                                            problem_size.k(), alpha, beta)
+      .run(grid, block);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_gemm_threadblock_crosswise, tensor_op_128x128x512_64x64x512_8x8x128) {
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using ElementC = int32_t;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  cutlass::gemm::GemmCoord problem_size(128, 128, 2048);
+
+  using ThreadBlockShape = cutlass::gemm::GemmShape<128, 128, 512>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 64, 512>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;
+
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  // Define the MmaCore components
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadBlockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementC, LayoutC, cutlass::arch::OpClassTensorOp, 2,
+      cutlass::arch::OpXorPopc>;
+
+  dim3 grid(1, 1);
+  dim3 block(32, 4, 1);
+
+  test::gemm::threadblock::Testbed<MmaCore>(problem_size.m(), problem_size.n(),
+                                            problem_size.k(), alpha, beta)
+      .run(grid, block);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_gemm_threadblock_crosswise,
+     multicta_256x256x1536_128x128x512_64x64x512_8x8x128) {
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using ElementC = int32_t;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  cutlass::gemm::GemmCoord problem_size(256, 256, 1536);
+
+  using ThreadBlockShape = cutlass::gemm::GemmShape<128, 128, 512>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 64, 512>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;
+
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  // Define the MmaCore components
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadBlockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementC, LayoutC, cutlass::arch::OpClassTensorOp, 2,
+      cutlass::arch::OpXorPopc>;
+
+  dim3 grid(2, 2);
+  dim3 block(32, 4, 1);
+
+  test::gemm::threadblock::Testbed<MmaCore>(problem_size.m(), problem_size.n(),
+                                            problem_size.k(), alpha, beta)
+      .run(grid, block);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_gemm_threadblock_crosswise,
+     multicta_512x256x6144_256x128x512_64x64x512_8x8x128) {
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = cutlass::layout::RowMajor;
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using ElementC = int32_t;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  cutlass::gemm::GemmCoord problem_size(512, 256, 6144);
+
+  using ThreadBlockShape = cutlass::gemm::GemmShape<256, 128, 512>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 64, 512>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;
+
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  // Define the MmaCore components
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadBlockShape, WarpShape, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementC, LayoutC, cutlass::arch::OpClassTensorOp, 2,
+      cutlass::arch::OpXorPopc>;
+
+  dim3 grid(2, 2);
+  dim3 block(32, 8, 1);
+
+  test::gemm::threadblock::Testbed<MmaCore>(problem_size.m(), problem_size.n(),
+                                            problem_size.k(), alpha, beta)
+      .run(grid, block);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 #endif

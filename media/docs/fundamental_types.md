@@ -16,6 +16,8 @@ Most types in CUTLASS are usable in both host code and device code. Moreover, th
 CUTLASS defines classes for the following numeric data types.
 
 * `half_t`: IEEE half-precision floating point (exponent: 5b, mantissa: 10b; literal suffix `_hf`)
+* `bfloat16_t`: BFloat16 data type (exponent: 8b, mantissa: 7b; literal suffix `_bf16`)
+* `tfloat32_t`: Tensor Float 32 data type (exponent: 8b, mantissa: 10b; literal suffix `_tf32`)
 * `int4_t`, `uint4_t`: 4b signed and unsigned integer (literal suffx `_s4`, `_u4`)
 * `bin1_t`: 1b binary numeric type (literal suffix `_b1`)
 * `complex<T>`: defines complex-valued data type based on the supplied real-valued numeric type
@@ -182,6 +184,39 @@ AlignedArray<half_t, 8> *ptr = reinterpret_cast<AlignedArray<half_t, 8> *>(smem_
 AlignedArray<half_t, 8> x = ptr[threadIdx.x];     // 128b shared memory load
 ```
 
+### Numeric Conversion
+
+CUTLASS defines procedures for performing numeric conversion between data types in `cutlass/numeric_conversion.h`. 
+Where possible, these target hardware acceleration on the target architecture and support multiple rounding modes.
+
+```c++
+#include "cutlass/numeric_conversion.h"
+#include "cutlass/numeric_types.h"
+
+NumericConverter<half_t, float>     convert_f32_to_f16;
+NumericConverter<tfloat32_t, float> convert_f32_to_tf32;
+
+half_t     x = convert_f32_to_f16(3.14159f);
+tfloat32_t y = convert_f32_to_tf32(3.14159f);
+```
+
+Recent GPU architectures such as NVIDIA Turing and Ampere combine numeric conversion with efficient packing
+into bit vectors. Consequently, CUTLASS defines conversion on both scalars and `Array<>` objects to implement 
+the optimal code sequence on all architectures.
+
+```c++
+//
+// Example: convert and pack 32b signed integers to a vector of packed signed 8-bit integers.
+//
+int const kN = 16;
+Array<int8_t, kN> destination;
+Array<int,    kN> source;
+
+NumericConverter<descltype(destination), decltype(source)> convert;
+
+destination = convert(source);
+```
+
 ### Coord
 
 ```c++
@@ -311,7 +346,7 @@ support on current and future NVIDIA GPUs.
 
 # Copyright
 
-Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

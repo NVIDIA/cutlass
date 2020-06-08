@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -108,6 +108,8 @@ TEST(SM75_warp_gemm_tensor_op_congruous_f16, 128x128x32_32x32x32_16x8x8) {
                             cutlass::gemm::GemmShape<128, 128, 32> >()
       .run();
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM75_warp_gemm_tensor_op_crosswise_f16, 128x128x32_64x64x32_16x8x8) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 32>;
@@ -316,6 +318,8 @@ TEST(SM75_warp_gemm_tensor_op_crosswise_f16, 128x128x64_16x16x64_16x8x8) {
                             cutlass::gemm::GemmShape<128, 128, 64> >()
       .run();
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM75_warp_gemm_tensor_op_crosswise_i8, 128x128x64_64x64x64_8x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;

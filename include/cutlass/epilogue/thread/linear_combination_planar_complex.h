@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -174,6 +174,39 @@ public:
     // complex multiply-add: I = alpha * AB + I
     intermediate.real = mul_add_op(alpha_.real(), converted_accumulator.real, intermediate.real);
     intermediate.imag = mul_add_op(alpha_.real(), converted_accumulator.imag, intermediate.imag);
+
+    intermediate.real = mul_add_op(-alpha_.imag(), converted_accumulator.imag, intermediate.real);
+    intermediate.imag = mul_add_op( alpha_.imag(), converted_accumulator.real, intermediate.imag);
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
+
+    return FragmentOutput(
+      destination_converter(intermediate.real), 
+      destination_converter(intermediate.imag));
+  }
+
+  /// Computes linear scaling: D = alpha * accumulator + beta * source
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(
+    FragmentAccumulator const &accumulator) const {
+
+    // Convert source to interal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    ComputeFragment converted_accumulator(
+      accumulator_converter(accumulator.real), 
+      accumulator_converter(accumulator.imag));
+
+    // Perform binary operations
+    ComputeFragment intermediate;
+
+    multiplies<Array<ElementCompute, kCount> > mul_op;
+    multiply_add<Array<ElementCompute, kCount> > mul_add_op;
+
+    // complex multiply-add: I = alpha * AB + I
+    intermediate.real = mul_add_op(alpha_.real(), converted_accumulator.real);
+    intermediate.imag = mul_add_op(alpha_.real(), converted_accumulator.imag);
 
     intermediate.real = mul_add_op(-alpha_.imag(), converted_accumulator.imag, intermediate.real);
     intermediate.imag = mul_add_op( alpha_.imag(), converted_accumulator.real, intermediate.imag);

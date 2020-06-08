@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -67,7 +67,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 8x32x8_8x32x1_2x4_4x8_1x1, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -97,7 +97,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 16x32x8_16x32x1_4x4_4x8_1x1, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -127,7 +127,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 16x64x8_16x64x1_4x8_4x8_1x1, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -157,7 +157,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 32x32x8_32x32x1_8x4_4x8_1x1, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -187,7 +187,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 32x64x8_32x64x1_8x8_4x8_1x1, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -217,7 +217,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 64x32x8_64x32x1_8x8_8x4_1x1, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -247,7 +247,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 8x32x8_8x16x1_2x2_4x8_1x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -277,7 +277,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 8x64x8_8x32x1_2x4_4x8_1x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -307,7 +307,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 16x32x8_16x16x1_4x2_4x8_1x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -337,7 +337,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 16x64x8_16x32x1_4x4_4x8_1x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -367,7 +367,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 16x128x8_16x64x1_4x8_4x8_1x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -397,7 +397,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x32x8_32x16x1_4x4_8x4_1x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -427,7 +427,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x64x8_32x32x1_8x4_4x8_1x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -457,7 +457,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 32x128x8_32x64x1_8x8_4x8_1x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -487,7 +487,7 @@ CUTLASS_TEST_L0(SM50_device_sgemm_nt, 64x64x8_64x32x1_8x8_8x4_1x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -517,7 +517,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x32x8_16x32x1_4x4_4x8_2x1, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -547,7 +547,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x32x8_32x32x1_8x4_4x8_2x1, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -577,7 +577,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 64x64x8_32x64x1_8x8_4x8_2x1, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -607,7 +607,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 128x32x8_64x32x1_8x8_8x4_2x1, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -637,7 +637,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 16x32x8_8x16x1_2x2_4x8_2x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -667,7 +667,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 16x64x8_8x32x1_2x4_4x8_2x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -697,7 +697,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x32x8_16x16x1_4x2_4x8_2x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -727,7 +727,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x64x8_16x32x1_4x4_4x8_2x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -757,7 +757,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x128x8_16x64x1_4x8_4x8_2x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -787,7 +787,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x32x8_32x16x1_4x4_8x4_2x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -817,7 +817,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x64x8_32x32x1_8x4_4x8_2x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -847,7 +847,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 64x128x8_32x64x1_8x8_4x8_2x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -877,7 +877,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 128x32x8_64x16x1_8x4_8x4_2x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -907,7 +907,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 128x64x8_64x32x1_8x8_8x4_2x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -937,7 +937,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 16x64x16_8x16x1_2x2_4x8_2x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -967,7 +967,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 16x128x16_8x32x1_2x4_4x8_2x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -997,7 +997,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x32x8_16x8x1_2x2_8x4_2x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1027,7 +1027,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x64x8_16x16x1_4x2_4x8_2x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1057,7 +1057,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x128x8_16x32x1_4x4_4x8_2x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1087,7 +1087,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 32x256x8_16x64x1_4x8_4x8_2x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1117,7 +1117,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x64x8_32x16x1_4x4_8x4_2x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1147,7 +1147,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x128x8_32x32x1_8x4_4x8_2x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1177,7 +1177,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 64x256x8_32x64x1_8x8_4x8_2x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1207,7 +1207,7 @@ CUTLASS_TEST_L0(SM50_device_sgemm_nt, 128x128x8_64x32x1_8x8_8x4_2x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1237,7 +1237,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x32x8_8x16x1_2x2_4x8_4x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1267,7 +1267,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x32x8_16x16x1_4x2_4x8_4x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1297,7 +1297,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x64x8_16x32x1_4x4_4x8_4x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1327,7 +1327,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 128x32x8_32x16x1_4x4_8x4_4x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1357,7 +1357,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 128x64x8_32x32x1_8x4_4x8_4x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1387,7 +1387,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 128x128x8_32x64x1_8x8_4x8_4x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1417,7 +1417,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 256x32x8_64x16x1_8x4_8x4_4x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1447,7 +1447,7 @@ CUTLASS_TEST_L1(SM50_device_sgemm_nt, 256x64x8_64x32x1_8x8_8x4_4x2, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1477,7 +1477,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x64x16_8x16x1_2x2_4x8_4x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1507,7 +1507,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 32x128x16_8x32x1_2x4_4x8_4x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1537,7 +1537,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x32x16_16x8x1_2x2_8x4_4x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1567,7 +1567,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x64x8_16x16x1_4x2_4x8_4x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1597,7 +1597,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x128x8_16x32x1_4x4_4x8_4x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1627,7 +1627,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 64x256x8_16x64x1_4x8_4x8_4x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1657,7 +1657,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 128x32x16_32x8x1_4x2_8x4_4x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1687,7 +1687,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 128x64x8_32x16x1_4x4_8x4_4x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1717,7 +1717,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 128x128x8_32x32x1_8x4_4x8_4x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -1747,7 +1747,7 @@ CUTLASS_TEST_L2(SM50_device_sgemm_nt, 256x64x8_64x16x1_8x4_8x4_4x4, {
         cutlass::arch::Sm50,
         ThreadblockShape, WarpShape, InstructionShape,
         EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
         2 // Stages
     >;
     EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());

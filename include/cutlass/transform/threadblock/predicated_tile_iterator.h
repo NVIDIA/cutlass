@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -319,9 +319,11 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
 
           AccessType const *access_ptr = reinterpret_cast<AccessType const *>(byte_ptr);
 
-          if (address_iterator_.valid()) {
-              frag_ptr[idx] = *access_ptr;
-          }
+          cutlass::arch::global_load<AccessType,
+                                     sizeof(AccessType)
+                                    >(
+              frag_ptr[idx], access_ptr, address_iterator_.valid());
+
           ++address_iterator_;
         }
       }

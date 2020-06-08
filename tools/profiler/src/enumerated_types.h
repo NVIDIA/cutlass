@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -50,7 +50,7 @@ T from_string(std::string const &);
 enum class ExecutionMode {
   kProfile,     ///< regular verification and profiling
   kDryRun,      ///< no kernels are launched or workspaces allocated; used to assess what operators might be launched
-  kEnumerate,   ///< no kernels launched or workspaces allocated; lists all function types and functions
+  kEnumerate,   ///< no kernels launched or workspaces allocated; lists all operation kind and operations
   kTrace,       ///< executes a single device-side computation with no other kernel launches
   kInvalid
 };

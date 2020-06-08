@@ -111,8 +111,8 @@ std::cout << tensor.host_view() << std::endl;
 
 ## Device Allocations
 
-To strictly allocate memory on the device using the smart pointers to manage allocation and deallocation,
-use `cutlass::device_memory::allocation<>`. 
+To strictly allocate memory on the device using the smart pointer pattern to manage allocation and deallocation,
+use `cutlass::DeviceAllocation<>`. 
 
 **Example:** allocating an array in device memory.
 ```c++
@@ -128,7 +128,7 @@ int main() {
 
   size_t N = 1024;
 
-  cutlass::device_memory::allocation<float> device_alloc(N);
+  cutlass::DeviceAllocation<float> device_alloc(N);
 
   // Call a CUDA kernel passing device memory as a pointer argument
   kernel<<< grid, block >>>(alloc.get());
@@ -340,8 +340,9 @@ used throughout the unit tests.
 ```c++
 #include <cutlass/numeric_types.h>
 #include <cutlass/layout/matrix.h>
-#include <cutlass/util/reference/host/gemm.h>
+
 #include <cutlass/util/host_tensor.h>
+#include <cutlass/util/reference/host/gemm.h>
 
 int main() {
 
@@ -378,7 +379,7 @@ int main() {
 
 # Copyright
 
-Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

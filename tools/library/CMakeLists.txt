@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -22,7 +22,7 @@
 
 include(GNUInstallDirs)
 
-find_package(Python3 3.6 COMPONENTS Interpreter REQUIRED)
+find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
 
 add_library(cutlass_library_includes INTERFACE)
 add_library(nvidia::cutlass::library::includes ALIAS cutlass_library_includes)
@@ -59,7 +59,7 @@ cutlass_add_library(
   src/operation_table.cu
   src/singleton.cu
   src/util.cu
-  
+
   )
 
 file(GLOB_RECURSE GENERATOR_PYTHON_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py)

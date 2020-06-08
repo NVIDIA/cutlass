@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -55,6 +55,8 @@ enum class Status {
   kErrorNotSupported,          ///< Operation is not supported on current device.
   kErrorWorkspaceNull,         ///< The given workspace is null when it is required to be non-null.
   kErrorInternal,              ///< An error within CUTLASS occurred.
+  kErrorArchMismatch,          ///< CUTLASS runs on a device that it was not compiled for.
+  kErrorInsufficientDriver,    ///< CUTLASS runs with a driver that is too old.
   kInvalid                     ///< Status is unspecified.
 };
 
@@ -78,6 +80,10 @@ static char const* cutlassGetStatusString(cutlass::Status status) {
       return "Error Workspace Null";
     case cutlass::Status::kErrorInternal:
       return "Error Internal";
+    case cutlass::Status::kErrorInsufficientDriver:
+      return "Error Insufficient Driver";
+    case cutlass::Status::kErrorArchMismatch:
+      return "Erroor Architecture Mismatch";
     case cutlass::Status::kInvalid: break;
   }
 

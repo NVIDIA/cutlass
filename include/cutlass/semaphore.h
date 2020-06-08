@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -67,7 +67,11 @@ public:
   CUTLASS_DEVICE
   void fetch() {
     if (wait_thread) {
+      #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+      asm volatile ("ld.global.acquire.gpu.b32 %0, [%1];\n" : "=r"(state) : "l"(lock));  
+      #else
       asm volatile ("ld.global.cg.b32 %0, [%1];\n" : "=r"(state) : "l"(lock));  
+      #endif
     }
   }
 
@@ -94,7 +98,11 @@ public:
     __syncthreads();
 
     if (wait_thread) {
+      #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+      asm volatile ("st.global.release.gpu.b32 [%0], %1;\n" : : "l"(lock), "r"(status));
+      #else
       asm volatile ("st.global.cg.b32 [%0], %1;\n" : : "l"(lock), "r"(status));
+      #endif
     }
   }
 };

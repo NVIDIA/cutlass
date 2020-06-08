@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -178,6 +178,40 @@ public:
 
     return destination_converter(intermediate);
   }
+
+  /// Computes linear scaling: D = alpha * accumulator 
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(
+    FragmentAccumulator const &accumulator) const {
+
+    // Convert source to interal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+
+    // Perform binary operations
+
+    ComputeFragment intermediate;
+
+    multiplies<ComputeFragment> mul_accumulator;
+    
+    minimum<ComputeFragment> min_accumulator;
+    maximum<ComputeFragment> max_accumulator;
+
+    intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+
+    /// Clamping constant value
+    ElementCompute const kClamp =
+        ElementCompute((1U << (sizeof_bits<ElementOutput>::value - 1)) - 1);
+
+    intermediate = max_accumulator(intermediate, -kClamp - ElementCompute(1));
+    intermediate = min_accumulator(intermediate, kClamp);
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
+
+    return destination_converter(intermediate);
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -278,7 +312,7 @@ public:
       beta_ = ElementCompute(1);
     }
   }
-
+  
   /// Computes linear scaling: D = alpha * accumulator + beta * source
   CUTLASS_HOST_DEVICE
   FragmentOutput operator()(
@@ -302,6 +336,37 @@ public:
     // Float min-max
     intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+
+    // Convert floats back to INT
+    FragmentAccumulator scaled_accumulator;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < kCount; ++i) {
+      scaled_accumulator[i] = static_cast<int>(intermediate[i]);
+    }
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, int, kCount, Round> destination_converter;
+
+    return destination_converter(scaled_accumulator);
+  }
+
+  /// Computes linear scaling: D = alpha * accumulator
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(FragmentAccumulator const &accumulator) const {
+
+    // Convert source to interal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+
+    // Compute linear scaling in floating point
+    ComputeFragment intermediate;
+
+    multiplies<ComputeFragment> mul_add_accumulator;
+    
+    // Float min-max
+    intermediate = mul_add_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
 
     // Convert floats back to INT
     FragmentAccumulator scaled_accumulator;
@@ -410,7 +475,7 @@ class FastLinearCombinationClamp {
       beta_ = ElementCompute(1);
     }
   }
-
+  
   /// Computes linear scaling: D = alpha * accumulator + beta * source
   CUTLASS_HOST_DEVICE
   FragmentOutput operator()(FragmentAccumulator const &accumulator,
@@ -439,6 +504,41 @@ class FastLinearCombinationClamp {
         mul_add_source(beta_, converted_source);  // X =  beta * C + uniform
     intermediate = mul_add_accumulator(alpha_, converted_accumulator,
                                        intermediate);  // D = alpha * Accum + X
+
+    /// Clamping constant value
+    ElementCompute const kClamp =
+        ElementCompute(1 << (sizeof_bits<ElementOutput>::value - 1));
+
+    intermediate = max_accumulator(intermediate, -kClamp);
+    intermediate = min_accumulator(intermediate, kClamp - ElementCompute(1));
+
+    // Convert to destination numeric type
+    FastNumericArrayConverter<ElementOutput, ElementCompute, kCount, Round>
+        destination_converter;
+
+    return destination_converter(intermediate);
+  }
+
+  /// Computes linear scaling: D = alpha * accumulator + beta * source
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(FragmentAccumulator const &accumulator) const {
+
+    // Convert source to interal compute numeric type
+    FastNumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round>
+        accumulator_converter;
+
+    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+
+    // Compute linear scaling in floating point
+    ComputeFragment intermediate;
+
+    multiplies<ComputeFragment> mul_accumulator;
+
+    minimum<ComputeFragment> min_accumulator;
+    maximum<ComputeFragment> max_accumulator;
+
+    // Float min-max
+    intermediate = mul_accumulator(alpha_, converted_accumulator);
 
     /// Clamping constant value
     ElementCompute const kClamp =

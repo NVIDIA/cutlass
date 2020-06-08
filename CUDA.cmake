@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -206,14 +206,14 @@ include_directories(SYSTEM ${CUDA_INCLUDE_DIRS})
 function(cutlass_correct_source_file_language_property)
   if(CUDA_COMPILER MATCHES "clang")
     foreach(File ${ARGN})
-      if(${File} MATCHES ".*\.cu$")
+      if(File MATCHES ".*\.cu$")
         set_source_files_properties(${File} PROPERTIES LANGUAGE CXX)
       endif()
     endforeach()
   endif()
 endfunction()
 
-set(CUTLASS_UNITY_BUILD_ENABLED ON CACHE BOOL "Enable combined source compilation")
+set(CUTLASS_UNITY_BUILD_ENABLED OFF CACHE BOOL "Enable combined source compilation")
 set(CUTLASS_UNITY_BUILD_BATCH_SIZE 16 CACHE STRING "Batch size for unified source files")
 
 function(cutlass_unify_source_files TARGET_ARGS_VAR)

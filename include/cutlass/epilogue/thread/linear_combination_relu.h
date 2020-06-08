@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -23,8 +23,7 @@
  *
  **************************************************************************************************/
 /*! \file
-  \brief Functor performing linear combination operations used by epilogues. Values are clamped before
-         converting to the output element type.
+  \brief Functor performing linear combination with a maximum operation used by epilogues.
 */
 
 #pragma once
@@ -34,6 +33,7 @@
 #include "cutlass/array.h"
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
+#include "cutlass/epilogue/thread/activation.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -43,8 +43,7 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Applies a linear combination operator to an array of elements then clamps the output before
-/// converting to the output element type.
+/// Applies a linear combination operator to an array of elements.
 ///
 /// D = alpha * accumulator + beta * source + uniform
 ///
@@ -75,10 +74,10 @@ public:
 
     ElementCompute alpha;                  ///< scales accumulators
     ElementCompute beta;                   ///< scales source tensor
-    ElementCompute threshold;              ///< Relu threshold
+    ElementCompute threshold;              ///< minimum value that is output 
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
-
+    ElementCompute const *threshold_ptr;   ///< pointer to threshold scalar - if not null, loads from memory
     //
     // Methods
     //
@@ -87,16 +86,17 @@ public:
     Params(): 
       alpha(ElementCompute(1)), 
       beta(ElementCompute(0)),
-      threshold(ElementCompute(0)),
+      threshold(ElementCompute(0)), 
       alpha_ptr(nullptr), 
-      beta_ptr(nullptr) { }
+      beta_ptr(nullptr),
+      threshold_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
       ElementCompute beta,
-      ElementCompute threshold  = ElementCompute(0)
-    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute threshold = ElementCompute(0)
+    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr), threshold_ptr(nullptr) {
 
     }
 
@@ -104,8 +104,8 @@ public:
     Params(
       ElementCompute const *alpha_ptr,
       ElementCompute const *beta_ptr,
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *threshold_ptr = nullptr
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr), threshold_ptr(threshold_ptr) {
 
     }
   };
@@ -128,7 +128,7 @@ public:
 
     alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
     beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
-    threshold_ = params.threshold;
+    threshold_ = (params.threshold_ptr ? *params.threshold_ptr : params.threshold);
   }
 
   /// Returns true if source is needed
@@ -144,13 +144,12 @@ public:
       beta_ = ElementCompute(1);
     }
   }
-
+  
   /// Computes linear scaling: D = alpha * accumulator + beta * source
   CUTLASS_HOST_DEVICE
   FragmentOutput operator()(
     FragmentAccumulator const &accumulator, 
-    FragmentOutput const &source,
-    ElementCompute uniform = ElementCompute(0)) const {
+    FragmentOutput const &source) const {
 
     // Convert source to interal compute numeric type
     NumericArrayConverter<ElementCompute, ElementOutput, kCount, Round> source_converter;
@@ -160,18 +159,44 @@ public:
     ComputeFragment converted_accumulator = accumulator_converter(accumulator);
 
     // Perform binary operations
-
     ComputeFragment intermediate;
 
     multiplies<ComputeFragment> mul_add_source;
     multiply_add<ComputeFragment> mul_add_accumulator;
-    
-    maximum<ComputeFragment> max_accumulator;
+    ReLu<ComputeFragment> relu;
 
     intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
-    
-    intermediate = max_accumulator(intermediate, threshold_);
+
+    // Compute threshold optionally
+    intermediate = relu(threshold_, intermediate);
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
+
+    return destination_converter(intermediate);
+  }
+
+  /// Computes linear scaling: D = alpha * accumulator
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(
+    FragmentAccumulator const &accumulator) const {
+
+    // Convert source to interal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+
+    // Perform binary operations
+    ComputeFragment intermediate;
+
+    multiplies<ComputeFragment> mul_accumulator;
+    ReLu<ComputeFragment> relu;
+
+    intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+
+    // Compute threshold optionally
+    intermediate = relu(threshold_, intermediate);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
@@ -180,24 +205,24 @@ public:
   }
 };
 
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Conditional guards to enable partial specialization for packed integers
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 720) && \
-    ((__CUDACC_VER_MAJOR__ > 10) ||                     \
-     ((__CUDACC_VER_MAJOR__ >= 10) && (__CUDACC_VER_MINOR__ >= 2)))
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 720) && ((__CUDACC_VER_MAJOR__ > 10) || ((__CUDACC_VER_MAJOR__ >= 10) && (__CUDACC_VER_MINOR__ >= 2)))
 
-/// Applies a linear combination operator to an array of elements then clamps the output before
-/// converting to the output element type.
+/// Applies a linear combination operator to an array of elements.
 ///
 /// D = alpha * accumulator + beta * source + uniform
 ///
+/// Special handling for int types
+
 template <
   typename ElementOutput_,                             ///< Data type used to load and store tensors
   int Count,                                           ///< Number of elements computed per operation
   FloatRoundStyle Round
 >
-class LinearCombinationRelu<ElementOutput_, Count, int, float, Round> {
+class LinearCombinationRelu <ElementOutput_, Count, int, float, Round> {
 public:
 
   using ElementOutput = ElementOutput_;
@@ -217,10 +242,10 @@ public:
 
     ElementCompute alpha;                  ///< scales accumulators
     ElementCompute beta;                   ///< scales source tensor
-    ElementCompute threshold;              ///< Relu threshold
+    ElementCompute threshold;              ///< minimum value that is output 
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
-
+    ElementCompute const *threshold_ptr;   ///< pointer to threshold scalar - if not null, loads from memory
     //
     // Methods
     //
@@ -229,16 +254,17 @@ public:
     Params(): 
       alpha(ElementCompute(1)), 
       beta(ElementCompute(0)),
-      threshold(ElementCompute(0)),
+      threshold(ElementCompute(0)), 
       alpha_ptr(nullptr), 
-      beta_ptr(nullptr) { }
+      beta_ptr(nullptr),
+      threshold_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
       ElementCompute beta,
-      ElementCompute threshold  = ElementCompute(0)
-    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute threshold = ElementCompute(0)
+    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr), threshold_ptr(nullptr) {
 
     }
 
@@ -246,8 +272,8 @@ public:
     Params(
       ElementCompute const *alpha_ptr,
       ElementCompute const *beta_ptr,
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *threshold_ptr = nullptr
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr), threshold_ptr(threshold_ptr) {
 
     }
   };
@@ -270,7 +296,7 @@ public:
 
     alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
     beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
-    threshold_ = params.threshold;
+    threshold_ = (params.threshold_ptr ? *params.threshold_ptr : params.threshold);
   }
 
   /// Returns true if source is needed
@@ -286,13 +312,12 @@ public:
       beta_ = ElementCompute(1);
     }
   }
-
+  
   /// Computes linear scaling: D = alpha * accumulator + beta * source
   CUTLASS_HOST_DEVICE
   FragmentOutput operator()(
     FragmentAccumulator const &accumulator, 
-    FragmentOutput const &source,
-    ElementCompute uniform = ElementCompute(0)) const {
+    FragmentOutput const &source) const {
 
     // Convert source to interal compute numeric type
     NumericArrayConverter<ElementCompute, ElementOutput, kCount, Round> source_converter;
@@ -302,21 +327,16 @@ public:
     ComputeFragment converted_accumulator = accumulator_converter(accumulator);
 
     // Perform binary operations
-
     ComputeFragment intermediate;
 
     multiplies<ComputeFragment> mul_add_source;
     multiply_add<ComputeFragment> mul_add_accumulator;
-    
-    maximum<ComputeFragment> max_accumulator;
+    ReLu<FragmentAccumulator> relu;
 
     intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
-    
-    // Clamp to theshold
-    intermediate = max_accumulator(intermediate, threshold_);
 
-    // Convert back to accumulator data type
+    // Convert floats back to INT
     FragmentAccumulator scaled_accumulator;
 
     CUTLASS_PRAGMA_UNROLL
@@ -324,8 +344,46 @@ public:
       scaled_accumulator[i] = static_cast<int>(intermediate[i]);
     }
 
-    // Convert to destination numeric type and pack
-    NumericArrayConverter<ElementOutput, ElementAccumulator, kCount, Round> destination_converter;
+    // Compute threshold optionally
+    scaled_accumulator = relu(threshold_, scaled_accumulator);
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, int, kCount, Round> destination_converter;
+
+    return destination_converter(scaled_accumulator);
+  }
+
+  /// Computes linear scaling: D = alpha * accumulator
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(
+    FragmentAccumulator const &accumulator) const {
+
+    // Convert source to interal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+
+    // Perform binary operations
+    ComputeFragment intermediate;
+
+    multiplies<ComputeFragment> mul_accumulator;
+    ReLu<FragmentAccumulator> relu;
+
+    intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+
+    // Convert floats back to INT
+    FragmentAccumulator scaled_accumulator;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < kCount; ++i) {
+      scaled_accumulator[i] = static_cast<int>(intermediate[i]);
+    }
+
+    // Compute threshold optionally
+    scaled_accumulator = relu(threshold_, scaled_accumulator);
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, int, kCount, Round> destination_converter;
 
     return destination_converter(scaled_accumulator);
   }
@@ -338,3 +396,6 @@ public:
 } // namespace thread
 } // namespace epilogue
 } // namespace cutlass
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+

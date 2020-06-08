@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -33,9 +33,14 @@
 
 #include "cutlass/coord.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/matrix_shape.h"
+#include "cutlass/layout/pitch_linear.h"
+#include "cutlass/gemm/gemm.h"
 
 namespace cutlass {
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+//                    stream operators for cutlass namespace                                     //
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <int Rank>
@@ -47,8 +52,6 @@ std::ostream& operator<<(std::ostream& out, Coord<Rank> const& coord) {
   return out;
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
 inline
 std::istream & operator>>(std::istream &stream, half_t &x) {
   float tmp;
@@ -59,6 +62,16 @@ std::istream & operator>>(std::istream &stream, half_t &x) {
 
 inline
 std::ostream & operator<<(std::ostream &out, half_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, bfloat16_t const &x) {
+  return out << float(x);
+}
+
+inline
+std::ostream & operator<<(std::ostream &out, tfloat32_t const &x) {
   return out << float(x);
 }
 
@@ -98,7 +111,54 @@ inline std::ostream &operator<<(std::ostream &out, ScalarIO<uint8_t> const &scal
   return out << unsigned(scalar.value);
 }
 
+
+/// Default printing to ostream for MatrixShape
+template <int Row, int Column>
+inline
+std::ostream & operator<<(std::ostream &out, cutlass::MatrixShape<Row, Column> const &matrix_shape) {
+  out << "cutlass::MatrixShape::(kRow, kColumn) {"
+    << cutlass::MatrixShape<Row,Column>::kRow <<","
+    << cutlass::MatrixShape<Row,Column>::kColumn <<"}";
+  return out;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+//                         stream operators for cutlass::gemm namespace                          //
+///////////////////////////////////////////////////////////////////////////////////////////////////
+namespace gemm {
+
+/// Default printing to ostream for GemmShape
+template <int M, int N, int K>
+inline
+std::ostream & operator<<(std::ostream &out, cutlass::gemm::GemmShape<M,N,K> const &gemm_shape) {
+  out << "cutlass::GemmShape::(kM, kN, kK) {"
+    << cutlass::gemm::GemmShape<M,N,K>::kM <<","
+    << cutlass::gemm::GemmShape<M,N,K>::kN <<","
+    << cutlass::gemm::GemmShape<M,N,K>::kK << "}";
+  return out;
+}
+
+} //namespace gemm
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+//                       stream operators for cutlass::layout namespace                          //
+///////////////////////////////////////////////////////////////////////////////////////////////////
+namespace layout {
+
+/// Default printing to ostream for PitchLinearShape
+template < int Contiguous, int Strided>
+inline
+std::ostream & operator<<(std::ostream &out, cutlass::layout::PitchLinearShape<Contiguous, Strided> const &pitch_linear_shape) {
+  out << "cutlass::layout::PitchLinearShape::(kContiguous, kStrided) {"
+    << cutlass::layout::PitchLinearShape<Contiguous,Strided>::kContiguous <<","
+    << cutlass::layout::PitchLinearShape<Contiguous,Strided>::kStrided <<"}";
+  return out;
+}
+
+} //namespace layout
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass
-
+///////////////////////////////////////////////////////////////////////////////////////////////////

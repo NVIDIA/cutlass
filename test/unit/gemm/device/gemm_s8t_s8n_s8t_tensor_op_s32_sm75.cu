@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -59,7 +59,7 @@ CUTLASS_TEST_L0(SM75_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 128x256x64_64x64x64,
       cutlass::gemm::GemmShape<64, 64, 64>, cutlass::gemm::GemmShape<8, 8, 16>,
       cutlass::epilogue::thread::FastLinearCombinationClamp<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
 } )
@@ -77,7 +77,7 @@ CUTLASS_TEST_L0(SM75_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 256x128x64_64x64x64,
       cutlass::gemm::GemmShape<64, 64, 64>, cutlass::gemm::GemmShape<8, 8, 16>,
       cutlass::epilogue::thread::FastLinearCombinationClamp<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
 } )
@@ -95,7 +95,7 @@ CUTLASS_TEST_L0(SM75_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 128x128x64_64x64x64,
       cutlass::gemm::GemmShape<64, 64, 64>, cutlass::gemm::GemmShape<8, 8, 16>,
       cutlass::epilogue::thread::FastLinearCombinationClamp<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
 
@@ -114,7 +114,7 @@ CUTLASS_TEST_L0(SM75_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 64x128x64_32x64x64, 
       cutlass::gemm::GemmShape<32, 64, 64>, cutlass::gemm::GemmShape<8, 8, 16>,
       cutlass::epilogue::thread::FastLinearCombinationClamp<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2>;
   
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
 } )
@@ -133,7 +133,7 @@ CUTLASS_TEST_L0(SM75_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 128x64x64_64x32x64, 
       cutlass::epilogue::thread::LinearCombinationClamp<
           ElementOutput, 32 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementCompute>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2>;
 
   test::gemm::device::Testbed<Gemm> testbed;
 
@@ -154,7 +154,7 @@ CUTLASS_TEST_L0(SM75_Device_Gemm_s8t_s8n_s8t_tensor_op_s32, 64x64x64_32x32x64, {
       cutlass::epilogue::thread::LinearCombinationClamp<
           ElementOutput, 32 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementCompute>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2>;
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2>;
 
   test::gemm::device::Testbed<Gemm> testbed;
 

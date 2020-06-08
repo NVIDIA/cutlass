@@ -104,6 +104,14 @@ for (int idx = 0; idx < kN; ++idx) {      // Loop has constant number of iterati
 
 ## Style
 
+### C++ Style
+
+CUTLASS source code follows the 
+[Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) with exceptions and extensions.
+
+Design choices should be consistent with the 
+[CppCoreGuidelines](https://github.com/isocpp/CppCoreGuidelines/blob/master/CppCoreGuidelines.md) recommendations by Stroustrup and Sutter.
+
 ### CUDA Built-in Variables
 
 Avoid direct access to CUDA built-in variables `threadIdx`, `blockIdx`, `blockDim`, and `gridDim` within
@@ -131,14 +139,6 @@ In particular, be sure to use:
 
 Avoid defining alternative implementations of the same functionality. Instead, prefer to enhance
 or extend additional components where it makes sense.
-
-### C++ Style
-
-CUTLASS source code follows the 
-[Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) with exceptions and extensions.
-
-Design choices should be consistent with the 
-[CppCoreGuidelines](https://github.com/isocpp/CppCoreGuidelines/blob/master/CppCoreGuidelines.md) recommendations by Stroustrup and Sutter.
 
 ### Classes and Structs
 
@@ -178,9 +178,10 @@ Members within classes and structures should be organized as follows:
 3. Constructors
 4. Other methods
 
-This convention follows the [CUB library](https://nvlabs.github.io/cub/), 
-and it also approximates the usual order of Systems and Controls textbooks. That is, they start by 
-(1.) identifying relevant constants, (2.) define a state-space representation of the dynamical system 
+This convention follows the [CUB library](https://nvlabs.github.io/cub/) and is also described by 
+[Howard Hinnant](https://howardhinnant.github.io/classdecl.html). Unsurprisingly, it approximates 
+the usual ordering of chapters in a typical Systems and Controls textbook. That is,
+(1.) identify relevant constants, (2.) define a state-space representation of the dynamical system 
 under study (i.e. the data members), and (3.) devote subsequent chapters to definining dynamical behavior
 of the system (i.e. the methods).
 
@@ -291,7 +292,7 @@ Github's pretty printer.
 
 # Copyright
 
-Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

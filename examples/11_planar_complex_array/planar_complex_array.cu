@@ -560,7 +560,9 @@ int main(int argc, char const **args) {
   if (props.major < 7) {
     std::cerr << "Tensor Core operations must be run on a machine with compute capability at least 70."
               << std::endl;
-    return -1;
+
+    // Returning zero so this passes on older architectures. Its actions are no-op.
+    return 0;
   }
   else if (props.major == 7 && props.minor <= 2) {
     //
@@ -568,7 +570,9 @@ int main(int argc, char const **args) {
     //
     if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 1))) {
       std::cerr << "Volta Tensor Core operations must be compiled with CUDA 10.1 Toolkit or later." << std::endl;
-      return -1;
+      
+      // Returning zero so this passes on older Toolkits. Its actions are no-op.
+      return 0;
     }
   }
   else if (props.major == 7 && props.minor >= 5) {
@@ -577,7 +581,9 @@ int main(int argc, char const **args) {
     //
     if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2))) {
       std::cerr << "Turing Tensor Core operations must be compiled with CUDA 10.2 Toolkit or later." << std::endl;
-      return -1;
+      
+      // Returning zero so this passes on older Toolkits. Its actions are no-op.
+      return 0;
     }
   }
 

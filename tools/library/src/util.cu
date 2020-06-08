@@ -45,6 +45,7 @@ static struct {
   Provider enumerant;
 }
 Provider_enumerants[] = {
+  {"none", "None", Provider::kNone},
   {"cutlass", "CUTLASS", Provider::kCUTLASS},
   {"host", "reference_host", Provider::kReferenceHost},
   {"device", "reference_device", Provider::kReferenceDevice},
@@ -83,6 +84,38 @@ Provider from_string<Provider>(std::string const &str) {
 }
 
 
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  GemmKind enumerant;
+}
+GemmKind_enumerants[] = {
+  {"gemm", "<Gemm>", GemmKind::kGemm},
+  {"batched", "<Batched>", GemmKind::kBatched},
+  {"array", "<Array>", GemmKind::kArray},
+  {"universal", "<Universal>", GemmKind::kUniversal},
+  {"planar_complex", "<PlanarComplex>", GemmKind::kPlanarComplex},
+  {"planar_complex_array", "<PlanarComplexArray>", GemmKind::kPlanarComplexArray},
+};
+
+/// Converts a ConvKind enumerant to a string
+char const *to_string(GemmKind type, bool pretty) {
+
+  for (auto const & possible : GemmKind_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -92,6 +125,7 @@ static struct {
   OperationKind enumerant;
 }
 OperationKind_enumerants[] = {
+  {"eq_gemm", "EqGemm", OperationKind::kEqGemm}, 
   {"gemm", "Gemm", OperationKind::kGemm},               
 };
 
@@ -194,10 +228,14 @@ NumericTypeID_enumerants[] = {
   {"s32", "S32", NumericTypeID::kS32},
   {"s64", "S64", NumericTypeID::kS64},
   {"f16", "F16", NumericTypeID::kF16},
+  {"bf16", "BF16", NumericTypeID::kBF16},
   {"f32", "F32", NumericTypeID::kF32},
+  {"tf32", "TF32", NumericTypeID::kTF32},
   {"f64", "F64", NumericTypeID::kF64},
   {"cf16", "CF16", NumericTypeID::kCF16},
+  {"cbf16", "CBF16", NumericTypeID::kCBF16},
   {"cf32", "CF32", NumericTypeID::kCF32},
+  {"ctf32", "CTF32", NumericTypeID::kCTF32},
   {"cf64", "CF64", NumericTypeID::kCF64},
   {"cu4", "CU4", NumericTypeID::kCU4},
   {"cu8", "CU8", NumericTypeID::kCU8},
@@ -249,10 +287,14 @@ NumericTypeID from_string<NumericTypeID>(std::string const &str) {
 int sizeof_bits(NumericTypeID type) {
   switch (type) {
     case NumericTypeID::kF16: return 16;
+    case NumericTypeID::kBF16: return 16;
+    case NumericTypeID::kTF32: return 32;
     case NumericTypeID::kF32: return 32;
     case NumericTypeID::kF64: return 64;
     case NumericTypeID::kCF16: return 32;
+    case NumericTypeID::kCBF16: return 32;
     case NumericTypeID::kCF32: return 64;
+    case NumericTypeID::kCTF32: return 64;
     case NumericTypeID::kCF64: return 128;
     case NumericTypeID::kS4: return 4;
     case NumericTypeID::kS8: return 8;
@@ -276,6 +318,8 @@ bool is_complex_type(NumericTypeID type) {
     case NumericTypeID::kCF16: return true;
     case NumericTypeID::kCF32: return true;
     case NumericTypeID::kCF64: return true;
+    case NumericTypeID::kCBF16: return true;
+    case NumericTypeID::kCTF32: return true;
     default: break;
   }
   return false;
@@ -287,6 +331,8 @@ NumericTypeID get_real_type(NumericTypeID type) {
     case NumericTypeID::kCF16: return NumericTypeID::kF16;
     case NumericTypeID::kCF32: return NumericTypeID::kF32;
     case NumericTypeID::kCF64: return NumericTypeID::kF64;
+    case NumericTypeID::kCBF16: return NumericTypeID::kBF16;
+    case NumericTypeID::kCTF32: return NumericTypeID::kTF32;
     default: break;
   }
   return type;
@@ -314,6 +360,8 @@ bool is_integer_type(NumericTypeID type) {
 bool is_signed_type(NumericTypeID type) {
   switch (type) {
     case NumericTypeID::kF16: return true;
+    case NumericTypeID::kBF16: return true;
+    case NumericTypeID::kTF32: return true;
     case NumericTypeID::kF32: return true;
     case NumericTypeID::kF64: return true;
     case NumericTypeID::kS4: return true;
@@ -340,9 +388,13 @@ bool is_unsigned_integer(NumericTypeID type) {
 bool is_float_type(NumericTypeID type) {
   switch (type) {
   case NumericTypeID::kF16: return true;
+  case NumericTypeID::kBF16: return true;
+  case NumericTypeID::kTF32: return true;
   case NumericTypeID::kF32: return true;
   case NumericTypeID::kF64: return true;
   case NumericTypeID::kCF16: return true;
+  case NumericTypeID::kCBF16: return true;
+  case NumericTypeID::kCTF32: return true;
   case NumericTypeID::kCF32: return true;
   case NumericTypeID::kCF64: return true;
   default: break;
@@ -431,7 +483,7 @@ OpcodeClassID_enumerants[] = {
   {"simt", "<simt>", OpcodeClassID::kSimt},
   {"tensorop", "<tensorop>", OpcodeClassID::kTensorOp},
   {"wmmatensorop", "<wmmatensorop>", OpcodeClassID::kWmmaTensorOp},
-  {"wmma", "<wmma>", OpcodeClassID::kWmmaTensorOp}
+  {"wmma", "<wmma>", OpcodeClassID::kWmmaTensorOp},
 };
 
 /// Converts a OpcodeClassID enumerant to a string
@@ -509,6 +561,47 @@ ComplexTransform from_string<ComplexTransform>(std::string const &str) {
 }
 
 
+static struct {
+  char const *text;
+  char const *pretty;
+  SplitKMode enumerant;
+}
+SplitKMode_enumerants[] = {
+  {"serial", "<serial>", SplitKMode::kSerial},
+  {"parallel", "<parallel>", SplitKMode::kParallel},
+};
+
+/// Converts a SplitKMode enumerant to a string
+char const *to_string(SplitKMode type, bool pretty) {
+
+  for (auto const & possible : SplitKMode_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+/// Converts a SplitKMode enumerant from a string
+template <>
+SplitKMode from_string<SplitKMode>(std::string const &str) {
+
+  for (auto const & possible : SplitKMode_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return SplitKMode::kInvalid;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Lexical cast a string to a byte array. Returns true if cast is successful or false if invalid.
 bool lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type, std::string const &str) {
@@ -570,6 +663,20 @@ bool lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type, std::string c
     *reinterpret_cast<half_t *>(bytes.data()) = static_cast<half_t>(tmp);
   }
     break;
+  case NumericTypeID::kBF16:
+  {
+    float tmp;
+    ss >> tmp;
+    *reinterpret_cast<bfloat16_t *>(bytes.data()) = static_cast<bfloat16_t>(tmp);
+  }
+    break;
+  case NumericTypeID::kTF32:
+  {
+    float tmp;
+    ss >> tmp;
+    *reinterpret_cast<tfloat32_t *>(bytes.data()) = static_cast<tfloat32_t>(tmp);
+  }
+    break;
   case NumericTypeID::kF32:
   {
     ss >> *reinterpret_cast<float *>(bytes.data());
@@ -589,9 +696,27 @@ bool lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type, std::string c
     x->imag() = static_cast<half_t>(std::imag(tmp));
   }
     break;
+  case NumericTypeID::kCBF16:
+  {
+    std::complex<float> tmp;
+    ss >> tmp;
+    cutlass::complex<cutlass::bfloat16_t> *x = reinterpret_cast<cutlass::complex<bfloat16_t> *>(bytes.data());
+    x->real() = static_cast<bfloat16_t>(std::real(tmp));
+    x->imag() = static_cast<bfloat16_t>(std::imag(tmp));
+  }
+    break;
   case NumericTypeID::kCF32:
   {
     ss >> *reinterpret_cast<std::complex<float>*>(bytes.data());
+  }
+    break;
+  case NumericTypeID::kCTF32:
+  {
+    std::complex<float> tmp;
+    ss >> tmp;
+    cutlass::complex<cutlass::tfloat32_t> *x = reinterpret_cast<cutlass::complex<tfloat32_t> *>(bytes.data());
+    x->real() = static_cast<tfloat32_t>(std::real(tmp));
+    x->imag() = static_cast<tfloat32_t>(std::imag(tmp));
   }
     break;
   case NumericTypeID::kCF64:
@@ -674,6 +799,18 @@ std::string lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type) {
     ss << tmp;
   }
     break;
+  case NumericTypeID::kBF16:
+  {
+    float tmp = *reinterpret_cast<bfloat16_t *>(bytes.data());;
+    ss << tmp;
+  }
+    break;
+  case NumericTypeID::kTF32:
+  {
+    float tmp = *reinterpret_cast<tfloat32_t *>(bytes.data());;
+    ss << tmp;
+  }
+    break;
   case NumericTypeID::kF32:
   {
     ss << *reinterpret_cast<float *>(bytes.data());
@@ -696,6 +833,18 @@ std::string lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type) {
     }
   }
     break;
+  case NumericTypeID::kCBF16:
+  {
+    cutlass::complex<bfloat16_t> const *x = 
+      reinterpret_cast<cutlass::complex<bfloat16_t> const *>(bytes.data());
+
+    ss << float(x->real());
+
+    if (x->imag() != cutlass::bfloat16_t()) {
+      ss << "+i" << float(x->imag());
+    }
+  }
+    break;
   case NumericTypeID::kCF32:
   {
     cutlass::complex<float> const * x = reinterpret_cast<cutlass::complex<float> const *>(bytes.data());
@@ -704,6 +853,17 @@ std::string lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type) {
 
     if (x->imag() != float()) {
       ss << "+i" << x->imag();
+    }
+  }
+    break;
+  case NumericTypeID::kCTF32:
+  {
+    cutlass::complex<tfloat32_t> const * x = reinterpret_cast<cutlass::complex<tfloat32_t> const *>(bytes.data());
+
+    ss << float(x->real());
+
+    if (x->imag() != tfloat32_t()) {
+      ss << "+i" << float(x->imag());
     }
   }
     break;
@@ -778,6 +938,16 @@ bool cast_from_int64(std::vector<uint8_t> &bytes, NumericTypeID type, int64_t sr
   case NumericTypeID::kF16:
   {
     *reinterpret_cast<half_t *>(bytes.data()) = static_cast<half_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kBF16:
+  {
+    *reinterpret_cast<bfloat16_t *>(bytes.data()) = static_cast<bfloat16_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kTF32:
+  {
+    *reinterpret_cast<tfloat32_t *>(bytes.data()) = static_cast<tfloat32_t>(float(src));
   }
     break;
   case NumericTypeID::kF32:
@@ -868,6 +1038,16 @@ bool cast_from_uint64(std::vector<uint8_t> &bytes, NumericTypeID type, uint64_t 
   case NumericTypeID::kF16:
   {
     *reinterpret_cast<half_t *>(bytes.data()) = static_cast<half_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kBF16:
+  {
+    *reinterpret_cast<bfloat16_t *>(bytes.data()) = static_cast<bfloat16_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kTF32:
+  {
+    *reinterpret_cast<tfloat32_t *>(bytes.data()) = static_cast<tfloat32_t>(float(src));
   }
     break;
   case NumericTypeID::kF32:
@@ -961,6 +1141,16 @@ bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double sr
     *reinterpret_cast<half_t *>(bytes.data()) = static_cast<half_t>(float(src));
   }
     break;
+  case NumericTypeID::kBF16:
+  {
+    *reinterpret_cast<bfloat16_t *>(bytes.data()) = static_cast<bfloat16_t>(float(src));
+  }
+    break;
+  case NumericTypeID::kTF32:
+  {
+    *reinterpret_cast<tfloat32_t *>(bytes.data()) = static_cast<tfloat32_t>(float(src));
+  }
+    break;
   case NumericTypeID::kF32:
   {
     *reinterpret_cast<float *>(bytes.data()) = static_cast<float>(src);
@@ -978,9 +1168,21 @@ bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double sr
     x->imag() = static_cast<half_t>(float(0));
   }
     break;
+  case NumericTypeID::kCBF16:
+  {
+    cutlass::complex<cutlass::bfloat16_t> *x = reinterpret_cast<cutlass::complex<bfloat16_t> *>(bytes.data());
+    x->real() = static_cast<bfloat16_t>(bfloat16_t(src));
+    x->imag() = static_cast<bfloat16_t>(bfloat16_t(0));
+  }
+    break;
   case NumericTypeID::kCF32:
   {
     *reinterpret_cast<std::complex<float>*>(bytes.data()) = std::complex<float>(float(src), float(0));
+  }
+    break;
+  case NumericTypeID::kCTF32:
+  {
+    *reinterpret_cast<std::complex<tfloat32_t>*>(bytes.data()) = std::complex<tfloat32_t>(tfloat32_t(src), tfloat32_t(0));
   }
     break;
   case NumericTypeID::kCF64:

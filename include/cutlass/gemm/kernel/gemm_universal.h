@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -71,7 +71,7 @@ public:
   using OperatorClass = typename Mma::Operator::OperatorClass;
   using ThreadblockShape = typename Mma::Shape;
   using WarpShape = typename Mma::Operator::Shape;
-  using InstructionShape = typename Mma::Policy::Operator::Shape;
+  using InstructionShape = typename Mma::Policy::Operator::InstructionShape;
   using ArchTag = typename Mma::ArchTag;
 
   static int const kStages = Mma::kStages;
@@ -259,9 +259,9 @@ public:
       Arguments const &args,
       void *workspace = nullptr) {
 
-      ptr_A = args.ptr_A;
-      ptr_B = args.ptr_B;
-      ptr_C = args.ptr_C;
+      ptr_A = const_cast<void *>(args.ptr_A);
+      ptr_B = const_cast<void *>(args.ptr_B);
+      ptr_C = const_cast<void *>(args.ptr_C);
       ptr_D = args.ptr_D;
 
       output_op = args.epilogue;
@@ -301,6 +301,10 @@ public:
     }
 
     return Status::kSuccess;
+  }
+
+  static Status can_implement(Arguments const &args) {
+    return can_implement(args.problem_size);
   }
 
   /// Executes one GEMM

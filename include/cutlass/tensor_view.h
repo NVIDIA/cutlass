@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -151,14 +151,20 @@ class TensorView : public TensorRef<Element_, Layout_> {
 
   /// Updates the pointer and layout object
   CUTLASS_HOST_DEVICE
-  void reset(Element* ptr, Layout const &layout, TensorCoord size) {
+  void reset(Element* ptr, Layout const &layout, TensorCoord const &extent) {
     Base::reset(ptr, layout);
-    this->resize(extent_);
+    this->resize(extent);
+  }
+
+  /// Updates the pointer
+  CUTLASS_HOST_DEVICE
+  void reset(Element* ptr) {
+    Base::reset(ptr);
   }
 
   /// Changes the size of the view without affecting pointer or layout
   CUTLASS_HOST_DEVICE
-  void resize(TensorCoord extent) {
+  void resize(TensorCoord const &extent) {
     this->extent_ = extent;
   }
 

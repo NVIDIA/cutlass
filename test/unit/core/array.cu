@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -227,6 +227,14 @@ TEST(Array, Float16x8) {
   TestArray<cutlass::half_t, 8>().run();
 }
 #endif
+
+TEST(Array, FloatBF16x8) {
+  TestArray<cutlass::bfloat16_t, 8>().run();
+}
+
+TEST(Array, FloatTF32x4) {
+  TestArray<cutlass::tfloat32_t, 4>().run();
+}
 
 TEST(Array, Float32x4) {
   TestArray<float, 4>().run();

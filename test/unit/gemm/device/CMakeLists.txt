@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -26,6 +26,64 @@ cutlass_test_unit_add_executable(
   BATCH_SOURCES ON
   BATCH_SIZE 4
 
+  gemm_planar_complex_f16_f16_f32_tensor_op_sm70.cu                              
+  gemm_planar_complex_f16_f16_f32_tensor_op_sm75.cu                                         
+  gemm_planar_complex_f16_f16_f32_tensor_op_sm80.cu
+
+  gemm_universal_f16n_f16t_f32t_tensor_op_f32_sm80.cu                                     
+  gemm_universal_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu                             
+  gemm_universal_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu
+  gemm_universal_cf32n_cf32n_cf32n_tensor_op_f32_sm80.cu
+
+  gemm_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu
+  gemm_cf64t_cf64n_cf64t_tensor_op_f64_sm80.cu
+
+  gemm_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu
+  gemm_cf64t_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
+
+  gemm_cf32n_cf32t_cf32t_tensor_op_tf32_f32_sm80.cu
+  gemm_cf32t_cf32n_cf32t_tensor_op_tf32_f32_sm80.cu
+
+  gemm_f16n_f16n_f16t_tensor_op_f32_sm80.cu
+  gemm_f16n_f16n_f32n_tensor_op_f32_sm80.cu
+  gemm_f16n_f16n_f32t_tensor_op_f32_sm80.cu
+  gemm_f16n_f16t_f16t_tensor_op_f16_sm80.cu
+  gemm_f16n_f16t_f32t_tensor_op_f32_sm80.cu
+  gemm_f16t_f16n_f16t_tensor_op_f16_sm80.cu
+  gemm_f16t_f16n_f32t_tensor_op_f32_sm80.cu
+  gemm_f16t_f16t_f32n_tensor_op_f32_sm80.cu
+  gemm_f16t_f16t_f32t_tensor_op_f32_sm80.cu
+  gemm_bf16n_bf16n_f32t_tensor_op_f32_sm80.cu
+  gemm_bf16t_bf16t_bf16t_tensor_op_f32_sm80.cu
+  gemm_tf32t_tf32n_f32t_tensor_op_f32_sm80.cu
+  gemm_tf32n_tf32t_f32t_tensor_op_f32_sm80.cu
+  gemm_tf32n_tf32n_f32t_tensor_op_f32_sm80.cu
+  gemm_tf32t_tf32t_f32t_tensor_op_f32_sm80.cu
+
+  gemm_f16t_f16n_f16t_tensor_op_f16_slicedk_sm80.cu
+  gemm_f16n_f16t_f16t_tensor_op_f16_slicedk_sm80.cu
+
+  simt_sgemm_nt_sm80.cu
+  simt_sgemm_tn_sm80.cu
+
+  gemm_s8t_s8n_s32t_tensor_op_s32_sm80.cu
+  gemm_s8t_s8n_s8n_tensor_op_s32_sm80.cu
+  gemm_s8t_s8n_s8t_tensor_op_s32_sm80.cu
+  gemm_s4t_s4n_s32n_tensor_op_s32_sm80.cu
+  gemm_s4t_s4n_s32t_tensor_op_s32_sm80.cu
+  gemm_b1t_b1n_s32n_tensor_op_s32_sm80.cu
+  gemm_b1t_b1n_s32t_tensor_op_s32_sm80.cu
+
+  gemm_s8n_s8t_s8n_tensor_op_s32_sm80.cu
+  gemm_s4n_s4t_s4n_tensor_op_s32_sm80.cu
+
+  gemm_f64n_f64t_f64t_tensor_op_f64_sm80.cu
+  gemm_f64t_f64n_f64t_tensor_op_f64_sm80.cu
+
+  gemm_b1t_b1n_s32t_tensor_op_s32_sm75.cu
+  gemm_b1t_b1n_s32n_tensor_op_s32_sm75.cu
+
+  gemm_f32n_f32n_f32t_tensor_op_f32_sm80.cu
   gemm_f16t_f16n_f16t_tensor_op_f16_sm75.cu
   gemm_f16n_f16t_f16t_tensor_op_f16_sm75.cu
   gemm_f16n_f16t_f16t_tensor_op_f16_slicedk_sm75.cu
@@ -149,4 +207,5 @@ cutlass_test_unit_add_executable(
   gemm_f16t_f16n_f16n_singlestage_wmma_tensor_op_f16_sm70.cu
 
   gemm_f16t_f16n_f32t_singlestage_wmma_tensor_op_f32_sm70.cu
+
 )

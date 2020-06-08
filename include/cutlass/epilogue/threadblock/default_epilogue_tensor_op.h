@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -39,16 +39,20 @@
 #include "cutlass/gemm/gemm.h"
 
 #include "cutlass/epilogue/thread/linear_combination.h"
+#include "cutlass/epilogue/thread/linear_combination_clamp.h"
 #include "cutlass/epilogue/thread/conversion_op.h"
 #include "cutlass/epilogue/thread/reduction_op.h"
 
 #include "cutlass/transform/threadblock/regular_tile_iterator_pitch_linear.h"
 
 #include "cutlass/epilogue/warp/fragment_iterator_tensor_op.h"
+#include "cutlass/epilogue/warp/fragment_iterator_complex_tensor_op.h"
 #include "cutlass/epilogue/warp/tile_iterator_tensor_op.h"
+#include "cutlass/epilogue/warp/tile_iterator_tensor_op_mixed.h"
 #include "cutlass/epilogue/threadblock/default_thread_map_tensor_op.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
 #include "cutlass/epilogue/threadblock/shared_load_iterator.h"
+#include "cutlass/epilogue/threadblock/shared_load_iterator_mixed.h"
 
 #include "cutlass/epilogue/threadblock/epilogue.h"
 #include "cutlass/epilogue/threadblock/interleaved_epilogue.h"
@@ -58,6 +62,177 @@
 namespace cutlass {
 namespace epilogue {
 namespace threadblock {
+
+////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+template <
+  typename ElementOutput,
+  typename ElementAccumulator,
+  int ElementsPerAccess,
+  typename ThreadblockShape,
+  typename WarpShape,
+  typename InstructionShape,
+  typename ThreadMap
+>
+struct DefaultIteratorsTensorOp {
+  
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOp<
+    WarpShape,
+    InstructionShape,
+    ElementAccumulator,
+    layout::RowMajor
+  >;
+
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIterator<
+    ThreadMap,
+    ElementAccumulator
+  >;
+};
+
+/// Partial specialization for half <= float x 8 epilogues avoids shared memory bank conflicts.
+template <
+  typename ThreadblockShape,
+  typename WarpShape,
+  typename InstructionShape,
+  typename ThreadMap
+>
+struct DefaultIteratorsTensorOp<
+  half_t, 
+  float, 
+  8, 
+  ThreadblockShape, 
+  WarpShape, 
+  InstructionShape, 
+  ThreadMap> {
+  
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
+    WarpShape,
+    InstructionShape,
+    float,
+    32,
+    16,
+    8,
+    8
+  >;
+
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIteratorMixed<
+    ThreadMap,
+    float,
+    32,
+    16,
+    8,
+    8
+  >;
+};
+
+/// Partial specialization for int8_t x 16 <= int32_t x 16 epilogues avoids shared memory bank conflicts.
+template <
+  int K,
+  typename InstructionShape,
+  typename ThreadMap
+>
+struct DefaultIteratorsTensorOp<
+  int8_t, 
+  int32_t, 
+  16, 
+  gemm::GemmShape<128, 128, K>, 
+  gemm::GemmShape<64, 64, K>, 
+  InstructionShape, 
+  ThreadMap> {
+  
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
+    gemm::GemmShape<64, 64, K>,
+    InstructionShape,
+    int32_t,
+    32,
+    8,
+    16,
+    8
+  >;
+
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIteratorMixed<
+    ThreadMap,
+    int32_t,
+    32,
+    8,
+    16,
+    8
+  >;
+};
+
+/// Partial specialization for int8_t x 8 <= int32_t x 8 epilogues avoids shared memory bank conflicts.
+template <
+  int K,
+  typename InstructionShape,
+  typename ThreadMap
+>
+struct DefaultIteratorsTensorOp<
+  int8_t, 
+  int32_t, 
+  8, 
+  gemm::GemmShape<128, 64, K>, 
+  gemm::GemmShape<64, 32, K>, 
+  InstructionShape, 
+  ThreadMap> {
+  
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
+    gemm::GemmShape<64, 32, K>,
+    InstructionShape,
+    int32_t,
+    32,
+    8,
+    8,
+    8
+  >;
+
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIteratorMixed<
+    ThreadMap,
+    int32_t,
+    32,
+    8,
+    8,
+    8
+  >;
+};
+
+/// Partial specialization for int8_t x 8 <= int32_t x 8 epilogues avoids shared memory bank conflicts.
+template <
+  int K,
+  typename InstructionShape,
+  typename ThreadMap
+>
+struct DefaultIteratorsTensorOp<
+  int8_t, 
+  int32_t, 
+  8, 
+  gemm::GemmShape<64, 64, K>, 
+  gemm::GemmShape<32, 32, K>, 
+  InstructionShape, 
+  ThreadMap> {
+  
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
+    gemm::GemmShape<32, 32, K>,
+    InstructionShape,
+    int32_t,
+    32,
+    8,
+    8,
+    8
+  >;
+
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIteratorMixed<
+    ThreadMap,
+    int32_t,
+    32,
+    8,
+    8,
+    8
+  >;
+};
+
+} // namespace detail
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -98,25 +273,33 @@ struct DefaultEpilogueTensorOp {
     ElementOutput
   >;
 
-  using AccumulatorFragmentIterator = cutlass::epilogue::warp::FragmentIteratorTensorOp<
-    typename WarpMmaTensorOp::Shape,
-    typename WarpMmaTensorOp::Policy::Operator::Shape,
-    typename WarpMmaTensorOp::Policy::Operator::ElementC,
-    typename WarpMmaTensorOp::Policy::Operator::FragmentC,
-    LayoutC
-  >;
+  using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,
+                                    cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
+                                        typename WarpMmaTensorOp::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::ElementC,
+                                        typename WarpMmaTensorOp::Policy::Operator::FragmentC,
+                                        LayoutC>,
+                                    cutlass::epilogue::warp::FragmentIteratorTensorOp<
+                                        typename WarpMmaTensorOp::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::ElementC,
+                                        typename WarpMmaTensorOp::Policy::Operator::FragmentC,
+                                        LayoutC> >::type;
 
-  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOp<
-    typename WarpMmaTensorOp::Shape,
-    typename WarpMmaTensorOp::Policy::Operator::Shape,
+  /// Support several implementations depending on structure of epilogue
+  using DefaultIterators = detail::DefaultIteratorsTensorOp<
+    ElementOutput,
     ElementAccumulator,
-    LayoutC
+    kElementsPerAccess,
+    Shape,
+    typename WarpMmaTensorOp::Shape,
+    typename WarpMmaTensorOp::Policy::Operator::Shape,
+    typename OutputTileThreadMap::CompactedThreadMap
   >;
 
-  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIterator<
-    typename OutputTileThreadMap::CompactedThreadMap,
-    ElementAccumulator
-  >;
+  using WarpTileIterator = typename DefaultIterators::WarpTileIterator;
+  using SharedLoadIterator = typename DefaultIterators::SharedLoadIterator;
 
   /// Hard-coded padding elements added 
   using Padding = cutlass::MatrixShape<0, 64 / sizeof_bits<ElementAccumulator>::value * 4>;
@@ -184,6 +367,7 @@ struct DefaultInterleavedEpilogueTensorOp {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+
 } // namespace threadblock
 } // namespace epilogue
 } // namespace cutlass

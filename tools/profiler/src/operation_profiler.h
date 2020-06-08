@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -73,7 +73,7 @@ protected:
   ArgumentDescriptionVector arguments_;
 
   /// List of providers used to verify and compare each result
-  ProviderVector reference_providers_;
+  ProviderVector verification_providers_;
 
   /// Model performance result initailized by the operation profiler with workload statistics
   /// and reasonable default state.
@@ -92,9 +92,10 @@ public:
   OperationProfiler();
 
   OperationProfiler(
+    Options const &options,
     library::OperationKind kind, 
     ArgumentDescriptionVector const &arguments = ArgumentDescriptionVector(),
-    ProviderVector const & reference_providers = ProviderVector());
+    ProviderVector const & verification_providers = ProviderVector());
 
   /// Destructor
   virtual ~OperationProfiler();
@@ -196,6 +197,20 @@ public:
     library::OperationDescription const &desc,
     library::Provider provider,
     library::Provider verification_provider = library::Provider::kInvalid);
+  
+  /// Helper to set a performance result member
+  static void set_argument(  
+    PerformanceResult &result,
+    char const *name,
+    ProblemSpace const &problem_space,
+    std::string const &value);
+
+  /// Helper to set a performance result member
+  static void set_argument(  
+    PerformanceResult &result,
+    char const *name,
+    ProblemSpace const &problem_space,
+    int64_t value);
 
 protected:
 
@@ -205,20 +220,6 @@ protected:
     library::OperationDescription const &operation_desc,
     ProblemSpace const &problem_space);
 
-  /// Helper to set a performance result member
-  static void set_argument_(  
-    PerformanceResult &result,
-    char const *name,
-    ProblemSpace const &problem_space,
-    std::string const &value);
-
-  /// Helper to set a performance result member
-  static void set_argument_(  
-    PerformanceResult &result,
-    char const *name,
-    ProblemSpace const &problem_space,
-    int64_t value);
-
   /// Method to profile an initialized CUTLASS operation
   virtual Status profile_cutlass_(
     double &runtime,
@@ -227,6 +228,12 @@ protected:
     void const *arguments,
     void *host_workspace,
     void *device_workspace);
+
+private:
+  /// finds string matches filter_string in operation_name
+  bool find_string_matches_(
+    std::string const &filter_string, 
+    std::string const &operation_name);
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

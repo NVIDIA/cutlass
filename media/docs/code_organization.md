@@ -88,6 +88,7 @@ tools/
       cutlass/
         library/             # header files for CUTLASS Deliverables Library (in cutlass::library:: namespace)
 
+          handle.h           # implements a host-side API for launching kernels, similar to cuBLAS
           library.h          # defines enums and structs to describe the tiled structure of operator instances          
           manifest.h         # collection of all instances
 
@@ -175,6 +176,14 @@ examples/
   07_volta_tensorop_gemm/    # example demonstrating mixed precision GEMM using Volta Tensor Cores
 
   08_turing_tensorop_gemm/   # example demonstrating integer GEMM using Turing Tensor Cores
+
+  10_planar_complex/         # example demonstrating planar complex GEMM kernels
+
+  11_planar_complex_array/   # example demonstrating planar complex kernels with batch-specific problem sizes
+
+  12_gemm_bias_relu/         # example demonstrating GEMM fused with bias and relu
+
+  13_fused_two_gemms/        # example demonstrating two GEMms fused in one kernel
 ```
 
 ## Media
@@ -211,7 +220,7 @@ of tests run may vary over time as more are added.
 
 # Copyright
 
-Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

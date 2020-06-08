@@ -1,4 +1,4 @@
-# Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -123,7 +123,7 @@ for precision in precisions:
 
         # write file header
         out.write("/***************************************************************************************************\n"
-" * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.\n"
+" * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.\n"
 " *\n"
 " * Redistribution and use in source and binary forms, with or without modification, are permitted\n"
 " * provided that the following conditions are met:\n"

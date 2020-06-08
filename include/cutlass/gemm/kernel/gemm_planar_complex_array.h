@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -377,6 +377,14 @@ public:
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord threadblock_tile_offset = threadblock_swizzle.get_tile_offset();
+
+    // Early exit if CTA is out of range
+    if (params.grid_tiled_shape.m() <= threadblock_tile_offset.m() ||
+      params.grid_tiled_shape.n() <= threadblock_tile_offset.n()) {
+
+      return;
+    }
+
     int batch_idx = threadblock_tile_offset.k();
 
     int problem_size_m = params.problem_size.m();

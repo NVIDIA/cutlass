@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -40,6 +40,8 @@
 
 #include "cutlass/arch/memory_sm75.h"
 #include "cutlass/arch/mma_sm75.h"
+#include "cutlass/arch/mma_sm80.h"
+
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/warp/mma.h"
 
@@ -75,8 +77,6 @@ template <
   typename Policy_,
   ///< Number of partitions along K dimension
   int PartitionsK_ = 1,
-  ///< Number of partitions along N dimension
-  int PartitionsN_ = 1,
   ///< Used for partial specialization
   typename Enable = bool
 >
@@ -106,6 +106,9 @@ public:
   /// Shape of the warp in units of thread (concept: MmaTensorOpPolicy)
   using Policy = Policy_;
 
+  /// Underlying instruction shape
+  using InstructionShape = typename Policy::Operator::Shape;
+
   /// Underlying architecture tag
   using ArchTag = typename Policy::Operator::ArchTag;
 
@@ -116,16 +119,13 @@ public:
   static ComplexTransform const kTransformB = ComplexTransform::kNone;
 
   /// Indicates class of matrix operator
-  using OperatorClass = arch::OpClassTensorOp;
+  using OperatorClass = arch::OpClassWmmaTensorOp;
 
   /// Number of threads participating in warp-level matrix product
   static int const kThreadCount = 32;
 
   /// Number of partitions along K dimension
   static int const kPartitionsK = PartitionsK_;
-
-  /// PartitionsN indicating how many PartitionsN for multiplicand B
-  static int const kPartitionsN = PartitionsN_;
 
 public:
 
@@ -163,9 +163,7 @@ private:
   /// Number of wmma operations performed
   using WmmaIterations = MatrixShape<
     Shape::kM / Policy::Operator::Shape::kM,
-    (Shape::kN / Policy::Operator::Shape::kN / kPartitionsN > 0) ?
-     Shape::kN / Policy::Operator::Shape::kN / kPartitionsN :
-      1
+    Shape::kN / Policy::Operator::Shape::kN 
   >;
 
 public:
@@ -189,8 +187,7 @@ public:
     FragmentC &D, 
     FragmentA const &A, 
     FragmentB const &B, 
-    FragmentC const &C,
-    int const &partitionN_idx = 0) const {
+    FragmentC const &C) const {
 
     CUTLASS_PRAGMA_UNROLL
     for (int n = 0; n < WmmaIterations::kColumn; ++n) {

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -192,7 +192,7 @@ template <
         OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
         ElementAccumulator_>::EpilogueOutputOp,
     /// Threadblock-level swizzling operator
-    typename ThreadblockSwizzle_ = threadblock::GemmIdentityThreadblockSwizzle,
+    typename ThreadblockSwizzle_ = threadblock::GemmIdentityThreadblockSwizzle<>,
     /// Number of stages used in the pipelined mainloop
     int Stages =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
@@ -202,6 +202,7 @@ template <
     /// Complex elementwise transformation on B operand
     ComplexTransform TransformB = ComplexTransform::kNone,
     /// Multiply-add operator 
+    // (selects complex or gaussian complex)
     typename Operator_ = arch::OpMultiplyAddComplex,
     /// If true, kernel supports split-K with serial reduction
     bool SplitKSerial = false
@@ -506,6 +507,7 @@ template <
   /// Complex elementwise transformation on B operand
   ComplexTransform TransformB,
   /// Multiply-add operator 
+  // (selects complex or gaussian complex)
   typename Operator_,
   /// If true, kernel supports split-K as a serial reduction
   bool SplitKSerial
@@ -571,8 +573,8 @@ public:
     EpilogueOutputOp,
     ThreadblockSwizzle,
     Stages,
-    TransformA,
     TransformB,
+    TransformA,
     Operator,
     SplitKSerial
   >;

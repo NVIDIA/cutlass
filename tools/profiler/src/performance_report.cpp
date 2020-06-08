@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -68,9 +68,11 @@ PerformanceReport::PerformanceReport(
 ):
   options_(options), argument_names_(argument_names), problem_index_(0), good_(true), op_kind_(op_kind) {
 
-  std::string file_name = options_.report.output_path.substr(0, options_.report.output_path.rfind("."));
-  std::string file_extension = options_.report.output_path.substr(options_.report.output_path.rfind(".") + 1);
-  op_file_name_ = file_name + "." + to_string(op_kind_) + "." + file_extension;
+  // Strip '.csv' if present
+  std::string base_path = options_.report.output_path.substr(
+    0, options_.report.output_path.rfind(".csv"));
+
+  op_file_name_ = base_path + "." + to_string(op_kind_) + ".csv";
 
   //
   // Open output file for operation of PerformanceReport::op_kind
@@ -166,6 +168,7 @@ void PerformanceReport::close() {
 static const char *disposition_status_color(Disposition disposition) {
   switch (disposition) {
     case Disposition::kPassed: return SHELL_COLOR_GREEN();
+    case Disposition::kIncorrect: return SHELL_COLOR_RED();
     case Disposition::kFailed: return SHELL_COLOR_RED();
     default:
     break;
@@ -195,16 +198,17 @@ std::ostream & PerformanceReport::print_result_pretty_(
 
   out
     << "\n"
-    << "              Provider: " << SHELL_COLOR_BRIGHT() << library::to_string(result.provider, true) << SHELL_COLOR_END() << "\n"
-    << "             Operation: " << result.operation_name << "\n\n"
-    << "                Status: " << SHELL_COLOR_BRIGHT() << library::to_string(result.status, true) << SHELL_COLOR_END() << "\n"
-    << "          Verification: " << SHELL_COLOR_BRIGHT() << (options_.verification.enabled ? "ON":"OFF") << SHELL_COLOR_END() << "\n"
-    << "           Disposition: " << disposition_status_color(result.disposition) << to_string(result.disposition, true) << SHELL_COLOR_END() << "\n\n";
+    << "        Provider: " << SHELL_COLOR_BRIGHT() << library::to_string(result.provider, true) << SHELL_COLOR_END() << "\n"
+    << "   OperationKind: " << SHELL_COLOR_BRIGHT() << library::to_string(result.op_kind) << SHELL_COLOR_END() << "\n"
+    << "       Operation: " << result.operation_name << "\n\n"
+    << "          Status: " << SHELL_COLOR_BRIGHT() << library::to_string(result.status, true) << SHELL_COLOR_END() << "\n"
+    << "    Verification: " << SHELL_COLOR_BRIGHT() << (options_.verification.enabled ? "ON":"OFF") << SHELL_COLOR_END() << "\n"
+    << "     Disposition: " << disposition_status_color(result.disposition) << to_string(result.disposition, true) << SHELL_COLOR_END() << "\n\n";
 
   // Display individual verification results for each verification-provider
   if (options_.verification.enabled) {
 
-    static int const indent_spaces = 22;
+    static int const indent_spaces = 16;
 
     for(auto & m : result.verification_map) {
       out  << std::right << std::setw(indent_spaces) << library::to_string(m.first, true) << ": " << to_string(m.second, true) << "\n";  
@@ -212,15 +216,15 @@ std::ostream & PerformanceReport::print_result_pretty_(
   }
 
   out
-    << "\n            Arguments: ";
+    << "\n       Arguments:";
 
   int column_idx = 0;
   for (auto const &arg : result.arguments) {
     if (!arg.second.empty()) {
       out << " --" << arg.first << "=" << arg.second; 
       column_idx += int(4 + arg.first.size() + arg.second.size());
-      if (column_idx > 90) {
-        out << "  \\\n              ";
+      if (column_idx > 98) {
+        out << "  \\\n                 ";
         column_idx = 0;
       }
     }
@@ -228,15 +232,15 @@ std::ostream & PerformanceReport::print_result_pretty_(
   out << "\n\n";
 
   out 
-    << "                 Bytes: " << result.bytes << "  bytes\n"
-    << "                 FLOPs: " << result.flops << "  flops\n\n";
+    << "           Bytes: " << result.bytes << "  bytes\n"
+    << "           FLOPs: " << result.flops << "  flops\n\n";
 
   if (result.good()) {
 
     out
-      << "             Runtime: " << result.runtime << "  ms\n"
-      << "              Memory: " << result.gbytes_per_sec() << " GiB/s\n"
-      << "\n              Math: " << result.gflops_per_sec() << " GFLOP/s\n";
+      << "         Runtime: " << result.runtime << "  ms\n"
+      << "          Memory: " << result.gbytes_per_sec() << " GiB/s\n"
+      << "\n            Math: " << result.gflops_per_sec() << " GFLOP/s\n";
 
   }
 
@@ -256,7 +260,7 @@ std::ostream & PerformanceReport::print_csv_header_(
 
   out 
     << (column_idx ? "," : "") << "Problem,Provider"
-    << ",Operation,Disposition,Status";
+    << ",OperationKind,Operation,Disposition,Status";
 
   for (auto const &arg_name : argument_names_) {
     out << "," << arg_name;
@@ -289,6 +293,7 @@ std::ostream & PerformanceReport::print_result_csv_(
     << (column_idx ? "," : "") 
     << result.problem_index
     << "," << to_string(result.provider, true)
+    << "," << to_string(result.op_kind)
     << "," << result.operation_name
     << "," << to_string(result.disposition)
     << "," << library::to_string(result.status);

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -175,15 +175,106 @@ public:
     OutputOp const &output_op,                    ///< Output operator
     OutputTileIterator destination_iterator,      ///< Tile iterator for destination
     AccumulatorTile const &accumulators,          ///< Complete warp-level accumulator tile
-    OutputTileIterator source_iterator,           ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
-    int64_t imag_stride_dest = 0,                 ///< Arguments required for planar complex case - not used in real-valued case
-    int64_t imag_stride_src = 0) {                ///<
-
-    typename OutputTileIterator::Fragment source_fragment;
-
+    OutputTileIterator source_iterator) {         ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
+    
     if (!output_op.is_source_needed()) {
-      source_iterator.clear_mask();
+      compute_source_not_needed_(output_op, destination_iterator, accumulators);
     }
+    else {
+      compute_source_needed_(output_op, destination_iterator, accumulators, source_iterator);
+    }
+  }
+
+private:
+  
+  /// Streams the result to global memory
+  CUTLASS_DEVICE
+  void compute_source_not_needed_(
+    OutputOp const &output_op,                    ///< Output operator
+    OutputTileIterator destination_iterator,      ///< Tile iterator for destination
+    AccumulatorTile const &accumulators) {        ///< Complete warp-level accumulator tile
+
+    //
+    // Iterator over warp-level accumulator fragment
+    //
+
+    AccumulatorFragmentIterator accum_fragment_iterator(accumulators);
+
+    //
+    // Iterate over accumulator tile
+    // 
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int iter = 0; iter < OutputTileIterator::kIterations; ++iter) {
+
+      //
+      // Convert and store fragment
+      //
+      
+      __syncthreads();
+
+      typename AccumulatorFragmentIterator::Fragment accum_fragment;
+
+      accum_fragment_iterator.load(accum_fragment);
+      ++accum_fragment_iterator;
+
+      this->warp_tile_iterator_.store(accum_fragment);
+
+      __syncthreads();
+
+      //
+      // Load fragments from shared memory
+      //
+
+      typename SharedLoadIterator::Fragment aligned_accum_fragment[kPartitionsK];
+
+      shared_load_iterator_.load(aligned_accum_fragment[0]);
+
+      // If the number of k-slices is > 1 - perform a reduction amongst the k-slices
+      if (kPartitionsK > 1)
+      {
+        plus <typename SharedLoadIterator::Fragment> add_fragments;
+        const int tile_row_offset = Base::SharedStorage::StorageShape::kRow / PartitionsK;
+
+        CUTLASS_PRAGMA_UNROLL
+        for ( int i = 1; i < kPartitionsK; ++i) {
+          shared_load_iterator_.add_tile_offset({tile_row_offset , 0});
+          shared_load_iterator_.load(aligned_accum_fragment[i]);
+          aligned_accum_fragment[0] = add_fragments(aligned_accum_fragment[0], aligned_accum_fragment[i]);
+        }
+
+        shared_load_iterator_.add_tile_offset({-1 * (kPartitionsK-1) * tile_row_offset, 0});
+      }
+
+      //
+      // Compute the output result
+      //
+     
+      typename OutputTileIterator::Fragment output_fragment;
+
+      apply_output_operator_source_not_needed_(output_fragment, output_op, aligned_accum_fragment[0]);
+
+
+      //
+      // Store the final result
+      //
+
+      destination_iterator.store(output_fragment);      
+      ++destination_iterator;
+
+    }
+  }
+
+  
+  /// Streams the result to global memory
+  CUTLASS_DEVICE
+  void compute_source_needed_(
+    OutputOp const &output_op,                    ///< Output operator
+    OutputTileIterator destination_iterator,      ///< Tile iterator for destination
+    AccumulatorTile const &accumulators,          ///< Complete warp-level accumulator tile
+    OutputTileIterator source_iterator) {         ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
+    
+    typename OutputTileIterator::Fragment source_fragment;
 
     source_fragment.clear();
 
@@ -265,8 +356,6 @@ public:
     }
   }
 
-private:
-
   /// Helper to invoke the output functor over each vector of output
   CUTLASS_DEVICE
   void apply_output_operator_(
@@ -292,6 +381,30 @@ private:
 
       // Call the output operator
       output_frag_ptr[i] = output_op(compute_frag_ptr[i], source_frag_ptr[i]);
+    }
+  }
+
+  /// Helper to invoke the output functor over each vector of output
+  CUTLASS_DEVICE
+  void apply_output_operator_source_not_needed_(
+    typename OutputTileIterator::Fragment &output_fragment,
+    OutputOp const &output_op,                    ///< Output operator
+    typename SharedLoadIterator::Fragment const &aligned_accum_fragment) {
+    
+    OutputAccessType *output_frag_ptr = 
+      reinterpret_cast<OutputAccessType *>(&output_fragment);
+
+    AccumulatorAccessType const *compute_frag_ptr = 
+      reinterpret_cast<AccumulatorAccessType const *>(&aligned_accum_fragment);
+
+    int const kOutputOpIterations = 
+      OutputTileIterator::Fragment::kElements / OutputTileIterator::kElementsPerAccess;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < kOutputOpIterations; ++i) {
+
+      // Call the output operator
+      output_frag_ptr[i] = output_op(compute_frag_ptr[i]);
     }
   }
 };

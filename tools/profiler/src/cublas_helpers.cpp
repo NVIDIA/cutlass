@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -52,15 +52,35 @@ Status get_cutlass_status(cublasStatus_t cublas) {
 }
 
 /// Maps a CUTLASS tensor layout to a cuBLAS transpose operation
-cublasOperation_t get_cublas_transpose_operation(library::LayoutTypeID layout) {
+bool get_cublas_transpose_operation(
+  cublasOperation_t &operation,
+  library::LayoutTypeID layout, 
+  library::ComplexTransform transform) {
+
   switch (layout) {
     case library::LayoutTypeID::kColumnMajor:
-      return CUBLAS_OP_N;
+      if (transform == library::ComplexTransform::kNone) {
+        operation = CUBLAS_OP_N;
+        return true;
+      }
+      else {
+        return false;
+      }
+      break;
     case library::LayoutTypeID::kRowMajor:
-      return CUBLAS_OP_T;
+      if (transform == library::ComplexTransform::kNone) {
+        operation = CUBLAS_OP_T;
+        return true;
+      }
+      else if (transform == library::ComplexTransform::kConjugate) {
+        operation = CUBLAS_OP_C;
+        return true;
+      }
+      break;
     default: break;
   }
-  throw std::runtime_error("CUTLASS layout type does not correspond to cublas type");
+
+  return false;
 }
 
 /// Maps a CUTLASS numeric type to a cuBLAS data type enumeration
@@ -114,6 +134,14 @@ bool get_cublas_datatype(cublasDataType_t &data_type, library::NumericTypeID ele
 
   case library::NumericTypeID::kB1: 
     break;
+
+  case library::NumericTypeID::kCF32:
+    data_type = CUDA_C_32F;
+    return true;
+
+  case library::NumericTypeID::kCF64:
+    data_type = CUDA_C_64F;
+    return true;
   
   case library::NumericTypeID::kInvalid:
   
@@ -156,6 +184,104 @@ Status cublas_satisfies(library::GemmDescription const &desc) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+cublasGemmExDispatcher::cublasGemmExDispatcher(
+  library::GemmDescription const &op_desc,
+  library::GemmUniversalConfiguration configuration_,
+  library::GemmUniversalArguments arguments_,
+  cublasGemmAlgo_t algorithm
+):
+  configuration(configuration_), arguments(arguments_), algo(algorithm), status(Status::kSuccess) {
+
+  bool good = true;
+
+  good = (good && get_cublas_transpose_operation(trans_A, op_desc.A.layout, op_desc.transform_A));
+  good = (good && get_cublas_transpose_operation(trans_B, op_desc.B.layout, op_desc.transform_B));
+  good = (good && get_cublas_datatype(data_type_A, op_desc.A.element));
+  good = (good && get_cublas_datatype(data_type_B, op_desc.B.element));
+  good = (good && get_cublas_datatype(data_type_C, op_desc.C.element));
+
+  good = (good && get_cublas_datatype(
+    compute_data_type,
+    op_desc.tile_description.math_instruction.element_accumulator));
+
+  // cuBLAS introduces a separate cublasComputeType enumerant to more precisely describe
+  // internal numerical data types used in the computation.
+#if (__CUDA_VER_MAJOR__ >= 11)
+  library::OpcodeClassID const & opcode_class =
+    op_desc.tile_description.math_instruction.opcode_class;
+
+  if (good &&
+    op_desc.A.element == library::NumericTypeID::kF32 &&
+    op_desc.B.element == library::NumericTypeID::kF32 &&
+    opcode_class == library::OpcodeClassID::kTensorOp) {
+
+    compute_type = CUBLAS_COMPUTE_32F_FAST_TF32;
+  }
+  else if (good) {
+    bool const isPedantic = false;
+    switch (compute_data_type) {
+      case CUDA_R_32F:
+      case CUDA_C_32F:
+        compute_type = isPedantic ? CUBLAS_COMPUTE_32F_PEDANTIC : CUBLAS_COMPUTE_32F;
+        break;
+      case CUDA_R_64F:
+      case CUDA_C_64F:
+        compute_type = isPedantic ? CUBLAS_COMPUTE_64F_PEDANTIC : CUBLAS_COMPUTE_64F;
+        break;
+      case CUDA_R_16F:
+        compute_type = isPedantic ? CUBLAS_COMPUTE_16F_PEDANTIC : CUBLAS_COMPUTE_16F;
+        break;
+      case CUDA_R_32I:
+        compute_type = isPedantic ? CUBLAS_COMPUTE_32I_PEDANTIC : CUBLAS_COMPUTE_32I;
+        break;
+      default:
+        good = false;
+        break;
+    }
+  }
+#endif // __CUDA_VER_MAJOR__ >= 11
+
+  if (!good) {
+    status = Status::kErrorNotSupported;
+  }
+}
+
+/// Executes GEMM using these arguments
+cublasStatus_t cublasGemmExDispatcher::operator()(cublasHandle_t handle) {
+
+  return cublasGemmEx(
+    handle,
+    trans_A,
+    trans_B,
+    configuration.problem_size.m(),
+    configuration.problem_size.n(),
+    configuration.problem_size.k(),
+    arguments.alpha,
+    arguments.A,
+    data_type_A,
+    int(configuration.lda),
+    arguments.B,
+    data_type_B,
+    int(configuration.ldb),
+    arguments.beta,
+    arguments.D,
+    data_type_C,
+    int(configuration.ldc),
+#if (__CUDA_VER_MAJOR__ >= 11)
+    compute_type,
+#else
+    compute_data_type,
+#endif
+    algo
+  );
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+} // namespace detail
 
 } // namespace profiler
 } // namespace cutlass

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -129,8 +129,8 @@ public:
     cutlass::MatrixCoord problem_size) {
 
     return dim3(
-      (problem_size.column() + Shape::kColumn - 1) / Shape::kColumn, 
-      (problem_size.row() + Shape::kRow -1) / Shape::kRow);
+      (problem_size.row() + Shape::kRow - 1) / Shape::kRow,
+      (problem_size.column() + Shape::kColumn - 1) / Shape::kColumn);
   }
 
   /// Determines the threadblock shape
@@ -145,8 +145,8 @@ public:
 
     // Determine CTA position
     MatrixCoord thread_offset(
-      int(blockIdx.y) * Shape::kRow + threadIdx.y,
-      int(blockIdx.x) * Shape::kColumn + threadIdx.x * kElementsPerAccess
+      int(blockIdx.x) * Shape::kRow + threadIdx.y,
+      int(blockIdx.y) * Shape::kColumn + threadIdx.x * kElementsPerAccess
     );
 
     // One guard conditional

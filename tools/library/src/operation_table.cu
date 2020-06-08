@@ -28,30 +28,7 @@
         instances may be queried.
 */
 
-#include <fstream>
-
-#include "cutlass/library/library.h"
 #include "cutlass/library/operation_table.h"
-#include "cutlass/library/util.h"
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-std::ostream & operator<<(std::ostream &out, cutlass::library::GemmFunctionalKey const &k) {
-
-  out << "{\n"
-    << "  element_compute: " << to_string(k.element_compute) << "\n"
-    << "   element_scalar: " << to_string(k.element_scalar) << "\n"
-    << "        element_A: " << to_string(k.element_A) << "\n"
-    << "         layout_A: " << to_string(k.layout_A) << "\n"
-    << "      transform_A: " << to_string(k.transform_A) << "\n"
-    << "        element_B: " << to_string(k.element_B) << "\n"
-    << "         layout_B: " << to_string(k.layout_B) << "\n"
-    << "      transform_B: " << to_string(k.transform_B) << "\n"
-    << "        element_C: " << to_string(k.element_C) << "\n"
-    << "}";
-
-  return out;
-}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -67,85 +44,38 @@ void OperationTable::append(Manifest const &manifest) {
 
     OperationDescription const &desc = operation->description();
 
+    // insert all gemm operation into operation table
     if (desc.kind == OperationKind::kGemm) {
       GemmDescription const &gemm_desc = static_cast<GemmDescription const &>(desc);
     
-      if (gemm_desc.gemm_kind == GemmKind::kGemm) {
 
-        GemmFunctionalKey functional_key(
-          gemm_desc.tile_description.math_instruction.element_accumulator,
-          gemm_desc.element_epilogue,
-          gemm_desc.A.element,
-          gemm_desc.A.layout,
-          gemm_desc.transform_A,
-          gemm_desc.B.element,
-          gemm_desc.B.layout,
-          gemm_desc.transform_B,
-          gemm_desc.C.element
-        );
+      GemmFunctionalKey functional_key(
+        gemm_desc.provider,
+        gemm_desc.gemm_kind,
+        gemm_desc.tile_description.math_instruction.element_accumulator,
+        gemm_desc.element_epilogue,
+        gemm_desc.A.element,
+        gemm_desc.A.layout,
+        gemm_desc.transform_A,
+        gemm_desc.B.element,
+        gemm_desc.B.layout,
+        gemm_desc.transform_B,
+        gemm_desc.C.element
+      );
 
-        Operation const *op = operation.get();
+      Operation const *op = operation.get();
 
-        int cc = gemm_desc.tile_description.minimum_compute_capability;
+      int cc = gemm_desc.tile_description.minimum_compute_capability;
         
-        int alignment = std::max(std::max(
-          gemm_desc.A.alignment, gemm_desc.B.alignment), gemm_desc.C.alignment);
+      int alignment = std::max(std::max(
+        gemm_desc.A.alignment, gemm_desc.B.alignment), gemm_desc.C.alignment);
 
-        GemmPreferenceKey preference_key(cc, alignment);
+      GemmPreferenceKey preference_key(cc, alignment);
 
-        gemm_operations[functional_key][preference_key].push_back(op);
-      }
-      else if (gemm_desc.gemm_kind == GemmKind::kPlanarComplex) {
-
-        GemmFunctionalKey functional_key(
-          gemm_desc.tile_description.math_instruction.element_accumulator,
-          gemm_desc.element_epilogue,
-          gemm_desc.A.element,
-          gemm_desc.A.layout,
-          gemm_desc.transform_A,
-          gemm_desc.B.element,
-          gemm_desc.B.layout,
-          gemm_desc.transform_B,
-          gemm_desc.C.element
-        );
-
-        Operation const *op = operation.get();
-
-        int cc = gemm_desc.tile_description.minimum_compute_capability;
-        
-        int alignment = std::max(std::max(
-          gemm_desc.A.alignment, gemm_desc.B.alignment), gemm_desc.C.alignment);
-
-        GemmPreferenceKey preference_key(cc, alignment);
-
-        gemm_planar_complex_operations[functional_key][preference_key].push_back(op);
-      }
-      else if (gemm_desc.gemm_kind == GemmKind::kPlanarComplexArray) {
-
-        GemmFunctionalKey functional_key(
-          gemm_desc.tile_description.math_instruction.element_accumulator,
-          gemm_desc.element_epilogue,
-          gemm_desc.A.element,
-          gemm_desc.A.layout,
-          gemm_desc.transform_A,
-          gemm_desc.B.element,
-          gemm_desc.B.layout,
-          gemm_desc.transform_B,
-          gemm_desc.C.element
-        );
-
-        Operation const *op = operation.get();
-
-        int cc = gemm_desc.tile_description.minimum_compute_capability;
-        
-        int alignment = std::max(std::max(
-          gemm_desc.A.alignment, gemm_desc.B.alignment), gemm_desc.C.alignment);
-
-        GemmPreferenceKey preference_key(cc, alignment);
-
-        gemm_planar_complex_array_operations[functional_key][preference_key].push_back(op);
-      }
+      gemm_operations[functional_key][preference_key].push_back(op);
     }
+
+
   }
 
 }

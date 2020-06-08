@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -33,7 +33,10 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
+#include "cutlass/library/util.h"
+
 #include "options.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -45,7 +48,10 @@ namespace profiler {
 Status get_cutlass_status(cublasStatus_t cublas);
 
 /// Maps a CUTLASS tensor layout to a cuBLAS transpose operation
-cublasOperation_t get_cublas_transpose_operation(library::LayoutTypeID layout);
+bool get_cublas_transpose_operation(
+  cublasOperation_t &operation,
+  library::LayoutTypeID layout,
+  library::ComplexTransform transform = library::ComplexTransform::kNone);
 
 /// Maps a CUTLASS numeric type to a cuBLAS data type enumeration
 bool get_cublas_datatype(cublasDataType_t &data_type, library::NumericTypeID element_type);
@@ -168,8 +174,8 @@ struct cublasGemmExDispatcher {
   //
   // Data members
   //
-  library::GemmConfiguration configuration;
-  library::GemmArguments arguments;
+  library::GemmUniversalConfiguration configuration;
+  library::GemmUniversalArguments arguments;
 
   // cublass-specific data structures to fill cublas API call arguments
   cublasOperation_t trans_A;
@@ -177,7 +183,12 @@ struct cublasGemmExDispatcher {
   cudaDataType_t data_type_A;
   cudaDataType_t data_type_B;
   cudaDataType_t data_type_C;
-  cudaDataType_t compute_type;
+  cudaDataType_t compute_data_type;
+
+#if (__CUDA_VER_MAJOR__ >= 11)
+  cublasComputeType_t compute_type;
+#endif
+
   cublasGemmAlgo_t algo;
   Status status;
   
@@ -187,54 +198,13 @@ struct cublasGemmExDispatcher {
 
   cublasGemmExDispatcher( 
     library::GemmDescription const &op_desc,
-    library::GemmConfiguration configuration_,
-    library::GemmArguments arguments_,
+    library::GemmUniversalConfiguration configuration_,
+    library::GemmUniversalArguments arguments_,
     cublasGemmAlgo_t algorithm = CUBLAS_GEMM_DFALT
-  ):
-    configuration(configuration_), arguments(arguments_), algo(algorithm), status(Status::kSuccess) {
-
-    trans_A = get_cublas_transpose_operation(op_desc.A.layout);
-    trans_B = get_cublas_transpose_operation(op_desc.B.layout);
-
-    bool good = true;
-    good = (good && get_cublas_datatype(data_type_A, op_desc.A.element));
-    good = (good && get_cublas_datatype(data_type_B, op_desc.B.element));
-    good = (good && get_cublas_datatype(data_type_C, op_desc.C.element));
-
-    good = (good && get_cublas_datatype(
-      compute_type, 
-      op_desc.tile_description.math_instruction.element_accumulator));
-
-    if (!good) {
-      status = Status::kErrorNotSupported;
-    }
-  }
+  );
 
   /// Executes GEMM using these arguments
-  cublasStatus_t operator()(cublasHandle_t handle) {
-
-    return cublasGemmEx(
-      handle,
-      trans_A,
-      trans_B,
-      configuration.problem_size.m(),
-      configuration.problem_size.n(),
-      configuration.problem_size.k(),
-      arguments.alpha,
-      arguments.A,
-      data_type_A,
-      int(configuration.lda),
-      arguments.B,
-      data_type_B,
-      int(configuration.ldb),
-      arguments.beta,
-      arguments.D,
-      data_type_C,
-      int(configuration.ldc),
-      compute_type,
-      algo
-    );
-  }
+  cublasStatus_t operator()(cublasHandle_t handle);
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
