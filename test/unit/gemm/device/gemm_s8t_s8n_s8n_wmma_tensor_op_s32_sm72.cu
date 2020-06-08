@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -69,7 +69,7 @@ TEST(SM75_Device_Gemm_s8t_s8n_s8n_wmma_tensor_op_s32, 128x128x32_64x64x32_16x16x
       ElementOutput,
       128 / cutlass::sizeof_bits<ElementOutput>::value
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     2
   >;
 
@@ -98,7 +98,7 @@ TEST(SM75_Device_Gemm_s8t_s8n_s8n_wmma_tensor_op_s32, 64x128x64_32x32x64_16x16x1
       ElementOutput,
       128 / cutlass::sizeof_bits<ElementOutput>::value
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     2
   >;
 
@@ -130,7 +130,7 @@ TEST(SM75_Device_Gemm_s8t_s8n_s8n_wmma_tensor_op_s32, 64x128x64_32x64x64_32x8x16
       ElementOutput,
       128 / cutlass::sizeof_bits<ElementOutput>::value
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     2
   >;
 
@@ -162,7 +162,7 @@ TEST(SM75_Device_Gemm_s8t_s8n_s8n_wmma_tensor_op_s32, 64x128x64_32x64x64_8x32x16
       ElementOutput,
       128 / cutlass::sizeof_bits<ElementOutput>::value
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     2
   >;
 

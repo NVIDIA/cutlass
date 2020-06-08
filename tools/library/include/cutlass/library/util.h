@@ -49,6 +49,9 @@ char const *to_string(Provider provider, bool pretty = false);
 /// Parses a Provider enumerant from a string
 template <> Provider from_string<Provider>(std::string const &str);
 
+/// Converts a GemmKind enumerant to a string
+char const *to_string(GemmKind type, bool pretty = false);
+
 /// Converts a NumericType enumerant to a string
 char const *to_string(OperationKind type, bool pretty = false);
 
@@ -110,6 +113,14 @@ char const *to_string(ComplexTransform type, bool pretty = false);
 /// Converts a ComplexTransform enumerant from a string
 template <>
 ComplexTransform from_string<ComplexTransform>(std::string const &str);
+
+
+/// Converts a SplitKMode enumerant to a string
+char const *to_string(SplitKMode split_k_mode, bool pretty = false);
+
+/// Converts a SplitKMode enumerant from a string
+template <>
+SplitKMode from_string<SplitKMode>(std::string const &str);
 
 /// Lexical cast from int64_t to string
 std::string lexical_cast(int64_t int_value);

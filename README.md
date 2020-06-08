@@ -1,8 +1,8 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 2.1
+# CUTLASS 2.2
 
-_CUTLASS 2.1 - April 2020_
+_CUTLASS 2.2 - June 2020_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
@@ -17,13 +17,27 @@ and applications.
 To support a wide variety of applications, CUTLASS provides extensive support for
 mixed-precision computations, providing specialized data-movement and
 multiply-accumulate abstractions for half-precision floating
-point (FP16), single-precision floating point (FP32), double-precision floating
+point (FP16), BFloat16 (BF16), Tensor Float 32 (TF32),
+single-precision floating point (FP32), double-precision floating
 point (FP64) types, integer data types (4b and 8b), and binary data types (1b). 
-Furthermore, CUTLASS demonstrates warp-synchronous matrix multiply operations for 
+
+Furthermore, CUTLASS demonstrates warp-synchronous matrix multiply operations 
 targeting the  programmable, high-throughput _Tensor Cores_ implemented by 
-NVIDIA's Volta and Turing architectures.
+NVIDIA's Volta, Turing, and Ampere architectures.
 
 See the [Quick Start Guide](/media/docs/quickstart.md) to get started quickly.
+
+See the [functionality listing](media/docs/functionality.md) for the list of operations
+supported at each level of the execution model hierarchy.
+
+# What's New in CUTLASS 2.2
+
+CUTLASS 2.2 is a significant update to CUTLASS adding:
+
+- Coverage of [NVIDIA Ampere Architecture features](https://devblogs.nvidia.com/nvidia-ampere-architecture-in-depth/)
+- Tensor Core-accelerated GEMMs targeting Tensor Float 32, BFloat16, and double-precision data types
+- Deep software pipelines using asynchronous copy
+- Intended to be compiled with [CUDA 11 Toolkit](https://developer.nvidia.com/cuda-toolkit)
 
 # What's New in CUTLASS 2.1
 
@@ -31,7 +45,6 @@ CUTLASS 2.1 is a minor update to CUTLASS 2.0 adding:
 
 - [Planar complex GEMM kernels](/examples/10_planar_complex/planar_complex.cu) targeting Volta and Turing Tensor Cores
 - BLAS-style API to launch kernels compiled into the [CUTLASS Library](/media/docs/quickstart.md#cutlass-library)
-
 
 # What's New in CUTLASS 2.0
 
@@ -43,9 +56,6 @@ CUTLASS 2.0 is a substantial refactoring from the previous version, intended to 
 
 **See the [CHANGELOG](CHANGELOG.md) for more details.**
 
-See the [functionality listing](media/docs/functionality.md) for the list of operations
-supported at each level of the execution model hierarchy.
-
 # Performance
 
 <p align="center"><img src=/media/images/cutlass-performance-plot.png></p>
@@ -53,15 +63,15 @@ supported at each level of the execution model hierarchy.
 CUTLASS primitives are very efficient.  When used to construct device-wide GEMM kernels,
 they exhibit performance comparable to cuBLAS for scalar GEMM
 computations. The above figure shows CUTLASS performance relative to cuBLAS
-for large matrix dimensions on an NVIDIA GeForce 2080 Ti and an NVIDIA TitanV
-using CUDA 10.2. Tensor Core operations are implemented using CUDA's 
+for large matrix dimensions on an NVIDIA GeForce 2080 Ti, an NVIDIA A100, and an NVIDIA TitanV
+using CUDA 11.0 Toolkit. Tensor Core operations are implemented using CUDA's 
 [mma instruction](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-mma).
 
 # Compatibility
 
 CUTLASS requires a C++11 host compiler and 
-performs best when built with the [CUDA 10.2 Toolkit](https://developer.nvidia.com/cuda-toolkit).
-It is compatible with CUDA 9.2, CUDA 10.0, and CUDA 10.1.
+performs best when built with the [CUDA 11.0 Toolkit](https://developer.nvidia.com/cuda-toolkit).
+It is compatible with CUDA 9.2, CUDA 10.0, CUDA 10.1, and CUDA 10.2.
 
 We have tested the following environments.
 
@@ -70,27 +80,28 @@ We have tested the following environments.
 | Windows 10      | Microsoft Visual Studio 2015|
 |                 | Microsoft Visual Studio 2017|
 | Ubuntu 16.04 | GCC 5.4.0 |
-| Ubuntu 18.04 | GCC 7.3.0 |
+| Ubuntu 18.04 | GCC 7.5.0 |
 
 Additionally, CUTLASS may be built with clang. 
 See [these instructions](media/docs/quickstart.md#clang) for more details.
 
 CUTLASS runs successfully on the following NVIDIA GPUs, and it is expected to be efficient on
-any Maxwell-, Pascal-, Volta-, or Turing- architecture NVIDIA GPU.
+any Maxwell-, Pascal-, Volta-, Turing-, or NVIDIA Ampere- architecture NVIDIA GPU.
 
-|**GPU**|**Minimum CUDA Toolkit**|**CUDA Toolkit Enabling Native Tensor Cores**|
-|---|---|---|
-|NVIDIA GeForce 1080|9.2|  |
-|NVIDIA TitanXP|9.2|  |
-|NVIDIA Tesla P100|9.2|  |
-|NVIDIA Tesla V100|9.2|10.1|
-|NVIDIA TitanV|9.2|10.1|
-|NVIDIA GeForce RTX 2080 TI, 2080, 2070|10.0|10.2|
-|NVIDIA Tesla T4|10.0|10.2|
+|**GPU**|**CUDA Compute Capability**|**Minimum CUDA Toolkit**|**CUDA Toolkit Enabling Native Tensor Cores**|
+|---|---|---|---|
+|NVIDIA Tesla P100|6.0|9.2|  |
+|NVIDIA GeForce 1080|6.1|9.2|  |
+|NVIDIA TitanXP|6.1|9.2|  |
+|NVIDIA Tesla V100|7.0|9.2|10.1|
+|NVIDIA TitanV|7.0|9.2|10.1|
+|NVIDIA GeForce RTX 2080 TI, 2080, 2070|7.5|10.0|10.2|
+|NVIDIA Tesla T4|7.5|10.0|10.2|
+|NVIDIA A100|8.0|11.0|11.0|
 
 # Documentation
 
-CUTLASS 2.1 is described in the following documents and the accompanying
+CUTLASS 2.2 is described in the following documents and the accompanying
 [Doxygen documentation](https://nvidia.github.io/cutlass).
 
 - [Quick Start Guide](/media/docs/quickstart.md) - build and run CUTLASS
@@ -124,7 +135,7 @@ $ export CUDACXX=${CUDA_INSTALL_PATH}/bin/nvcc
 ```
 
 Create a build directory within the CUTLASS project, then run CMake. By default CUTLASS will build kernels
-for CUDA architecture versions 5.0, 6.0, 6.1, 7.0 and 7.5. To reduce compile time you can specify
+for CUDA architecture versions 5.0, 6.0, 6.1, 7.0, 7.5, and 8.0. To reduce compile time you can specify
 the architectures to build CUTLASS for by changing the CMake configuration setting
 `CUTLASS_NVCC_ARCHS`.
 
@@ -210,6 +221,10 @@ examples/
   10_planar_complex/         # example demonstrating planar complex GEMM kernels
 
   11_planar_complex_array/   # example demonstrating planar complex kernels with batch-specific problem sizes
+
+  12_gemm_bias_relu/         # example demonstrating GEMM fused with bias and relu
+
+  13_fused_two_gemms/        # example demonstrating two GEMms fused in one kernel
 ```
 
 ### Tools
@@ -255,29 +270,32 @@ $ make cutlass_profiler -j
 
 Example command line for profiling SGEMM kernels is as follows:
 ```
-$ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=4352 --n=4096 --k=4096
+$ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=3456 --n=4096 --k=4096
 
 =============================
   Problem ID: 1
 
-    Provider: CUTLASS
-   Operation: cutlass_simt_sgemm_128x128_nn
+        Provider: CUTLASS
+   OperationKind: gemm
+       Operation: cutlass_simt_sgemm_128x128_8x2_nn_align1
 
- Disposition: Passed
-      Status: Success
+          Status: Success
+    Verification: ON
+     Disposition: Passed
 
-   Arguments:  --m=4352 --n=4096 --k=4096 --A=f32:column --B=f32:column --C=f32:column --alpha=1 --beta=0  \
-               --split_k_slices=1 --batch_count=1 --op_class=simt --accum=f32 --cta_m=128 --cta_n=128 --cta_k=8  \
-               --stages=2 --warps_m=2 --warps_n=2 --warps_k=1 --inst_m=1 --inst_n=1 --inst_k=1 --min_cc=50  \
-               --max_cc=1024
+          cuBLAS: Passed
 
-       Bytes: 52428800  bytes
-       FLOPs: 146064539648  flops
+       Arguments: --m=3456 --n=4096 --k=4096 --A=f32:column --B=f32:column --C=f32:column --alpha=1 --beta=0 --split_k_slices=1  \
+                  --batch_count=1 --op_class=simt --accum=f32 --cta_m=128 --cta_n=128 --cta_k=8 --stages=2 --warps_m=4  \
+                  --warps_n=2 --warps_k=1 --inst_m=1 --inst_n=1 --inst_k=1 --min_cc=50 --max_cc=1024
 
-     Runtime: 10.5424  ms
-      Memory: 4.63158 GiB/s
+           Bytes: 180355072  bytes
+           FLOPs: 115992428544  flops
 
-        Math: 13854.9 GFLOP/s
+         Runtime: 6.73655  ms
+          Memory: 24.934 GiB/s
+
+            Math: 17218.4 GFLOP/s
 ```
 
 [Further details about the CUTLASS Profiler are described here.](media/docs/profiler.md)

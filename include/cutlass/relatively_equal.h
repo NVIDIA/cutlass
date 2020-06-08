@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -142,6 +142,28 @@ bool relatively_equal<uint64_t>(uint64_t a, uint64_t b, uint64_t, uint64_t) {
 template <>
 CUTLASS_HOST_DEVICE
 bool relatively_equal<half_t>(half_t a, half_t b, half_t epsilon, half_t nonzero_floor) {
+  return detail::relatively_equal_float(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<bfloat16_t>(
+  bfloat16_t a, 
+  bfloat16_t b, 
+  bfloat16_t epsilon, 
+  bfloat16_t nonzero_floor) {
+  
+  return detail::relatively_equal_float(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<tfloat32_t>(
+  tfloat32_t a, 
+  tfloat32_t b, 
+  tfloat32_t epsilon, 
+  tfloat32_t nonzero_floor) {
+  
   return detail::relatively_equal_float(a, b, epsilon, nonzero_floor);
 }
 

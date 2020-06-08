@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -65,7 +65,7 @@ struct PerformanceResult {
   /// Outcome of verification (all verification results)
   DispositionMap verification_map;
 
-  /// Operation object
+  /// Operation name
   std::string operation_name;
 
   /// Stringified vector of argument values
@@ -119,3 +119,4 @@ using PerformanceResultVector = std::vector<PerformanceResult>;
 
 } // namespace profiler
 } // namespace cutlass
+

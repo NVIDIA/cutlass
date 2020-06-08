@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -49,6 +49,7 @@
 
 #include "cutlass/epilogue/threadblock/default_epilogue_planar_complex.h"
 #include "cutlass/gemm/threadblock/default_mma_planar_complex_pipelined.h"
+#include "cutlass/gemm/threadblock/default_mma_planar_complex_multistage.h" 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -220,6 +221,122 @@ struct DefaultGemmPlanarComplexUniversal<
   >;
 };
   
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for multiple pipeline stages.
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Complex elementwise transformation on A operand
+    ComplexTransform TransformA,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Complex elementwise transformation on B operand
+    ComplexTransform TransformB,
+    /// Access granularity of B matrix in units of elements
+    int kAlignmentB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Layout type for C and D matrix operands
+    typename LayoutC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Operator class tag
+    typename OperatorClass,
+    /// Tag indicating architecture to tune for
+    typename ArchTag,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// Operation performed by GEMM
+    typename Operator
+  >
+struct DefaultGemmPlanarComplexUniversal<
+  ElementA,
+  LayoutA,
+  TransformA,
+  kAlignmentA,
+  ElementB,
+  LayoutB,
+  TransformB,
+  kAlignmentB,
+  ElementC,
+  LayoutC,
+  ElementAccumulator,
+  OperatorClass,
+  ArchTag,
+  ThreadblockShape,
+  WarpShape,
+  InstructionShape,
+  EpilogueOutputOp,
+  ThreadblockSwizzle,
+  Stages,
+  Operator,
+  typename std::enable_if<(Stages > 2)>::type 
+> {
+
+  /// Define planar complex valued variants instead
+  using Mma = typename gemm::threadblock::DefaultMmaPlanarComplexMultistage<
+    ElementA,
+    LayoutA,
+    kAlignmentA,
+    ElementB,
+    LayoutB,
+    kAlignmentB,
+    ElementAccumulator,
+    LayoutC,
+    OperatorClass,
+    ArchTag,
+    ThreadblockShape,
+    WarpShape,
+    InstructionShape,
+    Stages,
+    TransformA,
+    TransformB,
+    Operator
+  >::ThreadblockMma;
+
+  /// Planar complex epilogue
+  using Epilogue = typename epilogue::threadblock::DefaultEpiloguePlanarComplex<
+    ThreadblockShape,
+    typename Mma::Policy::Operator,
+    OperatorClass,
+    ArchTag,
+    ThreadblockShape::kK / WarpShape::kK,
+    EpilogueOutputOp,
+    EpilogueOutputOp::kCount  
+  >::Epilogue;
+
+  /// Define the kernel in terms of the default kernel
+  using GemmKernel = kernel::GemmPlanarComplex<
+    Mma,
+    Epilogue, 
+    ThreadblockSwizzle
+  >;
+
+  // Array variant
+  using GemmArrayKernel = kernel::GemmPlanarComplexArray<
+    Mma,
+    Epilogue,
+    ThreadblockSwizzle
+  >;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace kernel

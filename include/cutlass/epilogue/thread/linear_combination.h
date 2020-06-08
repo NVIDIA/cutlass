@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -159,6 +159,28 @@ public:
 
     intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
+
+    return destination_converter(intermediate);
+  }
+
+  /// Computes linear scaling: D = alpha * accumulator
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(
+    FragmentAccumulator const &accumulator) const {
+
+    // Convert source to interal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+
+    // Perform binary operations
+    ComputeFragment intermediate;
+    multiplies<ComputeFragment> mul_accumulator;
+
+    intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum 
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;

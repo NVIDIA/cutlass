@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -147,6 +147,44 @@ struct DefaultEpiloguePlanarComplex<
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Defines sensible defaults for epilogues.
+template <
+  typename ThreadblockShape_,
+  typename WarpMmaOperator_,
+  int PartitionsK,
+  typename OutputOp_,
+  int ElementsPerAccess
+>
+struct DefaultEpiloguePlanarComplex<
+  ThreadblockShape_, 
+  WarpMmaOperator_, 
+  arch::OpClassTensorOp, 
+  arch::Sm80,
+  PartitionsK, 
+  OutputOp_, 
+  ElementsPerAccess> {
+
+  using RealEpilogue = DefaultEpilogueTensorOp<
+    ThreadblockShape_,
+    WarpMmaOperator_,
+    PartitionsK,
+    OutputOp_,
+    ElementsPerAccess
+  >;
+
+  using Epilogue = EpiloguePlanarComplex<
+    ThreadblockShape_,
+    WarpMmaOperator_,
+    PartitionsK,
+    typename RealEpilogue::OutputTileIterator,
+    typename RealEpilogue::AccumulatorFragmentIterator,
+    typename RealEpilogue::WarpTileIterator,
+    typename RealEpilogue::SharedLoadIterator,
+    OutputOp_,
+    typename RealEpilogue::Padding
+  >;
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

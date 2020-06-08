@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -61,9 +61,7 @@ template <
     /// Operator describing the tensor operation
     typename Operator_ = arch::OpMultiplyAdd,
     /// Number of partitions along K dimension
-    int PartitionsK = 1,
-    /// Number of partitions along N dimension per warp
-    int PartitionsN = 1
+    int PartitionsK = 1
 >
 struct DefaultMmaTensorOpWmma;
 
@@ -90,9 +88,7 @@ template <
     /// Operator describing the tensor operation
     typename Operator_,
     /// Number of partitions along K dimension
-    int PartitionsK,
-    /// Number of partitions along N dimension per warp
-    int PartitionsN>
+    int PartitionsK>
 struct DefaultMmaTensorOpWmma {
   using Policy = cutlass::gemm::warp::MmaTensorOpPolicy<
       cutlass::arch::Wmma<
@@ -116,8 +112,7 @@ struct DefaultMmaTensorOpWmma {
         ElementC, 
         LayoutC, 
         Policy, 
-        PartitionsK,
-        PartitionsN>;
+        PartitionsK>;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -127,4 +122,3 @@ struct DefaultMmaTensorOpWmma {
 } // namespace cutlass
 
 #endif
-

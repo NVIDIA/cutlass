@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -69,7 +69,7 @@
       ElementAccumulator,                                             \
       ElementCompute                                                  \
     >,                                                                \
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,       \
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,       \
     2                                                                 \
   >;                                                                  \
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());               \

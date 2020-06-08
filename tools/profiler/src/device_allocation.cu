@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -431,6 +431,14 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
       dist
     );
     break;
+  case library::NumericTypeID::kCF32:
+    cutlass::reference::device::BlockFillRandom<cutlass::complex<float>>(
+      reinterpret_cast<cutlass::complex<float> *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
   case library::NumericTypeID::kF64:
     cutlass::reference::device::BlockFillRandom<double>(
       reinterpret_cast<double *>(pointer_),
@@ -548,6 +556,14 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
       dist
     );
     break;
+  case library::NumericTypeID::kCF32:
+    cutlass::reference::host::BlockFillRandom<cutlass::complex<float>>(
+      reinterpret_cast<cutlass::complex<float> *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
   case library::NumericTypeID::kF64:
     cutlass::reference::host::BlockFillRandom<double>(
       reinterpret_cast<double *>(host_data.data()),
@@ -654,6 +670,12 @@ bool DeviceAllocation::block_compare_equal(
     return reference::device::BlockCompareEqual<float>(
       reinterpret_cast<float const *>(ptr_A), 
       reinterpret_cast<float const *>(ptr_B), 
+      capacity);
+
+  case library::NumericTypeID::kCF32:
+    return reference::device::BlockCompareEqual<cutlass::complex<float> >(
+      reinterpret_cast<complex<float> const *>(ptr_A), 
+      reinterpret_cast<complex<float> const *>(ptr_B), 
       capacity);
   
   case library::NumericTypeID::kCF16:
@@ -825,6 +847,23 @@ bool DeviceAllocation::block_compare_relatively_equal(
       static_cast<uint64_t>(epsilon), 
       static_cast<uint64_t>(nonzero_floor));
 
+  // No relatively equal comparison for complex numbers.
+  //
+  // As a simplification, we can require bitwise equality. This avoids false positives.
+  // (i.e. "pass" really means passing. "Fail" may not actually mean failure given appropriate epsilon.)
+  //
+  case library::NumericTypeID::kCF32:
+    return reference::device::BlockCompareEqual<cutlass::complex<float> >(
+      reinterpret_cast<complex<float> const *>(ptr_A),
+      reinterpret_cast<complex<float> const *>(ptr_B),
+      capacity);
+  
+  case library::NumericTypeID::kCF64:
+    return reference::device::BlockCompareEqual<cutlass::complex<double> >(
+      reinterpret_cast<complex<double> const *>(ptr_A),
+      reinterpret_cast<complex<double> const *>(ptr_B),
+      capacity);
+
   default:
     throw std::runtime_error("Unsupported numeric type");
   }
@@ -969,6 +1008,14 @@ void DeviceAllocation::write_tensor_csv(
 
   case library::NumericTypeID::kU64:
     write_tensor_csv_static_type<uint64_t>(out, *this);
+    break;
+  
+  case library::NumericTypeID::kCF32:
+    write_tensor_csv_static_type<cutlass::complex<float> >(out, *this);
+    break;
+
+  case library::NumericTypeID::kCF64:
+    write_tensor_csv_static_type<cutlass::complex<double> >(out, *this);
     break;
 
   default:

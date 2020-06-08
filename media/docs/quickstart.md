@@ -7,7 +7,7 @@
 ## Prerequisites
 
 CUTLASS requires:
-- NVIDIA CUDA Toolkit (9.2 or later required, 10.2 recommended)
+- NVIDIA CUDA Toolkit (9.2 or later required, [11.0](https://developer.nvidia.com/cuda-toolkit) recommended)
 - CMake 3.12+
 - host compiler supporting C++11 or greater (g++ 7.3.0 or Microsoft Visual Studio 2015 recommended)
 - Python 3.6+
@@ -20,23 +20,7 @@ $ export CUDACXX=${CUDA_INSTALL_PATH}/bin/nvcc
 
 $ mkdir build && cd build
 
-$ cmake .. -DCUTLASS_NVCC_ARCHS=75               # compiles for NVIDIA's Turing GPU architecture
-```
-
-## Clang
-
-For experimental purposes, CUTLASS may be compiled with 
-[clang 8.0](https://github.com/llvm/llvm-project/releases/download/llvmorg-8.0.1/clang+llvm-8.0.1-amd64-unknown-freebsd11.tar.xz) using the 
-[CUDA 10.0 Toolkit](https://developer.nvidia.com/cuda-10.0-download-archive).
-At this time, compiling with clang enables the CUTLASS SIMT GEMM kernels (sgemm, dgemm, hgemm, igemm)
-but does not enable TensorCores.
-
-```bash
-$ mkdir build && cd build
-
-$ cmake -DCUDA_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
-
-$ make test_unit -j
+$ cmake .. -DCUTLASS_NVCC_ARCHS=80               # compiles for NVIDIA Ampere GPU architecture
 ```
 
 ## Build and run the CUTLASS Profiler
@@ -120,6 +104,53 @@ $ make test_unit_gemm_warp -j
 [100%] Built target test_unit_gemm_warp
 ```
 
+## Building for Multiple Architectures
+
+To minimize compilation time, specific GPU architectures can be enabled via the CMake command,
+selected by [CUDA Compute Capability.](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compute-capabilities)
+
+**NVIDIA Ampere Architecture.**
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS=80               # compiles for NVIDIA Ampere GPU architecture
+```
+
+**NVIDIA Turing Architecture.**
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS=75               # compiles for NVIDIA Turing GPU architecture
+```
+
+**NVIDIA Volta Architecture.**
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS=70               # compiles for NVIDIA Volta GPU architecture
+```
+
+**NVIDIA Pascal Architecture.**
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS="60;61"          # compiles for NVIDIA Pascal GPU architecture
+```
+
+**NVIDIA Maxwell Architecture.**
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS="50;53"          # compiles for NVIDIA Maxwell GPU architecture
+```
+
+## Clang
+
+For experimental purposes, CUTLASS may be compiled with 
+[clang 8.0](https://github.com/llvm/llvm-project/releases/download/llvmorg-8.0.1/clang+llvm-8.0.1-amd64-unknown-freebsd11.tar.xz) using the 
+[CUDA 10.0 Toolkit](https://developer.nvidia.com/cuda-10.0-download-archive).
+At this time, compiling with clang enables the CUTLASS SIMT GEMM kernels (sgemm, dgemm, hgemm, igemm)
+but does not enable TensorCores.
+
+```bash
+$ mkdir build && cd build
+
+$ cmake -DCUDA_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
+
+$ make test_unit -j
+```
+
+
 ## Using CUTLASS within other applications
 
 Applications should list [`/include`](/include) within their include paths. They must be
@@ -143,10 +174,10 @@ int main() {
 
 ## Launching a GEMM kernel in CUDA
 
-**Example:** launch a mixed-precision GEMM targeting Volta Tensor Cores.
+**Example:** launch a mixed-precision GEMM targeting Turing Tensor Cores.
 ```c++
 #include <cutlass/numeric_types.h>
-#include <cutlas/gemm/device/gemm.h>
+#include <cutlass/gemm/device/gemm.h>
 #include <cutlass/util/host_tensor.h>
 
 int main() {
@@ -161,7 +192,7 @@ int main() {
     cutlass::layout::ColumnMajor,              // LayoutOutput
     float,                                     // ElementAccumulator
     cutlass::arch::OpClassTensorOp,            // tag indicating Tensor Cores
-    cutlass::arch::Sm70                        // tag indicating target GPU compute architecture
+    cutlass::arch::Sm75                        // tag indicating target GPU compute architecture
   >;
 
   Gemm gemm_op;
@@ -193,7 +224,7 @@ int main() {
   int lda = A.device_ref().stride(0);
   int ldb = B.device_ref().stride(0);
   int ldc = C.device_ref().stride(0);
-  int ldd = D.device_ref().stride(0);
+  int ldd = C.device_ref().stride(0);
   //
   // Launch GEMM on the device
   //
@@ -372,9 +403,14 @@ To instantiate kernels of all tile sizes, data types, and alignment constraints,
 
 Several recipes are defined below for convenience. They may be combined as a comma-delimited list.
 
-**Example.** All kernels for Volta and Turing architectures.
+**Example.** All GEMM kernels targeting NVIDIA Ampere Tensor Cores.
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75" -DCUTLASS_LIBRARY_KERNELS=all
+$ cmake .. -DCUTLASS_NVCC_ARCHS=80 -DCUTLASS_LIBRARY_KERNELS=tensorop*gemm
+```
+
+**Example.** All kernels for NVIDIA Volta, Turing, and Ampere architectures.
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all
 ```
 
 **Example.** All GEMM kernels targeting Turing Tensor Cores.
@@ -384,17 +420,17 @@ $ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=tensorop*gemm
 
 **Example.** All GEMM kernels with single-precision accumulation.
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75" -DCUTLASS_LIBRARY_KERNELS=s*gemm
+$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=s*gemm
 ```
 
 **Example.** All kernels which expect A and B to be column-major.
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75" -DCUTLASS_LIBRARY_KERNELS=gemm*nn
+$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=gemm*nn
 ```
 
 **Example.** All planar complex GEMM variants.
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75" -DCUTLASS_LIBRARY_KERNELS=planar_complex
+$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=planar_complex
 ```
 
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -42,7 +42,7 @@
 
 #include "testbed_splitk.h"
 
-// These tests cannot run unless CUDA 10.2 Toolkit or later is used.
+// These operators are assert(0) unless extended PTX is used. 
 #if defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

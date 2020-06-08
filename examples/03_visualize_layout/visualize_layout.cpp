@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -65,14 +65,26 @@ void print_usage(std::ostream &out) {
          "--extent=64,64 --vectorize=32 --output-shape=256,4\n"
       << "$ 03_visualize_layout \"TensorOpMultiplicand<4,128>\" "
          "--extent=128,32 --vectorize=32 --output-shape=256,4\n"
+      << "$ 03_visualize_layout \"TensorOpMultiplicand<4,256>\" "
+         "--extent=256,16 --vectorize=32 --output-shape=256,4\n"
       << "$ 03_visualize_layout \"TensorOpMultiplicand<8,32>\" "
          "--extent=32,64 --vectorize=16 --output-shape=128,4\n"
       << "$ 03_visualize_layout \"TensorOpMultiplicand<8,64>\" "
          "--extent=64,32 --vectorize=16 --output-shape=128,4\n"
+      << "$ 03_visualize_layout \"TensorOpMultiplicand<8,128>\" "
+         "--extent=128,16 --vectorize=16 --output-shape=128,4\n"
       << "$ 03_visualize_layout \"TensorOpMultiplicand<16,32>\" "
          "--extent=32,32 --vectorize=8 --output-shape=64,4\n"
       << "$ 03_visualize_layout \"TensorOpMultiplicand<16,64>\" "
          "--extent=64,16 --vectorize=8 --output-shape=64,4\n"
+      << "$ 03_visualize_layout \"TensorOpMultiplicand<32,16>\" "
+         "--extent=16,32 --vectorize=4 --output-shape=32,4\n"
+      << "$ 03_visualize_layout \"TensorOpMultiplicand<32,32>\" "
+         "--extent=32,16 --vectorize=4 --output-shape=32,4\n"
+      << "$ 03_visualize_layout \"TensorOpMultiplicandCongruous<32,32>\" "
+         "--extent=32,16 --vectorize=4 --output-shape=32,4\n"
+      << "$ 03_visualize_layout \"TensorOpMultiplicandCongruous<64, 16>\" "
+         "--extent=16,16 --vectorize=2 --output-shape=16,4\n"
       << "$ 03_visualize_layout \"VoltaTensorOpMultiplicandCrosswise<16,32>\" "
          "--extent=32,64 --vectorize=4 --output-shape=64,4\n"
       << "$ 03_visualize_layout \"VotlaTensorOpMultiplicandCongruous<16>\" "

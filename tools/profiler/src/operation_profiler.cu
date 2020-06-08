@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -31,6 +31,7 @@
 #include <iomanip>
 #include <cstring>
 #include <fstream>
+#include <sstream>
 
 #ifdef __unix__
 #include <unistd.h>
@@ -55,30 +56,41 @@ OperationProfiler::OperationProfiler(): kind_(library::OperationKind::kInvalid) 
 
 /// Ctor
 OperationProfiler::OperationProfiler(
+  Options const &options,
   library::OperationKind kind,
   ArgumentDescriptionVector const &arguments,
-  ProviderVector const & reference_providers
+  ProviderVector const & verification_providers
 ): 
-  kind_(kind), arguments_(arguments), reference_providers_(reference_providers) {
+  kind_(kind), arguments_(arguments) {
 
   ArgumentDescriptionVector tile_description_arguments{
-    {ArgumentTypeID::kEnumerated, {"op_class", "opcode-class"}, "Class of math instruction (SIMT or TensorOp)."},
-    {ArgumentTypeID::kEnumerated, {"accum", "accumulator-type"}, "Math instruction accumulator data type."},
-    {ArgumentTypeID::kInteger, {"cta_m", "threadblock-shape::m"}, "Threadblock shape in the M dimension."},
-    {ArgumentTypeID::kInteger, {"cta_n", "threadblock-shape::n"}, "Threadblock shape in the N dimension."},
-    {ArgumentTypeID::kInteger, {"cta_k", "threadblock-shape::k"}, "Threadblock shape in the K dimension."},
-    {ArgumentTypeID::kInteger, {"stages", "threadblock-stages"}, "Number of stages of threadblock-scoped matrix multiply."},
-    {ArgumentTypeID::kInteger, {"warps_m", "warp-count::m"}, "Number of warps within threadblock along the M dimension."},
-    {ArgumentTypeID::kInteger, {"warps_n", "warp-count::n"}, "Number of warps within threadblock along the N dimension."},
-    {ArgumentTypeID::kInteger, {"warps_k", "warp-count::k"}, "Number of warps within threadblock along the K dimension."},
-    {ArgumentTypeID::kInteger, {"inst_m", "instruction-shape::m"}, "Math instruction shape in the M dimension."},
-    {ArgumentTypeID::kInteger, {"inst_n", "instruction-shape::n"}, "Math instruction shape in the N dimension."},
-    {ArgumentTypeID::kInteger, {"inst_k", "instruction-shape::k"}, "Math instruction shape in the K dimension."},
-    {ArgumentTypeID::kInteger, {"min_cc", "minimum-compute-capability"}, "Minimum device compute capability."},
-    {ArgumentTypeID::kInteger, {"max_cc", "maximum-compute-capability"}, "Maximum device compute capability."}
+    {ArgumentTypeID::kEnumerated, {"op_class", "opcode-class"}, "Class of math instruction (simt, tensorop, wmmatensorop, wmma)"},
+    {ArgumentTypeID::kEnumerated, {"accum", "accumulator-type"}, "Math instruction accumulator data type"},
+    {ArgumentTypeID::kInteger, {"cta_m", "threadblock-shape::m"}, "Threadblock shape in the M dimension"},
+    {ArgumentTypeID::kInteger, {"cta_n", "threadblock-shape::n"}, "Threadblock shape in the N dimension"},
+    {ArgumentTypeID::kInteger, {"cta_k", "threadblock-shape::k"}, "Threadblock shape in the K dimension"},
+    {ArgumentTypeID::kInteger, {"stages", "threadblock-stages"}, "Number of stages of threadblock-scoped matrix multiply"},
+    {ArgumentTypeID::kInteger, {"warps_m", "warp-count::m"}, "Number of warps within threadblock along the M dimension"},
+    {ArgumentTypeID::kInteger, {"warps_n", "warp-count::n"}, "Number of warps within threadblock along the N dimension"},
+    {ArgumentTypeID::kInteger, {"warps_k", "warp-count::k"}, "Number of warps within threadblock along the K dimension"},
+    {ArgumentTypeID::kInteger, {"inst_m", "instruction-shape::m"}, "Math instruction shape in the M dimension"},
+    {ArgumentTypeID::kInteger, {"inst_n", "instruction-shape::n"}, "Math instruction shape in the N dimension"},
+    {ArgumentTypeID::kInteger, {"inst_k", "instruction-shape::k"}, "Math instruction shape in the K dimension"},
+    {ArgumentTypeID::kInteger, {"min_cc", "minimum-compute-capability"}, "Minimum device compute capability"},
+    {ArgumentTypeID::kInteger, {"max_cc", "maximum-compute-capability"}, "Maximum device compute capability"}
   };
 
   arguments_.insert(arguments_.end(), tile_description_arguments.begin(), tile_description_arguments.end());
+
+  for (auto provider : verification_providers) {
+    if (std::find(
+      options.verification.providers.begin(), 
+      options.verification.providers.end(), 
+      provider) != options.verification.providers.end()) {
+
+      verification_providers_.push_back(provider);
+    }
+  }
 }
 
 /// Destructor
@@ -248,8 +260,9 @@ int OperationProfiler::profile_all(
       auto min_cc = operation->description().tile_description.minimum_compute_capability;
       auto max_cc = operation->description().tile_description.maximum_compute_capability;
 
-      // Execute compatible operations if they satisfy the current device's compute capability
+      // Execute compatible cutlass operations if they satisfy the current device's compute capability
       if (operation->description().kind == kind_ &&
+        operation->description().provider == library::Provider::kCUTLASS &&
         options.device.compute_capability() >= min_cc &&
           options.device.compute_capability() <= max_cc) {
 
@@ -259,7 +272,7 @@ int OperationProfiler::profile_all(
         if (!filtered_by_name) {
           
           for (auto const & op_name : options.operation_names) {
-            if (operation_name.find(op_name) !=std::string::npos) {
+            if (find_string_matches_(op_name, operation_name)) {
               filtered_by_name = true;
               break;
             }
@@ -278,7 +291,7 @@ int OperationProfiler::profile_all(
           operation,
           problem_space,
           problem);
-        
+
         if (status == Status::kErrorInternal) {
           // Stop profiling if there was an internal error
           return false;
@@ -548,29 +561,28 @@ void OperationProfiler::initialize_result_(
   library::OperationDescription const &operation_desc,
   ProblemSpace const &problem_space) {
 
-  set_argument_(result, "op_class", problem_space,
+  set_argument(result, "op_class", problem_space,
     library::to_string(operation_desc.tile_description.math_instruction.opcode_class));
 
-  set_argument_(result, "accum", problem_space,
+  set_argument(result, "accum", problem_space,
     library::to_string(operation_desc.tile_description.math_instruction.element_accumulator));
 
-  set_argument_(result, "cta_m", problem_space, operation_desc.tile_description.threadblock_shape.m());
-  set_argument_(result, "cta_n", problem_space, operation_desc.tile_description.threadblock_shape.n());
-  set_argument_(result, "cta_k", problem_space, operation_desc.tile_description.threadblock_shape.k());
-  set_argument_(result, "stages", problem_space, operation_desc.tile_description.threadblock_stages);
-  set_argument_(result, "warps_m", problem_space, operation_desc.tile_description.warp_count.m());
-  set_argument_(result, "warps_n", problem_space, operation_desc.tile_description.warp_count.n());
-  set_argument_(result, "warps_k", problem_space, operation_desc.tile_description.warp_count.k());
-  set_argument_(result, "inst_m", problem_space, operation_desc.tile_description.math_instruction.instruction_shape.m());
-  set_argument_(result, "inst_n", problem_space, operation_desc.tile_description.math_instruction.instruction_shape.n());
-  set_argument_(result, "inst_k", problem_space, operation_desc.tile_description.math_instruction.instruction_shape.k());
-  set_argument_(result, "min_cc", problem_space, operation_desc.tile_description.minimum_compute_capability);
-  set_argument_(result, "max_cc", problem_space, operation_desc.tile_description.maximum_compute_capability);
+  set_argument(result, "cta_m", problem_space, operation_desc.tile_description.threadblock_shape.m());
+  set_argument(result, "cta_n", problem_space, operation_desc.tile_description.threadblock_shape.n());
+  set_argument(result, "cta_k", problem_space, operation_desc.tile_description.threadblock_shape.k());
+  set_argument(result, "stages", problem_space, operation_desc.tile_description.threadblock_stages);
+  set_argument(result, "warps_m", problem_space, operation_desc.tile_description.warp_count.m());
+  set_argument(result, "warps_n", problem_space, operation_desc.tile_description.warp_count.n());
+  set_argument(result, "warps_k", problem_space, operation_desc.tile_description.warp_count.k());
+  set_argument(result, "inst_m", problem_space, operation_desc.tile_description.math_instruction.instruction_shape.m());
+  set_argument(result, "inst_n", problem_space, operation_desc.tile_description.math_instruction.instruction_shape.n());
+  set_argument(result, "inst_k", problem_space, operation_desc.tile_description.math_instruction.instruction_shape.k());
+  set_argument(result, "min_cc", problem_space, operation_desc.tile_description.minimum_compute_capability);
+  set_argument(result, "max_cc", problem_space, operation_desc.tile_description.maximum_compute_capability);
 }
 
-
 /// Helper
-void OperationProfiler::set_argument_(
+void OperationProfiler::set_argument(
   PerformanceResult &result,
   char const *name,
   ProblemSpace const &problem_space,
@@ -579,13 +591,46 @@ void OperationProfiler::set_argument_(
   result.arguments.at(problem_space.argument_index(name)) = make_pair(std::string(name), value);
 }
 
-void OperationProfiler::set_argument_(  
+void OperationProfiler::set_argument(  
   PerformanceResult &result,
   char const *name,
   ProblemSpace const &problem_space,
   int64_t value) {
 
   result.arguments.at(problem_space.argument_index(name)) = make_pair(std::string(name), library::lexical_cast(value));
+}
+
+
+/// finds string matches filter_string in operation_name
+bool OperationProfiler::find_string_matches_(
+  std::string const &filter_string, 
+  std::string const &operation_name) {
+  // Returns true if all substrings appear in the operation_name in order
+  
+  // Split filter_string of the format "gemm*f32*nt" to tokens ["gemm", "f32", "nt"]
+  std::string item;  
+  std::istringstream iss(filter_string);
+  std::vector<std::string> filter_tokens;
+  while (std::getline(iss, item, '*')) {
+    filter_tokens.push_back(item);
+  }
+
+  // Search filter_tokens in operation_name in order
+  size_t start = 0, idx = 0;
+  for(auto & token : filter_tokens) {
+    // Check if characters left to be parsed in operation_name
+    if (start < operation_name.length()) {
+      // Find token in operation_name[start:]
+      idx = operation_name.substr(start).find(token);
+      if (idx == std::string::npos) {
+        return false;
+      }
+    }
+    start += (idx + token.length()); 
+  }
+
+  // All tokens in filter_string found in operation_name
+  return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

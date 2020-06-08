@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -69,6 +69,10 @@ struct sizeof_bits<bin1_t> {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include "cutlass/integer_subbyte.h"
+
 #include "cutlass/half.h"
+#include "cutlass/bfloat16.h"
+#include "cutlass/tfloat32.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+

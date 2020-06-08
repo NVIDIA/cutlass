@@ -44,6 +44,7 @@
 #include <vector>
 #include <string>
 #include <cstdint>
+#include <stdexcept>
 #include <cuda_runtime.h>
 
 #include "cutlass/cutlass.h"
@@ -93,10 +94,14 @@ enum class NumericTypeID {
   kS32,
   kS64,
   kF16,
+  kBF16, 
+  kTF32,
   kF32,
   kF64,
   kCF16,
+  kCBF16,
   kCF32,
+  kCTF32,
   kCF64,
   kCS4,
   kCS8,
@@ -120,6 +125,7 @@ enum class ComplexTransform {
 
 /// Providers
 enum class Provider {
+  kNone,
   kCUTLASS,
   kReferenceHost,
   kReferenceDevice,
@@ -132,6 +138,8 @@ enum class Provider {
 /// Enumeration indicating the kind of operation
 enum class OperationKind {
   kGemm,
+  kEqGemm,
+  kReduction,
   kInvalid
 };
 
@@ -160,9 +168,11 @@ enum class OpcodeClassID {
 };
 
 enum class MathOperationID {
+  kAdd,
   kMultiplyAdd,
   kMultiplyAddSaturate,
   kMultiplyAddComplex,
+  kMultiplyAddGaussianComplex,
   kXorPopc,
   kInvalid
 };
@@ -180,12 +190,17 @@ enum class GemmKind {
   kInvalid
 };
 
-/// Mode of GEMM
-enum class GemmUniversalMode {
-  kGemm,
-  kGemmSplitKParallel,
-  kBatched,
-  kArray,
+/// Mode of Universal GEMM
+using GemmUniversalMode = cutlass::gemm::GemmUniversalMode;
+
+enum class EpilogueKind {
+  kUnknown,
+  kConversion,
+  kLinearCombination,
+  kLinearCombinationClamp,
+  kLinearCombinationPlanarComplex,
+  kLinearCombinationRelu,
+  kLinearCombinationSigmoid,
   kInvalid
 };
 
@@ -219,6 +234,22 @@ struct MathInstructionDescription {
     element_accumulator(element_accumulator), 
     opcode_class(opcode_class),
     math_operation(math_operation) {}
+
+  // Equality operator
+  inline
+  bool operator==(MathInstructionDescription const& rhs) const{
+    return (
+      (instruction_shape == rhs.instruction_shape) &&
+      (element_accumulator == rhs.element_accumulator) &&
+      (opcode_class == rhs.opcode_class) &&
+      (math_operation == rhs.math_operation));
+  }
+
+  // Inequality operator
+  inline
+  bool operator!=(MathInstructionDescription const& rhs) const {
+    return !(*this == rhs);
+  }
 
 };
 
@@ -261,6 +292,24 @@ struct TileDescription {
     math_instruction(math_instruction),
     minimum_compute_capability(minimum_compute_capability),
     maximum_compute_capability(maximum_compute_capability) { }
+
+  // Equality operator
+  inline
+  bool operator==(TileDescription const& rhs) const{
+    return (
+      (threadblock_shape == rhs.threadblock_shape) &&
+      (threadblock_stages == rhs.threadblock_stages) &&
+      (warp_count == rhs.warp_count) &&
+      (math_instruction == rhs.math_instruction) &&
+      (minimum_compute_capability == rhs.minimum_compute_capability) &&
+      (maximum_compute_capability == rhs.maximum_compute_capability));
+  }
+
+  // Inequality operator
+  inline
+  bool operator!=(TileDescription const& rhs) const {
+    return !(*this == rhs);
+  }
 };
 
 /// High-level description of an operation
@@ -377,6 +426,20 @@ struct GemmDescription : public OperationDescription {
     split_k_mode(split_k_mode),
     transform_A(transform_A),
     transform_B(transform_B) {} 
+};
+
+
+/// Description of all Reduction operations
+struct ReductionDescription : public OperationDescription {
+
+  /// Describes the data type of workspace
+  NumericTypeID element_workspace;
+
+  /// Describes the data type of final output
+  NumericTypeID element_output;
+
+  /// Describes the data type of the scalars passed to the epilogue
+  NumericTypeID element_epilogue;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -549,6 +612,42 @@ struct GemmArrayArguments {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Universal GEMM supporting multiple split-K modes, multiple batched modes, real and complex
+//
+// OperationKind: Gemm
+// GemmKind:      Universal
+
+struct GemmUniversalConfiguration {
+
+  GemmUniversalMode mode;
+  gemm::GemmCoord problem_size;
+  int batch_count;
+
+  int64_t lda;
+  int64_t ldb;
+  int64_t ldc;
+  int64_t ldd;
+};
+
+struct GemmUniversalArguments {
+
+  void const *A;
+  void const *B;
+  void const *C;
+  void *D;
+
+  void const *alpha;
+  void const *beta;
+  ScalarPointerMode pointer_mode;
+
+  int64_t batch_stride_A;
+  int64_t batch_stride_B;
+  int64_t batch_stride_C;
+  int64_t batch_stride_D;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Complex valued GEMM in which real and imaginary parts are separated by a stride
 //
 // OperationKind: Gemm
@@ -647,7 +746,6 @@ struct GemmPlanarComplexArrayArguments {
   void const * beta;
   ScalarPointerMode pointer_mode;
 };
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

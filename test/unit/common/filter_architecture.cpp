@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -71,6 +71,7 @@ void FilterArchitecture() {
     { "SM61*",                      61, kMaxDevice},
     { "SM70*",                      70, 75},
     { "SM75*",                      75, kMaxDevice},
+    { "SM80*",                      80, kMaxDevice},
     { 0, 0, false }
   };
 

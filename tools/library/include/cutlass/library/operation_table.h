@@ -29,24 +29,28 @@
 */
 
 #pragma once
-
+#include <fstream>
 #include <iosfwd>
 #include <unordered_map>
 #include <algorithm>
 
 #include "cutlass/library/library.h"
 #include "cutlass/library/manifest.h"
-
+#include "cutlass/library/util.h"
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace library {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+//                          Data Structures for Gemm Functional Maps
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Tuple uniquely identifying functional behavior
+/// Tuple uniquely identifying Gemm functional behavior
 struct GemmFunctionalKey {
 
+  Provider provider;
+  GemmKind gemm_kind;
   NumericTypeID element_compute;
   NumericTypeID element_scalar;
   NumericTypeID element_A;
@@ -63,6 +67,8 @@ struct GemmFunctionalKey {
 
   inline
   GemmFunctionalKey(
+    Provider provider,
+    GemmKind gemm_kind = GemmKind::kGemm,
     NumericTypeID element_compute = NumericTypeID::kF32,
     NumericTypeID element_scalar = NumericTypeID::kF32,
     NumericTypeID element_A = NumericTypeID::kF16,
@@ -73,6 +79,8 @@ struct GemmFunctionalKey {
     ComplexTransform transform_B = ComplexTransform::kNone,
     NumericTypeID element_C = NumericTypeID::kF16
   ):
+    provider(provider),
+    gemm_kind(gemm_kind),
     element_compute(element_compute),
     element_scalar(element_scalar),
     element_A(element_A),
@@ -87,6 +95,8 @@ struct GemmFunctionalKey {
   inline
   bool operator==(GemmFunctionalKey const &rhs) const {
     return 
+      (provider == rhs.provider) &&
+      (gemm_kind == rhs.gemm_kind) &&
       (element_compute == rhs.element_compute) &&
       (element_scalar == rhs.element_scalar) &&
       (element_A == rhs.element_A) &&
@@ -104,6 +114,28 @@ struct GemmFunctionalKey {
   }
 };
 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+inline
+std::ostream & operator<<(std::ostream &out, cutlass::library::GemmFunctionalKey const &k) {
+
+  out << "{\n"
+    << "         provider: " << to_string(k.provider) << "\n"
+    << "        gemm_kind: " << to_string(k.gemm_kind) << "\n"
+    << "  element_compute: " << to_string(k.element_compute) << "\n"
+    << "   element_scalar: " << to_string(k.element_scalar) << "\n"
+    << "        element_A: " << to_string(k.element_A) << "\n"
+    << "         layout_A: " << to_string(k.layout_A) << "\n"
+    << "      transform_A: " << to_string(k.transform_A) << "\n"
+    << "        element_B: " << to_string(k.element_B) << "\n"
+    << "         layout_B: " << to_string(k.layout_B) << "\n"
+    << "      transform_B: " << to_string(k.transform_B) << "\n"
+    << "        element_C: " << to_string(k.element_C) << "\n"
+    << "}";
+
+  return out;
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Hash function for GemmFunctionalKey
@@ -120,15 +152,17 @@ struct GemmFunctionalKeyHasher {
     IntHash hash;
 
     return 
-      rotl(hash(int(key.element_compute)), 2) ^
-      rotl(hash(int(key.element_scalar)), 3) ^
-      rotl(hash(int(key.element_A)), 4) ^
-      rotl(hash(int(key.layout_A)), 5) ^
-      rotl(hash(int(key.transform_A)), 6) ^
-      rotl(hash(int(key.element_B)), 7) ^
-      rotl(hash(int(key.layout_B)), 8) ^
-      rotl(hash(int(key.transform_B)), 9) ^
-      rotl(hash(int(key.element_C)), 10);
+      rotl(hash(int(key.provider)), 1) ^ 
+      rotl(hash(int(key.gemm_kind)), 2) ^ 
+      rotl(hash(int(key.element_compute)), 3) ^
+      rotl(hash(int(key.element_scalar)), 4) ^
+      rotl(hash(int(key.element_A)), 5) ^
+      rotl(hash(int(key.layout_A)), 6) ^
+      rotl(hash(int(key.transform_A)), 7) ^
+      rotl(hash(int(key.element_B)), 8) ^
+      rotl(hash(int(key.layout_B)), 9) ^
+      rotl(hash(int(key.transform_B)), 10) ^
+      rotl(hash(int(key.element_C)), 11);
   }
 };
 
@@ -172,6 +206,7 @@ using GemmOperationFunctionalMap = std::unordered_map<
   GemmOperationVectorMap,
   GemmFunctionalKeyHasher
 >;
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -179,14 +214,9 @@ using GemmOperationFunctionalMap = std::unordered_map<
 class OperationTable {
 public:
 
-  /// Map of all operations of type kGemm and gemm_kind of type kGemm
+  /// Map of all operations of type kGemm 
+  // provider (kCUTLASS)
   GemmOperationFunctionalMap gemm_operations;
-
-  /// Map of all operations of type kGemm and gemm_kind of type kPlanarComplex
-  GemmOperationFunctionalMap gemm_planar_complex_operations;
-  
-  /// Map of all operations of type kGemm and gemm_kind of type kPlanarComplexArray
-  GemmOperationFunctionalMap gemm_planar_complex_array_operations;
 
 public:
 
@@ -202,4 +232,3 @@ public:
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 std::ostream & operator<<(std::ostream &out, cutlass::library::GemmFunctionalKey const &k);
-

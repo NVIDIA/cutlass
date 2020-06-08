@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -31,6 +31,8 @@
 #include <iomanip>
 #include <ios>
 
+#include "cutlass/core_io.h"
+
 #include "cublas_helpers.h"
 #include "gemm_operation_profiler.h"
 #include "gpu_timer.h"
@@ -44,22 +46,27 @@ namespace profiler {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Ctor
-GemmOperationProfiler::GemmOperationProfiler(): 
-  OperationProfiler(library::OperationKind::kGemm,{
-  	{ArgumentTypeID::kEnumerated, {"Gemm_kind"}, "Variant of GEMM (e.g. gemm, planar complex, batched, ...)"},
-	  {ArgumentTypeID::kInteger, {"m", "problem-size::m"}, "M dimension of the GEMM problem space"},
-  	{ArgumentTypeID::kInteger, {"n", "problem-size::n"}, "N dimension of the GEMM problem space"},
-	  {ArgumentTypeID::kInteger, {"k", "problem-size::k"}, "K dimension of the GEMM problem space"},
-  	{ArgumentTypeID::kTensor, {"A"}, "Tensor storing the A operand"},
-	  {ArgumentTypeID::kTensor, {"B"}, "Tensor storing the B operand"},
-  	{ArgumentTypeID::kTensor, {"C"}, "Tensor storing the C operand"},
-	  {ArgumentTypeID::kScalar, {"alpha", "epilogue::alpha"}, "Epilogue scalar alpha"},
-  	{ArgumentTypeID::kScalar, {"beta", "epilogue::beta"}, "Epilogue scalar beta"},
-	  {ArgumentTypeID::kInteger, {"split_k_slices"}, "Number of partitions of K dimension"},
-  	{ArgumentTypeID::kInteger, {"batch_count"}, "Number of GEMMs computed in one batch"},
-  }) {
+GemmOperationProfiler::GemmOperationProfiler(Options const &options): 
+  OperationProfiler(
+    options,
+    library::OperationKind::kGemm,
+    {
+      {ArgumentTypeID::kEnumerated, {"gemm_kind"}, "Variant of GEMM (gemm, batched, array, universal, planar_complex, planar_complex_array)"},
+      {ArgumentTypeID::kInteger, {"m", "problem-size::m"}, "M dimension of the GEMM problem space"},
+      {ArgumentTypeID::kInteger, {"n", "problem-size::n"}, "N dimension of the GEMM problem space"},
+      {ArgumentTypeID::kInteger, {"k", "problem-size::k"}, "K dimension of the GEMM problem space"},
+      {ArgumentTypeID::kTensor, {"A"}, "Tensor storing the A operand"},
+      {ArgumentTypeID::kTensor, {"B"}, "Tensor storing the B operand"},
+      {ArgumentTypeID::kTensor, {"C"}, "Tensor storing the C operand"},
+      {ArgumentTypeID::kScalar, {"alpha", "epilogue::alpha"}, "Epilogue scalar alpha"},
+      {ArgumentTypeID::kScalar, {"beta", "epilogue::beta"}, "Epilogue scalar beta"},
+      {ArgumentTypeID::kInteger, {"split_k_slices", "split-k-slices"}, "Number of partitions of K dimension"},
+      {ArgumentTypeID::kInteger, {"batch_count", "batch-count"}, "Number of GEMMs computed in one batch"},
+    },
+    { library::Provider::kCUBLAS}
+  ) {
 
-  description_ = "General matrix-matrix product. D = alpha * A*B + beta * C";
+  description_ = "      General matrix-matrix product. D = alpha * A*B + beta * C";
 }
 
 /// Destructor
@@ -107,6 +114,8 @@ void GemmOperationProfiler::print_examples(std::ostream &out) const {
     << "   --providers=cutlass --output=functional-test.csv\n\n";
 }
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 #if 0
 // used this for debugging
 static std::string byte_string(std::vector<uint8_t> const &bytes) {
@@ -122,47 +131,34 @@ static std::string byte_string(std::vector<uint8_t> const &bytes) {
 }
 #endif
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Extracts the problem dimensions
-Status GemmOperationProfiler::initialize_configuration(
-  Options const &options,  
-  PerformanceReport &report,
-  DeviceContext &device_context,
-  library::Operation const *operation,
+Status GemmOperationProfiler::GemmProblem::parse(
+  library::GemmDescription const &operation_desc,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
-
-  library::GemmDescription const &operation_desc = 
-    static_cast<library::GemmDescription const &>(operation->description());
-
-  if (operation_desc.gemm_kind != library::GemmKind::kGemm) {
-    return Status::kErrorInvalidProblem;
+  
+  if (!arg_as_int(this->m, "m", problem_space, problem)) {
+    // default value
+    this->m = 1024;
   }
 
-  if (!arg_as_int(problem_.m, "m", problem_space, problem)) {
+  if (!arg_as_int(this->n, "n", problem_space, problem)) {
     // default value
-    problem_.m = 1024;
-  }
-
-  if (!arg_as_int(problem_.n, "n", problem_space, problem)) {
-    // default value
-    problem_.n = 1024;
+    this->n = 1024;
   }
   
-  if (!arg_as_int(problem_.k, "k", problem_space, problem)) {
+  if (!arg_as_int(this->k, "k", problem_space, problem)) {
     // default value
-    problem_.k = 1024;
+    this->k = 1024;
   }
   
-  if (!arg_as_int(problem_.split_k_slices, "split_k_slices", problem_space, problem)) {
+  if (!arg_as_int(this->split_k_slices, "split_k_slices", problem_space, problem)) {
     // default value
-    problem_.split_k_slices = 1;
+    this->split_k_slices = 1;
   }
   
-  if (!arg_as_int(problem_.batch_count, "batch_count", problem_space, problem)) {
+  if (!arg_as_int(this->batch_count, "batch_count", problem_space, problem)) {
     // default value
-    problem_.batch_count = 1;
+    this->batch_count = 1;
   }
 
   if (!tensor_description_satisfies(operation_desc.A, "A", problem_space, problem)) {
@@ -178,37 +174,97 @@ Status GemmOperationProfiler::initialize_configuration(
   }
 
   if (!arg_as_scalar(
-    problem_.alpha, 
+    this->alpha, 
     operation_desc.element_epilogue, 
     "alpha", 
     problem_space, 
     problem)) {
 
-    if (!cast_from_double(problem_.alpha, operation_desc.element_epilogue, 1)) {
+    if (!cast_from_double(this->alpha, operation_desc.element_epilogue, 1)) {
       return Status::kErrorInternal;
     }
   }
   
   if (!arg_as_scalar(
-    problem_.beta, 
+    this->beta, 
     operation_desc.element_epilogue, 
     "beta", 
     problem_space, 
     problem)) {
     
-    if (!cast_from_double(problem_.beta, operation_desc.element_epilogue, 0)) {
+    if (!cast_from_double(this->beta, operation_desc.element_epilogue, 0)) {
       return Status::kErrorInternal;
     }
   }
   
-  problem_.lda = DeviceAllocation::get_packed_layout(
-    operation_desc.A.layout, {int(problem_.m), int(problem_.k)}).front();
+  this->lda = DeviceAllocation::get_packed_layout(
+    operation_desc.A.layout, {int(this->m), int(this->k)}).front();
 
-  problem_.ldb = DeviceAllocation::get_packed_layout(
-    operation_desc.B.layout, {int(problem_.k), int(problem_.n)}).front();
+  this->ldb = DeviceAllocation::get_packed_layout(
+    operation_desc.B.layout, {int(this->k), int(this->n)}).front();
 
-  problem_.ldc = DeviceAllocation::get_packed_layout(
-    operation_desc.C.layout, {int(problem_.m), int(problem_.n)}).front();
+  this->ldc = DeviceAllocation::get_packed_layout(
+    operation_desc.C.layout, {int(this->m), int(this->n)}).front();
+
+  return Status::kSuccess;
+}
+
+/// Initializes a performance result
+void GemmOperationProfiler::GemmProblem::initialize_result(
+  PerformanceResult &result,
+  library::GemmDescription const &operation_desc,
+  ProblemSpace const &problem_space) {
+
+  result.arguments.resize(problem_space.rank());
+
+  set_argument(result, "gemm_kind", problem_space, library::to_string(operation_desc.gemm_kind));
+
+  set_argument(result, "A", problem_space,
+    std::string(library::to_string(operation_desc.A.element)) + ":" + library::to_string(operation_desc.A.layout));
+
+  set_argument(result, "B", problem_space,
+    std::string(library::to_string(operation_desc.B.element)) + ":" + library::to_string(operation_desc.B.layout));
+
+  set_argument(result, "C", problem_space,
+    std::string(library::to_string(operation_desc.C.element)) + ":" + library::to_string(operation_desc.C.layout));
+
+  set_argument(result, "m", problem_space, m);
+  set_argument(result, "n", problem_space, n);
+  set_argument(result, "k", problem_space, k);
+
+  set_argument(result, "split_k_slices", problem_space, split_k_slices);
+  set_argument(result, "batch_count", problem_space, batch_count);
+
+  set_argument(result, "alpha", problem_space,
+    library::lexical_cast(alpha, operation_desc.element_epilogue));
+
+  set_argument(result, "beta", problem_space,
+    library::lexical_cast(beta, operation_desc.element_epilogue));
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Extracts the problem dimensions
+Status GemmOperationProfiler::initialize_configuration(
+  Options const &options,  
+  PerformanceReport &report,
+  DeviceContext &device_context,
+  library::Operation const *operation,
+  ProblemSpace const &problem_space,
+  ProblemSpace::Problem const &problem) {
+
+  library::GemmDescription const &operation_desc = 
+    static_cast<library::GemmDescription const &>(operation->description());
+
+  if (operation_desc.gemm_kind != library::GemmKind::kUniversal) {
+    return Status::kErrorInvalidProblem;
+  }
+
+  Status status = problem_.parse(operation_desc, problem_space, problem);
+  
+  if (status != Status::kSuccess) {
+    return status;
+  }
 
   gemm_workspace_.configuration.problem_size.m() = int(problem_.m);
   gemm_workspace_.configuration.problem_size.n() = int(problem_.n);
@@ -217,7 +273,8 @@ Status GemmOperationProfiler::initialize_configuration(
   gemm_workspace_.configuration.ldb = problem_.ldb;
   gemm_workspace_.configuration.ldc = problem_.ldc;
   gemm_workspace_.configuration.ldd = problem_.ldc;
-  gemm_workspace_.configuration.split_k_slices = int(problem_.split_k_slices);
+  //gemm_workspace_.configuration.split_k_slices = int(problem_.split_k_slices);
+  gemm_workspace_.configuration.batch_count = int(problem_.split_k_slices);
 
   gemm_workspace_.arguments.A = nullptr;
   gemm_workspace_.arguments.B = nullptr;
@@ -243,37 +300,24 @@ void GemmOperationProfiler::initialize_result_(
   result.disposition = Disposition::kNotRun;
   result.status = Status::kSuccess;
   result.operation_name = operation_desc.name;
-
-  result.arguments.resize(problem_space.rank());
-
-  set_argument_(result, "A", problem_space,
-    std::string(library::to_string(operation_desc.A.element)) + ":" + library::to_string(operation_desc.A.layout));
-
-  set_argument_(result, "B", problem_space,
-    std::string(library::to_string(operation_desc.B.element)) + ":" + library::to_string(operation_desc.B.layout));
-
-  set_argument_(result, "C", problem_space,
-    std::string(library::to_string(operation_desc.C.element)) + ":" + library::to_string(operation_desc.C.layout));
-
-  set_argument_(result, "m", problem_space, problem_.m);
-  set_argument_(result, "n", problem_space, problem_.n);
-  set_argument_(result, "k", problem_space, problem_.k);
-
-  set_argument_(result, "split_k_slices", problem_space, problem_.split_k_slices);
-  set_argument_(result, "batch_count", problem_space, problem_.batch_count);
-
-  set_argument_(result, "alpha", problem_space,
-    library::lexical_cast(problem_.alpha, operation_desc.element_epilogue));
-
-  set_argument_(result, "beta", problem_space,
-    library::lexical_cast(problem_.beta, operation_desc.element_epilogue));
+  
+  problem_.initialize_result(result, operation_desc, problem_space);
 
   OperationProfiler::initialize_result_(result, operation_desc, problem_space);
 
+  // Input bytes read and Output bytes written for the gemm problem
   result.bytes = 
     int64_t(library::sizeof_bits(operation_desc.A.element) * problem_.m / 8) * problem_.k + 
     int64_t(library::sizeof_bits(operation_desc.B.element) * problem_.n / 8) * problem_.k +
-    int64_t(library::sizeof_bits(operation_desc.C.element) * problem_.m / 8) * problem_.n * 2;
+    int64_t(library::sizeof_bits(operation_desc.C.element) * problem_.m / 8) * problem_.n;
+
+  // Set is_beta_zero true if beta is zero
+  bool is_beta_zero = std::all_of(problem_.beta.begin(), problem_.beta.end(), [](uint8_t i) { return i==0; });
+
+  // Output bytes read for the gemm problem for non-zero beta values
+  if (!is_beta_zero) {
+    result.bytes += int64_t(library::sizeof_bits(operation_desc.C.element) * problem_.m / 8) * problem_.n;
+  }
 
   result.flops = 2 * (problem_.m * problem_.n * problem_.k + problem_.m * problem_.n);
   result.runtime = 0;
@@ -378,8 +422,9 @@ Status GemmOperationProfiler::initialize_workspace(
     results_.back().provider = library::Provider::kCUTLASS;
     results_.back().op_kind = library::OperationKind::kGemm;
     results_.back().disposition = Disposition::kNotRun;
-    for(auto &verification_provider : options.verification.providers) {
-      results_.back().verification_map[verification_provider] = Disposition::kNotRun;
+
+    for(auto provider : verification_providers_) {
+      results_.back().verification_map[provider] = Disposition::kNotRun;
     }
   }
 
@@ -559,8 +604,7 @@ bool GemmOperationProfiler::verify_with_cublas_(
     );
 
     if (gemm_op.status != Status::kSuccess) {
-
-      results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kFailed;
+      results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kNotRun;
       return true;
     }
 

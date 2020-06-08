@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -63,7 +63,7 @@ using gemm_planar_complex_s884_tn_base = typename cutlass::gemm::kernel::Default
     float,
     float
   >,
-  cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+  cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
   2,
   cutlass::arch::OpMultiplyAdd
 >::GemmKernel;
@@ -107,7 +107,7 @@ using gemm_planar_complex_s884_nt_base = typename cutlass::gemm::kernel::Default
     float,
     float
   >,
-  cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+  cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
   2,
   cutlass::arch::OpMultiplyAdd
 >::GemmKernel;

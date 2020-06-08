@@ -23,7 +23,7 @@ from library import *
 class GemmOperation:
   #
   def __init__(self, gemm_kind, arch, tile_description, A, B, C, element_epilogue, \
-      epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Cohort):
+      epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity8):
 
     self.operation_kind = OperationKind.Gemm
     self.arch = arch
@@ -40,6 +40,7 @@ class GemmOperation:
   def is_complex(self):
     complex_operators = [
       MathOperation.multiply_add_complex, 
+      MathOperation.multiply_add_complex_gaussian
     ]
     return self.tile_description.math_instruction.math_operation in complex_operators
 
@@ -58,6 +59,8 @@ class GemmOperation:
 
   #
   def short_math_name(self):
+    if self.tile_description.math_instruction.math_operation == MathOperation.multiply_add_complex_gaussian:
+      return "g%s" % ShortDataTypeNames[self.accumulator_type()]
     return ShortDataTypeNames[self.accumulator_type()]
 
 
@@ -260,6 +263,135 @@ class EmitGemmInstance:
 ###################################################################################################
 
 #
+class EmitGemmUniversalInstance:
+  ''' Responsible for emitting a CUTLASS template definition'''
+
+  def __init__(self):
+    self.gemm_template = """
+// Gemm operator ${operation_name}
+using ${operation_name}_base = 
+  typename cutlass::gemm::kernel::DefaultGemmUniversal<
+    ${element_b}, ${layout_b}, ${transform_b}, ${align_b},    // transposed B operand
+    ${element_a}, ${layout_a}, ${transform_a}, ${align_a},    // transposed A operand
+    ${element_c}, ${layout_c},
+    ${element_accumulator},
+    ${opcode_class},
+    ${arch},
+    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+    cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k}>,
+    cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
+    ${epilogue_functor}<
+      ${element_c},
+      ${epilogue_vector_length},
+      ${element_accumulator},
+      ${element_epilogue}
+    >,
+    ${swizzling_functor},
+    ${stages},
+    ${math_operation}
+>::GemmKernel;
+
+// Define named type
+struct ${operation_name} : 
+  public ${operation_name}_base { };
+"""
+    self.gemm_template_interleaved = """
+// Gemm operator ${operation_name}
+using ${operation_name}_base = 
+  typename cutlass::gemm::kernel::DefaultGemmUniversal<
+    ${element_a}, ${layout_a}, ${transform_a}, ${align_a},
+    ${element_b}, ${layout_b}, ${transform_b}, ${align_b},
+    ${element_c}, ${layout_c},
+    ${element_accumulator},
+    ${opcode_class},
+    ${arch},
+    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+    cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k}>,
+    cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
+    ${epilogue_functor}<
+      ${element_c},
+      ${epilogue_vector_length},
+      ${element_accumulator},
+      ${element_epilogue}
+    >,
+    ${swizzling_functor},
+    ${stages},
+    ${math_operation}
+>::GemmKernel;
+
+// Define named type
+struct ${operation_name} : 
+  public ${operation_name}_base { };
+"""
+
+  def emit(self, operation):
+
+    threadblock_shape = operation.tile_description.threadblock_shape
+    warp_count = operation.tile_description.warp_count
+
+    warp_shape = [threadblock_shape[idx] // warp_count[idx] for idx in range(3)]
+    warp_shape[2] = operation.tile_description.threadblock_shape[2] 
+
+    epilogue_vector_length = int(min(operation.C.alignment * DataTypeSize[operation.C.element], 128) / DataTypeSize[operation.C.element])
+
+    transpose_layouts = {
+      LayoutType.ColumnMajor: LayoutType.RowMajor,
+      LayoutType.RowMajor: LayoutType.ColumnMajor
+    }
+
+    if operation.A.layout in transpose_layouts.keys() and \
+      operation.B.layout in transpose_layouts.keys() and \
+      operation.C.layout in transpose_layouts.keys():
+
+      instance_layout_A = transpose_layouts[operation.A.layout]
+      instance_layout_B = transpose_layouts[operation.B.layout]
+      instance_layout_C = transpose_layouts[operation.C.layout]
+
+      gemm_template = self.gemm_template
+    else:
+      instance_layout_A, instance_layout_B, instance_layout_C = \
+        (operation.A.layout, operation.B.layout, operation.C.layout)
+
+      gemm_template = self.gemm_template_interleaved
+    #
+
+    values = {
+      'operation_name': operation.procedural_name(),
+      'element_a': DataTypeTag[operation.A.element],
+      'layout_a': LayoutTag[instance_layout_A],
+      'element_b': DataTypeTag[operation.B.element],
+      'layout_b': LayoutTag[instance_layout_B],
+      'element_c': DataTypeTag[operation.C.element],
+      'layout_c': LayoutTag[instance_layout_C],
+      'element_accumulator': DataTypeTag[operation.accumulator_type()],
+      'opcode_class': OpcodeClassTag[operation.tile_description.math_instruction.opcode_class],
+      'arch': "cutlass::arch::Sm%d" % operation.arch,
+      'threadblock_shape_m': str(operation.tile_description.threadblock_shape[0]),
+      'threadblock_shape_n': str(operation.tile_description.threadblock_shape[1]),
+      'threadblock_shape_k': str(operation.tile_description.threadblock_shape[2]),
+      'warp_shape_m': str(warp_shape[0]),
+      'warp_shape_n': str(warp_shape[1]),
+      'warp_shape_k': str(warp_shape[2]),
+      'instruction_shape_m': str(operation.tile_description.math_instruction.instruction_shape[0]),
+      'instruction_shape_n': str(operation.tile_description.math_instruction.instruction_shape[1]),
+      'instruction_shape_k': str(operation.tile_description.math_instruction.instruction_shape[2]),
+      'epilogue_vector_length': str(epilogue_vector_length),
+      'element_epilogue': str(DataTypeTag[operation.element_epilogue]),
+      'epilogue_functor': EpilogueFunctorTag[operation.epilogue_functor],
+      'swizzling_functor': SwizzlingFunctorTag[operation.swizzling_functor],
+      'stages': str(operation.tile_description.stages),
+      'align_a': str(operation.A.alignment),
+      'align_b': str(operation.B.alignment),
+      'transform_a': ComplexTransformTag[operation.A.complex_transform],
+      'transform_b': ComplexTransformTag[operation.B.complex_transform],
+      'math_operation': MathOperationTag[operation.tile_description.math_instruction.math_operation]
+    }
+
+    return SubstituteTemplate(gemm_template, values)
+
+###################################################################################################
+
+#
 class EmitGemmPlanarComplexInstance:
   ''' Responsible for emitting a CUTLASS template definition'''
 
@@ -282,12 +414,13 @@ class EmitGemmPlanarComplexInstance:
       ${element_accumulator},
       ${element_epilogue}
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     ${stages},
     ${math_operator}
   >::GemmKernel;
 
-  struct ${operation_name} : public Operation_${operation_name} { };
+  struct ${operation_name} : 
+    public Operation_${operation_name} { };
 """
 
   def emit(self, operation):
@@ -355,7 +488,7 @@ class EmitGemmPlanarComplexArrayInstance:
       ${element_accumulator},
       ${element_epilogue}
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     ${stages},
     ${math_operator}
   >::GemmArrayKernel;
@@ -419,12 +552,14 @@ class EmitGemmConfigurationLibrary:
 
     self.instance_emitter = {
       GemmKind.Gemm: EmitGemmInstance,
+      GemmKind.Universal: EmitGemmUniversalInstance,
       GemmKind.PlanarComplex: EmitGemmPlanarComplexInstance,
       GemmKind.PlanarComplexArray: EmitGemmPlanarComplexArrayInstance
     }
 
     self.gemm_kind_wrappers = {
       GemmKind.Gemm: 'GemmOperation',
+      GemmKind.Universal: 'GemmUniversalOperation',
       GemmKind.PlanarComplex: 'GemmPlanarComplexOperation',
       GemmKind.PlanarComplexArray: 'GemmPlanarComplexArrayOperation'
     }
@@ -435,6 +570,13 @@ class EmitGemmConfigurationLibrary:
       GemmKind.Gemm: """
 ${compile_guard_start}
   manifest.append(new ${gemm_kind}<Operation_${operation_name}>("${operation_name}"));
+${compile_guard_end}
+""",
+      GemmKind.Universal: """
+${compile_guard_start}
+  manifest.append(new ${gemm_kind}<
+      cutlass::gemm::device::GemmUniversalAdapter<${operation_name}>
+    >("${operation_name}"));
 ${compile_guard_end}
 """,
       GemmKind.PlanarComplex: """
@@ -542,3 +684,4 @@ void initialize_${configuration_name}(Manifest &manifest) {
 
 ###################################################################################################
 ###################################################################################################
+

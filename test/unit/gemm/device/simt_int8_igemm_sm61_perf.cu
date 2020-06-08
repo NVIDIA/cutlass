@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -73,7 +73,7 @@ TEST(SM61_Device_Gemm_s8n_s8t_simt_op_dp4a_perf, 128x256x32_64x64x8) {
       ElementAccumulator,
       ElementCompute
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     2
   >;
 
@@ -109,7 +109,7 @@ TEST(SM61_Device_Gemm_s8t_s8t_simt_op_dp4a_perf, 128x256x32_64x64x8) {
       ElementAccumulator,
       ElementCompute
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     2
   >;
 
@@ -145,7 +145,7 @@ TEST(SM61_Device_Gemm_s8n_s8n_simt_op_dp4a_perf, 128x256x32_64x64x8) {
       ElementAccumulator,
       ElementCompute
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     2
   >;
 
@@ -181,7 +181,7 @@ TEST(SM61_Device_Gemm_s8t_s8n_simt_op_dp4a_perf, 128x256x32_64x64x8) {
       ElementAccumulator,
       ElementCompute
     >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     2
   >;
 

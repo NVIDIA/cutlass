@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -62,7 +62,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32t_tensor_op_s32, 128x256x512_64x64x512) {
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementCompute>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2, 128, 128,
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -84,7 +84,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32t_tensor_op_s32, 256x128x512_64x64x512) {
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementCompute>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2, 128, 128,
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -106,7 +106,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32t_tensor_op_s32, 128x128x512_64x64x512) {
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementCompute>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2, 128, 128,
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -128,7 +128,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32t_tensor_op_s32, 64x128x512_32x64x512) {
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementCompute>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2, 128, 128,
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -150,7 +150,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32t_tensor_op_s32, 128x64x512_64x32x512) {
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementCompute>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2, 128, 128,
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
@@ -172,7 +172,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32t_tensor_op_s32, 64x64x512_32x32x512) {
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementCompute>,
-      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 2, 128, 128,
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 2, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());

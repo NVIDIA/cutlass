@@ -45,6 +45,9 @@ private:
   /// Host workspace
   static int const kHostWorkspaceSize = (4 << 10);
 
+  /// Provider of operations
+  Provider provider_;
+
   /// CUDA device properties
   cudaDeviceProp device_;
 
@@ -89,6 +92,12 @@ public:
 
   /// Gets the current CUDA stream
   cudaStream_t get_stream() const;
+
+  /// Gets the current provider
+  Provider get_provider() const;
+
+  /// Sets the provider of operations
+  void set_provider(Provider provider);
 
   /// Gets the device workspace size
   size_t get_workspace_size() const;
@@ -148,6 +157,56 @@ public:
 
     void * ptr_D,                             /// Pointer to D matrix
     int ldd                                   /// Leading dimension of D matrix
+  );
+  
+  /// Executes a GEMM computation: D <= alpha * A*B + beta * C.
+  //
+  // Supports batched-strided, batched array or split-K serial or split-K parallel.
+  //
+  Status gemm_universal(
+
+    GemmUniversalMode mode,                   /// indicates the mode in which the kUniversal GEMM is launched
+
+    int M,                                    /// GEMM M dimension
+    int N,                                    /// GEMM N dimension
+    int K,                                    /// GEMM K dimension
+
+    NumericTypeID element_compute,            /// Data type of internal accumulation
+    
+    NumericTypeID element_scalar,             /// Data type of alpha/beta scalars
+
+    void const *alpha,                        /// Pointer to alpha scalar
+
+    NumericTypeID element_A,                  /// Data type of A matrix elements
+    LayoutTypeID layout_A,                    /// Layout of A matrix
+    ComplexTransform transform_A,             /// Complex transformation applied to A matrix - ignored for real-valued matrices
+
+    void const * ptr_A,                       /// Pointer to A matrix in Global Memory
+    int lda,                                  /// Leading dimension of A matrix
+
+    NumericTypeID element_B,                  /// Data type of B matrix elements
+    LayoutTypeID layout_B,                    /// Layout of B matrix
+    ComplexTransform transform_B,             /// Complex transformation applied to B matrix - ignored for real-valued matrices
+
+    void const * ptr_B,                       /// Pointer to B matrix in Global Memory
+    int ldb,                                  /// Leading dimension of B matrix
+
+    void const * beta,                        /// Pointer to beta scalar
+
+    NumericTypeID element_C,                  /// Data type of C and D matrices
+
+    void const * ptr_C,                       /// Pointer to C matrix
+    int ldc,                                  /// Leading dimension of C matrix
+
+    void * ptr_D,                             /// Pointer to D matrix
+    int ldd,                                  /// Leading dimension of D matrix
+   
+    int batch_count = 1,                      /// Batch count or number of split-K slices
+ 
+    int64_t batch_stride_A = 0,               /// Batch stride of A operand
+    int64_t batch_stride_B = 0,               /// Batch stride of B operand
+    int64_t batch_stride_C = 0,               /// Batch stride of C operand
+    int64_t batch_stride_D = 0                /// Batch stride of D operand
   );
 
   /// Planar complex GEMM
@@ -276,7 +335,6 @@ public:
 using HandlePtr = std::unique_ptr<Handle>;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
 } // namespace library
 } // namespace cutlass
 

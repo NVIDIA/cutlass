@@ -1,5 +1,5 @@
   /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -95,6 +95,16 @@ struct multiply_add {
     return C(a) * C(b) + c;
   }
 };
+
+/// Fused multiply-add
+template <typename T>
+struct and_add {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &a, T const &b, T const &c) const {
+    return ((a & b) + c);
+  }
+};
+
 
 /// Fused multiply-add
 template <typename T>
@@ -1206,6 +1216,212 @@ struct multiply_add<Array<half_t, N>, Array<half_t, N>, Array<half_t, N>> {
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fused multiply-add
+template <int N>
+struct multiply_add<Array<bfloat16_t, N>, Array<bfloat16_t, N>, Array<bfloat16_t, N>> {
+
+  CUTLASS_HOST_DEVICE
+  Array<bfloat16_t, N> operator()(
+    Array<bfloat16_t, N> const &a, 
+    Array<bfloat16_t, N> const &b, 
+    Array<bfloat16_t, N> const &c) const {
+    
+    Array<bfloat16_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    unsigned *result_ptr = reinterpret_cast<unsigned *>(&result);
+    unsigned const *a_ptr = reinterpret_cast<unsigned const *>(&a);
+    unsigned const *b_ptr = reinterpret_cast<unsigned const *>(&b);
+    unsigned const *c_ptr = reinterpret_cast<unsigned const *>(&c);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      asm ("fma.rn.bf16x2 %0, %1, %2, %3;\n" 
+        : "=r"(result_ptr[i]) 
+        : "r"(a_ptr[i]), "r"(b_ptr[i]), "r"(c_ptr[i])
+      );
+    }
+
+    if (N % 2) {
+
+      uint16_t *result_ptr = reinterpret_cast<uint16_t *>(&result);
+      uint16_t const *a_residual_ptr = reinterpret_cast<uint16_t const *>(&a);
+      uint16_t const *b_residual_ptr = reinterpret_cast<uint16_t const *>(&b);
+      uint16_t const *c_residual_ptr = reinterpret_cast<uint16_t const *>(&c);
+
+      asm ("fma.rn.bf16 %0, %1, %2, %3;\n" 
+        : "=h"(result_ptr[N - 1]) 
+        : "h"(a_residual_ptr[N - 1]), "h"(b_residual_ptr[N - 1]), "h"(c_residual_ptr[N - 1])
+      );
+    }
+
+    #else
+
+    multiply_add<bfloat16_t> op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = op(a[i], b[i], c[i]);
+    }
+    #endif
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<bfloat16_t, N> operator()(
+    bfloat16_t const &a, 
+    Array<bfloat16_t, N> const &b, 
+    Array<bfloat16_t, N> const &c) const {
+    
+    Array<bfloat16_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    unsigned *result_ptr = reinterpret_cast<unsigned *>(&result);
+
+    unsigned const *b_ptr = reinterpret_cast<unsigned const *>(&b);
+    unsigned const *c_ptr = reinterpret_cast<unsigned const *>(&c);
+
+    unsigned a_packed = static_cast<unsigned>(a.raw());
+    a_packed = (a_packed | (a_packed << 16));
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      asm ("fma.rn.bf16x2 %0, %1, %2, %3;\n" 
+        : "=r"(result_ptr[i]) 
+        : "r"(a_packed), "r"(b_ptr[i]), "r"(c_ptr[i])
+      );
+    }
+
+    if (N % 2) {
+
+      uint16_t *result_ptr = reinterpret_cast<uint16_t *>(&result);
+      uint16_t const *a_residual_ptr = reinterpret_cast<uint16_t const *>(&a);
+      uint16_t const *b_residual_ptr = reinterpret_cast<uint16_t const *>(&b);
+      uint16_t const *c_residual_ptr = reinterpret_cast<uint16_t const *>(&c);
+
+      asm ("fma.rn.bf16 %0, %1, %2, %3;\n" 
+        : "=h"(result_ptr[N - 1]) 
+        : "h"(a_residual_ptr[0]), "h"(b_residual_ptr[N - 1]), "h"(c_residual_ptr[N - 1])
+      );
+    }
+
+    #else
+
+    multiply_add<bfloat16_t> op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = op(a, b[i], c[i]);
+    }
+    #endif
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<bfloat16_t, N> operator()(
+    Array<bfloat16_t, N> const &a, 
+    bfloat16_t const &b, 
+    Array<bfloat16_t, N> const &c) const {
+    
+    Array<bfloat16_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    unsigned *result_ptr = reinterpret_cast<unsigned *>(&result);
+    
+    unsigned const *a_ptr = reinterpret_cast<unsigned const *>(&a);
+    unsigned const *c_ptr = reinterpret_cast<unsigned const *>(&c);
+
+    unsigned b_packed = static_cast<unsigned>(b.raw());
+    b_packed = (b_packed | (b_packed << 16));
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      asm ("fma.rn.bf16x2 %0, %1, %2, %3;\n" 
+        : "=r"(result_ptr[i]) 
+        : "r"(a_ptr[i]), "r"(b_packed), "r"(c_ptr[i])
+      );
+    }
+
+    if (N % 2) {
+
+      uint16_t *result_ptr = reinterpret_cast<uint16_t *>(&result);
+      uint16_t const *a_residual_ptr = reinterpret_cast<uint16_t const *>(&a);
+      uint16_t const *b_residual_ptr = reinterpret_cast<uint16_t const *>(&b);
+      uint16_t const *c_residual_ptr = reinterpret_cast<uint16_t const *>(&c);
+
+      asm ("fma.rn.bf16 %0, %1, %2, %3;\n" 
+        : "=h"(result_ptr[N - 1]) 
+        : "h"(a_residual_ptr[N - 1]), "h"(b_residual_ptr[0]), "h"(c_residual_ptr[N - 1])
+      );
+    }
+
+    #else
+
+    multiply_add<bfloat16_t> op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = op(a[i], b, c[i]);
+    }
+    #endif
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<bfloat16_t, N> operator()(
+    Array<bfloat16_t, N> const &a, 
+    Array<bfloat16_t, N> const &b, 
+    bfloat16_t const &c) const {
+    
+    Array<bfloat16_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    unsigned *result_ptr = reinterpret_cast<unsigned *>(&result);
+    
+    unsigned const *a_ptr = reinterpret_cast<unsigned const *>(&a);
+    unsigned const *b_ptr = reinterpret_cast<unsigned const *>(&b);
+
+    unsigned c_packed = static_cast<unsigned>(c.raw());
+    c_packed = (c_packed | (c_packed << 16));
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      asm ("fma.rn.bf16x2 %0, %1, %2, %3;\n" 
+        : "=r"(result_ptr[i]) 
+        : "r"(a_ptr[i]), "r"(b_ptr[i]), "r"(c_packed)
+      );
+    }
+
+    if (N % 2) {
+
+      uint16_t *result_ptr = reinterpret_cast<uint16_t *>(&result);
+      uint16_t const *a_residual_ptr = reinterpret_cast<uint16_t const *>(&a);
+      uint16_t const *b_residual_ptr = reinterpret_cast<uint16_t const *>(&b);
+      uint16_t const *c_residual_ptr = reinterpret_cast<uint16_t const *>(&c);
+
+      asm ("fma.rn.bf16 %0, %1, %2, %3;\n" 
+        : "=h"(result_ptr[N - 1]) 
+        : "h"(a_residual_ptr[N - 1]), "h"(b_residual_ptr[N - 1]), "h"(c_residual_ptr[0])
+      );
+    }
+
+    #else
+
+    multiply_add<bfloat16_t> op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = op(a[i], b[i], c);
+    }
+    #endif
+
+    return result;
+  }
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

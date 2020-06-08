@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -75,7 +75,7 @@ template <
     typename IteratorA_::Element, 
     IteratorA_::Fragment::kElements>,
   ///
-  /// Transformation applied to A operand
+  /// Transformation applied to B operand
   typename TransformB_ = NumericArrayConverter<
     typename SmemIteratorB_::Element, 
     typename IteratorB_::Element, 

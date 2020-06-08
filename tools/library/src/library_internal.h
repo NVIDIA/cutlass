@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -125,6 +125,14 @@ template <> struct NumericTypeMap<cutlass::complex<double> > {
   static NumericTypeID const kId = NumericTypeID::kCF64;
 };
 
+template <> struct NumericTypeMap<cutlass::bfloat16_t> {
+  static NumericTypeID const kId = NumericTypeID::kBF16;
+};
+
+template <> struct NumericTypeMap<cutlass::tfloat32_t> {
+  static NumericTypeID const kId = NumericTypeID::kTF32;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T> struct MathOperationMap {
@@ -141,6 +149,10 @@ template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddSaturate> {
 
 template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddComplex> {
   static MathOperationID const kId = MathOperationID::kMultiplyAddComplex;
+};
+
+template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddGaussianComplex> {
+  static MathOperationID const kId = MathOperationID::kMultiplyAddGaussianComplex;
 };
 
 template <> struct MathOperationMap<cutlass::arch::OpXorPopc> {
@@ -217,30 +229,40 @@ template <> struct ComplexTransformMap<cutlass::ComplexTransform::kConjugate> {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename T> struct ArchMap;
+template <typename ArchTag, typename OperatorClass> struct ArchMap;
 
-template <> struct ArchMap<arch::Sm50> {
+template <> struct ArchMap<arch::Sm50, arch::OpClassSimt> {
   static int const kMin = 50;
   static int const kMax = 1024;
 };
 
-template <> struct ArchMap<arch::Sm60> {
+template <> struct ArchMap<arch::Sm60, arch::OpClassSimt> {
   static int const kMin = 60;
   static int const kMax = 1024;
 };
 
-template <> struct ArchMap<arch::Sm61> {
+template <> struct ArchMap<arch::Sm61, arch::OpClassSimt> {
   static int const kMin = 61;
   static int const kMax = 1024;
 };
 
-template <> struct ArchMap<arch::Sm70> {
+template <> struct ArchMap<arch::Sm70, arch::OpClassWmmaTensorOp> {
+  static int const kMin = 70;
+  static int const kMax = 1024;
+};
+
+template <> struct ArchMap<arch::Sm70, arch::OpClassTensorOp> {
   static int const kMin = 70;
   static int const kMax = 75;
 };
 
-template <> struct ArchMap<arch::Sm75> {
+template <typename OperatorClass> struct ArchMap<arch::Sm75, OperatorClass> {
   static int const kMin = 75;
+  static int const kMax = 1024;
+};
+
+template <typename OperatorClass> struct ArchMap<arch::Sm80, OperatorClass> {
+  static int const kMin = 80;
   static int const kMax = 1024;
 };
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -407,6 +407,16 @@ TEST(Functional, multiply_add_f16x16) {
 
 TEST(Functional, multiply_add_f16x17) {
   Functional_multiply_add_TxN<cutlass::half_t, 17>();
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Functional, multiply_add_bf16x16) {
+  Functional_multiply_add_TxN<cutlass::bfloat16_t, 16>();
+}
+
+TEST(Functional, multiply_add_bf16x17) {
+  Functional_multiply_add_TxN<cutlass::bfloat16_t, 17>();
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

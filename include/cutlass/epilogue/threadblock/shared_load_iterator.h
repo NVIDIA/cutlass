@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -96,6 +96,15 @@ public:
     ThreadMap::kElementsPerAccess, 
     kAlignment>;
 
+  /// Vector type used for SMEM loads
+  using LoadType = AlignedArray<
+    Element,
+    const_min(128 / sizeof_bits<Element>::value, ThreadMap::kElementsPerAccess),
+    const_min(16, kAlignment)
+  >;
+
+  static int const kLoadsPerAccess = AccessType::kElements / LoadType::kElements;
+
 private:
 
   //
@@ -149,7 +158,6 @@ public:
   CUTLASS_DEVICE
   void load_with_pointer_offset(Fragment &frag, Index pointer_offset) {
 
-    AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
 
     CUTLASS_PRAGMA_UNROLL
     for (int cluster = 0; cluster < ThreadMap::Iterations::kCluster; ++cluster) {
@@ -169,15 +177,19 @@ public:
           int frag_row_idx = 
             (row + ThreadMap::Iterations::kRow * (group + ThreadMap::Iterations::kGroup * cluster));
 
-          AccessType const *memory_pointer = reinterpret_cast<AccessType const *>(byte_pointer);
+          LoadType *frag_ptr = reinterpret_cast<LoadType *>(&frag);
+          LoadType const *memory_pointer = reinterpret_cast<LoadType const *>(byte_pointer);
 
           CUTLASS_PRAGMA_UNROLL
           for (int column = 0; column < ThreadMap::Iterations::kColumn; ++column) {
             
             int frag_idx = frag_row_idx * ThreadMap::Iterations::kColumn + column;
 
-            frag_ptr[frag_idx] = 
-              memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess];            
+            CUTLASS_PRAGMA_UNROLL
+            for (int v = 0; v < kLoadsPerAccess; ++v) {
+              frag_ptr[frag_idx * kLoadsPerAccess + v] = 
+                memory_pointer[(column * ThreadMap::Delta::kColumn / kElementsPerAccess) * kLoadsPerAccess + v];
+            }
           }
         }
       }

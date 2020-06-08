@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -50,6 +50,7 @@ target_link_libraries(
   )
 
 set(CUTLASS_INSTALL_TESTS ON CACHE BOOL "Install test executables")
+set(CUTLASS_TEST_EXECUTION_ENVIRONMENT "" CACHE BOOL "Environment in which to invoke unit test executables")
   
 function(cutlass_test_unit_add_executable)
 
@@ -76,7 +77,7 @@ function(cutlass_test_unit_add_executable)
   add_custom_target(
     ${NAME_STEM}
     COMMAND
-    $<TARGET_FILE:${NAME}>
+    ${CUTLASS_TEST_EXECUTION_ENVIRONMENT} $<TARGET_FILE:${NAME}>
   DEPENDS
     ${NAME}
     )

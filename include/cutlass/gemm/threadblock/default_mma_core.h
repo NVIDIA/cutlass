@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -40,6 +40,8 @@
 #include "cutlass/gemm/warp/mma.h"
 #include "cutlass/gemm/threadblock/mma_pipelined.h"
 #include "cutlass/gemm/threadblock/mma_singlestage.h"
+#include "cutlass/arch/cache_operation.h" 
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -86,6 +88,17 @@ template <
     /// Store the accumulators in row major or column major.  Row major is used
     /// when output layout is interleaved.
     bool AccumulatorsInRowMajor = false
+    /// Cache operation of operand A
+    , cutlass::arch::CacheOperation::Kind CacheOpA =
+        cutlass::arch::CacheOperation::Global,
+    /// Cache operation of operand B
+    cutlass::arch::CacheOperation::Kind CacheOpB =
+        cutlass::arch::CacheOperation::Global,
+    /// per-element transformation for elements of A
+    ComplexTransform TransformA = ComplexTransform::kNone,
+    /// per-element transformation for elements of B
+    ComplexTransform TransformB = ComplexTransform::kNone,
+    bool IsComplex = false // (is_complex<ElementA>::value || is_complex<ElementB>::value)
 >
 struct DefaultMmaCore;
 

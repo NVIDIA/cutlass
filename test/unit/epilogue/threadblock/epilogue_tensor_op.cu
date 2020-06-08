@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -700,6 +700,65 @@ TEST(SM75_Epilogue_threadblock_epilogue, s8_tensor_op_64x64_32x3216) {
 }
 
 TEST(SM75_Epilogue_threadblock_epilogue, s8_tensor_op_128x128_64x64x16) {
+
+  //
+  // Define the warp-level matrix multiply
+  //
+
+  using ElementOutput = int8_t;
+  using ElementAccumulator = int;
+  using ElementCompute = float;
+  int const kElementsPerAccess = 128 / cutlass::sizeof_bits<ElementOutput>::value;
+  int const kPartitionsK = 1;
+  
+  using Shape = cutlass::gemm::GemmShape<128, 128, 16>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 64, 16>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 16>;
+  using Element = ElementOutput;
+  using LayoutA = cutlass::layout::RowMajorTensorOpMultiplicandCrosswise<
+      cutlass::sizeof_bits<Element>::value, 64>;
+  using LayoutB = cutlass::layout::ColumnMajorTensorOpMultiplicandCrosswise<
+      cutlass::sizeof_bits<Element>::value, 64>;
+
+  using WarpMmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      WarpShape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementAccumulator,
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddSaturate>::Type;
+
+  //
+  // Output operator
+  //
+
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
+    ElementOutput,
+    kElementsPerAccess,
+    ElementAccumulator,
+    ElementCompute
+  >;
+
+  //
+  // Define the epilogue
+  //
+
+  using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+    Shape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    OutputOp,
+    kElementsPerAccess
+  >::Epilogue;
+
+  //
+  // Instantiate epilogue
+  //
+
+  EpilogueTestbed<Epilogue> testbed;
+
+  bool passed = testbed.run_all();
+
+  EXPECT_TRUE(passed);
+}
+
+TEST(SM75_Epilogue_threadblock_epilogue, s8_tensor_op_64x128_64x64x16) {
 
   //
   // Define the warp-level matrix multiply
@@ -2516,6 +2575,249 @@ TEST(SM75_Epilogue_threadblock_epilogue, f16_tensor_op_128x64_64x32x8) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Epilogue_threadblock_epilogue, f64_tensor_op_64x64_32x32x4) {
+
+  //
+  // Define the warp-level matrix multiply
+  //
+
+  using ElementOutput = double;
+  using ElementAccumulator = double;
+  using ElementCompute = double;
+  int const kElementsPerAccess = 1;
+  int const kPartitionsK = 1;
+  
+  using Shape = cutlass::gemm::GemmShape<64, 64, 16>;
+  using WarpShape = cutlass::gemm::GemmShape<32, 32, 16>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+  using Element = double;
+  using ElementC = ElementAccumulator;
+  using LayoutA = cutlass::layout::ColumnMajorTensorOpMultiplicandCongruous64b;
+  using LayoutB = cutlass::layout::RowMajorTensorOpMultiplicandCongruous64b;
+  using LayoutC = cutlass::layout::RowMajor;
+
+  using WarpMmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      WarpShape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      LayoutC>::Type;
+
+  //
+  // Output operator
+  //
+
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
+    ElementOutput,
+    kElementsPerAccess,
+    ElementAccumulator,
+    ElementCompute
+  >;
+
+  //
+  // Define the epilogue
+  //
+
+  using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+    Shape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    OutputOp,
+    kElementsPerAccess
+  >::Epilogue;
+
+  //
+  // Instantiate epilogue
+  //
+
+  EpilogueTestbed<Epilogue> testbed;
+
+  bool passed = testbed.run_all();
+
+  EXPECT_TRUE(passed);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Epilogue_threadblock_epilogue, f64_tensor_op_128x64_64x32x4) {
+
+  //
+  // Define the warp-level matrix multiply
+  //
+
+  using ElementOutput = double;
+  using ElementAccumulator = double;
+  using ElementCompute = double;
+  int const kElementsPerAccess = 1;
+  int const kPartitionsK = 1;
+  
+  using Shape = cutlass::gemm::GemmShape<64, 64, 16>;
+  using WarpShape = cutlass::gemm::GemmShape<32, 32, 16>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+  using Element = double;
+  using ElementC = ElementAccumulator;
+  using LayoutA = cutlass::layout::ColumnMajorTensorOpMultiplicandCongruous64b;
+  using LayoutB = cutlass::layout::RowMajorTensorOpMultiplicandCongruous64b;
+  using LayoutC = cutlass::layout::RowMajor;
+
+  using WarpMmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      WarpShape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      LayoutC>::Type;
+
+  //
+  // Output operator
+  //
+
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
+    ElementOutput,
+    kElementsPerAccess,
+    ElementAccumulator,
+    ElementCompute
+  >;
+
+  //
+  // Define the epilogue
+  //
+
+  using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+    Shape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    OutputOp,
+    kElementsPerAccess
+  >::Epilogue;
+
+  //
+  // Instantiate epilogue
+  //
+
+  EpilogueTestbed<Epilogue> testbed;
+
+  bool passed = testbed.run_all();
+
+  EXPECT_TRUE(passed);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Epilogue_threadblock_epilogue, f64_tensor_op_64x128_32x64x4) {
+
+  //
+  // Define the warp-level matrix multiply
+  //
+
+  using ElementOutput = double;
+  using ElementAccumulator = double;
+  using ElementCompute = double;
+  int const kElementsPerAccess = 1;
+  int const kPartitionsK = 1;
+  
+  using Shape = cutlass::gemm::GemmShape<64, 64, 16>;
+  using WarpShape = cutlass::gemm::GemmShape<32, 32, 16>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+  using Element = double;
+  using ElementC = ElementAccumulator;
+  using LayoutA = cutlass::layout::ColumnMajorTensorOpMultiplicandCongruous64b;
+  using LayoutB = cutlass::layout::RowMajorTensorOpMultiplicandCongruous64b;
+  using LayoutC = cutlass::layout::RowMajor;
+
+  using WarpMmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      WarpShape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      LayoutC>::Type;
+
+  //
+  // Output operator
+  //
+
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
+    ElementOutput,
+    kElementsPerAccess,
+    ElementAccumulator,
+    ElementCompute
+  >;
+
+  //
+  // Define the epilogue
+  //
+
+  using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+    Shape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    OutputOp,
+    kElementsPerAccess
+  >::Epilogue;
+
+  //
+  // Instantiate epilogue
+  //
+
+  EpilogueTestbed<Epilogue> testbed;
+
+  bool passed = testbed.run_all();
+
+  EXPECT_TRUE(passed);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Epilogue_threadblock_epilogue, f64_tensor_op_128x128_32x64x4) {
+
+  //
+  // Define the warp-level matrix multiply
+  //
+
+  using ElementOutput = double;
+  using ElementAccumulator = double;
+  using ElementCompute = double;
+  int const kElementsPerAccess = 1;
+  int const kPartitionsK = 1;
+  
+  using Shape = cutlass::gemm::GemmShape<128, 128, 16>;
+  using WarpShape = cutlass::gemm::GemmShape<32, 64, 16>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+  using Element = double;
+  using ElementC = ElementAccumulator;
+  using LayoutA = cutlass::layout::ColumnMajorTensorOpMultiplicandCongruous64b;
+  using LayoutB = cutlass::layout::RowMajorTensorOpMultiplicandCongruous64b;
+  using LayoutC = cutlass::layout::RowMajor;
+
+  using WarpMmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      WarpShape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      LayoutC>::Type;
+
+  //
+  // Output operator
+  //
+
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
+    ElementOutput,
+    kElementsPerAccess,
+    ElementAccumulator,
+    ElementCompute
+  >;
+
+  //
+  // Define the epilogue
+  //
+
+  using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+    Shape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    OutputOp,
+    kElementsPerAccess
+  >::Epilogue;
+
+  //
+  // Instantiate epilogue
+  //
+
+  EpilogueTestbed<Epilogue> testbed;
+
+  bool passed = testbed.run_all();
+
+  EXPECT_TRUE(passed);
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM75_Epilogue_threadblock_epilogue, vec1_mixed_f16_f32_tensor_op_128x128_64x64x8) {

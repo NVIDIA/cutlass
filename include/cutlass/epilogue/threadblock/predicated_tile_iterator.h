@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -41,7 +41,7 @@
 #include "cutlass/tensor_ref.h"
 #include "cutlass/transform/pitch_linear_thread_map.h"
 #include "cutlass/epilogue/threadblock/output_tile_thread_map.h"
-
+#include "cutlass/arch/memory.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -306,10 +306,15 @@ public:
 
             bool guard = row_guard && mask_.predicates[column];
 
-            if (guard) {
-              frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column] = 
-                memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess];
-            }
+            cutlass::arch::global_load<
+              AccessType, 
+              sizeof(AccessType)
+            >(
+                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn +
+                         column],
+                (void *)&memory_pointer[column * ThreadMap::Delta::kColumn /
+                                        kElementsPerAccess],
+                guard);
           }
 
           if (row + 1 < ThreadMap::Iterations::kRow) {
@@ -365,11 +370,12 @@ public:
 
             bool guard = row_guard && mask_.predicates[column];
 
-            if (guard) {
-              
-              memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess] =
-                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column];
-            }
+            cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
+                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn +
+                         column],
+                (void *)&memory_pointer[column * ThreadMap::Delta::kColumn /
+                                        kElementsPerAccess],
+                guard);
           }
 
           if (row + 1 < ThreadMap::Iterations::kRow) {
@@ -660,9 +666,13 @@ public:
 
     bool guard = col_guard && mask_.predicates[iteration_contiguous_];
 
-    if (guard) {
-      *frag_ptr = *memory_pointer;
-    }
+    cutlass::arch::global_load<
+      AccessType, 
+      sizeof(AccessType)
+    >(
+        *frag_ptr,
+        (void *)memory_pointer,
+        guard);
   }
 
   /// Stores a fragment to memory
@@ -678,9 +688,8 @@ public:
 
     bool guard = col_guard && mask_.predicates[iteration_contiguous_];
 
-    if (guard) {
-      *memory_pointer = *frag_ptr;
-    }
+    cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
+        *frag_ptr, (void *)memory_pointer, guard);
   }
 
   /// Overrides the internal iteration index
@@ -732,6 +741,7 @@ public:
   }
 };
 
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 } // namespace threadblock

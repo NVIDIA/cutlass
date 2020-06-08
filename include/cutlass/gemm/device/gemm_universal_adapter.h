@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -41,14 +41,78 @@ namespace device {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace detail {
+
+  template <
+    typename ElementA_, 
+    typename LayoutA_, 
+    ComplexTransform TransformA,
+    int AlignmentA,
+    typename ElementB_,
+    typename LayoutB_,
+    ComplexTransform TransformB,
+    int AlignmentB,
+    typename LayoutC_,
+    bool Transpose
+  >
+  struct MapArguments {
+    using ElementA = ElementA_;
+    using LayoutA = LayoutA_;
+    static ComplexTransform const kTransformA = TransformA;
+    static int const kAlignmentA = AlignmentA; 
+    using ElementB = ElementB_;
+    using LayoutB = LayoutB_;
+    static ComplexTransform const kTransformB = TransformB;
+    static int const kAlignmentB = AlignmentB; 
+    using LayoutC = LayoutC_;
+  };
+
+  template <
+    typename ElementA_, 
+    typename LayoutA_, 
+    ComplexTransform TransformA,
+    int AlignmentA,
+    typename ElementB_,
+    typename LayoutB_,
+    ComplexTransform TransformB,
+    int AlignmentB,
+    typename LayoutC_
+  >
+  struct MapArguments<
+    ElementA_,
+    LayoutA_,
+    TransformA,
+    AlignmentA, 
+    ElementB_,
+    LayoutB_,
+    TransformB,
+    AlignmentB,
+    LayoutC_,
+    true
+  > {
+    using ElementA = ElementB_;
+    using LayoutA = typename layout::LayoutTranspose<LayoutB_>::type;
+    static ComplexTransform const kTransformA = TransformB;
+    static int const kAlignmentA = AlignmentB; 
+    using ElementB = ElementA_;
+    using LayoutB = typename layout::LayoutTranspose<LayoutA_>::type;
+    static ComplexTransform const kTransformB = TransformA;
+    static int const kAlignmentB = AlignmentA; 
+    using LayoutC = typename layout::LayoutTranspose<LayoutC_>::type;
+  };
+
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <typename GemmKernel_>
 class GemmUniversalAdapter {
 public:
 
   using GemmKernel = GemmKernel_;
 
-  static_assert(std::is_same<typename GemmKernel::LayoutC, cutlass::layout::RowMajor>::value,
-    "Universal adapter expects the kernel to be row-major and transposes its arguments.");
+  static bool const kInternalTranspose = 
+    std::is_same<typename GemmKernel::LayoutC, cutlass::layout::RowMajor>::value;
 
   using ThreadblockShape = typename GemmKernel::Mma::Shape;
   using WarpShape = typename GemmKernel::WarpShape;
@@ -56,26 +120,39 @@ public:
  
   using OperatorClass = typename GemmKernel::OperatorClass;
   using ArchTag = typename GemmKernel::ArchTag;
- 
+
   // Type, layout, and complex transform deliberately exchanged with B
-  using ElementA = typename GemmKernel::ElementB;
-  using LayoutA = typename layout::LayoutTranspose<typename GemmKernel::LayoutB>::type;
-  using TensorRefA = TensorRef<ElementA const, LayoutA>;
-  static ComplexTransform const kTransformA = GemmKernel::kTransformB;
+  using MapArguments = detail::MapArguments<
+    typename GemmKernel::ElementA,
+    typename GemmKernel::LayoutA,
+    GemmKernel::kTransformA,
+    GemmKernel::kAlignmentA,
+    typename GemmKernel::ElementB,
+    typename GemmKernel::LayoutB,
+    GemmKernel::kTransformB,
+    GemmKernel::kAlignmentB,
+    typename GemmKernel::LayoutC,
+    kInternalTranspose
+  >;
+
+  using ElementA = typename MapArguments::ElementA;
+  using LayoutA = typename MapArguments::LayoutA;
+  static ComplexTransform const kTransformA = MapArguments::kTransformA;
   static int const kAlignmentA = GemmKernel::kAlignmentA;
 
-  // Type, layout, and complex transform deliberately exchanged with A
-  using ElementB = typename GemmKernel::ElementA;
-  using LayoutB = typename layout::LayoutTranspose<typename GemmKernel::LayoutA>::type;
-  using TensorRefB = TensorRef<ElementB const, LayoutB>;
-  static ComplexTransform const kTransformB = GemmKernel::kTransformA;
+  using ElementB = typename MapArguments::ElementB;
+  using LayoutB = typename MapArguments::LayoutB;
+  static ComplexTransform const kTransformB = MapArguments::kTransformB;
   static int const kAlignmentB = GemmKernel::kAlignmentB;
-
+  
   using ElementC = typename GemmKernel::ElementC;
-  using LayoutC = cutlass::layout::ColumnMajor;
+  using LayoutC = typename MapArguments::LayoutC;
+  static int const kAlignmentC = GemmKernel::kAlignmentC;
+ 
+  using TensorRefA = TensorRef<ElementA const, LayoutA>;
+  using TensorRefB = TensorRef<ElementB const, LayoutB>;
   using TensorRefC = TensorRef<ElementC const, LayoutC>;
   using TensorRefD = TensorRef<ElementC, LayoutC>;
-  static int const kAlignmentC = GemmKernel::kAlignmentC;
 
   using ElementAccumulator = typename GemmKernel::Mma::Policy::Operator::ElementC;
 
@@ -99,7 +176,12 @@ public:
 
   /// Helper to construct a transposed equivalent for the underying GEMM operator
   static Arguments to_underlying_arguments(Arguments const &args) {
-    return args.transposed_problem();
+    if (kInternalTranspose) {
+      return args.transposed_problem();
+    }
+    else {
+      return args;
+    }
   }
 
   /// Determines whether the GEMM can execute the given problem.

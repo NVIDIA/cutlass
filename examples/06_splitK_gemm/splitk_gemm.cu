@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -39,7 +39,7 @@ inner product (1/16th of output), they accumulate to single output matrix.
 
 Writing a single high performance matrix multiplication kernel is hard but do-able. Whereas writing
 high performance kernels at scale which works for multiple problem sizes with good abstractions is
-really hard. CUTLASS solves this problem by providing simplified abstractions (knobs) to compose
+really hard. CUTLASS solves this problem by providing simplified abstractions to compose
 multiple sections of gemm kernel. When used properly, the kernels can hit peak performance of GPU
 easily.
 
@@ -144,7 +144,7 @@ using ShapeMMAWarp = cutlass::gemm::GemmShape<64, 64, 32>;  // <- warp tile M = 
 using ShapeMMAOp = cutlass::gemm::GemmShape<8, 8, 4>;  // <- MMA Op tile M = 8, N = 8, K = 4
 
 // This code section describes how threadblocks are scheduled on GPU
-using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle;  // <- ??
+using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;  // <- ??
 
 // This code section describes ?
 using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
@@ -172,17 +172,7 @@ using Gemm = cutlass::gemm::device::GemmSplitKParallel<ElementInputA,
                                                        ShapeMMAOp,
                                                        EpilogueOp>;
 
-int main() {
-
-  //
-  // Volta Tensor Core operations exposed with mma.sync are first available in CUDA 10.1.
-  //
-  // CUTLASS must be compiled with CUDA 10.1 Toolkit to run these examples.
-  //
-  if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 1))) {
-    std::cerr << "Volta Tensor Core operations must be compiled with CUDA 10.1 Toolkit or later." << std::endl;
-    return -1;
-  }
+int run() {
 
   cudaDeviceProp props;
 
@@ -316,11 +306,30 @@ int main() {
   tensor_ref_d.sync_host();
 
   // Check if output from CUTLASS kernel and reference kernel are equal or not
-  std::cout << (cutlass::reference::host::TensorEquals(tensor_d.host_view(),
-                                                       tensor_ref_d.host_view())
-                    ? "Passed"
-                    : "Failed")
-            << std::endl;
+  bool passed = cutlass::reference::host::TensorEquals(
+    tensor_d.host_view(),
+    tensor_ref_d.host_view());
 
-  CUTLASS_CHECK(status);
+  std::cout << (passed ? "Passed" : "Failed") << std::endl;
+
+  return (passed ? 0  : -1);
 }
+
+int main() {
+
+  //
+  // Volta Tensor Core operations exposed with mma.sync are first available in CUDA 10.1.
+  //
+  // CUTLASS must be compiled with CUDA 10.1 Toolkit to run these examples.
+  //
+  if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 1))) {
+    std::cerr << "Volta Tensor Core operations must be compiled with CUDA 10.1 Toolkit or later." << std::endl;
+
+    // Returning zero, so this test passes when built with older CUDA Toolkits. Its action are no-op.
+    return 0;
+  }
+  else {
+    return run();
+  }
+}
+

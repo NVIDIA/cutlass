@@ -15,7 +15,7 @@ $ make cutlass_profiler -j
 To limit compilation time, only one tile size (128x128) is instantiated for each data type, math instruction, and layout.
 To instantiate all sizes, set the following environment variable when running CMake from an empty `build/` directory.
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=all
+$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all
 ...
 $ make cutlass_profiler -j
 ```
@@ -102,7 +102,7 @@ Report:
   --verbose=<bool>                           If true (default), prints human-readable text to stdout.
 
 About:
-  --version                                  CUTLASS 2.0.0 built on Nov  19 2019 at 13:01:00
+  --version                                  CUTLASS 2.2.0 built on Jun  8 2020 at 07:59:33
 
 Operations:
   --operation=<operation_name>               Specifies a particular operation to run or print the usage statement.
@@ -191,29 +191,34 @@ Test your changes to gemm kernels with a quick functional test and save results 
 
 Example command line for profiling SGEMM kernels is as follows:
 ```bash
-$ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=4352 --n=4096 --k=4096
+$ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=3456 --n=4096 --k=4096
+
+
 
 =============================
   Problem ID: 1
 
-    Provider: CUTLASS
-   Operation: cutlass_simt_sgemm_128x128_nn
+        Provider: CUTLASS
+   OperationKind: gemm
+       Operation: cutlass_simt_sgemm_128x128_8x2_nn_align1
 
- Disposition: Passed
-      Status: Success
+          Status: Success
+    Verification: ON
+     Disposition: Passed
 
-   Arguments:  --m=4352 --n=4096 --k=4096 --A=f32:column --B=f32:column --C=f32:column --alpha=1 --beta=0        \
-               --split_k_slices=1 --batch_count=1 --op_class=simt --accum=f32 --cta_m=128 --cta_n=128 --cta_k=8  \
-               --stages=2 --warps_m=2 --warps_n=2 --warps_k=1 --inst_m=1 --inst_n=1 --inst_k=1 --min_cc=50       \
-               --max_cc=1024
+          cuBLAS: Passed
 
-       Bytes: 52428800  bytes
-       FLOPs: 146064539648  flops
+       Arguments: --m=3456 --n=4096 --k=4096 --A=f32:column --B=f32:column --C=f32:column --alpha=1 --beta=0 --split_k_slices=1  \
+                  --batch_count=1 --op_class=simt --accum=f32 --cta_m=128 --cta_n=128 --cta_k=8 --stages=2 --warps_m=4  \
+                  --warps_n=2 --warps_k=1 --inst_m=1 --inst_n=1 --inst_k=1 --min_cc=50 --max_cc=1024
 
-     Runtime: 10.5424  ms
-      Memory: 4.63158 GiB/s
+           Bytes: 180355072  bytes
+           FLOPs: 115992428544  flops
 
-        Math: 13854.9 GFLOP/s
+         Runtime: 6.73655  ms
+          Memory: 24.934 GiB/s
+
+            Math: 17218.4 GFLOP/s
 ```
 
 Note, the arguments which appear in the output may be used as command line parameters for subsequent invocations.
@@ -224,31 +229,34 @@ Note, the arguments which appear in the output may be used as command line param
 To execute kernels targeting Tensor Core operations, supply the flag `--op_class=tensorop` in the command line.
 
 ```bash
-$ ./tools/profiler/cutlass_profiler --op_class=tensorop
+$ ./tools/profiler/cutlass_profiler --op_class=tensorop --m=3456 --n=4096 --k=8192
+
+
 
 =============================
   Problem ID: 1
 
-    Provider: CUTLASS
-   Operation: cutlass_turing_h1688gemm_128x128_nt
+        Provider: CUTLASS
+   OperationKind: gemm
+       Operation: cutlass_tensorop_s16816gemm_f16_256x128_32x3_nn_align8
 
- Disposition: Passed
-      Status: Success
+          Status: Success
+    Verification: ON
+     Disposition: Passed
 
-   Arguments:  --m=4352 --n=4096 --k=4096 --A=f16:column --B=f16:row --C=f16:column --alpha=1 --beta=0   \
-               --op_class=tensorop --accum=f16 --cta_m=128 --cta_n=128 --cta_k=32 --stages=2             \
-               --warps_m=2 --warps_n=2 --warps_k=1 --inst_m=16 --inst_n=8 --inst_k=8                     \
-               --min_cc=75 --max_cc=1024
+          cuBLAS: Passed
 
+       Arguments: --m=3456 --n=4096 --k=8192 --A=f16:column --B=f16:column --C=f32:column --alpha=1 --beta=0 --split_k_slices=1  \
+                  --batch_count=1 --op_class=tensorop --accum=f32 --cta_m=256 --cta_n=128 --cta_k=32 --stages=3 --warps_m=4  \
+                  --warps_n=2 --warps_k=1 --inst_m=16 --inst_n=8 --inst_k=16 --min_cc=80 --max_cc=1024
 
-       Bytes: 52428800  bytes
-       FLOPs: 146064539648  flops
+           Bytes: 180355072  bytes
+           FLOPs: 231956545536  flops
 
-     Runtime: 1.51255  ms
-      Memory: 32.2821 GiB/s
+         Runtime: 0.98647  ms
+          Memory: 170.272 GiB/s
 
-        Math: 96568.7 GFLOP/s
-
+            Math: 235138 GFLOP/s
 ```
 
 ## Covering the problem space
@@ -271,7 +279,7 @@ with the `--output=<filename.csv>` command line option as shown:
 
 ```bash
 $ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sgemm_128x128_nn            \
-                                    --m=4352 --n=4096 --k=8:4096:8 --output=report.csv
+                                    --m=3456 --n=4096 --k=8:4096:8 --output=report.csv
 ```
 
 To faclitate generation of pivot tables and charts, additional columns may be prepended with the
@@ -279,13 +287,13 @@ To faclitate generation of pivot tables and charts, additional columns may be pr
 
 ```bash
 $ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sgemm_128x128_nn            \
-                                    --m=4352 --n=4096 --k=8:4096:8 --output=report.csv \
-                                    --tags=cutlass:2.0,date:2019-11-19
+                                    --m=3456 --n=4096 --k=8:4096:8 --output=report.csv \
+                                    --tags=cutlass:2.2,date:2020-06-08
 ```  
 
 # Copyright
 
-Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

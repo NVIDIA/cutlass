@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -45,6 +45,7 @@
 #include "cutlass/transform/threadblock/regular_tile_iterator_pitch_linear.h"
 
 #include "cutlass/epilogue/warp/fragment_iterator_complex_tensor_op.h"
+#include "cutlass/epilogue/warp/fragment_iterator_gaussian_complex_tensor_op.h"
 #include "cutlass/epilogue/warp/tile_iterator_tensor_op.h"
 #include "cutlass/epilogue/threadblock/default_thread_map_tensor_op.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
@@ -76,6 +77,7 @@ template <
   /// Elements accessed by inner-most loop of AccumulatorFragmentIterator::load()
   int ElementsPerAccess,
   /// Multiply-add operator 
+  /// Selects between (arch::OpMultiplyAddComplex, arch::OpMultiplyGaussianComplex) 
   typename Operator_ = arch::OpMultiplyAddComplex> 
 struct DefaultEpilogueComplexTensorOp {
 
@@ -108,6 +110,91 @@ struct DefaultEpilogueComplexTensorOp {
   >;
 
   using AccumulatorFragmentIterator = cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
+    typename WarpMmaTensorOp::Shape,
+    typename WarpMmaTensorOp::Policy::Operator::Shape,
+    typename WarpMmaTensorOp::Policy::Operator::ElementC,
+    typename WarpMmaTensorOp::Policy::Operator::FragmentC,
+    LayoutC
+  >;
+
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOp<
+    typename WarpMmaTensorOp::Shape,
+    typename WarpMmaTensorOp::Policy::Operator::Shape,
+    ElementAccumulator,
+    LayoutC
+  >;
+
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIterator<
+    typename OutputTileThreadMap::CompactedThreadMap,
+    ElementAccumulator
+  >;
+
+  /// Hard-coded padding elements added 
+  using Padding = cutlass::MatrixShape<0, 0>;
+
+  //
+  // Define the epilogue
+  //
+  using Epilogue = cutlass::epilogue::threadblock::Epilogue<
+    Shape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    OutputTileIterator,
+    AccumulatorFragmentIterator,
+    WarpTileIterator,
+    SharedLoadIterator,
+    OutputOp,
+    Padding
+  >;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Partial specialization and defines sensible defaults for epilogues for complex*complex case
+//  3 real-valued mma operations (Gaussian Complex)
+//  A  = (ar + j ai), B = (br +j bi), D = AB
+//  P1 = (ar + ai) * br, P2 = - ar * (br - bi), P3 = ai * (br + bi) 
+//  D  = dr + j di = (P1 - P3) + j (P1 + P2)
+/////////////////////////////////////////////////////////////////////////////////////////////////
+template <
+  typename Shape_,
+  typename WarpMmaTensorOp_,
+  int PartitionsK,
+  typename OutputOp_,
+  int ElementsPerAccess
+>
+struct DefaultEpilogueComplexTensorOp <Shape_, WarpMmaTensorOp_, PartitionsK, 
+                                      OutputOp_, ElementsPerAccess, 
+                                      arch::OpMultiplyAddGaussianComplex> {
+
+  using Shape = Shape_;
+  using WarpMmaTensorOp = WarpMmaTensorOp_;
+  static int const kPartitionsK = PartitionsK;
+  using OutputOp = OutputOp_;
+  static int const kElementsPerAccess = ElementsPerAccess;
+  using Operator = arch::OpMultiplyAddGaussianComplex;
+
+  using ElementOutput = typename OutputOp::ElementOutput;
+  using LayoutC = typename WarpMmaTensorOp::LayoutC;
+  using ElementAccumulator = typename WarpMmaTensorOp::ElementC;
+
+  //
+  // Thread map
+  //
+
+  using OutputTileThreadMap = typename cutlass::epilogue::threadblock::DefaultThreadMapTensorOp<
+    Shape,
+    typename WarpMmaTensorOp::Shape,
+    kPartitionsK,
+    ElementOutput,
+    kElementsPerAccess
+  >::Type;
+
+  using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
+    OutputTileThreadMap,
+    ElementOutput
+  >;
+
+  using AccumulatorFragmentIterator = cutlass::epilogue::warp::FragmentIteratorGaussianComplexTensorOp<
     typename WarpMmaTensorOp::Shape,
     typename WarpMmaTensorOp::Policy::Operator::Shape,
     typename WarpMmaTensorOp::Policy::Operator::ElementC,

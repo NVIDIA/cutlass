@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -849,6 +849,47 @@ bool arg_as_OpcodeClassID(
   return arg_as_OpcodeClassID(opcode_class, value_ptr);
 }
 
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_SplitKModeID(
+  library::SplitKMode &split_k_mode,
+  KernelArgument::Value const *value_ptr) {
+
+  if (value_ptr->not_null) {
+    if (value_ptr->argument->description->type == ArgumentTypeID::kEnumerated) {
+
+      split_k_mode = library::from_string<library::SplitKMode>(
+        static_cast<EnumeratedTypeArgument::EnumeratedTypeValue const *>(value_ptr)->element);
+
+      if (split_k_mode == library::SplitKMode::kInvalid) {
+        throw std::runtime_error(
+          "arg_as_SplitKModeID() - illegal cast.");
+      }
+    }
+    else {
+
+      throw std::runtime_error(
+        "arg_as_SplitKModeID() - illegal cast.");
+    }
+    return true;
+  }
+  return false;
+}
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_SplitKModeID(
+  library::SplitKMode &split_k_mode,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem) {
+
+  size_t idx = problem_space.argument_index(name);
+  KernelArgument::Value const *value_ptr = problem.at(idx).get();
+
+  return arg_as_SplitKModeID(split_k_mode, value_ptr);
+}
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Lexically casts an argument to a given type stored in a byte array. Returns true if not null.
 bool arg_as_scalar(
@@ -939,7 +980,6 @@ bool tensor_description_satisfies(
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
 } // namespace profiler
 } // namespace cutlass
 

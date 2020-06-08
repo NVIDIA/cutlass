@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -360,6 +360,29 @@ public:
 
 namespace cutlass {
 
+
+/// Scalar multiplication
+template <int Rank, typename Index>
+CUTLASS_HOST_DEVICE
+Coord<Rank, Index> operator*(Index s, Coord<Rank, Index> coord) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Rank; ++i) {
+    coord[i] *= s;
+  }
+  return coord;
+}
+
+/// Scalar multiplication
+template <int Rank, typename Index>
+CUTLASS_HOST_DEVICE
+Coord<Rank, Index> operator*(Coord<Rank, Index> coord, Index s) {
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Rank; ++i) {
+    coord[i] *= s;
+  }
+  return coord;
+}
+
 /// Scalar division
 template <int Rank, typename Index>
 CUTLASS_HOST_DEVICE
@@ -419,3 +442,4 @@ Coord<4> make_Coord(int _0, int _1, int _2, int _3) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace cutlass
+

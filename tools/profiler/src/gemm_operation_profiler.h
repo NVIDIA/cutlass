@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -31,6 +31,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <algorithm>
 #include <unordered_map>
 
 // CUTLASS Library includes
@@ -75,6 +76,18 @@ public:
 
     GemmProblem(): 
       m(16), n(16), k(16), lda(0), ldb(0), ldc(0), split_k_slices(1), batch_count(1) { }
+
+    /// Parses the problem
+    Status parse(
+      library::GemmDescription const &operation_desc,
+      ProblemSpace const &problem_space,
+      ProblemSpace::Problem const &problem);
+
+    /// Initializes a performance result
+    void initialize_result(
+      PerformanceResult &result,
+      library::GemmDescription const &operation_desc,
+      ProblemSpace const &problem_space);
   };
 
   /// Workspace used 
@@ -86,8 +99,8 @@ public:
     DeviceAllocation *Computed;
     DeviceAllocation *Reference;
 
-    library::GemmConfiguration configuration;
-    library::GemmArguments arguments;
+    library::GemmUniversalConfiguration configuration;
+    library::GemmUniversalArguments arguments;
 
     /// Buffer used for the operation's host workspace
     std::vector<uint8_t> host_workspace;
@@ -122,7 +135,7 @@ public:
   //
 
   /// Ctor
-  GemmOperationProfiler();
+  GemmOperationProfiler(Options const &options);
 
   /// Destructor
   virtual ~GemmOperationProfiler();

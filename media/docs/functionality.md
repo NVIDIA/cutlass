@@ -27,7 +27,16 @@ Hyperlinks to relevant unit tests demonstrate how specific template instances ma
 | **TensorOp**        | 75                 |  10.2+           | `s8 * s8 + s32 => {s32, s8}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s8t_s8n_s32n_tensor_op_s32_sm75.cu) |
 | **TensorOp**        | 75                 |  10.2+           | `s4 * s4 + s32 => {s32, s4}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s4t_s4n_s32n_tensor_op_s32_sm75.cu) |
 | **TensorOp**        | 75                 |  10.2+           | `b1 ^ b1 + s32 => {s32, b1}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_b1t_b1n_s32n_tensor_op_s32_sm75.cu) |
-
+| **TensorOp**        | 80                 |  11.0+           | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_tensor_op_f16_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `f16 * f16 + f32 => {f16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `bf16 * bf16 + f32 => {bf16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_bf16n_bf16t_bf16t_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `tf32 * tf32 + f32 => f32`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f32n_f32t_f32t_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `s8 * s8 + s32 => {s32, s8}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s8t_s8n_s32n_tensor_op_s32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `s4 * s4 + s32 => {s32, s4}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s4t_s4n_s32n_tensor_op_s32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `b1 ^ b1 + s32 => {s32, b1}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_b1t_b1n_s32n_tensor_op_s32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `f64 * f64 + f64 => f64`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f64n_f64t_f64t_tensor_op_f64_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `cf32 * cf32 + cf32 => cf32`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_cf32n_cf32t_cf32t_tensor_op_tf32_f32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `cf64 * cf64 + cf64 => cf64`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu), [Gaussian 3m](/test/unit/gemm/device/gemm_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu) |
 
 ## Warp-level Matrix Multiply with Tensor Cores
 
@@ -37,9 +46,13 @@ The following table summarizes supported warp level shapes for each TensorOp ins
 |-----------------|-----------------------|--------------------------------------------|
 | **TensorOp**    | 8-by-8-by-4           | 32x32x4, 32x64x4, 64x32x4, 64x64x4         |
 | **TensorOp**    | 16-by-8-by-8          | 32x32x8, 32x64x8, 64x32x8, 64x64x8         |
+| **TensorOp**    | 16-by-8-by-16         | 32x32x16, 32x64x16, 64x32x16, 64x64x16     |
 | **TensorOp**    | 8-by-8-by-16          | 32x32x16, 32x64x16, 64x32x16, 64x64x16     |
 | **TensorOp**    | 8-by-8-by-32          | 32x32x32, 32x64x32, 64x32x32, 64x64x32     |
+| **TensorOp**    | 16-by-8-by-32         | 32x32x32, 32x64x32, 64x32x32, 64x64x32     |
+| **TensorOp**    | 16-by-8-by-64         | 32x32x64, 32x64x64, 64x32x64, 64x64x64     |
 | **TensorOp**    | 8-by-8-by-128         | 32x32x128, 32x64x128, 64x32x128, 64x64x128 |
+| **TensorOp**    | 16-by-8-by-256        | 32x32x256, 32x64x256, 64x32x256, 64x64x256 |
 
 TensorOp instructions depend on a permuted shared memory layout that can be efficiently
 loaded from. The following tables summarize the destination shared memory layout that
@@ -68,6 +81,38 @@ from global memory with layout specified in the column "GMEM Layout."
 |  **C**    | `half_t`     | `RowMajor`      | `RowMajor`                         |
 |  **C**    | `float`      | `RowMajor`      | `RowMajor`                         |
 
+**TensorOp 16-by-8-by-8.**
+
+|**Operand**|**Element**   | **GMEM Layout** | **SMEM Layout**                    |
+|-----------|--------------|-----------------|------------------------------------|
+|  **A**    | `tfloat32_t`     | `ColumnMajor`   | `ColumnMajorTensorOpCongruous<32>` |
+|  **A**    | `tfloat32_t`     | `RowMajor`      | `RowMajorTensorOpCrosswise<32>`    |
+|  **B**    | `tfloat32_t`     | `ColumnMajor`   | `ColumnMajorTensorOpCrosswise<32>` |
+|  **B**    | `tfloat32_t`     | `RowMajor`      | `RowMajorTensorOpCongruous<32>`    |
+|  **C**    | `float`          | `RowMajor`      | `RowMajor`                         |
+
+
+**TensorOp 16-by-8-by-16.**
+
+|**Operand**|**Element**   | **GMEM Layout** | **SMEM Layout**                    |
+|-----------|--------------|-----------------|------------------------------------|
+|  **A**    | `half_t`, `bfloat16_t`     | `ColumnMajor`   | `ColumnMajorTensorOpCongruous<16>` |
+|  **A**    | `half_t`, `bfloat16_t`     | `RowMajor`      | `RowMajorTensorOpCrosswise<16>`    |
+|  **B**    | `half_t`, `bfloat16_t`     | `ColumnMajor`   | `ColumnMajorTensorOpCrosswise<16>` |
+|  **B**    | `half_t`, `bfloat16_t`     | `RowMajor`      | `RowMajorTensorOpCongruous<16>`    |
+|  **C**    | `half_t`     | `RowMajor`      | `RowMajor`                         |
+|  **C**    | `float`      | `RowMajor`      | `RowMajor`                         |
+
+**TensorOp 8-by-8-by-4.**
+
+|**Operand**|**Element**   | **GMEM Layout** | **SMEM Layout**                    |
+|-----------|--------------|-----------------|------------------------------------|
+|  **A**    | `double`     | `ColumnMajor`   | `ColumnMajorTensorOpCongruous<64>` |
+|  **A**    | `double`     | `RowMajor`      | `RowMajorTensorOpCrosswise<64>`    |
+|  **B**    | `double`     | `ColumnMajor`   | `ColumnMajorTensorOpCrosswise<64>` |
+|  **B**    | `double`     | `RowMajor`      | `RowMajorTensorOpCongruous<64>`    |
+|  **C**    | `double`     | `RowMajor`      | `RowMajor`                         |
+
 **TensorOp 8-by-8-by-16.**
 
 |**Operand**|**Element**   | **GMEM Layout** | **SMEM Layout**                    |
@@ -76,7 +121,23 @@ from global memory with layout specified in the column "GMEM Layout."
 |  **B**    | `int8_t`     | `ColumnMajor`   | `ColumnMajorTensorOpCongruous<8>`  |
 |  **C**    | `int32_t`    | `RowMajor`      | `RowMajor`                         |
 
+**TensorOp 16-by-8-by-32.**
+
+|**Operand**|**Element**   | **GMEM Layout** | **SMEM Layout**                    |
+|-----------|--------------|-----------------|------------------------------------|
+|  **A**    | `int8_t`     | `RowMajor`      | `RowMajorTensorOpCrosswise<8>`     |
+|  **B**    | `int8_t`     | `ColumnMajor`   | `ColumnMajorTensorOpCongruous<8>`  |
+|  **C**    | `int32_t`    | `RowMajor`      | `RowMajor`                         |
+
 **TensorOp 8-by-8-by-32.**
+
+|**Operand**|**Element**   | **GMEM Layout** | **SMEM Layout**                    |
+|-----------|--------------|-----------------|------------------------------------|
+|  **A**    | `int4b_t`    | `RowMajor`      | `RowMajorTensorOpCrosswise<4>`     |
+|  **B**    | `int4b_t`    | `ColumnMajor`   | `ColumnMajorTensorOpCongruous<4>`  |
+|  **C**    | `int32_t`    | `RowMajor`      | `RowMajor`                         |
+
+**TensorOp 16-by-8-by-64.**
 
 |**Operand**|**Element**   | **GMEM Layout** | **SMEM Layout**                    |
 |-----------|--------------|-----------------|------------------------------------|
@@ -119,7 +180,7 @@ CUDA exposes warp-level matrix operations in the CUDA C++ WMMA API. The CUDA C++
 
 # Copyright
 
-Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

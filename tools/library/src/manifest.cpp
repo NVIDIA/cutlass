@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -37,11 +37,6 @@ namespace library {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// init and insert all cutlass op in manifest object (procedurally generated using generator.py)
-void initialize_all(Manifest &manifest);         
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Top-level initialization
 Status Manifest::initialize() {
 
@@ -49,13 +44,8 @@ Status Manifest::initialize() {
     operations_.clear();
   }
 
-  switch(provider_) {
-    case Provider::kCUTLASS: 
-      initialize_all(*this); break;  
-
-    default: 
-      break;
-  }
+  // initialize procedurally generated cutlass op in manifest object
+  initialize_all(*this);
 
   return Status::kSuccess;
 }
