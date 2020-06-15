@@ -98,17 +98,17 @@ struct Mma<
 
   uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
   uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
-  uint32_t const *C = reinterpret_cast<uint32_t const *>(&c);
-  uint32_t *D = reinterpret_cast<uint32_t *>(&d);
+  float const *C = reinterpret_cast<float const *>(&c);
+  float *D = reinterpret_cast<float *>(&d);
 
   asm(
       "mma.sync.aligned.m16n8k8.row.col.f32.bf16.bf16.f32 "
       "{%0,%1,%2,%3}, {%4,%5}, {%6}, {%7,%8,%9,%10};\n"
-      : "=r"(D[0]), "=r"(D[1]), "=r"(D[2]), "=r"(D[3])
+      : "=f"(D[0]), "=f"(D[1]), "=f"(D[2]), "=f"(D[3])
       : 
         "r"(A[0]), "r"(A[1]), 
         "r"(B[0]), 
-        "r"(C[0]), "r"(C[1]), "r"(C[2]), "r"(C[3])
+        "f"(C[0]), "f"(C[1]), "f"(C[2]), "f"(C[3])
   );
 
 #else
@@ -341,15 +341,15 @@ struct Mma<
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
-    uint32_t const *C = reinterpret_cast<uint32_t const *>(&c);
-    uint32_t *D = reinterpret_cast<uint32_t *>(&d);
+    float const *C = reinterpret_cast<float const *>(&c);
+    float *D = reinterpret_cast<float *>(&d);
 
     asm volatile(
         "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
         "{%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%10,%11,%12,%13};\n"
-        : "=r"(D[0]), "=r"(D[1]), "=r"(D[2]), "=r"(D[3])
+        : "=f"(D[0]), "=f"(D[1]), "=f"(D[2]), "=f"(D[3])
         : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]),
-          "r"(C[0]), "r"(C[1]), "r"(C[2]), "r"(C[3]));
+          "f"(C[0]), "f"(C[1]), "f"(C[2]), "f"(C[3]));
 
 #else
     assert(0);
@@ -402,15 +402,15 @@ struct Mma<
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
-    uint32_t const *C = reinterpret_cast<uint32_t const *>(&c);
-    uint32_t *D = reinterpret_cast<uint32_t *>(&d);
+    float const *C = reinterpret_cast<float const *>(&c);
+    float *D = reinterpret_cast<float *>(&d);
 
     asm volatile(
         "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32  {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, "
         "{%10,%11,%12,%13};\n"
-        : "=r"(D[0]), "=r"(D[1]), "=r"(D[2]), "=r"(D[3])
+        : "=f"(D[0]), "=f"(D[1]), "=f"(D[2]), "=f"(D[3])
         : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]),
-          "r"(C[0]), "r"(C[1]), "r"(C[2]), "r"(C[3]));
+          "f"(C[0]), "f"(C[1]), "f"(C[2]), "f"(C[3]));
 
 #else
     assert(0);
@@ -461,15 +461,15 @@ struct Mma<
 
 #if defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
 
-  uint64_t const & A = reinterpret_cast<uint64_t const &>(a);
-  uint64_t const & B = reinterpret_cast<uint64_t const &>(b);
+  double const & A = reinterpret_cast<double const &>(a);
+  double const & B = reinterpret_cast<double const &>(b);
 
-  uint64_t const *C = reinterpret_cast<uint64_t const *>(&c);
-  uint64_t *D = reinterpret_cast<uint64_t *>(&d);
+  double const *C = reinterpret_cast<double const *>(&c);
+  double *D = reinterpret_cast<double *>(&d);
 
   asm volatile("mma.sync.aligned.m8n8k4.row.col.f64.f64.f64.f64 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
-      : "=l"(D[0]), "=l"(D[1])
-      : "l"(A), "l"(B), "l"(C[0]), "l"(C[1]));
+      : "=d"(D[0]), "=d"(D[1])
+      : "d"(A), "d"(B), "d"(C[0]), "d"(C[1]));
 
 #else
     assert(0);

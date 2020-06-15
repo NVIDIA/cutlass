@@ -44,9 +44,18 @@ function(cutlass_example_add_executable NAME)
     ${CUTLASS_EXAMPLES_COMMON_SOURCE_DIR}
     )
 
+  add_custom_target(
+    test_${NAME}
+    COMMAND
+    ${CUTLASS_TEST_EXECUTION_ENVIRONMENT} $<TARGET_FILE:${NAME}>
+  DEPENDS
+    ${NAME}
+    )
+
 endfunction()
 
 add_custom_target(cutlass_examples)
+add_custom_target(test_examples)
 
 foreach(EXAMPLE
   00_basic_gemm
@@ -66,5 +75,6 @@ foreach(EXAMPLE
 
   add_subdirectory(${EXAMPLE})
   add_dependencies(cutlass_examples ${EXAMPLE})
+  add_dependencies(test_examples test_${EXAMPLE})
 
 endforeach()

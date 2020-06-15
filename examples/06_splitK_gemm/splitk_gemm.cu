@@ -182,10 +182,12 @@ int run() {
     return -1;
   }
 
-  if (!(props.major >= 7)) {
-    std::cerr << "Volta Tensor Ops must be run on a machine with compute capability at least 70."
+  if (props.major != 7) {
+    std::cerr << "Volta Tensor Ops must be run on a machine with compute capability of 70, 72, or 75."
               << std::endl;
-    return -1;
+
+    // Return 0 so tests pass if run on unsupported architectures or CUDA Toolkits.
+    return 0;
   }
 
   //

@@ -37,6 +37,7 @@ CUTLASS 2.2 is a significant update to CUTLASS adding:
 - Coverage of [NVIDIA Ampere Architecture features](https://devblogs.nvidia.com/nvidia-ampere-architecture-in-depth/)
 - Tensor Core-accelerated GEMMs targeting Tensor Float 32, BFloat16, and double-precision data types
 - Deep software pipelines using asynchronous copy
+- Described in [GTC 2020 Webinar (SR 21745)](https://developer.nvidia.com/gtc/2020/video/s21745)
 - Intended to be compiled with [CUDA 11 Toolkit](https://developer.nvidia.com/cuda-toolkit)
 
 # What's New in CUTLASS 2.1
