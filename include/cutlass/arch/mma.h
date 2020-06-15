@@ -164,4 +164,5 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, ElementA, LayoutA, ElementB, LayoutB, El
 #include "cutlass/arch/mma_sm61.h"
 #include "cutlass/arch/mma_sm70.h" 
 #include "cutlass/arch/mma_sm75.h" 
+#include "cutlass/arch/mma_sm80.h"
 /////////////////////////////////////////////////////////////////////////////////////////////////

@@ -276,6 +276,9 @@ public:
   /// Gets pointer to device data with a pointer offset
   Element const * device_data_ptr_offset(LongIndex ptr_element_offset) const { return device_.get() + ptr_element_offset; }
 
+  /// Gets a pointer to the device data imaginary part
+  Element * device_data_imag() { return device_.get() + imaginary_stride(); }
+
   /// Accesses the tensor reference pointing to data
   TensorRef host_ref(LongIndex ptr_element_offset=0) { 
     return TensorRef(host_data_ptr_offset(ptr_element_offset), layout_, imaginary_stride()); 
@@ -415,6 +418,166 @@ public:
       device_memory::copy_to_device(
           device_data(), host_data(), imaginary_stride() * 2);
     }
+  }
+
+  /// Copy data from a caller-supplied device pointer into host memory.
+  void copy_in_device_to_host(
+    Element const* ptr_device_real,   ///< source device memory
+    Element const* ptr_device_imag,   ///< source device memory
+    LongIndex count = -1) {           ///< number of elements to transfer; if negative, entire tensor is overwritten.
+
+    if (count < 0) {
+      count = capacity();
+    }
+    else {
+      count = __NV_STD_MIN(capacity(), count);
+    }
+
+    device_memory::copy_to_host(
+      host_data(), ptr_device_real, count);
+
+    device_memory::copy_to_host(
+      host_data_imag(), ptr_device_imag, count);
+  }
+
+  /// Copy data from a caller-supplied device pointer into host memory.
+  void copy_in_device_to_device(
+    Element const* ptr_device_real,   ///< source device memory
+    Element const* ptr_device_imag,   ///< source device memory
+    LongIndex count = -1) {           ///< number of elements to transfer; if negative, entire tensor is overwritten.
+
+    if (count < 0) {
+      count = capacity();
+    }
+    else {
+      count = __NV_STD_MIN(capacity(), count);
+    }
+
+    device_memory::copy_device_to_device(
+      device_data(), ptr_device_real, count);
+
+    device_memory::copy_device_to_device(
+      device_data_imag(), ptr_device_imag, count);
+  }
+
+  /// Copy data from a caller-supplied device pointer into host memory.
+  void copy_in_host_to_device(
+    Element const* ptr_host_real,      ///< source host memory
+    Element const* ptr_host_imag,      ///< source host memory
+    LongIndex count = -1) {            ///< number of elements to transfer; if negative, entire tensor is overwritten.
+
+    if (count < 0) {
+      count = capacity();
+    }
+    else {
+      count = __NV_STD_MIN(capacity(), count);
+    }
+    
+    device_memory::copy_to_device(
+      device_data(), ptr_host_real, count);
+    
+    device_memory::copy_to_device(
+      device_data_imag(), ptr_host_imag, count);
+  }
+
+  /// Copy data from a caller-supplied device pointer into host memory.
+  void copy_in_host_to_host(
+    Element const* ptr_host_real,     ///< source host memory
+    Element const* ptr_host_imag,     ///< source host memory
+    LongIndex count = -1) {           ///< number of elements to transfer; if negative, entire tensor is overwritten.
+
+    if (count < 0) {
+      count = capacity();
+    }
+    else {
+      count = __NV_STD_MIN(capacity(), count);
+    }
+
+    device_memory::copy_host_to_host(
+      host_data(), ptr_host_real, count);
+
+    device_memory::copy_host_to_host(
+      host_data_imag(), ptr_host_imag, count);
+  }
+
+  /// Copy data from a caller-supplied device pointer into host memory.
+  void copy_out_device_to_host(
+    Element * ptr_host_real,           ///< source device memory
+    Element * ptr_host_imag,           ///< source device memory
+    LongIndex count = -1) const {      ///< number of elements to transfer; if negative, entire tensor is overwritten.
+
+    if (count < 0) {
+      count = capacity();
+    }
+    else {
+      count = __NV_STD_MIN(capacity(), count);
+    }
+
+    device_memory::copy_to_host(
+      ptr_host_real, device_data(), count);
+
+    device_memory::copy_to_host(
+      ptr_host_imag, device_data_imag(), count);
+  }
+
+  /// Copy data from a caller-supplied device pointer into host memory.
+  void copy_out_device_to_device(
+    Element * ptr_device_real,        ///< source device memory
+    Element * ptr_device_imag,        ///< source device memory
+    LongIndex count = -1) const {     ///< number of elements to transfer; if negative, entire tensor is overwritten.
+
+    if (count < 0) {
+      count = capacity();
+    }
+    else {
+      count = __NV_STD_MIN(capacity(), count);
+    }
+
+    device_memory::copy_device_to_device(
+      ptr_device_real, device_data(), count);
+
+    device_memory::copy_device_to_device(
+      ptr_device_imag, device_data_imag(), count);
+  }
+
+  /// Copy data from a caller-supplied device pointer into host memory.
+  void copy_out_host_to_device(
+    Element * ptr_device_real,        ///< source device memory
+    Element * ptr_device_imag,        ///< source device memory
+    LongIndex count = -1) const {     ///< number of elements to transfer; if negative, entire tensor is overwritten.
+
+    if (count < 0) {
+      count = capacity();
+    }
+    else {
+      count = __NV_STD_MIN(capacity(), count);
+    }
+    
+    device_memory::copy_to_device(
+      ptr_device_real, host_data(), count);
+    
+    device_memory::copy_to_device(
+      ptr_device_imag, host_data_imag(), count);
+  }
+
+  /// Copy data from a caller-supplied device pointer into host memory.
+  void copy_out_host_to_host(
+    Element * ptr_host_real,          ///< source host memory
+    Element * ptr_host_imag,          ///< source host memory
+    LongIndex count = -1) const {     ///< number of elements to transfer; if negative, entire tensor is overwritten.
+
+    if (count < 0) {
+      count = capacity();
+    }
+    else {
+      count = __NV_STD_MIN(capacity(), count);
+    }
+
+    device_memory::copy_host_to_host(
+      ptr_host_real, host_data(), count);
+
+    device_memory::copy_host_to_host(
+      ptr_host_imag, host_data_imag(), count);
   }
 };
 

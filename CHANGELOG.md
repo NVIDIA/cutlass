@@ -9,6 +9,7 @@
     * Tensor Float 32, BFloat16, and double-precision data types
     * Mixed integer data types (int8, int4, bin1)
    * Asynchronous copy for deep software pipelines via [`cp.async`](https://docs.nvidia.com/cuda/parallel-thread-execution)   
+   * Described in [GTC 2020 Webinar (SR 21745)](https://developer.nvidia.com/gtc/2020/video/s21745) (free registration required)
  * Features:
    * SDK examples showing GEMM fused with bias+relu and fused GEMM+GEMM
    * Complex-valued GEMMs targeting NVIDIA Ampere Tensor Cores in double-precision and Tensor Float 32

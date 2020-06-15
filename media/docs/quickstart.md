@@ -161,6 +161,7 @@ compiled as C++11 or greater.
 #include <iostream>
 #include <cutlass/cutlass.h>
 #include <cutlass/numeric_types.h>
+#include <cutlass/core_io.h>
 
 int main() {
 
@@ -174,10 +175,13 @@ int main() {
 
 ## Launching a GEMM kernel in CUDA
 
-**Example:** launch a mixed-precision GEMM targeting Turing Tensor Cores.
+**Example:** launch a mixed-precision GEMM targeting Turing Tensor Cores. 
+
+_Note, this example uses CUTLASS Utilities. Be sure `tools/util/include` is listed as an include path._
 ```c++
 #include <cutlass/numeric_types.h>
 #include <cutlass/gemm/device/gemm.h>
+
 #include <cutlass/util/host_tensor.h>
 
 int main() {

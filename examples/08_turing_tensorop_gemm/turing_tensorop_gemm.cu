@@ -208,7 +208,9 @@ int run() {
   if (!((props.major * 10 + props.minor) >= 75)) {
     std::cerr << "Turing Tensor Core operations must be run on a machine with compute capability at least 75."
               << std::endl;
-    return -1;
+
+    // Return 0 so tests are considered passing if run on unsupported platforms.
+    return 0;
   }
 
   const int length_m = 5120;
