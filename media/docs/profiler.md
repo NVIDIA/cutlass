@@ -15,10 +15,13 @@ $ make cutlass_profiler -j
 To limit compilation time, only one tile size (128x128) is instantiated for each data type, math instruction, and layout.
 To instantiate all sizes, set the following environment variable when running CMake from an empty `build/` directory.
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all
+$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all \
+    -DCUTLASS_UNITY_BUILD_ENABLED=ON -DCUTLASS_UNITY_BUILD_BATCH_SIZE=8
 ...
 $ make cutlass_profiler -j
 ```
+The arguments related to the "unity build" place multiple kernel instances in one compilation unit. This is needed to avoid
+a linker limitation on some platforms.
 
 The CUTLASS Profiler sources are stored in 
 ```bash
