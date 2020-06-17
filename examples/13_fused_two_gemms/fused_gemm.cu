@@ -22,8 +22,32 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*
 
-/**
+This example shows fusing two GEMM mainloops into one kernel. The first GEMM computes relu(alpha*A*B) and 
+the second GEMM computes relu(alpha*A*B+beta*C). The performance measuring environment compares against
+two unfused GEMM operations, demonstrating a speedup of the fused kernel on the 
+NVIDIA Turing GPU architecture.
+
+Problem size:
+
+  GEMM1 (M,N,K): 128*1600, 64, 576
+  GEMM2 (M,N,K): 128*1600, 128, 64
+
+Note that GEMM1_N = GEMM2_K
+
+The example requires the number of threadblocks be the same across 2 GEMMs and 
+thread_block_tile_N = problem_N so the data required by each layer is threadblock-resident. It 
+also requires warp_tile_N = thread_block_tile_N so the data required by each warp is 
+register-file-resident.
+
+Performance:
+
+  - fp16 on Tesla T4 @ 1590MHz (non-fused vs. fused): 1.39011 ms vs. 1.26035 ms
+  - int8 on Tesla T4 @ 1590MHz (non-fused vs. fused): 0.751759 ms vs. 0.62971 ms
+  - fp16 on Quadro RTX 8000 @ 1890MHz (non-fused vs. fused): 0.721144 ms vs. 0.629864 ms
+  - int8 on Quadro RTX 8000 @ 1890MHz (non-fused vs. fused): 0.379049 ms vs. 0.324764 ms
+
 */
 
 #include "b2b_gemm_f16t_f16n_f16t_tensor_op_f16_sm75.h"
