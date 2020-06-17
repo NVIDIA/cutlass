@@ -412,11 +412,12 @@ Several recipes are defined below for convenience. They may be combined as a com
 $ cmake .. -DCUTLASS_NVCC_ARCHS=80 -DCUTLASS_LIBRARY_KERNELS=tensorop*gemm
 ```
 
-**Example.** All kernels for NVIDIA Volta, Turing, and Ampere architectures. The "unity build" instantiates
-multiple kernel instances in each compilation unit avoiding linker limitations on some platforms.
+**Example.** All kernels for NVIDIA Volta, Turing, and Ampere architectures. Enabling 
+the "unity build" instantiates multiple kernel instances in each compilation unit, thereby
+reducing binary size and avoiding linker limitations on some platforms.
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all \
-   -DCUTLASS_UNITY_BUILD_ENABLED=ON -DCUTLASS_UNITY_BUILD_BATCH_SIZE=8
+   -DCUTLASS_UNITY_BUILD_ENABLED=ON
 ```
 
 **Example.** All GEMM kernels targeting Turing Tensor Cores.
