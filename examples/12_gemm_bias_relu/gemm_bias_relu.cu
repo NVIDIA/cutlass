@@ -132,7 +132,7 @@ int run() {
   cutlass::HostTensor<ElementInputA, LayoutInputA> tensor_a(
       problem_size.mk());  // <- Create matrix A with dimensions M x K
   cutlass::HostTensor<ElementInputB, LayoutInputB> tensor_b(
-      problem_size.nk());  // <- Create matrix B with dimensions N x K
+      problem_size.kn());  // <- Create matrix B with dimensions K x N
 
   cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_c_bias(
       {problem_size.m(), 1});  // <- Create matrix C with dimensions M x 1
@@ -234,7 +234,6 @@ int run() {
     tensor_a.device_ref(),
     tensor_b.device_ref(),
     0,
-    tensor_c_bias.device_ref(),
     tensor_ref_d.device_ref());
 
   // Wait for kernels to finish
