@@ -205,7 +205,7 @@ int run() {
   cutlass::HostTensor<ElementInputA, LayoutInputA> tensor_a(
       problem_size.mk());  // <- Create matrix A with dimensions M x K
   cutlass::HostTensor<ElementInputB, LayoutInputB> tensor_b(
-      problem_size.nk());  // <- Create matrix B with dimensions N x K
+      problem_size.kn());  // <- Create matrix B with dimensions K x N
   cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_c(
       problem_size.mn());  // <- Create matrix C with dimensions M x N
   cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_d(
