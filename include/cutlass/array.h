@@ -404,7 +404,7 @@ public:
   const_pointer data() const {
     return reinterpret_cast<const_pointer>(storage);
   }
-  
+
   CUTLASS_HOST_DEVICE
   pointer raw_data() {
     return reinterpret_cast<pointer>(storage);
@@ -512,8 +512,6 @@ class alignas(Alignment) AlignedArray: public Array<T, N> {
 public:
 
 };
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass
 
