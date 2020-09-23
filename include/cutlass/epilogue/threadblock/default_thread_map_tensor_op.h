@@ -69,7 +69,7 @@ struct DefaultThreadMapTensorOp {
 
     static_assert(
       !(ThreadblockShape::kM % WarpShape::kM) &&
-      !(ThreadblockShape::kM % WarpShape::kM), "Divisibility");
+      !(ThreadblockShape::kN % WarpShape::kN), "Divisibility");
 
     /// Number of warps
     using WarpCount = gemm::GemmShape<
@@ -119,7 +119,7 @@ struct DefaultInterleavedThreadMapTensorOp {
     static int const kWarpSize = 32;
 
     static_assert(!(ThreadblockShape::kM % WarpShape::kM) &&
-                      !(ThreadblockShape::kM % WarpShape::kM),
+                      !(ThreadblockShape::kN % WarpShape::kN),
                   "Divisibility");
 
     /// Number of warps

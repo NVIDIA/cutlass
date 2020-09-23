@@ -176,6 +176,12 @@ class TensorView : public TensorRef<Element_, Layout_> {
   CUTLASS_HOST_DEVICE
   Index extent(int dim) const { return extent_.at(dim); }
 
+  /// Returns the number of logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex size() const {
+    return extent_.product();
+  }
+
   /// Determines whether a location is within a tensor
   CUTLASS_HOST_DEVICE
   bool contains(TensorCoord const& coord) const {

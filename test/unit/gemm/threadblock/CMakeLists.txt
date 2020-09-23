@@ -22,6 +22,9 @@
 
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_threadblock
+  mma_multistage.cu
+  mma_multistage_sparse.cu
+  mma_pipelined_sm80.cu
   mma_pipelined_wmma_sm70.cu
   mma_pipelined_wmma_sm75.cu
   mma_singlestage_wmma_sm70.cu
@@ -29,5 +32,7 @@ cutlass_test_unit_add_executable(
   mma_pipelined_sm70.cu
   mma_pipelined_sm75.cu
   mma_pipelined_simt.cu
+  mma_planar_complex_sm80.cu
+
 )
 

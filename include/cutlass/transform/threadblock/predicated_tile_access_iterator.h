@@ -292,7 +292,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
         min(threadblock_offset.strided() + residue_size, extent_.strided())
       );
     } else {
-      
+
       Index residue_size = (extent_[kAdvanceRank] - threadblock_offset.contiguous()) % Shape::kContiguous;
       if (!residue_size) {
         residue_size = Shape::kContiguous;
@@ -852,7 +852,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for interleaved-32 data.  It
+/// Specialization of PredicatedTileAccessIterator for interleaved data.  It
 /// is mapped to the congruous layout.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
@@ -1032,7 +1032,7 @@ class PredicatedTileAccessIterator<Shape_, Element_,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for interleaved-32 data.  It
+/// Specialization of PredicatedTileAccessIterator for interleaved data.  It
 /// is mapped to the congruous layout.
 ///
 /// Satisfies: ForwardTileIteratorConcept |

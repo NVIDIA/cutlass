@@ -32,9 +32,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
-
 #include "cutlass/complex.h"
-
 #include "cutlass/array.h"
 #include "cutlass/half.h"
 
@@ -66,6 +64,82 @@ struct multiplies {
   T operator()(T lhs, T const &rhs) const {
     lhs *= rhs;
     return lhs;
+  }
+};
+
+/// Squares with optional conversion
+template <typename T, typename Output = T>
+struct square {
+  CUTLASS_HOST_DEVICE
+  Output operator()(T lhs) const {
+    multiplies<Output> mul_op;
+
+    Output y = Output(lhs);
+    return mul_op(y, y);
+  }
+};
+
+/// Returns the magnitude squared of an element.
+template <typename T, typename Output = T>
+struct magnitude_squared {
+  CUTLASS_HOST_DEVICE
+  Output operator()(T lhs) const {
+    multiplies<Output> mul_op;
+
+    Output y = Output(lhs);
+    return mul_op(y, y);
+  }
+};
+
+/// Squares with optional conversion
+template <typename T, typename Output>
+struct magnitude_squared<complex<T>, Output> {
+  CUTLASS_HOST_DEVICE
+  Output operator()(complex<T> lhs) const {
+    multiplies<Output> mul_op;
+
+    Output y_r = Output(lhs.real());
+    Output y_i = Output(lhs.imag());
+
+    return mul_op(y_r, y_r) + mul_op(y_i, y_i);
+  }
+};
+
+/// Computes the square of a difference with optional conversion
+template <typename T, typename Output = T>
+struct square_difference {
+  CUTLASS_HOST_DEVICE
+  Output operator()(T lhs, T rhs) const {
+    multiplies<Output> mul_op;
+
+    Output y = Output(lhs) - Output(rhs);
+    return mul_op(y, y);
+  }
+};
+
+/// Computes the square of a difference with optional conversion
+template <typename T, typename Output = T>
+struct magnitude_squared_difference {
+  CUTLASS_HOST_DEVICE
+  Output operator()(T lhs, T rhs) const {
+    multiplies<Output> mul_op;
+
+    Output y = Output(lhs) - Output(rhs);
+    return mul_op(y, y);
+  }
+};
+
+/// Computes the square of a difference with optional conversion
+template <typename T, typename Output>
+struct magnitude_squared_difference<complex<T>, Output> {
+  CUTLASS_HOST_DEVICE
+  Output operator()(complex<T> lhs, complex<T> rhs) const {
+    multiplies<Output> mul_op;
+
+    Output y_r = Output(lhs.real()) - Output(rhs.real());
+    Output y_i = Output(lhs.imag()) - Output(rhs.imag());
+
+    return mul_op(y_r, y_r) + mul_op(y_i, y_i);
   }
 };
 

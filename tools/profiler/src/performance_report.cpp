@@ -263,6 +263,10 @@ std::ostream & PerformanceReport::print_csv_header_(
     << ",OperationKind,Operation,Disposition,Status";
 
   for (auto const &arg_name : argument_names_) {
+    // Operand E is internal to the sparse kernel
+    if (arg_name.compare("E") == 0)
+      continue;
+
     out << "," << arg_name;
   }
 

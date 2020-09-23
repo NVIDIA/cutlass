@@ -70,6 +70,16 @@ Options::Device::Device(cutlass::CommandLine const &cmdline) {
     properties.major = cc / 10;
     properties.minor = cc % 10;
   }
+  
+  // Permit overriding the L2 cache capacity
+  if (cmdline.check_cmd_line_flag("llc-capacity")) {
+    int llc_capacity = 0;
+    cmdline.get_cmd_line_argument("llc-capacity", llc_capacity, 0);
+
+    if (llc_capacity >= 0) {
+      properties.l2CacheSize = (llc_capacity << 10);
+    }
+  }
 
 }
 
@@ -107,7 +117,12 @@ void Options::Device::print_usage(std::ostream &out) const {
 
   out
     << "  --compute-capability=<int>                   "
-    << "    Override the compute capability.\n\n";
+    << "    Override the compute capability.\n\n"
+
+    << "  --llc-capacity=<capacity in KiB>             "
+    << "    Capacity of last-level cache in kilobytes. If this is non-zero," << end_of_line
+    << "      profiling phases cycle through different input tensors to induce" << end_of_line
+    << "      capacity misses in the L2.\n\n";
 
 }
 
@@ -189,6 +204,7 @@ Options::Initialization::Initialization(cutlass::CommandLine const &cmdline) {
     // set uniform data distribution with range [-4, 4] 
     data_distribution.set_uniform(-4, 4, 0);
   }
+  
 
 }
 
@@ -364,7 +380,8 @@ void Options::Library::print_options(std::ostream &out, int indent) const {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 Options::Profiling::Profiling(cutlass::CommandLine const &cmdline) {
-  
+
+  cmdline.get_cmd_line_argument("workspace-count", workspace_count, 0);  
   cmdline.get_cmd_line_argument("warmup-iterations", warmup_iterations, 10);
   cmdline.get_cmd_line_argument("profiling-iterations", iterations, 100);
   cmdline.get_cmd_line_argument("sleep-duration", sleep_duration, 50);
@@ -390,6 +407,11 @@ Options::Profiling::Profiling(cutlass::CommandLine const &cmdline) {
 void Options::Profiling::print_usage(std::ostream &out) const {
 
   out << "Profiling:\n"
+
+    << "  --workspace-count=<workspace count>          "
+    << "    Number of discrete workspaces maintained to avoid cache-resident " << end_of_line
+    << "    If zero (default), the amount is chosen for each workload based on " << end_of_line
+    << "    capacity of the last-level cache.\n\n"
 
     << "  --profiling-iterations=<iterations>          "
     << "    Number of iterations to profile each kernel. If zero, kernels" << end_of_line
@@ -672,6 +694,10 @@ Options::Options(cutlass::CommandLine const &cmdline):
     cmdline.get_cmd_line_arguments("kernels", operation_names);
   }
 
+  if (cmdline.check_cmd_line_flag("ignore-kernels")) {
+    cmdline.get_cmd_line_arguments("ignore-kernels", excluded_operation_names);
+  }
+
   // Prevent launches on the device for anything other than CUTLASS operation
   if (execution_mode == ExecutionMode::kTrace) {
     initialization.provider = library::Provider::kReferenceHost;
@@ -706,6 +732,9 @@ void Options::print_usage(std::ostream &out) const {
     << "    Filter operations by kernel names. For example, call all kernels with" << end_of_line
     << "      (\"s1688\" and \"nt\") or (\"s844\" and \"tn\" and \"align8\") in their" << end_of_line
     << "      operation name using --kernels=\"s1688*nt, s884*tn*align8\"\n\n"
+
+    << "  --ignore-kernels=<string_list>               "
+    << "    Excludes kernels whose names match anything in this list.\n\n"
     ;
 
   //

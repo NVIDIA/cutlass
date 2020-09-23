@@ -29,6 +29,7 @@
 #include <cuda/std/cstdint>
 #else
 #include <cstdint>
+#include <cmath>
 #endif
 
 #include "cutlass/cutlass.h"
@@ -39,6 +40,8 @@
  */
 
 namespace cutlass {
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /******************************************************************************
  * Static math utilities
@@ -136,6 +139,19 @@ CUTLASS_HOST_DEVICE value_t lcm(value_t a, value_t b) {
   return temp ? (a / temp * b) : 0;
 }
 
+/// Returns the smallest value in the half-open range [a, a+b) that is a multiple of b
+CUTLASS_HOST_DEVICE
+constexpr int round_up(int a, int b) {
+  return ((a + b - 1) / b) * b;
+}
+
+/// Returns the ceiling of (a / b)
+CUTLASS_HOST_DEVICE
+constexpr int ceil_div(int a, int b) {
+  return (a + b - 1) / b;
+}
+
+
 /**
  * log2 computation, what's the
  * difference between the below codes and
@@ -189,7 +205,6 @@ void fast_divmod(int& quo, int& rem, int src, int div, unsigned int mul, unsigne
 
   // The remainder.
   rem = src - (quo * div);
-
 }
 
 // For long int input
@@ -206,17 +221,56 @@ void fast_divmod(int& quo, int64_t& rem, int64_t src, int div, unsigned int mul,
   rem = src - (quo * div);
 }
 
-/// Returns the smallest value in the half-open range [a, a+b) that is a multiple of b
-CUTLASS_HOST_DEVICE
-int round_up(int a, int b) {
-  return ((a + b - 1) / b) * b;
-}
+/// Object to encapsulate the fast division+modulus operation.
+///
+/// This object precomputes two values used to accelerate the computation and is best used
+/// when the divisor is a grid-invariant. In this case, it may be computed in host code and
+/// marshalled along other kernel arguments using the 'Params' pattern.
+///
+/// Example:
+///
+///
+///   int quotient, remainder, dividend, divisor;
+///
+///   FastDivmod divmod(divisor);
+///
+///   divmod(quotient, remainder, dividend);  
+///
+///   // quotient = (dividend / divisor)
+///   // remainder = (dividend % divisor)
+///
+struct FastDivmod {
 
-/// Returns the ceiling of (a / b)
-CUTLASS_HOST_DEVICE
-int ceil_div(int a, int b) {
-  return (a + b - 1) / b;
-}
+  int divisor;
+  unsigned int multiplier;
+  unsigned int shift_right;
+
+  /// Construct the FastDivmod object, in host code ideally.
+  ///
+  /// This precomputes some values based on the divisor and is computationally expensive.
+
+  CUTLASS_HOST_DEVICE
+  FastDivmod(): divisor(0), multiplier(0), shift_right(0) { }
+
+  CUTLASS_HOST_DEVICE
+  FastDivmod(int divisor_): divisor(divisor_) {
+    find_divisor(multiplier, shift_right, divisor);
+  }
+
+  /// Computes integer division and modulus using precomputed values. This is computationally
+  /// inexpensive.
+  CUTLASS_HOST_DEVICE
+  void operator()(int &quotient, int &remainder, int dividend) const {
+    fast_divmod(quotient, remainder, dividend, divisor, multiplier, shift_right);
+  }
+
+  /// Computes integer division and modulus using precomputed values. This is computationally
+  /// inexpensive.
+  CUTLASS_HOST_DEVICE
+  void operator()(int &quotient, int64_t &remainder, int64_t dividend) const {
+    fast_divmod(quotient, remainder, dividend, divisor, multiplier, shift_right);
+  }
+};
 
 /******************************************************************************
  * Min/Max
@@ -242,4 +296,117 @@ constexpr int const_max(int a, int b) {
     return (b > a ? b : a);
 }
 
+CUTLASS_HOST_DEVICE
+float fast_cos(float theta) {
+  #if defined(__CUDA_ARCH__)
+  return ::cosf(theta);
+  #else
+  return std::cos(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+double fast_cos(double theta) {
+  #if defined(__CUDA_ARCH__)
+  return ::cos(theta);
+  #else
+  return std::cos(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+float fast_sin(float theta) {
+  #if defined(__CUDA_ARCH__)
+  return ::sinf(theta);
+  #else
+  return std::sin(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+double fast_sin(double theta) {
+  #if defined(__CUDA_ARCH__)
+  return ::sin(theta);
+  #else
+  return std::sin(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+float fast_acos(float theta) {
+  #if defined(__CUDA_ARCH__)
+  return ::acosf(theta);
+  #else
+  return std::acos(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+double fast_acos(double theta) {
+  #if defined(__CUDA_ARCH__)
+  return ::acos(theta);
+  #else
+  return std::acos(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+float fast_asin(float theta) {
+  #if defined(__CUDA_ARCH__)
+  return ::asinf(theta);
+  #else
+  return std::asin(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+double fast_asin(double theta) {
+  #if defined(__CUDA_ARCH__)
+  return ::asin(theta);
+  #else
+  return std::asin(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+float fast_sqrt(float theta) {
+  #if defined(__CUDA_ARCH__)
+  return ::sqrtf(theta);
+  #else
+  return std::sqrt(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+double fast_sqrt(double theta) {
+  #if defined(__CUDA_ARCH__)
+  return ::sqrt(theta);
+  #else
+  return std::sqrt(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+float fast_log(float x) {
+  #if defined(__CUDA_ARCH__)
+  return ::logf(x);
+  #else
+  return std::log(x);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+double fast_log(double x) {
+  #if defined(__CUDA_ARCH__)
+  return ::log(x);
+  #else
+  return std::log(x);
+  #endif
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 }  // namespace cutlass
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+

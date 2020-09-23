@@ -23,6 +23,15 @@ $ mkdir build && cd build
 $ cmake .. -DCUTLASS_NVCC_ARCHS=80               # compiles for NVIDIA Ampere GPU architecture
 ```
 
+If your goal is strictly to build only the CUTLASS Profiler and to minimize compilation time, we suggest
+executing the following CMake command in an empty `build/` directory.
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS=80 -DCUTLASS_ENABLE_TESTS=OFF -DCUTLASS_UNITY_BUILD_ENABLED=ON
+```
+
+This reduces overall compilation time by excluding unit tests and enabling the unit build.
+
+
 ## Build and run the CUTLASS Profiler
 
 From the `build/` directory created above, compile the the CUTLASS Profiler.
@@ -403,7 +412,7 @@ $ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=sgemm
 Compling only the kernels desired reduces compilation time.
 
 To instantiate kernels of all tile sizes, data types, and alignment constraints, specify 
-`-DCUTLASS_LIBRARY_KERNELS=all` when running `cmake`. 
+`-DCUTLASS_LIBRARY_KERNELS=all` when running `cmake`.
 
 Several recipes are defined below for convenience. They may be combined as a comma-delimited list.
 
@@ -416,8 +425,7 @@ $ cmake .. -DCUTLASS_NVCC_ARCHS=80 -DCUTLASS_LIBRARY_KERNELS=tensorop*gemm
 the "unity build" instantiates multiple kernel instances in each compilation unit, thereby
 reducing binary size and avoiding linker limitations on some platforms.
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all \
-   -DCUTLASS_UNITY_BUILD_ENABLED=ON
+$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all -DCUTLASS_UNITY_BUILD_ENABLED=ON
 ```
 
 **Example.** All GEMM kernels targeting Turing Tensor Cores.

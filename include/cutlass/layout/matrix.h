@@ -35,7 +35,6 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/matrix_coord.h"
-#include "cutlass/matrix_traits.h"
 
 namespace cutlass {
 namespace layout {
@@ -803,7 +802,7 @@ private:
   // Data members
   //
 
-  MatrixLayout layout_id_;
+  Matrix layout_id_;
 
   /// Stride data member
   Stride stride_;
@@ -815,12 +814,12 @@ public:
 
   /// Ctor
   CUTLASS_HOST_DEVICE
-  GeneralMatrix(): layout_id_(MatrixLayout::kColumnMajor), stride_(make_Coord(0, 1)) { }
+  GeneralMatrix(): layout_id_(Matrix::kColumnMajor), stride_(make_Coord(0, 1)) { }
 
   /// Ctor
   CUTLASS_HOST_DEVICE
   GeneralMatrix(
-    MatrixLayout layout_id, 
+    Matrix layout_id, 
     Index ldm, 
     Index interleave): layout_id_(layout_id), stride_(make_Coord(ldm, interleave)) { }
 
@@ -828,11 +827,11 @@ public:
   CUTLASS_HOST_DEVICE
   static GeneralMatrix packed(
     MatrixCoord const &extent, 
-    MatrixLayout layout_id = MatrixLayout::kColumnMajor, 
+    Matrix layout_id = Matrix::kColumnMajor, 
     Index interleave = 1) {
 
     Index c;
-    if (layout_id == MatrixLayout::kRowMajor) {
+    if (layout_id == Matrix::kRowMajor) {
       c = extent.column();
     }
     else {
@@ -849,7 +848,7 @@ public:
   CUTLASS_HOST_DEVICE
   LongIndex operator()(MatrixCoord const &coord) const {
     Index c, s;
-    if (layout_id_ == MatrixLayout::kRowMajor) {
+    if (layout_id_ == Matrix::kRowMajor) {
       c = coord.column();
       s = coord.row();
     }
@@ -871,7 +870,7 @@ public:
   }
 
   CUTLASS_HOST_DEVICE
-  MatrixLayout layout_id() const {
+  Matrix layout_id() const {
     return layout_id_;
   }
 
@@ -882,7 +881,7 @@ public:
   }
 
   CUTLASS_HOST_DEVICE
-  MatrixLayout & layout_id() {
+  Matrix & layout_id() {
     return layout_id_;
   }
 
@@ -902,7 +901,7 @@ public:
   CUTLASS_HOST_DEVICE
   LongIndex capacity(MatrixCoord const &extent) const {
     Index s;
-    if (layout_id_ == MatrixLayout::kRowMajor) {
+    if (layout_id_ == Matrix::kRowMajor) {
       s = extent.row();
     }
     else {

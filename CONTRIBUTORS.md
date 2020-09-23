@@ -16,6 +16,9 @@ Naila Farooqui
 Piotr Majcher  
 Paul Springer  
 Jin Wang   
+Aniket Shivam  
+Chinmay Talegaonkar  
+Shang Zhang   
 Scott Yokim      
 Markus Hohnerbach  
 Aditya Atluri  
@@ -52,6 +55,8 @@ Olivier Giroux
 Stephen Jones  
 Rishkul Kulkarni  
 Bryce Lelbach  
+Matthew Nicely  
 Joel McCormack  
 Kyrylo Perelygin  
+
 

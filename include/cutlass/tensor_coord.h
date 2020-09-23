@@ -165,4 +165,146 @@ struct Tensor4DCoord : public Coord<4> {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Defines a canonical 5D coordinate used by tensor operations.
+struct Tensor5DCoord : public Coord<5> {
+
+  /// Base class
+  using Base = Coord<5>;
+
+  /// Index type
+  using Index = typename Base::Index;
+
+  /// LongIndex type
+  using LongIndex = typename Base::LongIndex;
+
+  /// Batch dimension
+  static int const kN = 0;
+
+  /// Depth dimension
+  static int const kD = 1;
+
+  /// Height dimension
+  static int const kH = 2;
+
+  /// Width dimension
+  static int const kW = 3;
+
+  /// Channels dimension
+  static int const kC = 4;
+
+  //
+  // Methods
+  //
+
+  /// Default ctor
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord() { }
+
+  /// Constructs from Coord<5>
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord(Coord<5> const &coord): Base(coord) { }
+
+  /// Helper to construct from N, D, H, W, and C.
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord(Index n, Index d, Index h, Index w, Index c): Base(make_Coord(n, d, h, w, c)) { }
+
+  /// Returns the batch of the coordinate
+  CUTLASS_HOST_DEVICE
+  Index const & n() const { return this->at(kN); }
+
+  /// Returns the batch of the coordinate
+  CUTLASS_HOST_DEVICE
+  Index & n() { return this->at(kN); }
+
+  /// Returns the batch of the coordinate
+  CUTLASS_HOST_DEVICE
+  Index const & d() const { return this->at(kD); }
+
+  /// Returns the batch of the coordinate
+  CUTLASS_HOST_DEVICE
+  Index & d() { return this->at(kD); }
+
+  /// Returns the row of the coordinate
+  CUTLASS_HOST_DEVICE
+  Index const & h() const { return this->at(kH); }
+
+  /// Returns the row of the coordinate
+  CUTLASS_HOST_DEVICE
+  Index & h() { return this->at(kH); }
+
+  /// Returns the column of the coordinate
+  CUTLASS_HOST_DEVICE
+  Index const & w() const { return this->at(kW); }
+
+  /// Returns the column of the coordinate
+  CUTLASS_HOST_DEVICE
+  Index & w() { return this->at(kW); }
+
+  /// Returns the channel of the coordinate
+  CUTLASS_HOST_DEVICE
+  Index const & c() const { return this->at(kC); }
+
+  /// Returns the channel of the coordinate
+  CUTLASS_HOST_DEVICE
+  Index & c() { return this->at(kC); }
+
+  //
+  // Coord operators
+  //
+
+  /// Element-wise addition
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord operator+(Base const& b) const {
+    return Tensor5DCoord(Base::operator+(b));
+  }
+
+  /// Element-wise subtraction
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord operator-(Base const& b) const {
+    return Tensor5DCoord(Base::operator-(b));
+  }
+
+  /// Element-wise multiplication
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord operator*(Base const& b) const {
+    return Tensor5DCoord(Base::operator*(b));
+  }
+
+  /// Element-wise division
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord operator/(Base const& b) const {
+    return Tensor5DCoord(Base::operator/(b));
+  }
+
+  /// In-place addition
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord& operator+=(Base const& b) {
+    Base::operator+=(b);
+    return *this;
+  }
+
+  /// In-place subtraction
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord& operator-=(Base const& b) {
+    Base::operator-=(b);
+    return *this;
+  }
+
+  /// In-place multiplication
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord& operator*=(Base const& b) {
+    Base::operator*=(b);
+    return *this;
+  }
+
+  /// In-place division
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord& operator/=(Base const& b) {
+    Base::operator/=(b);
+    return *this;
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 } // namespace cutlass

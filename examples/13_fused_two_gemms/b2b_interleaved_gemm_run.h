@@ -38,6 +38,8 @@
 #include "cutlass/util/reference/host/tensor_norm.h"
 #include "cutlass/util/host_reorder.h"
 #include "cutlass/util/reference/device/gemm.h"
+#include "cutlass/util/reference/device/tensor_relu.h"
+
 #include "helper.h"
 
 #define CHECK_GT(val1, val2) \
@@ -115,7 +117,9 @@ struct B2bInterleavedNonFusedGemmRun
     ElementCompute beta0 = ElementCompute(0),
     ElementCompute alpha1 = ElementCompute(1), 
     ElementCompute beta1 = ElementCompute(0),
-    bool relu = true) {
+    bool relu = true,
+    int warm_ups = 1,
+    int runs = 100) {
     
     //
     // Allocate the GEMM workspace
@@ -232,6 +236,13 @@ struct B2bInterleavedNonFusedGemmRun
     status = gemm_op_1.initialize(arguments_1);
 
     CUTLASS_CHECK(status);
+
+    for(int i = 0; i < warm_ups; i++) {
+        status = gemm_op_0();
+        CUTLASS_CHECK(status);
+        status = gemm_op_1();
+        CUTLASS_CHECK(status);
+    }
     //
     // Run the GEMM
     //
@@ -242,14 +253,14 @@ struct B2bInterleavedNonFusedGemmRun
 
     cudaEventRecord(start);
 
-    for(int i = 0; i < 100; i++) {
+    for(int i = 0; i < runs; i++) {
         status = gemm_op_0();
     
         CUTLASS_CHECK(status);
     }
     cudaEventRecord(stop1);    
 
-    for(int i = 0; i < 100; i++) {
+    for(int i = 0; i < runs; i++) {
         status = gemm_op_1();
     
         CUTLASS_CHECK(status);
@@ -261,9 +272,9 @@ struct B2bInterleavedNonFusedGemmRun
     cudaEventElapsedTime(&gemm0Time, start, stop1);
     cudaEventElapsedTime(&gemm1Time, stop1, stop2);
     cudaEventElapsedTime(&totalTime, start, stop2);
-    std::cout << "gemm 0 time " << gemm0Time / 100.0 << " ms\n";
-    std::cout << "gemm 1 time " << gemm1Time / 100.0 << " ms\n";
-    std::cout << "total time " << totalTime / 100.0 << " ms\n";
+    std::cout << "gemm 0 time " << gemm0Time / (float)runs << " ms\n";
+    std::cout << "gemm 1 time " << gemm1Time / (float)runs << " ms\n";
+    std::cout << "total time " << totalTime / (float)runs << " ms\n";
 
     tensor_D0.sync_host();
     tensor_D1.sync_host();
@@ -302,7 +313,7 @@ struct B2bInterleavedNonFusedGemmRun
     reference_gemm_1(
       problem_size_1,
       alpha1, 
-      tensor_D0.device_ref(), 
+      reference_D0.device_ref(), 
       tensor_B1.device_ref(), 
       beta1, 
       tensor_C1.device_ref(), 
@@ -420,7 +431,9 @@ struct B2bInterleavedFusedGemmRun
     ElementCompute beta0 = ElementCompute(0),
     ElementCompute alpha1 = ElementCompute(1), 
     ElementCompute beta1 = ElementCompute(0), 
-    bool relu = true) {
+    bool relu = true,
+    int warm_ups = 1,
+    int runs = 100) {
     
     //
     // Allocate the GEMM workspace
@@ -478,7 +491,7 @@ struct B2bInterleavedFusedGemmRun
     CHECK_TRUE(initialize_tensor(tensor_C1.host_view(), init_C, seed + 2015));
 
     //Reorder B0
-    cutlass::reorder_column<B2bGemm::InstructionShape::kK>(
+    cutlass::reorder_column<16>(
         tensor_B0_reordered.host_ref(), tensor_B0.host_ref(), problem_size_0);
     cutlass::reorder_column<InterleavedK_>(
         tensor_B1_reordered.host_ref(), tensor_B1.host_ref(), problem_size_1);
@@ -526,6 +539,11 @@ struct B2bInterleavedFusedGemmRun
 
     CUTLASS_CHECK(status);
 
+    for(int i = 0; i < warm_ups; i++) {
+        status = b2b_gemm_op();
+        CUTLASS_CHECK(status);
+    }
+
     //
     // Run the GEMM
     //
@@ -536,7 +554,7 @@ struct B2bInterleavedFusedGemmRun
 
     cudaEventRecord(start);
 
-    for(int i = 0; i < 100; i++) {
+    for(int i = 0; i < runs; i++) {
         status = b2b_gemm_op();
 
         CUTLASS_CHECK(status);
@@ -546,7 +564,7 @@ struct B2bInterleavedFusedGemmRun
     cudaDeviceSynchronize();
     float gemmTime;
     cudaEventElapsedTime(&gemmTime, start, stop);
-    std::cout << "time " << gemmTime / 100.0 << " ms\n";
+    std::cout << "time " << gemmTime / (float)runs << " ms\n";
 
     //tensor_D0.sync_host();
     tensor_D1.sync_host();

@@ -51,6 +51,9 @@ TEST(tfloat32_t, host_conversion) {
     EXPECT_TRUE(static_cast<float>(y) == f);
   }
 
+  // Try out default-ctor (zero initialization of primitive proxy type)
+  EXPECT_TRUE(cutlass::tfloat32_t() == 0.0_tf32);
+
   // Try out user-defined literals
   EXPECT_TRUE(cutlass::tfloat32_t(7) == 7_tf32);
   EXPECT_TRUE(7 == static_cast<int>(7_tf32));

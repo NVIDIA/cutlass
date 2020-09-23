@@ -37,6 +37,7 @@ set(CUTLASS_TOOLS_PROFILER_SOURCES
   src/problem_space.cpp
   src/operation_profiler.cu
   src/gemm_operation_profiler.cu
+  src/sparse_gemm_operation_profiler.cu
 )
 
 #

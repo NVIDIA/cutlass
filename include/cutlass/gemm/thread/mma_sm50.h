@@ -229,6 +229,16 @@ struct Mma<
   /// C operand storage
   using FragmentC = Array<ElementC, Shape::kMN>;
 
+  /// Underlying matrix multiply operator (concept: arch::Mma)
+  using ArchMmaOperator = typename MmaGeneric<
+                                    Shape,
+                                    ElementA,
+                                    LayoutA,
+                                    ElementB,
+                                    LayoutB,
+                                    ElementC,
+                                    LayoutC,
+                                    Operator>::MmaOp;
   //
   // Methods
   //

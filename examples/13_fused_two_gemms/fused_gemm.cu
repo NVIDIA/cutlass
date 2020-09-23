@@ -30,7 +30,6 @@ two unfused GEMM operations, demonstrating a speedup of the fused kernel on the
 NVIDIA Turing GPU architecture.
 
 Problem size:
-
   GEMM1 (M,N,K): 128*1600, 64, 576
   GEMM2 (M,N,K): 128*1600, 128, 64
 
@@ -42,16 +41,17 @@ also requires warp_tile_N = thread_block_tile_N so the data required by each war
 register-file-resident.
 
 Performance:
-
   - fp16 on Tesla T4 @ 1590MHz (non-fused vs. fused): 1.39011 ms vs. 1.26035 ms
   - int8 on Tesla T4 @ 1590MHz (non-fused vs. fused): 0.751759 ms vs. 0.62971 ms
   - fp16 on Quadro RTX 8000 @ 1890MHz (non-fused vs. fused): 0.721144 ms vs. 0.629864 ms
   - int8 on Quadro RTX 8000 @ 1890MHz (non-fused vs. fused): 0.379049 ms vs. 0.324764 ms
+  - int8 on GA100 @ 1200MHz (non-fused vs. fused): 0.153795 ms vs. 0.129874 ms
 
 */
 
 #include "b2b_gemm_f16t_f16n_f16t_tensor_op_f16_sm75.h"
 #include "b2b_gemm_s8n_s8t_s8n_tensor_op_s32_sm75.h"
+#include "b2b_gemm_s8n_s8t_s8n_tensor_op_s32_sm80.h"
 
 int run() {
 
@@ -71,7 +71,10 @@ int run() {
     return 0;
   }
 
-#if defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
+  run_nonfused_gemm_s8_sm80();
+  run_fused_gemm_s8_sm80();
+#elif defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
   run_nonfused_gemm_f16();
   run_fused_gemm_f16();
   run_nonfused_gemm_s8();

@@ -27,10 +27,10 @@
 */
 
 #pragma once
-
 #include "cutlass/cutlass.h"
 
 #include "cutlass/gemm/device/gemm.h"
+#include "cutlass/gemm/device/gemm_sparse.h"
 #include "cutlass/gemm/device/gemm_complex.h"
 #include "cutlass/gemm/device/gemm_batched.h"
 #include "cutlass/gemm/device/gemm_array.h"
@@ -325,7 +325,7 @@ public:
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Operator_>
-class GemmBatchedOperation : public GemmOperationBase<Operator_> {
+class GemmSparseOperation : public GemmOperationBase<Operator_> {
 public:
 
   using Operator = Operator_;
@@ -335,22 +335,21 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  using ElementE = typename Operator::ElementE;
+  using LayoutE = typename Operator::LayoutE;
   using ElementAccumulator = typename Operator::ElementAccumulator;
   using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
 
   using OperatorArguments = typename Operator::Arguments;
 
-protected:
-
-  /// 
-  GemmDescription description_;
-
 public:
 
   /// Constructor
-  GemmBatchedOperation(char const *name = "unknown_gemm"): GemmOperationBase<Operator_>(name) {
+  GemmSparseOperation(char const *name = "unknown_gemm"): GemmOperationBase<Operator_>(name) {
 
-    description_.gemm_kind = GemmKind::kBatched;
+    this->description_.kind = OperationKind::kSparseGemm;
+    this->description_.gemm_kind = GemmKind::kSparse;
+    this->description_.E = make_TensorDescription<ElementE, LayoutE>(Operator::kAlignmentE);
   }
 
 protected:
@@ -358,19 +357,14 @@ protected:
   /// Constructs the arguments structure given the configuration and arguments
   static Status construct_arguments_(
     OperatorArguments &operator_args,
-    GemmBatchedConfiguration const *configuration) {
+    SparseGemmConfiguration const *configuration) {
 
     operator_args.problem_size = configuration->problem_size;
     operator_args.ref_A = {nullptr, int(configuration->lda)};
-    operator_args.stride_A = configuration->batch_stride_A;
     operator_args.ref_B = {nullptr, int(configuration->ldb)};
-    operator_args.stride_B = configuration->batch_stride_B;
     operator_args.ref_C = {nullptr, int(configuration->ldc)};
-    operator_args.stride_C = configuration->batch_stride_C;
     operator_args.ref_D = {nullptr, int(configuration->ldd)};
-    operator_args.stride_D = configuration->batch_stride_D;
-
-    operator_args.batch_count = configuration->batch_count;
+    operator_args.ref_E = {nullptr, int(configuration->lde)};
 
     return Status::kSuccess;
   }
@@ -378,14 +372,13 @@ protected:
   /// Constructs the arguments structure given the configuration and arguments
   static Status update_arguments_(
     OperatorArguments &operator_args,
-    GemmBatchedArguments const *arguments) {
+    SparseGemmArguments const *arguments) {
 
     if (arguments->pointer_mode == ScalarPointerMode::kHost) {
       typename Operator::EpilogueOutputOp::Params params(
         *static_cast<ElementCompute const *>(arguments->alpha),
         *static_cast<ElementCompute const *>(arguments->beta)
       );
- 
       operator_args.epilogue = params;
     }
     else if (arguments->pointer_mode == ScalarPointerMode::kDevice){
@@ -403,27 +396,23 @@ protected:
     operator_args.ref_B.reset(static_cast<ElementB const *>(arguments->B));
     operator_args.ref_C.reset(static_cast<ElementC const *>(arguments->C));
     operator_args.ref_D.reset(static_cast<ElementC *>(arguments->D));
+    operator_args.ref_E.reset(static_cast<ElementE const *>(arguments->E));
 
     return Status::kSuccess;
   }
 
 public:
 
-  /// Returns the description of the GEMM operation
-  virtual OperationDescription const & description() const {
-    return description_;
-  }
-
   /// Returns success if the operation can proceed
   virtual Status can_implement(
     void const *configuration_ptr, 
     void const *arguments_ptr) const {
 
-    GemmBatchedConfiguration const *configuration = 
-      static_cast<GemmBatchedConfiguration const *>(configuration_ptr);
+    SparseGemmConfiguration const *configuration = 
+      static_cast<SparseGemmConfiguration const *>(configuration_ptr);
 
-    GemmBatchedArguments const *arguments = 
-      static_cast<GemmBatchedArguments const *>(arguments_ptr);
+    SparseGemmArguments const *arguments = 
+      static_cast<SparseGemmArguments const *>(arguments_ptr);
 
     OperatorArguments args;
 
@@ -457,7 +446,7 @@ public:
 
     Status status = construct_arguments_(
       args, 
-      static_cast<GemmBatchedConfiguration const *>(configuration_ptr));
+      static_cast<SparseGemmConfiguration const *>(configuration_ptr));
 
     if (status != Status::kSuccess) {
       return 0;
@@ -477,7 +466,7 @@ public:
 
     Status status = construct_arguments_(
       args, 
-      static_cast<GemmBatchedConfiguration const *>(configuration_ptr));
+      static_cast<SparseGemmConfiguration const *>(configuration_ptr));
 
     if (status != Status::kSuccess) {
       return status;
@@ -499,7 +488,7 @@ public:
 
     Status status = update_arguments_(
       args, 
-      static_cast<GemmBatchedArguments const *>(arguments_ptr));
+      static_cast<SparseGemmArguments const *>(arguments_ptr));
 
     if (status != Status::kSuccess) {
       return status;
@@ -515,191 +504,26 @@ public:
 
     return op->run(stream);
   }
-};
 
+  void print_operator_args(OperatorArguments &operator_args) const {
+#if 0
+    std::cout << "GemmOperation::OperatorArguments" << std::endl;
+    std::cout << "    problem_size: " << operator_args.problem_size.m() << ", "<< operator_args.problem_size.n() << "," <<  operator_args.problem_size.k() << std::endl;
+    std::cout << "    alpha:      " << operator_args.epilogue.alpha << std::endl;
+    std::cout << "    alpha_ptr:  " << operator_args.epilogue.alpha_ptr << std::endl;
+    std::cout << "    beta:       " << operator_args.epilogue.beta << std::endl;
+    std::cout << "    beta_ptr:   " << operator_args.epilogue.beta_ptr << std::endl;
+    std::cout << "  ref_A.data(): " << operator_args.ref_A.data() << std::endl;
+    std::cout << "  ref_A.stride: " << operator_args.ref_A.stride(0) << std::endl;
+    std::cout << "  ref_B.data(): " << operator_args.ref_B.data() << std::endl;
+    std::cout << "  ref_B.stride: " << operator_args.ref_B.stride(0) << std::endl;
+    std::cout << "  ref_C.data(): " << operator_args.ref_C.data() << std::endl;
+    std::cout << "  ref_C.stride: " << operator_args.ref_C.stride(0) << std::endl;
+#endif
+  }
+};
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename Operator_>
-class GemmArrayOperation : public GemmOperationBase<Operator_> {
-public:
-
-  using Operator = Operator_;
-  using ElementA = typename Operator::ElementA;
-  using LayoutA = typename Operator::LayoutA;
-  using ElementB = typename Operator::ElementB;
-  using LayoutB = typename Operator::LayoutB;
-  using ElementC = typename Operator::ElementC;
-  using LayoutC = typename Operator::LayoutC;
-  using ElementAccumulator = typename Operator::ElementAccumulator;
-  using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
-
-  using OperatorArguments = typename Operator::Arguments;
-
-protected:
-
-  /// 
-  GemmDescription description_;
-
-public:
-
-  /// Constructor
-  GemmArrayOperation(char const *name = "unknown_gemm"): GemmOperationBase<Operator_>(name) {
-
-    description_.gemm_kind = GemmKind::kArray;
-  }
-
-protected:
-
-  /// Constructs the arguments structure given the configuration and arguments
-  static Status construct_arguments_(
-    OperatorArguments &operator_args,
-    GemmArrayConfiguration const *configuration) {
-
-    operator_args.problem_size = configuration->problem_size;
-
-    operator_args.batch_count = configuration->batch_count;
-
-    return Status::kSuccess;
-  }
-
-  /// Constructs the arguments structure given the configuration and arguments
-  static Status update_arguments_(
-    OperatorArguments &operator_args,
-    GemmArrayArguments const *arguments) {
-
-    if (arguments->pointer_mode == ScalarPointerMode::kHost) {
-      typename Operator::EpilogueOutputOp::Params params(
-        *static_cast<ElementCompute const *>(arguments->alpha),
-        *static_cast<ElementCompute const *>(arguments->beta)
-      );
-      operator_args.epilogue = params;
-    }
-    else if (arguments->pointer_mode == ScalarPointerMode::kDevice){
-      typename Operator::EpilogueOutputOp::Params params(
-        static_cast<ElementCompute const *>(arguments->alpha),
-        static_cast<ElementCompute const *>(arguments->beta)
-      );
-      operator_args.epilogue = params; 
-    }
-    else {
-      return Status::kErrorInvalidProblem;
-    }
-
-    return Status::kSuccess;
-  }
-
-public:
-
-  /// Returns the description of the GEMM operation
-  virtual OperationDescription const & description() const {
-    return description_;
-  }
-
-  /// Returns success if the operation can proceed
-  virtual Status can_implement(
-    void const *configuration_ptr, 
-    void const *arguments_ptr) const {
-
-    GemmArrayConfiguration const *configuration = 
-      static_cast<GemmArrayConfiguration const *>(configuration_ptr);
-
-    GemmArrayArguments const *arguments = 
-      static_cast<GemmArrayArguments const *>(arguments_ptr);
-
-    OperatorArguments args;
-
-    Status status = construct_arguments_(args, configuration);
-
-    if (status != Status::kSuccess) {
-      return status;
-    }
-
-    status = update_arguments_(args, arguments);
-
-    if (status != Status::kSuccess) {
-      return status;
-    }
-
-    return Operator::can_implement(args);
-  }
-  
-  /// Gets the host-side workspace
-  virtual uint64_t get_host_workspace_size(
-    void const *configuration) const {
-
-    return sizeof(Operator);
-  }
-  
-  /// Gets the device-side workspace
-  virtual uint64_t get_device_workspace_size(
-    void const *configuration_ptr) const {
-
-    OperatorArguments args;
-
-    Status status = construct_arguments_(
-      args, 
-      static_cast<GemmArrayConfiguration const *>(configuration_ptr));
-
-    if (status != Status::kSuccess) {
-      return 0;
-    }
-
-    return Operator::get_workspace_size(args);
-  }
-  
-  /// Initializes the workspace
-  virtual Status initialize(
-    void const *configuration_ptr, 
-    void *host_workspace, 
-    void *device_workspace, 
-    cudaStream_t stream = nullptr) const {
-
-    OperatorArguments args;
-
-    Status status = construct_arguments_(
-      args, 
-      static_cast<GemmArrayConfiguration const *>(configuration_ptr));
-
-    if (status != Status::kSuccess) {
-      return status;
-    }
-
-    Operator *op = new (host_workspace) Operator;
-
-    return op->initialize(args, device_workspace, stream);
-  }
-
-  /// Runs the kernel
-  virtual Status run(
-    void const *arguments_ptr,
-    void *host_workspace, 
-    void *device_workspace = nullptr, 
-    cudaStream_t stream = nullptr) const {
-
-    OperatorArguments args;
-
-    Status status = update_arguments_(
-      args, 
-      static_cast<GemmArrayArguments const *>(arguments_ptr));
-
-    if (status != Status::kSuccess) {
-      return status;
-    }
-
-    Operator *op = static_cast<Operator *>(host_workspace);
-
-    status = op->update(args, device_workspace);
-
-    if (status != Status::kSuccess) {
-      return status;
-    }
-
-    return op->run(stream);
-  }
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Operator_>
 class GemmUniversalOperation : public GemmOperationBase<Operator_> {
@@ -742,7 +566,7 @@ protected:
     operator_args.ldb = int(configuration->ldb);
     operator_args.ldc = int(configuration->ldc);
     operator_args.ldd = int(configuration->ldd);
-
+    
     return Status::kSuccess;
   }
 

@@ -60,6 +60,20 @@ cutlass_test_unit_add_executable(
   gemm_tf32n_tf32n_f32t_tensor_op_f32_sm80.cu
   gemm_tf32t_tf32t_f32t_tensor_op_f32_sm80.cu
 
+  gemm_f16n_f16n_f16t_tensor_op_f32_sparse_sm80.cu
+  gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f16n_f16t_f16t_tensor_op_f16_sparse_sm80.cu
+  gemm_f16n_f16t_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f16t_f16n_f16t_tensor_op_f16_sparse_sm80.cu
+  gemm_f16t_f16n_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f16t_f16t_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f32t_f32n_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f32n_f32t_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f32t_f32t_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f32n_f32n_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_s8t_s8n_s32t_tensor_op_s32_sparse_sm80.cu
+  gemm_s4t_s4n_s32t_tensor_op_s32_sparse_sm80.cu
+
   gemm_f16t_f16n_f16t_tensor_op_f16_slicedk_sm80.cu
   gemm_f16n_f16t_f16t_tensor_op_f16_slicedk_sm80.cu
 
@@ -67,6 +81,7 @@ cutlass_test_unit_add_executable(
   simt_sgemm_tn_sm80.cu
 
   gemm_s8t_s8n_s32t_tensor_op_s32_sm80.cu
+  gemm_s8t_s8n_s32n_tensor_op_s32_sm80.cu
   gemm_s8t_s8n_s8n_tensor_op_s32_sm80.cu
   gemm_s8t_s8n_s8t_tensor_op_s32_sm80.cu
   gemm_s4t_s4n_s32n_tensor_op_s32_sm80.cu

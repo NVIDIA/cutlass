@@ -27,6 +27,8 @@ cutlass_test_unit_add_executable(
   bfloat16.cu
   tfloat32.cu
   complex.cu
+  quaternion.cu
+  matrix.cu
   predicate_vector.cu
   tensor_ref.cu
   tensor_view.cu

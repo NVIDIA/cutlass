@@ -123,15 +123,21 @@ struct GemmIdentityThreadblockSwizzle {
   /// Computes CUDA grid dimensions given a size in units of logical tiles
   CUTLASS_HOST_DEVICE
   dim3 get_grid_shape(GemmCoord tiled_shape) const {
+    if ((tiled_shape.m() < kTile) || (tiled_shape.n() < kTile))
+      return dim3(tiled_shape.m(), tiled_shape.n(), tiled_shape.k());
+
     return dim3(tiled_shape.m() * kTile, (tiled_shape.n() + kTile - 1) / kTile, tiled_shape.k());
   }
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset() const {
+  GemmCoord get_tile_offset(GemmCoord tiled_shape) const {
 
     int block_idx_x = RematerializeBlockIdxX();
     int block_idx_y = RematerializeBlockIdxY();
+
+    if ((tiled_shape.m() < kTile) || (tiled_shape.n() < kTile))
+      return GemmCoord{block_idx_x, block_idx_y, RematerializeBlockIdxZ()};
 
     return GemmCoord{
       (block_idx_x / kTile),
@@ -170,7 +176,7 @@ struct GemmHorizontalThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset() const {
+  GemmCoord get_tile_offset(GemmCoord tiled_shape) const {
     return GemmCoord{
       RematerializeBlockIdxY(),
       RematerializeBlockIdxX(),
@@ -205,7 +211,7 @@ struct GemmBatchedIdentityThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset() const {
+  GemmCoord get_tile_offset(GemmCoord tiled_shape) const {
     return GemmCoord{
       RematerializeBlockIdxX(),
       RematerializeBlockIdxY(),
@@ -244,16 +250,22 @@ struct GemmSplitKIdentityThreadblockSwizzle {
   /// Computes CUDA grid dimensions given a size in units of logical tiles
   CUTLASS_HOST_DEVICE
   dim3 get_grid_shape(GemmCoord tiled_shape) const {
+    if ((tiled_shape.m() < kTile) || (tiled_shape.n() < kTile))
+      return dim3(tiled_shape.m(), tiled_shape.n(), tiled_shape.k());
+
     return dim3(tiled_shape.m() * kTile, (tiled_shape.n() + kTile - 1) / kTile, tiled_shape.k());
   }
 
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset() const {
+  GemmCoord get_tile_offset(GemmCoord tiled_shape) const {
 
     int block_idx_x = RematerializeBlockIdxX();
     int block_idx_y = RematerializeBlockIdxY();
+
+    if ((tiled_shape.m() < kTile) || (tiled_shape.n() < kTile))
+      return GemmCoord{block_idx_x, block_idx_y, RematerializeBlockIdxZ()};
 
     return GemmCoord{
       (block_idx_x / kTile),
@@ -290,7 +302,7 @@ struct GemmSplitKHorizontalThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset() const {
+  GemmCoord get_tile_offset(GemmCoord tiled_shape) const {
     return GemmCoord{
       RematerializeBlockIdxY(),
       RematerializeBlockIdxX(),

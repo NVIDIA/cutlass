@@ -49,6 +49,7 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <cstdlib>
 
 // CUTLASS Utility includes
 #include "cutlass/util/command_line.h"
@@ -307,10 +308,18 @@ struct Range {
   // Type definitions
   //
 
+  enum class Mode {
+    kSequence,
+    kRandom,
+    kRandomLog2,
+    kInvalid
+  };
+
   struct Iterator {
 
     int64_t value;
     int64_t increment;
+    Range const *range;
 
     //
     // Methods
@@ -318,9 +327,10 @@ struct Range {
     
     Iterator(
       int64_t value_ = 0, 
-      int64_t increment_ = 1
+      int64_t increment_ = 1,
+      Range const *range_ = nullptr
     ): 
-      value(value_), increment(increment_) { }
+      value(value_), increment(increment_), range(range_) { }
 
     Iterator & operator++() {
       value += increment;
@@ -341,7 +351,50 @@ struct Range {
       return !(*this == it);
     }
 
+    static int64_t round(int64_t value, int64_t divisible) {
+      int64_t rem = (value % divisible);
+
+      // Round either up or down
+      if (rem > divisible / 2) {
+        value += (divisible - rem);
+      }
+      else {
+        value -= rem;
+      }
+
+      return value;
+    }
+
     int64_t at() const {
+      if (!range) {
+        return value;
+      }
+
+      switch (range->mode) {
+        case Mode::kSequence: return value;
+
+        case Mode::kRandom: {
+          double rnd = double(range->minimum) + 
+            double(std::rand()) / double(RAND_MAX) * (double(range->maximum) - double(range->minimum));
+
+          int64_t value = int64_t(rnd);
+
+          return round(value, range->divisible);      
+        }
+        break;
+
+        case Mode::kRandomLog2: {
+          double lg2_minimum = std::log(double(range->minimum)) / std::log(2.0);
+          double lg2_maximum = std::log(double(range->maximum)) / std::log(2.0);
+          double rnd = lg2_minimum + double(std::rand()) / double(RAND_MAX) * (lg2_maximum - lg2_minimum);      
+
+          int64_t value = int64_t(std::pow(2.0, rnd));
+
+          return round(value, range->divisible);
+        }
+        break;
+        default: break;
+      }
       return value;
     }
 
@@ -357,20 +410,29 @@ struct Range {
   int64_t first;        ///< first element in range
   int64_t last;         ///< last element in range
   int64_t increment;    ///< additive increment between values
+  
+  Mode mode;            ///< mode selection enables alternative values 
+  int64_t minimum;      ///< minimum value to return
+  int64_t maximum;      ///< maximum value to return
+  int64_t divisible;    ///< rounds value down to an integer multiple of this value 
 
   //
   // Methods
   //
 
   /// Default constructor - range acts as a scalar
-  Range(int64_t first_ = 0): first(first_), last(first_), increment(1) { }
+  Range(int64_t first_ = 0): first(first_), last(first_), increment(1), mode(Mode::kSequence), minimum(0), maximum(0), divisible(1) { }
 
   /// Range acts as a range
   Range(
     int64_t first_, 
     int64_t last_, 
-    int64_t increment_ = 1
-  ): first(first_), last(last_), increment(increment_) {
+    int64_t increment_ = 1,
+    Mode mode_ = Mode::kSequence,
+    int64_t minimum_ = 0,
+    int64_t maximum_ = 0,
+    int64_t divisible_ = 1
+  ): first(first_), last(last_), increment(increment_), mode(mode_), minimum(minimum_), maximum(maximum_), divisible(divisible_) {
 
     // Helpers to avoid constructing invalid ranges
     if (increment > 0) {
@@ -389,14 +451,29 @@ struct Range {
     }
   }
 
+  /// Helper to construct a sequence range
+  static Range Sequence(int64_t first_, int64_t last_, int64_t increment_ = 1) {
+    return Range(first_, last_, increment_, Mode::kSequence);
+  }
+
+  /// Helper to construct a range that is a random distribution 
+  static Range Random(int64_t minimum_, int64_t maximum_, int64_t count_, int64_t divisible_ = 1) {
+    return Range(1, count_, 1, Mode::kRandom, minimum_, maximum_, divisible_);
+  }
+
+  /// Helper to construct a range that is a random distribution over a log scale
+  static Range RandomLog2(int64_t minimum_, int64_t maximum_, int64_t count_, int64_t divisible_ = 1) {
+    return Range(1, count_, 1, Mode::kRandomLog2, minimum_, maximum_, divisible_);
+  }
+
   /// Returns an iterator to the first element within the range
   Iterator begin() const {
-    return Iterator(first, increment);
+    return Iterator(first, increment, this);
   }
 
   /// Returns an iterator to the first element *after* the range
   Iterator end() const {
-    return Iterator(first + ((last - first)/increment + 1) * increment, increment);
+    return Iterator(first + ((last - first)/increment + 1) * increment, increment, this);
   }
 };
 
@@ -770,8 +847,18 @@ private:
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Lexically casts an argument to an int if it is defined. Returns true if not null.
+bool arg_as_int(int &int_value, KernelArgument::Value const *value_ptr);
+
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_int(int64_t &int_value, KernelArgument::Value const *value_ptr);
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_int(
+  int &int_value,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem);
 
 /// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
 bool arg_as_int(

@@ -236,6 +236,18 @@ public:
   using ElementAccumulator = int;
   using ElementCompute = float;
 
+  static_assert(
+      platform::is_same<ElementOutput, int32_t>::value ||
+          platform::is_same<ElementOutput, uint32_t>::value ||
+          platform::is_same<ElementOutput, int16_t>::value ||
+          platform::is_same<ElementOutput, uint16_t>::value ||
+          platform::is_same<ElementOutput, int8_t>::value ||
+          platform::is_same<ElementOutput, uint8_t>::value ||
+          platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
+          platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
+          platform::is_same<ElementOutput, cutlass::uint1b_t>::value,
+      "This elementwise op expects the output to be int.");
+
   static int const kCount = Count;
 
   using FragmentOutput = Array<ElementOutput, kCount>;
@@ -392,8 +404,9 @@ public:
 ///
 /// D = alpha * accumulator + beta * source + uniform
 ///
-/// Note: The below method only works for small k dimensions.  The default
-/// approach is above
+/// Note: The below method only when problem_size_K <= 256 for signed int8 gemm
+/// or problem_size_K <= 128 for unsigned int8 gemm. The default approach is
+/// above.
 /// TODO: Add logic to fallback to the default approach
 template <
     /// Data type used to load and store< tensors
@@ -407,6 +420,18 @@ class FastLinearCombinationClamp {
   using ElementOutput = ElementOutput_;
   using ElementAccumulator = int;
   using ElementCompute = float;
+
+  static_assert(
+      platform::is_same<ElementOutput, int32_t>::value ||
+          platform::is_same<ElementOutput, uint32_t>::value ||
+          platform::is_same<ElementOutput, int16_t>::value ||
+          platform::is_same<ElementOutput, uint16_t>::value ||
+          platform::is_same<ElementOutput, int8_t>::value ||
+          platform::is_same<ElementOutput, uint8_t>::value ||
+          platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
+          platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
+          platform::is_same<ElementOutput, cutlass::uint1b_t>::value,
+      "This elementwise op expects the output to be int.");
 
   static int const kCount = Count;
 

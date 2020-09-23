@@ -21,6 +21,11 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 add_subdirectory(util)
-add_subdirectory(library)
-add_subdirectory(profiler)
+
+if (CUTLASS_ENABLE_LIBRARY)
+  add_subdirectory(library)
+endif()
+if (CUTLASS_ENABLE_PROFILER)
+  add_subdirectory(profiler)
+endif()
 

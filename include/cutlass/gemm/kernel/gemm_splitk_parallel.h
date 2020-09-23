@@ -128,7 +128,8 @@ struct GemmSplitKParallel {
     // Compute threadblock location
     ThreadblockSwizzle threadblock_swizzle;
 
-    cutlass::gemm::GemmCoord threadblock_tile_offset = threadblock_swizzle.get_tile_offset();
+    cutlass::gemm::GemmCoord threadblock_tile_offset =
+        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_offset.m() ||
@@ -205,7 +206,8 @@ struct GemmSplitKParallel {
     // Masked tile iterators constructed from members
     //
 
-    threadblock_tile_offset = threadblock_swizzle.get_tile_offset();
+    threadblock_tile_offset =
+        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
 
     //assume identity swizzle
     MatrixCoord threadblock_offset(

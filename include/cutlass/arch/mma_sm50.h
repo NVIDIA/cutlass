@@ -53,6 +53,7 @@ template <
 struct Mma<gemm::GemmShape<1, 1, 1>, 1, float, LayoutA, float, LayoutB, float, LayoutC, OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = OpMultiplyAdd;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -79,6 +80,7 @@ template <
 struct Mma<gemm::GemmShape<1, 1, 1>, 1, double, LayoutA, double, LayoutB, double, LayoutC, OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = OpMultiplyAdd;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -106,6 +108,7 @@ template <
 struct Mma<gemm::GemmShape<1, 1, 1>, 1, int, LayoutA, int, LayoutB, int, LayoutC, OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = OpMultiplyAdd;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -142,6 +145,7 @@ struct Mma<
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = OpMultiplyAddComplex;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -181,6 +185,7 @@ struct Mma<
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = OpMultiplyAddComplex;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -218,6 +223,7 @@ struct Mma<
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = OpMultiplyAddComplex;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -255,6 +261,7 @@ struct Mma<
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = OpMultiplyAddComplex;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -292,6 +299,7 @@ struct Mma<
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = OpMultiplyAddComplex;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -327,6 +335,7 @@ struct Mma<
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = OpMultiplyAddComplex;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -355,7 +364,8 @@ template <
 struct Mma<gemm::GemmShape<1, 1, 1>, 1, half_t, LayoutA, half_t, LayoutB, float, LayoutC, OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
-
+  using Operator = OpMultiplyAdd;
+  
   CUTLASS_HOST_DEVICE
   void operator()(
     Array<float, 1> &d,

@@ -71,7 +71,7 @@ struct DefaultThreadMapWmmaTensorOp {
 
     static_assert(
       !(ThreadblockShape::kM % WarpShape::kM) &&
-      !(ThreadblockShape::kM % WarpShape::kM), "Divisibility");
+      !(ThreadblockShape::kN % WarpShape::kN), "Divisibility");
 
     /// Number of warps
     using WarpCount = gemm::GemmShape<

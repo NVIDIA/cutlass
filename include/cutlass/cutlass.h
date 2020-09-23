@@ -125,13 +125,6 @@ static char const* cutlassGetStatusString(cutlass::Status status) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename T>
-struct Debug {
-  typename T::X x;
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
 static const int NUM_THREADS_PER_WARP = 32;
 static const int NUM_THREADS_PER_HALF_WARP = NUM_THREADS_PER_WARP / 2;
 static const int NUM_THREADS_PER_QUAD = 4;
@@ -143,7 +136,7 @@ static const int NUM_THREADS_PER_QUAD_PAIR = NUM_THREADS_PER_QUAD * 2;
 CUTLASS_DEVICE
 int LaneId() {
   int ret; 
-  asm ("mov.u32 %0, %%laneid;" : "=r"(ret));
+  asm ("mov.u32 %0, %%laneid;" : "=r"(ret) : );
   return ret;
 }
 
@@ -151,7 +144,7 @@ int LaneId() {
 CUTLASS_DEVICE
 int SmId() {
   int ret; 
-  asm ("mov.u32 %0, %%smid;" : "=r"(ret));
+  asm ("mov.u32 %0, %%smid;" : "=r"(ret) : );
   return ret;
 }
 

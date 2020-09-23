@@ -147,6 +147,9 @@ public:
     dp4a_type
   >;
 
+  /// Underlying matrix multiply operator (concept: arch::Mma)
+  using ArchMmaOperator = typename ThreadMma::ArchMmaOperator;
+
   /// Shape of the underlying instruction
   using InstructionShape = GemmShape<1,1,use_dp4a ? 4 : 1>;
 

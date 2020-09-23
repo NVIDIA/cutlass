@@ -50,6 +50,9 @@ TEST(half_t, host_conversion) {
     EXPECT_TRUE(static_cast<float>(y) == f);
   }
 
+  // Try out default-ctor (zero initialization of primitive proxy type)
+  EXPECT_TRUE(cutlass::half_t() == 0.0_hf);
+
   // Try out user-defined literals
   EXPECT_TRUE(cutlass::half_t(7) == 7_hf);
   EXPECT_TRUE(7 == static_cast<int>(7_hf));

@@ -65,7 +65,7 @@ struct alignas(2) bfloat16_t {
 
   /// Default constructor
   CUTLASS_HOST_DEVICE
-  bfloat16_t() { }
+  bfloat16_t() : storage(0) { }
 
   /// Floating-point conversion - round toward nearest
   CUTLASS_HOST_DEVICE

@@ -60,8 +60,8 @@ struct TensorOpPolicy<WarpShape, OperatorShape, layout::RowMajor> {
 
   /// Number of operations
   using OperatorCount = MatrixShape<
-    WarpShape::kM / OperatorShape::kM,
-    WarpShape::kN / OperatorShape::kN
+    (WarpShape::kM + OperatorShape::kM - 1) / OperatorShape::kM,
+    (WarpShape::kN + OperatorShape::kN - 1) / OperatorShape::kN
   >;
 
   //
@@ -70,6 +70,8 @@ struct TensorOpPolicy<WarpShape, OperatorShape, layout::RowMajor> {
 
   static int const kElementsPerAccess = 2;
   static int const kRowsPerIteration = 8;
+  static bool const kDivisible = 
+    !(WarpShape::kM % OperatorShape::kM) && !(WarpShape::kN % OperatorShape::kN);
 
   //
   // Derived quantities

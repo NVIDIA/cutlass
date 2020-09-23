@@ -82,7 +82,7 @@ struct alignas(4) tfloat32_t {
 
   /// Default constructor
   CUTLASS_HOST_DEVICE
-  tfloat32_t() { }
+  tfloat32_t() : storage(0) { }
 
   /// Floating-point conversion - round toward nearest even
   CUTLASS_HOST_DEVICE

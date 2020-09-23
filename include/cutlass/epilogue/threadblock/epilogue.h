@@ -104,7 +104,6 @@ public:
   using OutputOp = OutputOp_;
   using Padding = Padding_;
 
-  /// Output layout is always row-major
   using Layout = layout::RowMajor;
   using LongIndex = typename Layout::LongIndex;
 
@@ -164,7 +163,7 @@ public:
     typename Base::SharedStorage &shared_storage,    ///< Shared storage object    
     int thread_idx,                   ///< ID of a thread within the threadblock
     int warp_idx,                     ///< ID of warp within threadblock
-    int lane_idx                      ///< Id of thread within warp
+    int lane_idx                     ///< Id of thread within warp
   ):
     Base(shared_storage, thread_idx, warp_idx, lane_idx),
     shared_load_iterator_(shared_storage.reference(), thread_idx) { }
@@ -192,7 +191,8 @@ private:
   void compute_source_not_needed_(
     OutputOp const &output_op,                    ///< Output operator
     OutputTileIterator destination_iterator,      ///< Tile iterator for destination
-    AccumulatorTile const &accumulators) {        ///< Complete warp-level accumulator tile
+    AccumulatorTile const &accumulators          ///< Complete warp-level accumulator tile 
+    ) { 
 
     //
     // Iterator over warp-level accumulator fragment
@@ -259,9 +259,9 @@ private:
       // Store the final result
       //
 
-      destination_iterator.store(output_fragment);      
+      destination_iterator.store(output_fragment);
       ++destination_iterator;
-
+ 
     }
   }
 
@@ -272,7 +272,8 @@ private:
     OutputOp const &output_op,                    ///< Output operator
     OutputTileIterator destination_iterator,      ///< Tile iterator for destination
     AccumulatorTile const &accumulators,          ///< Complete warp-level accumulator tile
-    OutputTileIterator source_iterator) {         ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
+    OutputTileIterator source_iterator           ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
+    ) { 
     
     typename OutputTileIterator::Fragment source_fragment;
 

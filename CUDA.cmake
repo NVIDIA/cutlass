@@ -213,7 +213,14 @@ function(cutlass_correct_source_file_language_property)
   endif()
 endfunction()
 
-set(CUTLASS_UNITY_BUILD_ENABLED OFF CACHE BOOL "Enable combined source compilation")
+# If building with all kernels, set UNITY build on by default.
+if (CUTLASS_LIBRARY_KERNELS MATCHES "all")
+  set(CUTLASS_UNITY_BUILD_ENABLED_INIT ON)
+else()
+  set(CUTLASS_UNITY_BUILD_ENABLED_INIT OFF)
+endif()
+
+set(CUTLASS_UNITY_BUILD_ENABLED ${CUTLASS_UNITY_BUILD_ENABLED_INIT} CACHE BOOL "Enable combined source compilation")
 set(CUTLASS_UNITY_BUILD_BATCH_SIZE 16 CACHE STRING "Batch size for unified source files")
 
 function(cutlass_unify_source_files TARGET_ARGS_VAR)

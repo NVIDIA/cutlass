@@ -106,6 +106,8 @@ struct RandomGaussianFunc {
     FloatType mean;
     FloatType stddev;
     int int_scale;
+    FloatType float_scale_up;
+    FloatType float_scale_down;
 
     //
     // Methods
@@ -123,6 +125,9 @@ struct RandomGaussianFunc {
       stddev(static_cast<FloatType>(stddev_)), 
       int_scale(int_scale_) {
 
+      float_scale_up = FloatType(IntType(1) << int_scale);
+      float_scale_up += FloatType(0.5) * float_scale_up;
+      float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
     }
   };
 
@@ -158,8 +163,8 @@ struct RandomGaussianFunc {
 
     Element result;
     if (params.int_scale >= 0) {
-      rnd = FloatType(IntType(rnd * FloatType(IntType(1) << params.int_scale)));
-      result = Element(rnd / FloatType(IntType(1) << params.int_scale));
+      rnd = FloatType(IntType(rnd * params.float_scale_up));
+      result = Element(rnd * params.float_scale_down);
     }
     else {
       result = Element(rnd);
@@ -188,6 +193,8 @@ struct RandomGaussianFunc<complex<Real>> {
     FloatType mean;
     FloatType stddev;
     int int_scale;
+    FloatType float_scale_up;
+    FloatType float_scale_down;
 
     //
     // Methods
@@ -205,6 +212,9 @@ struct RandomGaussianFunc<complex<Real>> {
       stddev(static_cast<FloatType>(stddev_)), 
       int_scale(int_scale_) {
 
+      float_scale_up = FloatType(IntType(1) << int_scale);
+      float_scale_up += FloatType(0.5) * float_scale_up;
+      float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
     }
   };
 
@@ -242,12 +252,12 @@ struct RandomGaussianFunc<complex<Real>> {
 
     Element result;
     if (params.int_scale >= 0) {
-      rnd_r = FloatType(IntType(rnd_r * FloatType(IntType(1) << params.int_scale)));
-      rnd_i = FloatType(IntType(rnd_i * FloatType(IntType(1) << params.int_scale)));
+      rnd_r = FloatType(IntType(rnd_r * params.float_scale_up));
+      rnd_i = FloatType(IntType(rnd_i * params.float_scale_down));
 
       result = {
-        Real(rnd_r / FloatType(IntType(1) << params.int_scale)),
-        Real(rnd_i / FloatType(IntType(1) << params.int_scale))
+        Real(rnd_r * params.float_scale_down),
+        Real(rnd_i * params.float_scale_down)
       };
     }
     else {
@@ -378,7 +388,7 @@ void BlockFillRandomGaussian(
 namespace detail {
 
 /// Computes a random Gaussian distribution
-template <typename Element>                ///< Layout function
+template <typename Element>                ///< Element type 
 struct RandomUniformFunc {
 
   using FloatType = typename std::conditional<
@@ -400,8 +410,10 @@ struct RandomUniformFunc {
 
     uint64_t seed;
     FloatType range;
-    FloatType min;
+    FloatType max;
     int int_scale;
+    FloatType float_scale_up;
+    FloatType float_scale_down;
 
     /// Default ctor
     CUTLASS_HOST_DEVICE
@@ -414,15 +426,18 @@ struct RandomUniformFunc {
     /// Construction of Gaussian RNG functor.
     Params(
       uint64_t seed_ = 0, 
-      Element max = 1,
-      Element min_ = 0,
+      Element max_ = 1,
+      Element min = 0,
       int int_scale_ = -1
     ):
       seed(seed_), 
-      range(static_cast<FloatType>(max - min_)), 
-      min(static_cast<FloatType>(min_)), 
+      range(static_cast<FloatType>(max_ - min)), 
+      max(static_cast<FloatType>(max_)),
       int_scale(int_scale_) {
 
+      float_scale_up = FloatType(IntType(1) << int_scale);
+      float_scale_up += FloatType(0.5) * float_scale_up;
+      float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
     }
   };
 
@@ -454,15 +469,15 @@ struct RandomUniformFunc {
   Element operator()() {
 
     FloatType rnd = random_uniform_float<FloatType>(&rng_state);
-    rnd = params.min + params.range * rnd;
+    rnd = params.max - params.range * rnd;
 
     // Random values are cast to integer after scaling by a power of two to facilitate error
     // testing
     Element result;
 
     if (params.int_scale >= 0) {
-      rnd = FloatType(IntType(rnd * FloatType(IntType(1) << params.int_scale)));
-      result = Element(rnd / FloatType(IntType(1) << params.int_scale));
+      rnd = FloatType(IntType(rnd * params.float_scale_up));
+      result = Element(rnd * params.float_scale_down);
     }
     else {
       result = Element(rnd);
@@ -473,7 +488,7 @@ struct RandomUniformFunc {
 };
 
 /// Computes a random Gaussian distribution
-template <typename Real>                ///< Layout function
+template <typename Real>
 struct RandomUniformFunc<complex<Real>> {
 
   using Element = complex<Real>;
@@ -499,6 +514,8 @@ struct RandomUniformFunc<complex<Real>> {
     FloatType range;
     FloatType min;
     int int_scale;
+    FloatType float_scale_up;
+    FloatType float_scale_down;
 
     /// Default ctor
     CUTLASS_HOST_DEVICE
@@ -520,6 +537,9 @@ struct RandomUniformFunc<complex<Real>> {
       min(static_cast<FloatType>(min_)), 
       int_scale(int_scale_) {
 
+      float_scale_up = FloatType(IntType(1) << int_scale);
+      float_scale_up += FloatType(0.5) * float_scale_up;
+      float_scale_down = FloatType(1) / FloatType(IntType(1) << int_scale);
     }
   };
 
@@ -561,12 +581,12 @@ struct RandomUniformFunc<complex<Real>> {
     Element result;
 
     if (params.int_scale >= 0) {
-      rnd_r = FloatType(IntType(rnd_r * FloatType(IntType(1) << params.int_scale)));
-      rnd_i = FloatType(IntType(rnd_i * FloatType(IntType(1) << params.int_scale)));
+      rnd_r = FloatType(IntType(rnd_r * params.float_scale_up));
+      rnd_i = FloatType(IntType(rnd_i * params.float_scale_up));
 
       result = {
-        Real(rnd_r / FloatType(IntType(1) << params.int_scale)),
-        Real(rnd_i / FloatType(IntType(1) << params.int_scale))
+        Real(rnd_r * params.float_scale_down),
+        Real(rnd_i * params.float_scale_down)
       };
     }
     else {
@@ -670,7 +690,7 @@ void TensorFillRandomUniform(
   typename RandomFunc::Params random(seed, max, min, bits);
 
   TensorForEach<Func, Layout::kRank, Params>(
-    view.size(),
+    view.extent(),
     Params(view, random)
   );
 }
@@ -690,6 +710,7 @@ void BlockFillRandomUniform(
                                           ///  data.                 
   
   using RandomFunc = detail::RandomUniformFunc<Element>;
+  
   typename RandomFunc::Params params(seed, max, min, bits);
 
   BlockForEach<Element, RandomFunc>(ptr, capacity, params);
@@ -700,7 +721,214 @@ void BlockFillRandomUniform(
 
 namespace detail {
 
+/// Computes a random sparse meta 
+template <typename Element>               ///< Element type
+struct RandomSparseMetaFunc {
+
+  using FloatType = float;
+
+  using IntType = int32_t;
+
+  /// Parameters structure
+  struct Params {
+
+    //
+    // Data members
+    //
+
+    uint64_t seed;
+    FloatType range;
+    int MetaSizeInBits;
+
+    /// Default ctor
+    CUTLASS_HOST_DEVICE
+    Params() { }
+
+    //
+    // Methods
+    //
+
+    /// Construction of Gaussian RNG functor.
+    Params(
+      uint64_t seed_ = 0, 
+      int MetaSizeInBits_ = 2 
+    ):
+      seed(seed_), 
+      MetaSizeInBits(MetaSizeInBits_) {
+      if (MetaSizeInBits_ == 2) {
+        range = 6;
+      } else if (MetaSizeInBits_ == 4) {
+        range = 2;
+      }
+    }
+  };
+
+  //
+  // Data members
+  //
+
+  /// Parameters object
+  Params params;
+
+  /// RNG state object
+  curandState_t rng_state;
+
+  //
+  // Methods
+  //
+
+  /// Device-side initialization of RNG
+  CUTLASS_DEVICE
+  RandomSparseMetaFunc(Params const &params): params(params) {
+
+    uint64_t gtid = threadIdx.x + blockIdx.x * blockDim.x;
+
+    curand_init(params.seed, gtid, 0, &rng_state);
+  }
+
+  /// Compute random value and update RNG state
+  CUTLASS_DEVICE
+  Element operator()() {
+    Element FourToTwoMeta[6] = {0x4, 0x8, 0x9, 0xc, 0xd, 0xe};
+    Element TwoToOneMeta[2] = {0x4, 0xe};
+
+    Element *MetaArray =
+        (params.MetaSizeInBits == 2) ? FourToTwoMeta : TwoToOneMeta;
+
+    Element result = 0x0;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < cutlass::sizeof_bits<Element>::value / 4; ++i) {
+      FloatType rnd = random_uniform_float<FloatType>(&rng_state);
+      rnd = params.range * rnd;
+      Element meta = MetaArray[(int)rnd];
+
+      result = (Element)(result | ((Element)(meta << (i * 4))));
+    }
+
+    return result;
+  }
+};
+
 /// Computes a random Gaussian distribution
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorFillRandomSparseMetaFunc {
+
+  /// View type
+  using TensorView = TensorView<Element, Layout>;
+
+  /// Scalar type
+  typedef typename TensorView::Element T;
+
+  /// Coordinate in tensor's index space
+  typedef typename TensorView::TensorCoord TensorCoord;
+
+  using RandomFunc = RandomSparseMetaFunc<Element>;
+
+  /// Parameters structure
+  struct Params {
+
+    //
+    // Data members
+    //
+
+    TensorView view;
+    typename RandomFunc::Params random;
+
+    /// Default ctor
+    CUTLASS_HOST_DEVICE
+    Params() { }
+
+    //
+    // Methods
+    //
+
+    /// Construction of Gaussian RNG functor.
+    Params(
+      TensorView view_ = TensorView(),
+      typename RandomFunc::Params random_ = RandomFunc::Params()
+    ):
+      view(view_), random(random_) {
+
+    }
+  };
+
+  //
+  // Data members
+  //
+
+  Params params;
+  RandomFunc random;
+
+  //
+  // Methods
+  //
+
+  /// Device-side initialization of RNG
+  CUTLASS_DEVICE
+  TensorFillRandomSparseMetaFunc(Params const &params): params(params), random(params.random) {
+  }
+
+  /// Compute random value and update RNG state
+  CUTLASS_DEVICE
+  void operator()(TensorCoord const &coord) {
+
+    params.view.at(coord) = random();
+  }
+};
+
+} // namespace detail
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fills a tensor with random values with a uniform random distribution.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillRandomSparseMeta(
+  TensorView<Element, Layout> view,       ///< destination tensor
+  uint64_t seed,                          ///< seed for RNG
+  int MetaSizeInBits = 2) {                        ///< If non-negative, specifies number of fractional bits that 
+                                          ///  are not truncated to zero. Permits reducing precision of
+                                          ///  data.                 
+  
+  using RandomFunc = detail::RandomSparseMetaFunc<Element>;
+  using Func = detail::TensorFillRandomUniformFunc<Element, Layout>;
+  using Params = typename Func::Params;
+
+  typename RandomFunc::Params random(seed, MetaSizeInBits);
+
+  TensorForEach<Func, Layout::kRank, Params>(
+    view.extent(),
+    Params(view, random)
+  );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fills a tensor with random values with a uniform random distribution.
+template <typename Element>
+void BlockFillRandomSparseMeta(
+  Element *ptr,
+  size_t capacity,
+  uint64_t seed,                          ///< seed for RNG
+  int MetaSizeInBits = 2) {               ///< meta data size
+  
+  using RandomFunc = detail::RandomSparseMetaFunc<Element>;
+  
+  typename RandomFunc::Params params(seed, MetaSizeInBits);
+
+  BlockForEach<Element, RandomFunc>(ptr, capacity, params);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+/// Functor to fill a tensor with zeros off the diagonal and a uniform value on the diagonal.
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
@@ -734,7 +962,6 @@ struct TensorFillDiagonalFunc {
     // Methods
     //
 
-    /// Construction of Gaussian RNG functor.
     Params(
       TensorView view_ = TensorView(),
       Element diag_ = Element(1),
@@ -762,7 +989,7 @@ struct TensorFillDiagonalFunc {
 
   }
 
-  /// Compute random value and update RNG state
+  /// Updates the tensor
   CUTLASS_DEVICE
   void operator()(TensorCoord const &coord) {
 
@@ -797,7 +1024,7 @@ void TensorFillDiagonal(
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
-    view.size(),
+    view.extent(),
     Params(view, diag, other)
   );
 }
@@ -928,7 +1155,7 @@ void TensorUpdateDiagonal(
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
-    view.size(),
+    view.extent(),
     Params(view, diag)
   );
 }
@@ -1034,7 +1261,7 @@ void TensorUpdateOffDiagonal(
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
-    view.size(),
+    view.extent(),
     Params(view, other)
   );
 }
@@ -1137,7 +1364,7 @@ void TensorFillLinear(
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
-    view.size(),
+    view.extent(),
     Params(view, v, s)
   );
 }
@@ -1290,7 +1517,7 @@ void TensorCopyDiagonalIn(
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
-    view.size(),
+    view.extent(),
     Params(view, ptr)
   );
 }
@@ -1394,7 +1621,7 @@ void TensorCopyDiagonalOut(
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
-    view.size(),
+    view.extent(),
     Params(view, ptr)
   );
 }

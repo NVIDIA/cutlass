@@ -122,8 +122,9 @@ TEST(Layout_Matrix, general_matrix) {
 
   cutlass::layout::GeneralMatrix::TensorCoord extent = {M, N};
 
-  cutlass::layout::GeneralMatrix layout = 
-    cutlass::layout::GeneralMatrix::packed(extent, cutlass::MatrixLayout::kColumnMajor, interleave);
+  cutlass::layout::GeneralMatrix layout =
+      cutlass::layout::GeneralMatrix::packed(
+          extent, cutlass::layout::Matrix::kColumnMajor, interleave);
 
   cutlass::HostTensor<int, cutlass::layout::ColumnMajor> tensor(extent);
 

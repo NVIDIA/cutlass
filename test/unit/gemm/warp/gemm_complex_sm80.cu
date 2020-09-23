@@ -629,7 +629,66 @@ TEST(SM80_warp_gemm_complex_tensor_op_f32, 64x32x8_16x8x8_tn) {
       .run();
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_warp_gemm_complex_tensor_op_f64, 32x32x8_8x8x4_tn) {
+
+  using Shape = cutlass::gemm::GemmShape<32, 32, 4>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+  
+  using Element = cutlass::complex<double>;
+  using ElementC = cutlass::complex<double>;
+
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaComplexTensorOp<
+    Shape, 
+    InstructionShape, 
+    Element, 
+    LayoutA, 
+    Element, 
+    LayoutB, 
+    ElementC,
+    cutlass::layout::RowMajor
+  >::Type;
+
+  test::gemm::warp::TransformedTestbedComplex<
+      MmaTensorOp, cutlass::gemm::GemmShape<32, 32, 8> >()
+      .run();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_warp_gemm_complex_tensor_op_f64, 32x32x8_8x8x4_nt) {
+
+  using Shape = cutlass::gemm::GemmShape<32, 32, 4>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+  
+  using Element = cutlass::complex<double>;
+  using ElementC = cutlass::complex<double>;
+
+  using LayoutA = cutlass::layout::ColumnMajor;
+  using LayoutB = cutlass::layout::RowMajor;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaComplexTensorOp<
+    Shape, 
+    InstructionShape, 
+    Element, 
+    LayoutA, 
+    Element, 
+    LayoutB, 
+    ElementC,
+    cutlass::layout::RowMajor
+  >::Type;
+
+  test::gemm::warp::TransformedTestbedComplex<
+      MmaTensorOp, cutlass::gemm::GemmShape<32, 32, 8> >()
+      .run();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+
 
 #endif // #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 

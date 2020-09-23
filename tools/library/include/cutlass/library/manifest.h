@@ -48,7 +48,7 @@ namespace library {
 // Forward declaration 
 class Manifest;
 
-// init and insert all cutlass gemm and conv2d op in manifest object (procedurally generated using generator.py)
+// init and insert all cutlass gemm operations in manifest object (procedurally generated using generator.py)
 void initialize_all(Manifest &manifest);         
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////

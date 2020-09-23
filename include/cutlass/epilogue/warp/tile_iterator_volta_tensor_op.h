@@ -33,6 +33,7 @@
 #include "cutlass/layout/pitch_linear.h"
 
 #include "cutlass/epilogue/warp/tensor_op_policy.h"
+#include "cutlass/epilogue/warp/volta_tensor_op_policy.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -36,6 +36,8 @@
 #include "cutlass/complex.h"
 #include "cutlass/semaphore.h"
 
+#include "cutlass/trace.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -154,6 +156,7 @@ public:
       batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C), batch_stride_D(batch_stride_D), 
       lda(lda), ldb(ldb), ldc(ldc), ldd(ldd) {
 
+      CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size);
       }
 
     /// Returns arguments for the transposed problem
@@ -252,6 +255,7 @@ public:
       batch_stride_D(args.batch_stride_D),
       semaphore(static_cast<int *>(workspace)) {
 
+      CUTLASS_TRACE_HOST("GemmUniversal::Params::Params() - problem_size: " << problem_size);
     }
 
     CUTLASS_HOST_DEVICE
@@ -264,9 +268,16 @@ public:
       ptr_C = const_cast<void *>(args.ptr_C);
       ptr_D = args.ptr_D;
 
+      batch_stride_A = args.batch_stride_A;
+      batch_stride_B = args.batch_stride_B;
+      batch_stride_C = args.batch_stride_C;
+      batch_stride_D = args.batch_stride_D;
+
       output_op = args.epilogue;
 
       semaphore = static_cast<int *>(workspace);
+
+      CUTLASS_TRACE_HOST("GemmUniversal::Params::update()");
     }
   };
 
@@ -289,6 +300,8 @@ public:
   static Status can_implement(
     cutlass::gemm::GemmCoord const & problem_size) {
 
+    CUTLASS_TRACE_HOST("GemmUniversal::can_implement()");
+
     static int const kAlignmentA = Mma::IteratorA::AccessType::kElements;
     static int const kAlignmentB = Mma::IteratorB::AccessType::kElements;
     static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
@@ -297,8 +310,11 @@ public:
       (problem_size.n() % kAlignmentB) || (problem_size.k() % kAlignmentB) ||
       (problem_size.m() % kAlignmentC) || (problem_size.n() % kAlignmentC)) {
 
+      CUTLASS_TRACE_HOST("  returning kErrorMisalignedOperand");
       return Status::kErrorMisalignedOperand;
     }
+
+    CUTLASS_TRACE_HOST("  returning kSuccess");
 
     return Status::kSuccess;
   }
@@ -314,7 +330,8 @@ public:
     // Compute threadblock location
     ThreadblockSwizzle threadblock_swizzle;
 
-    cutlass::gemm::GemmCoord threadblock_tile_offset = threadblock_swizzle.get_tile_offset();
+    cutlass::gemm::GemmCoord threadblock_tile_offset =
+        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_offset.m() ||
@@ -421,7 +438,8 @@ public:
     // Masked tile iterators constructed from members
     //
 
-    threadblock_tile_offset = threadblock_swizzle.get_tile_offset();
+    threadblock_tile_offset =
+        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
 
     //assume identity swizzle
     MatrixCoord threadblock_offset(

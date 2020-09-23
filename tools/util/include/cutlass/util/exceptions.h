@@ -49,14 +49,9 @@ class cuda_exception : public std::exception {
   cudaError_t err;
 };
 
-/// Writes a cudaError_t to an output stream
-inline std::ostream& operator<<(std::ostream& out, cudaError_t result) {
-  return out << cudaGetErrorString(result);
-}
-
 /// Writes a cuda_exception instance to an output stream
 inline std::ostream& operator<<(std::ostream& out, cuda_exception const& e) {
-  return out << e.what() << ": " << e.cudaError();
+  return out << e.what() << ": " << cudaGetErrorString(e.cudaError());
 }
 
 }  // namespace cutlass

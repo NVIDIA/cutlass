@@ -50,7 +50,7 @@
   To build strictly the planar complex kernels needed for general application, execute the following
   CMake command in an empty build directory.
     
-    $ cmake .. -DCUTLASS_NVCC_ARCHS="70;75" \
+    $ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" \
   	  -DCUTLASS_LIBRARY_KERNELS=cutlass_tensorop_*gemm_planar_complex
 
   This builds all planar complex GEMM variants for Volta and Turing architectures.
@@ -59,7 +59,7 @@
   specified as follows. This only builds planar complex GEMMs targeting Tensor Cores for
   the 'CN' layout configuration (conjugate A operand with both A and B as column-major).
 
-    $ cmake .. -DCUTLASS_NVCC_ARCHS="70;75" \
+    $ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" \
   	  -DCUTLASS_LIBRARY_KERNELS=cutlass_tensorop_f16_s*gemm_planar_complex_f16*cn
 
     $ make 10_planar_complex
@@ -525,6 +525,11 @@ int main(int argc, char const **args) {
       // Returning zero so this test passes on older Toolkits even though its actions are no-op.
       return 0;
     }
+  }
+  else {
+    // NVIDIA Ampere Architecture GPUs (SM80 and later) are fully supported on CUDA 11 Toolkit and beyond.
+    //
+    // fall through
   }
 
   //

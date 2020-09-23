@@ -1778,5 +1778,81 @@ TEST(SM80_warp_gemm_tensor_op_interleaved, 128x128x128_64x64x128_16x8x64) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+TEST(SM80_warp_gemm_tensor_op_canonical_f64_row_col, 32x32x8_64x32x8_8x8x4) {
+  using Shape = cutlass::gemm::GemmShape<32, 32, 4>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+  using Element = double;
+  using ElementC = double;
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      cutlass::layout::RowMajor>::Type;
+
+  test::gemm::warp::Testbed<MmaTensorOp,
+                            cutlass::gemm::GemmShape<32, 32, 8> >()
+      .run();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_warp_gemm_tensor_op_canonical_f64_col_row, 32x32x8_64x32x8_8x8x4) {
+  using Shape = cutlass::gemm::GemmShape<32, 32, 4>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+  using Element = double;
+  using ElementC = double;
+  using LayoutA = cutlass::layout::ColumnMajor;
+  using LayoutB = cutlass::layout::RowMajor;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      cutlass::layout::RowMajor>::Type;
+
+  test::gemm::warp::Testbed<MmaTensorOp,
+                            cutlass::gemm::GemmShape<32, 32, 8> >()
+      .run();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_warp_gemm_tensor_op_canonical_tf32_row_col, 32x32x8_64x32x8_8x8x4) {
+  using Shape = cutlass::gemm::GemmShape<32, 32, 8>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
+  using Element = cutlass::tfloat32_t;
+  using ElementC = float;
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      cutlass::layout::RowMajor>::Type;
+
+  test::gemm::warp::Testbed<MmaTensorOp,
+                            cutlass::gemm::GemmShape<32, 32, 16> >()
+      .run();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_warp_gemm_tensor_op_canonical_tf32_col_row, 32x32x8_64x32x8_8x8x4) {
+  using Shape = cutlass::gemm::GemmShape<32, 32, 8>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
+  using Element = cutlass::tfloat32_t;
+  using ElementC = float;
+  using LayoutA = cutlass::layout::ColumnMajor;
+  using LayoutB = cutlass::layout::RowMajor;
+
+  using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
+      Shape, InstructionShape, Element, LayoutA, Element, LayoutB, ElementC,
+      cutlass::layout::RowMajor>::Type;
+
+  test::gemm::warp::Testbed<MmaTensorOp,
+                            cutlass::gemm::GemmShape<32, 32, 16> >()
+      .run();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 #endif // if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 

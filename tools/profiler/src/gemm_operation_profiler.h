@@ -59,6 +59,8 @@ public:
 
   /// Problem structure obtained from problem space
   struct GemmProblem {
+
+    cutlass::library::GemmUniversalMode mode; 
     int64_t m;
     int64_t n;
     int64_t k;
@@ -67,14 +69,15 @@ public:
     int64_t ldc;
     std::vector<uint8_t> alpha;
     std::vector<uint8_t> beta;
-    int64_t split_k_slices;
-    int64_t batch_count;
+    int split_k_slices;
+    int batch_count;
 
     //
     // Methods
     //
 
     GemmProblem(): 
+      mode(library::GemmUniversalMode::kGemm),
       m(16), n(16), k(16), lda(0), ldb(0), ldc(0), split_k_slices(1), batch_count(1) { }
 
     /// Parses the problem
@@ -82,6 +85,12 @@ public:
       library::GemmDescription const &operation_desc,
       ProblemSpace const &problem_space,
       ProblemSpace::Problem const &problem);
+
+    /// Total number of bytes loaded
+    int64_t bytes(library::GemmDescription const &operation_desc) const;
+
+    /// Total number of flops computed
+    int64_t flops(library::GemmDescription const &operation_desc) const;
 
     /// Initializes a performance result
     void initialize_result(
@@ -99,6 +108,10 @@ public:
     DeviceAllocation *Computed;
     DeviceAllocation *Reference;
 
+    /// Number of copies of the problem workspace which are visited sequentially during
+    /// profiling to avoid camping in the last level cache.
+    int problem_count;
+
     library::GemmUniversalConfiguration configuration;
     library::GemmUniversalArguments arguments;
 
@@ -113,7 +126,7 @@ public:
     //
 
     GemmWorkspace(): 
-      A(nullptr), B(nullptr), C(nullptr), Computed(nullptr), Reference(nullptr) { }
+      A(nullptr), B(nullptr), C(nullptr), Computed(nullptr), Reference(nullptr), problem_count(1) { }
   };
 
 protected:
@@ -199,6 +212,24 @@ protected:
     library::Operation const *operation,
     ProblemSpace const &problem_space,
     ProblemSpace::Problem const &problem);
+
+  /// Verifies CUTLASS against host and device references
+  bool verify_with_reference_(
+    Options const &options,  
+    PerformanceReport &report,
+    DeviceContext &device_context,
+    library::Operation const *operation,
+    ProblemSpace const &problem_space,
+    ProblemSpace::Problem const &problem);
+
+  /// Method to profile a CUTLASS Operation
+  Status profile_cutlass_(
+    double &runtime,
+    Options const &options,
+    library::Operation const *operation,
+    void *arguments,
+    void *host_workspace,
+    void *device_workspace);
 
 };
 

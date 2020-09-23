@@ -291,7 +291,9 @@ class MmaTensorOpFragmentIterator<Shape_, AccumulatorShape_, KBlocksColumn_, Ele
             !(Shape::kColumn % InstructionShape::kN),
         "Shape of warp-level Mma must be divisible by operator shape.");
     static_assert(
-        !(AccumulatorShape::kRow % Shape::kRow) &&
+        AccumulatorShape::kRow == Shape::kRow, 
+        "Rows of Warp Accumulator must be the same as rows of warp");
+    static_assert(
             !(AccumulatorShape::kColumn % Shape::kColumn),
         "Shape of Warp Accumulator must be divisible by warp shape.");
     static_assert(
@@ -304,7 +306,16 @@ class MmaTensorOpFragmentIterator<Shape_, AccumulatorShape_, KBlocksColumn_, Ele
 
 private:
 
-  static int const kElementsPerAccess = InstructionShape::kM * InstructionShape::kN / kThreads;
+  static int const kRowsPerIteration = 8;
+  static int const kColumnsPerIteration = 16;
+  static int const kElementsPerIteration = kRowsPerIteration * InstructionShape::kN / kThreads;
+  static int const kElementsPerAccess = kRowsPerIteration * kColumnsPerIteration / kThreads;
+  static int const kIterationsPerAccess = kElementsPerAccess / kElementsPerIteration;
+  
+  // Number of iterations per actual instruction
+  static int const kIterationsPerInstruction = InstructionShape::kM / kRowsPerIteration;
+
+  static int const kAccessStride = kIterationsPerInstruction;
 
   /// Number of mma operations performed by a warp
   using MmaIterations = MatrixShape<Shape::kRow / InstructionShape::kM,
@@ -313,13 +324,15 @@ private:
   using AccumulatorIterations = MatrixShape<AccumulatorShape::kRow / InstructionShape::kM,
                                               AccumulatorShape::kColumn / InstructionShape::kN>;
 
+  /// Number of Accesses in a warp
+  using AccessIterations = MatrixShape<MmaIterations::kRow * kIterationsPerInstruction, 
+                                        MmaIterations::kColumn / kIterationsPerAccess>;
+
   /// Number of K iterations    
   static int const kKBlockIterations = (AccumulatorShape::kColumn + kKBlockColumn - 1) / kKBlockColumn;
   static int const kResidualColumn = AccumulatorShape::kColumn - (kKBlockIterations - 1) * kKBlockColumn;
-  static int const kKBlockColumnIterations = kKBlockColumn / Shape::kColumn 
-                                     * (AccumulatorShape::kRow / Shape::kRow);
-  static int const kResidualIndex = kResidualColumn / Shape::kColumn
-                                     * (AccumulatorShape::kRow / Shape::kRow);
+  static int const kKBlockColumnIterations = kKBlockColumn / Shape::kColumn;
+  static int const kResidualIndex = kResidualColumn / Shape::kColumn;
 
 public:
 
@@ -338,8 +351,8 @@ public:
 private:
 
   /// Internal access type
-  using AccessType = Array<ElementAccumulator, kElementsPerAccess>;
-  using FragmentAccessType = Array<Element, kElementsPerAccess>;
+  using AccessType = Array<ElementAccumulator, kElementsPerIteration>;
+  using FragmentAccessType = Array<Element, kElementsPerIteration>;
 
 private:
   //
@@ -386,6 +399,11 @@ public:
     return *this;
   }
 
+  CUTLASS_HOST_DEVICE
+  void set_index(int idx) {
+    index_ = idx;
+  }
+
   /// Loads a fragment from the referenced part of the accumulator tile
   CUTLASS_HOST_DEVICE
   void load(Fragment &frag, OutputOp output_op) const {
@@ -399,21 +417,35 @@ public:
     FragmentAccessType *frag_ptr = reinterpret_cast<FragmentAccessType *>(&frag);
 //    NumericArrayConverter<Element, ElementAccumulator, kElementsPerAccess, FloatRoundStyle::round_indeterminate> fragmentConverter;
 
-    int index_m = (index_ * MmaIterations::kRow) % AccumulatorIterations::kRow;
-    int index_n = (index_ * MmaIterations::kRow) / AccumulatorIterations::kRow 
-                    * MmaIterations::kColumn;
+    int index = index_ * AccessIterations::kCount;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int m = 0; m < MmaIterations::kRow; m++) {
-      for (int n = 0; n < MmaIterations::kColumn; n++) {
-        int accumulator_access_offset = 
-            (m + index_m) * AccumulatorIterations::kColumn + n + index_n;
+    for (int i = 0; i < AccessIterations::kCount; i++) {
+//      int index_m = (index % AccessIterations::kCount) / (AccessIterations::kColumn * kIterationsPerInstruction) 
+//                  * kIterationsPerInstruction + index % kIterationsPerInstruction;
+//
+//      int index_n = (index / AccessIterations::kCount) * MmaIterations::kColumn +
+//                      (index % (AccessIterations::kColumn * kIterationsPerInstruction)) 
+//                      / kIterationsPerInstruction * AccessIterations::kColumn;
+//
+//      int accumulator_access_offset = index_m / kIterationsPerInstruction * AccessIterations::kCount * kIterationsPerInstruction
+//                      + index_m % kIterationsPerInstruction + index_n * kIterationsPerInstruction;
 
-        frag_ptr[m * MmaIterations::kColumn + n].clear();
+      int accumulator_access_offset = index / AccessIterations::kCount * (MmaIterations::kColumn * kIterationsPerInstruction) +
+                                    (index % AccessIterations::kCount) / (AccessIterations::kColumn * kIterationsPerInstruction) *
+                                    AccumulatorIterations::kColumn * kIterationsPerInstruction +
+                                    (index % (AccessIterations::kColumn * kIterationsPerInstruction)) / kIterationsPerInstruction *
+                                    (kIterationsPerInstruction * kIterationsPerAccess) +
+                                    (index % kIterationsPerInstruction);
+      CUTLASS_PRAGMA_UNROLL
+      for (int j = 0; j < kIterationsPerAccess; j++) {
+  
+        frag_ptr[i*kIterationsPerAccess + j].clear();
         if(!(is_residual_tile_ && index_ >= kResidualIndex))
-//            frag_ptr[m * MmaIterations::kColumn + n] = fragmentConverter(accumulators_[accumulator_access_offset]);
-            frag_ptr[m * MmaIterations::kColumn + n] = output_op(accumulators_[accumulator_access_offset], src_fragment);
+  //          frag_ptr[m * MmaIterations::kColumn + n] = fragmentConverter(accumulators_[accumulator_access_offset]);
+              frag_ptr[i*kIterationsPerAccess + j] = output_op(accumulators_[accumulator_access_offset + j * kAccessStride], src_fragment);
       }
+      index++;
     }
   }
 

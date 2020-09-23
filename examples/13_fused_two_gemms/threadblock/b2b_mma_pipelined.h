@@ -48,10 +48,6 @@ namespace gemm {
 namespace threadblock {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-template<int a>
-struct chk_val {
-    static_assert(a==0, "check value");
-};
 
 /// Structure to compute the matrix product targeting CUDA cores and SIMT math instructions.
 template <

@@ -487,6 +487,46 @@ public:
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <typename Element>
+CUTLASS_HOST_DEVICE
+Array<Element, 1> make_Array(Element x) {
+  Array<Element, 1> m;
+  m[0] = x;
+  return m;
+}
+
+template <typename Element>
+CUTLASS_HOST_DEVICE
+Array<Element, 2> make_Array(Element x, Element y) {
+  Array<Element, 2> m;
+  m[0] = x;
+  m[1] = y;
+  return m;
+}
+
+template <typename Element>
+CUTLASS_HOST_DEVICE
+Array<Element, 3> make_Array(Element x, Element y, Element z) {
+  Array<Element, 3> m;
+  m[0] = x;
+  m[1] = y;
+  m[2] = z;
+  return m;
+}
+
+template <typename Element>
+CUTLASS_HOST_DEVICE
+Array<Element, 4> make_Array(Element x, Element y, Element z, Element w) {
+  Array<Element, 4> m;
+  m[0] = x;
+  m[1] = y;
+  m[2] = z;
+  m[3] = w;
+  return m;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 } // namespace cutlass
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

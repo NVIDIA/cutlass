@@ -52,9 +52,10 @@ DeviceAllocation *DeviceContext::allocate_tensor(
   library::NumericTypeID type, 
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
-  std::vector<int> const &stride) {
+  std::vector<int> const &stride,
+  int batch_count) {
 
-  device_memory_.emplace_back(type, layout_id, extent, stride);
+  device_memory_.emplace_back(type, layout_id, extent, stride, batch_count);
   DeviceAllocation *allocation = &device_memory_.back();
   
   allocations_[name] = allocation;
@@ -68,10 +69,11 @@ DeviceAllocation *DeviceContext::allocate_tensor(
   library::NumericTypeID type, 
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
-  std::vector<int> const &stride) {
+  std::vector<int> const &stride,
+  int batch_count) {
 
   DeviceAllocation *allocation = 
-    allocate_tensor(name, type, layout_id, extent, stride);
+    allocate_tensor(name, type, layout_id, extent, stride, batch_count);
 
   if (options.initialization.enabled) {
     Distribution data_distribution = options.initialization.data_distribution; 
@@ -81,10 +83,22 @@ DeviceAllocation *DeviceContext::allocate_tensor(
       // change data distribution based on bit width
       switch(type) {
         case library::NumericTypeID::kB1:
-          data_distribution.set_uniform(0, 2, 0);
-          break;          
-        case library::NumericTypeID::kS8:
+          data_distribution.set_uniform(0, 1, 0);
+          break;
+        case library::NumericTypeID::kS2:
+          data_distribution.set_uniform(-1, 1, 0);
+          break;
+        case library::NumericTypeID::kS4:
           data_distribution.set_uniform(-2, 2, 0);
+          break;
+        case library::NumericTypeID::kU2:
+          data_distribution.set_uniform(0, 2, 0);
+          break;
+        case library::NumericTypeID::kU4:
+          data_distribution.set_uniform(0, 2, 0);
+          break;
+        case library::NumericTypeID::kS8:
+          data_distribution.set_uniform(-3, 3, 0);
           break;
         case library::NumericTypeID::kU8:
           data_distribution.set_uniform(0, 4, 0);
@@ -96,18 +110,50 @@ DeviceAllocation *DeviceContext::allocate_tensor(
     if (options.initialization.provider == library::Provider::kReferenceDevice) {
       allocation->initialize_random_device(
         options.initialization.seed, 
-        data_distribution); 
+        data_distribution);
     }
     else if (options.initialization.provider == library::Provider::kReferenceHost) {
       allocation->initialize_random_host(
         options.initialization.seed, 
-        data_distribution);  
+        data_distribution);
     }
   }
 
   return allocation;
 }
 
+/// Allocates memory for sparse meta data 
+DeviceAllocation *DeviceContext::allocate_sparsemeta_tensor(
+  Options const &options,
+  std::string const &name,
+  library::NumericTypeID type, 
+  library::LayoutTypeID layout_id, 
+  library::NumericTypeID type_a,
+  std::vector<int> const &extent, 
+  std::vector<int> const &stride,
+  int batch_count) {
+
+  DeviceAllocation *allocation = 
+    allocate_tensor(name, type, layout_id, extent, stride, batch_count);
+
+  if (options.initialization.enabled) {
+    // TF32 has 4bit meta data.  The rest has 2bit.
+    int MetaSizeInBits = (cutlass::library::sizeof_bits(type_a) == 32) ? 4 : 2;
+
+    if (options.initialization.provider == library::Provider::kReferenceDevice) {
+      allocation->initialize_random_sparsemeta_device(
+        options.initialization.seed, 
+        MetaSizeInBits);
+    }
+    else if (options.initialization.provider == library::Provider::kReferenceHost) {
+      allocation->initialize_random_sparsemeta_host(
+        options.initialization.seed, 
+        MetaSizeInBits);
+    }
+  }
+
+  return allocation;
+}
 /// Clears named allocations (but does not necessarily free memory)
 void DeviceContext::clear() {
   allocations_.clear();

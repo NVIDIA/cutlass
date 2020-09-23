@@ -78,7 +78,8 @@ template <
   int ElementsPerAccess,
   /// Multiply-add operator 
   /// Selects between (arch::OpMultiplyAddComplex, arch::OpMultiplyGaussianComplex) 
-  typename Operator_ = arch::OpMultiplyAddComplex> 
+  typename Operator_ = arch::OpMultiplyAddComplex
+> 
 struct DefaultEpilogueComplexTensorOp {
 
   using Shape = Shape_;
@@ -87,7 +88,6 @@ struct DefaultEpilogueComplexTensorOp {
   using OutputOp = OutputOp_;
   static int const kElementsPerAccess = ElementsPerAccess;
   using Operator = Operator_;
-
   using ElementOutput = typename OutputOp::ElementOutput;
   using LayoutC = typename WarpMmaTensorOp::LayoutC;
   using ElementAccumulator = typename WarpMmaTensorOp::ElementC;
@@ -164,7 +164,8 @@ template <
 >
 struct DefaultEpilogueComplexTensorOp <Shape_, WarpMmaTensorOp_, PartitionsK, 
                                       OutputOp_, ElementsPerAccess, 
-                                      arch::OpMultiplyAddGaussianComplex> {
+                                      arch::OpMultiplyAddGaussianComplex
+> {
 
   using Shape = Shape_;
   using WarpMmaTensorOp = WarpMmaTensorOp_;
@@ -172,7 +173,6 @@ struct DefaultEpilogueComplexTensorOp <Shape_, WarpMmaTensorOp_, PartitionsK,
   using OutputOp = OutputOp_;
   static int const kElementsPerAccess = ElementsPerAccess;
   using Operator = arch::OpMultiplyAddGaussianComplex;
-
   using ElementOutput = typename OutputOp::ElementOutput;
   using LayoutC = typename WarpMmaTensorOp::LayoutC;
   using ElementAccumulator = typename WarpMmaTensorOp::ElementC;

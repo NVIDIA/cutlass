@@ -34,7 +34,6 @@
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
 
-#include "cutlass/matrix_traits.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/gemm/gemm.h"
 
@@ -73,7 +72,12 @@ void GemmComplex(
   ScalarType beta,
   TensorRef<ElementC, LayoutC> tensor_c,
   TensorRef<ElementC, LayoutC> tensor_d,
-  ComputeType initial_accum) {
+  ComputeType initial_accum,
+  int batch_count = 1,
+  int64_t batch_stride_A = 0,
+  int64_t batch_stride_B = 0,
+  int64_t batch_stride_C = 0,
+  int64_t batch_stride_D = 0) {
 
   static_assert(
     LayoutA::kRank == 2 &&
@@ -92,61 +96,72 @@ void GemmComplex(
   ConvertOp convert_op;
   InnerProductOp inner_product_op;
 
-  for (int row_block = 0; row_block < M; row_block += Mblock) {
-    for (int col_block = 0; col_block < N; col_block += Nblock) {
+  for (int batch_idx = 0; batch_idx < batch_count; ++batch_idx) {
 
-      ComputeType accum[Mblock][Nblock];
+    // Compute matrix product using blocks
+    for (int row_block = 0; row_block < M; row_block += Mblock) {
+      for (int col_block = 0; col_block < N; col_block += Nblock) {
 
-      for (int j = 0; j < Nblock; j++) {
-        for (int i = 0; i < Mblock; i++) {
-          accum[i][j] = initial_accum;
+        ComputeType accum[Mblock][Nblock];
+
+        for (int j = 0; j < Nblock; j++) {
+          for (int i = 0; i < Mblock; i++) {
+            accum[i][j] = initial_accum;
+          }
         }
-      }
 
-      for (int k_block = 0; k_block < K; ++k_block) {
+        for (int k_block = 0; k_block < K; ++k_block) {
+          for (int j = 0; j < Nblock; j++) {
+            for (int i = 0; i < Mblock; i++) {
+              int row = row_block + i;
+              int col = col_block + j;
+
+              if (row < M && col < N) {
+                ElementA a = tensor_a.at(MatrixCoord(row, k_block));
+                ElementB b = tensor_b.at(MatrixCoord(k_block, col));
+
+                ComputeType a_ik = ComputeType(a);
+                ComputeType b_kj = ComputeType(b);
+
+                if (transform_a == ComplexTransform::kConjugate) {
+                  a_ik = conj(a_ik);
+                }
+
+                if (transform_b == ComplexTransform::kConjugate) {
+                  b_kj = conj(b_kj);
+                }
+
+                accum[i][j] = inner_product_op(a_ik, b_kj,  accum[i][j]);
+              }
+            }
+          }
+        }
+
         for (int j = 0; j < Nblock; j++) {
           for (int i = 0; i < Mblock; i++) {
             int row = row_block + i;
             int col = col_block + j;
 
+            MatrixCoord coord = MatrixCoord(row, col);
+
             if (row < M && col < N) {
-              ElementA a = tensor_a.at(MatrixCoord(row, k_block));
-              ElementB b = tensor_b.at(MatrixCoord(k_block, col));
 
-              ComputeType a_ik = ComputeType(a);
-              ComputeType b_kj = ComputeType(b);
-
-              if (transform_a == ComplexTransform::kConjugate) {
-                a_ik = conj(a_ik);
-              }
-
-              if (transform_b == ComplexTransform::kConjugate) {
-                b_kj = conj(b_kj);
-              }
-
-              accum[i][j] = inner_product_op(a_ik, b_kj,  accum[i][j]);
+              tensor_d.at(coord) = convert_op(
+                alpha * ScalarType(accum[i][j]) + 
+                beta * ScalarType(tensor_c.at(coord)));
             }
           }
         }
-      }
 
-      for (int j = 0; j < Nblock; j++) {
-        for (int i = 0; i < Mblock; i++) {
-          int row = row_block + i;
-          int col = col_block + j;
+      } // for (col_block)
+    } // for (row_block)
 
-          MatrixCoord coord = MatrixCoord(row, col);
+    tensor_a.add_pointer_offset(batch_stride_A);
+    tensor_b.add_pointer_offset(batch_stride_B);
+    tensor_c.add_pointer_offset(batch_stride_C);
+    tensor_d.add_pointer_offset(batch_stride_D);
 
-          if (row < M && col < N) {
-
-            tensor_d.at(coord) = convert_op(
-              alpha * ScalarType(accum[i][j]) + 
-              beta * ScalarType(tensor_c.at(coord)));
-          }
-        }
-      }
-    }
-  }
+  } // for (batch_idx)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

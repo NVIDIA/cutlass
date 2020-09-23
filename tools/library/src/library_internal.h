@@ -47,6 +47,7 @@
 #include "cutlass/layout/matrix.h"
 
 #include "cutlass/library/library.h"
+#include "cutlass/library/arch_mappings.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -143,6 +144,14 @@ template <> struct MathOperationMap<cutlass::arch::OpMultiplyAdd> {
   static MathOperationID const kId = MathOperationID::kMultiplyAdd;
 };
 
+template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddFastBF16> {
+  static MathOperationID const kId = MathOperationID::kMultiplyAddFastBF16;
+};
+
+template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddFastF16> {
+  static MathOperationID const kId = MathOperationID::kMultiplyAddFastF16;
+};
+
 template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddSaturate> {
   static MathOperationID const kId = MathOperationID::kMultiplyAddSaturate;
 };
@@ -169,6 +178,22 @@ template <> struct LayoutMap<cutlass::layout::ColumnMajor> {
 
 template <> struct LayoutMap<cutlass::layout::RowMajor> {
   static LayoutTypeID const kId = LayoutTypeID::kRowMajor;
+};
+
+template <> struct LayoutMap<cutlass::layout::ColumnMajorInterleaved<2>> {
+  static LayoutTypeID const kId = LayoutTypeID::kColumnMajorInterleavedK2;
+};
+
+template <> struct LayoutMap<cutlass::layout::RowMajorInterleaved<2>> {
+  static LayoutTypeID const kId = LayoutTypeID::kRowMajorInterleavedK2;
+};
+
+template <> struct LayoutMap<cutlass::layout::ColumnMajorInterleaved<4>> {
+  static LayoutTypeID const kId = LayoutTypeID::kColumnMajorInterleavedK4;
+};
+
+template <> struct LayoutMap<cutlass::layout::RowMajorInterleaved<4>> {
+  static LayoutTypeID const kId = LayoutTypeID::kRowMajorInterleavedK4;
 };
 
 template <> struct LayoutMap<cutlass::layout::ColumnMajorInterleaved<16>> {
@@ -199,6 +224,9 @@ template <> struct LayoutMap<cutlass::layout::TensorNHWC> {
   static LayoutTypeID const kId = LayoutTypeID::kTensorNHWC;
 };
 
+template <> struct LayoutMap<cutlass::layout::TensorNDHWC> {
+  static LayoutTypeID const kId = LayoutTypeID::kTensorNDHWC;
+};
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T> struct OpcodeClassMap;
@@ -225,45 +253,6 @@ template <> struct ComplexTransformMap<cutlass::ComplexTransform::kNone> {
 
 template <> struct ComplexTransformMap<cutlass::ComplexTransform::kConjugate> {
   static cutlass::library::ComplexTransform const kId = cutlass::library::ComplexTransform::kConjugate;
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename ArchTag, typename OperatorClass> struct ArchMap;
-
-template <> struct ArchMap<arch::Sm50, arch::OpClassSimt> {
-  static int const kMin = 50;
-  static int const kMax = 1024;
-};
-
-template <> struct ArchMap<arch::Sm60, arch::OpClassSimt> {
-  static int const kMin = 60;
-  static int const kMax = 1024;
-};
-
-template <> struct ArchMap<arch::Sm61, arch::OpClassSimt> {
-  static int const kMin = 61;
-  static int const kMax = 1024;
-};
-
-template <> struct ArchMap<arch::Sm70, arch::OpClassWmmaTensorOp> {
-  static int const kMin = 70;
-  static int const kMax = 1024;
-};
-
-template <> struct ArchMap<arch::Sm70, arch::OpClassTensorOp> {
-  static int const kMin = 70;
-  static int const kMax = 75;
-};
-
-template <typename OperatorClass> struct ArchMap<arch::Sm75, OperatorClass> {
-  static int const kMin = 75;
-  static int const kMax = 1024;
-};
-
-template <typename OperatorClass> struct ArchMap<arch::Sm80, OperatorClass> {
-  static int const kMin = 80;
-  static int const kMax = 1024;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

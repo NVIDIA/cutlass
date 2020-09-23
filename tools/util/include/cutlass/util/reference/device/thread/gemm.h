@@ -29,7 +29,6 @@
 #pragma once
 
 #include "cutlass/coord.h"
-#include "cutlass/matrix_traits.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/gemm/gemm.h"
 

@@ -577,19 +577,65 @@ void ProblemSpace::parse_(KernelArgument *arg, CommandLine const &cmdline) {
         std::vector<std::vector<std::string> > tokens;
         cmdline.get_cmd_line_argument_ranges(alias.c_str(), tokens);
 
-        for (auto const &range_tokens : tokens) {
+        for (auto &range_tokens : tokens) {
 
           if (!range_tokens.empty()) {
-            Range range(lexical_cast<int64_t>(range_tokens.front()));
 
-            if (range_tokens.size() > 1) {
-              range.last = lexical_cast<int64_t>(range_tokens.at(1));
+            Range range;
+
+            if (range_tokens.front() == "rand") {
+              range.mode = Range::Mode::kRandom;
+            }
+            else if (range_tokens.front() == "randlg2") {
+              range.mode = Range::Mode::kRandomLog2;
             }
 
-            if (range_tokens.size() > 2) {
-              range.increment = lexical_cast<int64_t>(range_tokens.at(2));
-            }
+            switch (range.mode) {
+              case Range::Mode::kSequence:
+              {
+                range.first = lexical_cast<int64_t>(range_tokens.front());
+            
+                if (range_tokens.size() > 1) {
+                  range.last = lexical_cast<int64_t>(range_tokens.at(1));
+                }
+                else {
+                  range.last = range.first;
+                }
 
+                if (range_tokens.size() > 2) {
+                  range.increment = lexical_cast<int64_t>(range_tokens.at(2));
+                }
+                else {
+                  range.increment = 1;
+                }
+              }
+              break;
+              case Range::Mode::kRandom: // fall-through
+              case Range::Mode::kRandomLog2:
+              {
+                if (range_tokens.size() < 4) {
+                  throw std::runtime_error(
+                    "Range of mode 'rand' must have four tokens showing "
+                    "the minimum, maximum, and number of iterations. For example, "
+                    "rand:16:128:1000");
+                }
+
+                range.minimum = lexical_cast<int64_t>(range_tokens.at(1));
+                range.maximum = lexical_cast<int64_t>(range_tokens.at(2));
+                range.first = 1;
+                range.last = lexical_cast<int64_t>(range_tokens.at(3));
+                range.increment = 1;
+                
+                if (range_tokens.size() > 4) {
+                  range.divisible = lexical_cast<int64_t>(range_tokens.at(4));
+                }
+              }
+              break;
+              default:
+                throw std::runtime_error("Unsupported range mode.");
+                break;
+            }
+          
             integer->ranges.push_back(range);
           }
         } 
@@ -711,6 +757,30 @@ bool arg_as_int(int64_t &int_value, KernelArgument::Value const *value_ptr) {
   }
 
   return false;
+}
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_int(int &int_value, KernelArgument::Value const *value_ptr) {
+  int64_t value64;
+  bool obtained = arg_as_int(value64, value_ptr);
+  if (obtained) {
+    int_value = int(value64);
+    return true;
+  }
+  return false;
+}
+
+/// Lexically casts an argument to an int
+bool arg_as_int(
+  int &int_value,
+  char const *name,
+  ProblemSpace const &problem_space,
+  ProblemSpace::Problem const &problem) {
+
+  size_t idx = problem_space.argument_index(name);
+  KernelArgument::Value const *value_ptr = problem.at(idx).get();
+
+  return arg_as_int(int_value, value_ptr);
 }
 
 /// Lexically casts an argument to an int64

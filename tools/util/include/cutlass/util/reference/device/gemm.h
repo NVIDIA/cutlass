@@ -34,7 +34,6 @@
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
 
-#include "cutlass/matrix_traits.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/gemm/gemm.h"
 

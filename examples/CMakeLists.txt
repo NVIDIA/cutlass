@@ -71,6 +71,8 @@ foreach(EXAMPLE
   11_planar_complex_array
   12_gemm_bias_relu
   13_fused_two_gemms
+  14_ampere_tf32_tensorop_gemm
+  15_ampere_sparse_tensorop_gemm
 )
 
   add_subdirectory(${EXAMPLE})
