@@ -94,6 +94,12 @@ std::vector<int> DeviceAllocation::get_packed_layout(
     case library::LayoutTypeID::kRowMajor: 
       stride = get_packed_layout_stride<cutlass::layout::RowMajor>(extent);
       break;
+    case library::LayoutTypeID::kColumnMajorInterleavedK2:
+      stride = get_packed_layout_stride<cutlass::layout::ColumnMajorInterleaved<2>>(extent);
+      break;
+    case library::LayoutTypeID::kRowMajorInterleavedK2:
+      stride = get_packed_layout_stride<cutlass::layout::RowMajorInterleaved<2>>(extent);
+      break;
     case library::LayoutTypeID::kColumnMajorInterleavedK4:
       stride = get_packed_layout_stride<cutlass::layout::ColumnMajorInterleaved<4>>(extent);
       break;
@@ -124,7 +130,9 @@ std::vector<int> DeviceAllocation::get_packed_layout(
     case library::LayoutTypeID::kTensorNHWC:
       stride = get_packed_layout_stride<cutlass::layout::TensorNHWC>(extent);
       break;
-
+    case library::LayoutTypeID::kTensorNDHWC:
+      stride = get_packed_layout_stride<cutlass::layout::TensorNDHWC>(extent);
+      break;
 
     default: break;
   }
@@ -200,6 +208,12 @@ size_t DeviceAllocation::construct_layout(
     case library::LayoutTypeID::kRowMajor: 
       return construct_layout_<cutlass::layout::RowMajor>(bytes, layout_id, extent, stride);
 
+    case library::LayoutTypeID::kColumnMajorInterleavedK2:
+      return construct_layout_<cutlass::layout::ColumnMajorInterleaved<2>>(bytes, layout_id, extent, stride);
+
+    case library::LayoutTypeID::kRowMajorInterleavedK2:
+      return construct_layout_<cutlass::layout::RowMajorInterleaved<2>>(bytes, layout_id, extent, stride);
+
     case library::LayoutTypeID::kColumnMajorInterleavedK4:
       return construct_layout_<cutlass::layout::ColumnMajorInterleaved<4>>(bytes, layout_id, extent, stride);
 
@@ -230,6 +244,9 @@ size_t DeviceAllocation::construct_layout(
     case library::LayoutTypeID::kTensorNHWC:
       return construct_layout_<cutlass::layout::TensorNHWC>(bytes, layout_id, extent, stride);
 
+    case library::LayoutTypeID::kTensorNDHWC:
+      return construct_layout_<cutlass::layout::TensorNDHWC>(bytes, layout_id, extent, stride);
+
     default: break;
   }
 
@@ -240,9 +257,11 @@ size_t DeviceAllocation::construct_layout(
 
 DeviceAllocation::DeviceAllocation(): 
   type_(library::NumericTypeID::kInvalid), 
+  batch_stride_(0),
   capacity_(0), 
   pointer_(nullptr),
-  layout_(library::LayoutTypeID::kUnknown) {
+  layout_(library::LayoutTypeID::kUnknown),
+  batch_count_(1) {
 
 }
 
@@ -250,7 +269,8 @@ DeviceAllocation::DeviceAllocation(
   library::NumericTypeID type, 
   size_t capacity
 ):
-  type_(type), capacity_(capacity), pointer_(nullptr), layout_(library::LayoutTypeID::kUnknown) {
+  type_(type), batch_stride_(capacity), capacity_(capacity), pointer_(nullptr), 
+  layout_(library::LayoutTypeID::kUnknown), batch_count_(1) {
 
   cudaError_t result = cudaMalloc((void **)&pointer_, bytes(type, capacity));
 
@@ -266,11 +286,12 @@ DeviceAllocation::DeviceAllocation(
   library::NumericTypeID type, 
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
-  std::vector<int> const &stride
+  std::vector<int> const &stride,
+  int batch_count
 ):
-  type_(type), capacity_(size_t(0)), pointer_(nullptr) {
+  type_(type), batch_stride_(size_t(0)), capacity_(size_t(0)), pointer_(nullptr), batch_count_(1) {
 
-  reset(type, layout_id, extent, stride);
+  reset(type, layout_id, extent, stride, batch_count);
 }
 
 DeviceAllocation::~DeviceAllocation() {
@@ -285,12 +306,14 @@ DeviceAllocation &DeviceAllocation::reset() {
   }
 
   type_ = library::NumericTypeID::kInvalid;
+  batch_stride_ = 0;
   capacity_ = 0;
   pointer_ = nullptr;
   layout_ = library::LayoutTypeID::kUnknown;
   stride_.clear();
   extent_.clear();
   tensor_ref_buffer_.clear();
+  batch_count_ = 1;
 
   return *this;
 }
@@ -299,16 +322,19 @@ DeviceAllocation &DeviceAllocation::reset(library::NumericTypeID type, size_t ca
 
   reset();
 
-  cudaError_t result = cudaMalloc((void **)&pointer_, bytes(type, capacity));
+  type_ = type;
+  batch_stride_ = capacity;
+  capacity_ = capacity;
+
+  cudaError_t result = cudaMalloc((void **)&pointer_, bytes(type_, capacity_));
   if (result != cudaSuccess) {
     throw std::bad_alloc();
   }
 
-  type_ = type;
-  capacity_ = capacity;
   layout_ = library::LayoutTypeID::kUnknown;
   stride_.clear();
   extent_.clear();
+  batch_count_ = 1;
 
   tensor_ref_buffer_.resize(sizeof(pointer_), 0);
   std::memcpy(tensor_ref_buffer_.data(), &pointer_, sizeof(pointer_));
@@ -321,7 +347,8 @@ DeviceAllocation &DeviceAllocation::reset(
   library::NumericTypeID type, 
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
-  std::vector<int> const &stride) {
+  std::vector<int> const &stride,
+  int batch_count) {
 
   reset();
 
@@ -332,12 +359,15 @@ DeviceAllocation &DeviceAllocation::reset(
   layout_ = layout_id;
   stride_ = stride;
   extent_ = extent;
+  batch_count_ = batch_count;
 
-  capacity_ = construct_layout(
+  batch_stride_ = construct_layout(
     tensor_ref_buffer_.data() + sizeof(pointer_), 
     layout_id, 
     extent, 
     stride_);
+
+  capacity_ = batch_stride_ * batch_count_;
 
   cudaError_t result = cudaMalloc((void **)&pointer_, bytes(type, capacity_));
   if (result != cudaSuccess) {
@@ -361,6 +391,10 @@ void *DeviceAllocation::data() const {
   return pointer_;
 }
 
+void *DeviceAllocation::batch_data(int batch_idx) const {
+    return static_cast<char *>(data()) + batch_stride_bytes() * batch_idx; 
+}
+
 library::LayoutTypeID DeviceAllocation::layout() const {
   return layout_;
 }
@@ -372,6 +406,21 @@ std::vector<int> const & DeviceAllocation::stride() const {
 /// Gets the extent vector
 std::vector<int> const & DeviceAllocation::extent() const {
   return extent_;
+}
+
+/// Gets the number of adjacent tensors in memory
+int DeviceAllocation::batch_count() const {
+  return batch_count_;
+}
+
+/// Gets the stride (in units of elements) beteween items
+int64_t DeviceAllocation::batch_stride() const {
+  return batch_stride_;
+}
+
+/// Gets the stride (in units of bytes) beteween items
+int64_t DeviceAllocation::batch_stride_bytes() const {
+  return bytes(type_, batch_stride_);
 }
 
 size_t DeviceAllocation::capacity() const {
@@ -423,9 +472,41 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
       dist
     );
     break;
+  case library::NumericTypeID::kBF16:
+    cutlass::reference::device::BlockFillRandom<cutlass::bfloat16_t>(
+      reinterpret_cast<cutlass::bfloat16_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kTF32:
+    cutlass::reference::device::BlockFillRandom<cutlass::tfloat32_t>(
+      reinterpret_cast<cutlass::tfloat32_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
   case library::NumericTypeID::kF32:
     cutlass::reference::device::BlockFillRandom<float>(
       reinterpret_cast<float *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kCBF16:
+    cutlass::reference::device::BlockFillRandom<complex<bfloat16_t>>(
+      reinterpret_cast<complex<bfloat16_t> *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kCTF32:
+    cutlass::reference::device::BlockFillRandom<cutlass::complex<cutlass::tfloat32_t>>(
+      reinterpret_cast<cutlass::complex<cutlass::tfloat32_t> *>(pointer_),
       capacity_,
       seed,
       dist
@@ -450,6 +531,22 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
   case library::NumericTypeID::kCF64:
     cutlass::reference::device::BlockFillRandom<complex<double>>(
       reinterpret_cast<complex<double> *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kS2:
+    cutlass::reference::device::BlockFillRandom<int2b_t>(
+      reinterpret_cast<int2b_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kS4:
+    cutlass::reference::device::BlockFillRandom<int4b_t>(
+      reinterpret_cast<int4b_t *>(pointer_),
       capacity_,
       seed,
       dist
@@ -482,6 +579,30 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
   case library::NumericTypeID::kS64:
     cutlass::reference::device::BlockFillRandom<int64_t>(
       reinterpret_cast<int64_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kB1:
+    cutlass::reference::device::BlockFillRandom<uint1b_t>(
+      reinterpret_cast<uint1b_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kU2:
+    cutlass::reference::device::BlockFillRandom<uint2b_t>(
+      reinterpret_cast<uint2b_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kU4:
+    cutlass::reference::device::BlockFillRandom<uint4b_t>(
+      reinterpret_cast<uint4b_t *>(pointer_),
       capacity_,
       seed,
       dist
@@ -523,7 +644,6 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
   }
 }
 
-
 void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
   if (!good()) {
     throw std::runtime_error("Attempting to initialize invalid allocation.");
@@ -540,6 +660,22 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
       dist
     );
     break;
+  case library::NumericTypeID::kBF16:
+    cutlass::reference::host::BlockFillRandom<cutlass::bfloat16_t>(
+      reinterpret_cast<cutlass::bfloat16_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kTF32:
+    cutlass::reference::host::BlockFillRandom<cutlass::tfloat32_t>(
+      reinterpret_cast<cutlass::tfloat32_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
   case library::NumericTypeID::kF32:
     cutlass::reference::host::BlockFillRandom<float>(
       reinterpret_cast<float *>(host_data.data()),
@@ -551,6 +687,22 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
   case library::NumericTypeID::kCF16:
     cutlass::reference::host::BlockFillRandom<cutlass::complex<cutlass::half_t>>(
       reinterpret_cast<cutlass::complex<cutlass::half_t> *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kCBF16:
+    cutlass::reference::host::BlockFillRandom<cutlass::complex<cutlass::bfloat16_t>>(
+      reinterpret_cast<cutlass::complex<cutlass::bfloat16_t> *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kCTF32:
+    cutlass::reference::host::BlockFillRandom<cutlass::complex<cutlass::tfloat32_t>>(
+      reinterpret_cast<cutlass::complex<cutlass::tfloat32_t> *>(host_data.data()),
       capacity_,
       seed,
       dist
@@ -575,6 +727,22 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
   case library::NumericTypeID::kCF64:
     cutlass::reference::host::BlockFillRandom<cutlass::complex<double>>(
       reinterpret_cast<cutlass::complex<double> *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kS2:
+    cutlass::reference::host::BlockFillRandom<int2b_t>(
+      reinterpret_cast<int2b_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kS4:
+    cutlass::reference::host::BlockFillRandom<int4b_t>(
+      reinterpret_cast<int4b_t *>(host_data.data()),
       capacity_,
       seed,
       dist
@@ -607,6 +775,30 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
   case library::NumericTypeID::kS64:
     cutlass::reference::host::BlockFillRandom<int64_t>(
       reinterpret_cast<int64_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kB1:
+    cutlass::reference::host::BlockFillRandom<uint1b_t>(
+      reinterpret_cast<uint1b_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kU2:
+    cutlass::reference::host::BlockFillRandom<uint2b_t>(
+      reinterpret_cast<uint2b_t *>(host_data.data()),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kU4:
+    cutlass::reference::host::BlockFillRandom<uint4b_t>(
+      reinterpret_cast<uint4b_t *>(host_data.data()),
       capacity_,
       seed,
       dist
@@ -650,6 +842,67 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
   copy_from_host(host_data.data());
 }
 
+void DeviceAllocation::initialize_random_sparsemeta_device(int seed, int MetaSizeInBits) {
+  if (!good()) {
+    throw std::runtime_error("Attempting to initialize invalid allocation.");
+  }
+
+  // Instantiate calls to CURAND here. This file takes a long time to compile for
+  // this reason.
+
+  switch (type_) {
+  case library::NumericTypeID::kU16:
+    cutlass::reference::device::BlockFillRandomSparseMeta<uint16_t>(
+      reinterpret_cast<uint16_t *>(pointer_),
+      capacity_,
+      seed,
+      MetaSizeInBits
+    );
+    break;
+  case library::NumericTypeID::kU32:
+    cutlass::reference::device::BlockFillRandomSparseMeta<uint32_t>(
+      reinterpret_cast<uint32_t *>(pointer_),
+      capacity_,
+      seed,
+      MetaSizeInBits
+    );
+    break;
+  default:
+    break;
+  }
+}
+
+void DeviceAllocation::initialize_random_sparsemeta_host(int seed, int MetaSizeInBits) {
+  if (!good()) {
+    throw std::runtime_error("Attempting to initialize invalid allocation.");
+  }
+
+  std::vector<uint8_t> host_data(bytes());
+
+  switch (type_) {
+  case library::NumericTypeID::kS16:
+    cutlass::reference::host::BlockFillRandomSparseMeta<uint16_t>(
+      reinterpret_cast<uint16_t *>(host_data.data()),
+      capacity_,
+      seed,
+      MetaSizeInBits
+    );
+    break;
+  case library::NumericTypeID::kS32:
+    cutlass::reference::host::BlockFillRandomSparseMeta<uint32_t>(
+      reinterpret_cast<uint32_t *>(host_data.data()),
+      capacity_,
+      seed,
+      MetaSizeInBits
+    );
+    break;
+  default:
+    break;
+  }
+
+  copy_from_host(host_data.data());
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Returns true if two blocks have exactly the same value
@@ -666,6 +919,18 @@ bool DeviceAllocation::block_compare_equal(
       reinterpret_cast<half_t const *>(ptr_B), 
       capacity);
     
+  case library::NumericTypeID::kBF16:
+    return reference::device::BlockCompareEqual<bfloat16_t>(
+      reinterpret_cast<bfloat16_t const *>(ptr_A), 
+      reinterpret_cast<bfloat16_t const *>(ptr_B), 
+      capacity);
+
+  case library::NumericTypeID::kTF32:
+    return reference::device::BlockCompareEqual<tfloat32_t>(
+      reinterpret_cast<tfloat32_t const *>(ptr_A), 
+      reinterpret_cast<tfloat32_t const *>(ptr_B), 
+      capacity);
+
   case library::NumericTypeID::kF32:
     return reference::device::BlockCompareEqual<float>(
       reinterpret_cast<float const *>(ptr_A), 
@@ -684,6 +949,18 @@ bool DeviceAllocation::block_compare_equal(
       reinterpret_cast<complex<half_t> const *>(ptr_B), 
       capacity);
     
+  case library::NumericTypeID::kCBF16:
+    return reference::device::BlockCompareEqual<complex<bfloat16_t>>(
+      reinterpret_cast<complex<bfloat16_t> const *>(ptr_A), 
+      reinterpret_cast<complex<bfloat16_t> const *>(ptr_B), 
+      capacity);
+
+  case library::NumericTypeID::kCTF32:
+    return reference::device::BlockCompareEqual<complex<tfloat32_t>>(
+      reinterpret_cast<complex<tfloat32_t> const *>(ptr_A), 
+      reinterpret_cast<complex<tfloat32_t> const *>(ptr_B), 
+      capacity);
+  
   case library::NumericTypeID::kF64:
     return reference::device::BlockCompareEqual<double>(
       reinterpret_cast<double const *>(ptr_A), 
@@ -694,6 +971,18 @@ bool DeviceAllocation::block_compare_equal(
     return reference::device::BlockCompareEqual<complex<double>>(
       reinterpret_cast<complex<double> const *>(ptr_A), 
       reinterpret_cast<complex<double> const *>(ptr_B), 
+      capacity);
+  
+  case library::NumericTypeID::kS2:
+    return reference::device::BlockCompareEqual<int2b_t>(
+      reinterpret_cast<int2b_t const *>(ptr_A), 
+      reinterpret_cast<int2b_t const *>(ptr_B), 
+      capacity);
+
+  case library::NumericTypeID::kS4:
+    return reference::device::BlockCompareEqual<int4b_t>(
+      reinterpret_cast<int4b_t const *>(ptr_A), 
+      reinterpret_cast<int4b_t const *>(ptr_B), 
       capacity);
 
   case library::NumericTypeID::kS8:
@@ -718,6 +1007,24 @@ bool DeviceAllocation::block_compare_equal(
     return reference::device::BlockCompareEqual<int64_t>(
       reinterpret_cast<int64_t const *>(ptr_A), 
       reinterpret_cast<int64_t const *>(ptr_B), 
+      capacity);
+  
+  case library::NumericTypeID::kB1:
+    return reference::device::BlockCompareEqual<uint1b_t>(
+      reinterpret_cast<uint1b_t const *>(ptr_A), 
+      reinterpret_cast<uint1b_t const *>(ptr_B), 
+      capacity);
+  
+  case library::NumericTypeID::kU2:
+    return reference::device::BlockCompareEqual<uint2b_t>(
+      reinterpret_cast<uint2b_t const *>(ptr_A), 
+      reinterpret_cast<uint2b_t const *>(ptr_B), 
+      capacity);
+  
+  case library::NumericTypeID::kU4:
+    return reference::device::BlockCompareEqual<uint4b_t>(
+      reinterpret_cast<uint4b_t const *>(ptr_A), 
+      reinterpret_cast<uint4b_t const *>(ptr_B), 
       capacity);
 
   case library::NumericTypeID::kU8:
@@ -767,6 +1074,22 @@ bool DeviceAllocation::block_compare_relatively_equal(
       static_cast<half_t>(epsilon), 
       static_cast<half_t>(nonzero_floor));
     
+  case library::NumericTypeID::kBF16:
+    return reference::device::BlockCompareRelativelyEqual<bfloat16_t>(
+      reinterpret_cast<bfloat16_t const *>(ptr_A), 
+      reinterpret_cast<bfloat16_t const *>(ptr_B),
+      capacity, 
+      static_cast<bfloat16_t>(epsilon), 
+      static_cast<bfloat16_t>(nonzero_floor));
+
+  case library::NumericTypeID::kTF32:
+    return reference::device::BlockCompareRelativelyEqual<tfloat32_t>(
+      reinterpret_cast<tfloat32_t const *>(ptr_A), 
+      reinterpret_cast<tfloat32_t const *>(ptr_B),
+      capacity, 
+      static_cast<tfloat32_t>(epsilon), 
+      static_cast<tfloat32_t>(nonzero_floor));
+
   case library::NumericTypeID::kF32:
     return reference::device::BlockCompareRelativelyEqual<float>(
       reinterpret_cast<float const *>(ptr_A), 
@@ -782,6 +1105,22 @@ bool DeviceAllocation::block_compare_relatively_equal(
       capacity, 
       static_cast<double>(epsilon), 
       static_cast<double>(nonzero_floor));
+  
+  case library::NumericTypeID::kS2:
+    return reference::device::BlockCompareRelativelyEqual<int2b_t>(
+      reinterpret_cast<int2b_t const *>(ptr_A), 
+      reinterpret_cast<int2b_t const *>(ptr_B),
+      capacity, 
+      static_cast<int2b_t>(epsilon), 
+      static_cast<int2b_t>(nonzero_floor));
+  
+  case library::NumericTypeID::kS4:
+    return reference::device::BlockCompareRelativelyEqual<int4b_t>(
+      reinterpret_cast<int4b_t const *>(ptr_A), 
+      reinterpret_cast<int4b_t const *>(ptr_B),
+      capacity, 
+      static_cast<int4b_t>(epsilon), 
+      static_cast<int4b_t>(nonzero_floor));
 
   case library::NumericTypeID::kS8:
     return reference::device::BlockCompareRelativelyEqual<int8_t>(
@@ -814,6 +1153,30 @@ bool DeviceAllocation::block_compare_relatively_equal(
       capacity, 
       static_cast<int64_t>(epsilon), 
       static_cast<int64_t>(nonzero_floor));
+  
+  case library::NumericTypeID::kB1:
+    return reference::device::BlockCompareRelativelyEqual<uint1b_t>(
+      reinterpret_cast<uint1b_t const *>(ptr_A), 
+      reinterpret_cast<uint1b_t const *>(ptr_B),
+      capacity, 
+      static_cast<uint1b_t>(epsilon), 
+      static_cast<uint1b_t>(nonzero_floor));
+
+  case library::NumericTypeID::kU2:
+    return reference::device::BlockCompareRelativelyEqual<uint2b_t>(
+      reinterpret_cast<uint2b_t const *>(ptr_A), 
+      reinterpret_cast<uint2b_t const *>(ptr_B),
+      capacity, 
+      static_cast<uint2b_t>(epsilon), 
+      static_cast<uint2b_t>(nonzero_floor));
+
+  case library::NumericTypeID::kU4:
+    return reference::device::BlockCompareRelativelyEqual<uint4b_t>(
+      reinterpret_cast<uint4b_t const *>(ptr_A), 
+      reinterpret_cast<uint4b_t const *>(ptr_B),
+      capacity, 
+      static_cast<uint4b_t>(epsilon), 
+      static_cast<uint4b_t>(nonzero_floor));
 
   case library::NumericTypeID::kU8:
     return reference::device::BlockCompareRelativelyEqual<uint8_t>(
@@ -852,6 +1215,12 @@ bool DeviceAllocation::block_compare_relatively_equal(
   // As a simplification, we can require bitwise equality. This avoids false positives.
   // (i.e. "pass" really means passing. "Fail" may not actually mean failure given appropriate epsilon.)
   //
+  case library::NumericTypeID::kCF16:
+    return reference::device::BlockCompareEqual<cutlass::complex<half_t> >(
+      reinterpret_cast<complex<half_t> const *>(ptr_A),
+      reinterpret_cast<complex<half_t> const *>(ptr_B),
+      capacity);
+
   case library::NumericTypeID::kCF32:
     return reference::device::BlockCompareEqual<cutlass::complex<float> >(
       reinterpret_cast<complex<float> const *>(ptr_A),
@@ -865,7 +1234,9 @@ bool DeviceAllocation::block_compare_relatively_equal(
       capacity);
 
   default:
-    throw std::runtime_error("Unsupported numeric type");
+    {
+      throw std::runtime_error(std::string("Unsupported numeric type: ") + to_string(numeric_type));
+    }
   }
 }
 
@@ -928,13 +1299,17 @@ static void write_tensor_csv_static_tensor_view(
   Layout layout(stride);
   HostTensor<Element, Layout> host_tensor(extent, layout, false);
 
-  if (host_tensor.capacity() != allocation.capacity()) {
+  if (host_tensor.capacity() != allocation.batch_stride()) {
     throw std::runtime_error("Unexpected capacity to equal.");
   }
 
-  host_tensor.copy_in_device_to_host(static_cast<Element const *>(allocation.data()), host_tensor.capacity());
+  host_tensor.copy_in_device_to_host(
+    static_cast<Element const *>(allocation.data()), 
+    allocation.batch_stride());
 
   TensorViewWrite(out, host_tensor.host_view());
+
+  out << "\n\n";
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -951,8 +1326,41 @@ static void write_tensor_csv_static_type(
     case library::LayoutTypeID::kColumnMajor:
       write_tensor_csv_static_tensor_view<T, layout::ColumnMajor>(out, allocation);
       break;
+    case library::LayoutTypeID::kRowMajorInterleavedK2:
+      write_tensor_csv_static_tensor_view<T, layout::RowMajorInterleaved<2>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kColumnMajorInterleavedK2:
+      write_tensor_csv_static_tensor_view<T, layout::ColumnMajorInterleaved<2>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kRowMajorInterleavedK4:
+      write_tensor_csv_static_tensor_view<T, layout::RowMajorInterleaved<4>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kColumnMajorInterleavedK4:
+      write_tensor_csv_static_tensor_view<T, layout::ColumnMajorInterleaved<4>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kRowMajorInterleavedK16:
+      write_tensor_csv_static_tensor_view<T, layout::RowMajorInterleaved<16>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kColumnMajorInterleavedK16:
+      write_tensor_csv_static_tensor_view<T, layout::ColumnMajorInterleaved<16>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kRowMajorInterleavedK32:
+      write_tensor_csv_static_tensor_view<T, layout::RowMajorInterleaved<32>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kColumnMajorInterleavedK32:
+      write_tensor_csv_static_tensor_view<T, layout::ColumnMajorInterleaved<32>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kRowMajorInterleavedK64:
+      write_tensor_csv_static_tensor_view<T, layout::RowMajorInterleaved<64>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kColumnMajorInterleavedK64:
+      write_tensor_csv_static_tensor_view<T, layout::ColumnMajorInterleaved<64>>(out, allocation);
+      break;
     case library::LayoutTypeID::kTensorNHWC:
       write_tensor_csv_static_tensor_view<T, layout::TensorNHWC>(out, allocation);
+      break;
+    case library::LayoutTypeID::kTensorNDHWC:
+      write_tensor_csv_static_tensor_view<T, layout::TensorNDHWC>(out, allocation);
       break;
     default:
       throw std::runtime_error("Unhandled layout");
@@ -970,12 +1378,28 @@ void DeviceAllocation::write_tensor_csv(
     write_tensor_csv_static_type<half_t>(out, *this);
     break;
     
+  case library::NumericTypeID::kBF16:
+    write_tensor_csv_static_type<bfloat16_t>(out, *this);
+    break;
+
+  case library::NumericTypeID::kTF32:
+    write_tensor_csv_static_type<tfloat32_t>(out, *this);
+    break;
+
   case library::NumericTypeID::kF32:
     write_tensor_csv_static_type<float>(out, *this);
     break;
 
   case library::NumericTypeID::kF64:
     write_tensor_csv_static_type<double>(out, *this);
+    break;
+  
+  case library::NumericTypeID::kS2:
+    write_tensor_csv_static_type<int2b_t>(out, *this);
+    break;
+
+  case library::NumericTypeID::kS4:
+    write_tensor_csv_static_type<int4b_t>(out, *this);
     break;
 
   case library::NumericTypeID::kS8:
@@ -992,6 +1416,18 @@ void DeviceAllocation::write_tensor_csv(
 
   case library::NumericTypeID::kS64:
     write_tensor_csv_static_type<int64_t>(out, *this);
+    break;
+  
+  case library::NumericTypeID::kB1:
+    write_tensor_csv_static_type<uint1b_t>(out, *this);
+    break;
+
+  case library::NumericTypeID::kU2:
+    write_tensor_csv_static_type<uint2b_t>(out, *this);
+    break;
+
+  case library::NumericTypeID::kU4:
+    write_tensor_csv_static_type<uint4b_t>(out, *this);
     break;
 
   case library::NumericTypeID::kU8:
@@ -1010,6 +1446,10 @@ void DeviceAllocation::write_tensor_csv(
     write_tensor_csv_static_type<uint64_t>(out, *this);
     break;
   
+  case library::NumericTypeID::kCF16:
+    write_tensor_csv_static_type<cutlass::complex<half_t> >(out, *this);
+    break;
+
   case library::NumericTypeID::kCF32:
     write_tensor_csv_static_type<cutlass::complex<float> >(out, *this);
     break;

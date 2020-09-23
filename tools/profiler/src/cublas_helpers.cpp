@@ -51,6 +51,18 @@ Status get_cutlass_status(cublasStatus_t cublas) {
   return Status::kErrorInternal;
 }
 
+/// Converts a cuBLASS status to cutlass::profiler::Disposition
+Disposition get_cutlass_disposition(cublasStatus_t cublas_status) {
+
+  if (cublas_status == CUBLAS_STATUS_INVALID_VALUE) {
+    return Disposition::kInvalidProblem;
+  }
+  else if (cublas_status == CUBLAS_STATUS_NOT_SUPPORTED) {
+    return Disposition::kNotSupported;
+  }
+  return Disposition::kFailed;
+}
+
 /// Maps a CUTLASS tensor layout to a cuBLAS transpose operation
 bool get_cublas_transpose_operation(
   cublasOperation_t &operation,
@@ -156,7 +168,6 @@ bool get_cublas_datatype(cublasDataType_t &data_type, library::NumericTypeID ele
 
 /// Gets the cublas algorithm given threadblock tile dimensions and math opcode class
 cublasGemmAlgo_t get_cublas_gemm_algo(int cta_m, int cta_n, int cta_k, library::OpcodeClassID opcode_class) {
-  // TODO
   return (opcode_class == library::OpcodeClassID::kSimt ? 
     CUBLAS_GEMM_DEFAULT : CUBLAS_GEMM_DEFAULT_TENSOR_OP);
 }
@@ -252,37 +263,69 @@ cublasGemmExDispatcher::cublasGemmExDispatcher(
 /// Executes GEMM using these arguments
 cublasStatus_t cublasGemmExDispatcher::operator()(cublasHandle_t handle) {
 
-  return cublasGemmEx(
-    handle,
-    trans_A,
-    trans_B,
-    configuration.problem_size.m(),
-    configuration.problem_size.n(),
-    configuration.problem_size.k(),
-    arguments.alpha,
-    arguments.A,
-    data_type_A,
-    int(configuration.lda),
-    arguments.B,
-    data_type_B,
-    int(configuration.ldb),
-    arguments.beta,
-    arguments.D,
-    data_type_C,
-    int(configuration.ldc),
-#if (__CUDA_VER_MAJOR__ >= 11)
-    compute_type,
-#else
-    compute_data_type,
-#endif
-    algo
-  );
+  if (configuration.mode == library::GemmUniversalMode::kBatched) {
+    return cublasGemmStridedBatchedEx(
+      handle,
+      trans_A,
+      trans_B,
+      configuration.problem_size.m(),
+      configuration.problem_size.n(),
+      configuration.problem_size.k(),
+      arguments.alpha,
+      arguments.A,
+      data_type_A,
+      int(configuration.lda),
+      arguments.batch_stride_A,
+      arguments.B,
+      data_type_B,
+      int(configuration.ldb),
+      arguments.batch_stride_B,
+      arguments.beta,
+      arguments.D,
+      data_type_C,
+      int(configuration.ldc),
+      arguments.batch_stride_C,
+      configuration.batch_count,
+  #if (__CUDA_VER_MAJOR__ >= 11)
+      compute_type,
+  #else
+      compute_data_type,
+  #endif
+      algo
+    );
+  }
+  else {
+    return cublasGemmEx(
+      handle,
+      trans_A,
+      trans_B,
+      configuration.problem_size.m(),
+      configuration.problem_size.n(),
+      configuration.problem_size.k(),
+      arguments.alpha,
+      arguments.A,
+      data_type_A,
+      int(configuration.lda),
+      arguments.B,
+      data_type_B,
+      int(configuration.ldb),
+      arguments.beta,
+      arguments.D,
+      data_type_C,
+      int(configuration.ldc),
+  #if (__CUDA_VER_MAJOR__ >= 11)
+      compute_type,
+  #else
+      compute_data_type,
+  #endif
+      algo
+    );
+  }
 }
 
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
 } // namespace detail
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
 } // namespace profiler
 } // namespace cutlass
 

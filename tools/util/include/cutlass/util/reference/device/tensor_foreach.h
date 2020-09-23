@@ -95,7 +95,7 @@ struct BlockForEach {
   BlockForEach(
     Element *ptr, 
     size_t capacity,
-    typename Func::Params params = typename Func::Params(), 
+    typename Func::Params params = typename Func::Params(),
     int grid_size = 0, 
     int block_size = 0) {
 

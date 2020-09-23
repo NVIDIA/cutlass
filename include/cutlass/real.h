@@ -22,6 +22,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/**
+  \file
+  \brief This class provides helpers to support real<> and complex<> types in generic code.
+*/
+
 #pragma once
 
 namespace cutlass {

@@ -33,6 +33,7 @@
 
 
 #include "cutlass/library/library.h"
+#include "cutlass/library/util.h"
 
 #include "options.h"
 #include "device_allocation.h"
@@ -76,7 +77,8 @@ public:
     library::NumericTypeID type, 
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>());
+    std::vector<int> const &stride = std::vector<int>(),
+    int batch_count = 1);
 
   /// Allocates memory of a given type, capacity (elements), and name
   DeviceAllocation *allocate_tensor(
@@ -85,7 +87,19 @@ public:
     library::NumericTypeID type, 
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>());
+    std::vector<int> const &stride = std::vector<int>(),
+    int batch_count = 1);
+
+  /// Allocates memory for sparse meta data 
+  DeviceAllocation *allocate_sparsemeta_tensor(
+    Options const &options,
+    std::string const &name,
+    library::NumericTypeID type, 
+    library::LayoutTypeID layout_id, 
+    library::NumericTypeID type_a,
+    std::vector<int> const &extent, 
+    std::vector<int> const &stride = std::vector<int>(),
+    int batch_count = 1);
 
   /// Clears named allocations (but does not necessarily free memory)
   void clear();

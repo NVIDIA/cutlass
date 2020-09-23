@@ -189,7 +189,8 @@ public:
   static Disposition compare_tensors(
     Options const &options,
     DeviceAllocation &experimental,
-    DeviceAllocation &reference);
+    DeviceAllocation &reference,
+    int64_t count = 0);
 
   static void save_workspace(
     DeviceContext &device_context,
@@ -225,7 +226,7 @@ protected:
     double &runtime,
     Options const &options,
     library::Operation const *operation,
-    void const *arguments,
+    void *arguments,
     void *host_workspace,
     void *device_workspace);
 

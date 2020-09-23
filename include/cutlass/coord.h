@@ -439,6 +439,12 @@ Coord<4> make_Coord(int _0, int _1, int _2, int _3) {
   return Coord<4>(values);
 }
 
+/// Helper to make a 5-element coordinate
+CUTLASS_HOST_DEVICE
+Coord<5> make_Coord(int _0, int _1, int _2, int _3, int _4) {
+  int values[5] = {_0, _1, _2, _3, _4};
+  return Coord<5>(values);
+}
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace cutlass

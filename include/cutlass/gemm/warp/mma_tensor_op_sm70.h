@@ -106,8 +106,11 @@ public:
   /// Architecture tag
   using ArchTag = arch::Sm70;
 
+  /// Underlying matrix multiply operator (concept: arch::Mma)
+  using ArchMmaOperator = typename Policy::Operator;
+
   /// Underlying instruction shape
-  using InstructionShape = typename Policy::Operator::Shape;
+  using InstructionShape = typename ArchMmaOperator::Shape;
 
   /// Complex transform on A operand
   static ComplexTransform const kTransformA = ComplexTransform::kNone;
@@ -133,8 +136,8 @@ public:
     ElementA,
     LayoutA,
     MatrixShape<
-      Policy::Operator::Shape::kM,
-      Policy::Operator::Shape::kK
+      ArchMmaOperator::Shape::kM,
+      ArchMmaOperator::Shape::kK
     >,
     Policy::OpDelta::kRow,
     kThreadCount
@@ -150,8 +153,8 @@ public:
     ElementB,
     LayoutB,
     MatrixShape<
-      Policy::Operator::Shape::kK,
-      Policy::Operator::Shape::kN
+      ArchMmaOperator::Shape::kK,
+      ArchMmaOperator::Shape::kN
     >,
     Policy::OpDelta::kRow,
     kThreadCount
@@ -165,7 +168,7 @@ public:
     MatrixShape<Shape::kM, Shape::kN>,
     ElementC,
     LayoutC,
-    typename Policy::Operator::Shape,
+    typename ArchMmaOperator::Shape,
     typename Policy::OpDelta
   >;
 
@@ -175,14 +178,14 @@ public:
 private:
 
   static_assert(
-    !(Shape::kM % Policy::Operator::Shape::kM) && 
-    !(Shape::kN % Policy::Operator::Shape::kN),
+    !(Shape::kM % ArchMmaOperator::Shape::kM) && 
+    !(Shape::kN % ArchMmaOperator::Shape::kN),
     "Shape of warp-level Mma must be divisible by operator shape.");
 
   /// Number of mma operations performed
   using MmaIterations = MatrixShape<
-    InterleavedTileShape::kM / Policy::Operator::Shape::kM,
-    InterleavedTileShape::kN / Policy::Operator::Shape::kN
+    InterleavedTileShape::kM / ArchMmaOperator::Shape::kM,
+    InterleavedTileShape::kN / ArchMmaOperator::Shape::kN
   >;
   using TileIterations = MatrixShape<
     Shape::kM / InterleavedTileShape::kM,
@@ -195,7 +198,7 @@ private:
 public:
 
   /// Underlying matrix multiply operator (concept: arch::Mma)
-  typename Policy::Operator mma;
+  ArchMmaOperator mma;
 
 public:
 
@@ -215,9 +218,9 @@ public:
     FragmentB const &B, 
     FragmentC const &C)  {
 
-    using MmaOperandA = typename Policy::Operator::FragmentA;
-    using MmaOperandB = typename Policy::Operator::FragmentB;
-    using MmaOperandC = typename Policy::Operator::FragmentC;
+    using MmaOperandA = typename ArchMmaOperator::FragmentA;
+    using MmaOperandB = typename ArchMmaOperator::FragmentB;
+    using MmaOperandC = typename ArchMmaOperator::FragmentC;
 
     D = C;
 

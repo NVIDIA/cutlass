@@ -1,8 +1,8 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 2.2
+# CUTLASS 2.3
 
-_CUTLASS 2.2 - June 2020_
+_CUTLASS 2.3 - September 2020_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
@@ -30,6 +30,14 @@ See the [Quick Start Guide](/media/docs/quickstart.md) to get started quickly.
 See the [functionality listing](media/docs/functionality.md) for the list of operations
 supported at each level of the execution model hierarchy.
 
+# What's New in CUTLASS 2.3
+
+CUTLASS 2.3 is a minor update to CUTLASS adding:
+- GEMMs targeting structured [Sparse Tensor Cores](test/unit/gemm/device/gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu) in NVIDIA Ampere Architecture GPUs
+- Fast SGEMM kernels targeting GeForce RTX 30-series CUDA Cores
+- Intended to be compiled with [CUDA 11.1 Toolkit](https://developer.nvidia.com/cuda-toolkit)
+- See the [CHANGELOG](CHANGELOG.md) for more details.
+
 # What's New in CUTLASS 2.2
 
 CUTLASS 2.2 is a significant update to CUTLASS adding:
@@ -42,7 +50,7 @@ CUTLASS 2.2 is a significant update to CUTLASS adding:
 
 # What's New in CUTLASS 2.1
 
-CUTLASS 2.1 is a minor update to CUTLASS 2.0 adding:
+CUTLASS 2.1 is a minor update to CUTLASS adding:
 
 - [Planar complex GEMM kernels](/examples/10_planar_complex/planar_complex.cu) targeting Volta and Turing Tensor Cores
 - BLAS-style API to launch kernels compiled into the [CUTLASS Library](/media/docs/quickstart.md#cutlass-library)
@@ -71,8 +79,8 @@ using CUDA 11.0 Toolkit. Tensor Core operations are implemented using CUDA's
 # Compatibility
 
 CUTLASS requires a C++11 host compiler and 
-performs best when built with the [CUDA 11.0 Toolkit](https://developer.nvidia.com/cuda-toolkit).
-It is compatible with CUDA 9.2, CUDA 10.0, CUDA 10.1, and CUDA 10.2.
+performs best when built with the [CUDA 11.1 Toolkit](https://developer.nvidia.com/cuda-toolkit).
+It is compatible with CUDA 9.2, CUDA 10.0, CUDA 10.1, CUDA 10.2, and CUDA 11.0.
 
 We have tested the following environments.
 
@@ -99,10 +107,11 @@ any Maxwell-, Pascal-, Volta-, Turing-, or NVIDIA Ampere- architecture NVIDIA GP
 |NVIDIA GeForce RTX 2080 TI, 2080, 2070|7.5|10.0|10.2|
 |NVIDIA Tesla T4|7.5|10.0|10.2|
 |NVIDIA A100|8.0|11.0|11.0|
+|NVIDIA GeForce 3090|8.6|11.1|11.1|
 
 # Documentation
 
-CUTLASS 2.2 is described in the following documents and the accompanying
+CUTLASS is described in the following documents and the accompanying
 [Doxygen documentation](https://nvidia.github.io/cutlass).
 
 - [Quick Start Guide](/media/docs/quickstart.md) - build and run CUTLASS
@@ -136,14 +145,14 @@ $ export CUDACXX=${CUDA_INSTALL_PATH}/bin/nvcc
 ```
 
 Create a build directory within the CUTLASS project, then run CMake. By default CUTLASS will build kernels
-for CUDA architecture versions 5.0, 6.0, 6.1, 7.0, 7.5, and 8.0. To reduce compile time you can specify
+for CUDA architecture versions 5.0, 6.0, 6.1, 7.0, 7.5, 8.0, and 8.6. To reduce compile time you can specify
 the architectures to build CUTLASS for by changing the CMake configuration setting
 `CUTLASS_NVCC_ARCHS`.
 
 ```
 $ mkdir build && cd build
 
-$ cmake .. -DCUTLASS_NVCC_ARCHS=75               # compiles for NVIDIA's Turing GPU architecture
+$ cmake .. -DCUTLASS_NVCC_ARCHS=80               # compiles for NVIDIA's Ampere Architecture
 ```
 
 From the `build/` directory, compile and run the CUTLASS unit tests by building the target `test_unit` with make.
@@ -258,15 +267,25 @@ The `tools/profiler/` directory contains a command-line utility for launching ea
 It can be built as follows:
 
 ```
-$ make cutlass_profiler -j
+$ make cutlass_profiler -j16
 ```
 
-To limit compilation time, only one tile size is instantiated for each data type, math instruction, and layout.
+By default, only one tile size is instantiated for each data type, math instruction, and layout.
 To instantiate all, set the following environment variable when running CMake from an empty `build/` directory.
+Beware, this results in *thousands* of kernels and long build times.
 ```
 $ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=all
 ...
-$ make cutlass_profiler -j
+$ make cutlass_profiler -j16
+```
+
+To compile strictly one kernel or a small set of kernels, a comma-delimited list of kernel names with 
+wildcard characters may be reduce the set of kernels. The following builds exactly one kernel:
+
+```
+$ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=cutlass_simt_sgemm_128x128_8x2_nn_align1
+...
+$ make cutlass_profiler -j16
 ```
 
 Example command line for profiling SGEMM kernels is as follows:

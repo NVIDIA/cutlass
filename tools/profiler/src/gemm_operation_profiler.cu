@@ -37,6 +37,9 @@
 #include "gemm_operation_profiler.h"
 #include "gpu_timer.h"
 
+#include "cutlass/library/library.h"
+#include "cutlass/library/handle.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -135,6 +138,8 @@ Status GemmOperationProfiler::GemmProblem::parse(
   library::GemmDescription const &operation_desc,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
+    
+  this->mode = library::GemmUniversalMode::kGemm;
   
   if (!arg_as_int(this->m, "m", problem_space, problem)) {
     // default value
@@ -151,6 +156,7 @@ Status GemmOperationProfiler::GemmProblem::parse(
     this->k = 1024;
   }
   
+  this->mode = library::GemmUniversalMode::kGemm;
   if (!arg_as_int(this->split_k_slices, "split_k_slices", problem_space, problem)) {
     // default value
     this->split_k_slices = 1;
@@ -159,6 +165,14 @@ Status GemmOperationProfiler::GemmProblem::parse(
   if (!arg_as_int(this->batch_count, "batch_count", problem_space, problem)) {
     // default value
     this->batch_count = 1;
+  }
+  else if (this->batch_count > 1) {
+    this->mode = library::GemmUniversalMode::kBatched;
+  }
+
+  if (this->split_k_slices > 1 && this->batch_count > 1) {
+    // At least one of these must be one
+    return Status::kErrorInvalidProblem;
   }
 
   if (!tensor_description_satisfies(operation_desc.A, "A", problem_space, problem)) {
@@ -208,6 +222,48 @@ Status GemmOperationProfiler::GemmProblem::parse(
 
   return Status::kSuccess;
 }
+
+/// Total number of bytes loaded
+int64_t GemmOperationProfiler::GemmProblem::bytes(library::GemmDescription const &operation_desc) const {
+  // Input bytes read and Output bytes written for the gemm problem
+  int64_t bytes =
+    int64_t(library::sizeof_bits(operation_desc.A.element) * m / 8) * k +
+    int64_t(library::sizeof_bits(operation_desc.B.element) * n / 8) * k +
+    int64_t(library::sizeof_bits(operation_desc.C.element) * m / 8) * n;
+
+  // Set is_beta_zero true if beta is zero
+  bool is_beta_zero = std::all_of(beta.begin(), beta.end(), [](uint8_t i) { return i==0; });
+
+  // Output bytes read for the gemm problem for non-zero beta values
+  if (!is_beta_zero) {
+    bytes += int64_t(library::sizeof_bits(operation_desc.C.element) * m / 8) * n;
+  }
+
+  bytes *= batch_count;
+
+  return bytes;
+}
+
+/// Total number of flops computed
+int64_t GemmOperationProfiler::GemmProblem::flops(library::GemmDescription const &operation_desc) const {
+  int64_t flops_ = (int64_t(m) * n * k + m * n) * 2 * batch_count;
+
+  // complex-valued support
+  switch (operation_desc.tile_description.math_instruction.math_operation) {
+  case library::MathOperationID::kMultiplyAddComplex:
+    flops_ *= 4;
+    break;
+
+  case library::MathOperationID::kMultiplyAddGaussianComplex:
+    flops_ *= 3;
+    break;
+
+  default: break;
+  }
+
+  return flops_;
+}
+
 
 /// Initializes a performance result
 void GemmOperationProfiler::GemmProblem::initialize_result(
@@ -266,6 +322,7 @@ Status GemmOperationProfiler::initialize_configuration(
     return status;
   }
 
+  gemm_workspace_.configuration.mode = problem_.mode;
   gemm_workspace_.configuration.problem_size.m() = int(problem_.m);
   gemm_workspace_.configuration.problem_size.n() = int(problem_.n);
   gemm_workspace_.configuration.problem_size.k() = int(problem_.k);
@@ -273,8 +330,13 @@ Status GemmOperationProfiler::initialize_configuration(
   gemm_workspace_.configuration.ldb = problem_.ldb;
   gemm_workspace_.configuration.ldc = problem_.ldc;
   gemm_workspace_.configuration.ldd = problem_.ldc;
-  //gemm_workspace_.configuration.split_k_slices = int(problem_.split_k_slices);
-  gemm_workspace_.configuration.batch_count = int(problem_.split_k_slices);
+
+  if (problem_.mode == library::GemmUniversalMode::kBatched) {
+    gemm_workspace_.configuration.batch_count = problem_.batch_count;
+  }
+  else {
+    gemm_workspace_.configuration.batch_count = problem_.split_k_slices;
+  }
 
   gemm_workspace_.arguments.A = nullptr;
   gemm_workspace_.arguments.B = nullptr;
@@ -305,31 +367,9 @@ void GemmOperationProfiler::initialize_result_(
 
   OperationProfiler::initialize_result_(result, operation_desc, problem_space);
 
-  // Input bytes read and Output bytes written for the gemm problem
-  result.bytes = 
-    int64_t(library::sizeof_bits(operation_desc.A.element) * problem_.m / 8) * problem_.k + 
-    int64_t(library::sizeof_bits(operation_desc.B.element) * problem_.n / 8) * problem_.k +
-    int64_t(library::sizeof_bits(operation_desc.C.element) * problem_.m / 8) * problem_.n;
-
-  // Set is_beta_zero true if beta is zero
-  bool is_beta_zero = std::all_of(problem_.beta.begin(), problem_.beta.end(), [](uint8_t i) { return i==0; });
-
-  // Output bytes read for the gemm problem for non-zero beta values
-  if (!is_beta_zero) {
-    result.bytes += int64_t(library::sizeof_bits(operation_desc.C.element) * problem_.m / 8) * problem_.n;
-  }
-
-  result.flops = 2 * (problem_.m * problem_.n * problem_.k + problem_.m * problem_.n);
+  result.bytes = problem_.bytes(operation_desc);
+  result.flops = problem_.flops(operation_desc);
   result.runtime = 0;
-
-  // complex-valued support
-  switch (operation_desc.tile_description.math_instruction.math_operation) {
-  case library::MathOperationID::kMultiplyAddComplex:
-    result.flops *= 4;
-    break;
- 
-  default: break;
-  }
 
 }
 
@@ -345,6 +385,21 @@ Status GemmOperationProfiler::initialize_workspace(
   library::GemmDescription const &operation_desc = 
     static_cast<library::GemmDescription const &>(operation->description());
 
+  // Compute the number of copies of the problem to avoid L2 camping.
+  if (!options.profiling.workspace_count) {
+    int64_t bytes = problem_.bytes(operation_desc);
+    if (bytes < 3 * int64_t(options.device.properties.l2CacheSize)) {
+      gemm_workspace_.problem_count = 
+        1 + int((3 * int64_t(options.device.properties.l2CacheSize)) / bytes);
+    }
+    else {
+      gemm_workspace_.problem_count = 1;
+    }
+  }
+  else {
+    gemm_workspace_.problem_count = options.profiling.workspace_count;
+  }
+
   if (options.execution_mode != ExecutionMode::kDryRun) {
 
     gemm_workspace_.A = device_context.allocate_tensor(
@@ -353,7 +408,8 @@ Status GemmOperationProfiler::initialize_workspace(
       operation_desc.A.element,
       operation_desc.A.layout,
       {int(problem_.m), int(problem_.k)},
-      {int(problem_.lda)}
+      {int(problem_.lda)},
+      problem_.batch_count * gemm_workspace_.problem_count
     );
 
     gemm_workspace_.B = device_context.allocate_tensor(
@@ -362,7 +418,8 @@ Status GemmOperationProfiler::initialize_workspace(
       operation_desc.B.element,
       operation_desc.B.layout,
       {int(problem_.k), int(problem_.n)},
-      {int(problem_.ldb)}
+      {int(problem_.ldb)},
+      problem_.batch_count * gemm_workspace_.problem_count
     );
 
     gemm_workspace_.C = device_context.allocate_tensor(
@@ -371,7 +428,8 @@ Status GemmOperationProfiler::initialize_workspace(
       operation_desc.C.element,
       operation_desc.C.layout,
       {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)}
+      {int(problem_.ldc)},
+      problem_.batch_count * gemm_workspace_.problem_count
     );
 
     gemm_workspace_.Computed = device_context.allocate_tensor(
@@ -379,7 +437,8 @@ Status GemmOperationProfiler::initialize_workspace(
       operation_desc.C.element,
       operation_desc.C.layout,
       {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)}
+      {int(problem_.ldc)},
+      problem_.batch_count * gemm_workspace_.problem_count
     );
 
     gemm_workspace_.Reference = device_context.allocate_tensor(
@@ -387,7 +446,8 @@ Status GemmOperationProfiler::initialize_workspace(
       operation_desc.C.element,
       operation_desc.C.layout,
       {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)}
+      {int(problem_.ldc)},
+      problem_.batch_count * gemm_workspace_.problem_count
     );
 
     gemm_workspace_.Reference->copy_from_device(gemm_workspace_.C->data());
@@ -458,6 +518,10 @@ bool GemmOperationProfiler::verify_cutlass(
   gemm_workspace_.arguments.alpha = problem_.alpha.data();
   gemm_workspace_.arguments.beta = problem_.beta.data();
   gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
+  gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
+  gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
+  gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
+  gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
 
   //
   // Run the CUTLASS operation
@@ -512,6 +576,8 @@ bool GemmOperationProfiler::verify_cutlass(
       }
     }
 #endif // #if CUTLASS_ENABLE_CUBLAS
+
+    verify_with_reference_(options, report, device_context, operation, problem_space, problem);
     
     // Update disposition to worst case verification outcome among all 
     // verification providers which are supported
@@ -561,7 +627,7 @@ bool GemmOperationProfiler::verify_with_cublas_(
 
   if (status != CUBLAS_STATUS_SUCCESS) {
 
-    results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kFailed;
+    results_.back().verification_map[library::Provider::kCUBLAS] = get_cutlass_disposition(status);
     return true;
   }
 
@@ -589,9 +655,13 @@ bool GemmOperationProfiler::verify_with_cublas_(
 
     // Initialize structure containing GEMM arguments
     gemm_workspace_.arguments.A = gemm_workspace_.A->data();
+    gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
     gemm_workspace_.arguments.B = gemm_workspace_.B->data();
+    gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
     gemm_workspace_.arguments.C = gemm_workspace_.Reference->data();
+    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Reference->batch_stride();
     gemm_workspace_.arguments.D = gemm_workspace_.Reference->data();
+    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Reference->batch_stride();
     gemm_workspace_.arguments.alpha = problem_.alpha.data();
     gemm_workspace_.arguments.beta = problem_.beta.data();
     gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
@@ -615,7 +685,7 @@ bool GemmOperationProfiler::verify_with_cublas_(
     // Handle errors
     if (status != CUBLAS_STATUS_SUCCESS) {
 
-      results_.back().verification_map[library::Provider::kCUBLAS] = Disposition::kFailed;
+      results_.back().verification_map[library::Provider::kCUBLAS] = get_cutlass_disposition(status);
       return true;
     }
 
@@ -626,7 +696,8 @@ bool GemmOperationProfiler::verify_with_cublas_(
     results_.back().verification_map[library::Provider::kCUBLAS] = compare_tensors(
       options,
       *gemm_workspace_.Computed,
-      *gemm_workspace_.Reference
+      *gemm_workspace_.Reference,
+      gemm_workspace_.Computed->batch_stride()
     );
 
     // Save workspace if incorrect
@@ -653,6 +724,150 @@ bool GemmOperationProfiler::verify_with_cublas_(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Verifies CUTLASS against host and device references
+bool GemmOperationProfiler::verify_with_reference_(
+  Options const &options,  
+  PerformanceReport &report,
+  DeviceContext &device_context,
+  library::Operation const *operation,
+  ProblemSpace const &problem_space,
+  ProblemSpace::Problem const &problem) {
+
+  library::GemmDescription const &gemm_desc = 
+    static_cast<library::GemmDescription const &>(operation->description());
+
+  //
+  // Initialize state
+  //
+
+  library::Provider references[] = {
+    library::Provider::kReferenceDevice,
+    library::Provider::kReferenceHost
+  };
+
+  for (auto provider : references) {
+
+    // Skip providers that are not enabled
+    if (!options.verification.provider_enabled(provider)) {
+      continue;
+    }
+
+    void *ptr_A = gemm_workspace_.A->data();
+    void *ptr_B = gemm_workspace_.B->data();
+    void *ptr_C = gemm_workspace_.C->data();
+    void *ptr_D = gemm_workspace_.Reference->data();
+
+    // To support the host-side reference, conditionally allocate and
+    // copy tensors to host memory.
+    std::vector<uint8_t> host_data_A;
+    std::vector<uint8_t> host_data_B;
+    std::vector<uint8_t> host_data_C;
+    std::vector<uint8_t> host_data_D;
+
+    if (provider == library::Provider::kReferenceHost) {
+
+      host_data_A.resize(gemm_workspace_.A->bytes());
+      ptr_A = host_data_A.data();
+      gemm_workspace_.A->copy_to_host(ptr_A);
+
+      host_data_B.resize(gemm_workspace_.B->bytes());
+      ptr_B = host_data_B.data();
+      gemm_workspace_.B->copy_to_host(ptr_B);
+
+      host_data_C.resize(gemm_workspace_.C->bytes());
+      ptr_C = host_data_C.data();
+      gemm_workspace_.C->copy_to_host(ptr_C);
+
+      host_data_D.resize(gemm_workspace_.Reference->bytes());
+      ptr_D = host_data_D.data();
+    }
+
+    //
+    // Launch
+    //
+
+    library::Handle handle;
+
+    handle.set_provider(provider);
+
+    Status status = handle.gemm_universal(
+      library::GemmUniversalMode::kGemm,
+      gemm_workspace_.configuration.problem_size.m(),
+      gemm_workspace_.configuration.problem_size.n(),
+      gemm_workspace_.configuration.problem_size.k(),
+      gemm_desc.tile_description.math_instruction.element_accumulator,
+      gemm_desc.element_epilogue,
+
+      problem_.alpha.data(),
+
+      gemm_desc.A.element,
+      gemm_desc.A.layout,
+      gemm_desc.transform_A,
+      ptr_A,
+      int(gemm_workspace_.configuration.lda),
+
+      gemm_desc.B.element,
+      gemm_desc.B.layout,
+      gemm_desc.transform_B,
+      ptr_B,
+      int(gemm_workspace_.configuration.ldb),
+
+      problem_.beta.data(),
+
+      gemm_desc.C.element,
+      ptr_C,
+      int(gemm_workspace_.configuration.ldc),
+
+      ptr_D,
+      int(gemm_workspace_.configuration.ldd),
+
+      gemm_workspace_.configuration.batch_count,
+      gemm_workspace_.A->batch_stride(),
+      gemm_workspace_.B->batch_stride(),
+      gemm_workspace_.C->batch_stride(),
+      gemm_workspace_.Reference->batch_stride()
+    );
+
+    if (status != Status::kSuccess) {
+      results_.back().verification_map[provider] = Disposition::kNotRun;
+      return true;
+    }
+
+    results_.back().status = status;
+
+    if (provider == library::Provider::kReferenceHost) {
+      gemm_workspace_.Reference->copy_from_host(ptr_D); 
+    }
+
+    //
+    // Verify results
+    //
+
+    results_.back().verification_map[provider] = compare_tensors(
+      options,
+      *gemm_workspace_.Computed,
+      *gemm_workspace_.Reference,
+      gemm_workspace_.Computed->batch_stride()
+    );
+
+    // Save workspace if incorrect
+    if (options.verification.save_workspace == SaveWorkspace::kIncorrect && 
+      results_.back().verification_map[provider] == Disposition::kIncorrect) {
+
+      save_workspace(
+        device_context,
+        options,
+        gemm_desc,
+        library::Provider::kCUTLASS,
+        provider);
+    }
+  }
+
+  return true;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Measures performance results
 bool GemmOperationProfiler::profile(
   Options const &options,  
@@ -672,6 +887,10 @@ bool GemmOperationProfiler::profile(
     gemm_workspace_.arguments.alpha = problem_.alpha.data();
     gemm_workspace_.arguments.beta = problem_.beta.data();
     gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
+    gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
+    gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
+    gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
+    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
 
     results_.back().status = profile_cutlass_(
       results_.back().runtime,
@@ -683,6 +902,100 @@ bool GemmOperationProfiler::profile(
     );
   }
   return true;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Method to profile a CUTLASS Operation
+Status GemmOperationProfiler::profile_cutlass_(
+  double &runtime,
+  Options const &options,
+  library::Operation const *operation,
+  void *arguments,
+  void *host_workspace,
+  void *device_workspace) {
+
+  GpuTimer timer;
+
+  //
+  // Optional sleep to limit power consumption and thermals
+  //
+
+  sleep(options.profiling.sleep_duration);
+
+  //
+  // Warmup loop
+  //
+
+  Status status;
+
+  for (int iteration = 0; iteration < options.profiling.warmup_iterations; ++iteration) {
+    
+    int problem_idx = (iteration % gemm_workspace_.problem_count) * problem_.batch_count;
+
+    gemm_workspace_.arguments.A = gemm_workspace_.A->batch_data(problem_idx);
+    gemm_workspace_.arguments.B = gemm_workspace_.B->batch_data(problem_idx);
+    gemm_workspace_.arguments.C = gemm_workspace_.C->batch_data(problem_idx);
+    gemm_workspace_.arguments.D = gemm_workspace_.Computed->batch_data(problem_idx);
+
+    // Execute the CUTLASS operation
+    status = operation->run(
+      &gemm_workspace_.arguments,
+      host_workspace,
+      device_workspace);
+
+    if (status != Status::kSuccess) {
+      return status;
+    }
+  }
+
+  //
+  // Initialize GPU timer
+  //
+
+  timer.start();
+
+  //
+  // Profiling loop
+  //
+
+  int Iterations = options.profiling.iterations;
+
+  int iteration = 0;
+  for (; iteration < Iterations; ++iteration) {
+    
+    // Iterate over copies of the problem in memory
+    int workspace_idx = options.profiling.warmup_iterations + iteration;
+    int problem_idx = (workspace_idx % gemm_workspace_.problem_count) * problem_.batch_count;
+
+    gemm_workspace_.arguments.A = gemm_workspace_.A->batch_data(problem_idx);
+    gemm_workspace_.arguments.B = gemm_workspace_.B->batch_data(problem_idx);
+    gemm_workspace_.arguments.C = gemm_workspace_.C->batch_data(problem_idx);
+    gemm_workspace_.arguments.D = gemm_workspace_.Computed->batch_data(problem_idx);
+
+    status = operation->run(
+      arguments,
+      host_workspace,
+      device_workspace);
+
+    if (status != Status::kSuccess) {
+      return status;
+    }
+  }
+
+  //
+  // Wait for completion
+  //
+
+  timer.stop_and_wait();
+
+  //
+  // Update performance result
+  //
+
+  runtime = timer.duration(iteration);
+
+  return status;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

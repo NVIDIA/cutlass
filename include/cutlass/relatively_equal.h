@@ -79,6 +79,18 @@ bool relatively_equal<uint1b_t>(uint1b_t a, uint1b_t b, uint1b_t, uint1b_t) {
 
 template <>
 CUTLASS_HOST_DEVICE
+bool relatively_equal<int2b_t>(int2b_t a, int2b_t b, int2b_t, int2b_t) {
+  return (a == b);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<uint2b_t>(uint2b_t a, uint2b_t b, uint2b_t, uint2b_t) {
+  return (a == b);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
 bool relatively_equal<int4b_t>(int4b_t a, int4b_t b, int4b_t, int4b_t) {
   return (a == b);
 }

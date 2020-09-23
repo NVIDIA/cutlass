@@ -184,14 +184,17 @@ public:
   /// Shape of the warp in units of thread (concept: MmaLanePolicySimt)
   using Policy = Policy_;
 
+  /// Underlying matrix multiply operator (concept: arch::Mma)
+  using ArchMmaOperator = typename Policy::Operator;
+
   /// Architecture tag from underlying instruction
-  using ArchTag = typename Policy::Operator::ArchTag;
+  using ArchTag = typename ArchMmaOperator::ArchTag;
 
   /// Indicates class of matrix operator
   using OperatorClass = arch::OpClassTensorOp;
 
   /// Shape of underlying instruction
-  using InstructionShape = typename Policy::Operator::Shape;
+  using InstructionShape = typename ArchMmaOperator::Shape;
 
   /// Complex transform on A operand
   static ComplexTransform const kTransformA = ComplexTransform::kNone;
@@ -210,7 +213,7 @@ public:
   /// Iterates over the A operand in memory
   using IteratorA = MmaTensorOpMultiplicandTileIterator<
      MatrixShape<Shape::kM, Shape::kK>, Operand::kA, ElementA, LayoutA,
-     MatrixShape<Policy::Operator::Shape::kM, Policy::Operator::Shape::kK>,
+     MatrixShape<ArchMmaOperator::Shape::kM, ArchMmaOperator::Shape::kK>,
      Policy::OpDelta::kRow, kThreadCount, kPartitionsK>;
 
   /// Storage for A tile
@@ -218,12 +221,12 @@ public:
 
   /// Storage for transformed A tile
   using TransformedFragmentA =
-      Array<typename Policy::Operator::ElementA, FragmentA::kElements>;
+      Array<typename ArchMmaOperator::ElementA, FragmentA::kElements>;
 
   /// Iterates over the B operand in memory
   using IteratorB = MmaTensorOpMultiplicandTileIterator<
       MatrixShape<Shape::kK, Shape::kN>, Operand::kB, ElementB, LayoutB,
-      MatrixShape<Policy::Operator::Shape::kK, Policy::Operator::Shape::kN>,
+      MatrixShape<ArchMmaOperator::Shape::kK, ArchMmaOperator::Shape::kN>,
       Policy::OpDelta::kRow, kThreadCount, kPartitionsK>;
 
   /// Storage for B tile
@@ -231,33 +234,28 @@ public:
 
   /// Storage for transformed B tile
   using TransformedFragmentB =
-      Array<typename Policy::Operator::ElementB, FragmentB::kElements>;
+      Array<typename ArchMmaOperator::ElementB, FragmentB::kElements>;
 
   /// Iterates over the C operand in memory
   using IteratorC = MmaTensorOpAccumulatorTileIterator<
      MatrixShape<Shape::kM, Shape::kN>, ElementC, LayoutC,
-     typename Policy::Operator::Shape, typename Policy::OpDelta>;
+     typename ArchMmaOperator::Shape, typename Policy::OpDelta>;
 
   /// Storage for C tile
   using FragmentC = typename IteratorC::Fragment;
 
 private:
 
-  static_assert(
-    !(Shape::kM % Policy::Operator::Shape::kM) && 
-    !(Shape::kN % Policy::Operator::Shape::kN),
-    "Shape of warp-level Mma must be divisible by operator shape.");
-
   /// Number of mma operations performed
   using MmaIterations = MatrixShape<
-    Shape::kM / Policy::Operator::Shape::kM,
-    Shape::kN / Policy::Operator::Shape::kN
+    (Shape::kM + ArchMmaOperator::Shape::kM - 1) / ArchMmaOperator::Shape::kM,
+    (Shape::kN + ArchMmaOperator::Shape::kN - 1) / ArchMmaOperator::Shape::kN
   >;
 
 public:
 
   /// Underlying matrix multiply operator (concept: arch::Mma)
-  typename Policy::Operator mma;
+  ArchMmaOperator mma;
 
 public:
 
@@ -278,9 +276,9 @@ public:
     FragmentC const &C
   ) const {
 
-    using MmaOperandA = typename Policy::Operator::FragmentA;
-    using MmaOperandB = typename Policy::Operator::FragmentB;
-    using MmaOperandC = typename Policy::Operator::FragmentC;
+    using MmaOperandA = typename ArchMmaOperator::FragmentA;
+    using MmaOperandB = typename ArchMmaOperator::FragmentB;
+    using MmaOperandC = typename ArchMmaOperator::FragmentC;
 
     D = C;
 
@@ -351,22 +349,22 @@ public:
     // Define conversions from source type to instruction type
     //
     FloatRoundStyle const kRoundA =
-        PreferredRoundingMode<typename Policy::Operator::ElementA,
+        PreferredRoundingMode<typename ArchMmaOperator::ElementA,
                               ElementA>::kRound;
     FloatRoundStyle const kRoundB =
-        PreferredRoundingMode<typename Policy::Operator::ElementB,
+        PreferredRoundingMode<typename ArchMmaOperator::ElementB,
                               ElementB>::kRound;
     #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 800)
-      detail::ConvertAndPack<typename Policy::Operator::ElementA, ElementA,
+      detail::ConvertAndPack<typename ArchMmaOperator::ElementA, ElementA,
                             FragmentA::kElements, kRoundA>
           convert_A;
-      NumericArrayConverter<typename Policy::Operator::ElementB, ElementB,
+      NumericArrayConverter<typename ArchMmaOperator::ElementB, ElementB,
                             FragmentB::kElements / 2, kRoundB>
           convert_B;
       Array<ElementB, FragmentB::kElements / 2> const *ptr_B =
           reinterpret_cast<Array<ElementB, FragmentB::kElements / 2> const *>(&B);
-      Array<typename Policy::Operator::ElementB, FragmentB::kElements / 2> *
-          ptr_dst_B = reinterpret_cast<Array<typename Policy::Operator::ElementB,
+      Array<typename ArchMmaOperator::ElementB, FragmentB::kElements / 2> *
+          ptr_dst_B = reinterpret_cast<Array<typename ArchMmaOperator::ElementB,
                                              FragmentB::kElements / 2> *>(&dst_B);
   
       dst_A = convert_A(A);
@@ -375,16 +373,16 @@ public:
       ptr_dst_B[1] = convert_B(ptr_B[1]);
 
     #elif defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
-      detail::ConvertAndPack<typename Policy::Operator::ElementA, ElementA,
+      detail::ConvertAndPack<typename ArchMmaOperator::ElementA, ElementA,
                             FragmentA::kElements / 2, kRoundA>
           convert_A;
-      NumericArrayConverter<typename Policy::Operator::ElementB, ElementB,
+      NumericArrayConverter<typename ArchMmaOperator::ElementB, ElementB,
                             FragmentB::kElements, kRoundB>
           convert_B;
       Array<ElementA, FragmentA::kElements / 2> const *ptr_A =
           reinterpret_cast<Array<ElementA, FragmentA::kElements / 2> const *>(&A);
-      Array<typename Policy::Operator::ElementA, FragmentA::kElements / 2> *
-          ptr_dst_A = reinterpret_cast<Array<typename Policy::Operator::ElementA,
+      Array<typename ArchMmaOperator::ElementA, FragmentA::kElements / 2> *
+          ptr_dst_A = reinterpret_cast<Array<typename ArchMmaOperator::ElementA,
                                              FragmentA::kElements / 2> *>(&dst_A);
   
       dst_B = convert_B(B);

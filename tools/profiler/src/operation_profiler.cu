@@ -268,6 +268,7 @@ int OperationProfiler::profile_all(
 
         std::string operation_name(operation->description().name);
 
+        // Filter kernels by name
         bool filtered_by_name = options.operation_names.empty();
         if (!filtered_by_name) {
           
@@ -277,6 +278,13 @@ int OperationProfiler::profile_all(
               break;
             }
           } 
+        }
+
+        for (auto const & op_name : options.excluded_operation_names) {
+          if (find_string_matches_(op_name, operation_name)) {
+            filtered_by_name = false;
+            break;
+          }
         }
 
         if (!filtered_by_name || !satisfies(operation->description(), problem_space, problem)) {
@@ -410,13 +418,18 @@ void OperationProfiler::sleep(int sleep_duration) {
 Disposition OperationProfiler::compare_tensors(
   Options const &options,
   DeviceAllocation &experimental,
-  DeviceAllocation &reference) {
+  DeviceAllocation &reference,
+  int64_t count) {
 
   if (experimental.type() != reference.type()) {
     return Disposition::kIncorrect;
   }
 
   bool passed = false;
+
+  if (count == 0) {
+    count = reference.capacity();
+  }
 
   if (options.verification.epsilon == 0) {
 
@@ -425,7 +438,7 @@ Disposition OperationProfiler::compare_tensors(
       experimental.type(), 
       experimental.data(),
       reference.data(),
-      experimental.capacity());
+      count);
   }
   else {
 
@@ -434,7 +447,7 @@ Disposition OperationProfiler::compare_tensors(
       experimental.type(), 
       experimental.data(),
       reference.data(),
-      experimental.capacity(),
+      count,
       options.verification.epsilon,
       options.verification.nonzero_floor);
   }
@@ -483,7 +496,7 @@ Status OperationProfiler::profile_cutlass_(
   double &runtime,
   Options const &options,
   library::Operation const *operation,
-  void const *arguments,
+  void *arguments,
   void *host_workspace,
   void *device_workspace) {
 

@@ -251,7 +251,6 @@ struct DefaultEpilogueTensorOp {
   static int const kPartitionsK = PartitionsK;
   using OutputOp = OutputOp_;
   static int const kElementsPerAccess = ElementsPerAccess;
-
   using ElementOutput = typename OutputOp::ElementOutput;
   using LayoutC = typename WarpMmaTensorOp::LayoutC;
   using ElementAccumulator = typename WarpMmaTensorOp::ElementC;

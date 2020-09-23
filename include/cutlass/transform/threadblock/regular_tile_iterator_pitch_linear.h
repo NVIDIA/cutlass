@@ -49,7 +49,8 @@ namespace threadblock {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Regular tile iterator specialized for pitch-linear
+/// Regular tile iterator specialized for pitch-linear.  This one is used by 2-stage SIMT kernels
+/// and sparse tensor core meta data.
 template <
   typename Shape_,
   typename Element_,
@@ -139,7 +140,8 @@ public:
       for (int c = 0; c < ThreadMap::Iterations::kContiguous; ++c) {
 
         int idx = c + s * ThreadMap::Iterations::kContiguous;
-        frag_ptr[idx] = access_ptr[c * ThreadMap::Delta::kContiguous];
+        frag_ptr[idx] = access_ptr[c * ThreadMap::Delta::kContiguous /
+                                   ThreadMap::kElementsPerAccess];
       }
 
       if (s + 1 < ThreadMap::Iterations::kStrided) {
@@ -180,7 +182,8 @@ public:
       for (int c = 0; c < ThreadMap::Iterations::kContiguous; ++c) {
 
         int idx = c + s * ThreadMap::Iterations::kContiguous;
-        access_ptr[c * ThreadMap::Delta::kContiguous] = frag_ptr[idx];
+        access_ptr[c * ThreadMap::Delta::kContiguous /
+                   ThreadMap::kElementsPerAccess] = frag_ptr[idx];
       }
 
       if (s + 1 < ThreadMap::Iterations::kStrided) {

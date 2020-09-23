@@ -93,6 +93,19 @@ struct Mma<
   /// C operand storage
   using FragmentC = Array<ElementC, Shape::kMN>;
 
+  /// Underlying matrix multiply operator (concept: arch::Mma)
+  //  Use 1x1x4 IDP4A sequence for bulk of computation
+  using ArchMmaOperator = arch::Mma<
+      gemm::GemmShape<1,1,4>,
+      1,
+      ElementA,
+      LayoutA,
+      ElementB,
+      LayoutB,
+      ElementC,
+      LayoutC,
+      arch::OpMultiplyAdd>; 
+
   //
   // Methods
   //
@@ -112,22 +125,11 @@ struct Mma<
     D = C;
 
     /// Use 1x1x4 IDP4A sequence for bulk of computation
-    using Mma = arch::Mma<
-      gemm::GemmShape<1,1,4>,
-      1,
-      ElementA,
-      LayoutA,
-      ElementB,
-      LayoutB,
-      ElementC,
-      LayoutC,
-      arch::OpMultiplyAdd>;
-
-    Mma mma;
+    ArchMmaOperator mma;
 
     // Compute matrix product
     CUTLASS_PRAGMA_UNROLL
-    for (int k = 0; k < Shape::kK / Mma::Shape::kK; ++k) {
+    for (int k = 0; k < Shape::kK / ArchMmaOperator::Shape::kK; ++k) {
 
       CUTLASS_PRAGMA_UNROLL
       for (int n = 0; n < Shape::kN; ++n) {
@@ -143,8 +145,8 @@ struct Mma<
 
           mma(
             tmp,
-            ptr_A[m * Shape::kK / Mma::Shape::kK + k],
-            ptr_B[n * Shape::kK / Mma::Shape::kK + k],
+            ptr_A[m * Shape::kK / ArchMmaOperator::Shape::kK + k],
+            ptr_B[n * Shape::kK / ArchMmaOperator::Shape::kK + k],
             tmp);
 
           d.at(mn) = reinterpret_cast<int32_t &>(tmp);
@@ -206,6 +208,19 @@ struct Mma<
   /// C operand storage
   using FragmentC = Array<ElementC, Shape::kMN>;
 
+  /// Underlying matrix multiply operator (concept: arch::Mma)
+  /// Use 1x1x4 IDP4A sequence for bulk of computation
+  using ArchMmaOperator = arch::Mma<
+      gemm::GemmShape<1,1,4>,
+      1,
+      ElementA,
+      LayoutA,
+      ElementB,
+      LayoutB,
+      ElementC,
+      LayoutC,
+      arch::OpMultiplyAdd>; 
+
   //
   // Methods
   //
@@ -224,25 +239,15 @@ struct Mma<
     // Copy accumulators
     D = C;
 
-    /// Use 1x1x4 IDP4A sequence for bulk of computation
-    using Mma = arch::Mma<
-      gemm::GemmShape<1,1,4>,
-      1,
-      ElementA,
-      LayoutA,
-      ElementB,
-      LayoutB,
-      ElementC,
-      LayoutC,
-      arch::OpMultiplyAdd>;
-
-    Mma mma;
+    /// Underlying matrix multiply operator
+    ArchMmaOperator mma;
+    
     Array<int8_t, 4> const *ptr_A = reinterpret_cast<Array<int8_t, 4> const *>(&A);
     Array<int8_t, 4> const *ptr_B = reinterpret_cast<Array<int8_t, 4> const *>(&B);
 
     // Compute matrix product
     CUTLASS_PRAGMA_UNROLL
-    for (int k = 0; k < Shape::kK / Mma::Shape::kK; ++k) {
+    for (int k = 0; k < Shape::kK / ArchMmaOperator::Shape::kK; ++k) {
 
       CUTLASS_PRAGMA_UNROLL
       for (int n = 0; n < Shape::kN; ++n) {

@@ -47,6 +47,9 @@ namespace profiler {
 /// Converts a cuBLAS status to cutlass::Status
 Status get_cutlass_status(cublasStatus_t cublas);
 
+/// Converts a cuBLASS status to cutlass::profiler::Disposition
+Disposition get_cutlass_disposition(cublasStatus_t cublas_status);
+
 /// Maps a CUTLASS tensor layout to a cuBLAS transpose operation
 bool get_cublas_transpose_operation(
   cublasOperation_t &operation,

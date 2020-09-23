@@ -37,6 +37,8 @@
 
 namespace cutlass {
 
+/// This is needed for the interleaved integer tensor core kernels.  The purpose
+/// is to use skip the shared memory part in the epilogue.
 template <int Interleaved, typename Element, typename Layout>
 void reorder_column(TensorRef<Element, Layout> dest,
                     TensorRef<Element, Layout> src,
@@ -60,4 +62,32 @@ void reorder_column(TensorRef<Element, Layout> dest,
   }
 }
 
+/// This is needed for the sparse tensor core kernels.  The purpose
+/// is to use ldmatrix to load from shared memory to the register file.
+template <typename Element, typename LayoutDest, typename LayoutSrc>
+void reorder_meta(TensorRef<Element, LayoutDest> dest,
+                  TensorRef<Element, LayoutSrc> src,
+                  cutlass::gemm::GemmCoord problem_size) {
+  for (int m = 0; m < problem_size.m(); m++) {
+    for (int k = 0; k < problem_size.k(); k++) {
+      // First reorder the rows.
+      int group = (sizeof(Element) == 2) ? 32 : 16;
+      int interweave = (sizeof(Element) == 2) ? 4 : 2;
+
+      int dest_row = m / group * group + (m % 8) * interweave + (m % group) / 8;
+      int dest_col = k;
+
+      // Next swizzle the 2x2 blocks from Z to N.
+      if (((dest_row % 2) == 0) && ((dest_col % 2) == 1)) {
+        ++dest_row;
+        --dest_col;
+      } else if (((dest_row % 2) == 1) && ((dest_col % 2) == 0)) {
+        --dest_row;
+        ++dest_col;
+      }
+
+      dest.at({dest_row, dest_col}) = src.at({m, k});
+    }
+  }
+}
 } // namespace cutlass

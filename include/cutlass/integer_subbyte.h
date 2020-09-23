@@ -83,11 +83,10 @@ struct integer_subbyte {
   integer_subbyte(unsigned value)
       : storage(reinterpret_cast<Storage const &>(value) & kMask) {}
 
-  /// Conversion from double
   CUTLASS_HOST_DEVICE
   integer_subbyte(double value) {
-    T tmp = (T)value;
-    storage = reinterpret_cast<Storage const &>(tmp) & kMask;
+    T tmp = static_cast<T>(value);
+    storage = Storage(reinterpret_cast<unsigned const &>(tmp) & kMask);
   }
 
   ///
@@ -155,6 +154,12 @@ struct integer_subbyte {
 /// 1-bit Unsigned integer type
 using uint1b_t = integer_subbyte<1, false>;
 
+/// 2-bit Integer type
+using int2b_t = integer_subbyte<2, true>;
+
+/// 2-bit Unsigned integer type
+using uint2b_t = integer_subbyte<2, false>;
+
 /// 4-bit Integer type
 using int4b_t = integer_subbyte<4, true>;
 
@@ -167,6 +172,18 @@ using uint4b_t = integer_subbyte<4, false>;
 template <>
 struct sizeof_bits<uint1b_t> {
   static int const value = 1;
+};
+
+/// Defines the size of an element in bits - specialized for int2b_t
+template <>
+struct sizeof_bits<int2b_t> {
+  static int const value = 2;
+};
+
+/// Defines the size of an element in bits - specialized for uint2b_t
+template <>
+struct sizeof_bits<uint2b_t> {
+  static int const value = 2;
 };
 
 /// Defines the size of an element in bits - specialized for int4b_t

@@ -55,6 +55,17 @@ struct Sm75 {
 struct Sm80 {
   static int const kMinComputeCapability = 80; 
 };
+struct Sm86 {
+  static int const kMinComputeCapability = 86;
+};
+
+/// Triggers a breakpoint on the device
+CUTLASS_DEVICE
+void device_breakpoint() {
+#if defined(__CUDA_ARCH__)
+  asm volatile ("  brkpt;\n");
+#endif
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

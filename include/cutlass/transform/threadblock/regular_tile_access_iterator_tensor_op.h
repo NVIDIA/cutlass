@@ -451,6 +451,10 @@ class RegularTileAccessIterator<Shape_, Element_,
 
   using ThreadMap = ThreadMap_;
 
+  static_assert(!(ThreadMap::Delta::kContiguous % kCrosswise),
+                "kCrosswise is the smallest unit in the contiguous dimension "
+                "for shared memory swizzling.");
+
   /// Internal details made public to facilitate introspection
   struct Detail {
     /// This iterator is specialized for an access size that is 128 bits in
@@ -554,8 +558,10 @@ class RegularTileAccessIterator<Shape_, Element_,
 
     int access_offset =
         stride_idx * ThreadMap::Delta::kStrided * stride_ / Layout::kFactor +
-        iteration_contiguous_ * ThreadMap::Delta::kContiguous /
-            ThreadMap::kElementsPerAccess;
+        // kCrosswise elements in the contiguous dimension would span to a
+        // shared memory cache line.
+        iteration_contiguous_ * (ThreadMap::Delta::kContiguous / kCrosswise) *
+            Layout::TileShape::kContiguous;
     char *access_byte_ptr =
         reinterpret_cast<char *>(access_ptr + access_offset);
     return reinterpret_cast<AccessType *>(access_byte_ptr + byte_offset_);

@@ -187,10 +187,12 @@ class complex
   /// Division
     template <typename A>
   CUTLASS_HOST_DEVICE complex<T> operator/(complex<A> const &rhs) const {
-    T d = (rhs.real() * (rhs) + rhs.imag() * rhs.imag());
+    T d = T(rhs.real() * rhs.real() + rhs.imag() * rhs.imag());
 
-    return complex<T>((this->real() * (rhs) + this->imag() * rhs.imag()) / d,
-                      (this->imag() * (rhs)-this->real() * rhs.imag()) / d);
+    return complex<T>(
+      (real() * rhs.real() + imag() * rhs.imag()) / d,
+      (imag() * rhs.real() - real() * rhs.imag()) / d
+    );
   }
 
   /// Scalar Division

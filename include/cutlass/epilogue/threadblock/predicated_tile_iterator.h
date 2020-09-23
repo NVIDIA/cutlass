@@ -41,6 +41,7 @@
 #include "cutlass/tensor_ref.h"
 #include "cutlass/transform/pitch_linear_thread_map.h"
 #include "cutlass/epilogue/threadblock/output_tile_thread_map.h"
+#include "cutlass/arch/arch.h"
 #include "cutlass/arch/memory.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,7 +55,7 @@ namespace threadblock {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Tile iterator used to load output tile from shared memory in epilogue.
+/// Tile iterator used to load and store output tile from shared memory in epilogue.
 ///
 /// Satisfies: ReadableTileIterator | PredicatedTileIterator | ForwardTileIterator
 ///
@@ -243,8 +244,8 @@ public:
     TensorCoord extent,
     int thread_idx,
     TensorCoord threadblock_offset = TensorCoord()
-  ):
-    params_(params) {
+  ): params_(params)
+  {
 
     TensorCoord thread_offset = ThreadMap::initial_offset(thread_idx) + threadblock_offset;
 
@@ -336,7 +337,8 @@ public:
   /// Loads a fragment from memory
   CUTLASS_DEVICE
   void load(Fragment &frag) {
-    load_with_byte_offset(frag, 0);
+      load_with_byte_offset(frag, 0);
+
   }
 
   /// Stores a fragment to memory
@@ -397,7 +399,8 @@ public:
   /// Stores a fragment to memory
   CUTLASS_DEVICE
   void store(Fragment const &frag) {
-    store_with_byte_offset(frag, 0);
+      store_with_byte_offset(frag, 0);
+
   }
 
   /// Advances to the next position to load or store

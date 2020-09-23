@@ -24,53 +24,13 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cmath>
 
 #include "cutlass/cutlass.h"
-#include "cutlass/complex.h"
-#include "cutlass/tensor_ref.h"
 
-#include "cutlass/util/reference/host/tensor_foreach.h"
+// The contents of this file have been moved  to 'tensor_reduce' to cover other types of reductions.
 
-namespace cutlass  {
-namespace reference {
-namespace host {
+#include "cutlass/util/reference/host/tensor_reduce.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Computes the p=2 norm of the elements of a tensor with arbitrary reduction data type.
-template <
-    typename Element,
-    typename Layout,
-    typename ElementReduction
->
-    ElementReduction TensorNorm(
-        TensorView<Element, Layout> view,
-        ElementReduction accumulator) {
 
-    TensorForEachLambda(
-        view.extent(),
-        [&](typename Layout::TensorCoord const & coord) {
-        Element element = Element(view.at(coord));
-        accumulator = cutlass::norm_accumulate(element, accumulator);
-    });
-    return std::sqrt(accumulator);
-}
-
-/// Computes the p=2 norm of the elements of a tensor.
-template <
-  typename Element, 
-  typename Layout
->
-double TensorNorm(TensorView<Element, Layout> view) {
-
-  return TensorNorm<Element, Layout, double>(view, 0);
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-} // namespace host
-} // namespace reference
-} // namespace cutlass
-
-///////////////////////////////////////////////////////////////////////////////////////////////////

@@ -27,6 +27,8 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/coord.h"
+#include "cutlass/subbyte_reference.h"
+#include "cutlass/fast_math.h"
 
 namespace cutlass {
 namespace reference {
@@ -138,7 +140,7 @@ __global__ void BlockForEach(
   size_t index = threadIdx.x + blockIdx.x * blockDim.x;
 
   for (; index < capacity; index += blockDim.x * gridDim.x) {
-    ptr[index] = func();
+    ReferenceFactory<Element>::get(ptr, index) = func();
   }
 }
 

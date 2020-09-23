@@ -40,6 +40,7 @@
 #include "cutlass/gemm/warp/mma_tensor_op_fragment_iterator.h"
 
 #include "threadblock/b2b_mma_pipelined.h"
+#include "threadblock/b2b_mma_multistage.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -200,8 +201,6 @@ template <
     typename ElementAccumulator,
     /// Tag indicating architecture to tune for
     typename OperatorClass,
-    /// Tag indicating architecture to tune for
-    typename ArchTag,
     /// Threadblock-level tile size (concept: GemmShape)
     typename ThreadblockShape0,
     /// Threadblock-level tile size (concept: GemmShape)
@@ -220,7 +219,7 @@ template <
     int InterleavedK>
 struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
                   kAlignmentB, ElementAccumulator,
-                  layout::ColumnMajorInterleaved<InterleavedK>, OperatorClass, ArchTag, 
+                  layout::ColumnMajorInterleaved<InterleavedK>, OperatorClass, arch::Sm75, 
                   ThreadblockShape0, ThreadblockShape1, WarpShape0, WarpShape1,
                   InstructionShape, 2, Operator, EpilogueOutputOp, true> {
   // Define the MmaCore components
@@ -251,7 +250,7 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
       cutlass::MatrixShape<MmaCore0::Shape::kK, MmaCore0::Shape::kN>, ElementB,
       LayoutB, 0, typename MmaCore0::IteratorThreadMapB>;
 
-  // Use fragment iterator for A operand
+  // Use fragment iterator for A1 operand
   using AccumulatorLayout = cutlass::layout::RowMajor; //AccumulatorsInRowMajor = true
   using FragmentIteratorA1 = 
       cutlass::gemm::warp::MmaTensorOpFragmentIterator<
@@ -281,6 +280,111 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+
+/// Specialization for column-major-interleaved output
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Access granularity of B matrix in units of elements
+    int kAlignmentB,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Tag indicating architecture to tune for
+    typename OperatorClass,
+    /// Tag indicating architecture to tune for
+    typename ArchTag,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape0,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape1,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape0,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape1,
+    /// Instruction-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Number of stages used in the multistage mainloop
+    int Stages,
+    /// Operation performed by GEMM
+    typename Operator,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Number of Interleaved K
+    int InterleavedK>
+struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
+                  kAlignmentB, ElementAccumulator,
+                  layout::ColumnMajorInterleaved<InterleavedK>, OperatorClass, ArchTag, 
+                  ThreadblockShape0, ThreadblockShape1, WarpShape0, WarpShape1,
+                  InstructionShape, Stages, Operator, EpilogueOutputOp, true> {
+  // Define the MmaCore components
+  using MmaCore0 = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadblockShape0, WarpShape0, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementAccumulator,
+      layout::ColumnMajorInterleaved<InterleavedK>, OperatorClass, Stages,
+      Operator, true>;
+  using MmaCore1 = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadblockShape1, WarpShape1, InstructionShape, ElementA, LayoutA,
+      ElementB, LayoutB, ElementAccumulator,
+      layout::ColumnMajorInterleaved<InterleavedK>, OperatorClass, Stages,
+      Operator, true>;
+
+  // Define iterators over tiles from the A operand
+  using ThreadMapA0 = typename MmaCore0::IteratorThreadMapA;
+  using AccessTypeA = cutlass::Array<ElementA, kAlignmentA>;
+  using IteratorA0 =
+      cutlass::transform::threadblock::PredicatedTileAccessIterator<
+          cutlass::MatrixShape<ThreadblockShape0::kM, ThreadblockShape0::kK>,
+          ElementA, LayoutA, 1, ThreadMapA0, AccessTypeA>;
+
+  // Define iterators over tiles from the B operand
+  using ThreadMapB0 = typename MmaCore0::IteratorThreadMapB;
+  using AccessTypeB = cutlass::Array<ElementB, kAlignmentB>;
+  using IteratorB0 =
+      cutlass::transform::threadblock::PredicatedTileAccessIterator<
+          cutlass::MatrixShape<ThreadblockShape1::kK, ThreadblockShape1::kN>,
+          ElementB, LayoutB, 0, ThreadMapB0, AccessTypeB>;
+
+  // Use fragment iterator for A1 operand
+  using AccumulatorLayout = cutlass::layout::RowMajor; //AccumulatorsInRowMajor = true
+  using FragmentIteratorA1 = 
+      cutlass::gemm::warp::MmaTensorOpFragmentIterator<
+          cutlass::MatrixShape<MmaCore1::WarpShape::kM, MmaCore1::InstructionShape::kK>, //warp shape
+          cutlass::MatrixShape<MmaCore0::WarpShape::kM, MmaCore0::WarpShape::kN>, //accumulator shape
+          MmaCore1::Shape::kK, //kBlocksColumn
+          ElementAccumulator, ElementA, AccumulatorLayout, 
+          InstructionShape, EpilogueOutputOp, true /*only handle beta=0 for 1st Gemm epilogue*/>;
+
+  // Define iterators over tiles from the B operand
+  using ThreadMapB1 = typename MmaCore1::IteratorThreadMapB;
+  using IteratorB1 =
+      cutlass::transform::threadblock::PredicatedTileAccessIterator<
+          cutlass::MatrixShape<ThreadblockShape1::kK, ThreadblockShape1::kN>,
+          ElementB, LayoutB, 0, ThreadMapB1, AccessTypeB>;
+
+
+
+  // Define the threadblock-scoped multistage matrix multiply
+  using ThreadblockB2bMma = cutlass::gemm::threadblock::B2bMmaMultistage<
+      typename MmaCore0::Shape, IteratorA0, typename MmaCore0::SmemIteratorA,
+      MmaCore0::kCacheOpA, 
+      IteratorB0, typename MmaCore0::SmemIteratorB, MmaCore0::kCacheOpB, 
+      typename MmaCore1::Shape, FragmentIteratorA1,
+      IteratorB1, typename MmaCore1::SmemIteratorB, MmaCore1::kCacheOpB, 
+      ElementAccumulator, layout::ColumnMajorInterleaved<InterleavedK>,
+      EpilogueOutputOp,
+      typename MmaCore0::MmaPolicy, typename MmaCore1::MmaPolicy, Stages>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
 
 } // namespace threadblock
 } // namespace gemm

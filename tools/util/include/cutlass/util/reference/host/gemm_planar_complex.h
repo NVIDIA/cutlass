@@ -35,7 +35,6 @@
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/tensor_ref_planar_complex.h"
 
-#include "cutlass/matrix_traits.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/gemm/gemm.h"
 

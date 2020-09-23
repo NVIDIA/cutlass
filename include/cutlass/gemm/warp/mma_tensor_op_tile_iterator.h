@@ -241,6 +241,9 @@ public:
       int access_strided_idx = -1;
 
       if (Policy::LdsmShape::kContiguous == 4) {
+        // Matrix multiply 1688 A/B
+        // Q0 Q1 Q2 Q3 (Q stands for 1 8x128bit block).
+        // Four blocks are next to each other in the contiguous dimension.
         partition_contiguous_idx = ((lane_in_quad_pair >> 2) ^ i);
         access_contiguous_idx = (quad_pair ^ lane_in_quad);
         access_strided_idx = lane_in_quad_pair;
@@ -262,7 +265,17 @@ public:
         partition_contiguous_idx = ((lane_in_quad_pair >> 2) ^ (i >> 1));
         access_contiguous_idx = ((quad_quad + ((i & 1) << 1)) ^ lane_in_quad);
         access_strided_idx = lane_in_quad_quad;
+      } else if (Policy::LdsmShape::kContiguous == 1) {
+        // Matrix multiply 16832.SP B
+        // Q0
+        // Q1
+        // Q2
+        // Q3
+        partition_contiguous_idx = ((lane_in_quad_pair >> 2) ^ (i >> 2)); 
+        access_contiguous_idx = ((i & 3) ^ lane_in_quad); 
+        access_strided_idx = lane_id; 
       }
+
       int access_contiguous =
           partition_contiguous_idx * Layout::PartitionShape::kContiguous +
           access_contiguous_idx;
@@ -531,24 +544,24 @@ class MmaTensorOpMultiplicandTileIterator<
         !(Shape::kContiguous % InstructionShape::kContiguous),
         "Shape of warp-level Mma must be divisible by operator shape.");
 
-    // Determine number of elements along outer dimension per individual LDS.32
-    // op.  Every one warp of LDS.32 loads 8x4 elements
+    // Determine number of elements along outer dimension per individual 32bit
+    // shared memory load op.  Every one warp of 32bit shared memory load loads
+    // 8x4 elements
     static int const kLdsOpInner = Layout::TileShape::kStrided;
     static int const kLdsOpOuter = kThreads / kLdsOpInner;
 
     static_assert(!(Shape::kContiguous % kLdsOpOuter),
-                  "Shape of warp-level mma must be divisible by LDS.32's "
+                  "Shape of warp-level mma must be divisible by 32bit "
                   "fundamental tile size.");
 
     static_assert(!(Shape::kStrided % kLdsOpInner),
-                  "Shape of warp-level mma must be divisible by LDS.32's "
+                  "Shape of warp-level mma must be divisible by 32bit "
                   "fundamental tile size.");
 
-    /// Number of LDS.32 instructions needed by one MMA instruction
-    /// 1684 A 2x1
-    /// 1684 B 1x1
-    /// 1688 A 2x2
-    /// 1688 B 1x2
+    /// Number of 32 bit shared memory load instructions needed by one MMA instruction
+    /// 1688  A 2x2
+    /// 1688  B 1x2
+    /// 16816 B 1x4
     static int const LdsShapeContiguous =
         InstructionShape::kContiguous / kLdsOpOuter;
     static int const LdsShapeStrided = InstructionShape::kStrided / kLdsOpInner;
@@ -639,6 +652,8 @@ class MmaTensorOpMultiplicandTileIterator<
     if (Shape::kContiguous ==
         Layout::TileShape::kContiguous * Layout::kElementsPerAccess / 2) {
       if (tile_offset.contiguous() % 2) {
+        // Matrix multiply 1688 pointer_[0] <=> pointer_[4] pointer_[1] <=> pointer_[5]
+        //           pointer_[2] <=> pointer_[6] pointer_[3] <=> pointer_[7]
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < kPointerCount / 2; ++i) {
           AccessType const *tmp_pointer = pointer_[i];
@@ -1535,6 +1550,14 @@ class MmaTensorOpMultiplicandTileIterator<
         access_strided_idx =
             (lane_in_quad_pair + (lane_id >> 4 << 3)) / Layout::kFactor;
       } 
+      else if (Policy::LdsmShape::kContiguous == Policy::LdsmShape::kCount) {
+        // Matrix multiply 16832.SP B
+        // Q0 Q1 Q2 Q3
+        partition_contiguous_idx = (lane_id % Layout::kFactor);
+        access_contiguous_idx =
+            (quad_pair ^ (lane_in_quad_pair / Layout::kFactor));
+        access_strided_idx = lane_in_quad_pair / Layout::kFactor;
+      }
     } else if (Layout::kFactor == 1) {
       // Super Matrix multiply kBlock = 64
       if (Policy::LdsmShape::kStrided == Policy::LdsmShape::kCount) {
@@ -1565,6 +1588,13 @@ class MmaTensorOpMultiplicandTileIterator<
         access_contiguous_idx = ((quad_pair & 1) ^ lane_in_quad);
         access_strided_idx = lane_in_quad_pair + (lane_id >> 4 << 3);
       } 
+      else if (Policy::LdsmShape::kContiguous == Policy::LdsmShape::kCount) {
+        // Matrix multiply 16832.SP B
+        // Q0 Q1 Q2 Q3
+        partition_contiguous_idx = (lane_in_quad_pair >> 2);
+        access_contiguous_idx = (quad_pair ^ lane_in_quad);
+        access_strided_idx = lane_in_quad_pair;
+      }
     }
 
     int access_contiguous =
@@ -2369,17 +2399,18 @@ class MmaTensorOpAccumulatorTileIterator<
 
   /// Internal structure of iterator - made public to enable introspection
   struct Policy {
-    static_assert(
+    static bool const kDivisible =
         !(Shape::kRow % InstructionShape::kM) &&
-            !(Shape::kColumn % InstructionShape::kN),
-        "Shape of warp-level Mma must be divisible by operator shape.");
+            !(Shape::kColumn % InstructionShape::kN);
 
     static_assert(platform::is_same<TensorCoord, MatrixCoord>::value,
       "Layouts must be defined for logical MatrixCoord coordinate space.");
 
     /// Number of mma operations performed
-    using MmaIterations = MatrixShape<Shape::kRow / InstructionShape::kM,
-                                      Shape::kColumn / InstructionShape::kN>;
+    using MmaIterations = MatrixShape<
+      (Shape::kRow + InstructionShape::kM - 1) / InstructionShape::kM,
+      (Shape::kColumn + InstructionShape::kN - 1) / InstructionShape::kN
+    >;
   };
 
 private:
@@ -2398,7 +2429,9 @@ public:
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads>;
+  using Fragment = Array<
+    Element, 
+    Policy::MmaIterations::kCount * InstructionShape::kMN / kThreads>;
 
 private:
 
@@ -2667,17 +2700,18 @@ class MmaTensorOpAccumulatorTileIterator<Shape_, Element_,
 
   /// Internal structure of iterator - made public to enable introspection
   struct Policy {
-    static_assert(
+    static bool const kDivisible = 
         !(Shape::kRow % InstructionShape::kM) &&
-            !(Shape::kColumn % InstructionShape::kN),
-        "Shape of warp-level Mma must be divisible by operator shape.");
+            !(Shape::kColumn % InstructionShape::kN);
 
     static_assert(platform::is_same<TensorCoord, MatrixCoord>::value,
       "Layouts must be defined for logical MatrixCoord coordinate space.");
 
     /// Number of mma operations performed
-    using MmaIterations = MatrixShape<Shape::kRow / InstructionShape::kM,
-                                      Shape::kColumn / InstructionShape::kN>;
+    using MmaIterations = MatrixShape<
+      (Shape::kRow + InstructionShape::kM - 1) / InstructionShape::kM,
+      (Shape::kColumn + InstructionShape::kN - 1) / InstructionShape::kN
+    >;
   };
 
 private:
@@ -2696,7 +2730,8 @@ public:
   //
 
   /// Fragment object holding a thread's part of a tile
-  using Fragment = Array<Element, Shape::kCount / kThreads>;
+  using Fragment = Array<Element, 
+    Policy::MmaIterations::kCount * InstructionShape::kMN / kThreads>;
 
 private:
 

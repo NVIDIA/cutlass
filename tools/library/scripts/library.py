@@ -265,6 +265,7 @@ class LayoutType(enum.Enum):
   ColumnMajorInterleaved64 = enum_auto()
   RowMajorInterleaved64 = enum_auto()
   TensorNHWC = enum_auto()
+  TensorNDHWC = enum_auto()
   TensorNCHW = enum_auto()
   TensorNGHWC = enum_auto()
   TensorNCxHW32 = enum_auto()
@@ -279,6 +280,7 @@ LayoutTag = {
   LayoutType.ColumnMajorInterleaved64: 'cutlass::layout::ColumnMajorInterleaved<64>',
   LayoutType.RowMajorInterleaved64: 'cutlass::layout::RowMajorInterleaved<64>',
   LayoutType.TensorNHWC: 'cutlass::layout::TensorNHWC',
+  LayoutType.TensorNDHWC: 'cutlass::layout::TensorNDHWC',
   LayoutType.TensorNCHW: 'cutlass::layout::TensorNCHW',
   LayoutType.TensorNGHWC: 'cutlass::layout::TensorNGHWC',
   LayoutType.TensorNCxHW32: 'cutlass::layout::TensorNCxHW32',
@@ -305,6 +307,7 @@ ShortLayoutTypeNames = {
   LayoutType.RowMajorInterleaved32: 't32',
   LayoutType.RowMajorInterleaved64: 't64',
   LayoutType.TensorNHWC: 'nhwc',
+  LayoutType.TensorNDHWC: 'ndhwc',
   LayoutType.TensorNCHW: 'nchw',
   LayoutType.TensorNGHWC: 'nghwc',
   LayoutType.TensorNCxHW32: 'ncxhw32',
@@ -320,7 +323,6 @@ ShortComplexLayoutNames = {
 }
 
 ###################################################################################################
-
 #
 class OpcodeClass(enum.Enum):
   Simt = enum_auto()
@@ -383,8 +385,7 @@ def SubstituteTemplate(template, values):
 #
 class GemmKind(enum.Enum):
   Gemm = enum_auto()
-  Batched = enum_auto()
-  Array = enum_auto()
+  Sparse = enum_auto()
   Universal = enum_auto()
   PlanarComplex = enum_auto()
   PlanarComplexArray = enum_auto()
@@ -392,8 +393,7 @@ class GemmKind(enum.Enum):
 #
 GemmKindNames = {
   GemmKind.Gemm: "gemm",
-  GemmKind.Batched: "gemm_batched",
-  GemmKind.Array: "gemm_array",
+  GemmKind.Sparse: "spgemm",
   GemmKind.Universal: "gemm",
   GemmKind.PlanarComplex: "gemm_planar_complex",
   GemmKind.PlanarComplexArray: "gemm_planar_complex_array",

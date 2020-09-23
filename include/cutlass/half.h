@@ -349,7 +349,7 @@ struct alignas(2) half_t {
 
   /// Default constructor
   CUTLASS_HOST_DEVICE
-  half_t() { }
+  half_t() : storage(0) { }
 
   /// Reinterpret cast from CUDA's half type
   CUTLASS_HOST_DEVICE

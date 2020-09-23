@@ -31,9 +31,8 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
-
+#include "cutlass/constants.h"
 #include "cutlass/complex.h"
-
 #include "cutlass/array.h"
 #include "cutlass/half.h"
 #include "cutlass/functional.h"
@@ -108,6 +107,40 @@ struct Sigmoid<Array<T, N> > {
   }
 };
 
+// GELU operator
+template <typename T>
+struct GELU {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &scalar) const {
+    return T(cutlass::constants::half<T>() * scalar *
+      (cutlass::constants::one<T>() + erff( scalar / cutlass::constants::root_two<T>() )));
+  }
+};
+
+template <>
+struct GELU<float> {
+  CUTLASS_HOST_DEVICE
+  float operator()(float const &scalar) const {
+    return cutlass::constants::half<float>() * scalar *
+      (cutlass::constants::one<float>() + erff( scalar / cutlass::constants::root_two<float>() ));
+  }
+};
+
+template <typename T, int N>
+struct GELU<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    Array<T, N> y;
+    GELU<T> gelu_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < int(rhs.size()); ++i) {
+      y[i] = gelu_op(rhs[i]);
+    }
+
+    return y;
+  }
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -103,6 +103,7 @@ set(SUBDIRS
   transform
   epilogue
   reduction
+  util
   )
 
 if(TARGET nvidia::nvrtc AND TARGET nvidia::cuda_driver)

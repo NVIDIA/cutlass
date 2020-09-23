@@ -79,7 +79,7 @@ private:
   // Data members
   //
 
-  /// Stride data member - [c, wc, hwc]
+  /// Stride data member - [stride_w, stride_h, stride_n]
   Stride stride_;
 
 public:
@@ -93,7 +93,12 @@ public:
 
   /// Constructor
   CUTLASS_HOST_DEVICE
-  TensorNHWC(typename Stride::Index c, typename Stride::Index wc, typename Stride::Index hwc): stride_(make_Coord(c, wc, hwc)) { }
+  TensorNHWC(
+    typename Stride::Index stride_w,    ///< number of elements between adjacent W coordinates
+    typename Stride::Index stride_h,    ///< number of elements between adjacent H coordinates
+    typename Stride::Index stride_n     ///< number of elements between adjacent N coordinates
+  ): 
+    stride_(make_Coord(stride_w, stride_h, stride_n)) { }
 
   /// Helper returns a layout to a tightly packed NHWC tensor.
   CUTLASS_HOST_DEVICE
@@ -114,12 +119,6 @@ public:
       LongIndex(stride_[0] * coord.w()) + 
       LongIndex(stride_[1] * coord.h()) +
       LongIndex(stride_[2] * coord.n());
-  }
-
-  /// Returns a RowMajor equivalent for a TensorNHWC layout
-  CUTLASS_HOST_DEVICE
-  explicit operator RowMajor() {
-    return RowMajor(stride_[0]);
   }
 
   /// Returns the logical coordinate (n, h, w, c) from a given offset in linear memory.
@@ -443,6 +442,107 @@ public:
     return (extent.c() / kInterleave * stride_[2]);
   }
 };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Mapping function for 5-D NDHWC tensors.
+class TensorNDHWC {
+public:
+  /// Logical rank of tensor
+  static int const kRank = 5;
+
+  /// Rank of stride vector
+  static int const kStrideRank = 4;
+
+  /// Index type used for coordinates
+  using Index = int32_t;
+
+  /// Long index type used for offsets
+  using LongIndex = int64_t;
+
+  /// Logical coordinate (n, d, h, w, c)
+  using TensorCoord = Tensor5DCoord;
+
+  /// Stride vector
+  using Stride = Coord<kStrideRank>;
+
+private:
+  //
+  // Data members
+  //
+
+  /// Stride data member - [c, wc, hwc, dhwc]
+  Stride stride_;
+
+public:
+  //
+  // Methods
+  //
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  TensorNDHWC(Stride const &stride = Stride(0)): stride_(stride) { }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  TensorNDHWC(
+    typename Stride::Index c, 
+    typename Stride::Index wc, 
+    typename Stride::Index hwc, 
+    typename Stride::Index dhwc): 
+  stride_(make_Coord(c, wc, hwc, dhwc)) { }
+
+  /// Helper returns a layout to a tightly packed NHWC tensor.
+  CUTLASS_HOST_DEVICE
+  static TensorNDHWC packed(TensorCoord const &extent) {
+    return TensorNDHWC(
+      make_Coord(
+        extent.c(), 
+        extent.w() * extent.c(),
+        extent.h() * extent.w() * extent.c(),
+        extent.d() * extent.h() * extent.w() * extent.c()
+      )
+    );
+  }
+  
+  /// Returns the offset of a coordinate (n, d, h, w, c) in linear memory. 
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(TensorCoord const &coord) const {
+    return coord.c() + 
+      LongIndex(stride_[0] * coord.w()) + 
+      LongIndex(stride_[1] * coord.h()) +
+      LongIndex(stride_[2] * coord.d()) +
+      LongIndex(stride_[3] * coord.n());
+  }
+
+  /// Returns the stride of the layout
+  CUTLASS_HOST_DEVICE
+  Stride stride() const {
+    return stride_;
+  }
+
+  /// Returns the stride of the layout
+  CUTLASS_HOST_DEVICE
+  Stride & stride() {
+    return stride_;
+  }
+
+  /// Compute the number of contiguous elements needed to store a tensor with the given size
+  CUTLASS_HOST_DEVICE
+  LongIndex capacity(TensorCoord const &extent) const {
+    // it does not make sense if the extent is larger than stride
+    // and we could not rely on the capacity calculation in such cases
+    // we could move this checkers to debug code only
+    if ((extent.c() > stride_[0])
+        || (extent.w() * stride_[0] > stride_[1]) 
+        || (extent.h() * stride_[1] > stride_[2])
+        || (extent.d() * stride_[2] > stride_[3])) {
+      assert(0);
+    }
+    return extent.n() * stride_[3];
+  }
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

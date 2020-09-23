@@ -1119,11 +1119,18 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, float,
 
 /// Partial specialization:
 ///
-///   A: column-major-interleave32
-///   B: row-major-interleave32
+///   A: column-major-interleave
+///   B: row-major-interleave
 ///   Operator: tensor op class
 ///
 /// This uses the default warp-level operator given tile sizes
+///
+/// Column/RowMajorInterleved<InterleavedK>(m, n) is mapped to Column/RowMajor(m
+/// x InterleavedK, n / InterleavedK) so that Column/RowMajor global iterators
+/// can be reused. The shared store iterator is the same as the crosswise shared
+/// store iterator. So, the only thing we need to do is to swap the coordinates
+/// (contiguous <=> strided) used by the global iterator and the shared store
+/// iterator.
 template <
     /// Shape of threadblock-scoped matrix multiply operator (concept:
     /// GemmShape)

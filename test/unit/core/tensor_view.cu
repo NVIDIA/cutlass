@@ -114,9 +114,9 @@ TEST(TensorView, contiguous) {
     int32_t,
     cutlass::layout::ContiguousLayout> ContiguousTensorView;
 
-  cutlass::MatrixLayout layouts[] = {
-    cutlass::MatrixLayout::kColumnMajor,
-    cutlass::MatrixLayout::kRowMajor
+  cutlass::layout::Matrix layouts[] = {
+    cutlass::layout::Matrix::kColumnMajor,
+    cutlass::layout::Matrix::kRowMajor
   };
 
   cutlass::Coord<2> bounds = cutlass::make_Coord(M, N);
@@ -129,7 +129,7 @@ TEST(TensorView, contiguous) {
     int row_stride;
     int col_stride;
 
-    if (layouts[i] == cutlass::MatrixLayout::kColumnMajor) {
+    if (layouts[i] == cutlass::layout::Matrix::kColumnMajor) {
       row_stride = 1;
       col_stride = M;
       ldm = col_stride;
@@ -156,7 +156,7 @@ TEST(TensorView, contiguous) {
     }
 
     std::cout << "---------\n";
-    std::cout << (layouts[i] == cutlass::MatrixLayout::kColumnMajor ?
+    std::cout << (layouts[i] == cutlass::layout::Matrix::kColumnMajor ?
       "Column-major:" : "Row-major:") << "\n\n";
 
     std::cout << "Logical view:\n";
@@ -165,7 +165,7 @@ TEST(TensorView, contiguous) {
 
     std::cout << "Linear memory:";
     for (int idx = 0; idx < view.capacity(); ++idx) {
-      if (!(idx % (layouts[i] == cutlass::MatrixLayout::kColumnMajor ? M : N))) {
+      if (!(idx % (layouts[i] == cutlass::layout::Matrix::kColumnMajor ? M : N))) {
         std::cout << std::endl;
       }
       std::cout << std::setw(4) << view.at(idx) << " ";

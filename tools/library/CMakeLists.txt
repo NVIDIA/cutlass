@@ -60,6 +60,9 @@ cutlass_add_library(
   src/singleton.cu
   src/util.cu
 
+  src/reference/gemm.cu
+  src/reference/initialize_reference_operations.cu
+
   )
 
 file(GLOB_RECURSE GENERATOR_PYTHON_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py)
@@ -80,6 +83,7 @@ execute_process(
     --generator-target library
     --architectures "${CUTLASS_NVCC_ARCHS_ENABLED}"
     --kernels "${CUTLASS_LIBRARY_KERNELS}"
+    --ignore-kernels "${CUTLASS_LIBRARY_IGNORE_KERNELS}"
     --cuda-version "${CUTLASS_GENERATOR_CUDA_COMPILER_VERSION}"
   RESULT_VARIABLE cutlass_lib_INSTANCE_GENERATION_RESULT
   OUTPUT_VARIABLE cutlass_lib_INSTANCE_GENERATION_OUTPUT

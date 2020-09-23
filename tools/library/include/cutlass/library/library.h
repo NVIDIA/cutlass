@@ -65,6 +65,8 @@ enum class LayoutTypeID {
   kUnknown,
   kColumnMajor,
   kRowMajor,
+  kColumnMajorInterleavedK2,
+  kRowMajorInterleavedK2,
   kColumnMajorInterleavedK4,
   kRowMajorInterleavedK4,
   kColumnMajorInterleavedK16,
@@ -74,7 +76,9 @@ enum class LayoutTypeID {
   kColumnMajorInterleavedK64,
   kRowMajorInterleavedK64,
   kTensorNCHW,
+  kTensorNCDHW,
   kTensorNHWC,
+  kTensorNDHWC,
   kInvalid
 };
   
@@ -83,11 +87,13 @@ enum class NumericTypeID {
   kUnknown,
   kVoid,
   kB1,
+  kU2,
   kU4,
   kU8,
   kU16,
   kU32,
   kU64,
+  kS2,
   kS4,
   kS8,
   kS16,
@@ -103,11 +109,13 @@ enum class NumericTypeID {
   kCF32,
   kCTF32,
   kCF64,
+  kCS2,
   kCS4,
   kCS8,
   kCS16,
   kCS32,
   kCS64,
+  kCU2,
   kCU4,
   kCU8,
   kCU16,
@@ -116,7 +124,7 @@ enum class NumericTypeID {
   kInvalid
 };
 
-/// Enumeraed type describing a transformation on a complex value.
+/// Enumerated type describing a transformation on a complex value.
 enum class ComplexTransform {
   kNone,
   kConjugate,
@@ -139,6 +147,7 @@ enum class Provider {
 enum class OperationKind {
   kGemm,
   kEqGemm,
+  kSparseGemm,
   kReduction,
   kInvalid
 };
@@ -164,6 +173,7 @@ enum class OpcodeClassID {
   kSimt,
   kTensorOp,
   kWmmaTensorOp,
+  kSparseTensorOp,
   kInvalid
 };
 
@@ -171,6 +181,8 @@ enum class MathOperationID {
   kAdd,
   kMultiplyAdd,
   kMultiplyAddSaturate,
+  kMultiplyAddFastBF16,
+  kMultiplyAddFastF16,
   kMultiplyAddComplex,
   kMultiplyAddGaussianComplex,
   kXorPopc,
@@ -182,8 +194,7 @@ enum class MathOperationID {
 /// Enumeration indicating what kind of GEMM operation to perform
 enum class GemmKind {
   kGemm,
-  kBatched,
-  kArray,
+  kSparse,
   kUniversal,
   kPlanarComplex,
   kPlanarComplexArray,
@@ -392,6 +403,9 @@ struct GemmDescription : public OperationDescription {
   /// Describes the source and destination matrices
   TensorDescription C;
 
+  /// Describes the sparse meta matrices
+  TensorDescription E;
+
   /// Describes the data type of the scalars passed to the epilogue
   NumericTypeID element_epilogue;
 
@@ -428,6 +442,26 @@ struct GemmDescription : public OperationDescription {
     transform_B(transform_B) {} 
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Desciprion for structured sparse GEMMs.
+struct SparseGemmDescription : public GemmDescription {
+
+  /// Description structure for structured sparse GEMM
+  SparseGemmDescription(
+    GemmKind gemm_kind = GemmKind::kGemm,
+    TensorDescription const &A = TensorDescription(),
+    TensorDescription const &B = TensorDescription(),
+    TensorDescription const &C = TensorDescription(),
+    TensorDescription const &E = TensorDescription(),
+    NumericTypeID element_epilogue = NumericTypeID::kInvalid,
+    SplitKMode split_k_mode = SplitKMode::kNone,
+    ComplexTransform transform_A = ComplexTransform::kNone,
+    ComplexTransform transform_B = ComplexTransform::kNone
+  ):
+    GemmDescription(gemm_kind, A, B, C, element_epilogue, split_k_mode, transform_A, transform_B)
+     {this->E = E;}
+};
 
 /// Description of all Reduction operations
 struct ReductionDescription : public OperationDescription {
@@ -746,6 +780,48 @@ struct GemmPlanarComplexArrayArguments {
   void const * beta;
   ScalarPointerMode pointer_mode;
 };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// OperationKind: kSparseGemm
+//
+
+/// Computes GEMM assumine one of the inputs has 2:4 structured sparsity.
+struct SparseGemmConfiguration {
+
+  GemmUniversalMode mode;
+  gemm::GemmCoord problem_size;
+  int batch_count;                /// number of sparse matrix products in batch
+
+  int64_t lda;                    /// leading dimension of A operand
+  int64_t ldb;                    /// leading dimension of B operand
+  int64_t ldc;                    /// leading dimension of C operand
+  int64_t ldd;                    /// leading dimension of D operand
+  int64_t lde;                    /// leading dimension of E operand (metadata matrix)
+
+  int64_t batch_stride_A;         // stride between matrices
+  int64_t batch_stride_B;         // stride between matrices
+  int64_t batch_stride_C;         // stride between matrices
+  int64_t batch_stride_D;         // stride between matrices
+  int64_t batch_stride_E;         // stride between matrices
+};
+
+/// Arguments for sparse GEMMs
+struct SparseGemmArguments {
+
+  void const *A;                    /// pointer to A matrix
+  void const *B;                    /// pointer to B matrix
+  void const *C;                    /// pointer to C matrix
+  void *D;                          /// pointer to D matrix
+  void const *E;                    /// pointer to E matric (metadata)
+
+  void const *alpha;                /// pointer to alpha scalar
+  void const *beta;                 /// pointer to beta scalar
+  ScalarPointerMode pointer_mode;   /// enumerant indicating whether alpha/beta pointers are host
+                                    ///   or device pointers.
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

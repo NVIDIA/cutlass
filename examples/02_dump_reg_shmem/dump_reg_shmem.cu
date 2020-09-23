@@ -69,7 +69,7 @@
 template <typename Element, typename GmemIterator, typename SmemIterator>
 __global__ void kernel_dump(typename GmemIterator::Params params,
                             typename GmemIterator::TensorRef ref) {
-  __shared__ Element shared_storage[EXAMPLE_MATRIX_ROW * EXAMPLE_MATRIX_COL];
+  extern __shared__ Element shared_storage[];
 
   // Construct the global iterator and load the data to the fragments.
   int tb_thread_id = threadIdx.y * blockDim.x + threadIdx.x;
@@ -164,8 +164,11 @@ int main() {
   dim3 grid(1, 1);
   dim3 block(32, 1, 1);
 
+  int smem_size =
+      int(sizeof(Element) * EXAMPLE_MATRIX_ROW * EXAMPLE_MATRIX_COL);
+
   kernel_dump<Element, GmemIterator, SmemIterator>
-      <<<grid, block>>>(params, matrix.device_ref());
+      <<<grid, block, smem_size, 0>>>(params, matrix.device_ref());
 
   cudaError_t result = cudaDeviceSynchronize();
 

@@ -96,7 +96,7 @@ struct GemmCoord : public Coord<3, int> {
   /// Integer-valued index
   typedef int Index;
 
-  /// Base type is a Coord of rank=4
+  /// Base type is a Coord of rank=3
   typedef Coord<3, Index> Base;
 
   /// GEMM M dimension - rows of the output C matrix
@@ -274,7 +274,7 @@ struct BatchedGemmCoord : public Coord<4, int> {
   /// GEMM K dimension - inner dimension of the GEMM problem
   static int const kK = 2;
 
-  /// GEMM K dimension - inner dimension of the GEMM problem
+  /// GEMM Batch dimension - inner dimension of the GEMM problem
   static int const kBatch = 3;
 
   //

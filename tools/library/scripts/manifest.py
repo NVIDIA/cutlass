@@ -113,6 +113,7 @@ class Manifest:
     self.operations = {}
     self.args = args
     self.compute_capabilities = [int(x) for x in args.architectures.split(';')]
+    self.selected_kernels = []
     
     if args.operations == 'all':
       self.operations_enabled = []
@@ -128,6 +129,14 @@ class Manifest:
       self.kernel_names = []
     else:
       self.kernel_names = [x for x in args.kernels.split(',') if x != '']
+
+    self.ignore_kernel_names = [x for x in args.ignore_kernels.split(',') if x != '']
+
+    if args.kernel_filter_file is None:
+        self.kernel_filter_list = []
+    else:
+        self.kernel_filter_list = self.get_kernel_filters(args.kernel_filter_file)
+
 
     self.operation_count = 0
     self.operations_by_name = {}
@@ -152,6 +161,29 @@ void initialize_all(Manifest &manifest) {
 } // namespace cutlass
 
 '''
+
+
+  def get_kernel_filters (self, kernelListFile):
+    if os.path.isfile(kernelListFile):
+        with open(kernelListFile, 'r') as fileReader:
+            lines = [line.rstrip() for line in fileReader if not line.startswith("#")]
+        
+        lines = [re.compile(line) for line in lines if line]
+        return lines
+    else:
+        return []
+
+
+
+  def filter_out_kernels(self, kernel_name, kernel_filter_list):
+
+    for kernel_filter_re in kernel_filter_list:
+        if kernel_filter_re.search(kernel_name) is not None:
+            return True
+        
+    return False
+
+    
   #
   def _filter_string_matches(self, filter_string, haystack):
     ''' Returns true if all substrings appear in the haystack in order'''
@@ -190,10 +222,24 @@ void initialize_all(Manifest &manifest) {
     if len(self.kernel_names):
       name = operation.procedural_name()
       enabled = False
+
+      # compare against the include list
       for name_substr in self.kernel_names:
         if self._filter_string_matches(name_substr, name):
           enabled = True
           break
+
+      # compare against the exclude list
+      for name_substr in self.ignore_kernel_names:
+        if self._filter_string_matches(name_substr, name):
+          enabled = False
+          break
+          
+    if len(self.kernel_filter_list) > 0:
+        enabled = False
+        if self.filter_out_kernels(operation.procedural_name(), self.kernel_filter_list):
+            enabled = True
+
 
     # todo: filter based on compute data type
     return enabled
@@ -208,6 +254,8 @@ void initialize_all(Manifest &manifest) {
     '''
 
     if self.filter(operation):
+    
+      self.selected_kernels.append(operation.procedural_name())
 
       self.operations_by_name[operation.procedural_name()] = operation
 
@@ -260,7 +308,8 @@ void initialize_all(Manifest &manifest) {
         self.top_level_reserve, {'operation_count': str(self.operation_count)}))
 
       # for each operation kind, emit initializer for all configurations
-      for operation_kind, configurations in self.operations.items():  
+      for operation_kind, configurations in self.operations.items():
+        
         with operation_emitters[target](generated_path, operation_kind, self.args) as operation_kind_emitter:
           for configuration_name, operations in configurations.items():
             operation_kind_emitter.emit(configuration_name, operations)

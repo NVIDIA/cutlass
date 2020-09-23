@@ -85,7 +85,7 @@ Array<T, N> mac(Array<T, N> const &a, Array<T, N> const &b, Array<T, N> const &c
   Array<T, N> d;
   CUTLASS_PRAGMA_UNROLL
   for (int i = 0; i < N; ++i) {
-    d[i] = a[i] * b[i] + c;
+    d[i] = a[i] * b[i] + c[i];
   }
   return d;
 }

@@ -56,8 +56,13 @@ __global__ void BlockCompareEqual(
   size_t idx = threadIdx.x + blockDim.x * blockIdx.x;
 
   for (; idx < capacity; idx += gridDim.x * blockDim.x) {
-    if (ptr_A[idx] != ptr_B[idx]) {
+
+    Element a = cutlass::ReferenceFactory<Element>::get(ptr_A, idx);
+    Element b = cutlass::ReferenceFactory<Element>::get(ptr_B, idx);
+
+    if (a != b) {
       *equal = 0;
+
       return;
     }
   }
@@ -76,8 +81,8 @@ __global__ void BlockCompareRelativelyEqual(
 
   for (; idx < capacity; idx += gridDim.x * blockDim.x) {
 
-    Element a = ptr_A[idx];
-    Element b = ptr_B[idx];
+    Element a = cutlass::ReferenceFactory<Element>::get(ptr_A, idx);
+    Element b = cutlass::ReferenceFactory<Element>::get(ptr_B, idx);
 
     if (!relatively_equal(a, b, epsilon, nonzero_floor)) {
       *equal = 0;

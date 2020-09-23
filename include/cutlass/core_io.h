@@ -31,17 +31,42 @@
 #include <iostream>
 #include <typeinfo>
 
+#include "cutlass/array.h"
 #include "cutlass/coord.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/matrix_shape.h"
 #include "cutlass/layout/pitch_linear.h"
+#include "cutlass/tensor_view.h"
 #include "cutlass/gemm/gemm.h"
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Output operator for CUDA built-in dim3 type
+inline std::ostream &operator<<(std::ostream &out, dim3 d) {
+  return out << d.x << ", " << d.y << ", " << d.z;
+}
+
+/// Output operator for CUDA built-in error type
+inline std::ostream &operator<<(std::ostream &out, cudaError_t error) {
+  return out << cudaGetErrorString(error);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //                    stream operators for cutlass namespace                                     //
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename Element, int Rank>
+inline
+std::ostream& operator<<(std::ostream& out, Array<Element, Rank> const& v) {
+  for (int i = 0; i < Rank; ++i) {
+    out << (i ? ", " : "") << v[i];
+  }
+  return out;
+}
 
 template <int Rank>
 inline
@@ -115,7 +140,7 @@ inline std::ostream &operator<<(std::ostream &out, ScalarIO<uint8_t> const &scal
 /// Default printing to ostream for MatrixShape
 template <int Row, int Column>
 inline
-std::ostream & operator<<(std::ostream &out, cutlass::MatrixShape<Row, Column> const &matrix_shape) {
+std::ostream & operator<<(std::ostream &out, MatrixShape<Row, Column> const &matrix_shape) {
   out << "cutlass::MatrixShape::(kRow, kColumn) {"
     << cutlass::MatrixShape<Row,Column>::kRow <<","
     << cutlass::MatrixShape<Row,Column>::kColumn <<"}";
@@ -130,7 +155,7 @@ namespace gemm {
 /// Default printing to ostream for GemmShape
 template <int M, int N, int K>
 inline
-std::ostream & operator<<(std::ostream &out, cutlass::gemm::GemmShape<M,N,K> const &gemm_shape) {
+std::ostream & operator<<(std::ostream &out, GemmShape<M,N,K> const &gemm_shape) {
   out << "cutlass::GemmShape::(kM, kN, kK) {"
     << cutlass::gemm::GemmShape<M,N,K>::kM <<","
     << cutlass::gemm::GemmShape<M,N,K>::kN <<","
@@ -150,7 +175,7 @@ namespace layout {
 /// Default printing to ostream for PitchLinearShape
 template < int Contiguous, int Strided>
 inline
-std::ostream & operator<<(std::ostream &out, cutlass::layout::PitchLinearShape<Contiguous, Strided> const &pitch_linear_shape) {
+std::ostream & operator<<(std::ostream &out, PitchLinearShape<Contiguous, Strided> const &pitch_linear_shape) {
   out << "cutlass::layout::PitchLinearShape::(kContiguous, kStrided) {"
     << cutlass::layout::PitchLinearShape<Contiguous,Strided>::kContiguous <<","
     << cutlass::layout::PitchLinearShape<Contiguous,Strided>::kStrided <<"}";

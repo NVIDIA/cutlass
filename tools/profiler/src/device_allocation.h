@@ -51,6 +51,9 @@ private:
   /// Data type of contained elements
   library::NumericTypeID type_;
 
+  /// Gets the stride between elements
+  size_t batch_stride_;
+
   /// Capacity in elements of device allocation
   size_t capacity_;
 
@@ -65,6 +68,9 @@ private:
 
   /// Extent vector
   std::vector<int> extent_;
+
+  /// Support allocating a 'batch' of non-overlapping tensors in contiguous memory
+  int batch_count_;
 
   /// Buffer holding TensorRef instance to recently allocated memory
   std::vector<uint8_t> tensor_ref_buffer_;
@@ -118,7 +124,8 @@ public:
     library::NumericTypeID type, 
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>());
+    std::vector<int> const &stride = std::vector<int>(),
+    int batch_count = 1);
 
   ~DeviceAllocation();
 
@@ -132,7 +139,8 @@ public:
     library::NumericTypeID type, 
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>());
+    std::vector<int> const &stride = std::vector<int>(),
+    int batch_count = 1);
 
   /// Returns a buffer owning the tensor reference
   std::vector<uint8_t> &tensor_ref() {
@@ -144,8 +152,11 @@ public:
   /// Data type of contained elements
   library::NumericTypeID type() const;
   
-  /// Pointer to device memory
+  /// Pointer to start of device memory allocation
   void *data() const;
+
+  /// Pointer to the first element of a batch
+  void *batch_data(int batch_idx) const;
 
   /// Gets the layout type
   library::LayoutTypeID layout() const;
@@ -156,6 +167,15 @@ public:
   /// Gets the extent vector
   std::vector<int> const & extent() const;
 
+  /// Gets the number of adjacent tensors in memory
+  int batch_count() const;
+
+  /// Gets the stride (in units of elements) beteween items
+  int64_t batch_stride() const;
+
+  /// Gets the stride (in units of bytes) beteween items
+  int64_t batch_stride_bytes() const;
+
   /// Capacity of allocation in number of elements
   size_t capacity() const;
   
@@ -165,8 +185,14 @@ public:
   /// Initializes a device allocation to a random distribution using cuRAND
   void initialize_random_device(int seed, Distribution dist);
 
-  /// Initializes a device allocation to a random distribution using cuRAND
+  /// Initializes a host allocation to a random distribution using std::cout
   void initialize_random_host(int seed, Distribution dist);
+
+  /// Initializes a device allocation to a random distribution using cuRAND
+  void initialize_random_sparsemeta_device(int seed, int MetaSizeInBits);
+
+  /// Initializes a host allocation to a random distribution using std::cout
+  void initialize_random_sparsemeta_host(int seed, int MetaSizeInBits);
 
   /// Copies from an equivalent-sized tensor in device memory
   void copy_from_device(void const *ptr);

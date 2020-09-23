@@ -175,6 +175,9 @@ public:
   /// Options related to profiling
   struct Profiling {
 
+    /// Number of workspaces to rotate through to avoid cache-resident working sets
+    int workspace_count;
+
     /// Number of iterations to warmup each kernel prior to profiling
     int warmup_iterations;
 
@@ -273,6 +276,10 @@ public:
 
   /// Vector of operation name substrings
   std::vector<std::string> operation_names;
+  
+  /// Vector of operation name substrings
+  std::vector<std::string> excluded_operation_names;
+
 
   //
   // Detailed configuration options

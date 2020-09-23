@@ -38,6 +38,7 @@
 #include "cutlass/complex.h"
 #include "cutlass/array.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/subbyte_reference.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/tensor_view_planar_complex.h"
 
@@ -300,7 +301,6 @@ void TensorFillRandomGaussian(
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Fills a tensor with random values with a Gaussian distribution.
 template <
   typename Element                        ///< Element type
@@ -319,11 +319,12 @@ void BlockFillRandomGaussian(
   detail::RandomGaussianFunc<Element> random_func(seed, mean, stddev, bits);
 
   for (size_t i = 0; i < capacity; ++i) {
-    ptr[i] = random_func();
+    ReferenceFactory<Element>::get(ptr, i) = random_func();
   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
@@ -510,7 +511,6 @@ void TensorFillRandomUniform(
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// Fills a tensor with random values with a uniform random distribution.
 template <
   typename Element                        ///< Element type
@@ -527,11 +527,10 @@ void BlockFillRandomUniform(
   detail::RandomUniformFunc<Element> random_func(seed, max, min, bits);
 
   for (size_t i = 0; i < capacity; ++i) {
-    ptr[i] = random_func();
+    ReferenceFactory<Element>::get(ptr, i) = random_func();
   }
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace detail {
@@ -879,6 +878,135 @@ void BlockFillRandom(
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace detail {
+
+template <typename Element>
+struct RandomSparseMetaFunc {
+  
+  uint64_t seed;
+  double range;
+  int MetaSizeInBits;
+
+  //
+  // Methods
+  //
+
+  RandomSparseMetaFunc(
+    uint64_t seed_ = 0, 
+    int MetaSizeInBits_ = 2
+  ):
+    seed(seed_), MetaSizeInBits(MetaSizeInBits_) {
+      std::srand((unsigned)seed);
+      if (MetaSizeInBits_ == 2) {
+        range = 6;
+      } else if (MetaSizeInBits_ == 4) {
+        range = 2;
+      }
+    }
+
+  /// Compute random value and update RNG state
+  Element operator()() const {
+    Element FourToTwoMeta[6] = {0x4, 0x8, 0x9, 0xc, 0xd, 0xe};
+    Element TwoToOneMeta[2] = {0x4, 0xe};
+
+    Element * MetaArray = (MetaSizeInBits == 2) ? FourToTwoMeta : TwoToOneMeta;
+
+    Element result = 0x0;
+
+    for (int i = 0; i < cutlass::sizeof_bits<Element>::value / 4; ++i) {
+      double rnd = double(std::rand()) / double(RAND_MAX);
+      rnd = range * rnd;
+      Element meta = MetaArray[(int)rnd];
+
+      result = (Element)(result | ((Element)(meta << (i * 4))));
+    }
+
+    return result;
+  }
+};
+
+/// Computes a random sparse meta
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorFillRandomSparseMetaFunc {
+
+  using TensorView = TensorView<Element, Layout>;
+
+  //
+  // Data members
+  //
+
+  TensorView view;
+  RandomSparseMetaFunc<Element> func;
+
+  //
+  // Methods
+  //
+
+  /// Construction of Gaussian RNG functor.
+  TensorFillRandomSparseMetaFunc(
+    TensorView view_ = TensorView(),
+    RandomSparseMetaFunc<Element> func_ = RandomSparseMetaFunc<Element>()
+  ):
+    view(view_), func(func_) {
+
+  }
+
+  /// Compute random value and update RNG state
+  void operator()(Coord<Layout::kRank> const &coord) const {
+
+    view.at(coord) = func();
+  }
+};
+
+} // namespace detail
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fills a tensor with random values with a uniform random distribution.
+template <
+  typename Element,                 ///< Element type
+  typename Layout>                  ///< Layout function
+void TensorFillRandomSparseMeta(
+  TensorView<Element, Layout> dst,  ///< destination tensor
+  uint64_t seed,                    ///< seed for RNG
+  int MetaSizeInBits) {             ///< 2 bit or 4 bit
+
+  detail::RandomSparseMetaFunc<Element> random_func(seed, MetaSizeInBits);
+
+  detail::TensorFillRandomSparseMetaFunc<Element, Layout> func(
+    dst,
+    random_func
+  );
+
+  TensorForEach(
+    dst.extent(),
+    func
+  );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fills a tensor with random values with a uniform random distribution.
+template <
+  typename Element                        ///< Element type
+>
+void BlockFillRandomSparseMeta(
+  Element *ptr,
+  size_t capacity,
+  uint64_t seed,                          ///< seed for RNG
+  int MetaSizeInBits) {                   ///< 2 bit or 4bit
+
+  detail::RandomSparseMetaFunc<Element> random_func(seed, MetaSizeInBits);
+
+  for (size_t i = 0; i < capacity; ++i) {
+    ptr[i] = random_func();
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Copies a diagonal in from host memory without modifying off-diagonal elements.
 template <
   typename Element,               ///< Element type
@@ -891,7 +1019,7 @@ void TensorCopyDiagonalIn(
   
   for (typename Layout::Index i = 0; i < extent; ++i) {
     Coord<Layout::kRank> coord(i);
-    dst.at(coord) = ptr[i];
+    dst.at(coord) = ReferenceFactory<Element>::get(ptr, i);
   }
 }
 
@@ -910,7 +1038,7 @@ void TensorCopyDiagonalOut(
   
   for (typename Layout::Index i = 0; i < extent; ++i) {
     Coord<Layout::kRank> coord(i);
-    ptr[i] = src.at(coord);
+    ReferenceFactory<Element>::get(ptr, i) = src.at(coord);
   }
 }
 

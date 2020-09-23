@@ -44,13 +44,17 @@ namespace transform {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Strip-mines a pitch-linear tile among a given number of threads, first along the contiguous
-/// dimension then along the strided dimension.
+/// Strip-mines a pitch-linear tile among a given number of threads, first along
+/// the contiguous dimension then along the strided dimension.
 ///
-/// The tile must be divisible by the thread count such that all threads may execute the same
-/// number of iterations with the same delta to exhaustively cover the tile.
+/// The tile must be divisible by the thread count such that all threads may
+/// execute the same number of iterations with the same delta to exhaustively
+/// cover the tile.
 ///
 /// This class satisfies the "RegularThreadMapping" concept.
+///
+/// This ThreadMap is used by SIMT kernels and operand E of the sparse tensor
+/// kernels.
 template <
   typename Shape_,
   int Threads,
@@ -96,16 +100,17 @@ struct PitchLinearStripminedThreadMap {
 
   /// Number of iterations by each thread
   using Iterations = typename platform::conditional<
-    Threads >= Detail::ShapeVec::kContiguous,
-    layout::PitchLinearShape<
-      1,
-      (Threads >= Detail::ShapeVec::kContiguous ? Detail::ShapeVec::kStrided / (kThreads / Detail::ShapeVec::kContiguous) : 0)
-    >,
-    layout::PitchLinearShape<
-      Detail::ShapeVec::kContiguous / kThreads,
-      Detail::ShapeVec::kStrided
-    >
-  >::type;
+      Threads >= Detail::ShapeVec::kContiguous,
+      layout::PitchLinearShape<
+          1,
+          // Redo the comparison here to work around divide by zero compiler
+          // error.  The compiler evaluates both path of platform::conditional.
+          (Threads >= Detail::ShapeVec::kContiguous
+               ? Detail::ShapeVec::kStrided /
+                     (kThreads / Detail::ShapeVec::kContiguous)
+               : 0)>,
+      layout::PitchLinearShape<Detail::ShapeVec::kContiguous / kThreads,
+                               Detail::ShapeVec::kStrided>>::type;
 
   /// Interval between accesses along each dimension of the tensor's logical coordinate space
   /// (in units of Elements)
@@ -125,13 +130,13 @@ struct PitchLinearStripminedThreadMap {
   /// (in units of Elements)
   CUTLASS_HOST_DEVICE
   static TensorCoord initial_offset(int thread_id) {
-    
     return TensorCoord(
       (thread_id % Detail::ShapeVec::kContiguous) * kElementsPerAccess, 
       thread_id / Detail::ShapeVec::kContiguous);
   }
 };
 
+/// This ThreadMap is used by GEMV
 template <
   typename Shape,
   int Threads,
@@ -196,6 +201,8 @@ struct PitchLinearTilePolicyStripminedThreadStrided
 
 /// Policy defining a warp-raked arrangement in which a shape is partitioned into contiguous
 /// elements.
+///
+/// This ThreadMap is used by tensor core kernels.
 template <
   typename Shape_,
   int Threads,
@@ -240,6 +247,14 @@ struct PitchLinearWarpRakedThreadMap {
       Shape::kContiguous / kElementsPerAccess,
       Shape::kStrided
     >;
+
+    static_assert(
+      !(ShapeInAccesses::kContiguous % WarpThreadArrangement::kContiguous),
+      "ShapeInAccesses must be divisible by WarpThreadArrangement.");
+
+    static_assert(
+      !(ShapeInAccesses::kStrided % WarpThreadArrangement::kStrided),
+      "ShapeInAccesses must be divisible by WarpThreadArrangement.");
 
     // compute number of warp-level accesses total
     using WarpAccessIterations = layout::PitchLinearShape<
@@ -672,16 +687,17 @@ struct PitchLinear2DThreadTileStripminedThreadMap <Shape_, Threads, cutlass::lay
 
   /// Number of iterations by each thread
   using Iterations = typename platform::conditional<
-    Threads >= Detail::ShapeVec::kContiguous,
-    layout::PitchLinearShape<
-      1,
-      (Threads >= Detail::ShapeVec::kContiguous ? Detail::ShapeVec::kStrided / (kThreads / Detail::ShapeVec::kContiguous) : 0)
-    >,
-    layout::PitchLinearShape<
-      Detail::ShapeVec::kContiguous / kThreads,
-      Detail::ShapeVec::kStrided
-    >
-  >::type;
+      Threads >= Detail::ShapeVec::kContiguous,
+      layout::PitchLinearShape<
+          1,
+          // Redo the comparison here to work around divide by zero compiler
+          // error.  The compiler evaluates both path of platform::conditional.
+          (Threads >= Detail::ShapeVec::kContiguous
+               ? Detail::ShapeVec::kStrided /
+                     (kThreads / Detail::ShapeVec::kContiguous)
+               : 0)>,
+      layout::PitchLinearShape<Detail::ShapeVec::kContiguous / kThreads,
+                               Detail::ShapeVec::kStrided>>::type;
 
   /// Interval between accesses along each dimension of the tensor's logical coordinate space
   /// (in units of Elements)

@@ -32,6 +32,8 @@
 // Profiler includes
 #include "cutlass_profiler.h"
 #include "gemm_operation_profiler.h"
+#include "sparse_gemm_operation_profiler.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -45,6 +47,8 @@ CutlassProfiler::CutlassProfiler(
   options_(options) {
 
   operation_profilers_.emplace_back(new GemmOperationProfiler(options));
+
+  operation_profilers_.emplace_back(new SparseGemmOperationProfiler(options));
 
 }
 

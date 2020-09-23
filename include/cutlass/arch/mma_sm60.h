@@ -55,6 +55,7 @@ struct Mma<
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<2, 1, 1>;
+  using Operator = OpMultiplyAdd;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -99,6 +100,7 @@ struct Mma<
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 2, 1>;
+  using Operator = OpMultiplyAdd;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -143,6 +145,7 @@ struct Mma <
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<2, 2, 1>;
+  using Operator = OpMultiplyAdd;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -196,7 +199,8 @@ struct Mma<
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<2, 2, 1>;
-
+  using Operator = OpMultiplyAdd;
+  
   CUTLASS_HOST_DEVICE
   void operator()(
     Array<half_t, 4> &d,

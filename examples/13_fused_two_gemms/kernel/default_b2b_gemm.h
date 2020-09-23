@@ -217,7 +217,85 @@ struct DefaultB2bGemm<
 };
 
 
-/// Partial specialization for Turing IMMA Interleaved layout
+/// Partial specialization for Ampere Integer Matrix Multiply Interleaved layout
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Access granularity of B matrix in units of elements
+    int kAlignmentB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape0,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape1,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape0,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape1,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp0,
+    /// Epilogue output operator
+    typename EpilogueOutputOp1,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// Number of Interleaved k
+    int InterleavedK,
+    /// If true, kernel is configured to support serial reduction in the
+    /// epilogue
+    bool SplitKSerial,
+    /// Operation performed by GEMM
+    typename Operator,
+    /// Is Beta zero or not
+    bool IsBetaZero>
+struct DefaultB2bGemm<
+    ElementA, layout::ColumnMajorInterleaved<InterleavedK>, kAlignmentA,
+    ElementB, layout::RowMajorInterleaved<InterleavedK>, kAlignmentB, 
+    ElementC, layout::ColumnMajorInterleaved<InterleavedK>, int32_t,
+    arch::OpClassTensorOp, arch::Sm80,
+    ThreadblockShape0, ThreadblockShape1, WarpShape0, WarpShape1,
+    InstructionShape, EpilogueOutputOp0, EpilogueOutputOp1,
+    ThreadblockSwizzle, Stages,
+    SplitKSerial, Operator, IsBetaZero> {
+  using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
+  using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
+  using LayoutC = layout::ColumnMajorInterleaved<InterleavedK>;
+
+  using ElementAccumulator = int32_t;
+
+  /// Define the threadblock-scoped matrix multiply-accumulate
+  using B2bMma = typename cutlass::gemm::threadblock::DefaultB2bMma<
+      ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
+      ElementAccumulator, LayoutC, arch::OpClassTensorOp, arch::Sm80,
+      ThreadblockShape0, ThreadblockShape1, WarpShape0, WarpShape1,
+      InstructionShape, Stages, Operator, EpilogueOutputOp0,
+      true>::ThreadblockB2bMma;
+
+  static const int kPartitionsK1 = ThreadblockShape1::kK / WarpShape1::kK;
+
+  /// Define the epilogue
+  using Epilogue = typename cutlass::epilogue::threadblock::
+      DefaultInterleavedEpilogueTensorOp<
+          ThreadblockShape1, typename B2bMma::Operator1, kPartitionsK1, EpilogueOutputOp1,
+          64 / sizeof_bits<ElementC>::value, InterleavedK,
+          IsBetaZero>::Epilogue;
+
+  /// Define the kernel-level GEMM operator.
+  using B2bGemmKernel = kernel::B2bGemm<B2bMma, Epilogue, ThreadblockSwizzle, SplitKSerial>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+
+/// Partial specialization for Turing Integer Tensor Core Interleaved layout
 template <
     /// Element type for A matrix operand
     typename ElementA,

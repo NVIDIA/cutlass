@@ -32,7 +32,7 @@ endif()
 
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 
-project(CUTLASS VERSION 2.2.0 LANGUAGES CXX)
+project(CUTLASS VERSION 2.3.0 LANGUAGES CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
 find_package(Doxygen QUIET)
@@ -69,6 +69,8 @@ endif()
 
 set(CUTLASS_ENABLE_EXAMPLES ${CUTLASS_ENABLE_EXAMPLES_INIT} CACHE BOOL "Enable CUTLASS Examples")
 set(CUTLASS_ENABLE_TOOLS ${CUTLASS_ENABLE_TOOLS_INIT} CACHE BOOL "Enable CUTLASS Tools")
+set(CUTLASS_ENABLE_LIBRARY ${CUTLASS_ENABLE_TOOLS} CACHE BOOL "Enable CUTLASS Library")
+set(CUTLASS_ENABLE_PROFILER ${CUTLASS_ENABLE_TOOLS} CACHE BOOL "Enable CUTLASS Profiler")
 
 if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
   set(CUTLASS_ENABLE_TESTS_INIT ${CUTLASS_ENABLE_TOOLS_INIT})
@@ -100,6 +102,9 @@ if (NOT CUDA_VERSION VERSION_LESS 10.0)
 endif()
 if (NOT CUDA_VERSION VERSION_LESS 11.0)
   list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 80)
+endif()
+if (NOT CUDA_VERSION VERSION_LESS 11.1)
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 86)
 endif()
 set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
 set(CUTLASS_NVCC_ARCHS_ENABLED ${CUTLASS_NVCC_ARCHS} CACHE STRING "The SM architectures to build code for.")
@@ -164,12 +169,14 @@ set(CUTLASS_ENABLE_F16C OFF CACHE BOOL "Enable F16C x86 extensions in host code.
 #
 set(CUTLASS_LIBRARY_OPERATIONS "all" CACHE STRING "Comma delimited list of operation name filters. Default '' means all operations are enabled.")
 set(CUTLASS_LIBRARY_KERNELS "" CACHE STRING "Comma delimited list of kernel name filters. If unspecified, only the largest tile size is enabled. If 'all' is specified, all kernels are enabled.")
+set(CUTLASS_LIBRARY_IGNORE_KERNELS "" CACHE STRING "Comma delimited list of kernel names to exclude from build.")
 
 
 # Test Levels L0, L1, L2
 set(CUTLASS_TEST_LEVEL "0" CACHE STRING "Level of tests to compile.")
 set_property(CACHE CUTLASS_TEST_LEVEL PROPERTY STRINGS 0 1 2)
 list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_TEST_LEVEL=${CUTLASS_TEST_LEVEL})
+list(APPEND CUTLASS_CUDA_CLANG_FLAGS -DCUTLASS_TEST_LEVEL=${CUTLASS_TEST_LEVEL})
 
 #
 # CUDA 10.1 introduces "mma" in PTX performing collective matrix multiply operations.
@@ -180,6 +187,11 @@ if (CUDA_VERSION VERSION_LESS 10.1)
 else()
   set(CUTLASS_ENABLE_TENSOR_CORE_MMA_DEFAULT ON)
 endif()
+
+# Trace levels for debugging
+set(CUTLASS_DEBUG_TRACE_LEVEL "0" CACHE STRING "Level of debug tracing to perform.")
+list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_DEBUG_TRACE_LEVEL=${CUTLASS_DEBUG_TRACE_LEVEL})
+
 
 set(CUTLASS_ENABLE_TENSOR_CORE_MMA ${CUTLASS_ENABLE_TENSOR_CORE_MMA_DEFAULT} CACHE BOOL
   "Enable PTX mma instruction for collective matrix multiply operations.")
@@ -352,7 +364,7 @@ set_target_properties(CUTLASS PROPERTIES EXPORT_NAME cutlass)
 
 set(CUTLASS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE PATH "CUTLASS Header Library")
 
-set(CUTLASS_GENERATOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/library/)
+set(CUTLASS_GENERATOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/library CACHE INTERNAL "Location of generator scripts")
 
 # The following utility directory is needed even if the tools build is disabled, so it exists here.
 set(CUTLASS_TOOLS_UTIL_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/util/include CACHE INTERNAL "")

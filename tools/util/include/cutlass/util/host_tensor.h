@@ -39,7 +39,6 @@
 #include <vector>
 
 #include "cutlass/cutlass.h"
-#include "cutlass/matrix_traits.h"
 #include "cutlass/tensor_ref.h"
 #include "cutlass/tensor_view.h"
 

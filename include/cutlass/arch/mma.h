@@ -150,6 +150,42 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, ElementA, LayoutA, ElementB, LayoutB, El
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Specifies internal data type for computation
+struct SPFormatType {
+  enum Kind {
+    Thread
+  };
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Matrix multiply-add operation
+template <
+  /// Size of the matrix product (concept: GemmShape)
+  typename Shape_,
+  /// Number of threads participating
+  int kThreads_,
+  /// Data type of A elements
+  typename ElementA,
+  /// Layout of A matrix (concept: MatrixLayout)
+  typename LayoutA,
+  /// Data type of B elements
+  typename ElementB,
+  /// Layout of B matrix (concept: MatrixLayout)
+  typename LayoutB,
+  /// Element type of C matrix
+  typename ElementC,
+  /// Layout of C matrix (concept: MatrixLayout)
+  typename LayoutC,
+  /// Inner product operator
+  typename Operator,
+  /// Specifies meta data format
+  SPFormatType::Kind SPFormat = SPFormatType::Thread
+>
+struct SparseMma;
+
 } // namespace arch
 } // namespace cutlass
 
@@ -165,4 +201,5 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, ElementA, LayoutA, ElementB, LayoutB, El
 #include "cutlass/arch/mma_sm70.h" 
 #include "cutlass/arch/mma_sm75.h" 
 #include "cutlass/arch/mma_sm80.h"
+#include "cutlass/arch/sp_mma_sm80.h"
 /////////////////////////////////////////////////////////////////////////////////////////////////

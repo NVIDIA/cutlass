@@ -81,17 +81,23 @@ struct TensorOpMultiplicand {
   static int const kFactor =
       kTileShapeContiguous * kElementsPerAccess / kCrosswise;
 
-  /// The strided dimension needs to be at least WarpSize(32) /
-  /// kTileShapeContiguous for a warp to access.  To ensure conflict free
+  static_assert(
+      (kFactor > 0),
+      "kCrosswise should be no large than one shared memory cache line.");
+
+  /// The strided dimension needs to be at least (WarpSize(32) /
+  /// kTileShapeContiguous) for a warp to access.  To ensure conflict free
   /// access, it also needs to be at least (kTileShapeContiguous / kFactor).
+  /// See comments below
   static int const kTileShapeStride =
       ((kTileShapeContiguous / kFactor) > (32 / kTileShapeContiguous))
           ? (kTileShapeContiguous / kFactor)
           : (32 / kTileShapeContiguous);
 
-  /// Fundamental tile shape in units of vectors
-  /// For TN kblock=32 and 8x8x16 shapes, TileShape = <8, 4>.
-  /// For the rest, TileShape = <8, 8>
+  /// Fundamental tile shape in units of vectors to guarantee bank conflict free
+  /// shared memory load/store.
+  /// For kFactor = 1, TileShape = <8, 8> 
+  /// For kFactor > 1, TileShape = <8, 4>
   using TileShape = PitchLinearShape<kTileShapeContiguous, kTileShapeStride>;
 
   /// Fundamental partition shape in units of vectors

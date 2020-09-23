@@ -216,8 +216,6 @@ class EmitGemmInstance:
   def emit(self, operation):
 
     warp_shape = [operation.tile_description.threadblock_shape[idx] // operation.tile_description.warp_count[idx] for idx in range(3)]
-    #warp_shape[2] = operation.tile_description.math_instruction.instruction_shape[2]
-    warp_shape[2] = operation.tile_description.threadblock_shape[2] 
 
     epilogue_vector_length = int(min(operation.C.alignment * DataTypeSize[operation.C.element], 128) / DataTypeSize[operation.C.element])
 
@@ -261,6 +259,86 @@ class EmitGemmInstance:
     return SubstituteTemplate(template, values)
 
 ###################################################################################################
+
+class EmitSparseGemmInstance:
+  ''' Responsible for emitting a CUTLASS template definition'''
+
+  def __init__(self):
+    self.gemm_template = """
+  // Gemm operator ${operation_name}
+  using Operation_${operation_name} = cutlass::gemm::device::SparseGemm<
+    ${element_a}, ${layout_a},
+    ${element_b}, ${layout_b},
+    ${element_c}, ${layout_c},
+    ${element_accumulator},
+    ${opcode_class},
+    ${arch},
+    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+    cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k}>,
+    cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
+    ${epilogue_functor}<
+      ${element_c},
+      ${epilogue_vector_length},
+      ${element_accumulator},
+      ${element_epilogue}
+    >,
+    ${swizzling_functor},
+    ${stages},
+    ${align_a},
+    ${align_b},
+    false,
+    ${math_operation}
+    ${residual}
+  >;
+"""
+
+  def emit(self, operation):
+
+    warp_shape = [operation.tile_description.threadblock_shape[idx] // operation.tile_description.warp_count[idx] for idx in range(3)]
+
+    epilogue_vector_length = int(min(operation.C.alignment * DataTypeSize[operation.C.element], 128) / DataTypeSize[operation.C.element])
+
+    residual = ''
+    
+    values = {
+      'operation_name': operation.procedural_name(),
+      'element_a': DataTypeTag[operation.A.element],
+      'layout_a': LayoutTag[operation.A.layout],
+      'element_b': DataTypeTag[operation.B.element],
+      'layout_b': LayoutTag[operation.B.layout],
+      'element_c': DataTypeTag[operation.C.element],
+      'layout_c': LayoutTag[operation.C.layout],
+      'element_accumulator': DataTypeTag[operation.accumulator_type()],
+      'opcode_class': OpcodeClassTag[operation.tile_description.math_instruction.opcode_class],
+      'arch': "cutlass::arch::Sm%d" % operation.arch,
+      'threadblock_shape_m': str(operation.tile_description.threadblock_shape[0]),
+      'threadblock_shape_n': str(operation.tile_description.threadblock_shape[1]),
+      'threadblock_shape_k': str(operation.tile_description.threadblock_shape[2]),
+      'warp_shape_m': str(warp_shape[0]),
+      'warp_shape_n': str(warp_shape[1]),
+      'warp_shape_k': str(warp_shape[2]),
+      'instruction_shape_m': str(operation.tile_description.math_instruction.instruction_shape[0]),
+      'instruction_shape_n': str(operation.tile_description.math_instruction.instruction_shape[1]),
+      'instruction_shape_k': str(operation.tile_description.math_instruction.instruction_shape[2]),
+      'epilogue_vector_length': str(epilogue_vector_length),
+      'element_epilogue': str(DataTypeTag[operation.element_epilogue]),
+      'epilogue_functor': EpilogueFunctorTag[operation.epilogue_functor],
+      'swizzling_functor': SwizzlingFunctorTag[operation.swizzling_functor],
+      'stages': str(operation.tile_description.stages),
+      'align_a': str(operation.A.alignment),
+      'align_b': str(operation.B.alignment),
+      'transform_a': ComplexTransformTag[operation.A.complex_transform],
+      'transform_b': ComplexTransformTag[operation.B.complex_transform],
+      'math_operation': MathOperationTag[operation.tile_description.math_instruction.math_operation],
+      'residual': residual
+    }
+
+    template = self.gemm_template
+
+    return SubstituteTemplate(template, values)
+
+###################################################################################################
+
 
 #
 class EmitGemmUniversalInstance:
@@ -330,7 +408,6 @@ struct ${operation_name} :
     warp_count = operation.tile_description.warp_count
 
     warp_shape = [threadblock_shape[idx] // warp_count[idx] for idx in range(3)]
-    warp_shape[2] = operation.tile_description.threadblock_shape[2] 
 
     epilogue_vector_length = int(min(operation.C.alignment * DataTypeSize[operation.C.element], 128) / DataTypeSize[operation.C.element])
 
@@ -552,6 +629,7 @@ class EmitGemmConfigurationLibrary:
 
     self.instance_emitter = {
       GemmKind.Gemm: EmitGemmInstance,
+      GemmKind.Sparse: EmitSparseGemmInstance,
       GemmKind.Universal: EmitGemmUniversalInstance,
       GemmKind.PlanarComplex: EmitGemmPlanarComplexInstance,
       GemmKind.PlanarComplexArray: EmitGemmPlanarComplexArrayInstance
@@ -559,6 +637,7 @@ class EmitGemmConfigurationLibrary:
 
     self.gemm_kind_wrappers = {
       GemmKind.Gemm: 'GemmOperation',
+      GemmKind.Sparse: 'GemmSparseOperation',
       GemmKind.Universal: 'GemmUniversalOperation',
       GemmKind.PlanarComplex: 'GemmPlanarComplexOperation',
       GemmKind.PlanarComplexArray: 'GemmPlanarComplexArrayOperation'
@@ -568,6 +647,11 @@ class EmitGemmConfigurationLibrary:
 
     self.instance_template = {
       GemmKind.Gemm: """
+${compile_guard_start}
+  manifest.append(new ${gemm_kind}<Operation_${operation_name}>("${operation_name}"));
+${compile_guard_end}
+""",
+      GemmKind.Sparse: """
 ${compile_guard_start}
   manifest.append(new ${gemm_kind}<Operation_${operation_name}>("${operation_name}"));
 ${compile_guard_end}

@@ -977,6 +977,30 @@ struct Mma<
   /// C operand storage
   using FragmentC = Array<ElementC, Shape::kMN>;
 
+  static bool const a_row_major = platform::is_same< LayoutA, layout::RowMajor>::value;
+  static bool const b_column_major = platform::is_same< LayoutB, layout::ColumnMajor>::value;
+  static bool const c_row_major = platform::is_same< LayoutC, layout::RowMajor>::value;
+  static bool const c_column_major = platform::is_same< LayoutC, layout::ColumnMajor>::value;
+
+  static bool const m_mod2 = !(Shape::kM % 2);
+  static bool const n_mod2 = !(Shape::kN % 2);
+  static bool const k_mod2 = !(Shape::kK % 2);
+
+  // HFMA based MMA optimizations are of 2 types :
+  // 1. Inner product 
+  // 2. Outer product
+  // It is chosen based on LayoutC (for outer product gemm) or
+  // Using LayoutA and LayoutB or shape=1x1x2K (for inner product gemms)
+  // If all fails, we choose the generic MMA
+  static bool const use_outer_prod = (c_column_major && m_mod2) || (c_row_major && n_mod2);
+  static bool const use_inner_prod = (a_row_major && b_column_major && k_mod2) || (Shape::kM==1 && Shape::kN==1 && k_mod2);
+  static bool const use_optimized =  (use_outer_prod || use_inner_prod);
+
+  using ArchMmaOperator = typename platform::conditional< use_optimized, 
+    detail::Mma_HFMA2<Shape, LayoutA, LayoutB, LayoutC, use_outer_prod>, 
+    MmaGeneric <Shape, ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, Operator> 
+  >::type;
+
   //
   // Methods
   //
@@ -989,30 +1013,8 @@ struct Mma<
     FragmentB const & B,
     FragmentC const & C) {
 
-    constexpr bool a_row_major = platform::is_same< LayoutA, layout::RowMajor>::value;
-    constexpr bool b_column_major = platform::is_same< LayoutB, layout::ColumnMajor>::value;
-    constexpr bool c_row_major = platform::is_same< LayoutC, layout::RowMajor>::value;
-    constexpr bool c_column_major = platform::is_same< LayoutC, layout::ColumnMajor>::value;
+    ArchMmaOperator mma;
 
-    constexpr bool m_mod2 = !(Shape::kM % 2);
-    constexpr bool n_mod2 = !(Shape::kN % 2);
-    constexpr bool k_mod2 = !(Shape::kK % 2);
-
-    // HFMA based MMA optimizations are of 2 types :
-    // 1. Inner product 
-    // 2. Outer product
-    // It is chosen based on LayoutC (for outer product gemm) or
-    // Using LayoutA and LayoutB or shape=1x1x2K (for inner product gemms)
-    // If all fails, we choose the generic MMA
-    constexpr bool use_outer_prod = (c_column_major && m_mod2) || (c_row_major && n_mod2);
-    constexpr bool use_inner_prod = (a_row_major && b_column_major && k_mod2) || (Shape::kM==1 && Shape::kN==1 && k_mod2);
-    constexpr bool use_optimized =  (use_outer_prod || use_inner_prod);
-
-    typename platform::conditional< use_optimized, 
-      detail::Mma_HFMA2<Shape, LayoutA, LayoutB, LayoutC, use_outer_prod>, 
-      MmaGeneric <Shape, ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, Operator> 
-    >::type mma;
-  
     mma(D, A, B, C);
 
   }
@@ -1085,6 +1087,8 @@ struct Mma<
   using FragmentA = Array<ElementA, Shape::kMK>;
   using FragmentB = Array<ElementB, Shape::kKN>;
   using FragmentC = Array<ElementC, Shape::kMN>;
+
+  using ArchMmaOperator = typename TransposeMma::ArchMmaOperator;
 
   CUTLASS_HOST_DEVICE
   void operator()(

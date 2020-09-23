@@ -93,14 +93,13 @@ static struct {
 }
 GemmKind_enumerants[] = {
   {"gemm", "<Gemm>", GemmKind::kGemm},
-  {"batched", "<Batched>", GemmKind::kBatched},
-  {"array", "<Array>", GemmKind::kArray},
+  {"spgemm", "<Sparse>", GemmKind::kSparse},
   {"universal", "<Universal>", GemmKind::kUniversal},
   {"planar_complex", "<PlanarComplex>", GemmKind::kPlanarComplex},
   {"planar_complex_array", "<PlanarComplexArray>", GemmKind::kPlanarComplexArray},
 };
 
-/// Converts a ConvKind enumerant to a string
+/// Converts a GemmKind enumerant to a string
 char const *to_string(GemmKind type, bool pretty) {
 
   for (auto const & possible : GemmKind_enumerants) {
@@ -116,6 +115,8 @@ char const *to_string(GemmKind type, bool pretty) {
 
   return pretty ? "Invalid" : "invalid";
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -217,11 +218,13 @@ NumericTypeID_enumerants[] = {
   {"unknown", "<unkown>", NumericTypeID::kUnknown},
   {"void", "Void", NumericTypeID::kVoid},
   {"b1", "B1", NumericTypeID::kB1},
+  {"u2", "U2", NumericTypeID::kU2},
   {"u4", "U4", NumericTypeID::kU4},
   {"u8", "U8", NumericTypeID::kU8},
   {"u16", "U16", NumericTypeID::kU16},
   {"u32", "U32", NumericTypeID::kU32},
   {"u64", "U64", NumericTypeID::kU64},
+  {"s2", "S2", NumericTypeID::kS2},
   {"s4", "S4", NumericTypeID::kS4},
   {"s8", "S8", NumericTypeID::kS8},
   {"s16", "S16", NumericTypeID::kS16},
@@ -237,11 +240,13 @@ NumericTypeID_enumerants[] = {
   {"cf32", "CF32", NumericTypeID::kCF32},
   {"ctf32", "CTF32", NumericTypeID::kCTF32},
   {"cf64", "CF64", NumericTypeID::kCF64},
+  {"cu2", "CU2", NumericTypeID::kCU2},
   {"cu4", "CU4", NumericTypeID::kCU4},
   {"cu8", "CU8", NumericTypeID::kCU8},
   {"cu16", "CU16", NumericTypeID::kCU16},
   {"cu32", "CU32", NumericTypeID::kCU32},
   {"cu64", "CU64", NumericTypeID::kCU64},  
+  {"cs2", "CS2", NumericTypeID::kCS2},
   {"cs4", "CS4", NumericTypeID::kCS4},
   {"cs8", "CS8", NumericTypeID::kCS8},
   {"cs16", "CS16", NumericTypeID::kCS16},
@@ -296,11 +301,13 @@ int sizeof_bits(NumericTypeID type) {
     case NumericTypeID::kCF32: return 64;
     case NumericTypeID::kCTF32: return 64;
     case NumericTypeID::kCF64: return 128;
+    case NumericTypeID::kS2: return 2;
     case NumericTypeID::kS4: return 4;
     case NumericTypeID::kS8: return 8;
     case NumericTypeID::kS16: return 16;
     case NumericTypeID::kS32: return 32;
     case NumericTypeID::kS64: return 64;
+    case NumericTypeID::kU2: return 2;
     case NumericTypeID::kU4: return 4;
     case NumericTypeID::kU8: return 8;
     case NumericTypeID::kU16: return 16;
@@ -341,11 +348,13 @@ NumericTypeID get_real_type(NumericTypeID type) {
 /// Returns true if numeric type is integer
 bool is_integer_type(NumericTypeID type) {
   switch (type) {
+    case NumericTypeID::kS2: return true;
     case NumericTypeID::kS4: return true;
     case NumericTypeID::kS8: return true;
     case NumericTypeID::kS16: return true;
     case NumericTypeID::kS32: return true;
     case NumericTypeID::kS64: return true;
+    case NumericTypeID::kU2: return true;
     case NumericTypeID::kU4: return true;
     case NumericTypeID::kU8: return true;
     case NumericTypeID::kU16: return true;
@@ -364,6 +373,7 @@ bool is_signed_type(NumericTypeID type) {
     case NumericTypeID::kTF32: return true;
     case NumericTypeID::kF32: return true;
     case NumericTypeID::kF64: return true;
+    case NumericTypeID::kS2: return true;
     case NumericTypeID::kS4: return true;
     case NumericTypeID::kS8: return true;
     case NumericTypeID::kS16: return true;
@@ -415,6 +425,12 @@ layout_aliases[] = {
   {LayoutTypeID::kColumnMajor, "column"},
   {LayoutTypeID::kColumnMajor, "col"},
   {LayoutTypeID::kColumnMajor, "n"},
+ 
+  {LayoutTypeID::kColumnMajorInterleavedK2, "nk2"},
+  {LayoutTypeID::kRowMajorInterleavedK2, "tk2"},
+ 
+  {LayoutTypeID::kColumnMajorInterleavedK4, "nk4"},
+  {LayoutTypeID::kRowMajorInterleavedK4, "tk4"},
   
   {LayoutTypeID::kColumnMajorInterleavedK16, "nk16"},
   {LayoutTypeID::kRowMajorInterleavedK16, "tk16"},
@@ -426,7 +442,10 @@ layout_aliases[] = {
   {LayoutTypeID::kRowMajorInterleavedK64, "tk64"},
 
   {LayoutTypeID::kTensorNCHW, "nchw"},
+  {LayoutTypeID::kTensorNCDHW, "ncdhw"},
   {LayoutTypeID::kTensorNHWC, "nhwc"},
+  {LayoutTypeID::kTensorNDHWC, "ndhwc"},
+
   {LayoutTypeID::kUnknown, "*"},
   {LayoutTypeID::kInvalid, nullptr}
 };
@@ -457,6 +476,8 @@ int get_layout_stride_rank(LayoutTypeID layout_id) {
   switch (layout_id) {
     case LayoutTypeID::kColumnMajor: return cutlass::layout::ColumnMajor::kStrideRank;
     case LayoutTypeID::kRowMajor:  return cutlass::layout::RowMajor::kStrideRank;
+    case LayoutTypeID::kColumnMajorInterleavedK2:
+    case LayoutTypeID::kRowMajorInterleavedK2:
     case LayoutTypeID::kColumnMajorInterleavedK4:
     case LayoutTypeID::kRowMajorInterleavedK4:
     case LayoutTypeID::kColumnMajorInterleavedK16:
@@ -464,10 +485,10 @@ int get_layout_stride_rank(LayoutTypeID layout_id) {
     case LayoutTypeID::kColumnMajorInterleavedK32:
     case LayoutTypeID::kRowMajorInterleavedK32:
     case LayoutTypeID::kColumnMajorInterleavedK64:
-    case LayoutTypeID::kRowMajorInterleavedK64:
-      return 1;
+    case LayoutTypeID::kRowMajorInterleavedK64: return 1;
     case LayoutTypeID::kTensorNCHW:
     case LayoutTypeID::kTensorNHWC: return 3;
+    case LayoutTypeID::kTensorNDHWC: return 4;
     default : throw std::runtime_error("Unsupported LayoutTypeID in LayoutType::get_stride_rank");
   }
 }
@@ -969,12 +990,12 @@ bool cast_from_int64(std::vector<uint8_t> &bytes, NumericTypeID type, int64_t sr
     break;
   case NumericTypeID::kCF32:
   {
-    *reinterpret_cast<std::complex<float>*>(bytes.data()) = std::complex<float>(float(src), float(0));
+    *reinterpret_cast<cutlass::complex<float>*>(bytes.data()) = cutlass::complex<float>(float(src), float(0));
   }
     break;
   case NumericTypeID::kCF64:
   {
-    *reinterpret_cast<std::complex<double>*>(bytes.data()) = std::complex<double>(double(src), double(0));
+    *reinterpret_cast<cutlass::complex<double>*>(bytes.data()) = cutlass::complex<double>(double(src), double(0));
   }
     break;
   default:
@@ -1177,17 +1198,17 @@ bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double sr
     break;
   case NumericTypeID::kCF32:
   {
-    *reinterpret_cast<std::complex<float>*>(bytes.data()) = std::complex<float>(float(src), float(0));
+    *reinterpret_cast<cutlass::complex<float>*>(bytes.data()) = cutlass::complex<float>(float(src), float());
   }
     break;
   case NumericTypeID::kCTF32:
   {
-    *reinterpret_cast<std::complex<tfloat32_t>*>(bytes.data()) = std::complex<tfloat32_t>(tfloat32_t(src), tfloat32_t(0));
+    *reinterpret_cast<cutlass::complex<tfloat32_t>*>(bytes.data()) = cutlass::complex<tfloat32_t>(tfloat32_t(src), tfloat32_t());
   }
     break;
   case NumericTypeID::kCF64:
   {
-    *reinterpret_cast<std::complex<double>*>(bytes.data()) = std::complex<double>(src, double(0));
+    *reinterpret_cast<cutlass::complex<double>*>(bytes.data()) = cutlass::complex<double>(src, double());
   }
     break;
   default:
