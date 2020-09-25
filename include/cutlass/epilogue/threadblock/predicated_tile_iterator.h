@@ -372,12 +372,11 @@ public:
 
             bool guard = row_guard && mask_.predicates[column];
 
-            cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
-                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn +
-                         column],
-                (void *)&memory_pointer[column * ThreadMap::Delta::kColumn /
-                                        kElementsPerAccess],
-                guard);
+            if (guard) {
+              
+              memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess] =
+                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column];
+            }
           }
 
           if (row + 1 < ThreadMap::Iterations::kRow) {
@@ -691,8 +690,9 @@ public:
 
     bool guard = col_guard && mask_.predicates[iteration_contiguous_];
 
-    cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
-        *frag_ptr, (void *)memory_pointer, guard);
+    if (guard) {
+      *memory_pointer = *frag_ptr;
+    }
   }
 
   /// Overrides the internal iteration index
