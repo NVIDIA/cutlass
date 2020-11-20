@@ -347,7 +347,7 @@ $ make cutlass_profiler -j16
 or by name
 
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=sfprop,s16816fprop,s16816dgrad,s16816wgrad
+$ cmake .. -DCUTLASS_NVCC_ARCHS=80 -DCUTLASS_LIBRARY_KERNELS=sfprop,s16816fprop,s16816dgrad,s16816wgrad
 ...
 $ make cutlass_profiler -j16
 ```
