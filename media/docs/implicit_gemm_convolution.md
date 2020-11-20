@@ -165,7 +165,7 @@ This enables 128-bit vector memory acceses which lead to efficient CUDA kernels.
 CUTLASS defines CUDA C++ templates accepting numerous template arguments to specialize the resulting
 kernel by operation, data type, tile configuration, math instruction, and fused output operation.
 
-In [09_turing_tensorop_conv2dfprop.cu](/examples/09_turing_tensorop_conv2dfprop/09_turing_tensorop_conv2dfprop.cu), a convolution
+In [turing_tensorop_conv2dfprop.cu](/examples/09_turing_tensorop_conv2dfprop/turing_tensorop_conv2dfprop.cu), a convolution
 operation is defined as follows.
 
 ```c++
