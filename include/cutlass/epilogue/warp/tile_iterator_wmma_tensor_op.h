@@ -28,7 +28,7 @@
 
 #pragma once
 
-#if !defined(__clang__)
+#if !(defined(__clang__) && defined(__CUDA__))
 
 #include "cutlass/cutlass.h"
 #include "cutlass/wmma_array.h"

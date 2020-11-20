@@ -44,6 +44,28 @@ Hyperlinks to relevant unit tests demonstrate how specific template instances ma
 | **SpTensorOp**      | 80                 |  11.1+           | `s4 * s4 + s32 => {s4, s32}`       | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_s4t_s4n_s32t_tensor_op_s32_sparse_sm80.cu) |
 
 
+## Device-level Implicit GEMM convolution
+
+The following table summarizes device-level implicit GEMM convolution kernels in CUTLASS, organized by opcode class, data type, and layout.
+Hyperlinks to relevant conv2d fprop unit tests demonstrate how specific template instances may be defined. 
+One can find and/or create equivalent dgrad and wgrad convolutional operators.
+
+|**Opcode Class** | **Compute Capability** | **CUDA Toolkit** | **Data Type**                  | **Layouts**      | **Unit Test**    |
+|-----------------|------------------------|------------------|--------------------------------|------------------|------------------|
+| **Simt**            | 50,60,61,70,75     |  9.2+            | `f32 * f32 + f32 => f32`       | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f32nhwc_f32nhwc_f32nhwc_simt_f32_sm50.cu)                |
+| **Simt**            | 50,60,61,70,75     |  9.2+            | `cf32 * cf32 + cf32 => cf32`   | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm50.cu)                |
+| **TensorOp**        | 70                 |  10.1+           | `f16 * f16 + f32 => {f16, f32}`| NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm70.cu) |
+| **TensorOp**        | 75                 |  10.2+           | `f16 * f16 + f32 => {f16, f32}`| NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm75.cu) |
+| **TensorOp**        | 75                 |  10.2+           | `s8 * s8 + s32 => {s32, s8}`   | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s8nhwc_s8nhwc_s32nhwc_tensor_op_s32_sm75.cu) |
+| **Simt**            | 80                 |  11.0+            | `f32 * f32 + f32 => f32`       | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f32nhwc_f32nhwc_f32nhwc_simt_f32_sm80.cu)                |
+| **Simt**            | 80                 |  11.0+            | `cf32 * cf32 + cf32 => cf32`   | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm80.cu)                |
+| **TensorOp**        | 80                 |  11.0+           | `f16 * f16 + f32 => {f16, f32}`| NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `f16 * f16 + f16 => f16`       | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `tf32 * tf32 + f32 => f32`     | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_tf32nhwc_tf32nhwc_f32nhwc_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `s8 * s8 + s32 => {s32, s8}`   | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s8nhwc_s8nhwc_s32nhwc_tensor_op_s32_sm80.cu) |
+| **TensorOp**        | 80                 |  11.0+           | `s4 * s4 + s32 => {s32, s4}`   | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s4nhwc_s4nhwc_s32nhwc_tensor_op_s32_sm80.cu) |
+
+
 
 ## Warp-level Matrix Multiply with Tensor Cores
 

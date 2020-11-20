@@ -53,6 +53,10 @@
 #include "cutlass/layout/tensor.h"
 
 #include "cutlass/gemm/gemm.h"
+#include "cutlass/conv/convolution.h"
+#include "cutlass/conv/conv2d_problem_size.h"
+#include "cutlass/conv/conv3d_problem_size.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -79,6 +83,10 @@ enum class LayoutTypeID {
   kTensorNCDHW,
   kTensorNHWC,
   kTensorNDHWC,
+  kTensorNC32HW32,
+  kTensorC32RSK32,
+  kTensorNC64HW64,
+  kTensorC64RSK64,
   kInvalid
 };
   
@@ -138,6 +146,7 @@ enum class Provider {
   kReferenceHost,
   kReferenceDevice,
   kCUBLAS,
+  kCUDNN,               
   kInvalid
 };
 
@@ -146,6 +155,8 @@ enum class Provider {
 /// Enumeration indicating the kind of operation
 enum class OperationKind {
   kGemm,
+  kConv2d,              
+  kConv3d,             
   kEqGemm,
   kSparseGemm,
   kReduction,
@@ -203,6 +214,30 @@ enum class GemmKind {
 
 /// Mode of Universal GEMM
 using GemmUniversalMode = cutlass::gemm::GemmUniversalMode;
+
+/// Enumeration indicating what kind of Conv2d operation to perform
+enum class ConvKind {
+  kUnknown,
+  kFprop,
+  kDgrad,
+  kWgrad,
+  kInvalid
+};
+
+enum class ConvModeID {
+  kCrossCorrelation,
+  kConvolution,
+  kInvalid
+};
+
+// Iterator algorithm enum in order of general performance-efficiency
+enum class IteratorAlgorithmID {
+  kNone,
+  kAnalytic,
+  kOptimized,
+  kInvalid
+};
+
 
 enum class EpilogueKind {
   kUnknown,
@@ -477,6 +512,66 @@ struct ReductionDescription : public OperationDescription {
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Description of all Conv2d operations
+struct ConvDescription : public OperationDescription {
+  /// Describes the convolution dimension support (2D or 3D)
+  int conv_dim;
+  
+  /// Describes the kind of convolution
+  ConvKind conv_kind;
+
+  /// Describes the type of iterator algorithm (analytic or precomputed)
+  IteratorAlgorithmID iterator_algorithm;
+
+  /// Describes the A operand
+  TensorDescription A;
+
+  /// Describes the B operand
+  TensorDescription B;
+
+  /// Describes the C operand
+  TensorDescription C;
+
+  /// Describes the data type of the scalars passed to the epilogue
+  NumericTypeID element_epilogue;
+
+  //
+  // Methods
+  //
+  // Returns Activation TensorDescription
+  TensorDescription activation() const {
+    switch(conv_kind) {
+      case library::ConvKind::kFprop : return A;
+      case library::ConvKind::kDgrad : return C;
+      case library::ConvKind::kWgrad : return B;
+      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
+    }
+  }
+
+  // Returns Filter TensorDescription
+  TensorDescription filter() const {
+    switch(conv_kind) {
+      case library::ConvKind::kFprop : return B;
+      case library::ConvKind::kDgrad : return B;
+      case library::ConvKind::kWgrad : return C;
+      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
+    }
+  }
+
+  // Returns Output TensorDescription
+  TensorDescription output() const {
+    switch(conv_kind) {
+      case library::ConvKind::kFprop : return C;
+      case library::ConvKind::kDgrad : return A;
+      case library::ConvKind::kWgrad : return A;
+      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
+    }
+  }
+
+};
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Base class for all operations
@@ -824,6 +919,204 @@ struct SparseGemmArguments {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Two dimensional convolution
+//
+// OperationKind: Conv2d
+//
+struct Conv2dConfiguration {
+
+  conv::SplitKMode split_k_mode;
+  
+  /// Conv2d problem size 
+  //  contains strictly conv2d size (N,H,W,C,K,R,S,P,Q,padding,stride,dilation,mode)
+  //  also includes (split_k_slices, groups)
+  conv::Conv2dProblemSize problem_size;
+
+  /// Layout object for activations tensor
+  layout::TensorNHWC layout_activations;
+
+  /// Layout object for filters tensor
+  layout::TensorNHWC layout_filters;
+
+  /// Layout object for source tensor
+  layout::TensorNHWC layout_source;
+
+  /// Layout object for output tensor
+  layout::TensorNHWC layout_output;
+
+  //
+  // Methods 
+  //
+
+  // Mapping functions (A,B,C -> activation,filter,output)
+  layout::TensorNHWC layout_a(library::ConvKind const &conv_kind) const {
+    switch (conv_kind) {
+      case library::ConvKind::kFprop: return layout_activations;
+      case library::ConvKind::kDgrad: return layout_output;
+      case library::ConvKind::kWgrad: return layout_output;
+      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
+    }
+  }
+
+  layout::TensorNHWC layout_b(library::ConvKind const &conv_kind) const {
+    switch (conv_kind) {
+      case library::ConvKind::kFprop: return layout_filters;
+      case library::ConvKind::kDgrad: return layout_filters;
+      case library::ConvKind::kWgrad: return layout_activations;
+      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
+    }
+  }
+
+  layout::TensorNHWC layout_c(library::ConvKind const &conv_kind) const {
+    switch (conv_kind) {
+      case library::ConvKind::kFprop: return layout_output;
+      case library::ConvKind::kDgrad: return layout_activations;
+      case library::ConvKind::kWgrad: return layout_filters;
+      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
+    }
+  }
+};
+
+
+/// Three dimensional convolution
+//
+// OperationKind: Conv3d
+//
+struct Conv3dConfiguration {
+
+  conv::SplitKMode split_k_mode;
+  
+  /// Conv2d problem size 
+  //  contains strictly conv2d size (N,D,H,W,C,K,T,R,S,Z,P,Q,padding,stride,dilation,mode)
+  //  also includes (split_k_slices, groups)
+  conv::Conv3dProblemSize problem_size;
+
+  /// Layout object for activations tensor
+  layout::TensorNDHWC layout_activations;
+
+  /// Layout object for filters tensor
+  layout::TensorNDHWC layout_filters;
+
+  /// Layout object for source tensor
+  layout::TensorNDHWC layout_source;
+
+  /// Layout object for output tensor
+  layout::TensorNDHWC layout_output;
+
+  //
+  // Methods 
+  //
+
+  // Mapping functions (A,B,C -> activation,filter,output)
+  layout::TensorNDHWC layout_a(library::ConvKind const &conv_kind) const {
+    switch (conv_kind) {
+      case library::ConvKind::kFprop: return layout_activations;
+      case library::ConvKind::kDgrad: return layout_output;
+      case library::ConvKind::kWgrad: return layout_output;
+      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
+    }
+  }
+
+  layout::TensorNDHWC layout_b(library::ConvKind const &conv_kind) const {
+    switch (conv_kind) {
+      case library::ConvKind::kFprop: return layout_filters;
+      case library::ConvKind::kDgrad: return layout_filters;
+      case library::ConvKind::kWgrad: return layout_activations;
+      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
+    }
+  }
+
+  layout::TensorNDHWC layout_c(library::ConvKind const &conv_kind) const {
+    switch (conv_kind) {
+      case library::ConvKind::kFprop: return layout_output;
+      case library::ConvKind::kDgrad: return layout_activations;
+      case library::ConvKind::kWgrad: return layout_filters;
+      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
+    }
+  }
+};
+
+/// Arguments for CONV
+struct ConvArguments {
+
+  /////////////////////////////////////////////////////////
+  /// ImplicitGemm matrices A, B, C, D
+  /////////////////////////////////////////////////////////
+  /// pointer to implicit gemm matrix A
+  void const *A;
+
+  /// pointer to implicit gemm matrix B
+  void const *B;
+
+  /// pointer to implicit gemm matrix C
+  void const *C;
+
+  /// pointer to implicit gemm desitination matrix D
+  void *D;
+
+  /// Host or device pointer to alpha scalar
+  void const *alpha;
+
+  /// Host or device pointer to beta scalar
+  void const *beta;
+
+  /// Enumerant indicating whether alpha/beta point to host or device memory
+  ScalarPointerMode pointer_mode;
+
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Configuration for Reduction operations
+//
+// OperationKind: Reduction
+//
+struct ReductionConfiguration {
+
+  /// Redcution problem size
+  MatrixCoord problem_size;
+
+  /// Number of partitions to reduce
+  int partitions;
+
+  /// Number of lements between each partition
+  int64_t partition_stride;
+
+  /// leading dimension of 'w'orksace operand
+  int64_t ldw; 
+
+  /// leading dimension of 's'ource operand
+  int64_t lds;
+
+  /// leading dimension of 'd'estination operand
+  int64_t ldd;
+};
+
+/// Arguments for Reduction
+struct ReductionArguments {
+
+  /// Pointer to workspace matrix
+  void const *workspace;
+
+  /// Pointer to source matrix
+  void const *source;
+
+  /// Pointer to destination matrix
+  void *destination;
+
+  /// pointer to reference matrix
+  void *reference;
+
+  /// Host or device pointer to alpha scalar
+  void const *alpha;
+
+  /// Host or device pointer to beta scalar
+  void const *beta;
+
+  /// Enumerant indicating whether alpha/beta point to host or device memory
+  ScalarPointerMode pointer_mode;
+};
 
 } // namespace library
 } // namespace cutlass

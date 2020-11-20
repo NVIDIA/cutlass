@@ -247,6 +247,36 @@ struct Testbed {
     return compare_reference(problem_size, alpha, beta);
   }
 
+	/// Determine if the CUDA device is sufficient to run the kernel
+  bool sufficient() const {
+    //
+    // Determine SMEM requirements and waive if not satisfied
+    //
+
+    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+
+    if (properties.sharedMemPerMultiprocessor < smem_size) {
+      return false;
+    }
+
+    return true;
+  }
+
+
   /// Executes one test
   bool run(
     cutlass::gemm::GemmCoord problem_size, 
@@ -254,6 +284,10 @@ struct Testbed {
     ElementCompute alpha = ElementCompute(1), 
     ElementCompute beta = ElementCompute(0)) {
 
+		// Waive test if insufficient CUDA device
+		if (!sufficient()) {
+			return true;
+		}
 
     this->initialize(problem_size);
 
@@ -279,7 +313,11 @@ struct Testbed {
 
     cutlass::Status status = gemm_op.initialize(arguments, workspace.get());
 
-    EXPECT_TRUE(status == cutlass::Status::kSuccess) << to_string(status);
+    if (status != cutlass::Status::kSuccess) {
+      cudaError_t error = cudaGetLastError();
+      std::cerr << "This test is not supported: " << cudaGetErrorString(error) << "\n";
+      return true;
+    }
 
     //
     // Run the GEMM

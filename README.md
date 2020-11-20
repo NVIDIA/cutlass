@@ -1,8 +1,8 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 2.3
+# CUTLASS 2.4
 
-_CUTLASS 2.3 - September 2020_
+_CUTLASS 2.4 - November 2020_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
@@ -25,10 +25,21 @@ Furthermore, CUTLASS demonstrates warp-synchronous matrix multiply operations
 targeting the  programmable, high-throughput _Tensor Cores_ implemented by 
 NVIDIA's Volta, Turing, and Ampere architectures.
 
+Additionaly, CUTLASS implements high-performance convolution (implicit GEMM). 
+Implicit GEMM is the formulation of a convolution operation as a GEMM. This allows CUTLASS 
+to build convolutions by reusing highly optimized warp-wide GEMM components and below. 
+
 See the [Quick Start Guide](/media/docs/quickstart.md) to get started quickly.
 
-See the [functionality listing](media/docs/functionality.md) for the list of operations
+See the [functionality listing](/media/docs/functionality.md) for the list of operations
 supported at each level of the execution model hierarchy.
+
+# What's New in CUTLASS 2.4
+CUTLASS 2.4 is a significant update to CUTLASS adding:
+- 1-D, 2-D, and 3-D convolution targeting Tensor and CUDA cores for NVIDIA Ampere, Turing, and Volta GPU architectures
+- CUTLASS profiler support for convolution
+- [Documentation](/media/docs/implicit_gemm_convolution.md) describing Implicit GEMM Convolution algorithm and implementation
+- See the [CHANGELOG](CHANGELOG.md) for more details.
 
 # What's New in CUTLASS 2.3
 
@@ -118,6 +129,7 @@ CUTLASS is described in the following documents and the accompanying
 - [Functionality](/media/docs/functionality.md) - summarizes functionality available in CUTLASS
 - [Efficient GEMM in CUDA](media/docs/efficient_gemm.md) - describes how GEMM kernels may be implemented efficiently in CUDA
 - [GEMM API](media/docs/gemm_api.md) - describes the CUTLASS GEMM model and C++ template concepts 
+- [Implicit GEMM Convolution](media/docs/implicit_gemm_convolution.md) - describes 2-D and 3-D convolution in CUTLASS
 - [Code Organization](media/docs/code_organization.md) - describes the organization and contents of the CUTLASS project
 - [Terminology](media/docs/terminology.md) - describes terms used in the code
 - [Programming Guidelines](media/docs/programming_guidelines.md) - guidelines for writing efficient modern CUDA C++
@@ -140,7 +152,7 @@ CUTLASS unit tests, examples, and utilities can be build with CMake starting ver
 Make sure the `CUDACXX` environment  variable points to NVCC in the CUDA Toolkit installed
 on your system.
 
-```
+```bash
 $ export CUDACXX=${CUDA_INSTALL_PATH}/bin/nvcc
 ```
 
@@ -149,7 +161,7 @@ for CUDA architecture versions 5.0, 6.0, 6.1, 7.0, 7.5, 8.0, and 8.6. To reduce 
 the architectures to build CUTLASS for by changing the CMake configuration setting
 `CUTLASS_NVCC_ARCHS`.
 
-```
+```bash
 $ mkdir build && cd build
 
 $ cmake .. -DCUTLASS_NVCC_ARCHS=80               # compiles for NVIDIA's Ampere Architecture
@@ -160,7 +172,7 @@ From the `build/` directory, compile and run the CUTLASS unit tests by building 
 The unit tests are organized as several binaries mirroring the top-level namespaces of CUTLASS,
 and they may be executed in parallel via make's `-j` command line argument.
 
-```
+```bash
 $ make test_unit -j
 ...
 ...
@@ -191,6 +203,8 @@ include/                     # client applications should target this directory 
 
     arch/                    # direct exposure of architecture features (including instruction-level GEMMs)
 
+    conv/                    # code specialized for convolution
+
     gemm/                    # code specialized for general matrix product computations
 
     layout/                  # layout definitions for matrices, tensors, and other mathematical objects in memory
@@ -210,34 +224,39 @@ include/                     # client applications should target this directory 
 
 ```
 examples/
-  00_basic_gemm/             # launches a basic GEMM with single precision inputs and outputs
+  00_basic_gemm/                   # launches a basic GEMM with single precision inputs and outputs
 
-  01_cutlass_utilities/      # demonstrates CUTLASS Utilities for allocating and initializing tensors
+  01_cutlass_utilities/            # demonstrates CUTLASS Utilities for allocating and initializing tensors
   
-  02_dump_reg_smem/          # debugging utilities for printing register and shared memory contents
+  02_dump_reg_smem/                # debugging utilities for printing register and shared memory contents
   
-  03_visualize_layout/       # utility for visualizing all layout functions in CUTLASS
+  03_visualize_layout/             # utility for visualizing all layout functions in CUTLASS
 
-  04_tile_iterator/          # example demonstrating an iterator over tiles in memory
+  04_tile_iterator/                # example demonstrating an iterator over tiles in memory
 
-  05_batched_gemm/           # example demonstrating CUTLASS's batched strided GEMM operation
+  05_batched_gemm/                 # example demonstrating CUTLASS's batched strided GEMM operation
 
-  06_splitK_gemm/            # exmaple demonstrating CUTLASS's Split-K parallel reduction kernel
+  06_splitK_gemm/                  # exmaple demonstrating CUTLASS's Split-K parallel reduction kernel
 
-  07_volta_tensorop_gemm/    # example demonstrating mixed precision GEMM using Volta Tensor Cores
+  07_volta_tensorop_gemm/          # example demonstrating mixed precision GEMM using Volta Tensor Cores
 
-  08_turing_tensorop_gemm/   # example demonstrating integer GEMM using Turing Tensor Cores
+  08_turing_tensorop_gemm/         # example demonstrating integer GEMM using Turing Tensor Cores
 
-  10_planar_complex/         # example demonstrating planar complex GEMM kernels
+  09_turing_tensorop_conv2dfprop/  # example demonstrating integer implicit GEMM convolution (forward propagation) using Turing Tensor Cores
 
-  11_planar_complex_array/   # example demonstrating planar complex kernels with batch-specific problem sizes
+  10_planar_complex/               # example demonstrating planar complex GEMM kernels
 
-  12_gemm_bias_relu/         # example demonstrating GEMM fused with bias and relu
+  11_planar_complex_array/         # example demonstrating planar complex kernels with batch-specific problem sizes
 
-  13_fused_two_gemms/        # example demonstrating two GEMms fused in one kernel
+  12_gemm_bias_relu/               # example demonstrating GEMM fused with bias and relu
+
+  13_fused_two_gemms/              # example demonstrating two GEMms fused in one kernel
+
+  22_ampere_tensorop_conv2dfprop/  # example demonstrating integer implicit GEMM convolution (forward propagation) using Ampere Tensor Cores
 ```
 
 ### Tools
+
 ```
 tools/
   library/                   # CUTLASS Instance Library - contains instantiations of all supported CUTLASS templates
@@ -266,14 +285,14 @@ Instructions for building and running the Unit tests are described in the [Quick
 The `tools/profiler/` directory contains a command-line utility for launching each of the GEMM kernels.
 It can be built as follows:
 
-```
+```bash
 $ make cutlass_profiler -j16
 ```
 
 By default, only one tile size is instantiated for each data type, math instruction, and layout.
 To instantiate all, set the following environment variable when running CMake from an empty `build/` directory.
 Beware, this results in *thousands* of kernels and long build times.
-```
+```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=all
 ...
 $ make cutlass_profiler -j16
@@ -282,7 +301,7 @@ $ make cutlass_profiler -j16
 To compile strictly one kernel or a small set of kernels, a comma-delimited list of kernel names with 
 wildcard characters may be reduce the set of kernels. The following builds exactly one kernel:
 
-```
+```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=cutlass_simt_sgemm_128x128_8x2_nn_align1
 ...
 $ make cutlass_profiler -j16
@@ -316,6 +335,56 @@ $ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=3456 --n=4096 --k=4096
           Memory: 24.934 GiB/s
 
             Math: 17218.4 GFLOP/s
+```
+
+To compile strictly 2-D or 3-D convolution kernels, filter by operation
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_OPERATIONS=conv2d,conv3d
+...
+$ make cutlass_profiler -j16
+```
+
+or by name
+
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS=80 -DCUTLASS_LIBRARY_KERNELS=sfprop,s16816fprop,s16816dgrad,s16816wgrad
+...
+$ make cutlass_profiler -j16
+```
+
+Example command line for profiling 2-D convolution kernels is as follows:
+
+```bash
+$ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sfprop_optimized_128x128_8x2_nhwc --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
+
+
+=============================
+  Problem ID: 1
+
+        Provider: CUTLASS
+   OperationKind: conv2d
+       Operation: cutlass_simt_sfprop_optimized_128x128_8x2_nhwc
+
+          Status: Success
+    Verification: ON
+     Disposition: Passed
+
+reference_device: Passed
+
+       Arguments: --conv_kind=fprop --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 --p=224 --q=224 --pad_h=1 --pad_w=1  \
+                  --stride_h=1 --stride_w=1 --dilation_h=1 --dilation_w=1 --Activation=f32:nhwc --Filter=f32:nhwc --Output=f32:nhwc  \
+                  --conv_mode=cross --iterator_algorithm=optimized --alpha=1 --beta=0 --split_k_mode=serial --split_k_slices=1  \
+                  --eq_gemm_provider=none --op_class=simt --accum=f32 --cta_m=128 --cta_n=128 --cta_k=8 --stages=2 --warps_m=4  \
+                  --warps_n=2 --warps_k=1 --inst_m=1 --inst_n=1 --inst_k=1 --min_cc=50 --max_cc=1024
+
+           Bytes: 2055798784  bytes
+           FLOPs: 118482796544  flops
+
+         Runtime: 8.13237  ms
+          Memory: 235.431 GiB/s
+
+            Math: 14569.3 GFLOP/s
+
 ```
 
 [Further details about the CUTLASS Profiler are described here.](media/docs/profiler.md)

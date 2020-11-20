@@ -32,7 +32,7 @@ endif()
 
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 
-project(CUTLASS VERSION 2.3.0 LANGUAGES CXX)
+project(CUTLASS VERSION 2.4.0 LANGUAGES CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
 find_package(Doxygen QUIET)
@@ -137,7 +137,12 @@ if (NOT (CMAKE_BUILD_TYPE OR CONFIGURATION_TYPES))
 endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CUTLASS_LIBRARY_DEBUG_POSTFIX ".debug" CACHE STRING "Default postfix value for debug libraries")
+if (DEFINED CMAKE_DEBUG_POSTFIX)
+  set(CUTLASS_LIBRARY_DEBUG_POSTFIX_INIT ${CMAKE_DEBUG_POSTFIX})
+else()
+  set(CUTLASS_LIBRARY_DEBUG_POSTFIX_INIT .debug)
+endif()
+set(CUTLASS_LIBRARY_DEBUG_POSTFIX ${CUTLASS_LIBRARY_DEBUG_POSTFIX_INIT} CACHE STRING "Default postfix value for debug libraries")
 
 if(WIN32)
   # On Windows we link against the shared (DLL) runtime. Change gtest settings to match this.
@@ -191,7 +196,6 @@ endif()
 # Trace levels for debugging
 set(CUTLASS_DEBUG_TRACE_LEVEL "0" CACHE STRING "Level of debug tracing to perform.")
 list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_DEBUG_TRACE_LEVEL=${CUTLASS_DEBUG_TRACE_LEVEL})
-
 
 set(CUTLASS_ENABLE_TENSOR_CORE_MMA ${CUTLASS_ENABLE_TENSOR_CORE_MMA_DEFAULT} CACHE BOOL
   "Enable PTX mma instruction for collective matrix multiply operations.")
@@ -466,20 +470,194 @@ if (CUTLASS_ENABLE_CUBLAS)
   target_compile_definitions(CUTLASS INTERFACE CUTLASS_ENABLE_CUBLAS=1)
 endif()
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cuDNN.cmake)
+
+if (CUTLASS_ENABLE_CUDNN)
+  target_compile_definitions(CUTLASS INTERFACE CUTLASS_ENABLE_CUDNN=1)
+endif()
+
 ################################################################################
 
-if(CUTLASS_ENABLE_TOOLS)
-  add_subdirectory(tools)
-endif()
-if(CUTLASS_ENABLE_EXAMPLES)
-  add_subdirectory(examples)
+include(CTest)
+enable_testing()
+if (NOT TARGET test_all)
+  add_custom_target(test_all)
 endif()
 
-if(CUTLASS_ENABLE_TESTS)
-  include(CTest)
-  enable_testing()
-  add_subdirectory(test)
+set(CUTLASS_INSTALL_TESTS ON CACHE BOOL "Install test executables")
+set(CUTLASS_TEST_EXECUTION_ENVIRONMENT "" CACHE BOOL "Environment in which to invoke unit test executables")
+
+set(CMAKE_TEST_INSTALL_PREFIX test CACHE STRING "Test root install location, relative to CMAKE_INSTALL_PREFIX.")
+set(CUTLASS_TEST_INSTALL_PREFIX ${CMAKE_TEST_INSTALL_PREFIX}/cutlass CACHE STRING "Test root install location, relative to CMAKE_INSTALL_PREFIX.")
+set(CUTLASS_TEST_INSTALL_BINDIR ${CUTLASS_TEST_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR} CACHE STRING "Test root install location, relative to CMAKE_INSTALL_PREFIX.")
+set(CUTLASS_TEST_INSTALL_LIBDIR ${CUTLASS_TEST_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR} CACHE STRING "Test root install location, relative to CMAKE_INSTALL_PREFIX.")
+
+install(DIRECTORY DESTINATION ${CUTLASS_TEST_INSTALL_PREFIX})
+install(DIRECTORY DESTINATION ${CUTLASS_TEST_INSTALL_BINDIR})
+install(DIRECTORY DESTINATION ${CUTLASS_TEST_INSTALL_LIBDIR})
+install(DIRECTORY DESTINATION ${CUTLASS_TEST_INSTALL_PREFIX}/ctest)
+
+set(CUTLASS_CTEST_TEMPLATE_FILE ${CMAKE_CURRENT_LIST_DIR}/cmake/CTestTestfile.config.cmake)
+set(CUTLASS_CTEST_GENERATED_FILES "" CACHE INTERNAL "")
+
+function(cutlass_add_executable_tests NAME TARGET)
+# 
+# Generates test rules for `make test`, `make test_all`, and `ctest` invoked from either the 
+# <CMAKE_BINARY_DIR> or the <CMAKE_INSTALL_PREFIX>/<CUTLASS_TEST_INSTALL_PREFIX> after installation.
+# 
+# NAME: The base name for the test. Can be run with `make <NAME>` or `ctest -R 'c<NAME>'`.
+# TARGET: The target corresponding to the executable under test.
+# DISABLE_EXECUTABLE_INSTALL_RULE: An option, if given, that disables creating an install rule for TARGET.
+# DEPENDS: A list of targets or files on which this test is dependent.
+# DEPENDEES: A list of targets which should depend on this test.
+# TEST_COMMAND_OPTIONS: A list of variables (i.e. by reference params) which contain command line arguments
+#   to pass to the test executable. A unique test with suffix _0, _1, ... is generated for each set of 
+#   options given. If this option is not used, a single test with no arguments is generated.
+# 
+
+  set(options DISABLE_EXECUTABLE_INSTALL_RULE)
+  set(oneValueArgs)
+  set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+    
+  if (NOT __DISABLE_EXECUTABLE_INSTALL_RULE AND CUTLASS_INSTALL_TESTS)
+  
+    # file(RELATIVE_PATH CMAKE_CURRENT_BINARY_RELATIVE_DIR ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+  
+    install(
+      TARGETS ${TARGET}
+      RUNTIME DESTINATION ${CUTLASS_TEST_INSTALL_BINDIR}
+      )
+  
+  endif()
+
+  if (NOT __TEST_COMMAND_OPTIONS)
+    set(__TEST_COMMAND_OPTIONS " ")
+  endif()
+
+  list(LENGTH __TEST_COMMAND_OPTIONS CMD_COUNT)
+  set(CMD_IDX 0)
+
+  if (CMD_COUNT GREATER 1)
+    add_custom_target(${NAME} DEPENDS ${TARGET} ${__DEPENDS})
+    foreach(DEPENDEE ${__DEPENDEES})
+      add_dependencies(${DEPENDEE} ${NAME})
+    endforeach()
+  endif()
+
+  foreach(CMD_OPTIONS ${__TEST_COMMAND_OPTIONS})
+
+    if (CMD_COUNT GREATER 1)
+      set(TEST_NAME ${NAME}_${CMD_IDX})
+    else()
+      set(TEST_NAME ${NAME})
+    endif()
+
+    # The following rigmarole is needed to deal with spaces and possible quotes in 
+    # command line arguments. The options are passed "by reference" as the actual
+    # variable names holding the real options. We then expand these in a way that
+    # preserves any quotes. Note, they have to be in this order for it to work for 
+    # all the use cases below.
+
+    set(CMD_OPTIONS ${${CMD_OPTIONS}})
+    list(JOIN CMD_OPTIONS " " TEST_COMMAND_OPTIONS)
+    separate_arguments(CMD_OPTIONS)
+   
+    add_custom_target(
+      ${TEST_NAME}
+      COMMAND
+      ${CUTLASS_TEST_EXECUTION_ENVIRONMENT} $<TARGET_FILE:${TARGET}> ${CMD_OPTIONS}
+      DEPENDS
+      ${TARGET}
+      )
+
+    if (CMD_COUNT GREATER 1)
+      add_dependencies(${NAME} ${TEST_NAME})
+    endif()
+
+    foreach(DEPENDEE ${__DEPENDEES})
+      add_dependencies(${DEPENDEE} ${TEST_NAME})
+    endforeach()
+
+    add_test(
+      NAME c${TEST_NAME}
+      COMMAND ${CUTLASS_TEST_EXECUTION_ENVIRONMENT} $<TARGET_FILE:${TARGET}> ${CMD_OPTIONS}
+      )
+
+    if (CUTLASS_INSTALL_TESTS)
+
+      # To run the tests from an install package with tests enabled, we need to generate test files
+      # that don't rely on the current directory structure in build.  
+
+      set(TEST_NAME c${TEST_NAME})
+      set(TEST_EXE $<TARGET_FILE_NAME:${TARGET}>)
+      set(TEST_EXE_WORKING_DIRECTORY ./${CMAKE_INSTALL_BINDIR})
+      configure_file("${CUTLASS_CTEST_TEMPLATE_FILE}" "${CMAKE_PROJECT_DIR}${CMAKE_CURRENT_BINARY_DIR}/CTestTestfile.${TEST_NAME}.config.cmake" @ONLY)
+
+      file(GENERATE 
+        OUTPUT "${CMAKE_PROJECT_DIR}${CMAKE_CURRENT_BINARY_DIR}/CTestTestfile.${TEST_NAME}.cmake" 
+        INPUT "${CMAKE_PROJECT_DIR}${CMAKE_CURRENT_BINARY_DIR}/CTestTestfile.${TEST_NAME}.config.cmake"
+        )
+  
+      install(
+        FILES "${CMAKE_PROJECT_DIR}${CMAKE_CURRENT_BINARY_DIR}/CTestTestfile.${TEST_NAME}.cmake"
+        DESTINATION ${CUTLASS_TEST_INSTALL_PREFIX}/ctest/
+        )
+  
+      set(CUTLASS_CTEST_GENERATED_FILES ${CUTLASS_CTEST_GENERATED_FILES};ctest/CTestTestfile.${TEST_NAME}.cmake CACHE INTERNAL "")
+  
+    endif()
+
+    math(EXPR CMD_IDX "${CMD_IDX} + 1")
+
+  endforeach()
+
+endfunction()
+
+if (CUTLASS_ENABLE_TOOLS)
+  add_subdirectory(tools)
+  if (CUTLASS_ENABLE_PROFILER)
+    add_dependencies(test_all test_profiler)
+  endif()  
 endif()
+if (CUTLASS_ENABLE_EXAMPLES)
+  add_subdirectory(examples)
+  add_dependencies(test_all test_examples)
+endif()
+
+if (CUTLASS_ENABLE_TESTS)
+  add_subdirectory(test)
+  add_dependencies(test_all test_unit)
+endif()
+
+if (CUTLASS_INSTALL_TESTS)
+
+  file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/cmake")
+
+  file(WRITE "${CMAKE_BINARY_DIR}/cmake/CTestTestfile.cmake" "# Generated File\n")
+  foreach(GENERATED_FILE ${CUTLASS_CTEST_GENERATED_FILES})
+    file(APPEND "${CMAKE_BINARY_DIR}/cmake/CTestTestfile.cmake" "include(${GENERATED_FILE})\n")
+  endforeach()
+
+  install(
+    FILES "${CMAKE_BINARY_DIR}/cmake/CTestTestfile.cmake"
+    DESTINATION ${CUTLASS_TEST_INSTALL_PREFIX}/
+    )
+
+endif()
+
+#? install(
+#?   FILES ${CMAKE_BINARY_DIR}/CTestTestfile.cmake
+#?   DESTINATION ${CUTLASS_TEST_INSTALL_PREFIX}/
+#?   )
+#? 
+#? install(
+#?   DIRECTORY 
+#?     ${CMAKE_BINARY_DIR}/tools
+#?     ${CMAKE_BINARY_DIR}/test
+#?   DESTINATION ${CUTLASS_TEST_INSTALL_PREFIX}/
+#?   FILES_MATCHING PATTERN "CTestTestfile.cmake"
+#?   )
 
 ################################################################################
 

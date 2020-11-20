@@ -32,6 +32,8 @@
 // Profiler includes
 #include "cutlass_profiler.h"
 #include "gemm_operation_profiler.h"
+#include "conv2d_operation_profiler.h"          
+#include "conv3d_operation_profiler.h"          
 #include "sparse_gemm_operation_profiler.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -49,6 +51,10 @@ CutlassProfiler::CutlassProfiler(
   operation_profilers_.emplace_back(new GemmOperationProfiler(options));
 
   operation_profilers_.emplace_back(new SparseGemmOperationProfiler(options));
+
+  operation_profilers_.emplace_back(new Conv2dOperationProfiler(options));
+
+  operation_profilers_.emplace_back(new Conv3dOperationProfiler(options));
 
 }
 
@@ -159,6 +165,8 @@ void CutlassProfiler::print_usage_(std::ostream &out) {
 
   out << "\n\nFor details about a particular function, specify the function name with --help.\n\nExample:\n\n"
     << "  $ cutlass_profiler --operation=Gemm --help\n\n"
+    << "  $ cutlass_profiler --operation=Conv3d --help\n\n"         
+    << "  $ cutlass_profiler --operation=Conv2d --help\n\n"         
   ;
 }
 

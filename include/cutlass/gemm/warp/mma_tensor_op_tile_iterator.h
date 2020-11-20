@@ -1518,6 +1518,7 @@ class MmaTensorOpMultiplicandTileIterator<
     } else if (Layout::kFactor == 2) {
       // Super Matrix multiply kBlock = 32
       if (Policy::LdsmShape::kStrided == Policy::LdsmShape::kCount) {
+        // Matrix multiply 1688 A/B
         // (Q stands for 1 8x128bit block).
         // Q0
         // Q1
@@ -3191,10 +3192,430 @@ public:
 
         int idx = mma_m + mma_n * Policy::MmaIterations::kRow;
 
-	AccessType* access_ptr = reinterpret_cast<AccessType *>(offset_ref.data() +
-				 offset_ref.offset(TensorCoord(accum_m, accum_n)));
+        AccessType* access_ptr = reinterpret_cast<AccessType *>(offset_ref.data() +
+                                 offset_ref.offset(TensorCoord(accum_m, accum_n)));
 
-        access_ptr[0] = frag_ptr[idx];				 
+        access_ptr[0] = frag_ptr[idx];               
+      }
+    }
+  }
+
+  /// Stores a fragment to memory with additional pointer offset
+  CUTLASS_DEVICE
+  void store_with_byte_offset(
+    Fragment const &frag,                       ///< fragment to store from the tensor
+    Index byte_offset) const {                  ///< store a tile with a linear offset
+
+    store_with_pointer_offset(byte_offset / sizeof(Element));
+  }
+
+  /// Stores a fragment to memory with logical offset in units of whole tiles.
+  CUTLASS_DEVICE
+  void store(
+    Fragment &frag,                             ///< fragment to store to the tensor
+    TensorCoord const &tile_offset) const {     ///< stores a tile with a logical offset in units of whole tiles
+
+    store(frag, tile_offset, 0);
+  }
+
+  /// Stores a fragment from memory with logical offset in units of whole tiles.
+  CUTLASS_DEVICE
+  void store(
+      /// fragment to store to the tensor
+      Fragment const &frag,
+      /// stores a tile with a logical offset in units of whole tiles
+      TensorCoord const &tile_offset,
+      /// stores a tile with a logical offset AND a pointer offset
+      Index pointer_offset) const {
+    store_with_pointer_offset(frag, ref_.offset(tile_offset) + pointer_offset);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// This tile iterator is specialized for 32-thread TensorOps. It is used to load or store
+/// accumulators from memory and is agnostic to layout. It could be faster if it assumed row-major
+/// accumulator layout.
+///
+/// Satisfies:
+///   ReadableRandomAccessContiguousTileIteratorConcept |
+///   WriteableRandomAccessContiguousTileIteratorConcept
+///
+
+template <
+    /// Size of the matrix to load (concept: MatrixShape)
+    typename Shape_,
+    /// Element typ
+    typename Element_,
+    /// Shape of one matrix product operation (concept: MatrixShape)
+    typename InstructionShape_,
+    /// Interval between adjacent *MMA instructions (in units of MMA
+    /// instructions, concept: MatrixShape)
+    typename OpDelta_,
+    /// Interleaved N
+    int InterleavedN>
+class MmaTensorOpAccumulatorTileIterator<
+    Shape_, Element_, cutlass::layout::TensorNCxHWx<InterleavedN>,
+    InstructionShape_, OpDelta_> {
+ public:
+
+  /// Shape of tile to load (concept: MatrixShape)
+  using Shape = Shape_;
+
+  /// Operand tag
+  static Operand const kOperand = Operand::kC;
+
+  /// Element type
+  using Element = int8_t;
+
+  /// Layout of source tile
+  using Layout = cutlass::layout::TensorNCxHWx<InterleavedN>;
+
+  /// Shape of one matrix product operation (concept: MatrixShape)
+  using InstructionShape = InstructionShape_;
+
+  /// Delta between *MMA operations (in units of *MMA operations, concept: MatrixShape)
+  using OpDelta = OpDelta_;
+
+  /// Number of participating threads
+  static int const kThreads = 32;
+
+  /// TensorRef type for loading element from a tensor
+  using TensorRef = TensorRef<Element, Layout>;
+
+  /// Index type
+  using Index = typename TensorRef::Index;
+
+  /// Long Index type
+  using LongIndex = typename TensorRef::LongIndex;
+
+  /// Coordinate for an element in the tensor
+  using TensorCoord = typename TensorRef::TensorCoord;
+
+  /// Internal structure of iterator - made public to enable introspection
+  struct Policy {
+    static_assert(
+        !(Shape::kRow % InstructionShape::kM) &&
+            !(Shape::kColumn % InstructionShape::kN),
+        "Shape of warp-level Mma must be divisible by operator shape.");
+
+    /// Number of elements in strided dimension that each STG writes
+    static int const kStridedPerSTG = 8;
+
+    /// Factor to calculate reorder index to pack accumulator.
+    static int const kPackedFactor = Shape::kColumn / 32;
+
+    /// Number of mma operations performed
+    using MmaIterations = MatrixShape<Shape::kRow / kStridedPerSTG,
+                                      Shape::kColumn / InterleavedN>;
+  };
+
+private:
+
+  static int const kElementsPerAccess = InterleavedN / 4;
+
+public:
+
+  //
+  // Derived quantities
+  //
+
+  struct alignas((kElementsPerAccess * sizeof_bits<Element>::value / 8)) AccessType {
+      Array<Element, kElementsPerAccess> storage;
+  };
+
+  /// Fragment object holding a thread's part of a tile
+  using Fragment = Array<int32_t, Shape::kCount / kThreads>;
+
+private:
+
+  /// Reference to output tensor
+  TensorRef ref_;
+
+  /// Row offset index globally
+  LongIndex global_offset_row_;
+
+  /// Column offset index globally
+  LongIndex global_offset_col_;
+
+  /// Output tensor size
+  TensorCoord extent_;
+
+  /// Alpha 
+  float alpha_;
+
+  /// Beta
+  float beta_;
+
+public:
+  
+  /// Default ctor constructs null iterator
+  CUTLASS_HOST_DEVICE
+  MmaTensorOpAccumulatorTileIterator() { }
+
+  /// Constructor from TensorRef
+  CUTLASS_HOST_DEVICE
+  MmaTensorOpAccumulatorTileIterator(
+    TensorRef const &ref,
+    int const lane_id,
+    TensorCoord extent,
+    float alpha = 1.0f,
+    float beta = 0.0f
+  ):
+    ref_(ref),
+    extent_(extent),
+    alpha_(alpha),
+    beta_(beta) {
+
+    int quad = (lane_id >> 2);
+    int lane_in_quad = (lane_id & 3);
+
+    global_offset_row_ = quad;
+
+    global_offset_col_ = lane_in_quad * kElementsPerAccess;
+  }
+
+  /// Adds a pointer offset to internal pointer(s) to advance through memory
+  CUTLASS_HOST_DEVICE
+  MmaTensorOpAccumulatorTileIterator &add_pointer_offset(LongIndex offset) {
+    ref_.add_pointer_offset(offset);
+    return *this;
+  }
+
+  /// Advances an iterator along logical dimensions of matrix in units of whole tiles
+  CUTLASS_HOST_DEVICE
+  MmaTensorOpAccumulatorTileIterator &add_tile_offset(MatrixCoord const &tile_offset) {
+
+    global_offset_row_ += tile_offset.row() * Shape::kRow;
+
+    global_offset_col_ += tile_offset.column() * Shape::kColumn;
+
+    return *this;
+  }
+
+  /// Advances the iterator along the advance dimension
+  CUTLASS_HOST_DEVICE
+  MmaTensorOpAccumulatorTileIterator & operator++() {
+    // deliberate no-op
+    return *this;
+  }
+
+  /// Advances the iterator along the advance dimension
+  CUTLASS_HOST_DEVICE
+  MmaTensorOpAccumulatorTileIterator & operator--() {
+    // deliberate no-op
+    return *this;
+  }
+
+  ///< advances in units of whole tiles along the logical coordinate space of the tensor
+  CUTLASS_DEVICE
+  MmaTensorOpAccumulatorTileIterator & operator+=(TensorCoord const &tile_offset) {
+    add_tile_offset(tile_offset);
+    return *this;
+  }
+
+  ///< advances in units of whole tiles along the logical coordinate space of the tensor
+  CUTLASS_DEVICE
+  MmaTensorOpAccumulatorTileIterator & operator-=(TensorCoord const &tile_offset) {
+    add_tile_offset(-tile_offset);
+    return *this;
+  }
+
+  /// Loads a fragment from memory at the location pointed to by the iterator.
+  CUTLASS_HOST_DEVICE
+  void load(Fragment &frag) const {
+    load_with_pointer_offset(frag);
+  }
+
+  /// Loads a fragment from memory with additional logical offset
+  CUTLASS_DEVICE
+  void load_with_pointer_offset(
+    Fragment &frag,                             ///< fragment to load from the tensor
+    Index pointer_offset) const {               ///< loads a tile with a linear offset
+  
+    TensorRef offset_ref(ref_);
+    offset_ref.add_pointer_offset(pointer_offset);
+
+    AccessType* frag_ptr = reinterpret_cast<AccessType *>(&frag);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int mma_n = 0; mma_n < Policy::MmaIterations::kN; ++mma_n) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int mma_m = 0; mma_m < Policy::MmaIterations::kM; ++mma_m) {
+        int accum_m = mma_m * InstructionShape::kM;
+        int accum_n = mma_n * InstructionShape::kN;
+
+        int idx = mma_m + mma_n * Policy::MmaIterations::kM;
+
+        AccessType* access_ptr = reinterpret_cast<AccessType *>(offset_ref.data() +
+                                 accum_m * offset_ref.stride(0) + accum_n);
+
+        frag_ptr[idx] = access_ptr[0];
+      }
+    }
+  }
+
+  /// Loads a fragment from memory with additional logical offset
+  CUTLASS_DEVICE
+  void load_with_byte_offset(
+    Fragment &frag,                             ///< fragment to load from the tensor
+    Index byte_offset) const {                  ///< loads a tile with a linear offset
+
+    load_with_pointer_offset(byte_offset / sizeof(Element));
+  }
+
+  /// Loads a fragment from memory with logical offset in units of whole tiles.
+  CUTLASS_DEVICE
+  void load(
+    Fragment &frag,                             ///< fragment to load from the tensor
+    TensorCoord const &tile_offset) const {     ///< loads a tile with a logical offset in units of whole tiles
+
+    load(frag, tile_offset, 0);
+  }
+
+  /// Loads a fragment from memory with logical offset in units of whole tiles.
+  CUTLASS_DEVICE
+  void load(
+    Fragment &frag,                             ///< fragment to load from the tensor
+    TensorCoord const &tile_offset,             ///< loads a tile with a logical offset in units of whole tiles
+    Index pointer_offset) const {               ///< loads a tile with a logical offset AND a pointer offset
+
+    load_with_pointer_offset(frag, ref_.offset(tile_offset) + pointer_offset);
+  }
+
+  /// Stores a fragment to memory
+  CUTLASS_HOST_DEVICE
+  void store(Fragment const &frag) const {
+    store_with_pointer_offset(frag, 0);
+  }
+
+  /// Stores a fragment to memory with additional pointer offset
+  CUTLASS_DEVICE
+  void store_with_pointer_offset(
+    Fragment const &frag,                       ///< fragment to store from the tensor
+    Index pointer_offset) const {               ///< store a tile with a linear offset
+  
+    TensorRef offset_ref(ref_);
+    offset_ref.add_pointer_offset(pointer_offset);
+
+    Array<float, Shape::kCount / kThreads> output_frag_f;
+    Array<Element, Shape::kCount / kThreads> output_frag;
+
+    LongIndex pq = extent_.h() * extent_.w();
+
+    LongIndex extent_row = extent_.n() * pq;
+    LongIndex extent_col = extent_.c();
+
+    LongIndex k_major = (global_offset_col_ / InterleavedN) * pq;
+    Index k_minor = global_offset_col_ % InterleavedN;
+    LongIndex k_offset = k_major * InterleavedN + k_minor;
+    LongIndex k_offset_delta = pq * InterleavedN;
+
+    LongIndex stride_n = pq * extent_.c();
+
+    Index n;
+    LongIndex pq_rem;
+
+    unsigned int pq_mul, pq_shr;
+    find_divisor(pq_mul, pq_shr, pq);
+
+    if(beta_ == 0.0f) {
+      CUTLASS_PRAGMA_UNROLL
+      for(int i = 0; i < frag.size(); ++i) {
+        output_frag_f[i] = frag[i];
+      }
+
+      if(InstructionShape::kM == Policy::kStridedPerSTG) {
+        CUTLASS_PRAGMA_UNROLL
+        for(int i = 0; i < frag.size(); ++i) {
+          output_frag[i] = (Element)(output_frag_f[i] * alpha_);
+        }
+      } else {
+        CUTLASS_PRAGMA_UNROLL
+        for(int i = 0; i < frag.size(); ++i) {
+          int map_i = (i / (16 * Policy::kPackedFactor)) * (16 * Policy::kPackedFactor)
+                    + (i % (8 * Policy::kPackedFactor)) / 2 * 4
+                    + (i % (8 * Policy::kPackedFactor)) % 2
+                    + (i / (8 * Policy::kPackedFactor)) % 2 * 2;
+          output_frag[i] = (Element)(output_frag_f[map_i] * alpha_);
+        }
+      }
+
+      AccessType const *frag_ptr = reinterpret_cast<AccessType const*>(&output_frag);
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int mma_m = 0; mma_m < Policy::MmaIterations::kRow; ++mma_m) {
+        int accum_m = mma_m * Policy::kStridedPerSTG;
+
+        fast_divmod(n, pq_rem, global_offset_row_ + accum_m, pq, pq_mul, pq_shr);
+        LongIndex offset_m = n * stride_n + k_offset + pq_rem * InterleavedN;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int mma_n = 0; mma_n < Policy::MmaIterations::kColumn; ++mma_n) {
+       
+          int accum_n = mma_n * InterleavedN;
+
+          int idx = mma_n + mma_m * Policy::MmaIterations::kColumn;
+         
+          if((global_offset_row_ + accum_m < extent_row) && (global_offset_col_ + accum_n < extent_col)) {
+            AccessType* access_ptr = reinterpret_cast<AccessType *>(offset_ref.data() +
+                                                                    offset_m + mma_n * k_offset_delta);
+
+            access_ptr[0] = frag_ptr[idx];
+          }
+        }
+      }
+    } else {
+      if(InstructionShape::kM == Policy::kStridedPerSTG) {
+        CUTLASS_PRAGMA_UNROLL
+        for(int i = 0; i < frag.size(); ++i) {
+          output_frag_f[i] = frag[i];
+        }
+      } else {
+        CUTLASS_PRAGMA_UNROLL
+        for(int i = 0; i < frag.size(); ++i) {
+          int map_i = (i / (16 * Policy::kPackedFactor)) * (16 * Policy::kPackedFactor)
+                    + (i % (8 * Policy::kPackedFactor)) / 2 * 4
+                    + (i % (8 * Policy::kPackedFactor)) % 2
+                    + (i / (8 * Policy::kPackedFactor)) % 2 * 2;
+          output_frag_f[i] = frag[map_i];
+        }
+      }
+
+      AccessType const *frag_ptr = reinterpret_cast<AccessType const*>(&output_frag);
+
+      Array<Element, kElementsPerAccess> ref_frag;
+      AccessType *ref_frag_ptr = reinterpret_cast<AccessType *>(&ref_frag);
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int mma_m = 0; mma_m < Policy::MmaIterations::kRow; ++mma_m) {
+        int accum_m = mma_m * Policy::kStridedPerSTG;
+
+        fast_divmod(n, pq_rem, global_offset_row_ + accum_m, pq, pq_mul, pq_shr);
+        LongIndex offset_m = n * stride_n + k_offset + pq_rem * InterleavedN;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int mma_n = 0; mma_n < Policy::MmaIterations::kColumn; ++mma_n) {
+       
+          int accum_n = mma_n * InterleavedN;
+
+          int idx = mma_n + mma_m * Policy::MmaIterations::kColumn;
+         
+          if((global_offset_row_ + accum_m < extent_row) && (global_offset_col_ + accum_n < extent_col)) {
+            AccessType* access_ptr = reinterpret_cast<AccessType *>(offset_ref.data() +
+                                                                    offset_m + mma_n * k_offset_delta);
+
+            ref_frag_ptr[0] = access_ptr[0];
+
+            CUTLASS_PRAGMA_UNROLL
+            for(int i = 0; i < kElementsPerAccess; ++i) {
+              output_frag[idx * kElementsPerAccess + i] = Element(alpha_ * output_frag_f[idx * kElementsPerAccess + i]
+                                                                + beta_ * ref_frag[i]);
+            }
+
+            access_ptr[0] = frag_ptr[idx];
+          }
+        }
       }
     }
   }

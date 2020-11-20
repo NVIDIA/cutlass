@@ -50,6 +50,7 @@ Provider_enumerants[] = {
   {"host", "reference_host", Provider::kReferenceHost},
   {"device", "reference_device", Provider::kReferenceDevice},
   {"cublas", "cuBLAS", Provider::kCUBLAS},
+  {"cudnn", "cuDNN", Provider::kCUDNN},                           
 };
 
 /// Converts a Provider enumerant to a string
@@ -128,6 +129,9 @@ static struct {
 OperationKind_enumerants[] = {
   {"eq_gemm", "EqGemm", OperationKind::kEqGemm}, 
   {"gemm", "Gemm", OperationKind::kGemm},               
+  {"conv2d", "Conv2d", OperationKind::kConv2d},           
+  {"conv3d", "Conv3d", OperationKind::kConv3d},           
+  {"spgemm", "SparseGemm", OperationKind::kSparseGemm},
 };
 
 /// Converts a Status enumerant to a string
@@ -445,6 +449,10 @@ layout_aliases[] = {
   {LayoutTypeID::kTensorNCDHW, "ncdhw"},
   {LayoutTypeID::kTensorNHWC, "nhwc"},
   {LayoutTypeID::kTensorNDHWC, "ndhwc"},
+  {LayoutTypeID::kTensorNC32HW32, "nc32hw32"},
+  {LayoutTypeID::kTensorNC64HW64, "nc64hw64"},
+  {LayoutTypeID::kTensorC32RSK32, "c32rsk32"},
+  {LayoutTypeID::kTensorC64RSK64, "c64rsk64"},
 
   {LayoutTypeID::kUnknown, "*"},
   {LayoutTypeID::kInvalid, nullptr}
@@ -474,22 +482,46 @@ LayoutTypeID from_string<LayoutTypeID>(std::string const &str) {
 /// Gets stride rank for the layout_id (static function)
 int get_layout_stride_rank(LayoutTypeID layout_id) {
   switch (layout_id) {
-    case LayoutTypeID::kColumnMajor: return cutlass::layout::ColumnMajor::kStrideRank;
-    case LayoutTypeID::kRowMajor:  return cutlass::layout::RowMajor::kStrideRank;
+    case LayoutTypeID::kColumnMajor:
+      return cutlass::layout::ColumnMajor::kStrideRank;
+    case LayoutTypeID::kRowMajor:
+      return cutlass::layout::RowMajor::kStrideRank;
     case LayoutTypeID::kColumnMajorInterleavedK2:
+      return cutlass::layout::ColumnMajorInterleaved<2>::kStrideRank;
     case LayoutTypeID::kRowMajorInterleavedK2:
+      return cutlass::layout::RowMajorInterleaved<2>::kStrideRank;
     case LayoutTypeID::kColumnMajorInterleavedK4:
+      return cutlass::layout::ColumnMajorInterleaved<4>::kStrideRank;
     case LayoutTypeID::kRowMajorInterleavedK4:
+      return cutlass::layout::RowMajorInterleaved<4>::kStrideRank;
     case LayoutTypeID::kColumnMajorInterleavedK16:
+      return cutlass::layout::ColumnMajorInterleaved<16>::kStrideRank;
     case LayoutTypeID::kRowMajorInterleavedK16:
+      return cutlass::layout::RowMajorInterleaved<16>::kStrideRank;
     case LayoutTypeID::kColumnMajorInterleavedK32:
+      return cutlass::layout::ColumnMajorInterleaved<32>::kStrideRank;
     case LayoutTypeID::kRowMajorInterleavedK32:
+      return cutlass::layout::RowMajorInterleaved<32>::kStrideRank;
     case LayoutTypeID::kColumnMajorInterleavedK64:
-    case LayoutTypeID::kRowMajorInterleavedK64: return 1;
+      return cutlass::layout::ColumnMajorInterleaved<64>::kStrideRank;
+    case LayoutTypeID::kRowMajorInterleavedK64:
+      return cutlass::layout::RowMajorInterleaved<64>::kStrideRank;
     case LayoutTypeID::kTensorNCHW:
-    case LayoutTypeID::kTensorNHWC: return 3;
-    case LayoutTypeID::kTensorNDHWC: return 4;
-    default : throw std::runtime_error("Unsupported LayoutTypeID in LayoutType::get_stride_rank");
+      return cutlass::layout::TensorNCHW::kStrideRank;
+    case LayoutTypeID::kTensorNHWC:
+      return cutlass::layout::TensorNHWC::kStrideRank;
+    case LayoutTypeID::kTensorNDHWC:
+      return cutlass::layout::TensorNDHWC::kStrideRank;
+    case LayoutTypeID::kTensorNC32HW32:
+      return cutlass::layout::TensorNCxHWx<32>::kStrideRank;
+    case LayoutTypeID::kTensorNC64HW64:
+      return cutlass::layout::TensorNCxHWx<64>::kStrideRank;
+    case LayoutTypeID::kTensorC32RSK32:
+      return cutlass::layout::TensorCxRSKx<32>::kStrideRank;
+    case LayoutTypeID::kTensorC64RSK64:
+      return cutlass::layout::TensorCxRSKx<64>::kStrideRank;
+    default:
+      throw std::runtime_error("Unsupported LayoutTypeID in LayoutType::get_stride_rank");
   }
 }
 
@@ -624,6 +656,136 @@ SplitKMode from_string<SplitKMode>(std::string const &str) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+static struct {
+  char const *text;
+  char const *pretty;
+  ConvModeID enumerant;
+}
+ConvModeID_enumerants[] = {
+  {"cross", "<cross>", ConvModeID::kCrossCorrelation},
+  {"conv", "<conv>", ConvModeID::kConvolution},
+};
+
+/// Converts a ConvModeID enumerant to a string
+char const *to_string(ConvModeID type, bool pretty) {
+
+  for (auto const & possible : ConvModeID_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+/// Converts a ConvModeID enumerant from a string
+template <>
+ConvModeID from_string<ConvModeID>(std::string const &str) {
+
+  for (auto const & possible : ConvModeID_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return ConvModeID::kInvalid;
+}
+
+
+static struct {
+  char const *text;
+  char const *pretty;
+  IteratorAlgorithmID enumerant;
+}
+IteratorAlgorithmID_enumerants[] = {
+  {"none", "<none>", IteratorAlgorithmID::kNone},
+  {"analytic", "<analytic>", IteratorAlgorithmID::kAnalytic},
+  {"optimized", "<optimized>", IteratorAlgorithmID::kOptimized},
+};
+
+/// Converts a ConvModeID enumerant to a string
+char const *to_string(IteratorAlgorithmID type, bool pretty) {
+
+  for (auto const & possible : IteratorAlgorithmID_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+/// Converts a ConvModeID enumerant from a string
+template <>
+IteratorAlgorithmID from_string<IteratorAlgorithmID>(std::string const &str) {
+
+  for (auto const & possible : IteratorAlgorithmID_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return IteratorAlgorithmID::kInvalid;
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  ConvKind enumerant;
+}
+ConvKind_enumerants[] = {
+  {"unknown", "<unkown>", ConvKind::kUnknown},
+  {"fprop", "<fprop>", ConvKind::kFprop},
+  {"dgrad", "<dgrad>", ConvKind::kDgrad},
+  {"wgrad", "<wgrad>", ConvKind::kWgrad},
+};
+
+/// Converts a ConvKind enumerant to a string
+char const *to_string(ConvKind type, bool pretty) {
+
+  for (auto const & possible : ConvKind_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+
+/// Converts a ConvKind enumerant from a string
+template <>
+ConvKind from_string<ConvKind>(std::string const &str) {
+
+  for (auto const & possible : ConvKind_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return ConvKind::kInvalid;
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Lexical cast a string to a byte array. Returns true if cast is successful or false if invalid.
 bool lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type, std::string const &str) {
   int size_bytes = sizeof_bits(type) / 8;
@@ -1224,5 +1386,3 @@ bool cast_from_double(std::vector<uint8_t> &bytes, NumericTypeID type, double sr
 } // namespace cutlass
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-

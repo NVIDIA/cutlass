@@ -243,7 +243,7 @@ int OperationProfiler::profile_all(
   ProblemSpace::Iterator problem_it = problem_space.begin();
   ProblemSpace::Iterator problem_end = problem_space.end();
 
-  bool continue_profiling = true;
+  bool continue_profiling = true, internal_error = false;
 
   // For each problem in problem space
   for (; continue_profiling && problem_it != problem_end; ++problem_it) {
@@ -302,7 +302,8 @@ int OperationProfiler::profile_all(
 
         if (status == Status::kErrorInternal) {
           // Stop profiling if there was an internal error
-          return false;
+          internal_error = true;
+          break;
         }
         else if (status != Status::kSuccess) {
           // If the workspace could not be initialized for any other reason, continue to
@@ -322,7 +323,8 @@ int OperationProfiler::profile_all(
 
           if (status == Status::kErrorInternal) {
             // Stop profiling if there was an internal error
-            return false;
+            internal_error = true;
+            break;
           }
           else if (status != Status::kSuccess) {
             // If the workspace could not be initialized for any other reason, continue to
@@ -336,8 +338,9 @@ int OperationProfiler::profile_all(
         //
 
         // B. Verify CUTLASS
-        if (continue_profiling) {
-          
+         
+        if (continue_profiling && options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
+
           continue_profiling = this->verify_cutlass(
             options,
             report, 
@@ -368,6 +371,7 @@ int OperationProfiler::profile_all(
         //
         // D. Profile
         //
+
         if (continue_profiling && options.profiling.enabled) {
 
           continue_profiling = this->profile(
@@ -392,10 +396,7 @@ int OperationProfiler::profile_all(
     } 
   }
 
-  // 3. Emit report
-  report.close();
-
-  return 0;
+  return internal_error ? 1 : 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

@@ -105,6 +105,14 @@ public:
   /// Warp-level Mma
   using Operator = typename Policy::Operator;
 
+  using ArchTag = arch::Sm70;
+
+  /// Complex transform on A operand
+  static ComplexTransform const kTransformA = Operator::kTransformA;
+
+  /// Complex transform on B operand
+  static ComplexTransform const kTransformB = Operator::kTransformB;
+
   // staticaly assert kStages for MmaSingleStage is 1 (single stage mma pipeline)
   static_assert((Base::kStages==1), "MmaSingleStage requires kStages set to value 1");
 private:

@@ -909,6 +909,37 @@ bool arg_as_SplitKModeID(
   ProblemSpace const &problem_space, 
   ProblemSpace::Problem const &problem);
 
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_ConvModeID(library::ConvModeID &conv_mode, KernelArgument::Value const *value_ptr);
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_ConvModeID(
+  library::ConvModeID &conv_mode,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem);
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_IteratorAlgorithmID(library::IteratorAlgorithmID &iterator_algorithm, KernelArgument::Value const *value_ptr);
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_IteratorAlgorithmID(
+  library::IteratorAlgorithmID &iterator_algorithm,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem);
+
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_ProviderID(library::Provider &provider, KernelArgument::Value const *value_ptr);
+
+/// Lexically casts an argument to an int64 if it is defined. Returns true if not null.
+bool arg_as_ProviderID(
+  library::Provider &provider,
+  char const *name,
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem);
+
 /// Lexically casts an argument to a given type stored in a byte array. Returns true if not null.
 bool arg_as_scalar(
   std::vector<uint8_t> &bytes,
@@ -935,10 +966,34 @@ bool tensor_description_satisfies(
   ProblemSpace const &problem_space, 
   ProblemSpace::Problem const &problem);
 
+
+/// Returns true if a conv kind satisfies the value
+bool conv_kind_satisfies(
+  library::ConvKind const &conv_kind,
+  EnumeratedTypeArgument::EnumeratedTypeValue const *value_ptr);
+
+/// Returns true if a conv kind satisfies the value
+bool conv_kind_satisfies(
+  library::ConvKind const &conv_kind,
+  char const *name, 
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem);
+
+/// Returns true if a iterator algorithm satisfies the value
+bool iterator_algorithm_satisfies(
+  library::IteratorAlgorithmID const &iterator_algorithm,
+  EnumeratedTypeArgument::EnumeratedTypeValue const *value_ptr);
+
+/// Returns true if a iterator algorithm satisfies the value
+bool iterator_algorithm_satisfies(
+  library::IteratorAlgorithmID const &iterator_algorithm,
+  char const *name, 
+  ProblemSpace const &problem_space, 
+  ProblemSpace::Problem const &problem);
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace profiler
 } // namespace cutlass
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-

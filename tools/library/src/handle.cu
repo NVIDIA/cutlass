@@ -1037,8 +1037,70 @@ Status Handle::gemm_planar_complex_array(
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Finds conv operation instances with Conv::ElementC = Reduction::ElementWorkspace
+Operation const* find_conv_operation_for_parallel_reduction(Operation const *operation) {
+
+  ConvDescription const &conv_desc = 
+    static_cast<ConvDescription const &>(operation->description());
+
+  // if the curren conv operation accumulator and output data type match return operation
+  if(conv_desc.tile_description.math_instruction.element_accumulator == conv_desc.C.element) {
+    return operation;
+  }
+
+  // find conv operation to match conv output and reduction workspace data type
+  ConvFunctionalKey key(
+    library::Provider::kCUTLASS,
+    conv_desc.conv_kind,        
+    conv_desc.A.element,
+    conv_desc.A.layout,
+    conv_desc.B.element,
+    conv_desc.B.layout,
+    conv_desc.tile_description.math_instruction.element_accumulator,
+    conv_desc.C.layout,
+    conv_desc.tile_description.math_instruction.element_accumulator, 
+    conv_desc.element_epilogue);
+
+  // conv operation table for conv2d or conv3d
+  auto conv_operations = (conv_desc.kind == OperationKind::kConv2d) ? 
+                          Singleton::get().operation_table.conv2d_operations : 
+                          Singleton::get().operation_table.conv3d_operations;
+
+  // find ConvFunctionalKey in convolution operation table
+  auto operators_it = conv_operations.find(key);
+
+  if (operators_it == conv_operations.end()) {
+    return nullptr;
+  }
+  
+  if (operators_it->second.empty()) {
+    return nullptr;
+  }
+
+  // conv operation for same compute capability and iterator algorithm
+  ConvPreferenceKey preference_key(
+    conv_desc.tile_description.minimum_compute_capability, 
+    conv_desc.iterator_algorithm);
+
+  auto it = operators_it->second.find(preference_key);
+  
+  if(it == operators_it->second.end()) {
+    return nullptr;
+  }
+
+  // return matching conv opertion (same tile sizes and instruction)
+  for (auto op : it->second) {
+    if (op->description().tile_description == operation->description().tile_description) {
+      return op;
+    }
+  }
+
+  return nullptr;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 } // namespace library
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

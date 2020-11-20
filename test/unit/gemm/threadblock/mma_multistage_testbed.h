@@ -266,19 +266,17 @@ struct Testbed {
           test::gemm::threadblock::kernel_multistage_mma<Mma>,
           cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size);
 
-      EXPECT_EQ(result, cudaSuccess)
-          << " cudaFuncSetAttribute "
-             "cudaFuncAttributeMaxDynamicSharedMemorySize error: "
-          << cudaGetErrorString(result);
+      if (result != cudaSuccess) {
+        return true;
+      }
 
       result = cudaFuncSetAttribute(
           test::gemm::threadblock::kernel_multistage_mma<Mma>,
           cudaFuncAttributePreferredSharedMemoryCarveout, 100);
 
-      EXPECT_EQ(result, cudaSuccess)
-          << " cudaFuncSetAttribute "
-             "cudaFuncAttributePreferredSharedMemoryCarveout error: "
-          << cudaGetErrorString(result);
+      if (result != cudaSuccess) {
+          return true;
+      }
     }
 
     test::gemm::threadblock::kernel_multistage_mma<Mma>

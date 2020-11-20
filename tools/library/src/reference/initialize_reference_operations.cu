@@ -37,10 +37,14 @@ namespace cutlass {
 namespace library {
 
 void initialize_gemm_reference_operations(Manifest &manifest);
+void initialize_conv2d_reference_operations(Manifest &manifest);
+void initialize_conv3d_reference_operations(Manifest &manifest);
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 void initialize_reference_operations(Manifest &manifest) {
+  initialize_conv2d_reference_operations(manifest);
+  initialize_conv3d_reference_operations(manifest);
   initialize_gemm_reference_operations(manifest);
 }
 

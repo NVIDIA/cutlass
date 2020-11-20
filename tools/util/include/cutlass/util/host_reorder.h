@@ -62,6 +62,18 @@ void reorder_column(TensorRef<Element, Layout> dest,
   }
 }
 
+template <int Interleaved, typename Element, typename Layout>
+void reorder_convK(TensorRef<Element, Layout> dest,
+                    TensorRef<Element, Layout> src,
+                    cutlass::gemm::GemmCoord problem_size) {
+
+    TensorRef<Element, layout::RowMajorInterleaved<Interleaved>> mappedDest(dest.data(), dest.stride(0));
+    TensorRef<Element, layout::RowMajorInterleaved<Interleaved>> mappedSrc(src.data(), src.stride(0));
+    
+    reorder_column<Interleaved>(
+        mappedDest, mappedSrc, problem_size);
+}
+
 /// This is needed for the sparse tensor core kernels.  The purpose
 /// is to use ldmatrix to load from shared memory to the register file.
 template <typename Element, typename LayoutDest, typename LayoutSrc>

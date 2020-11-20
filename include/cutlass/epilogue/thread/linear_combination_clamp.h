@@ -133,7 +133,7 @@ public:
 
   /// Functionally required for serial reduction in the epilogue
   CUTLASS_HOST_DEVICE
-  void set_k_partition(int k_partition) {
+  void set_k_partition(int k_partition, int k_partition_count) {
     if (k_partition) {
       beta_ = ElementCompute(1);
     }
@@ -319,7 +319,7 @@ public:
 
   /// Functionally required for serial reduction in the epilogue
   CUTLASS_HOST_DEVICE
-  void set_k_partition(int k_partition) {
+  void set_k_partition(int k_partition, int k_partition_count) {
     if (k_partition) {
       beta_ = ElementCompute(1);
     }
@@ -354,7 +354,7 @@ public:
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kCount; ++i) {
-      scaled_accumulator[i] = static_cast<int>(intermediate[i]);
+      scaled_accumulator[i] = __float2int_rn(intermediate[i]);
     }
 
     // Convert to destination numeric type
@@ -385,7 +385,7 @@ public:
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kCount; ++i) {
-      scaled_accumulator[i] = static_cast<int>(intermediate[i]);
+      scaled_accumulator[i] = __float2int_rn(intermediate[i]);
     }
 
     // Convert to destination numeric type
@@ -495,7 +495,7 @@ class FastLinearCombinationClamp {
 
   /// Functionally required for serial reduction in the epilogue
   CUTLASS_HOST_DEVICE
-  void set_k_partition(int k_partition) {
+  void set_k_partition(int k_partition, int k_partition_count) {
     if (k_partition) {
       beta_ = ElementCompute(1);
     }

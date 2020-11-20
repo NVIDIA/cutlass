@@ -249,6 +249,45 @@ struct Gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ScalarType,
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Partial specialization for multiply-add
+template <typename ElementA, typename LayoutA, typename ElementB,
+          typename LayoutB, typename ElementC, typename LayoutC,
+          typename ScalarType, typename ComputeType>
+struct Gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ScalarType,
+            ComputeType, arch::OpMultiplyAddFastBF16> {
+
+  void operator()(gemm::GemmCoord problem_size, ScalarType alpha,
+                  TensorRef<ElementA, LayoutA> tensor_a,
+                  TensorRef<ElementB, LayoutB> tensor_b, ScalarType beta,
+                  TensorRef<ElementC, LayoutC> tensor_c,
+                  ComputeType initial_accum = ComputeType(0)) {
+    static_assert(
+        LayoutA::kRank == 2 && LayoutB::kRank == 2 && LayoutC::kRank == 2,
+        "Tensors must be of rank 2");
+
+    compute_gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC,
+                 ScalarType, ComputeType, multiply_add<ComputeType>>(
+        problem_size, alpha, tensor_a, tensor_b, beta, tensor_c, initial_accum);
+  }
+  
+  void operator()(gemm::GemmCoord problem_size, ScalarType alpha,
+                  TensorRef<ElementA, LayoutA> tensor_a,
+                  TensorRef<ElementB, LayoutB> tensor_b, ScalarType beta,
+                  TensorRef<ElementC, LayoutC> tensor_c,
+                  TensorRef<ElementC, LayoutC> tensor_d,
+                  ComputeType initial_accum = ComputeType(0)) {
+    static_assert(
+        LayoutA::kRank == 2 && LayoutB::kRank == 2 && LayoutC::kRank == 2,
+        "Tensors must be of rank 2");
+
+    compute_gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC,
+                 ScalarType, ComputeType, multiply_add<ComputeType>>(
+        problem_size, alpha, tensor_a, tensor_b, beta, tensor_c, tensor_d, initial_accum);
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Partial specialization for multiply-add-saturate
 template <typename ElementA, typename LayoutA, typename ElementB,
           typename LayoutB, typename ElementC, typename LayoutC,

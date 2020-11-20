@@ -49,19 +49,14 @@ target_link_libraries(
   cutlass_test_unit_infra
   )
 
-set(CUTLASS_INSTALL_TESTS ON CACHE BOOL "Install test executables")
-set(CUTLASS_TEST_EXECUTION_ENVIRONMENT "" CACHE BOOL "Environment in which to invoke unit test executables")
-  
-function(cutlass_test_unit_add_executable)
+function(cutlass_test_unit_add_executable NAME)
 
   set(options)
   set(oneValueArgs)
   set(multiValueArgs)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-  cutlass_add_executable(${__UNPARSED_ARGUMENTS})
-
-  list(GET __UNPARSED_ARGUMENTS 0 NAME)
+  cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS})
 
   target_link_libraries(
     ${NAME}
@@ -72,24 +67,12 @@ function(cutlass_test_unit_add_executable)
 
   string(REGEX REPLACE cutlass_ "" NAME_STEM ${NAME})
 
-  add_test(c${NAME_STEM} ${NAME})
+  set(CUTLASS_TEST_UNIT_TEST_COMMAND_OPTIONS --gtest_output=xml:${NAME_STEM}.gtest.xml)
 
-  add_custom_target(
-    ${NAME_STEM}
-    COMMAND
-    ${CUTLASS_TEST_EXECUTION_ENVIRONMENT} $<TARGET_FILE:${NAME}>
-  DEPENDS
-    ${NAME}
+  cutlass_add_executable_tests(
+    ${NAME_STEM} ${NAME} 
+    TEST_COMMAND_OPTIONS CUTLASS_TEST_UNIT_TEST_COMMAND_OPTIONS
     )
-
-  if (CUTLASS_INSTALL_TESTS)
-
-    install(
-      TARGETS ${NAME}
-      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-      )
-
-  endif()
 
 endfunction()
 
@@ -99,6 +82,7 @@ add_custom_target(test_unit)
 set(SUBDIRS
   core
   gemm
+  conv
   layout
   transform
   epilogue

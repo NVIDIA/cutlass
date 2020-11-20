@@ -30,6 +30,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/aligned_buffer.h"
+#include "cutlass/numeric_types.h"
 #include "cutlass/subbyte_reference.h"
 #include "cutlass/platform/platform.h"
 
@@ -1019,9 +1020,11 @@ __global__ void sparse_kernel(
     typename Mma::ElementB, ThreadblockShape::kN * ThreadblockShape::kK> smem_buffer_B;
 
   __shared__ cutlass::AlignedBuffer<
-      typename Mma::ElementE, ThreadblockShape::kM * ThreadblockShape::kK /
+      typename Mma::ElementE, Mma::Shape::kM * Mma::Shape::kK /
                                   Mma::kSparse / Mma::kElementsPerElementE>
       smem_buffer_E;
+  
+  __syncthreads();
 
   if (threadIdx.x == 0) {
     typename Mma::ElementA *smem_ptr_A = smem_buffer_A.data();
@@ -1168,6 +1171,7 @@ struct SparseTestbed {
 
   /// Allocates workspace in device memory
   SparseTestbed() {
+
     tensor_A.reset(cutlass::make_Coord(ThreadblockShape::kM,
                                        ThreadblockShape::kK / Sparse));
     tensor_A_uncompressed.reset(

@@ -32,6 +32,8 @@
 #include <iomanip>
 #include <memory>
 
+#include <cutlass/cutlass.h>
+
 #include "options.h"
 #include "register_layout.h"
 
@@ -132,6 +134,8 @@ int main(int argc, char const *arg[]) {
   }
 
   layout_it->second->print_csv(std::cout);
+
+  cudaFree(0); // Ensure CUDA is available.
 
   return 0;
 }

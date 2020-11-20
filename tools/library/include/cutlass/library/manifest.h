@@ -51,6 +51,9 @@ class Manifest;
 // init and insert all cutlass gemm operations in manifest object (procedurally generated using generator.py)
 void initialize_all(Manifest &manifest);         
 
+// init and insert all reduction op in manifest object (manually instantiated in library/reduction)
+void initialize_all_reduction_op(Manifest &manifest);
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// List of operations

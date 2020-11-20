@@ -367,6 +367,52 @@ struct DefaultInterleavedEpilogueTensorOp {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+/// Defines sensible defaults for epilogues for TensorOps which uses
+/// intereleaved output layout. For this case, shared memory is not needed.
+template <typename Shape_, typename WarpMmaTensorOp_, int PartitionsK,
+          typename OutputOp_, int ElementsPerAccess, int InterleavedK,
+          bool IsBetaZero = false, bool isSplitK = false>
+struct DefaultInterleavedConvEpilogue {
+  using Shape = Shape_;
+  using WarpMmaTensorOp = WarpMmaTensorOp_;
+  static int const kPartitionsK = PartitionsK;
+  using OutputOp = OutputOp_;
+  static int const kElementsPerAccess = ElementsPerAccess;
+
+  using ElementOutput = typename OutputOp::ElementOutput;
+  using ElementAccumulator = typename WarpMmaTensorOp::ElementC;
+
+  //
+  // Thread map
+  //
+  using OutputTileThreadMap = typename cutlass::epilogue::threadblock::
+      DefaultInterleavedConvThreadMapTensorOp<
+          Shape, typename WarpMmaTensorOp::Shape, kPartitionsK, ElementOutput,
+          kElementsPerAccess, InterleavedK>::Type;
+
+  using OutputTileIterator =
+      cutlass::epilogue::threadblock::InterleavedConvPredicatedTileIterator<
+          OutputTileThreadMap, ElementOutput, InterleavedK>;
+
+  using AccumulatorFragmentIterator =
+      cutlass::epilogue::warp::FragmentIteratorTensorOp<
+          typename WarpMmaTensorOp::Shape,
+          typename WarpMmaTensorOp::Policy::Operator::Shape,
+          typename WarpMmaTensorOp::Policy::Operator::ElementC,
+          typename WarpMmaTensorOp::Policy::Operator::FragmentC,
+          // can reuse the gemm version here to do element selection
+          layout::ColumnMajorInterleaved<InterleavedK>>;
+
+  //
+  // Define the epilogue
+  //
+  using Epilogue = cutlass::epilogue::threadblock::InterleavedEpilogue<
+      Shape, WarpMmaTensorOp, kPartitionsK, OutputTileIterator,
+      AccumulatorFragmentIterator, OutputOp, InterleavedK, IsBetaZero>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
 } // namespace threadblock
 } // namespace epilogue
 } // namespace cutlass

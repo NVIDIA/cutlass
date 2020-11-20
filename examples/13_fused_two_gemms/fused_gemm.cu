@@ -55,22 +55,6 @@ Performance:
 
 int run() {
 
-  cudaDeviceProp props;
-
-  cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (error != cudaSuccess) {
-    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
-    return -1;
-  }
-
-  if (!(props.major * 10 + props.minor >= 75)) {
-    std::cerr << "Turing Tensor Ops must be run on a machine with compute capability at least 75."
-              << std::endl;
-
-    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
-    return 0;
-  }
-
 #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
   run_nonfused_gemm_s8_sm80();
   run_fused_gemm_s8_sm80();
@@ -85,17 +69,38 @@ int run() {
 }
 
 int main() {
+
+  bool notSupported = false;
+
   // Turing Tensor Core operations exposed with mma.sync are first available in CUDA 10.2.
   //
   // CUTLASS must be compiled with CUDA 10.1 Toolkit to run these examples.
   if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2))) {
     std::cerr << "Turing Tensor Core operations must be compiled with CUDA 10.2 Toolkit or later." << std::endl;
 
+    notSupported = true;
+  }
+
+  cudaDeviceProp props;
+
+  cudaError_t error = cudaGetDeviceProperties(&props, 0);
+  if (error != cudaSuccess) {
+    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
+    return -1;
+  }
+
+  if (!(props.major * 10 + props.minor >= 75)) {
+    std::cerr << "Turing Tensor Ops must be run on a machine with compute capability at least 75."
+              << std::endl;
+
+    notSupported = true;
+  }
+
+  if (notSupported) {
     // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
   }
-  else {
-    return run();
-  }
+
+  return run();
 }
 

@@ -69,10 +69,14 @@ PerformanceReport::PerformanceReport(
   options_(options), argument_names_(argument_names), problem_index_(0), good_(true), op_kind_(op_kind) {
 
   // Strip '.csv' if present
-  std::string base_path = options_.report.output_path.substr(
-    0, options_.report.output_path.rfind(".csv"));
-
+  std::string base_path = options_.report.output_path;
+  base_path = base_path.substr(0, base_path.rfind(".csv"));
   op_file_name_ = base_path + "." + to_string(op_kind_) + ".csv";
+
+  base_path = options_.report.junit_output_path;
+  base_path = base_path.substr(0, base_path.rfind(".xml"));
+  base_path = base_path.substr(0, base_path.rfind(".junit"));
+  op_junit_file_name_ = base_path + "." + to_string(op_kind_) + ".junit.xml";
 
   //
   // Open output file for operation of PerformanceReport::op_kind
@@ -108,6 +112,21 @@ PerformanceReport::PerformanceReport(
       print_csv_header_(output_file_) << std::endl;
     }
   }
+
+  if (!options_.report.junit_output_path.empty()) {
+
+    junit_output_file_.open(op_junit_file_name_);
+
+    if (!junit_output_file_.good()) {
+
+      std::cerr << "Could not open junit output file at path '"
+         << options_.report.junit_output_path << "'" << std::endl;
+
+      good_ = false;
+    }
+
+    print_junit_header_(junit_output_file_);
+  }
 }
 
 void PerformanceReport::next_problem() {
@@ -121,6 +140,10 @@ void PerformanceReport::append_result(PerformanceResult result) {
   if (options_.report.verbose) {
     std::cout << "\n";
     print_result_pretty_(std::cout, result) << std::flush; 
+  }
+
+  if (junit_output_file_.is_open()) {
+    print_junit_result_(junit_output_file_, result);
   }
 
   if (output_file_.is_open()) {
@@ -143,7 +166,7 @@ void PerformanceReport::append_results(PerformanceResultVector const &results) {
   }
 }
 
-void PerformanceReport::close() {
+PerformanceReport::~PerformanceReport() {
 
   //
   // Output results to stdout if they were not written to a file already.
@@ -161,7 +184,17 @@ void PerformanceReport::close() {
     }
   }
   else if (output_file_.is_open() && options_.report.verbose) {
-    std::cout << "\n\nWrote results to '" << op_file_name_ << "'" << std::endl;
+    std::cout << "\nWrote results to '" << op_file_name_ << "'" << std::endl;
+  }
+
+  if (output_file_.is_open()) {
+    output_file_.close();
+  }
+
+  if (junit_output_file_.is_open()) {
+    print_junit_footer_(junit_output_file_);
+    junit_output_file_.close();
+    std::cout << "\nWrote jUnit results to '" << op_junit_file_name_ << "'" << std::endl;
   }
 }
 
@@ -179,7 +212,8 @@ static const char *disposition_status_color(Disposition disposition) {
 /// Prints the result in human readable form
 std::ostream & PerformanceReport::print_result_pretty_(
   std::ostream &out, 
-  PerformanceResult const &result) {
+  PerformanceResult const &result,
+  bool use_shell_coloring) {
 
   out << "=============================\n"
     << "  Problem ID: " << result.problem_index << "\n";
@@ -196,14 +230,20 @@ std::ostream & PerformanceReport::print_result_pretty_(
     out << "\n";
   }
 
+  std::string shell_color_bright = use_shell_coloring ? SHELL_COLOR_BRIGHT() : "";
+  std::string shell_color_end = use_shell_coloring ? SHELL_COLOR_END() : "";
+  auto _disposition_status_color = [&](Disposition d) -> const char * { 
+    return use_shell_coloring ? disposition_status_color(d) : "";
+  };
+
   out
     << "\n"
-    << "        Provider: " << SHELL_COLOR_BRIGHT() << library::to_string(result.provider, true) << SHELL_COLOR_END() << "\n"
-    << "   OperationKind: " << SHELL_COLOR_BRIGHT() << library::to_string(result.op_kind) << SHELL_COLOR_END() << "\n"
+    << "        Provider: " << shell_color_bright << library::to_string(result.provider, true) << shell_color_end << "\n"
+    << "   OperationKind: " << shell_color_bright << library::to_string(result.op_kind) << shell_color_end << "\n"
     << "       Operation: " << result.operation_name << "\n\n"
-    << "          Status: " << SHELL_COLOR_BRIGHT() << library::to_string(result.status, true) << SHELL_COLOR_END() << "\n"
-    << "    Verification: " << SHELL_COLOR_BRIGHT() << (options_.verification.enabled ? "ON":"OFF") << SHELL_COLOR_END() << "\n"
-    << "     Disposition: " << disposition_status_color(result.disposition) << to_string(result.disposition, true) << SHELL_COLOR_END() << "\n\n";
+    << "          Status: " << shell_color_bright << library::to_string(result.status, true) << shell_color_end << "\n"
+    << "    Verification: " << shell_color_bright << (options_.verification.enabled ? "ON":"OFF") << shell_color_end << "\n"
+    << "     Disposition: " << _disposition_status_color(result.disposition) << to_string(result.disposition, true) << shell_color_end << "\n\n";
 
   // Display individual verification results for each verification-provider
   if (options_.verification.enabled) {
@@ -263,10 +303,6 @@ std::ostream & PerformanceReport::print_csv_header_(
     << ",OperationKind,Operation,Disposition,Status";
 
   for (auto const &arg_name : argument_names_) {
-    // Operand E is internal to the sparse kernel
-    if (arg_name.compare("E") == 0)
-      continue;
-
     out << "," << arg_name;
   }
 
@@ -325,6 +361,112 @@ std::ostream & PerformanceReport::print_result_csv_(
   }
 
   return out;
+}
+
+std::ostream & PerformanceReport::print_junit_header_(std::ostream &out) {
+
+  out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" << std::endl;
+  out << "<testsuite name=\"cutlass_profiler\">" << std::endl;
+  return out;
+
+}
+
+namespace {
+
+  std::string escape_xml_special_chars(const std::string& src) {
+    std::stringstream dst;
+    for (char ch : src) {
+      switch (ch) {
+      case '&': dst << "&amp;"; break;
+      case '\'': dst << "&apos;"; break;
+      case '"': dst << "&quot;"; break;
+      case '<': dst << "&lt;"; break;
+      case '>': dst << "&gt;"; break;
+      default: dst << ch; break;
+      }
+    }
+    return dst.str();
+  }
+
+  template<typename T>
+  std::ostream & print_junit_result_property_(std::ostream & os, const std::string & name, const T & property) {
+    return os << "    <property name=\"" << name << "\" value=\"" << property << "\" />" << std::endl;
+  }
+}
+
+std::ostream & PerformanceReport::print_junit_result_(std::ostream &out, PerformanceResult const &result) {
+
+  out << "  " << "<testcase name=\"";
+
+  std::string delim = "";
+
+  // Pivot tags
+  for (auto const & tag : options_.report.pivot_tags) {
+    out << delim << tag.second; delim = "_";
+  }
+
+  out << delim << to_string(result.op_kind); delim = "_";
+  out << delim << result.operation_name;
+
+  for (auto const & arg : result.arguments) {
+    out << delim << arg.second;
+  }
+
+  out << "\" ";
+
+  bool skipped = false, failed = false, error = false;
+
+  switch (result.disposition) {
+  case Disposition::kNotRun:
+  case Disposition::kNotSupported:
+    skipped = true;
+    break;
+  case Disposition::kPassed: 
+  case Disposition::kNotVerified:
+    break;
+  case Disposition::kFailed: 
+  case Disposition::kIncorrect:
+    failed = true; 
+    break;
+  case Disposition::kInvalidProblem:
+  case Disposition::kInvalid:
+    error = true;
+    break;
+  };
+  
+  if (skipped) {
+    out << "status=\"notrun\"";
+  } else {
+    out << "status=\"run\"";
+  }
+    
+  out << ">" << std::endl;
+
+  if (failed) {
+    out << "    <failure message=\"" << to_string(result.disposition) << "\" />" << std::endl;
+  }
+
+  if (error) {
+    out << "    <error message=\"" << to_string(result.disposition) << "\" />" << std::endl;
+  }
+
+  out << "    <system-out><![CDATA[" << std::endl;
+  std::stringstream ss;
+  print_result_pretty_(ss, result, false);
+  out << escape_xml_special_chars(ss.str()) << std::endl;
+  out << "    ]]></system-out>" << std::endl;
+
+  out << "  </testcase>" << std::endl;
+
+  return out;  
+
+}
+
+std::ostream & PerformanceReport::print_junit_footer_(std::ostream &out) {
+
+  out << "</testsuite>" << std::endl;
+  return out;
+
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

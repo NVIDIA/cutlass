@@ -199,6 +199,91 @@ TEST(SM70_warp_gemm_tensor_op_crosswise, 64x64x32_64x64x32_16x16x4) {
 
   test::gemm::warp::Testbed<MmaTensorOp, cutlass::gemm::GemmShape<64, 64, 32> >().run();
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM70_warp_gemm_volta_tensor_op_canonical_f32_row_col, 64x64x16_64x64x4_8x8x4) {
+  
+  using Shape = cutlass::gemm::GemmShape<64, 64, 4>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+  using ElementA = cutlass::half_t;
+  using ElementB = cutlass::half_t;
+  using ElementC = float;
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+
+  using Policy = cutlass::gemm::warp::MmaTensorOpPolicy<
+    cutlass::arch::Mma<
+      cutlass::gemm::GemmShape<16, 16, 4>,
+      32,
+      ElementA,
+      cutlass::layout::RowMajor,
+      ElementB,
+      cutlass::layout::ColumnMajor,
+      ElementC,
+      cutlass::layout::RowMajor,
+      cutlass::arch::OpMultiplyAdd
+    >,
+    cutlass::MatrixShape<1, 1>
+  >;
+
+  using MmaTensorOp = cutlass::gemm::warp::MmaVoltaTensorOp<
+    Shape,
+    ElementA,
+    LayoutA,
+    ElementB,
+    LayoutB,
+    ElementC,
+    cutlass::layout::RowMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<MmaTensorOp,
+                            cutlass::gemm::GemmShape<64, 64, 16> >()
+      .run();
+}
+
+TEST(SM70_warp_gemm_volta_tensor_op_canonical_f32_col_row, 64x64x16_64x64x4_8x8x4) {
+  
+  using Shape = cutlass::gemm::GemmShape<64, 64, 4>;
+  using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;
+  using ElementA = cutlass::half_t;
+  using ElementB = cutlass::half_t;
+  using ElementC = float;
+  using LayoutA = cutlass::layout::ColumnMajor;
+  using LayoutB = cutlass::layout::RowMajor;
+
+  using Policy = cutlass::gemm::warp::MmaTensorOpPolicy<
+    cutlass::arch::Mma<
+      cutlass::gemm::GemmShape<16, 16, 4>,
+      32,
+      ElementA,
+      LayoutA,
+      ElementB,
+      LayoutB,
+      ElementC,
+      cutlass::layout::RowMajor,
+      cutlass::arch::OpMultiplyAdd
+    >,
+    cutlass::MatrixShape<1, 1>
+  >;
+
+  using MmaTensorOp = cutlass::gemm::warp::MmaVoltaTensorOp<
+    Shape,
+    ElementA,
+    LayoutA,
+    ElementB,
+    LayoutB,
+    ElementC,
+    cutlass::layout::RowMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<MmaTensorOp,
+                            cutlass::gemm::GemmShape<64, 64, 16> >()
+      .run();
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 #endif // CUTLASS_ARCH_MMA_SM70_SUPPORTED

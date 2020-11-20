@@ -93,6 +93,9 @@ struct Mma_HFMA2 <
   /// C operand storage
   using FragmentC = Array<half_t, Shape::kMN>;
 
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
+
   //
   // Methods
   //
@@ -178,6 +181,9 @@ struct Mma_HFMA2<
 
   /// C operand storage
   using FragmentC = Array<half_t, Shape::kMN>;
+
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
 
   //
   // Methods
@@ -270,6 +276,9 @@ struct Mma_HFMA2 <
   /// C operand storage
   using FragmentC = Array<half_t, Shape::kMN>;
 
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
+
   //
   // Methods
   //
@@ -356,6 +365,8 @@ struct Mma_HFMA2<
   /// C operand storage
   using FragmentC = Array<half_t, Shape::kMN>;
 
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
   //
   // Methods
   //
@@ -442,6 +453,9 @@ struct Mma_HFMA2 <
 
   /// C operand storage
   using FragmentC = Array<half_t, Shape::kMN>;
+
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
 
   //
   // Methods
@@ -533,6 +547,9 @@ struct Mma_HFMA2 <
   /// C operand storage
   using FragmentC = Array<half_t, Shape::kMN>;
 
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
+
   //
   // Methods
   //
@@ -622,6 +639,9 @@ struct Mma_HFMA2 <
 
   /// C operand storage
   using FragmentC = Array<half_t, Shape::kMN>;
+
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
 
   //
   // Methods
@@ -714,6 +734,9 @@ struct Mma_HFMA2<
   /// C operand storage
   using FragmentC = Array<half_t, Shape::kMN>;
 
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
+
   //
   // Methods
   //
@@ -800,6 +823,9 @@ struct Mma_HFMA2<
   /// C operand storage
   using FragmentC = Array<half_t, Shape::kMN>;
 
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
+
   //
   // Methods
   //
@@ -879,6 +905,9 @@ struct Mma_HFMA2<
   /// C operand storage
   using FragmentC = Array<half_t, Shape::kMN>;
 
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
+  
   //
   // Methods
   //

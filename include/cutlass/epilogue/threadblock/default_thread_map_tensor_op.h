@@ -144,6 +144,55 @@ struct DefaultInterleavedThreadMapTensorOp {
       Detail::kThreads, kElementsPerAccess, sizeof_bits<Element>::value>;
 };
 
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// Defines the optimal thread map for TensorOp accumulator layouts
+template <typename ThreadblockShape_, typename WarpShape_, int PartitionsK,
+          typename Element_, int ElementsPerAccess, int InterleavedK>
+struct DefaultInterleavedConvThreadMapTensorOp {
+  using ThreadblockShape = ThreadblockShape_;
+  using WarpShape = WarpShape_;
+  static int const kPartitionsK = PartitionsK;
+  using Element = Element_;
+  static int const kElementsPerAccess = ElementsPerAccess;
+  static int const kInterleavedK = InterleavedK;
+
+  //
+  // Definitions
+  //
+
+  struct Detail {
+    /// Tensor Operations fundamentally perform operations on 8 rows
+    static int const kTensorOpRows = 8;
+    static int const kWarpSize = 32;
+
+    static_assert(!(ThreadblockShape::kM % WarpShape::kM) &&
+                      !(ThreadblockShape::kN % WarpShape::kN),
+                  "Divisibility");
+
+    /// Number of warps
+    using WarpCount =
+        gemm::GemmShape<ThreadblockShape::kM / WarpShape::kM,
+                        ThreadblockShape::kN / WarpShape::kN, kPartitionsK>;
+
+    /// Number of participating threads
+    static int const kThreads = WarpCount::kCount * kWarpSize;
+  };
+
+  //
+  // ThreadMap
+  //
+
+  /// ThreadMap to be used by epilogue::MaskedTileIterator satisfying concept
+  /// InterleavedOutputTileThreadMap
+  using Type = InterleavedConvOutputTileThreadMap<
+      MatrixShape<Detail::WarpCount::kM, Detail::WarpCount::kN>,
+      MatrixShape<WarpShape::kM / Detail::kTensorOpRows,
+                  WarpShape::kN / InterleavedK>,
+      Detail::kThreads, kElementsPerAccess, sizeof_bits<Element>::value>;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 
 } // namespace threadblock

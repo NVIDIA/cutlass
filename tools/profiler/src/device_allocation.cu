@@ -133,7 +133,18 @@ std::vector<int> DeviceAllocation::get_packed_layout(
     case library::LayoutTypeID::kTensorNDHWC:
       stride = get_packed_layout_stride<cutlass::layout::TensorNDHWC>(extent);
       break;
-
+    case library::LayoutTypeID::kTensorNC32HW32:
+      stride = get_packed_layout_stride<cutlass::layout::TensorNCxHWx<32>>(extent);
+      break;
+    case library::LayoutTypeID::kTensorNC64HW64:
+      stride = get_packed_layout_stride<cutlass::layout::TensorNCxHWx<64>>(extent);
+      break;
+    case library::LayoutTypeID::kTensorC32RSK32:
+      stride = get_packed_layout_stride<cutlass::layout::TensorCxRSKx<32>>(extent);
+      break;
+    case library::LayoutTypeID::kTensorC64RSK64:
+      stride = get_packed_layout_stride<cutlass::layout::TensorCxRSKx<64>>(extent);
+      break;
     default: break;
   }
 
@@ -246,6 +257,18 @@ size_t DeviceAllocation::construct_layout(
 
     case library::LayoutTypeID::kTensorNDHWC:
       return construct_layout_<cutlass::layout::TensorNDHWC>(bytes, layout_id, extent, stride);
+
+    case library::LayoutTypeID::kTensorNC32HW32:
+      return construct_layout_<cutlass::layout::TensorNCxHWx<32>>(bytes, layout_id, extent, stride);
+
+    case library::LayoutTypeID::kTensorNC64HW64:
+      return construct_layout_<cutlass::layout::TensorNCxHWx<64>>(bytes, layout_id, extent, stride);
+
+    case library::LayoutTypeID::kTensorC32RSK32:
+      return construct_layout_<cutlass::layout::TensorCxRSKx<32>>(bytes, layout_id, extent, stride);
+
+    case library::LayoutTypeID::kTensorC64RSK64:
+      return construct_layout_<cutlass::layout::TensorCxRSKx<64>>(bytes, layout_id, extent, stride);
 
     default: break;
   }
@@ -1361,6 +1384,18 @@ static void write_tensor_csv_static_type(
       break;
     case library::LayoutTypeID::kTensorNDHWC:
       write_tensor_csv_static_tensor_view<T, layout::TensorNDHWC>(out, allocation);
+      break;
+    case library::LayoutTypeID::kTensorNC32HW32:
+      write_tensor_csv_static_tensor_view<T, layout::TensorNCxHWx<32>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kTensorNC64HW64:
+      write_tensor_csv_static_tensor_view<T, layout::TensorNCxHWx<64>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kTensorC32RSK32:
+      write_tensor_csv_static_tensor_view<T, layout::TensorCxRSKx<32>>(out, allocation);
+      break;
+    case library::LayoutTypeID::kTensorC64RSK64:
+      write_tensor_csv_static_tensor_view<T, layout::TensorCxRSKx<64>>(out, allocation);
       break;
     default:
       throw std::runtime_error("Unhandled layout");
