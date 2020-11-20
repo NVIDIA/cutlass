@@ -63,6 +63,15 @@ cutlass_add_library(
   src/reference/gemm.cu
   src/reference/initialize_reference_operations.cu
 
+
+  # cutlass reduction instances in cutlass library
+  src/reduction/reduction_device.cu
+  src/reduction/init_reduction_operations.cu
+  
+  # cutlass conv reference instances in cutlass library
+  src/reference/conv2d.cu
+  src/reference/conv3d.cu
+
   )
 
 file(GLOB_RECURSE GENERATOR_PYTHON_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/*.py)
@@ -136,7 +145,7 @@ function(cutlass_add_cutlass_library)
     cutlass_library_includes
     )
 
-  set_target_properties(${__NAME} PROPERTIES DEBUG_POSTFIX ${CUTLASS_LIBRARY_DEBUG_POSTFIX})
+  set_target_properties(${__NAME} PROPERTIES DEBUG_POSTFIX "${CUTLASS_LIBRARY_DEBUG_POSTFIX}")
   
   set(OUTPUT_NAME cutlass)
 

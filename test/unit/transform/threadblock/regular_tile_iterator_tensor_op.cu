@@ -81,7 +81,7 @@ __global__ void kernel_gemm_threadblock_tensor_op_multiplicand_store(
     }
   }
 
-  // Use iterator to scatter results
+  // Use iterator to store results
   Iterator iter(ref_output, threadIdx.x);
   iter.store(frag);
 }

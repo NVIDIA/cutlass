@@ -227,6 +227,9 @@ void SparseGemmOperationProfiler::SparseGemmProblem::initialize_result(
   set_argument(result, "C", problem_space,
     std::string(library::to_string(operation_desc.C.element)) + ":" + library::to_string(operation_desc.C.layout));
 
+  set_argument(result, "E", problem_space,
+    std::string(library::to_string(operation_desc.E.element)) + ":" + library::to_string(operation_desc.E.layout));
+
   set_argument(result, "m", problem_space, m);
   set_argument(result, "n", problem_space, n);
   set_argument(result, "k", problem_space, k);

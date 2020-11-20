@@ -113,31 +113,6 @@ using Gemm = cutlass::gemm::device::Gemm<ElementInputA,
 
 int run() {
 
-  // Ampere Tensor Core operations exposed with mma.sync and ldmatrix are first available
-  // in CUDA 11.0. 
-  //
-  // CUTLASS must be compiled with CUDA 11 Toolkit to run these examples.
-  if (!(__CUDACC_VER_MAJOR__ >= 11)) {
-    std::cerr << "Ampere Tensor Core operations must be compiled with CUDA 11.0 Toolkit or later." << std::endl;
-    return -1;
-  }
-
-  cudaDeviceProp props;
-
-  cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (error != cudaSuccess) {
-    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
-    return -1;
-  }
-
-  if (!((props.major * 10 + props.minor) >= 80)) {
-    std::cerr << "Turing Tensor Core operations must be run on a machine with compute capability at least 80."
-              << std::endl;
-
-    // Return 0 so tests are considered passing if run on unsupported platforms.
-    return 0;
-  }
-
   const int length_m = 5120;
   const int length_n = 4096;
   const int length_k = 4096;
@@ -262,17 +237,36 @@ int run() {
 }
 
 int main() {
+  
+  bool notSupported = false;
+
   // Ampere Tensor Core operations exposed with mma.sync and ldmatrix are first available
   // in CUDA 11.0. 
   //
   // CUTLASS must be compiled with CUDA 11.0 Toolkit to run these examples.
   if (!(__CUDACC_VER_MAJOR__ >= 11)) {
     std::cerr << "Ampere Tensor Core operations must be compiled with CUDA 11.0 Toolkit or later." << std::endl;
+    notSupported = true;
+  }
 
-    // Returning zero so this test passes when built on older Toolkits. 
+  cudaDeviceProp props;
+
+  cudaError_t error = cudaGetDeviceProperties(&props, 0);
+  if (error != cudaSuccess) {
+    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
+    return -1;
+  }
+
+  if (!((props.major * 10 + props.minor) >= 80)) {
+    std::cerr << "Turing Tensor Core operations must be run on a machine with compute capability at least 80."
+              << std::endl;
+    notSupported = true;
+  }
+
+  if (notSupported) {
+    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
   }
-  else {
-    return run();
-  }
+
+  return run();
 }

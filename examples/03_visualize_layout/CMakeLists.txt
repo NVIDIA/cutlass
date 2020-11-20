@@ -20,9 +20,15 @@
 # STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+set(TEST_COMMAND_00 RowMajor --extent=16,16)
+set(TEST_COMMAND_01 "ColumnMajorInterleaved<4>" --extent=32,8 --output-shape=16 --vectorize=4)
+
 cutlass_example_add_executable(
   03_visualize_layout
   visualize_layout.cpp
   register_layout.cu
+  TEST_COMMAND_OPTIONS
+  TEST_COMMAND_00
+  TEST_COMMAND_01
   )
 

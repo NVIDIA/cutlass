@@ -34,6 +34,7 @@
 #include "cutlass/gemm/threadblock/default_mma_core_sm80.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
+#include "cutlass/gemm/threadblock/default_multistage_mma_complex_core_sm80.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 

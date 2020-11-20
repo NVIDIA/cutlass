@@ -429,6 +429,25 @@ public:
       args.epilogue,
       static_cast<int *>(workspace)
     };
+    
+    int smem_size = int(sizeof(typename GemmKernel::SharedStorage));
+    if (smem_size >= (48 << 10)) {
+      cudaError_t result = cudaFuncSetAttribute(Kernel<GemmKernel>,
+                                    cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                    smem_size);
+
+      if (result != cudaSuccess) {
+        return Status::kErrorInternal;
+      }
+
+      result = cudaFuncSetAttribute(
+          Kernel<GemmKernel>,
+          cudaFuncAttributePreferredSharedMemoryCarveout, 100);
+
+      if (result != cudaSuccess) {
+        return Status::kErrorInternal;
+      }
+    }
 
     return Status::kSuccess;
   }
@@ -461,30 +480,11 @@ public:
     dim3 grid = threadblock_swizzle.get_grid_shape(params_.grid_tiled_shape);
     dim3 block(GemmKernel::kThreadCount, 1, 1);
 
-    cudaError_t result;
-
     int smem_size = int(sizeof(typename GemmKernel::SharedStorage));
-    if (smem_size >= (48 << 10)) {
-      result = cudaFuncSetAttribute(Kernel<GemmKernel>,
-                                    cudaFuncAttributeMaxDynamicSharedMemorySize,
-                                    smem_size);
-
-      if (result != cudaSuccess) {
-        return Status::kErrorInternal;
-      }
-
-      result = cudaFuncSetAttribute(
-          Kernel<GemmKernel>,
-          cudaFuncAttributePreferredSharedMemoryCarveout, 100);
-
-      if (result != cudaSuccess) {
-        return Status::kErrorInternal;
-      }
-    }
 
     cutlass::Kernel<GemmKernel><<<grid, block, smem_size, stream>>>(params_);
 
-    result = cudaGetLastError();
+    cudaError_t result = cudaGetLastError();
 
     return result == cudaSuccess ? Status::kSuccess : Status::kErrorInternal;
   }

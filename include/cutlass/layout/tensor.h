@@ -40,6 +40,7 @@
 #endif
 #include "cutlass/cutlass.h"
 #include "cutlass/fast_math.h"
+#include "cutlass/layout/pitch_linear.h"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/coord.h"
 #include "cutlass/tensor_coord.h"
@@ -120,6 +121,12 @@ public:
       LongIndex(stride_[1] * coord.h()) +
       LongIndex(stride_[2] * coord.n());
   }
+  
+  /// Returns the offset of a pitchlinear coordinate in linear memory. 
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const {
+    return coord.contiguous() + LongIndex(coord.strided() * stride_[2]);
+  }
 
   /// Returns the logical coordinate (n, h, w, c) from a given offset in linear memory.
   CUTLASS_HOST_DEVICE
@@ -181,7 +188,6 @@ public:
     return extent.n() * stride_[2];
   }
 };
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -422,6 +428,14 @@ public:
       LongIndex(stride_[0] * coord.w()) + 
       LongIndex(stride_[1] * coord.h()) + 
       LongIndex(stride_[2] * c_major);
+  }
+
+  /// Returns the offset of a pitchlinear coordinate in linear memory. 
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord const &coord) const {
+    return (coord.contiguous() % kInterleave) +
+      LongIndex((coord.contiguous() / kInterleave) * stride_[2]) +
+      LongIndex(coord.strided() * kInterleave);
   }
 
   /// Returns the stride of the layout

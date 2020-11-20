@@ -68,6 +68,10 @@ template <
   typename Policy_,
   /// Number of partitions along K dimension
   int PartitionsK = 1,
+  /// Complex transformation on operand A
+  ComplexTransform TransformA = ComplexTransform::kNone,
+  /// Complex transformation on operand B
+  ComplexTransform TransformB = ComplexTransform::kNone,
   /// Used for partial specialization
   typename Enable = bool
 >
@@ -104,10 +108,10 @@ public:
   using ArchTag = arch::Sm50;
 
   /// Complex transform on A operand
-  static ComplexTransform const kTransformA = ComplexTransform::kNone;
+  static ComplexTransform const kTransformA = TransformA;
 
   /// Complex transform on B operand
-  static ComplexTransform const kTransformB = ComplexTransform::kNone;
+  static ComplexTransform const kTransformB = TransformB;
 
   /// Layout of threads
   using ThreadLayoutA = typename platform::conditional< platform::is_same< layout::ColumnMajorInterleaved<4>, LayoutA >::value,
@@ -215,11 +219,21 @@ public:
   CUTLASS_DEVICE
   void operator()(
     FragmentC &d, 
-    FragmentA const &a, 
-    FragmentB const &b, 
+    FragmentA a, 
+    FragmentB b, 
     FragmentC const &c, int group_idx = 0) const {
 
     ThreadMma mma;
+
+    if (kTransformA == ComplexTransform::kConjugate) {
+      conjugate<FragmentA> conj_a;
+      a = conj_a(a);
+    }
+
+    if (kTransformB == ComplexTransform::kConjugate) {
+      conjugate<FragmentB> conj_b;
+      b = conj_b(b);
+    }
 
     mma(d, a, b, c);
   }

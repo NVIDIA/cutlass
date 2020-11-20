@@ -76,6 +76,55 @@ void OperationTable::append(Manifest const &manifest) {
     }
 
 
+    // insert all conv2d or conv3d operation into operation table
+    if (desc.kind == OperationKind::kConv2d || desc.kind == OperationKind::kConv3d) {
+      auto &conv_desc = static_cast<library::ConvDescription const &>(desc);
+
+      ConvFunctionalKey functional_key(
+        conv_desc.provider,
+        conv_desc.conv_kind,
+        conv_desc.A.element,
+        conv_desc.A.layout,
+        conv_desc.B.element,
+        conv_desc.B.layout,
+        conv_desc.C.element,
+        conv_desc.C.layout,
+        conv_desc.tile_description.math_instruction.element_accumulator, 
+        conv_desc.element_epilogue
+      );
+
+      Operation const *op = operation.get();
+
+      int cc = conv_desc.tile_description.minimum_compute_capability;
+
+      ConvPreferenceKey preference_key(cc, conv_desc.iterator_algorithm);
+
+      // insert conv operation to conv2d_operations or conv3d_operations map
+      (desc.kind == OperationKind::kConv2d) ?
+        conv2d_operations[functional_key][preference_key].push_back(op) : 
+        conv3d_operations[functional_key][preference_key].push_back(op);
+    }
+
+    // insert all reduction operation into operation table
+    if (desc.kind == OperationKind::kReduction) {
+      auto &reduce_desc = static_cast<library::ReductionDescription const &>(desc);
+
+      ReductionFunctionalKey functional_key(
+        reduce_desc.provider,
+        reduce_desc.element_workspace,
+        reduce_desc.tile_description.math_instruction.element_accumulator,
+        reduce_desc.element_output,
+        reduce_desc.element_epilogue,
+        library::MathOperationID::kAdd,
+        library::EpilogueKind::kLinearCombination
+      );
+
+      Operation const *op = operation.get();
+
+      reduction_operations[functional_key] = op;
+
+    }
+
   }
 
 }

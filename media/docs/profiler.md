@@ -109,15 +109,28 @@ About:
 Operations:
   --operation=<operation_name>               Specifies a particular operation to run or print the usage statement.
 
-     gemm                                    General matrix-matrix product. D = alpha * A*B + beta * C
+     gemm                                          General matrix-matrix product. D = alpha * A*B + beta * C
+     spgemm                                        Structured sparse GEMM. D = alpha * A*B + beta * C
+     conv2d                                        Conv2d operation. Output(Tensor4D) = alpha * Input(Tensor4D) * Filter(Tensor4D) + beta * Input(Tensor4D)
+     conv3d                                        Conv3d operation. Output(Tensor5D) = alpha * Input(Tensor5D) * Filter(Tensor5D) + beta * Input(Tensor5D)
 
 
 For more details about a particular operation, specify the operation name with --help.
 
 Example:
-  $ ./tools/profiler/cutlass_profiler --operation=Gemm --help
 
+  $ cutlass_profiler --operation=Gemm --help
+
+  $ cutlass_profiler --operation=Conv3d --help
+
+  $ cutlass_profiler --operation=Conv2d --help
+
+  $ cutlass_profiler --operation=SparseGemm --help
 ```
+
+# GEMM
+
+The CUTLASS Profiler is capable of executing each GEMM kernel.
 
 ## GEMM Arguments
 
@@ -189,7 +202,7 @@ Test your changes to gemm kernels with a quick functional test and save results 
    --providers=cutlass --output=functional-test.csv
 ```
 
-## Example SGEMM
+## Example CUDA Core GEMM Operation (SGEMM)
 
 Example command line for profiling SGEMM kernels is as follows:
 ```bash
@@ -226,7 +239,7 @@ $ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=3456 --n=4096 --k=4096
 Note, the arguments which appear in the output may be used as command line parameters for subsequent invocations.
 
 
-## Example Tensor Core Operations
+## Example Tensor Core GEMM Operations (S16816GEMM)
 
 To execute kernels targeting Tensor Core operations, supply the flag `--op_class=tensorop` in the command line.
 
@@ -292,6 +305,158 @@ $ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sgemm_128x128_nn     
                                     --m=3456 --n=4096 --k=8:4096:8 --output=report.csv \
                                     --tags=cutlass:2.2,date:2020-06-08
 ```  
+
+# Convolution
+
+The CUTLASS Profiler is capable of executing 2-D and 3-D convolution problems for forwards and backwards
+oeprator variants.
+
+The CUTLASS Profiler can be built with cuDNN enabled to use as a reference implementation. If CMake detects
+the cuDNN library available in the system, it is included as a dependency. This may be explicitly overridden
+with CMake flag `CUTLASS_ENABLE_CUDNN`. 
+
+```bash
+$ cmake .. -DCUTLASS_LIBRARY_OPERATIONS=conv2d -DCUTLASS_ENABLE_CUDNN=OFF
+...
+$ make -j16 cutlass_profiler
+```
+
+
+## Convolution Arguments
+
+```bash
+$ ./tools/profiler/cutlass_profiler --help --operation=Conv2d
+
+Conv2d
+
+  [enum]      --conv_kind                                       Convolutional operator (fprop, dgrad, wgrad)
+  [int]       --n,--input_n                                     Input N dimension of the Conv2d problem space
+  [int]       --h,--input_h                                     Input H dimension of the Conv2d problem space
+  [int]       --w,--input_w                                     Input W dimension of the Conv2d problem space
+  [int]       --c,--input_c                                     Input C dimension of the Conv2d problem space
+  [int]       --k,--filter_k                                    Filter K dimension of the Conv2d problem space
+  [int]       --r,--filter_r                                    Filter R dimension of the Conv2d problem space
+  [int]       --s,--filter_s                                    Filter S dimension of the Conv2d problem space
+  [int]       --p,--output_p                                    Output P dimension of the Conv2d problem space
+  [int]       --q,--output_q                                    Output Q dimension of the Conv2d problem space
+  [int]       --pad_h                                           Padding in H direction
+  [int]       --pad_w                                           Padding in W direction
+  [int]       --stride_h                                        Stride in H direction
+  [int]       --stride_w                                        Stride in W direction
+  [int]       --dilation_h                                      Dilation in H direction
+  [int]       --dilation_w                                      Dilation in W direction
+  [tensor]    --Activation                                      Tensor storing the Activation operand
+  [tensor]    --Filter                                          Tensor storing the Filter operand
+  [tensor]    --Output                                          Tensor storing the Output operand
+  [enum]      --conv_mode                                       Convolution filter mode (conv, cross)
+  [enum]      --iterator_algorithm,--iterator_algo              Convolution iterator algorithm (analytic, optimized)
+  [scalar]    --alpha,--epilogue::alpha                         Epilogue scalar alpha
+  [scalar]    --beta,--epilogue::beta                           Epilogue scalar beta
+  [enum]      --split_k_mode,--split-k-mode                     SplitK mode for serial or parallel reduction (serial, parallel)
+  [int]       --split_k_slices,--split-k-slices                 Number of partitions of K dimension
+  [enum]      --eq_gemm_provider,--eq-gemm-provider             Enable profiling equivalent gemm by the following providers (cutlass)
+  [enum]      --op_class,--opcode-class                         Class of math instruction (simt, tensorop, wmmatensorop, wmma)
+  [enum]      --accum,--accumulator-type                        Math instruction accumulator data type
+  [int]       --cta_m,--threadblock-shape::m                    Threadblock shape in the M dimension
+  [int]       --cta_n,--threadblock-shape::n                    Threadblock shape in the N dimension
+  [int]       --cta_k,--threadblock-shape::k                    Threadblock shape in the K dimension
+  [int]       --stages,--threadblock-stages                     Number of stages of threadblock-scoped matrix multiply
+  [int]       --warps_m,--warp-count::m                         Number of warps within threadblock along the M dimension
+  [int]       --warps_n,--warp-count::n                         Number of warps within threadblock along the N dimension
+  [int]       --warps_k,--warp-count::k                         Number of warps within threadblock along the K dimension
+  [int]       --inst_m,--instruction-shape::m                   Math instruction shape in the M dimension
+  [int]       --inst_n,--instruction-shape::n                   Math instruction shape in the N dimension
+  [int]       --inst_k,--instruction-shape::k                   Math instruction shape in the K dimension
+  [int]       --min_cc,--minimum-compute-capability             Minimum device compute capability
+  [int]       --max_cc,--maximum-compute-capability             Maximum device compute capability
+
+Examples:
+
+Profile a particular convolution (specify all the convolution parameters):
+
+ $ cutlass_profiler --operation=Conv2d --Activation=f16:nhwc   \
+  --Filter=f16:nhwc --Output=f16 --accumulator-type=f32        \
+  --n=32 --h=14 --w=14 --c=8 --k=64 --r=3 --s=3                \
+  --pad_h=1 --pad_w=1                                          \
+  --stride::h=1 --stride::w=1 --dilation::h=1 --dilation::w=1
+
+```
+
+## Example CUDA Core Convolution Operation (SFPROP)
+
+Example command line for profiling Convolution kernels is as follows:
+
+```bash
+$ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sfprop_optimized_128x128_8x2_nhwc  --verification-providers=device --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
+
+
+=============================
+  Problem ID: 1
+
+        Provider: CUTLASS
+   OperationKind: conv2d
+       Operation: cutlass_simt_sfprop_optimized_128x128_8x2_nhwc
+
+          Status: Success
+    Verification: ON
+     Disposition: Passed
+
+reference_device: Passed
+
+       Arguments: --conv_kind=fprop --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 --p=224 --q=224 --pad_h=1 --pad_w=1  \
+                  --stride_h=1 --stride_w=1 --dilation_h=1 --dilation_w=1 --Activation=f32:nhwc --Filter=f32:nhwc --Output=f32:nhwc  \
+                  --conv_mode=cross --iterator_algorithm=optimized --alpha=1 --beta=0 --split_k_mode=serial --split_k_slices=1  \
+                  --eq_gemm_provider=none --op_class=simt --accum=f32 --cta_m=128 --cta_n=128 --cta_k=8 --stages=2 --warps_m=4  \
+                  --warps_n=2 --warps_k=1 --inst_m=1 --inst_n=1 --inst_k=1 --min_cc=50 --max_cc=1024
+
+           Bytes: 2055798784  bytes
+           FLOPs: 118482796544  flops
+
+         Runtime: 8.13237  ms
+          Memory: 235.431 GiB/s
+
+            Math: 14569.3 GFLOP/s
+
+```
+
+## Example Tensor Core Convolution Operation (S16816FPROP)
+
+Example command line for profiling Convolution kernels is as follows:
+
+```bash
+$ ./tools/profiler/cutlass_profiler --kernels=cutlass_tensorop_s16816fprop_optimized_f16_128x128_64x4_nhwc  --verification-providers=device --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 
+
+
+
+=============================
+  Problem ID: 1
+
+        Provider: CUTLASS
+   OperationKind: conv2d
+       Operation: cutlass_tensorop_s16816fprop_optimized_f16_128x128_64x4_nhwc
+
+          Status: Success
+    Verification: ON
+     Disposition: Passed
+
+reference_device: Passed
+
+       Arguments: --conv_kind=fprop --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 --p=224 --q=224 --pad_h=1 --pad_w=1  \
+                  --stride_h=1 --stride_w=1 --dilation_h=1 --dilation_w=1 --Activation=f16:nhwc --Filter=f16:nhwc --Output=f32:nhwc  \
+                  --conv_mode=cross --iterator_algorithm=optimized --alpha=1 --beta=0 --split_k_mode=serial --split_k_slices=1  \
+                  --eq_gemm_provider=none --op_class=tensorop --accum=f32 --cta_m=128 --cta_n=128 --cta_k=64 --stages=4  \
+                  --warps_m=2 --warps_n=2 --warps_k=1 --inst_m=16 --inst_n=8 --inst_k=16 --min_cc=80 --max_cc=1024
+
+           Bytes: 1130659840  bytes
+           FLOPs: 118482796544  flops
+
+         Runtime: 0.945071  ms
+          Memory: 1114.21 GiB/s
+
+            Math: 125369 GFLOP/s
+
+
+```
 
 # Copyright
 

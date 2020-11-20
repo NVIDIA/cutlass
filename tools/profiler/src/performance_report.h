@@ -59,6 +59,12 @@ private:
   /// Output file containing results
   std::ofstream output_file_;
 
+  /// Operation file name containing junit performance report of op_kind
+  std::string op_junit_file_name_;
+
+  /// Output file containing junit results
+  std::ofstream junit_output_file_;
+
   /// Flag indicating the performance report is valid
   bool good_;
 
@@ -74,14 +80,13 @@ private:
 public:
 
   PerformanceReport(Options const &options, std::vector<std::string> const &argument_names, library::OperationKind const &op_kind);
+  ~PerformanceReport();
 
   bool good() const { return good_; }
 
   void next_problem();
   void append_result(PerformanceResult result);
   void append_results(PerformanceResultVector const &results);
-
-  void close();
 
 public:
 
@@ -91,10 +96,21 @@ public:
   /// Prints the CSV
   std::ostream & print_result_csv_(std::ostream &out, PerformanceResult const &result);
 
+  /// @defgroup jUnit Result Generation
+  /// Functions related to generation of the jUnit results
+  /// @{
+
+  std::ostream & print_junit_header_(std::ostream &out);
+  std::ostream & print_junit_result_(std::ostream &out, PerformanceResult const &result);
+  std::ostream & print_junit_footer_(std::ostream &out);
+
+  /// @}
+
   /// Prints the result in human readable form
   std::ostream & print_result_pretty_(
     std::ostream &out, 
-    PerformanceResult const &result);
+    PerformanceResult const &result,
+    bool use_shell_coloring = true);
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

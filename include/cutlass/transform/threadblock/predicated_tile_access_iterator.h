@@ -500,7 +500,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for pitch-linear data.
+/// Specialization of PredicatedTileAccessIterator for column-major data.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
 ///            ReadableContiguousTileIteratorConcept |
@@ -676,7 +676,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for pitch-linear data.
+/// Specialization of PredicatedTileAccessIterator for row-major data.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
 ///            ReadableContiguousTileIteratorConcept |
@@ -852,8 +852,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for interleaved data.  It
-/// is mapped to the congruous layout.
+/// Specialization of PredicatedTileAccessIterator for column-major interleaved data.  
+/// It is mapped to the congruous layout.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
 ///            ReadableContiguousTileIteratorConcept |
@@ -1032,8 +1032,8 @@ class PredicatedTileAccessIterator<Shape_, Element_,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileAccessIterator for interleaved data.  It
-/// is mapped to the congruous layout.
+/// Specialization of PredicatedTileAccessIterator for row-major interleaved data.  
+//  It is mapped to the congruous layout.
 ///
 /// Satisfies: ForwardTileIteratorConcept |
 ///            ReadableContiguousTileIteratorConcept |

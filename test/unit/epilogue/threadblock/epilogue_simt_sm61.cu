@@ -804,7 +804,7 @@ TEST(SM61_Epilogue_threadblock_epilogue, simt_i8_i32_32x64_32x64x8) {
   // Output operator
   //
 
-  using OutputOp = cutlass::epilogue::thread::LinearCombinationClamp<
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
     kElementsPerAccess,
     ElementAccumulator,
@@ -874,7 +874,7 @@ TEST(SM61_Epilogue_threadblock_epilogue, simt_i8_i32_32x128_32x64x8) {
   // Output operator
   //
 
-  using OutputOp = cutlass::epilogue::thread::LinearCombinationClamp<
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
     kElementsPerAccess,
     ElementAccumulator,
@@ -944,7 +944,7 @@ TEST(SM61_Epilogue_threadblock_epilogue, simt_i8_i32_64x128_32x64x8) {
   // Output operator
   //
 
-  using OutputOp = cutlass::epilogue::thread::LinearCombinationClamp<
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
     kElementsPerAccess,
     ElementAccumulator,
@@ -1014,7 +1014,7 @@ TEST(SM61_Epilogue_threadblock_epilogue, simt_i8_i32_128x128_32x64x8) {
   // Output operator
   //
 
-  using OutputOp = cutlass::epilogue::thread::LinearCombinationClamp<
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
     kElementsPerAccess,
     ElementAccumulator,
@@ -1084,7 +1084,7 @@ TEST(SM61_Epilogue_threadblock_epilogue, simt_i8_i32_128x64_32x64x8) {
   // Output operator
   //
 
-  using OutputOp = cutlass::epilogue::thread::LinearCombinationClamp<
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
     kElementsPerAccess,
     ElementAccumulator,

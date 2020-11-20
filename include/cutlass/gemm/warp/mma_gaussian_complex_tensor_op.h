@@ -147,11 +147,17 @@ public:
   /// Shape of the warp in units of thread (concept: MmaLanePolicySimt)
   using Policy = Policy_;
 
-  /// Shape of underlying instruction
-  using InstructionShape = typename Policy::Operator::Shape;
+  /// Underlying matrix multiply operator (concept: arch::Mma)
+  using ArchMmaOperator = typename Policy::Operator;
 
-  /// Underlying architecture tag
-  using ArchTag = typename Policy::Operator::ArchTag;
+  /// Shape of underlying instruction
+  using InstructionShape = typename ArchMmaOperator::Shape;
+
+  /// Underlying arch tag
+  using ArchTag = typename ArchMmaOperator::ArchTag;
+
+  /// Indicates class of matrix operator
+  using OperatorClass = arch::OpClassTensorOp;
 
   /// Complex transform on A operand
   static ComplexTransform const kTransformA = TransformA;
@@ -159,8 +165,6 @@ public:
   /// Complex transform on B operand
   static ComplexTransform const kTransformB = TransformB;
 
-  /// Indicates class of matrix operator
-  using OperatorClass = arch::OpClassTensorOp;
 
   /// Number of threads participating in warp-level matrix product
   static int const kThreadCount = 32;
@@ -173,7 +177,7 @@ public:
     Operand::kA,
     ElementA,
     LayoutA,
-    MatrixShape<Policy::Operator::Shape::kM, Policy::Operator::Shape::kK>,
+    MatrixShape<ArchMmaOperator::Shape::kM, ArchMmaOperator::Shape::kK>,
     Policy::OpDelta::kRow,
     32,
     1
@@ -191,7 +195,7 @@ public:
     Operand::kB,
     ElementB,
     LayoutB,
-    MatrixShape<Policy::Operator::Shape::kK, Policy::Operator::Shape::kN>,
+    MatrixShape<ArchMmaOperator::Shape::kK, ArchMmaOperator::Shape::kN>,
     Policy::OpDelta::kColumn,
     32,
     1
@@ -204,14 +208,14 @@ public:
   using TransformedFragmentB = FragmentB;
 
   static_assert(
-    !(Shape::kM % Policy::Operator::Shape::kM) && 
-    !(Shape::kN % Policy::Operator::Shape::kN),
+    !(Shape::kM % ArchMmaOperator::Shape::kM) && 
+    !(Shape::kN % ArchMmaOperator::Shape::kN),
     "Shape of warp-level Mma must be divisible by operator shape.");
 
   /// Number of mma operations performed
   using MmaIterations = MatrixShape<
-    Shape::kM / Policy::Operator::Shape::kM,
-    Shape::kN / Policy::Operator::Shape::kN
+    Shape::kM / ArchMmaOperator::Shape::kM,
+    Shape::kN / ArchMmaOperator::Shape::kN
   >;
 
   /// Iterates over the C operand in memory
@@ -219,7 +223,7 @@ public:
      MatrixShape<Shape::kM, Shape::kN>, 
      ElementC, 
      LayoutC,
-     typename Policy::Operator::Shape, 
+     typename ArchMmaOperator::Shape, 
      typename Policy::OpDelta>;
 
   /// Storage for C tile, the accumulator. Note, regardless of multiplicand type, this
@@ -229,7 +233,7 @@ public:
   using FragmentC = typename IteratorC::Fragment;
 
   static_assert(
-    FragmentC::kElements == 3 * MmaIterations::kCount * Policy::Operator::FragmentC::kElements,
+    FragmentC::kElements == 3 * MmaIterations::kCount * ArchMmaOperator::FragmentC::kElements,
     "Unexpected gaussian complex fragment length.");
 
 private:
@@ -239,7 +243,7 @@ private:
   //
 
   /// Underlying real-valued matrix multiply operator (concept: arch::Mma)
-  typename Policy::Operator mma;
+  ArchMmaOperator mma;
 
 public:
 
@@ -261,9 +265,9 @@ public:
   ) const {
 
     // Alias types for underlying real-valued matrix multiply operator
-    using MmaOperandA = typename Policy::Operator::FragmentA;
-    using MmaOperandB = typename Policy::Operator::FragmentB;
-    using MmaOperandC = typename Policy::Operator::FragmentC;
+    using MmaOperandA = typename ArchMmaOperator::FragmentA;
+    using MmaOperandB = typename ArchMmaOperator::FragmentB;
+    using MmaOperandC = typename ArchMmaOperator::FragmentC;
 
     static_assert(MmaOperandA::kElements == 1, 
       "This implementation only supports math instructions in which exactly one element is needed for the A operand."
@@ -345,8 +349,6 @@ public:
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-// TODO - partial specializations of real*complex and complex*real
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

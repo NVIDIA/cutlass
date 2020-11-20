@@ -582,7 +582,7 @@ public:
         semaphore.fetch();
 
         // Indicate which position in a serial reduction the output operator is currently updating
-        output_op.set_k_partition(threadblock_tile_offset.k());
+        output_op.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
       }
     }
     else if (params.mode == GemmUniversalMode::kGemmSplitKParallel) {

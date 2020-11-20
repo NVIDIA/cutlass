@@ -227,6 +227,23 @@ template <> struct LayoutMap<cutlass::layout::TensorNHWC> {
 template <> struct LayoutMap<cutlass::layout::TensorNDHWC> {
   static LayoutTypeID const kId = LayoutTypeID::kTensorNDHWC;
 };
+
+template <> struct LayoutMap<cutlass::layout::TensorNCxHWx<32>> {
+  static LayoutTypeID const kId = LayoutTypeID::kTensorNC32HW32;
+};
+
+template <> struct LayoutMap<cutlass::layout::TensorNCxHWx<64>> {
+  static LayoutTypeID const kId = LayoutTypeID::kTensorNC64HW64;
+};
+
+template <> struct LayoutMap<cutlass::layout::TensorCxRSKx<32>> {
+  static LayoutTypeID const kId = LayoutTypeID::kTensorC32RSK32;
+};
+
+template <> struct LayoutMap<cutlass::layout::TensorCxRSKx<64>> {
+  static LayoutTypeID const kId = LayoutTypeID::kTensorC64RSK64;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T> struct OpcodeClassMap;
@@ -255,6 +272,43 @@ template <> struct ComplexTransformMap<cutlass::ComplexTransform::kConjugate> {
   static cutlass::library::ComplexTransform const kId = cutlass::library::ComplexTransform::kConjugate;
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <cutlass::conv::Mode  T> struct ConvModeMap;
+
+template <> struct ConvModeMap<conv::Mode::kCrossCorrelation> {
+  static ConvModeID const kId = ConvModeID::kCrossCorrelation;
+};
+
+template <> struct ConvModeMap<conv::Mode::kConvolution> {
+  static ConvModeID const kId = ConvModeID::kConvolution;
+};
+
+
+template <cutlass::conv::Operator  T> struct ConvKindMap;
+
+template <> struct ConvKindMap<conv::Operator::kFprop> {
+  static ConvKind const kId = ConvKind::kFprop;
+};
+
+template <> struct ConvKindMap<conv::Operator::kDgrad> {
+  static ConvKind const kId = ConvKind::kDgrad;
+};
+
+template <> struct ConvKindMap<conv::Operator::kWgrad> {
+  static ConvKind const kId = ConvKind::kWgrad;
+};
+
+
+template <cutlass::conv::IteratorAlgorithm  T> struct IteratorAlgorithmMap;
+
+template <> struct IteratorAlgorithmMap<conv::IteratorAlgorithm::kAnalytic> {
+  static IteratorAlgorithmID const kId = IteratorAlgorithmID::kAnalytic;
+};
+
+template <> struct IteratorAlgorithmMap<conv::IteratorAlgorithm::kOptimized> {
+  static IteratorAlgorithmID const kId = IteratorAlgorithmID::kOptimized;
+};
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Element, typename Layout>

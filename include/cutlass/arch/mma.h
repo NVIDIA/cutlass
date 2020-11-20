@@ -201,5 +201,5 @@ struct SparseMma;
 #include "cutlass/arch/mma_sm70.h" 
 #include "cutlass/arch/mma_sm75.h" 
 #include "cutlass/arch/mma_sm80.h"
-#include "cutlass/arch/sp_mma_sm80.h"
+#include "cutlass/arch/mma_sparse_sm80.h"
 /////////////////////////////////////////////////////////////////////////////////////////////////

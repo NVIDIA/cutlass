@@ -401,6 +401,7 @@ Options::Profiling::Profiling(cutlass::CommandLine const &cmdline) {
   else {
     providers.push_back(library::Provider::kCUTLASS);
     providers.push_back(library::Provider::kCUBLAS);
+    providers.push_back(library::Provider::kCUDNN);      
   }
 }
 
@@ -428,8 +429,8 @@ void Options::Profiling::print_usage(std::ostream &out) const {
 
     << "  --providers=<providers>                      "
     << "    List of providers to be profiled for performance. (default: '*')" << end_of_line
-    << "      Gemm providers {cutlass*"
-    << "}" << end_of_line
+    << "      Gemm providers {cutlass*, cublas*}" << end_of_line
+    << "      Conv2d providers {cutlass*, cudnn*}"
     << "\n\n";
 
 }
@@ -502,6 +503,7 @@ Options::Verification::Verification(cutlass::CommandLine const &cmdline) {
   else {
     providers.push_back(library::Provider::kCUBLAS);
     providers.push_back(library::Provider::kReferenceDevice);
+    providers.push_back(library::Provider::kCUDNN);      
   }
 }
 
@@ -529,6 +531,7 @@ void Options::Verification::print_usage(std::ostream &out) const {
     << "  --verification-providers=<providers>         "
     << "    List of providers used to verify result. (default: '*')" << end_of_line
     << "      Gemm verification-providers {cublas*}" << end_of_line
+    << "      Conv2d verification-providers {cudnn*, device*, host}"
     << "\n\n";
 }
 
@@ -570,6 +573,7 @@ Options::Report::Report(cutlass::CommandLine const &cmdline) {
   
   cmdline.get_cmd_line_argument("append", append, false);
   cmdline.get_cmd_line_argument("output", output_path);
+  cmdline.get_cmd_line_argument("junit-output", junit_output_path);
 
   if (cmdline.check_cmd_line_flag("tags")) {
     cmdline.get_cmd_line_argument_pairs("tags", pivot_tags);
@@ -591,6 +595,9 @@ void Options::Report::print_usage(std::ostream &out) const {
     << "  --output=<path>                              "
     << "    Path to output file for machine readable results. Operation kind and '.csv' is appended.\n\n"
 
+    << "  --junit-output=<path>                        "
+    << "    Path to junit output file for result reporting. Operation kind and '.junit.xml' is appended.\n\n"
+
     << "  --report-not-run=<bool>                      "
     << "    If true, reports the status of all kernels including those that" << end_of_line
     << "      do not satisfy the given arguments.\n\n"
@@ -608,6 +615,7 @@ void Options::Report::print_options(std::ostream &out, int indent) const {
   out
     << indent_str(indent) << "append: " << append << "\n"
     << indent_str(indent) << "output: " << output_path << "\n"
+    << indent_str(indent) << "junit-output: " << junit_output_path << "\n"
     << indent_str(indent) << "report_not_run: " << report_not_run << "\n"
     << indent_str(indent) << "tags:\n";
 

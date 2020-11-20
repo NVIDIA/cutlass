@@ -218,6 +218,9 @@ public:
     /// Path to a file containing results
     std::string output_path;
 
+    /// Path to a file containing junit xml results
+    std::string junit_output_path;
+
     /// Sequence of tags to attach to each result
     std::vector<std::pair<std::string, std::string>> pivot_tags;
 

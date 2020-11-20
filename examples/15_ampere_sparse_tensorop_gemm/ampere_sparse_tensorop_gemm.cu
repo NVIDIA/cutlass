@@ -71,7 +71,7 @@ using SmArch = cutlass::arch::Sm80;
 
 // This code section describes the tile size a thread block will compute
 using ShapeMMAThreadBlock =
-    cutlass::gemm::GemmShape<256, 128, 256>;  // <- threadblock tile M = 128, N = 128, K = 256
+    cutlass::gemm::GemmShape<128, 128, 256>;  // <- threadblock tile M = 128, N = 128, K = 256
 // This code section describes tile size a warp will compute
 using ShapeMMAWarp = cutlass::gemm::GemmShape<64, 64, 256>;  // <- warp tile M = 64, N = 64, K = 256
 // This code section describes the size of MMA op
@@ -122,31 +122,6 @@ constexpr int kElementsPerElementE = Gemm::kElementsPerElementE;
 constexpr int kMetaSizeInBits = Gemm::kMetaSizeInBits;
 
 int run() {
-
-  // Ampere Sparse Tensor Core operations exposed with mma.sync and ldmatrix are first available
-  // in CUDA 11.1. 
-  //
-  // CUTLASS must be compiled with CUDA 11.1 Toolkit to run these examples.
-  if (!(__CUDACC_VER_MAJOR__ > 11 || (__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ >= 1))) {
-    std::cerr << "Ampere Tensor Core operations must be compiled with CUDA 11.1 Toolkit or later." << std::endl;
-    return -1;
-  }
-
-  cudaDeviceProp props;
-
-  cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (error != cudaSuccess) {
-    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
-    return -1;
-  }
-
-  if (!((props.major * 10 + props.minor) >= 80)) {
-    std::cerr << "Turing Tensor Core operations must be run on a machine with compute capability at least 80."
-              << std::endl;
-
-    // Return 0 so tests are considered passing if run on unsupported platforms.
-    return 0;
-  }
 
   const int length_m = 512;
   const int length_n = 512;
@@ -295,17 +270,37 @@ int run() {
 }
 
 int main() {
+  
+  bool notSupported = false;
+
   // Ampere Sparse Tensor Core operations exposed with mma.sync and ldmatrix are first available
   // in CUDA 11.1. 
   //
   // CUTLASS must be compiled with CUDA 11.1 Toolkit to run these examples.
+  
   if (!(__CUDACC_VER_MAJOR__ > 11 || (__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ >= 1))) {
     std::cerr << "Ampere Tensor Core operations must be compiled with CUDA 11.1 Toolkit or later." << std::endl;
+    notSupported = true;
+  }
 
-    // Returning zero so this test passes when built on older Toolkits. 
+  cudaDeviceProp props;
+
+  cudaError_t error = cudaGetDeviceProperties(&props, 0);
+  if (error != cudaSuccess) {
+    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
+    return -1;
+  }
+
+  if (!((props.major * 10 + props.minor) >= 80)) {
+    std::cerr << "Ampere Tensor Core operations must be run on a machine with compute capability at least 80."
+              << std::endl;
+    notSupported = true;
+  }
+
+  if (notSupported) {
+    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
   }
-  else {
-    return run();
-  }
+
+  return run();
 }

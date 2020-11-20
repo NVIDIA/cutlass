@@ -161,6 +161,42 @@ struct negate {
   }
 };
 
+/// Greater equal 
+template <typename T>
+struct greater_equal {
+  CUTLASS_HOST_DEVICE
+  bool operator()(T const &lhs, T const &rhs) const {
+    return (lhs >= rhs);
+  }
+};
+
+/// Greater  
+template <typename T>
+struct greater {
+  CUTLASS_HOST_DEVICE
+  bool operator()(T const &lhs, T const &rhs) const {
+    return (lhs > rhs);
+  }
+};
+
+/// Less equal 
+template <typename T>
+struct less_equal {
+  CUTLASS_HOST_DEVICE
+  bool operator()(T const &lhs, T const &rhs) const {
+    return (lhs <= rhs);
+  }
+};
+
+/// Less  
+template <typename T>
+struct less {
+  CUTLASS_HOST_DEVICE
+  bool operator()(T const &lhs, T const &rhs) const {
+    return (lhs < rhs);
+  }
+};
+
 /// Fused multiply-add
 template <typename A, typename B = A, typename C = A>
 struct multiply_add {
@@ -186,6 +222,40 @@ struct xor_add {
   CUTLASS_HOST_DEVICE
   T operator()(T const &a, T const &b, T const &c) const {
     return ((a ^ b) + c);
+  }
+};
+
+template <typename T>
+struct conjugate {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &a) const {
+    return a;
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename T>
+struct conjugate<complex<T>>  {
+  CUTLASS_HOST_DEVICE
+  complex<T> operator()(complex<T> const &a) const {
+    return conj(a);
+  }
+};
+
+template <typename T, int N>
+struct conjugate<Array<T, N> >  {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &a) const {
+
+    conjugate<T> conj_op;
+
+    Array<T, N> ca;
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      ca[i] = conj_op(a[i]);
+    }
+    return ca;
   }
 };
 
@@ -1496,6 +1566,86 @@ struct multiply_add<Array<bfloat16_t, N>, Array<bfloat16_t, N>, Array<bfloat16_t
     return result;
   }
 };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> operator+(Array<T, N> const &lhs, Array<T, N> const &rhs) {
+  plus<Array<T, N>> op;
+  return op(lhs, rhs);
+}
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> operator-(Array<T, N> const &lhs, Array<T, N> const &rhs) {
+  minus<Array<T, N>> op;
+  return op(lhs, rhs);
+}
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> operator-(Array<T, N> const &lhs) {
+  negate<Array<T, N>> op;
+  return op(lhs);
+}
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> operator*(Array<T, N> const &lhs, Array<T, N> const &rhs) {
+  multiplies<Array<T, N>> op;
+  return op(lhs, rhs);
+}
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> operator*(T lhs, Array<T, N> const &rhs) {
+  multiplies<Array<T, N>> op;
+  return op(lhs, rhs);
+}
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> operator*(Array<T, N> const &lhs, T rhs) {
+  multiplies<Array<T, N>> op;
+  return op(lhs, rhs);
+}
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> operator/(Array<T, N> const &lhs, Array<T, N> const &rhs) {
+  divides<Array<T, N>> op;
+  return op(lhs, rhs);
+}
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> fma(Array<T, N> const &a, Array<T, N> const &b, Array<T, N> const &c) {
+  multiply_add<Array<T, N>> op;
+  return op(a, b, c);
+}
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> fma(T a, Array<T, N> const &b, Array<T, N> const &c) {
+  multiply_add<Array<T, N>> op;
+  return op(a, b, c);
+}
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> fma(Array<T, N> const &a, T b, Array<T, N> const &c) {
+  multiply_add<Array<T, N>> op;
+  return op(a, b, c);
+}
+
+template <typename T, int N>
+CUTLASS_HOST_DEVICE
+Array<T, N> fma(Array<T, N> const &a, Array<T, N> const &b, T c) {
+  multiply_add<Array<T, N>> op;
+  return op(a, b, c);
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

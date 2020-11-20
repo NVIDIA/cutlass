@@ -1,6 +1,17 @@
 # NVIDIA CUTLASS Changelog
 
 # CUTLASS 2.x
+## [2.4.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.4.0) (2020-11-19)
+  * Implicit GEMM convolution kernels supporting CUDA and Tensor Cores on NVIDIA GPUs
+    * Operators: forward (Fprop), backward data gradient (Dgrad), and backward weight gradient (Wgrad) convolution
+    * Data type: FP32, complex<FP32>, Tensor Float 32 (TF32), BFloat16 (BF16), Float16, Int4, Int8, Int32
+    * Spatial dimensions: 1-D, 2-D, and 3-D
+    * Layout: NHWC, NCxHWx
+  * Implicit GEMM convolution components: 
+    * Global memory iterators supporting fprop, dgrad, and wgrad
+    * `MmaMultistage` for implicit GEMM convolution for NVIDIA Ampere architecture
+    * `MmaPipeline` for implicit GEMM convolution for NVIDIA Volta and Turing architectures
+    * [Documentation](/media/docs/implicit_gemm_convolution.md) describing Implicit GEMM Convolution algorithm and implementation
 
 ## [2.3.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.3.0) (2020-09-23)
  * [NVIDIA Ampere Architecture features](https://devblogs.nvidia.com/nvidia-ampere-architecture-in-depth/)

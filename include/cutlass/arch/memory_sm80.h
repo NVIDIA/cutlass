@@ -74,6 +74,10 @@ template <
     /// Size of the access in bytes
     int SizeInBytes>
 struct cp_async<SizeInBytes, CacheOperation::Always> {
+  // Make sure the size is supported.
+  static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
+                "Size is not supported");
+
   /// Copy
   CUTLASS_DEVICE
   cp_async(void *smem_ptr, void const *global_ptr, bool pred_guard = true) {
@@ -104,6 +108,10 @@ template <
     /// Size of the access in bytes
     int SizeInBytes>
 struct cp_async_zfill<SizeInBytes, CacheOperation::Always> {
+  // Make sure the size is supported.
+  static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
+                "Size is not supported");
+
   /// Copy with zero fill
   CUTLASS_DEVICE
   cp_async_zfill(void *smem_ptr, void const *global_ptr, bool pred_guard) {
@@ -138,6 +146,10 @@ template <
     /// Size of the access in bytes
     int SizeInBytes>
 struct cp_async<SizeInBytes, CacheOperation::Global> {
+  // Make sure the size is supported.
+  static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
+                "Size is not supported");
+
   /// Copy
   CUTLASS_DEVICE
   cp_async(void *smem_ptr, void const *global_ptr, bool pred_guard = true) {
@@ -171,6 +183,10 @@ template <
     /// Size of the access in bytes
     int SizeInBytes>
 struct cp_async_zfill<SizeInBytes, CacheOperation::Global> {
+  // Make sure the size is supported.
+  static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
+                "Size is not supported");
+
   /// Copy with zero fill
   CUTLASS_DEVICE
   cp_async_zfill(void *smem_ptr, void const *global_ptr, bool pred_guard = true) {
@@ -235,4 +251,3 @@ CUTLASS_DEVICE void cp_async_wait<0>() {
 }  // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

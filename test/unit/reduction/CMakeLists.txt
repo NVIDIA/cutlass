@@ -22,7 +22,6 @@
 
 add_subdirectory(thread)
 add_subdirectory(kernel)
-
 add_custom_target(
   cutlass_test_unit_reduction
   DEPENDS

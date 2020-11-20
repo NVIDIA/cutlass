@@ -52,7 +52,7 @@
 #endif
 #endif
 
-#endif //__clang__
+#endif //!defined(__clang__)
 
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
 
@@ -82,6 +82,12 @@ struct CutlassToWmmaDataType<cutlass::half_t> {
   using Type = __half;
 };
 
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800) && (__CUDACC_VER_MAJOR__ >= 11)
+template<>
+struct CutlassToWmmaDataType<cutlass::bfloat16_t> {
+  using Type = __nv_bfloat16;
+};
+#endif
 
 /// Statically maps int8_t => char
 template<>
@@ -158,6 +164,14 @@ template<>
 struct WmmaToCutlassDataType<__half> {
   using Type = cutlass::half_t;
 };
+
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800) && (__CUDACC_VER_MAJOR__ >= 11)
+template<>
+struct WmmaToCutlassDataType<__nv_bfloat16> {
+  using Type = cutlass::bfloat16_t;
+};
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

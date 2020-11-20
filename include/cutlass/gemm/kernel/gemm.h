@@ -138,8 +138,20 @@ struct Gemm {
       typename Epilogue::OutputTileIterator::TensorRef ref_C,
       typename Epilogue::OutputTileIterator::TensorRef ref_D) {
 
-    static int const kAlignmentA = Mma::IteratorA::AccessType::kElements;
-    static int const kAlignmentB = Mma::IteratorB::AccessType::kElements;
+    static int const kAlignmentA = (platform::is_same<typename Mma::IteratorA::Layout,
+                                                      layout::ColumnMajorInterleaved<32>>::value)
+                                   ? 32
+                                   : (platform::is_same<typename Mma::IteratorA::Layout,
+                                                        layout::ColumnMajorInterleaved<64>>::value)
+                                     ? 64
+                                     : Mma::IteratorA::AccessType::kElements;
+    static int const kAlignmentB =  (platform::is_same<typename Mma::IteratorB::Layout,
+                                                       layout::RowMajorInterleaved<32>>::value)
+                                   ? 32
+                                   : (platform::is_same<typename Mma::IteratorB::Layout,
+                                                        layout::RowMajorInterleaved<64>>::value)
+                                     ? 64
+                                     : Mma::IteratorB::AccessType::kElements;
     static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
 
     if (!TensorRef_aligned(ref_A, kAlignmentA)) {
@@ -274,7 +286,7 @@ struct Gemm {
       semaphore.fetch();
 
       // Indicate which position in a serial reduction the output operator is currently updating
-      output_op.set_k_partition(threadblock_tile_offset.k());
+      output_op.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
     }
 
     // Tile iterator loading from source tensor.

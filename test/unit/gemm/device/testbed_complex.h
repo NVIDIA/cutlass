@@ -31,6 +31,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 
 #include "../../common/cutlass_unit_test.h"
 
@@ -100,6 +101,34 @@ struct TestbedComplex : public Testbed<Gemm> {
     return this->compare_reference(problem_size, alpha, beta);
   }
 
+	bool sufficient() const {
+		//
+		// Determine SMEM requirements and waive if not satisfied
+		//
+
+		int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+
+		cudaDeviceProp properties;
+		int device_idx;
+		cudaError_t result = cudaGetDevice(&device_idx);
+	
+		if (result != cudaSuccess) {
+			throw std::runtime_error("cudaGetDevice() API call failed.");
+		}
+		
+		result = cudaGetDeviceProperties(&properties, device_idx);
+
+		if (result != cudaSuccess) {
+			throw std::runtime_error("cudaGetDeviceProperties() failed");
+		}
+
+		if (properties.sharedMemPerMultiprocessor < smem_size) {
+			return false;
+		}
+
+		return true;
+	}
+
   /// Executes one test
   bool run(
     cutlass::gemm::GemmCoord problem_size, 
@@ -107,7 +136,17 @@ struct TestbedComplex : public Testbed<Gemm> {
     ElementCompute alpha = ElementCompute(1), 
     ElementCompute beta = ElementCompute(0)) {
 
+		// Waive the test if device not sufficient
+		if (!sufficient()) {
+			return true;
+		}
+
+		//
+		// Initialize workspace
+		//
+
     this->initialize(problem_size);
+		
 
     //
     // Initialize the GEMM operator

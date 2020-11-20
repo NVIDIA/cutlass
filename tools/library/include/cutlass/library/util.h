@@ -122,6 +122,27 @@ char const *to_string(SplitKMode split_k_mode, bool pretty = false);
 template <>
 SplitKMode from_string<SplitKMode>(std::string const &str);
 
+/// Converts a ConvModeID enumerant to a string
+char const *to_string(ConvModeID type, bool pretty = false);
+
+/// Converts a ConvModeID enumerant from a string
+template <>
+ConvModeID from_string<ConvModeID>(std::string const &str);
+
+/// Converts a IteratorAlgorithmID enumerant to a string
+char const *to_string(IteratorAlgorithmID type, bool pretty = false);
+
+/// Converts a IteratorAlgorithmID enumerant from a string
+template <>
+IteratorAlgorithmID from_string<IteratorAlgorithmID>(std::string const &str);
+
+/// Converts a ConvKind enumerant to a string
+char const *to_string(ConvKind type, bool pretty = false);
+
+/// Converts a ConvKind enumerant from a string
+template <>
+ConvKind from_string<ConvKind>(std::string const &str);
+
 /// Lexical cast from int64_t to string
 std::string lexical_cast(int64_t int_value);
 

@@ -20,120 +20,47 @@
 # STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cutlass_test_unit_add_executable(
+add_custom_target(
   cutlass_test_unit_gemm_device
+  DEPENDS
+  cutlass_test_unit_gemm_device_simt
+  cutlass_test_unit_gemm_device_tensorop_sm70
+  cutlass_test_unit_gemm_device_tensorop_sm75
+  cutlass_test_unit_gemm_device_tensorop_f16_sm80
+  cutlass_test_unit_gemm_device_tensorop_f32_sm80
+  cutlass_test_unit_gemm_device_tensorop_f32_tf32_sm80
+  cutlass_test_unit_gemm_device_tensorop_f64
+  cutlass_test_unit_gemm_device_tensorop_s32_sm80
+  cutlass_test_unit_gemm_device_wmma
+  cutlass_test_unit_gemm_device_tensorop_planar_complex
+  cutlass_test_unit_gemm_device_sparse_tensorop_sm80
+)
+
+add_custom_target(
+  test_unit_gemm_device
+  DEPENDS
+  test_unit_gemm_device_simt
+  test_unit_gemm_device_tensorop_sm70
+  test_unit_gemm_device_tensorop_sm75
+  test_unit_gemm_device_tensorop_f16_sm80
+  test_unit_gemm_device_tensorop_f32_sm80
+  test_unit_gemm_device_tensorop_f32_tf32_sm80
+  test_unit_gemm_device_tensorop_f64
+  test_unit_gemm_device_tensorop_s32_sm80
+  test_unit_gemm_device_wmma
+  test_unit_gemm_device_tensorop_planar_complex
+  test_unit_gemm_device_sparse_tensorop_sm80
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_simt
 
   BATCH_SOURCES ON
   BATCH_SIZE 4
 
-  gemm_planar_complex_f16_f16_f32_tensor_op_sm70.cu                              
-  gemm_planar_complex_f16_f16_f32_tensor_op_sm75.cu                                         
-  gemm_planar_complex_f16_f16_f32_tensor_op_sm80.cu
-
-  gemm_universal_f16n_f16t_f32t_tensor_op_f32_sm80.cu                                     
-  gemm_universal_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu                             
-  gemm_universal_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu
-  gemm_universal_cf32n_cf32n_cf32n_tensor_op_f32_sm80.cu
-
-  gemm_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu
-  gemm_cf64t_cf64n_cf64t_tensor_op_f64_sm80.cu
-
-  gemm_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu
-  gemm_cf64t_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
-
-  gemm_cf32n_cf32t_cf32t_tensor_op_tf32_f32_sm80.cu
-  gemm_cf32t_cf32n_cf32t_tensor_op_tf32_f32_sm80.cu
-
-  gemm_f16n_f16n_f16t_tensor_op_f32_sm80.cu
-  gemm_f16n_f16n_f32n_tensor_op_f32_sm80.cu
-  gemm_f16n_f16n_f32t_tensor_op_f32_sm80.cu
-  gemm_f16n_f16t_f16t_tensor_op_f16_sm80.cu
-  gemm_f16n_f16t_f32t_tensor_op_f32_sm80.cu
-  gemm_f16t_f16n_f16t_tensor_op_f16_sm80.cu
-  gemm_f16t_f16n_f32t_tensor_op_f32_sm80.cu
-  gemm_f16t_f16t_f32n_tensor_op_f32_sm80.cu
-  gemm_f16t_f16t_f32t_tensor_op_f32_sm80.cu
-  gemm_bf16n_bf16n_f32t_tensor_op_f32_sm80.cu
-  gemm_bf16t_bf16t_bf16t_tensor_op_f32_sm80.cu
-  gemm_tf32t_tf32n_f32t_tensor_op_f32_sm80.cu
-  gemm_tf32n_tf32t_f32t_tensor_op_f32_sm80.cu
-  gemm_tf32n_tf32n_f32t_tensor_op_f32_sm80.cu
-  gemm_tf32t_tf32t_f32t_tensor_op_f32_sm80.cu
-
-  gemm_f16n_f16n_f16t_tensor_op_f32_sparse_sm80.cu
-  gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu
-  gemm_f16n_f16t_f16t_tensor_op_f16_sparse_sm80.cu
-  gemm_f16n_f16t_f32t_tensor_op_f32_sparse_sm80.cu
-  gemm_f16t_f16n_f16t_tensor_op_f16_sparse_sm80.cu
-  gemm_f16t_f16n_f32t_tensor_op_f32_sparse_sm80.cu
-  gemm_f16t_f16t_f32t_tensor_op_f32_sparse_sm80.cu
-  gemm_f32t_f32n_f32t_tensor_op_f32_sparse_sm80.cu
-  gemm_f32n_f32t_f32t_tensor_op_f32_sparse_sm80.cu
-  gemm_f32t_f32t_f32t_tensor_op_f32_sparse_sm80.cu
-  gemm_f32n_f32n_f32t_tensor_op_f32_sparse_sm80.cu
-  gemm_s8t_s8n_s32t_tensor_op_s32_sparse_sm80.cu
-  gemm_s4t_s4n_s32t_tensor_op_s32_sparse_sm80.cu
-
-  gemm_f16t_f16n_f16t_tensor_op_f16_slicedk_sm80.cu
-  gemm_f16n_f16t_f16t_tensor_op_f16_slicedk_sm80.cu
-
   simt_sgemm_nt_sm80.cu
   simt_sgemm_tn_sm80.cu
-
-  gemm_s8t_s8n_s32t_tensor_op_s32_sm80.cu
-  gemm_s8t_s8n_s32n_tensor_op_s32_sm80.cu
-  gemm_s8t_s8n_s8n_tensor_op_s32_sm80.cu
-  gemm_s8t_s8n_s8t_tensor_op_s32_sm80.cu
-  gemm_s4t_s4n_s32n_tensor_op_s32_sm80.cu
-  gemm_s4t_s4n_s32t_tensor_op_s32_sm80.cu
-  gemm_b1t_b1n_s32n_tensor_op_s32_sm80.cu
-  gemm_b1t_b1n_s32t_tensor_op_s32_sm80.cu
-
-  gemm_s8n_s8t_s8n_tensor_op_s32_sm80.cu
-  gemm_s4n_s4t_s4n_tensor_op_s32_sm80.cu
-
-  gemm_f64n_f64t_f64t_tensor_op_f64_sm80.cu
-  gemm_f64t_f64n_f64t_tensor_op_f64_sm80.cu
-
-  gemm_b1t_b1n_s32t_tensor_op_s32_sm75.cu
-  gemm_b1t_b1n_s32n_tensor_op_s32_sm75.cu
-
-  gemm_f32n_f32n_f32t_tensor_op_f32_sm80.cu
-  gemm_f16t_f16n_f16t_tensor_op_f16_sm75.cu
-  gemm_f16n_f16t_f16t_tensor_op_f16_sm75.cu
-  gemm_f16n_f16t_f16t_tensor_op_f16_slicedk_sm75.cu
-  gemm_f16t_f16n_f16t_tensor_op_f16_slicedk_sm75.cu
-
-  gemm_f16n_f16n_f16t_tensor_op_f32_sm75.cu
-
-  gemm_f16n_f16n_f32t_tensor_op_f32_sm75.cu
-  gemm_f16n_f16t_f32t_tensor_op_f32_sm75.cu
-  gemm_f16t_f16n_f32t_tensor_op_f32_sm75.cu
-  gemm_f16t_f16t_f32t_tensor_op_f32_sm75.cu
-
-  gemm_f16n_f16n_f32n_tensor_op_f32_sm75.cu
-  gemm_f16t_f16t_f32n_tensor_op_f32_sm75.cu
-
-  gemm_s8n_s8t_s8n_tensor_op_s32_sm75.cu
-  gemm_s8t_s8n_s32t_tensor_op_s32_sm75.cu
-  gemm_s8t_s8n_s32n_tensor_op_s32_sm75.cu
-  gemm_s8t_s8n_s8t_tensor_op_s32_sm75.cu
-  gemm_s8t_s8n_s8n_tensor_op_s32_sm75.cu
-
-  gemm_s4n_s4t_s4n_tensor_op_s32_sm75.cu
-  gemm_s4t_s4n_s32t_tensor_op_s32_sm75.cu
-  gemm_s4t_s4n_s32n_tensor_op_s32_sm75.cu
-
-  gemm_f16n_f16n_f32t_volta_tensor_op_f32_sm70.cu
-  gemm_f16n_f16t_f32t_volta_tensor_op_f32_sm70.cu
-  gemm_f16t_f16n_f32t_volta_tensor_op_f32_sm70.cu
-  gemm_f16t_f16t_f32t_volta_tensor_op_f32_sm70.cu
-
-  gemm_f16n_f16n_f16t_volta_tensor_op_f32_sm70.cu
-
-  gemm_f16n_f16t_f16t_volta_tensor_op_f16_sm70.cu
-  gemm_f16t_f16n_f16t_volta_tensor_op_f16_sm70.cu
-
+  
   simt_cgemm_nn_sm50.cu
   simt_cgemm_nt_sm50.cu
   simt_cgemm_tn_sm50.cu
@@ -167,10 +94,158 @@ cutlass_test_unit_add_executable(
   simt_zgemm_tn_sm50.cu
   simt_zgemm_tt_sm50.cu
 
+  gemm_splitk_simt_sm50.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm70
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+
+  gemm_f16n_f16n_f32t_volta_tensor_op_f32_sm70.cu
+  gemm_f16n_f16t_f32t_volta_tensor_op_f32_sm70.cu
+  gemm_f16t_f16n_f32t_volta_tensor_op_f32_sm70.cu
+  gemm_f16t_f16t_f32t_volta_tensor_op_f32_sm70.cu
+
+  gemm_f16n_f16n_f16t_volta_tensor_op_f32_sm70.cu
+
+  gemm_f16n_f16t_f16t_volta_tensor_op_f16_sm70.cu
+  gemm_f16t_f16n_f16t_volta_tensor_op_f16_sm70.cu
+
+  gemm_splitk_tensor_op_sm70.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_sm75
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_f16t_f16n_f16t_tensor_op_f16_sm75.cu
+  gemm_f16n_f16t_f16t_tensor_op_f16_sm75.cu
+  gemm_f16n_f16t_f16t_tensor_op_f16_slicedk_sm75.cu
+  gemm_f16t_f16n_f16t_tensor_op_f16_slicedk_sm75.cu
+
+  gemm_f16n_f16n_f16t_tensor_op_f32_sm75.cu
+
+  gemm_f16n_f16n_f32t_tensor_op_f32_sm75.cu
+  gemm_f16n_f16t_f32t_tensor_op_f32_sm75.cu
+  gemm_f16t_f16n_f32t_tensor_op_f32_sm75.cu
+  gemm_f16t_f16t_f32t_tensor_op_f32_sm75.cu
+
+  gemm_f16n_f16n_f32n_tensor_op_f32_sm75.cu
+  gemm_f16t_f16t_f32n_tensor_op_f32_sm75.cu
+
+  gemm_s8n_s8t_s8n_tensor_op_s32_sm75.cu
+  gemm_s8t_s8n_s32t_tensor_op_s32_sm75.cu
+  gemm_s8t_s8n_s32n_tensor_op_s32_sm75.cu
+  gemm_s8t_s8n_s8t_tensor_op_s32_sm75.cu
+  gemm_s8t_s8n_s8n_tensor_op_s32_sm75.cu
+
+  gemm_s4n_s4t_s4n_tensor_op_s32_sm75.cu
+  gemm_s4t_s4n_s32t_tensor_op_s32_sm75.cu
+  gemm_s4t_s4n_s32n_tensor_op_s32_sm75.cu
+  
+  gemm_b1t_b1n_s32t_tensor_op_s32_sm75.cu
+  gemm_b1t_b1n_s32n_tensor_op_s32_sm75.cu
+
   gemm_splitk_serial_tensor_op_sm75.cu
   gemm_splitk_tensor_op_sm75.cu
-  gemm_splitk_tensor_op_sm70.cu
-  gemm_splitk_simt_sm50.cu
+
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_f16_sm80
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_f16t_f16n_f16t_tensor_op_f16_slicedk_sm80.cu
+  gemm_f16n_f16t_f16t_tensor_op_f16_slicedk_sm80.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_f32_sm80
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_universal_f16n_f16t_f32t_tensor_op_f32_sm80.cu
+  gemm_f16n_f16n_f16t_tensor_op_f32_sm80.cu
+  gemm_f16n_f16n_f32n_tensor_op_f32_sm80.cu
+  gemm_f16n_f16n_f32t_tensor_op_f32_sm80.cu
+  gemm_f16n_f16t_f16t_tensor_op_f16_sm80.cu
+  gemm_f16n_f16t_f32t_tensor_op_f32_sm80.cu
+  gemm_f16t_f16n_f16t_tensor_op_f16_sm80.cu
+  gemm_f16t_f16n_f32t_tensor_op_f32_sm80.cu
+  gemm_f16t_f16t_f32n_tensor_op_f32_sm80.cu
+  gemm_f16t_f16t_f32t_tensor_op_f32_sm80.cu
+  gemm_bf16n_bf16n_f32t_tensor_op_f32_sm80.cu
+  gemm_bf16t_bf16t_bf16t_tensor_op_f32_sm80.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_f32_tf32_sm80
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_tf32t_tf32n_f32t_tensor_op_f32_sm80.cu
+  gemm_tf32n_tf32t_f32t_tensor_op_f32_sm80.cu
+  gemm_tf32n_tf32n_f32t_tensor_op_f32_sm80.cu
+  gemm_tf32t_tf32t_f32t_tensor_op_f32_sm80.cu                 
+  gemm_universal_cf32n_cf32n_cf32n_tensor_op_f32_sm80.cu
+  gemm_cf32n_cf32t_cf32t_tensor_op_tf32_f32_sm80.cu
+  gemm_cf32t_cf32n_cf32t_tensor_op_tf32_f32_sm80.cu
+
+  gemm_f32n_f32n_f32t_tensor_op_f32_sm80.cu
+  gemm_f32n_f32n_f32t_tensor_op_bf16_f32_sm80.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_f64
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_f64n_f64t_f64t_tensor_op_f64_sm80.cu
+  gemm_f64t_f64n_f64t_tensor_op_f64_sm80.cu
+
+  gemm_universal_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu                             
+  gemm_universal_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu
+  gemm_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu
+  gemm_cf64t_cf64n_cf64t_tensor_op_f64_sm80.cu
+  gemm_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu
+  gemm_cf64t_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
+
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_s32_sm80
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_s8t_s8n_s32t_tensor_op_s32_sm80.cu
+  gemm_s8t_s8n_s32n_tensor_op_s32_sm80.cu
+  gemm_s8t_s8n_s8n_tensor_op_s32_sm80.cu
+  gemm_s8t_s8n_s8t_tensor_op_s32_sm80.cu
+  gemm_s4t_s4n_s32n_tensor_op_s32_sm80.cu
+  gemm_s4t_s4n_s32t_tensor_op_s32_sm80.cu
+  gemm_b1t_b1n_s32n_tensor_op_s32_sm80.cu
+  gemm_b1t_b1n_s32t_tensor_op_s32_sm80.cu
+
+  gemm_s8n_s8t_s8n_tensor_op_s32_sm80.cu
+  gemm_s4n_s4t_s4n_tensor_op_s32_sm80.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_wmma
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
 
   # wmma floating point tests
   gemm_f16t_f16n_f16t_wmma_tensor_op_f16_sm70.cu
@@ -222,5 +297,37 @@ cutlass_test_unit_add_executable(
   gemm_f16t_f16n_f16n_singlestage_wmma_tensor_op_f16_sm70.cu
 
   gemm_f16t_f16n_f32t_singlestage_wmma_tensor_op_f32_sm70.cu
-
 )
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_planar_complex
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_planar_complex_f16_f16_f32_tensor_op_sm70.cu                              
+  gemm_planar_complex_f16_f16_f32_tensor_op_sm75.cu                                         
+  gemm_planar_complex_f16_f16_f32_tensor_op_sm80.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_sparse_tensorop_sm80
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_f16n_f16n_f16t_tensor_op_f32_sparse_sm80.cu
+  gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f16n_f16t_f16t_tensor_op_f16_sparse_sm80.cu
+  gemm_f16n_f16t_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f16t_f16n_f16t_tensor_op_f16_sparse_sm80.cu
+  gemm_f16t_f16n_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f16t_f16t_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f32t_f32n_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f32n_f32t_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f32t_f32t_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_f32n_f32n_f32t_tensor_op_f32_sparse_sm80.cu
+  gemm_s8t_s8n_s32t_tensor_op_s32_sparse_sm80.cu
+  gemm_s4t_s4n_s32t_tensor_op_s32_sparse_sm80.cu
+)
+

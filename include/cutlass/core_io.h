@@ -38,6 +38,9 @@
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/gemm/gemm.h"
+#include "cutlass/conv/convolution.h"
+#include "cutlass/conv/conv2d_problem_size.h"
+#include "cutlass/conv/conv3d_problem_size.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -156,10 +159,20 @@ namespace gemm {
 template <int M, int N, int K>
 inline
 std::ostream & operator<<(std::ostream &out, GemmShape<M,N,K> const &gemm_shape) {
-  out << "cutlass::GemmShape::(kM, kN, kK) {"
+  out << "cutlass::gemm::GemmShape::(kM, kN, kK) {"
     << cutlass::gemm::GemmShape<M,N,K>::kM <<","
     << cutlass::gemm::GemmShape<M,N,K>::kN <<","
     << cutlass::gemm::GemmShape<M,N,K>::kK << "}";
+  return out;
+}
+
+/// Default printing to ostream for GemmCoord
+inline
+std::ostream & operator<<(std::ostream &out, GemmCoord const &gemm_coord) {
+  out << "cutlass::gemm::GemmCoord:: {"
+    << gemm_coord.m() <<","
+    << gemm_coord.n() <<","
+    << gemm_coord.k() << "}";
   return out;
 }
 
@@ -183,6 +196,45 @@ std::ostream & operator<<(std::ostream &out, PitchLinearShape<Contiguous, Stride
 }
 
 } //namespace layout
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+//                         stream operators for cutlass::conv namespace                          //
+///////////////////////////////////////////////////////////////////////////////////////////////////
+namespace conv {
+/// Default printing to ostream for Conv2dProblemSize
+inline
+std::ostream& operator<<(std::ostream& out, Conv2dProblemSize const& problem) {
+  out << "NHWC: (" << problem.N << ", " << problem.H << ", " << problem.W << ", " << problem.C << ")" << std::endl
+      << "KRSC: (" << problem.K << ", " << problem.R << ", " << problem.S << ", " << problem.C << ")" << std::endl
+      << "NPQK: (" << problem.N << ", " << problem.P << ", " << problem.Q << ", " << problem.K << ")" << std::endl
+      << "Pad_h, Pad_w: (" << problem.pad_h << ", " << problem.pad_w << ")" << std::endl
+      << "Stride_h, Stride_w: (" << problem.stride_h << ", " << problem.stride_w << ")" << std::endl
+      << "Dilation_h, Dilation_w: (" << problem.dilation_h << ", " << problem.dilation_w << ")" << std::endl
+      << "split_k_slices: (" << problem.split_k_slices << ")" << std::endl
+      << "mode: (" << ((problem.mode==conv::Mode::kConvolution) ? "conv" : "xcross") << ")";
+
+  return out;
+}
+
+
+/// Default printing to ostream for Conv3dProblemSize
+inline
+std::ostream& operator<<(std::ostream& out, Conv3dProblemSize const& problem) {
+  out << "NDHWC: (" << problem.N << ", " << problem.D << ", " << problem.H << ", " << problem.W << ", " << problem.C << ")" << std::endl
+      << "KTRSC: (" << problem.K << ", " << problem.T << ", " << problem.R << ", " << problem.S << ", " << problem.C << ")" << std::endl
+      << "NZPQK: (" << problem.N << ", " << problem.Z << ", " << problem.P << ", " << problem.Q << ", " << problem.K << ")" << std::endl
+      << "pad_d, pad_h, pad_w: ("  << problem.pad_d << ", " << problem.pad_h << ", " << problem.pad_w << ")" << std::endl
+      << "stride_d, stride_h, stride_w: ("  << problem.stride_d << ", " << problem.stride_h << ", " << problem.stride_w << ")" << std::endl
+      << "dilation_d, dilation_h, dilation_w: ("  << problem.dilation_d << ", " << problem.dilation_h << ", " << problem.dilation_w << ")" << std::endl
+      << "split_k_slices: (" << problem.split_k_slices << ") " << std::endl
+      << "mode: (" << ((problem.mode==conv::Mode::kConvolution) ? "conv" : "xcross") << ")";
+
+  return out;
+}
+
+} // namespace conv
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass

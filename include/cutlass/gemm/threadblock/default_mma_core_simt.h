@@ -389,7 +389,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
   /// Policy used to define MmaPipelined 
   using MmaPolicy = MmaPolicy<
     MmaWarpSimt,
-    MatrixShape<kPaddingN, 0>,    // skew for A matrix to avoid SMEM bank conflicts
+    MatrixShape<kPaddingM, 0>,    // skew for A matrix to avoid SMEM bank conflicts
     MatrixShape<0, kPaddingN>,    // skew for B matrix to avoid SMEM bank conflicts
     WarpCount::kK
   >;

@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <cutlass/half.h>
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/array.h"
@@ -77,7 +78,6 @@ public:
     ElementCompute threshold;              ///< minimum value that is output 
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
-    ElementCompute const *threshold_ptr;   ///< pointer to threshold scalar - if not null, loads from memory
     //
     // Methods
     //
@@ -88,15 +88,14 @@ public:
       beta(ElementCompute(0)),
       threshold(ElementCompute(0)), 
       alpha_ptr(nullptr), 
-      beta_ptr(nullptr),
-      threshold_ptr(nullptr) { }
+      beta_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
       ElementCompute beta,
       ElementCompute threshold = ElementCompute(0)
-    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr), threshold_ptr(nullptr) {
+    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
@@ -104,8 +103,8 @@ public:
     Params(
       ElementCompute const *alpha_ptr,
       ElementCompute const *beta_ptr,
-      ElementCompute const *threshold_ptr = nullptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr), threshold_ptr(threshold_ptr) {
+      ElementCompute threshold = ElementCompute(0)
+    ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
 
     }
   };
@@ -128,7 +127,7 @@ public:
 
     alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
     beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
-    threshold_ = (params.threshold_ptr ? *params.threshold_ptr : params.threshold);
+    threshold_ = params.threshold;
   }
 
   /// Returns true if source is needed
@@ -139,9 +138,15 @@ public:
 
   /// Functionally required for serial reduction in the epilogue
   CUTLASS_HOST_DEVICE
-  void set_k_partition(int k_partition) {
+  void set_k_partition(int k_partition, int k_partition_count) {
     if (k_partition) {
       beta_ = ElementCompute(1);
+    }
+
+    if (k_partition != k_partition_count - 1) {
+      // set to NaN to make ReLU no-op for all except last k partitions
+      int64_t allones = -1;
+      threshold_ = reinterpret_cast<ElementCompute const &>(allones);
     }
   }
   
@@ -204,7 +209,6 @@ public:
     return destination_converter(intermediate);
   }
 };
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -245,7 +249,6 @@ public:
     ElementCompute threshold;              ///< minimum value that is output 
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
-    ElementCompute const *threshold_ptr;   ///< pointer to threshold scalar - if not null, loads from memory
     //
     // Methods
     //
@@ -256,15 +259,14 @@ public:
       beta(ElementCompute(0)),
       threshold(ElementCompute(0)), 
       alpha_ptr(nullptr), 
-      beta_ptr(nullptr),
-      threshold_ptr(nullptr) { }
+      beta_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
       ElementCompute beta,
       ElementCompute threshold = ElementCompute(0)
-    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr), threshold_ptr(nullptr) {
+    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
@@ -272,8 +274,8 @@ public:
     Params(
       ElementCompute const *alpha_ptr,
       ElementCompute const *beta_ptr,
-      ElementCompute const *threshold_ptr = nullptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr), threshold_ptr(threshold_ptr) {
+      ElementCompute threshold = ElementCompute(0)
+    ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
 
     }
   };
@@ -296,7 +298,7 @@ public:
 
     alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
     beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
-    threshold_ = (params.threshold_ptr ? *params.threshold_ptr : params.threshold);
+    threshold_ = params.threshold;
   }
 
   /// Returns true if source is needed
@@ -307,9 +309,15 @@ public:
 
   /// Functionally required for serial reduction in the epilogue
   CUTLASS_HOST_DEVICE
-  void set_k_partition(int k_partition) {
+  void set_k_partition(int k_partition, int k_partition_count) {
     if (k_partition) {
       beta_ = ElementCompute(1);
+    }
+
+    if (k_partition != k_partition_count - 1) {
+      // set to NaN to make ReLU no-op for all except last k partitions
+      int64_t allones = -1;
+      threshold_ = reinterpret_cast<ElementCompute const &>(allones);
     }
   }
   
@@ -331,26 +339,41 @@ public:
 
     multiplies<ComputeFragment> mul_add_source;
     multiply_add<ComputeFragment> mul_add_accumulator;
-    ReLu<FragmentAccumulator> relu;
+    ReLu<ComputeFragment> relu;
 
     intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
 
-    // Convert floats back to INT
-    FragmentAccumulator scaled_accumulator;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kCount; ++i) {
-      scaled_accumulator[i] = static_cast<int>(intermediate[i]);
-    }
-
     // Compute threshold optionally
-    scaled_accumulator = relu(threshold_, scaled_accumulator);
+    intermediate = relu(threshold_, intermediate);
 
-    // Convert to destination numeric type
-    NumericArrayConverter<ElementOutput, int, kCount, Round> destination_converter;
+    if (platform::is_same<ElementOutput, int32_t>::value ||
+        platform::is_same<ElementOutput, uint32_t>::value ||
+        platform::is_same<ElementOutput, int16_t>::value ||
+        platform::is_same<ElementOutput, uint16_t>::value ||
+        platform::is_same<ElementOutput, int8_t>::value ||
+        platform::is_same<ElementOutput, uint8_t>::value ||
+        platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
+        platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
+        platform::is_same<ElementOutput, cutlass::uint1b_t>::value) {
+      // Convert floats back to INT
+      FragmentAccumulator scaled_accumulator;
 
-    return destination_converter(scaled_accumulator);
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < kCount; ++i) {
+        scaled_accumulator[i] = __float2int_rn(intermediate[i]);
+      }
+
+      // Convert to destination numeric type
+      NumericArrayConverter<ElementOutput, int, kCount, Round>
+          destination_converter;
+
+      return destination_converter(scaled_accumulator);
+    } else {
+      NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round>
+          destination_converter;
+      return destination_converter(intermediate);
+    }
   }
 
   /// Computes linear scaling: D = alpha * accumulator
@@ -367,25 +390,48 @@ public:
     ComputeFragment intermediate;
 
     multiplies<ComputeFragment> mul_accumulator;
-    ReLu<FragmentAccumulator> relu;
+    ReLu<ComputeFragment> relu;
 
     intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+
+    // Compute threshold optionally
+    intermediate = relu(threshold_, intermediate);
 
     // Convert floats back to INT
     FragmentAccumulator scaled_accumulator;
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kCount; ++i) {
-      scaled_accumulator[i] = static_cast<int>(intermediate[i]);
+      scaled_accumulator[i] = __float2int_rn(intermediate[i]);
     }
 
-    // Compute threshold optionally
-    scaled_accumulator = relu(threshold_, scaled_accumulator);
+    if (platform::is_same<ElementOutput, int32_t>::value ||
+        platform::is_same<ElementOutput, uint32_t>::value ||
+        platform::is_same<ElementOutput, int16_t>::value ||
+        platform::is_same<ElementOutput, uint16_t>::value ||
+        platform::is_same<ElementOutput, int8_t>::value ||
+        platform::is_same<ElementOutput, uint8_t>::value ||
+        platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
+        platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
+        platform::is_same<ElementOutput, cutlass::uint1b_t>::value) {
+      // Convert floats back to INT
+      FragmentAccumulator scaled_accumulator;
 
-    // Convert to destination numeric type
-    NumericArrayConverter<ElementOutput, int, kCount, Round> destination_converter;
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < kCount; ++i) {
+        scaled_accumulator[i] = __float2int_rn(intermediate[i]);
+      }
 
-    return destination_converter(scaled_accumulator);
+      // Convert to destination numeric type
+      NumericArrayConverter<ElementOutput, int, kCount, Round>
+          destination_converter;
+
+      return destination_converter(scaled_accumulator);
+    } else {
+      NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round>
+          destination_converter;
+      return destination_converter(intermediate);
+    }
   }
 };
 
@@ -398,4 +444,3 @@ public:
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

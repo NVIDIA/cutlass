@@ -117,9 +117,16 @@ public:
   using ThreadblockShape = typename GemmKernel::Mma::Shape;
   using WarpShape = typename GemmKernel::WarpShape;
   using InstructionShape = typename GemmKernel::InstructionShape;
- 
-  using OperatorClass = typename GemmKernel::OperatorClass;
-  using ArchTag = typename GemmKernel::ArchTag;
+
+  // warp-level, arch-level (instruction), math operator 
+  using WarpMmaOperator = typename GemmKernel::Mma::Policy::Operator;
+  using ArchMmaOperator = typename WarpMmaOperator::ArchMmaOperator;
+  using MathOperator = typename ArchMmaOperator::Operator;
+  
+  // Operator class and arch tag extract bottom-up 
+  // set it for top-level gemm device-level template
+  using OperatorClass = typename WarpMmaOperator::OperatorClass;
+  using ArchTag = typename WarpMmaOperator::ArchTag;
 
   // Type, layout, and complex transform deliberately exchanged with B
   using MapArguments = detail::MapArguments<

@@ -36,6 +36,11 @@ namespace cutlass {
 namespace library {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void initialize_reference_operations(Manifest &manifest);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Top-level initialization
 Status Manifest::initialize() {
 
@@ -45,6 +50,12 @@ Status Manifest::initialize() {
 
   // initialize procedurally generated cutlass op in manifest object
   initialize_all(*this);
+
+  // initialize manually instanced conv3d reference op in manifest object
+  initialize_reference_operations(*this);
+
+  // initialize manually instanced reduction reference op in manifest object
+  initialize_all_reduction_op(*this);
 
   return Status::kSuccess;
 }

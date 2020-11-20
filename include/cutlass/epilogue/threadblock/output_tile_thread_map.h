@@ -488,6 +488,68 @@ struct InterleavedOutputTileThreadMap {
   }
 };
 
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// Template metaprogram for partitioning a 4D interleaved layout across warps
+/// to achieve several performance objectives:
+///
+///   - coalesced memory accesses in units of 64 Byte lines
+///   - minimal address arithmetic
+///   - minimal predicate calculations
+///
+template <typename WarpCount_, typename Iterations_, int Threads,
+          int ElementsPerAccess, int ElementSize>
+struct InterleavedConvOutputTileThreadMap {
+  using WarpCount = WarpCount_;
+
+  static int const kWarpSize = 32;
+  static int const kThreads = Threads;
+  static int const kWarpCount = kThreads / kWarpSize;
+
+  static int const kElementsPerAccess = ElementsPerAccess;
+  static int const kElementSize = ElementSize;
+
+  //
+  // Metaprogram computation
+  //
+
+  struct Detail {};
+
+  //
+  // Output
+  //
+
+  using Iterations = Iterations_;
+
+  using Delta = MatrixShape<kWarpSize / 4, 4 * kElementsPerAccess>;
+
+  /// Initial offset function
+  CUTLASS_HOST_DEVICE
+  static MatrixCoord initial_offset(int thread_idx) {
+    int warp_idx = thread_idx / kWarpSize;
+    int lane_idx = thread_idx % kWarpSize;
+
+    // Compute warp location
+    MatrixCoord warp_footprint{
+        Delta::kRow * Iterations::kRow,
+        Delta::kColumn * Iterations::kColumn,
+    };
+
+    MatrixCoord warp_offset{warp_idx % WarpCount::kRow,
+                            warp_idx / WarpCount::kRow};
+
+    // Compute per-lane offset
+    MatrixCoord thread_offset_in_warp{lane_idx / 4,
+                                      (lane_idx % 4) * kElementsPerAccess};
+
+    MatrixCoord thread_offset_in_threadblock_tile =
+        warp_footprint * warp_offset + thread_offset_in_warp;
+
+    return thread_offset_in_threadblock_tile;
+  }
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 
 } // namespace threadblock

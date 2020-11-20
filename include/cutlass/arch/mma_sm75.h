@@ -365,7 +365,7 @@ struct Mma<
   }
 };
 
-/// Matrix multiply-add operation: S32 = S8 * U8 + S32
+/// Matrix multiply-add operation: S32 = U8 * U8 + S32
 template <>
 struct Mma<
   gemm::GemmShape<8, 8, 16>,
@@ -599,7 +599,7 @@ struct Mma<
   }
 };
 
-/// Matrix multiply-add operation: S32 = S8 * U8 + S32
+/// Matrix multiply-add operation: S32 = U8 * U8 + S32
 template <>
 struct Mma<
   gemm::GemmShape<8,8,16>,

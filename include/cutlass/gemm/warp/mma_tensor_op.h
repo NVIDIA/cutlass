@@ -244,8 +244,6 @@ public:
   /// Storage for C tile
   using FragmentC = typename IteratorC::Fragment;
 
-private:
-
   /// Number of mma operations performed
   using MmaIterations = MatrixShape<
     (Shape::kM + ArchMmaOperator::Shape::kM - 1) / ArchMmaOperator::Shape::kM,

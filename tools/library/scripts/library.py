@@ -71,6 +71,7 @@ class DataType(enum.Enum):
   cu16 = enum_auto()
   cu32 = enum_auto()
   cu64 = enum_auto()
+  invalid = enum_auto()
 
 #
 ShortDataTypeNames = {
@@ -260,6 +261,8 @@ MathOperationTag = {
 class LayoutType(enum.Enum):
   ColumnMajor = enum_auto()
   RowMajor = enum_auto()
+  ColumnMajorInterleaved2 = enum_auto()
+  RowMajorInterleaved2 = enum_auto()
   ColumnMajorInterleaved32 = enum_auto()
   RowMajorInterleaved32 = enum_auto()
   ColumnMajorInterleaved64 = enum_auto()
@@ -268,13 +271,17 @@ class LayoutType(enum.Enum):
   TensorNDHWC = enum_auto()
   TensorNCHW = enum_auto()
   TensorNGHWC = enum_auto()
-  TensorNCxHW32 = enum_auto()
-  TensorNCxHW64 = enum_auto()
+  TensorNC32HW32 = enum_auto()
+  TensorNC64HW64 = enum_auto()
+  TensorC32RSK32 = enum_auto()
+  TensorC64RSK64 = enum_auto()
 
 #
 LayoutTag = {
   LayoutType.ColumnMajor: 'cutlass::layout::ColumnMajor',
   LayoutType.RowMajor: 'cutlass::layout::RowMajor',
+  LayoutType.ColumnMajorInterleaved2: 'cutlass::layout::ColumnMajorInterleaved<2>',
+  LayoutType.RowMajorInterleaved2: 'cutlass::layout::RowMajorInterleaved<2>',
   LayoutType.ColumnMajorInterleaved32: 'cutlass::layout::ColumnMajorInterleaved<32>',
   LayoutType.RowMajorInterleaved32: 'cutlass::layout::RowMajorInterleaved<32>',
   LayoutType.ColumnMajorInterleaved64: 'cutlass::layout::ColumnMajorInterleaved<64>',
@@ -283,14 +290,18 @@ LayoutTag = {
   LayoutType.TensorNDHWC: 'cutlass::layout::TensorNDHWC',
   LayoutType.TensorNCHW: 'cutlass::layout::TensorNCHW',
   LayoutType.TensorNGHWC: 'cutlass::layout::TensorNGHWC',
-  LayoutType.TensorNCxHW32: 'cutlass::layout::TensorNCxHW32',
-  LayoutType.TensorNCxHW64: 'cutlass::layout::TensorNCxHW64'
+  LayoutType.TensorNC32HW32: 'cutlass::layout::TensorNCxHWx<32>',
+  LayoutType.TensorC32RSK32: 'cutlass::layout::TensorCxRSKx<32>',
+  LayoutType.TensorNC64HW64: 'cutlass::layout::TensorNCxHWx<64>',
+  LayoutType.TensorC64RSK64: 'cutlass::layout::TensorCxRSKx<64>',
 }
 
 #
 TransposedLayout = {
   LayoutType.ColumnMajor: LayoutType.RowMajor,
   LayoutType.RowMajor: LayoutType.ColumnMajor,
+  LayoutType.ColumnMajorInterleaved2: LayoutType.RowMajorInterleaved2,
+  LayoutType.RowMajorInterleaved2: LayoutType.ColumnMajorInterleaved2,
   LayoutType.ColumnMajorInterleaved32: LayoutType.RowMajorInterleaved32,
   LayoutType.RowMajorInterleaved32: LayoutType.ColumnMajorInterleaved32,
   LayoutType.ColumnMajorInterleaved64: LayoutType.RowMajorInterleaved64,
@@ -301,17 +312,21 @@ TransposedLayout = {
 #
 ShortLayoutTypeNames = {
   LayoutType.ColumnMajor: 'n',
+  LayoutType.ColumnMajorInterleaved32: 'n2',
   LayoutType.ColumnMajorInterleaved32: 'n32',
   LayoutType.ColumnMajorInterleaved64: 'n64',
   LayoutType.RowMajor: 't',
+  LayoutType.RowMajorInterleaved2: 't2',
   LayoutType.RowMajorInterleaved32: 't32',
   LayoutType.RowMajorInterleaved64: 't64',
   LayoutType.TensorNHWC: 'nhwc',
   LayoutType.TensorNDHWC: 'ndhwc',
   LayoutType.TensorNCHW: 'nchw',
   LayoutType.TensorNGHWC: 'nghwc',
-  LayoutType.TensorNCxHW32: 'ncxhw32',
-  LayoutType.TensorNCxHW64: 'ncxhw64'
+  LayoutType.TensorNC32HW32: 'nc32hw32',
+  LayoutType.TensorNC64HW64: 'nc64hw64',
+  LayoutType.TensorC32RSK32: 'c32rsk32',
+  LayoutType.TensorC64RSK64: 'c64rsk64'
 }
 
 #
@@ -346,9 +361,14 @@ OpcodeClassTag = {
 #
 class OperationKind(enum.Enum):
   Gemm = enum_auto()
+  Conv2d = enum_auto()        
+  Conv3d = enum_auto()        
+
 #
 OperationKindNames = {
   OperationKind.Gemm: 'gemm'
+  , OperationKind.Conv2d: 'conv2d'  
+  , OperationKind.Conv3d: 'conv3d' 
 }
 
 # 
@@ -424,6 +444,61 @@ SwizzlingFunctorTag = {
   SwizzlingFunctor.Identity4: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<4>',
   SwizzlingFunctor.Identity8: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<8>',
 }
+
+###################################################################################################
+
+#
+class ConvKind(enum.Enum):
+  Fprop = enum_auto()
+  Dgrad = enum_auto()
+  Wgrad = enum_auto()
+
+#
+ConvKindTag = {
+  ConvKind.Fprop: 'cutlass::conv::Operator::kFprop',
+  ConvKind.Dgrad: 'cutlass::conv::Operator::kDgrad',
+  ConvKind.Wgrad: 'cutlass::conv::Operator::kWgrad'
+}
+
+ConvKindNames = {
+  ConvKind.Fprop: 'fprop',
+  ConvKind.Dgrad: 'dgrad',
+  ConvKind.Wgrad: 'wgrad',
+}
+
+#
+class IteratorAlgorithm(enum.Enum):
+  Analytic = enum_auto()
+  Optimized = enum_auto()
+
+#
+IteratorAlgorithmTag = {
+  IteratorAlgorithm.Analytic: 'cutlass::conv::IteratorAlgorithm::kAnalytic',
+  IteratorAlgorithm.Optimized: 'cutlass::conv::IteratorAlgorithm::kOptimized',
+}
+
+IteratorAlgorithmNames = {
+  IteratorAlgorithm.Analytic: 'analytic',
+  IteratorAlgorithm.Optimized: 'optimized',
+}
+
+#
+class StrideSupport(enum.Enum):
+  Strided = enum_auto()
+  Unity = enum_auto()
+
+#
+StrideSupportTag = {
+  StrideSupport.Strided: 'cutlass::conv::StrideSupport::kStrided',
+  StrideSupport.Unity: 'cutlass::conv::StrideSupport::kUnity',
+}
+
+StrideSupportNames = {
+  StrideSupport.Strided: '',
+  StrideSupport.Unity: 'unity_stride',
+}
+
+
 ###################################################################################################
 
 #

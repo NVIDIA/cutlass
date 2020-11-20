@@ -250,6 +250,34 @@ struct TestbedUniversal {
     return compare_reference(problem_size, alpha, beta);
   }
 
+  bool sufficient() const {
+    //
+    // Determine SMEM requirements and waive if not satisfied
+    //
+
+    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+
+    if (properties.sharedMemPerMultiprocessor < smem_size) {
+      return false;
+    }
+
+    return true;
+  }
+
   /// Executes one test
   bool run(
     cutlass::gemm::GemmUniversalMode mode,
@@ -257,6 +285,11 @@ struct TestbedUniversal {
     int batch_count = 1,
     ElementCompute alpha = ElementCompute(1), 
     ElementCompute beta = ElementCompute(0)) {
+
+		// Waive test if insufficient CUDA device
+		if (!sufficient()) {
+			return true;
+		}
 
     this->initialize(problem_size);
 

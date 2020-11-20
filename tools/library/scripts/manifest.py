@@ -10,6 +10,9 @@ import shutil
 
 from library import *
 from gemm_operation import *
+from conv2d_operation import *  
+from conv3d_operation import *  
+
 ###################################################################################################
 
 class EmitOperationKindLibrary:
@@ -20,6 +23,8 @@ class EmitOperationKindLibrary:
 
     self.emitters = {
       OperationKind.Gemm: EmitGemmConfigurationLibrary
+      , OperationKind.Conv2d: EmitConv2dConfigurationLibrary  
+      , OperationKind.Conv3d: EmitConv3dConfigurationLibrary  
     }
 
     self.configurations = [];
@@ -112,7 +117,10 @@ class Manifest:
   def __init__(self, args):
     self.operations = {}
     self.args = args
-    self.compute_capabilities = [int(x) for x in args.architectures.split(';')]
+
+    architectures = args.architectures.split(';') if len(args.architectures) else ['50',]
+    self.compute_capabilities = [int(x) for x in architectures]
+    
     self.selected_kernels = []
     
     if args.operations == 'all':
@@ -121,6 +129,8 @@ class Manifest:
 
       operations_list = [
         OperationKind.Gemm
+        , OperationKind.Conv2d    
+        , OperationKind.Conv3d    
       ] 
 
       self.operations_enabled = [x for x in operations_list if OperationKindNames[x] in args.operations.split(',')]
