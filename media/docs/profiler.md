@@ -5,15 +5,17 @@
 # CUTLASS Profiler
 
 The CUTLASS Profiler is a command-line driven test and profiling environment for CUTLASS computations
-defined in the CUTLASS Instance Library.
+defined in the CUTLASS Instance Library. The CUTLASS Profiler is capable of executing each GEMM, Sparse Gemm, 
+Conv2d, and Conv3d kernel.
 
 The CUTLASS Profiler may be compiled with:
 ```bash
 $ make cutlass_profiler -j
 ```
 
-To limit compilation time, only one tile size (128x128) is instantiated for each data type, math instruction, and layout.
-To instantiate all sizes, set the following environment variable when running CMake from an empty `build/` directory.
+To limit compilation time, only one tile size (typically 128x128) is instantiated for each data type, 
+math instruction, and layout. To instantiate all sizes, set the following environment variable when running CMake from an 
+empty `build/` directory.
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all  -DCUTLASS_UNITY_BUILD_ENABLED=ON
 ...
@@ -32,82 +34,121 @@ The CUTLASS Profiler usage statement may be obtained by executing `cutlass_profi
 ```bash
 CUTLASS Performance Tool
 usage:
+
     cutlass_profiler [options]
-  
+
   --help
-  
-  --mode={profile*,single,dry,enumerate}     Regular profiling, single kernel mode only, or no profiling.
-  
-  --device-info                              Prints information on all GPUs present in the system
-  
-  --operation=<operation_kind>               CUTLASS operation to profile.
-  
-  --kernels=<kernel names>                   Names of individual kernels to execute. All are executed if not specified.
+
+  --mode=<string>                                  Cutlass profiler execution mode.
+                                                    --mode=profile    regular verification and profiling (default)
+                                                    --mode=dry_run    no kernels are launched or workspaces allocated
+                                                    --mode=enumerate  lists all operation kind and operations
+                                                    --mode=trace      executes a single device-side computation with
+                                                                       no other kernel launches
+
+  --device-info                                    Prints information on all GPUs present in the system
+
+  --operation=<operation_kind>                     CUTLASS operation to profile.
+
+  --kernels=<string_list>                          Filter operations by kernel names. For example, call all kernels with
+                                                   ("s1688" and "nt") or ("s844" and "tn" and "align8") in their
+                                                   operation name using --kernels="s1688*nt, s884*tn*align8"
+
+  --ignore-kernels=<string_list>                   Excludes kernels whose names match anything in this list.
 
 Device:
-  --device=<int>                             CUDA Device ID
+  --device=<int>                                   CUDA Device ID
+
+  --compute-capability=<int>                       Override the compute capability.
+
+  --llc-capacity=<capacity in KiB>                 Capacity of last-level cache in kilobytes. If this is non-zero,
+                                                   profiling phases cycle through different input tensors to induce
+                                                   capacity misses in the L2.
+
 
 Initialization:
-  --initialization=<bool>                    Enables initialization (default: true). If false, device memory is
-                                             not initialized after allocation.
+  --initialization=<bool>                          Enables initialization (default: true). If false, device memory is
+                                                   not initialized after allocation.
 
-  --initialization-provider=<provider>       Selects 'device' or 'host' initialization.
+  --initialization-provider=<provider>             Selects initialization provider {host, device*}. (default: '*')
 
-  --dist=<distribution>                      Data distribution of input tensors
+  --dist=<distribution>                            Data distribution of input tensors {uniform*, gaussian, identity, sequential}
+                                                    --dist=uniform,min:<double>,max:<double>,scale:<integer>
+                                                    --dist=gaussian,mean:<double>,stddev:<double>,scale:<integer>
+                                                    --dist=sequential,start:<double>,delta:<double>,scale:<integer>
+                                                    --dist=identity
 
-  --seed=<int>                               Random number generator seed. Used to enforce deterministic
-                                             initialization.
+  --seed=<int>                                     Random number generator seed. Used to enforce deterministic
+                                                   initialization.
+
 
 Library:
-  --library-algo-mode=<mode>                 Indicates algorithm mode used to call libraries such as cuBLAS and cuDNN.
-                                             mode={default*,matching,best}
+  --library-algo-mode=<mode>                       Indicates algorithm mode used to call libraries such as cuBLAS and cuDNN.
+                                                   mode={default*,matching,best}
 
-  --library-algos=<range-list>               If --algorithm-mode=best, permits specifying a selection of algorithms.
+  --library-algos=<range-list>                     If --algorithm-mode=best, permits specifying a selection of algorithms.
+
 
 Profiling:
-  --profiling-iterations=<iterations>        Number of iterations to profile each kernel. If zero, kernels
-                                             are launched up to the profiling duration.
+  --workspace-count=<workspace count>              Number of discrete workspaces maintained to avoid cache-resident 
+                                                 If zero (default), the amount is chosen for each workload based on 
+                                                 capacity of the last-level cache.
 
-  --warmup-iterations=<iterations>           Number of iterations to execute each kernel prior to profiling.
-  
-  --sleep-duration=<duration>                Number of ms to sleep between profiling periods (ms)
-  
-  --profiling-enabled=<bool>                 If true, profiling is actually conducted.
-  
-  --providers=<providers>                    List of providers to be profiled for performance
+  --profiling-iterations=<iterations>              Number of iterations to profile each kernel. If zero, kernels
+                                                   are launched up to the profiling duration.
+
+  --warmup-iterations=<iterations>                 Number of iterations to execute each kernel prior to profiling.
+
+  --sleep-duration=<duration>                      Number of ms to sleep between profiling periods (ms).
+
+  --profiling-enabled=<bool>                       If true, profiling is actually conducted.
+
+  --providers=<providers>                          List of providers to be profiled for performance. (default: '*')
+                                                   Gemm providers {cutlass*, cublas*}
+                                                   Conv2d providers {cutlass*, cudnn*}
+
 
 Verification:
-  --verification-enabled=<bool>              Whether to perform verification checks.
+  --verification-enabled=<bool>                    Whether to perform verification checks.
 
-  --epsilon=<error>                          Error threshold. Setting to zero (default) requires
-                                             bit-level equivalence.
+  --epsilon=<error>                                Error threshold. Setting to zero (default) requires
+                                                   bit-level equivalence.
 
-  --nonzero-floor=<floor>                    Results whose absolute value is less than this quantity
-                                             are treated as zero for comparisons.
+  --nonzero-floor=<floor>                          Results whose absolute value is less than this quantity
+                                                   are treated as zero for comparisons.
 
-  --save-workspace={*never,incorrect,always} Specifies when to save the GEMM inputs and results to the filesystem.
+  --save-workspace=<string>                        Specifies when to save the GEMM inputs and results to the filesystem.
+                                                    --save-workspace=never      never save workspace (default)
+                                                    --save-workspace=incorrect  save workspace for incorrect results
+                                                    --save-workspace=always     always save workspace
 
-  --verification-providers=<providers>       List of providers used to verify result. (default: cublas)
+  --verification-providers=<providers>             List of providers used to verify result. (default: '*')
+                                                   Gemm verification-providers {cublas*}
+                                                   Conv2d verification-providers {cudnn*, device*, host}
+
 
 Report:
-  --append=<bool>                            If true, result is appended to possibly existing file. Otherwise, 
-                                             any existing file is overwritten.
+  --append=<bool>                                  If true, result is appended to possibly existing file. Otherwise, 
+                                                   any existing file is overwritten.
 
-  --output=<path>                            Path to output file for machine readable results.
+  --output=<path>                                  Path to output file for machine readable results. Operation kind and '.csv' is appended.
 
-  --report-not-run=<bool>                    If true, reports the status of all kernels including those that
-                                             do not satisfy the given arguments.
+  --junit-output=<path>                            Path to junit output file for result reporting. Operation kind and '.junit.xml' is appended.
 
-  --tags=<column:tag,...>                    Inserts leading columns in output table and uniform values for each
-                                             column. Useful for generating pivot tables.
+  --report-not-run=<bool>                          If true, reports the status of all kernels including those that
+                                                   do not satisfy the given arguments.
 
-  --verbose=<bool>                           If true (default), prints human-readable text to stdout.
+  --tags=<column:tag,...>                          Inserts leading columns in output table and uniform values for each
+                                                   column. Useful for generating pivot tables.
+
+  --verbose=<bool>                                 Prints human-readable text to stdout. If false, nothing is written to stdout.
+
 
 About:
-  --version                                  CUTLASS 2.2.0 built on Jun  8 2020 at 07:59:33
+  --version                                        CUTLASS 2.4.0 built on Nov 19 2020 at 11:59:00
+
 
 Operations:
-  --operation=<operation_name>               Specifies a particular operation to run or print the usage statement.
 
      gemm                                          General matrix-matrix product. D = alpha * A*B + beta * C
      spgemm                                        Structured sparse GEMM. D = alpha * A*B + beta * C
@@ -115,7 +156,7 @@ Operations:
      conv3d                                        Conv3d operation. Output(Tensor5D) = alpha * Input(Tensor5D) * Filter(Tensor5D) + beta * Input(Tensor5D)
 
 
-For more details about a particular operation, specify the operation name with --help.
+For details about a particular function, specify the function name with --help.
 
 Example:
 
@@ -125,12 +166,15 @@ Example:
 
   $ cutlass_profiler --operation=Conv2d --help
 
-  $ cutlass_profiler --operation=SparseGemm --help
 ```
 
 # GEMM
 
-The CUTLASS Profiler is capable of executing each GEMM kernel.
+The CUTLASS Profiler is capable of executing GEMM and Sparse GEMM problems.
+
+The CUTLASS Profiler can be built with cuBLAS enabled to use as a reference implementation. If CMake detects
+the cuBLASS library available in the system, it is included as a dependency. This may be explicitly overridden
+with CMake flag `CUTLASS_ENABLE_CUBLAS`. 
 
 ## GEMM Arguments
 
@@ -202,7 +246,7 @@ Test your changes to gemm kernels with a quick functional test and save results 
    --providers=cutlass --output=functional-test.csv
 ```
 
-## Example CUDA Core GEMM Operation (SGEMM)
+## Example CUDA Core GEMM Operation
 
 Example command line for profiling SGEMM kernels is as follows:
 ```bash
@@ -239,10 +283,9 @@ $ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=3456 --n=4096 --k=4096
 Note, the arguments which appear in the output may be used as command line parameters for subsequent invocations.
 
 
-## Example Tensor Core GEMM Operations (S16816GEMM)
+## Example Tensor Core GEMM Operations
 
 To execute kernels targeting Tensor Core operations, supply the flag `--op_class=tensorop` in the command line.
-
 ```bash
 $ ./tools/profiler/cutlass_profiler --op_class=tensorop --m=3456 --n=4096 --k=8192
 
@@ -382,12 +425,11 @@ Profile a particular convolution (specify all the convolution parameters):
 
 ```
 
-## Example CUDA Core Convolution Operation (SFPROP)
+## Example CUDA Core Convolution Operation
 
-Example command line for profiling Convolution kernels is as follows:
-
+Example command line for profiling forward propagation convolution kernels on CUDA cores is as follows:
 ```bash
-$ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sfprop_optimized_128x128_8x2_nhwc  --verification-providers=device --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
+$ ./tools/profiler/cutlass_profiler --kernels=simt_sfprop  --verification-providers=device --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
 
 
 =============================
@@ -419,12 +461,11 @@ reference_device: Passed
 
 ```
 
-## Example Tensor Core Convolution Operation (S16816FPROP)
+## Example Tensor Core Convolution Operation
 
-Example command line for profiling Convolution kernels is as follows:
-
+Example command line for profiling forward propagation convolution kernels runing on Tensor Cores is as follows:
 ```bash
-$ ./tools/profiler/cutlass_profiler --kernels=cutlass_tensorop_s16816fprop_optimized_f16_128x128_64x4_nhwc  --verification-providers=device --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 
+$ ./tools/profiler/cutlass_profiler --kernels=tensorop*fprop  --verification-providers=device --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 
 
 
 
