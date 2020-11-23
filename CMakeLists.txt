@@ -343,6 +343,9 @@ function(cutlass_apply_standard_compile_options TARGET)
     $<$<COMPILE_LANGUAGE:${CUDA_COMPILE_LANGUAGE}>:$<$<CONFIG:DEBUG>:${_FLAGS_DEBUG}>>
     )
 
+  if (ENABLE_ALL_WARNINGS)
+    target_compile_options(${TARGET} PRIVATE -Wall -Wextra)
+  endif (ENABLE_ALL_WARNINGS)
 endfunction()
 
 #
