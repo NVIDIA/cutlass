@@ -8,7 +8,7 @@
     * Spatial dimensions: 1-D, 2-D, and 3-D
     * Layout: NHWC, NCxHWx
   * Implicit GEMM convolution components: 
-    * Global memory iterators supporting fprop, dgrad, and wgrad
+    * Global memory iterators supporting Fprop, Dgrad, and Wgrad
     * `MmaMultistage` for implicit GEMM convolution for NVIDIA Ampere architecture
     * `MmaPipeline` for implicit GEMM convolution for NVIDIA Volta and Turing architectures
     * [Documentation](/media/docs/implicit_gemm_convolution.md) describing Implicit GEMM Convolution algorithm and implementation

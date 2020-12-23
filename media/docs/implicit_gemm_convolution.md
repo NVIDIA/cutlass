@@ -51,7 +51,7 @@ f(p, r) = p * stride_h + R - r - 1 + pad_h
 g(q, s) = h * stride_w + S - s - 1 + pad_w
 ```
 
-A [host](/tools/util/include/reference/host/convolution.h) and [device](/tools/util/include/reference/device/convolution.h) 
+A [host](/tools/util/include/cutlass/util/reference/host/convolution.h) and [device](/tools/util/include/cutlass/util/reference/device/convolution.h) 
 reference implementation are provided in the CUTLASS Utilities.
 
 This computation may be mapped to the elements of a matrix product as follows.
@@ -347,7 +347,7 @@ creating GEMM-B tile in shared memory.
 The improvements covered by optimized iterators are: 
 - (a) Precomputing kernel-invariant pointer deltas on the host 
 - (b) Computing cta-invariant mask predicates on device-side iterator ctors
-- (c) Use of [fast divmod](include/cutlass/fast_math.h) to map GEMM dimenstions to convolution tensors. 
+- (c) Use of [fast divmod](/include/cutlass/fast_math.h) to map GEMM dimenstions to convolution tensors. 
 For example, _optimized_ activation iterator uses fast divmod to map GEMM _M_ to NPQ 
 for activation iterator
 

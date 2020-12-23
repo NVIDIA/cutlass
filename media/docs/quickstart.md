@@ -47,6 +47,7 @@ You may also filter kernels by name by supplying a filter string with flag `CUTL
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=80 -DCUTLASS_LIBRARY_KERNELS=s16816gemm,s16816fprop*128x128
 ```
+See more examples on selectively compiling CUTLASS GEMM and convolution kernels [here](media/docs/quickstart.md#example-cmake-commands).
 
 You may explicitly exclude cuBLAS and cuDNN as dependencies with the following CMake flags.
 - `-DCUTLASS_ENABLE_CUBLAS=OFF`
@@ -87,14 +88,14 @@ $ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=4352 --n=4096 --k=4096
         Math: 13854.9 GFLOP/s
 ```
 
-To execute the CUTLASS Profiler for Convolution, run the following example.
+To execute the CUTLASS Profiler for convolution, run the following example.
 ```bash
 $ ./tools/profiler/cutlass_profiler --kernels=s1688fprop --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 --pad_h=1 --pad_w=1
 ```
 
 To execute all CUTLASS 2-D convolution operators, execute the following.
 ```bash
-$ ./tools/profiler/cutlass_profiler --operation=conv2d--n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
+$ ./tools/profiler/cutlass_profiler --operation=conv2d --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
 
 
 =============================
@@ -462,52 +463,77 @@ int main() {
 }
 ```
 
-Kernels can be selectively included in the CUTLASS Library by specifying filter strings when
-executing CMake. For example, only single-precision GEMM kernels can be instantiated as follows.
+# Example CMake Commands 
 
+To instantiate all operations supporting all tile sizes, data types, and alignment constraints, specify 
+`-DCUTLASS_LIBRARY_KERNELS=all` when running `cmake`.
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=sgemm
+$ cmake .. -DCUTLASS_NVCC_ARCHS='70;75;80' -DCUTLASS_LIBRARY_KERNELS=all
+```
+The above command line generates about seven thousand kernels targetting NVIDIA Ampere, Turing, and Volta architectures. 
+Compiling thousands of kernels for three different architectures is time consuming. Additionaly, this would also result 
+in a large binary size and on some platforms linker to fail on building the library.
+
+Enabling the "unity build" instantiates multiple kernel instances in each compilation unit, thereby reducing binary size 
+and avoiding linker limitations on some platforms.
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all -DCUTLASS_UNITY_BUILD_ENABLED=ON
 ```
 
+It is advised to only compile CUTLASS kernels for NVIDIA architectures one plans on running. Furthermore, kernels 
+can be selectively included in the CUTLASS Library by specifying filter strings and wildcard characters when executing CMake. 
+
+Several examples are defined below for convenience. They may be combined as a comma-delimited list. 
 Compling only the kernels desired reduces compilation time.
 
-To instantiate kernels of all tile sizes, data types, and alignment constraints, specify 
-`-DCUTLASS_LIBRARY_KERNELS=all` when running `cmake`.
 
-Several recipes are defined below for convenience. They may be combined as a comma-delimited list.
-
+## GEMM CMake Examples
 **Example.** All GEMM kernels targeting NVIDIA Ampere Tensor Cores.
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=80 -DCUTLASS_LIBRARY_KERNELS=tensorop*gemm
 ```
 
-**Example.** All kernels for NVIDIA Volta, Turing, and Ampere architectures. Enabling 
-the "unity build" instantiates multiple kernel instances in each compilation unit, thereby
-reducing binary size and avoiding linker limitations on some platforms.
-```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=all -DCUTLASS_UNITY_BUILD_ENABLED=ON
-```
-
-**Example.** All GEMM kernels targeting Turing Tensor Cores.
+**Example.** All GEMM kernels targeting NVIDIA Turing Tensor Cores.
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=tensorop*gemm
 ```
 
-**Example.** All GEMM kernels with single-precision accumulation.
+**Example.** All GEMM kernels with FP32 accumulation targeting NVIDIA Ampere, Turing, and Volta architectures.
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=s*gemm
 ```
 
-**Example.** All kernels which expect A and B to be column-major.
+**Example.** All kernels which expect A and B to be column-major or row-major targeting NVIDIA Ampere, Turing, and Volta architectures.
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=gemm*nn
+$ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=gemm*nn,gemm*tt
 ```
 
-**Example.** All planar complex GEMM variants.
+**Example.** All planar complex GEMM variants targeting NVIDIA Ampere, Turing, and Volta architectures.
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS="70;75;80" -DCUTLASS_LIBRARY_KERNELS=planar_complex
 ```
 
+## Convolution CMake Examples
+**Example.** All convolution kernels targeting NVIDIA Ampere's 16816 Tensor Core operation
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS='80' -DCUTLASS_LIBRARY_KERNELS=s16816fprop,s16816dgrad,s16816wgrad
+```
+
+**Example.** All forward propagation (fprop) convolution kernels targeting CUDA Cores for multiple NVIDIA architectures
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS='50;60;61;70;75;80' -DCUTLASS_LIBRARY_KERNELS=sfprop
+```
+
+**Example.** All forward propagation (fprop) convolution kernels with FP32 accumulation and FP16 input targetting NVIDIA Ampere's 16816 Tensor Core operation
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS='80' -DCUTLASS_LIBRARY_KERNELS=s16816fprop_*_f16
+```
+
+**Example.** All backward weight gradient (wgrad) convolution kernels with FP32 accumulation, FP16 input, and optimized global memory iterator 
+targetting NVIDIA Ampere, Turing, and Volta Tensor Core operations
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS='70;75;80' -DCUTLASS_LIBRARY_KERNELS=tensorop*s*wgrad_optimized_f16
+```
 
 # Copyright
 

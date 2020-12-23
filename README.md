@@ -288,6 +288,7 @@ It can be built as follows:
 ```bash
 $ make cutlass_profiler -j16
 ```
+## Building all GEMM and Convolution kernels (_long_ build times)
 
 By default, only one tile size is instantiated for each data type, math instruction, and layout.
 To instantiate all, set the following environment variable when running CMake from an empty `build/` directory.
@@ -298,17 +299,71 @@ $ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=all
 $ make cutlass_profiler -j16
 ```
 
-To compile strictly one kernel or a small set of kernels, a comma-delimited list of kernel names with 
-wildcard characters may be reduce the set of kernels. The following builds exactly one kernel:
+## Building a subset of GEMM and Convolution kernels (_reduced_ build times)
 
+To compile strictly one kernel or a small set of kernels, a comma-delimited list of kernel names with 
+wildcard characters may be used to reduce the set of kernels. The following examples show building exactly one
+or a subset of kernels for NVIDIA Ampere and Turing architecture:
+
+### Building a subset Tensor Core GEMM kernels
+
+To compile a subset of Tensor Core GEMM kernels with FP32 accumulation and FP16 input targetting NVIDIA Ampere and Turing architecture, 
+use the below cmake command line:
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_KERNELS=cutlass_simt_sgemm_128x128_8x2_nn_align1
+$ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_tensorop_s*gemm_f16_*_nt_align8
 ...
 $ make cutlass_profiler -j16
 ```
 
-Example command line for profiling SGEMM kernels is as follows:
+Example command line for profiling a subset of Tensor Core GEMM kernels is as follows:
+```bash
+./tools/profiler/cutlass_profiler --kernels=cutlass_tensorop_s*gemm_f16_*_nt_align8 --m=3456 --n=4096 --k=4096
+
+...
+=============================
+  Problem ID: 1
+
+        Provider: CUTLASS
+   OperationKind: gemm
+       Operation: cutlass_tensorop_s1688gemm_f16_256x128_32x2_nt_align8
+
+          Status: Success
+    Verification: ON
+     Disposition: Passed
+
+reference_device: Passed
+          cuBLAS: Passed
+
+       Arguments: --gemm_kind=universal --m=3456 --n=4096 --k=4096 --A=f16:column --B=f16:row --C=f32:column --alpha=1  \
+                  --beta=0 --split_k_slices=1 --batch_count=1 --op_class=tensorop --accum=f32 --cta_m=256 --cta_n=128  \
+                  --cta_k=32 --stages=2 --warps_m=4 --warps_n=2 --warps_k=1 --inst_m=16 --inst_n=8 --inst_k=8 --min_cc=75  \
+                  --max_cc=1024
+
+           Bytes: 118489088  bytes
+           FLOPs: 115992428544  flops
+
+         Runtime: 1.55948  ms
+          Memory: 70.7616 GiB/s
+
+            Math: 74378.8 GFLOP/s
+
+
+
+=============================
+...
 ```
+
+### Building one CUDA Core GEMM kernel
+
+To compile one SGEMM kernel targetting NVIDIA Ampere and Turing architecture, use the below cmake command line:
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_simt_sgemm_128x128_8x2_nn_align1
+...
+$ make cutlass_profiler -j16
+```
+
+Example command line for profiling single SGEMM CUDA kernel is as follows:
+```bash
 $ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=3456 --n=4096 --k=4096
 
 =============================
@@ -335,24 +390,69 @@ $ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=3456 --n=4096 --k=4096
           Memory: 24.934 GiB/s
 
             Math: 17218.4 GFLOP/s
+
+=============================
 ```
 
-To compile strictly 2-D or 3-D convolution kernels, filter by operation
+### Building a subset of Tensor Core Convolution kernels
+
+To compile a subset of Tensor core convolution kernels implementing forward propagation (fprop) with FP32 accumulation 
+and FP16 input targetting NVIDIA Ampere and Turing architecture, use the below cmake command line:
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS=75 -DCUTLASS_LIBRARY_OPERATIONS=conv2d,conv3d
+$ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_tensorop_s*fprop_optimized_f16
 ...
 $ make cutlass_profiler -j16
 ```
 
-or by name
+Example command line for profiling a subset of Tensor Core convolution kernels is as follows:
 
 ```bash
-$ cmake .. -DCUTLASS_NVCC_ARCHS=80 -DCUTLASS_LIBRARY_KERNELS=sfprop,s16816fprop,s16816dgrad,s16816wgrad
+$ ./tools/profiler/cutlass_profiler --kernels=cutlass_tensorop_s*fprop_optimized_f16 --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
+
+...
+=============================
+  Problem ID: 1
+
+        Provider: CUTLASS
+   OperationKind: conv2d
+       Operation: cutlass_tensorop_s16816fprop_optimized_f16_128x128_32x5_nhwc
+
+          Status: Success
+    Verification: ON
+     Disposition: Passed
+
+reference_device: Passed
+
+       Arguments: --conv_kind=fprop --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3 --p=224 --q=224 --pad_h=1 --pad_w=1  \
+                  --stride_h=1 --stride_w=1 --dilation_h=1 --dilation_w=1 --Activation=f16:nhwc --Filter=f16:nhwc --Output=f32:nhwc  \
+                  --conv_mode=cross --iterator_algorithm=optimized --alpha=1 --beta=0 --split_k_mode=serial --split_k_slices=1  \
+                  --eq_gemm_provider=none --op_class=tensorop --accum=f32 --cta_m=128 --cta_n=128 --cta_k=32 --stages=5  \
+                  --warps_m=2 --warps_n=2 --warps_k=1 --inst_m=16 --inst_n=8 --inst_k=16 --min_cc=80 --max_cc=1024
+
+           Bytes: 1130659840  bytes
+           FLOPs: 118482796544  flops
+
+         Runtime: 0.711496  ms
+          Memory: 1479.99 GiB/s
+
+            Math: 166526 GFLOP/s
+
+=============================
+...
+```
+
+
+### Building one Convolution CUDA kernel
+
+To compile and run one CUDA Core convolution kernel implementing forward propagation (fprop) with F32 accumulation 
+and FP32 input targetting NVIDIA Ampere and Turing architecture, use the below cmake command line:
+```bash
+$ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_simt_sfprop_optimized_128x128_8x2_nhwc
 ...
 $ make cutlass_profiler -j16
 ```
 
-Example command line for profiling 2-D convolution kernels is as follows:
+Example command line for profiling one CUDA Core convolution kernel:
 
 ```bash
 $ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sfprop_optimized_128x128_8x2_nhwc --n=8 --h=224 --w=224 --c=128 --k=128 --r=3 --s=3
@@ -380,14 +480,21 @@ reference_device: Passed
            Bytes: 2055798784  bytes
            FLOPs: 118482796544  flops
 
-         Runtime: 8.13237  ms
-          Memory: 235.431 GiB/s
+         Runtime: 7.34266  ms
+          Memory: 260.752 GiB/s
 
-            Math: 14569.3 GFLOP/s
+            Math: 16136.2 GFLOP/s
+
+
+=============================
 
 ```
 
-[Further details about the CUTLASS Profiler are described here.](media/docs/profiler.md)
+## More Details on Compiling CUTLASS Kernels and CUTLASS Profiler
+- Please follow the links for more CMake examples on selectively compiling CUTLASS kernels:
+  - [GEMM CMake Examples](media/docs/quickstart.md#gemm-cmake-examples) 
+  - [Implicit GEMM conovlution CMake Examples](media/docs/quickstart.md#convolution-cmake-examples)
+- [Further details about the CUTLASS Profiler are described here.](media/docs/profiler.md)
 
 
 # About
