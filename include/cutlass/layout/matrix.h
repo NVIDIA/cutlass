@@ -529,7 +529,7 @@ public:
 
   /// Inverse of layout function, mapping linear offset to logical coordinate
   CUTLASS_HOST_DEVICE
-  MatrixCoord inverse(LongIndex offset) const {
+  MatrixCoord inverse(LongIndex /*offset*/) const {
     // TODO
     return MatrixCoord(0, 0);
   }
