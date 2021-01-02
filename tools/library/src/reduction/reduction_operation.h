@@ -173,7 +173,7 @@ public:
 
   /// Gets the host-side workspace
   virtual uint64_t get_host_workspace_size(
-    void const *configuration) const {
+    void const */*configuration*/) const {
 
     return sizeof(Operator);
   }

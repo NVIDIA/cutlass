@@ -1048,7 +1048,8 @@ bool arg_as_scalar(
 
   if (value_ptr->not_null) {
     if (value_ptr->argument->description->type == ArgumentTypeID::kInteger) {
-      int64_t int_value = static_cast<IntegerArgument::IntegerValue const *>(value_ptr)->value;
+      // Unused for now
+      // int64_t int_value = static_cast<IntegerArgument::IntegerValue const *>(value_ptr)->value;
       
       // TODO - convert int64_t => destination type
     }
