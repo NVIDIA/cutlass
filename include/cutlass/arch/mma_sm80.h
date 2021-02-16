@@ -40,7 +40,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#if ((__CUDACC_VER_MAJOR__ > 11) || (__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ >= 0))
+#if (defined(__clang__) || ((__CUDACC_VER_MAJOR__ > 11) || (__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ >= 0)))
 
 #define CUTLASS_ARCH_MMA_SM80_SUPPORTED 1
 
