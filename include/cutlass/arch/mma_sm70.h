@@ -37,13 +37,13 @@
 #include "cutlass/layout/matrix.h"
 #include "cutlass/numeric_types.h"
 
-#if (defined(__clang__) || ((__CUDACC_VER_MAJOR__ > 10) || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 1)))
+#if ((defined(__clang__) && defined(__CUDA__) && CUDA_VERSION >= 10011) || ((__CUDACC_VER_MAJOR__ > 10) || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 1)))
 #define CUTLASS_ARCH_MMA_SM70_SUPPORTED
 #endif
 
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 700))
 
-#if (defined(__clang__) || ((__CUDACC_VER_MAJOR__ > 10) || (__CUDACC_VER_MAJOR__ == 10 &&__CUDACC_VER_MINOR__ >= 1)))
+#if ((defined(__clang__) && defined(__CUDA__) && CUDA_VERSION >= 10011) || ((__CUDACC_VER_MAJOR__ > 10) || (__CUDACC_VER_MAJOR__ == 10 &&__CUDACC_VER_MINOR__ >= 1)))
 #define CUTLASS_ARCH_MMA_SM70_ENABLED
 #endif
 

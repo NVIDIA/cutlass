@@ -49,7 +49,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#if (defined(__clang__) || ((__CUDACC_VER_MAJOR__ > 10) || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2)))
+#if ((defined(__clang__) && defined(__CUDA__) && CUDA_VERSION >= 10011) || ((__CUDACC_VER_MAJOR__ > 10) || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2)))
 
 #define CUTLASS_ARCH_MMA_SM75_SUPPORTED 1
 
