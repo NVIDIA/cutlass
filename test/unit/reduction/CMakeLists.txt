@@ -22,11 +22,14 @@
 
 add_subdirectory(thread)
 add_subdirectory(kernel)
+add_subdirectory(device)
+
 add_custom_target(
   cutlass_test_unit_reduction
   DEPENDS
   cutlass_test_unit_reduction_thread
   cutlass_test_unit_reduction_kernel
+  cutlass_test_unit_reduction_device
   )
 
 add_custom_target(
@@ -34,4 +37,5 @@ add_custom_target(
   DEPENDS
   test_unit_reduction_thread
   test_unit_reduction_kernel
+  test_unit_reduction_device
   )

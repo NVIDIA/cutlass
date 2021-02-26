@@ -5,8 +5,8 @@
 ## [2.5.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.5.0) (2021-02-26)
   * Tensor reductions
     * _m_-to-_n_ reductions of tensors with affine layout
-    * [Specializations](/test/unit/reduction/tensor_reduce_contiguous.cu) for reductions including contiguous dimension
-    * [Specializations](/test/unit/reduction/tensor_reduce_strided.cu) for reductions excluding contiguous dimension
+    * [Specializations](/test/unit/reduction/device/tensor_reduce_contiguous.cu) for reductions including contiguous dimension
+    * [Specializations](/test/unit/reduction/device/tensor_reduce_strided.cu) for reductions excluding contiguous dimension
     * Custom reduction functors such as `cutlass::logical_and`
     * Large tensor support, up to 2^63 elements (however, each dimension is limited to an extent of 2^31)
   * Optimizations for 3-D convolution
