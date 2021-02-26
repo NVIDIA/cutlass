@@ -36,9 +36,9 @@ supported at each level of the execution model hierarchy.
 
 # What's New in CUTLASS 2.5
 CUTLASS 2.5 is a minor update to CUTLASS adding:
-- Tensor reductions
-- Fused inlined operations on Convolution input
-- Optimizations for 3-D convolution
+- [Tensor reductions](/test/unit/reduction/tensor_reduce_contiguous.cu)
+- [Optimizations for 3-D convolution](include/cutlass/conv/threadblock/conv3d_fprop_activation_tile_access_iterator_optimized.h)
+- [Fused Convolution+Convolution example](/examples/13_two_tensor_op_fusion/README.md)
 - See the [CHANGELOG](CHANGELOG.md) for more details
 
 # What's New in CUTLASS 2.4

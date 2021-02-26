@@ -4,14 +4,17 @@
 
 ## [2.5.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.5.0) (2021-02-26)
   * Tensor reductions
-    * User-supplied reduction operations across one or more dimensions of tensors with affine layouts
-    * Optimizations for vectorized memory accesses
+    * _m_-to-_n_ reductions of tensors with affine layout
+    * [Specializations](/test/unit/reduction/tensor_reduce_contiguous.cu) for reductions including contiguous dimension
+    * [Specializations](/test/unit/reduction/tensor_reduce_strided.cu) for reductions excluding contiguous dimension
+    * Custom reduction functors such as `cutlass::logical_and`
     * Large tensor support, up to 2^63 elements (however, each dimension is limited to an extent of 2^31)
-  * Fused inlined operations on Convolution input
-    * Vector broadcast and transformation on Convolution input
   * Optimizations for 3-D convolution
-    * Tile iterators using precomputed delta table for three spatial dimensions
-    * Performance parity with 2-D convolution implementation
+    * [Optimized tile iterators](include/cutlass/conv/threadblock/conv3d_fprop_activation_tile_access_iterator_optimized.h) using precomputed delta table for 3-D convolution
+    * Full coverage of [forward](test/unit/conv/device/conv3d_fprop_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm80.cu) and [backwards](test/unit/conv/device/conv3d_dgrad_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm80.cu) passes for 3D convolution
+  * [Fused Convolution+Convolution example](/examples/13_two_tensor_op_fusion/README.md)
+  * Corrections and bug fixes reported by the CUTLASS community
+    * Thank you for filing these issues!
   
 
 ## [2.4.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.4.0) (2020-11-19)
