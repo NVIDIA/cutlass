@@ -1,5 +1,5 @@
   /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -230,6 +230,156 @@ struct conjugate {
   CUTLASS_HOST_DEVICE
   T operator()(T const &a) const {
     return a;
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename T>
+struct logical_and {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &a, T const &b) const {
+    return ((a && b) ? T(1) : T());
+  }
+};
+
+template <typename T>
+struct logical_or {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &a, T const &b) const {
+    return ((a || b) ? T(1) : T());
+  }
+};
+
+template <typename T>
+struct logical_not {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &a) const {
+    return T(!(a));
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename T>
+struct bit_and {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &a, T const &b) const {
+    return a & b;
+  }
+};
+
+template <typename T>
+struct bit_or {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &a, T const &b) const {
+    return a | b;
+  }
+};
+
+template <typename T>
+struct bit_not {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &a) const {
+    return ~a;
+  }
+};
+
+template <typename T>
+struct bit_xor {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &a, T const &b) const {
+    return a ^ b;
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Partial specializations for Arrays
+template <int N>
+struct bit_and<Array<uint1b_t, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<uint1b_t, N> operator()(Array<uint1b_t, N> const &a, Array<uint1b_t, N> const &b) const {
+    using ArrayType = Array<uint1b_t, N>;
+    using Storage = typename ArrayType::Storage;
+    ArrayType result;
+
+    Storage *result_data = result.raw_data();
+    Storage const *a_data = a.raw_data();
+    Storage const *b_data = b.raw_data();
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < ArrayType::kStorageElements; ++i) {
+      result_data[i] = (a_data[i] & b_data[i]);
+    }
+
+    return result;
+  }
+};
+
+// Partial specializations for Arrays
+template <int N>
+struct bit_or<Array<uint1b_t, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<uint1b_t, N> operator()(Array<uint1b_t, N> const &a, Array<uint1b_t, N> const &b) const {
+    using ArrayType = Array<uint1b_t, N>;
+    using Storage = typename ArrayType::Storage;
+    ArrayType result;
+
+    Storage *result_data = result.raw_data();
+    Storage const *a_data = a.raw_data();
+    Storage const *b_data = b.raw_data();
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < ArrayType::kStorageElements; ++i) {
+      result_data[i] = (a_data[i] | b_data[i]);
+    }
+
+    return result;
+  }
+};
+
+
+// Partial specializations for Arrays
+template <int N>
+struct bit_not<Array<uint1b_t, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<uint1b_t, N> operator()(Array<uint1b_t, N> const &a) const {
+    using ArrayType = Array<uint1b_t, N>;
+    using Storage = typename ArrayType::Storage;
+    ArrayType result;
+
+    Storage *result_data = result.raw_data();
+    Storage const *a_data = a.raw_data();
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < ArrayType::kStorageElements; ++i) {
+      result_data[i] = (~a_data[i]);
+    }
+
+    return result;
+  }
+};
+
+// Partial specializations for Arrays
+template <int N>
+struct bit_xor<Array<uint1b_t, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<uint1b_t, N> operator()(Array<uint1b_t, N> const &a, Array<uint1b_t, N> const &b) const {
+    using ArrayType = Array<uint1b_t, N>;
+    using Storage = typename ArrayType::Storage;
+    ArrayType result;
+
+    Storage *result_data = result.raw_data();
+    Storage const *a_data = a.raw_data();
+    Storage const *b_data = b.raw_data();
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < ArrayType::kStorageElements; ++i) {
+      result_data[i] = (a_data[i] ^ b_data[i]);
+    }
+
+    return result;
   }
 };
 

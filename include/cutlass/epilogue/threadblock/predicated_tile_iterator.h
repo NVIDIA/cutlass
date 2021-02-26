@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -176,7 +176,7 @@ private:
 
   /// Internal state counter
   int state_[3];
-
+ 
 private:
 
   //
@@ -212,6 +212,11 @@ public:
 
       mask_.predicates[c] = ((thread_offset.column() 
         + ThreadMap::Delta::kColumn * c) < extent.column());
+    }
+
+    // Null pointer performs no accesses
+    if (!pointer) {
+      mask_.clear();
     }
 
     // Initialize pointer
@@ -288,11 +293,12 @@ public:
     }
   }
 
+
   /// Loads a fragment from memory
   CUTLASS_DEVICE
   void load(Fragment &frag) {
-      load_with_byte_offset(frag, 0);
 
+    load_with_byte_offset(frag, 0);
   }
 
   /// Stores a fragment to memory
@@ -326,11 +332,10 @@ public:
 
             bool guard = row_guard && mask_.predicates[column];
 
-            if (guard) {
-              
-              memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess] =
-                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column];
-            }
+            cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
+                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column],
+                (void *)&memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess],
+                guard);
           }
 
           if (row + 1 < ThreadMap::Iterations::kRow) {
@@ -349,11 +354,12 @@ public:
     }
   }
 
+
   /// Stores a fragment to memory
   CUTLASS_DEVICE
   void store(Fragment const &frag) {
-      store_with_byte_offset(frag, 0);
 
+    store_with_byte_offset(frag, 0);
   }
 
   /// Advances to the next position to load or store
@@ -404,7 +410,7 @@ public:
 
   ///< Sets the mask
   CUTLASS_DEVICE void get_mask(Mask &mask) {
-    return mask_;
+    mask = mask_;
   }
 
   ///< Sets the mask
@@ -644,9 +650,8 @@ public:
 
     bool guard = col_guard && mask_.predicates[iteration_contiguous_];
 
-    if (guard) {
-      *memory_pointer = *frag_ptr;
-    }
+    cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
+        *frag_ptr, (void *)memory_pointer, guard);
   }
 
   /// Overrides the internal iteration index
@@ -689,7 +694,7 @@ public:
 
   ///< Sets the mask
   CUTLASS_DEVICE void get_mask(Mask &mask) {
-    return mask_;
+    mask = mask_;
   }
 
   ///< Sets the mask
@@ -949,9 +954,8 @@ public:
     AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
     AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer);
 
-    if (guard) {
-      *memory_pointer = *frag_ptr;
-    }
+    cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
+        *frag_ptr, (void *)memory_pointer, guard);
   }
 
   /// Overrides the internal iteration index
@@ -993,7 +997,7 @@ public:
 
   ///< Sets the mask
   CUTLASS_DEVICE void get_mask(Mask &mask) {
-    return mask_;
+    mask = mask_;
   }
 
   ///< Sets the mask

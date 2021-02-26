@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -166,6 +166,22 @@ struct TestbedConv2dProblemSizes {
     ////////////////////////////////////////////////////////////////////////////////////////////
     
     conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize( 
+      {1, 1, 1, minimum_channel_size},   // input size  (NHWC)
+      {8, 1, 1, minimum_channel_size},   // filter size (KRSC)
+      {1, 1, 1, 1},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize( 
+      {1, 1, 8, minimum_channel_size},   // input size  (NHWC)
+      {8, 1, 3, minimum_channel_size},   // filter size (KRSC)
+      {1, 1, 1, 1},                      // padding (pad_h, _, pad_w, _)
+      {1, 1},                            // stride (stride_h, stride_w)
+      {1, 1}                             // dilation (dilation_h, dilation_w) 
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize( 
       {1, 8, 8, minimum_channel_size},   // input size  (NHWC)
       {8, 3, 3, minimum_channel_size},   // filter size (KRSC)
       {1, 1, 1, 1},                      // padding (pad_h, _, pad_w, _)
@@ -322,7 +338,7 @@ struct TestbedConv2dProblemSizes {
       {1, 1},             // dilation (dilation_h, dilation_w)
       {4, 1, 1, 328}      // output size (NPQK)
     ));
-  
+    
   }
 
 

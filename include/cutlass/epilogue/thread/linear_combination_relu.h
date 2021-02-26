@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -35,6 +35,7 @@
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/epilogue/thread/activation.h"
+#include "cutlass/epilogue/thread/scale_type.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -53,6 +54,7 @@ template <
   int Count,                                           ///< Number of elements computed per operation
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
+  ScaleType::Kind Scale = ScaleType::Default,          ///< Control Alpha and Beta scaling
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
 >
 class LinearCombinationRelu {
@@ -93,7 +95,7 @@ public:
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
-      ElementCompute beta,
+      ElementCompute beta = ElementCompute(0),
       ElementCompute threshold = ElementCompute(0)
     ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
@@ -102,7 +104,7 @@ public:
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr,
+      ElementCompute const *beta_ptr = nullptr,
       ElementCompute threshold = ElementCompute(0)
     ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
 
@@ -133,6 +135,10 @@ public:
   /// Returns true if source is needed
   CUTLASS_HOST_DEVICE
   bool is_source_needed() const {
+    if (Scale == ScaleType::NoBetaScaling) return true;
+
+    if (Scale == ScaleType::OnlyAlphaScaling) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -170,7 +176,11 @@ public:
     multiply_add<ComputeFragment> mul_add_accumulator;
     ReLu<ComputeFragment> relu;
 
-    intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
+    if (Scale == ScaleType::NoBetaScaling)
+      intermediate = converted_source;
+    else
+      intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
+
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
 
     // Compute threshold optionally
@@ -224,9 +234,10 @@ public:
 template <
   typename ElementOutput_,                             ///< Data type used to load and store tensors
   int Count,                                           ///< Number of elements computed per operation
+  ScaleType::Kind Scale,                               ///< Control Alpha and Beta scaling
   FloatRoundStyle Round
 >
-class LinearCombinationRelu <ElementOutput_, Count, int, float, Round> {
+class LinearCombinationRelu <ElementOutput_, Count, int, float, Scale, Round> {
 public:
 
   using ElementOutput = ElementOutput_;
@@ -264,7 +275,7 @@ public:
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
-      ElementCompute beta,
+      ElementCompute beta = ElementCompute(0),
       ElementCompute threshold = ElementCompute(0)
     ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
@@ -273,7 +284,7 @@ public:
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr,
+      ElementCompute const *beta_ptr = nullptr,
       ElementCompute threshold = ElementCompute(0)
     ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
 
@@ -304,6 +315,10 @@ public:
   /// Returns true if source is needed
   CUTLASS_HOST_DEVICE
   bool is_source_needed() const {
+    if (Scale == ScaleType::NoBetaScaling) return true;
+
+    if (Scale == ScaleType::OnlyAlphaScaling) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -341,8 +356,10 @@ public:
     multiply_add<ComputeFragment> mul_add_accumulator;
     ReLu<ComputeFragment> relu;
 
-    intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    if (Scale == ScaleType::NoBetaScaling)
+      intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
+    else
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
 
     // Compute threshold optionally
     intermediate = relu(threshold_, intermediate);

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -34,6 +34,9 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/conv/kernel/default_conv2d.h"
 
+#include "cutlass/conv/threadblock/conv3d_dgrad_output_gradient_tile_access_iterator_optimized.h"
+#include "cutlass/conv/threadblock/conv3d_dgrad_filter_tile_access_iterator_optimized.h"
+
 #include "cutlass/conv/threadblock/conv3d_dgrad_output_gradient_tile_access_iterator_analytic.h"
 #include "cutlass/conv/threadblock/conv3d_dgrad_filter_tile_access_iterator_analytic.h"
 #include "cutlass/conv/threadblock/conv2d_tile_iterator.h"
@@ -45,7 +48,7 @@ namespace conv {
 namespace kernel {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-/// Defines a kernel for Conv2dDgrad
+/// Defines a kernel for Conv3dDgrad
 template <
   typename ElementA,
   typename LayoutA,
@@ -67,7 +70,7 @@ template <
   conv::StrideSupport StrideSupport = StrideSupport::kStrided
 > struct DefaultConv3dDgrad;
 
-/// Defines a kernel for Conv2dDgrad specialzation for Analytic IteratorAlgorithm Dgrad Strided
+/// Defines a kernel for Conv3dDgrad specialzation for Analytic IteratorAlgorithm Dgrad Strided
 // and multistage pipeline.
 template <
   typename ElementA,
@@ -135,6 +138,117 @@ struct DefaultConv3dDgrad <
       ThreadMapB
     >;
   
+  using SmemIteratorB = typename MmaCore::SmemIteratorB;
+
+  // Warp-level GEMM components
+  using WarpMmaTensorOp = typename MmaCore::MmaTensorOp;
+  using MmaPolicy = typename MmaCore::MmaPolicy;
+
+  // Define the Mma
+  using Mma = threadblock::ImplicitGemmMultistage<
+    ThreadblockShape,
+    IteratorA,
+    SmemIteratorA,
+    arch::CacheOperation::Always,
+    IteratorB,
+    SmemIteratorB,
+    arch::CacheOperation::Global,
+    MmaPolicy,
+    Stages 
+  >;
+
+  // Define the epilogue
+  using Epilogue = typename epilogue::threadblock::DefaultEpilogueTensorOp<
+    ThreadblockShape,
+    WarpMmaTensorOp,
+    1,
+    EpilogueOutputOp,
+    EpilogueOutputOp::kCount
+  >::Epilogue;
+
+  // Define the kernel
+  using Kernel = cutlass::conv::kernel::ImplicitGemmConvolution<
+    Mma,
+    Epilogue,
+    ThreadblockSwizzle,
+    conv::Operator::kDgrad,
+    Conv3dProblemSize
+  >;
+};
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Defines a kernel for Conv3dDgrad specialzation for Optimized IteratorAlgorithm Dgrad Strided
+// and multistage pipeline.
+template <
+  typename ElementA,
+  typename LayoutA,
+  typename ElementB,
+  typename LayoutB,
+  typename ElementC,
+  typename LayoutC,
+  typename ElementAccumulator,
+  typename OperatorClass,
+  typename ArchTag,
+  typename ThreadblockShape,
+  typename WarpShape,
+  typename InstructionShape,
+  typename EpilogueOutputOp,
+  typename ThreadblockSwizzle,
+  int Stages,
+  typename MathOperatorTag
+>
+struct DefaultConv3dDgrad <
+  ElementA,
+  LayoutA,
+  ElementB,
+  LayoutB,
+  ElementC,
+  LayoutC,
+  ElementAccumulator,
+  OperatorClass,
+  ArchTag,
+  ThreadblockShape,
+  WarpShape,
+  InstructionShape,
+  EpilogueOutputOp,
+  ThreadblockSwizzle,
+  Stages,
+  MathOperatorTag,
+  IteratorAlgorithm::kOptimized,
+  StrideSupport::kUnity
+> {
+
+  // Define the core components from GEMM
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadblockShape, WarpShape, InstructionShape, ElementA, layout::RowMajor,
+      ElementB, layout::RowMajor, ElementAccumulator, layout::RowMajor, OperatorClass,
+      Stages, MathOperatorTag>;
+
+  // Define iterators over tiles from the A operand
+  using ThreadMapA = typename MmaCore::IteratorThreadMapA;
+
+  using IteratorA =
+    cutlass::conv::threadblock::Conv3dDgradOutputGradientTileAccessIteratorOptimized<
+      cutlass::MatrixShape<ThreadblockShape::kM, ThreadblockShape::kK>,
+      ElementA,
+      ThreadMapA,
+      StrideSupport::kUnity
+    >;
+
+  using SmemIteratorA = typename MmaCore::SmemIteratorA;
+
+  // Define iterators over tiles from the B operand
+  using ThreadMapB = typename MmaCore::IteratorThreadMapB;
+
+  using IteratorB =
+    cutlass::conv::threadblock::Conv3dDgradFilterTileAccessIteratorOptimized<
+      cutlass::MatrixShape<ThreadblockShape::kK, ThreadblockShape::kN>,
+      ElementB,
+      ThreadMapB
+    >;
+
   using SmemIteratorB = typename MmaCore::SmemIteratorB;
 
   // Warp-level GEMM components

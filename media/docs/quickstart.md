@@ -537,7 +537,7 @@ $ cmake .. -DCUTLASS_NVCC_ARCHS='70;75;80' -DCUTLASS_LIBRARY_KERNELS=tensorop*s*
 
 # Copyright
 
-Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

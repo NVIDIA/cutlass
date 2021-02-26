@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -204,7 +204,7 @@ include_directories(SYSTEM ${CUDA_INCLUDE_DIRS})
 # paths by default, so we add it explicitly here.
 
 function(cutlass_correct_source_file_language_property)
-  if(CUDA_COMPILER MATCHES "clang")
+  if(CUDA_COMPILER MATCHES "[Cc]lang")
     foreach(File ${ARGN})
       if(File MATCHES ".*\.cu$")
         set_source_files_properties(${File} PROPERTIES LANGUAGE CXX)

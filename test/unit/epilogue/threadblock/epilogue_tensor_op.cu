@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -460,7 +460,7 @@ TEST(SM75_Epilogue_threadblock_epilogue, s4_tensor_op_128x32_64x32x32) {
 }
 
 
-TEST(SM75_Epilogue_threadblock_epilogue, s8_tensor_op_256x128_64x64x32) {
+TEST(SM75_Epilogue_threadblock_epilogue, s4_tensor_op_256x128_64x64x32) {
 
   //
   // Define the warp-level matrix multiply
@@ -520,7 +520,7 @@ TEST(SM75_Epilogue_threadblock_epilogue, s8_tensor_op_256x128_64x64x32) {
 }
 
 
-TEST(SM75_Epilogue_threadblock_epilogue, s8_tensor_op_128x256_64x64x32) {
+TEST(SM75_Epilogue_threadblock_epilogue, s4_tensor_op_128x256_64x64x32) {
 
   //
   // Define the warp-level matrix multiply

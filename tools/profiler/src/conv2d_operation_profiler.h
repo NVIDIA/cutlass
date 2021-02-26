@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -257,42 +257,95 @@ public:
     /// host buffer for tensor c
     std::vector<uint8_t> host_tensor_c;
 
-
     //
     // Methods
     //
 
-    Conv2dWorkspace(): 
-      A(nullptr), B(nullptr), C(nullptr), Computed(nullptr), Reference(nullptr) { }
+    Conv2dWorkspace()
+        : A(nullptr),
+          B(nullptr),
+          C(nullptr),
+          Computed(nullptr),
+          Reference(nullptr) {}
 
-      // Returns stride vector for tensor A
-      std::vector<int> stride_a(library::ConvKind const &conv_kind) {
-        return {        
-          configuration.layout_a(conv_kind).stride()[0],
-          configuration.layout_a(conv_kind).stride()[1],
-          configuration.layout_a(conv_kind).stride()[2]
-        };
+    // Set stride vector for tensor activations, filters, output
+    void set_stride_vector(Conv2dProblem const &problem,
+                           library::ConvKind const &conv_kind,
+                           library::LayoutTypeID const &layout_a,
+                           library::LayoutTypeID const &layout_b,
+                           library::LayoutTypeID const &layout_c) {
+      std::vector<int> stride_activations;
+      std::vector<int> stride_filters;
+      std::vector<int> stride_output;
+
+      // Strides for interleaved fprop
+      if (conv_kind == library::ConvKind::kFprop &&
+          ((layout_a == library::LayoutTypeID::kTensorNC32HW32 &&
+            layout_b == library::LayoutTypeID::kTensorC32RSK32 &&
+            layout_c == library::LayoutTypeID::kTensorNC32HW32) ||
+           (layout_a == library::LayoutTypeID::kTensorNC64HW64 &&
+            layout_b == library::LayoutTypeID::kTensorC64RSK64 &&
+            layout_c == library::LayoutTypeID::kTensorNC64HW64))) {
+        int interleave =
+            (layout_a == library::LayoutTypeID::kTensorNC32HW32) ? 32 : 64;
+
+        stride_activations.push_back(int(problem.w) * interleave);
+        stride_activations.push_back(int(problem.w) * int(problem.h) *
+                                     interleave);
+        stride_activations.push_back(int(problem.h) * int(problem.w) *
+                                     int(problem.c));
+
+        stride_filters.push_back(int(problem.k) * interleave);
+        stride_filters.push_back(int(problem.k) * int(problem.s) * interleave);
+        stride_filters.push_back(int(problem.k) * int(problem.s) *
+                                 int(problem.r) * interleave);
+
+        stride_output.push_back(int(problem.q) * interleave);
+        stride_output.push_back(int(problem.q) * int(problem.p) * interleave);
+        stride_output.push_back(int(problem.q) * int(problem.p) *
+                                int(problem.k));
+      } else {
+        // Strides for the rest cases
+        stride_activations.push_back(int(problem.c));
+        stride_activations.push_back(int(problem.w) * int(problem.c));
+        stride_activations.push_back(int(problem.h) * int(problem.w) *
+                                     int(problem.c));
+
+        stride_filters.push_back(int(problem.c));
+        stride_filters.push_back(int(problem.s) * int(problem.c));
+        stride_filters.push_back(int(problem.r) * int(problem.s) *
+                                 int(problem.c));
+
+        stride_output.push_back(int(problem.k));
+        stride_output.push_back(int(problem.q) * int(problem.k));
+        stride_output.push_back(int(problem.q) * int(problem.p) *
+                                int(problem.k));
       }
 
-      // Returns stride vector for tensor B
-      std::vector<int> stride_b(library::ConvKind const &conv_kind) {
+      switch (conv_kind) {
+        case library::ConvKind::kFprop:
+          configuration.stride_a = stride_activations;
+          configuration.stride_b = stride_filters;
+          configuration.stride_c = stride_output;
 
-        return {        
-          configuration.layout_b(conv_kind).stride()[0],
-          configuration.layout_b(conv_kind).stride()[1],
-          configuration.layout_b(conv_kind).stride()[2]
-        };
+          break;
+        case library::ConvKind::kDgrad:
+          configuration.stride_a = stride_output;
+          configuration.stride_b = stride_filters;
+          configuration.stride_c = stride_activations;
+
+          break;
+        case library::ConvKind::kWgrad:
+          configuration.stride_a = stride_output;
+          configuration.stride_b = stride_activations;
+          configuration.stride_c = stride_filters;
+
+          break;
+        default:
+          throw std::runtime_error(
+              "Invalid Conv Operator (fprop, dgrad, wgrad)");
       }
-
-      // Returns stride vector for tensor C
-      std::vector<int> stride_c(library::ConvKind const &conv_kind) {
-
-        return {        
-          configuration.layout_c(conv_kind).stride()[0],
-          configuration.layout_c(conv_kind).stride()[1],
-          configuration.layout_c(conv_kind).stride()[2]
-        };
-      }
+    }
   };
 
 protected:

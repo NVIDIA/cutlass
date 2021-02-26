@@ -1,8 +1,8 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 2.4
+# CUTLASS 2.5
 
-_CUTLASS 2.4 - November 2020_
+_CUTLASS 2.5 - February 2021_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
@@ -34,12 +34,18 @@ See the [Quick Start Guide](/media/docs/quickstart.md) to get started quickly.
 See the [functionality listing](/media/docs/functionality.md) for the list of operations
 supported at each level of the execution model hierarchy.
 
+# What's New in CUTLASS 2.5
+CUTLASS 2.5 is a minor update to CUTLASS adding:
+- Tensor reductions
+- Fused inlined operations on Convolution input
+- Optimizations for 3-D convolution
+- See the [CHANGELOG](CHANGELOG.md) for more details
+
 # What's New in CUTLASS 2.4
 CUTLASS 2.4 is a significant update to CUTLASS adding:
 - 1-D, 2-D, and 3-D convolution targeting Tensor and CUDA cores for NVIDIA Ampere, Turing, and Volta GPU architectures
 - CUTLASS profiler support for convolution
 - [Documentation](/media/docs/implicit_gemm_convolution.md) describing Implicit GEMM Convolution algorithm and implementation
-- See the [CHANGELOG](CHANGELOG.md) for more details.
 
 # What's New in CUTLASS 2.3
 
@@ -47,7 +53,6 @@ CUTLASS 2.3 is a minor update to CUTLASS adding:
 - GEMMs targeting structured [Sparse Tensor Cores](test/unit/gemm/device/gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu) in NVIDIA Ampere Architecture GPUs
 - Fast SGEMM kernels targeting GeForce RTX 30-series CUDA Cores
 - Intended to be compiled with [CUDA 11.1 Toolkit](https://developer.nvidia.com/cuda-toolkit)
-- See the [CHANGELOG](CHANGELOG.md) for more details.
 
 # What's New in CUTLASS 2.2
 
@@ -508,7 +513,7 @@ The official list of CUTLASS developers and contributors is available here: [CON
 
 # Copyright
 
-Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

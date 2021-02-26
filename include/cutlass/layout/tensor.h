@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -149,11 +149,11 @@ public:
     fast_divmod(w, tmp, w, int(stride_[0]), c_mul, c_shr);
     #else
 
-    n = int(index / (stride_[0] * stride_[1] * stride_[2]));
-    LongIndex residual = index % (stride_[0] * stride_[1] * stride_[2]);
+    n = int(index / stride_[2]);
+    LongIndex residual = index % stride_[2];
 
-    h = int(residual / (stride_[0] * stride_[1]));
-    residual = (residual % (stride_[0] * stride_[1]));
+    h = int(residual / stride_[1]);
+    residual = (residual % stride_[1]);
 
     w = int(residual / stride_[0]);
     c = int(residual % stride_[0]);
@@ -314,6 +314,15 @@ public:
   CUTLASS_HOST_DEVICE
   TensorNCxHWx(Stride const &stride = Stride(0)): stride_(stride) { }
 
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  TensorNCxHWx(
+    typename Stride::Index stride_w,    ///< number of elements between adjacent W coordinates
+    typename Stride::Index stride_h,    ///< number of elements between adjacent H coordinates
+    typename Stride::Index stride_n     ///< number of elements between adjacent N coordinates
+  ):
+    stride_(make_Coord(stride_w, stride_h, stride_n)) { }
+
   /// Helper returns a layout to a tightly packed tensor
   CUTLASS_HOST_DEVICE
   static TensorNCxHWx packed(TensorCoord const &extent) {
@@ -403,6 +412,15 @@ public:
   /// Constructor
   CUTLASS_HOST_DEVICE
   TensorCxRSKx(Stride const &stride = Stride(0)): stride_(stride) { }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  TensorCxRSKx(
+    typename Stride::Index stride_w,    ///< number of elements between adjacent W coordinates
+    typename Stride::Index stride_h,    ///< number of elements between adjacent H coordinates
+    typename Stride::Index stride_n     ///< number of elements between adjacent N coordinates
+  ):
+    stride_(make_Coord(stride_w, stride_h, stride_n)) { }
 
   /// Helper returns a layout to a tightly packed tensor
   CUTLASS_HOST_DEVICE
@@ -529,6 +547,12 @@ public:
       LongIndex(stride_[3] * coord.n());
   }
 
+  /// Returns the offset of a pitchlinear coordinate in linear memory. 
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const {
+    return coord.contiguous() + LongIndex(coord.strided() * stride_[3]);
+  }
+  
   /// Returns the stride of the layout
   CUTLASS_HOST_DEVICE
   Stride stride() const {

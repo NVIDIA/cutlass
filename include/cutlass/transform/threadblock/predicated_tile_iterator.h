@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -25,8 +25,10 @@
 /*! \file
     \brief Templates implementing loading of tiles from pitch-linear rank=2 tensors. 
 
-    This iterator uses masks to guard out-of-bounds accesses and visits the last "residue" tile
-    first, with the objective of minimizing predicate mask updates during steady-state operation.
+    This iterator uses masks to guard out-of-bounds accesses. The first tile this
+    iterator visits maybe partial, then the remaining tiles are complete. So, we 
+    only need to compute the predicates twice, once before the first tile and 
+    once for the remaining full tiles which can share the same predicates.
 
     A precomputed "Params" object minimizes the amount of state that must be stored in registers,
     and integer addition is used to advance the pointer through memory.

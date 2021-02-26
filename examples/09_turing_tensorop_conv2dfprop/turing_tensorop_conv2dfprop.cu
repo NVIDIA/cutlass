@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -485,6 +485,7 @@ Result profile_convolution(Options const &options) {
   // Split K dimension into 1 partitions
   int split_k_slices = 1;
 
+  // Construct Conv2dProblemSize with user defined output size
   cutlass::conv::Conv2dProblemSize problem_size(      
       options.input_size,
       options.filter_size,
@@ -495,6 +496,8 @@ Result profile_convolution(Options const &options) {
       mode,
       split_k_slices);
 
+  // Construct ImplicitGemm::Argument structure with conv2d 
+  // problem size, data pointers, and epilogue values
   typename ImplicitGemm::Arguments arguments{
     problem_size,
     tensor_a.device_ref(),
@@ -514,6 +517,9 @@ Result profile_convolution(Options const &options) {
 
   // Allocate workspace memory
   cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
+
+  result.status = implicit_gemm_op.can_implement(arguments);
+  CUTLASS_CHECK(result.status);
 
   result.status = implicit_gemm_op.initialize(arguments, workspace.get());
   CUTLASS_CHECK(result.status);

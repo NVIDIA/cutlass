@@ -571,7 +571,6 @@ struct ConvDescription : public OperationDescription {
 
 };
 
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Base class for all operations
@@ -933,49 +932,14 @@ struct Conv2dConfiguration {
   //  also includes (split_k_slices, groups)
   conv::Conv2dProblemSize problem_size;
 
-  /// Layout object for activations tensor
-  layout::TensorNHWC layout_activations;
+  // stride of operand A
+  std::vector<int> stride_a;
 
-  /// Layout object for filters tensor
-  layout::TensorNHWC layout_filters;
+  // stride of operand B
+  std::vector<int> stride_b;
 
-  /// Layout object for source tensor
-  layout::TensorNHWC layout_source;
-
-  /// Layout object for output tensor
-  layout::TensorNHWC layout_output;
-
-  //
-  // Methods 
-  //
-
-  // Mapping functions (A,B,C -> activation,filter,output)
-  layout::TensorNHWC layout_a(library::ConvKind const &conv_kind) const {
-    switch (conv_kind) {
-      case library::ConvKind::kFprop: return layout_activations;
-      case library::ConvKind::kDgrad: return layout_output;
-      case library::ConvKind::kWgrad: return layout_output;
-      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
-    }
-  }
-
-  layout::TensorNHWC layout_b(library::ConvKind const &conv_kind) const {
-    switch (conv_kind) {
-      case library::ConvKind::kFprop: return layout_filters;
-      case library::ConvKind::kDgrad: return layout_filters;
-      case library::ConvKind::kWgrad: return layout_activations;
-      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
-    }
-  }
-
-  layout::TensorNHWC layout_c(library::ConvKind const &conv_kind) const {
-    switch (conv_kind) {
-      case library::ConvKind::kFprop: return layout_output;
-      case library::ConvKind::kDgrad: return layout_activations;
-      case library::ConvKind::kWgrad: return layout_filters;
-      default : throw std::runtime_error("Invalid Conv Operator (fprop, dgrad, wgrad)");
-    }
-  }
+  // stride of operand C
+  std::vector<int> stride_c;
 };
 
 

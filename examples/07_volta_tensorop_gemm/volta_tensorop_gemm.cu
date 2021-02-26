@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -284,8 +284,12 @@ int run() {
   // Instantiate CUTLASS kernel depending on templates
   Gemm gemm_op;
 
+  // Check the problem size is supported or not 
+  cutlass::Status status = gemm_op.can_implement(arguments);
+  CUTLASS_CHECK(status);
+
   // Initialize CUTLASS kernel with arguments and workspace pointer
-  cutlass::Status status = gemm_op.initialize(arguments, workspace.get());
+  status = gemm_op.initialize(arguments, workspace.get());
   CUTLASS_CHECK(status);
 
   // Launch initialized CUTLASS kernel

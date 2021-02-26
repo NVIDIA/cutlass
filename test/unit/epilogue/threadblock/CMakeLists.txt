@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -22,6 +22,7 @@
 
 cutlass_test_unit_add_executable(
   cutlass_test_unit_epilogue_threadblock
+  
   predicated_tile_iterator.cu
   output_tile_threadmap.cu
   epilogue_simt.cu

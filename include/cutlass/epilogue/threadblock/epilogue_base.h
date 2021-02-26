@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -66,7 +66,8 @@ template <
   int PartitionsK,                          ///< Number of partitions of the K dimension
   typename AccumulatorFragmentIterator_,    ///< Fragment iterator selecting accumulators
   typename WarpTileIterator_,               ///< Warp-scoped tile iterator writing accumulators to SMEM
-  typename Padding_                         ///< Padding added to SMEM allocation to avoid bank conflicts (concept: MatrixShape)
+  typename Padding_,                        ///< Padding added to SMEM allocation to avoid bank conflicts (concept: MatrixShape)
+  int FragmentsPerIteration = 1
 >
 class EpilogueBase {
 public:
@@ -94,6 +95,9 @@ public:
     kPartitionsK
   >;
 
+  /// Use this to control the granularity of one epilogue 'iteration'
+  static int const kFragmentsPerIteration = FragmentsPerIteration;
+
 public:
 
   /// Shared storage allocation needed by the epilogue
@@ -120,7 +124,7 @@ public:
 
     /// Shape of the shared memory allocation for the epilogue    
     using StorageShape = MatrixShape<
-      Shape::kRow + Padding::kRow, 
+      (Shape::kRow + Padding::kRow) * kFragmentsPerIteration, 
       Shape::kColumn + Padding::kColumn
     >;
 

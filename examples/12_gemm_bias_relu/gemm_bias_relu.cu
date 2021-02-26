@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -48,11 +48,19 @@ using ElementInputA = cutlass::half_t;              // <- data type of elements 
 using ElementInputB = cutlass::half_t;              // <- data type of elements in input matrix B
 using ElementOutput = float;                        // <- data type of elements in output matrix D
 
-// The code section below describes matrix layout of input and output matrices. Column Major for
-// Matrix A, Row Major for Matrix B and Row Major for Matrix C
+// The code section below describes matrix layout of input and output matrices.
+// Column Major for Matrix A, B and C.
+//
+// Note this example only works for ColumnMajor output because
+//   1) we only have row major epilogue.
+//   2) we swap A and B if the output is column major then we can still use the
+//      row major epilogue.
+//   3) Mx1 bias vector becomes 1xM after the swapping/transposing.
+//   4) we can use the existing OutputIterator to load 1xM bias vector.
+
 using LayoutInputA = cutlass::layout::ColumnMajor;
 using LayoutInputB = cutlass::layout::ColumnMajor;
-using LayoutOutput = cutlass::layout::RowMajor;
+using LayoutOutput = cutlass::layout::ColumnMajor;
 
 // This code section describes whether you want to use tensor cores or regular SIMT cores on GPU SM
 using MMAOp = cutlass::arch::OpClassTensorOp;
@@ -73,17 +81,18 @@ using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSw
 
 // Define the epilogue operation as LinearCombinationRelu. This is approximately equal to
 //
-//    d_ij = max(0, alpha * sum_k(a_ik * b_kj) + beta * c_ij )
+//    d_ij = max(0, alpha * sum_k(a_ik * b_kj) + c_ij )
 //
 using EpilogueOp = cutlass::epilogue::thread::LinearCombinationRelu<
-    ElementOutput,                                     // <- data type of output matrix
-    128 / cutlass::sizeof_bits<ElementOutput>::value,  // <- this is the number of elements per
-                                                       // vectorized memory access. For half
-                                                       // precision, it's 8 elements. This becomes
-                                                       // the vector width of math instructions in
-                                                       // epilogue too
-    ElementAccumulator,                                // <- data type of accumulator
-    ElementComputeEpilogue>;  // <- data type for alpha/beta in linear combination function
+    ElementOutput,                                        // <- data type of output matrix
+    128 / cutlass::sizeof_bits<ElementOutput>::value,     // <- this is the number of elements per
+                                                          // vectorized memory access. For half
+                                                          // precision, it's 8 elements. This becomes
+                                                          // the vector width of math instructions in
+                                                          // epilogue too
+    ElementAccumulator,                                   // <- data type of accumulator
+    ElementComputeEpilogue,                               // <- data type for alpha in linear combination function
+    cutlass::epilogue::thread::ScaleType::NoBetaScaling>; // <- alpha x C + bias
 
 // Number of pipelines you want to use
 constexpr int NumStages = 2;
@@ -160,9 +169,8 @@ int run() {
   tensor_d.sync_device();
   tensor_ref_d.sync_device();
 
-  // Initialize alpha and beta for dot product computation
+  // Initialize alpha for dot product computation
   ElementComputeEpilogue alpha = ElementComputeEpilogue(1);
-  ElementComputeEpilogue beta = ElementComputeEpilogue(0);
 
   // Split K dimension into 1 partitions
   int split_k_slices = 1;
@@ -178,7 +186,7 @@ int run() {
                                         //    to project away the N dimension by setting the stride to zero.
 
     tensor_d.device_ref(),              // <- reference to matrix D on device
-    {alpha, beta},                      // <- tuple of alpha and beta
+    {alpha},                              // <- alpha
     split_k_slices};                    // <- k-dimension split factor
 
   // Using the arguments, query for extra workspace required for matrix multiplication computation
@@ -190,8 +198,12 @@ int run() {
   // Instantiate CUTLASS kernel depending on templates
   Gemm gemm_op;
 
+  // Check the problem size is supported or not 
+  cutlass::Status status = gemm_op.can_implement(arguments);
+  CUTLASS_CHECK(status);
+
   // Initialize CUTLASS kernel with arguments and workspace pointer
-  cutlass::Status status = gemm_op.initialize(arguments, workspace.get());
+  status = gemm_op.initialize(arguments, workspace.get());
   CUTLASS_CHECK(status);
 
   // Launch initialized CUTLASS kernel
@@ -233,7 +245,7 @@ int run() {
     for (int j = 0; j < problem_size.n(); ++j) {
       tensor_ref_d.at({i, j}) = std::max(
         ElementOutput(0), 
-        ElementOutput(tensor_ref_d.at({i, j}) + beta * tensor_c_bias.at({i, 0}))
+        ElementOutput(tensor_ref_d.at({i, j}) + tensor_c_bias.at({i, 0}))
       );
     }
   }

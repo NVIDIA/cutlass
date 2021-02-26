@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -171,7 +171,7 @@ public:
   void add_pointer_offset(LongIndex pointer_offset) {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kLoadsPerAccess; ++i) {
-      pointers_ += pointer_offset / LoadType::kElements;
+      pointers_[i] += pointer_offset / LoadType::kElements;
     }
   }
 
@@ -179,7 +179,9 @@ public:
   void add_tile_offset(TensorCoord const &offset) {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kLoadsPerAccess; ++i) {
-      pointers_[i] += offset.row() * stride_ + offset.column() / LoadType::kElements;
+      pointers_[i] += 
+        offset.row() * Shape::kRow * stride_ + 
+        offset.column() * Shape::kColumn / LoadType::kElements;
     }
   }
 
@@ -236,7 +238,7 @@ public:
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Partial specialization for int32_t x 16 => int8_t x 16
+/// Partial specialization for int32_t x 8 => int8_t x 8
 template <
   typename ThreadMap_       ///< Thread map (conept: OutputTileThreadMap)
 >
@@ -339,7 +341,9 @@ public:
   void add_tile_offset(TensorCoord const &offset) {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kLoadsPerAccess; ++i) {
-      pointers_[i] += offset.row() * stride_ + offset.column() / LoadType::kElements;
+      pointers_[i] += 
+        offset.row() * Shape::kRow * stride_ + 
+        offset.column() * Shape::kColumn / LoadType::kElements;
     }
   }
 
@@ -497,7 +501,9 @@ public:
   void add_tile_offset(TensorCoord const &offset) {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kLoadsPerAccess; ++i) {
-      pointers_[i] += offset.row() * stride_ + offset.column() / LoadType::kElements;
+      pointers_[i] += 
+        offset.row() * Shape::kRow * stride_ + 
+        offset.column() * Shape::kColumn / LoadType::kElements;
     }
   }
 

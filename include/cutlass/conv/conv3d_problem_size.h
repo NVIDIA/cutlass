@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -188,7 +188,7 @@ public:
       mode, split_k_slices, groups
     ) { 
       // set output Z
-      Z = ((D + pad_d - T * dilation_d) / stride_d) + 1;      
+      Z = ((D + pad_d * 2 - T * dilation_d) / stride_d) + 1;      
     }
 
   /// Equality operator (ignores mode and split_k_slice)

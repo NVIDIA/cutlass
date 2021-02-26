@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -63,7 +63,7 @@ namespace threadblock {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Epilogue operator without splitk
+/// Epilogue operator
 template <
   typename Shape_,                          ///< Shape of threadblock tile (concept: GemmShape)
   typename WarpMmaOperator_,                ///< Warp-level MMA operator (concept: gemm::warp::MmaTensorOp)
@@ -73,7 +73,8 @@ template <
   typename WarpTileIterator_,               ///< Warp-scoped tile iterator writing accumulators to SMEM
   typename SharedLoadIterator_,             ///< Threadblock-scoped tile iterator loading from SMEM
   typename OutputOp_,                       ///< Output operator
-  typename Padding_                         ///< Padding added to SMEM allocation to avoid bank conflicts (concept: MatrixShape)
+  typename Padding_,                        ///< Padding added to SMEM allocation to avoid bank conflicts (concept: MatrixShape)
+  int FragmentsPerPartition = 1                 ///< Used to coarsten the epilogue granularity
 >
 class Epilogue : 
   public EpilogueBase<
@@ -82,7 +83,8 @@ class Epilogue :
     PartitionsK, 
     AccumulatorFragmentIterator_, 
     WarpTileIterator_, 
-    Padding_> {
+    Padding_,
+    FragmentsPerPartition> {
 
 public:
 
@@ -92,7 +94,8 @@ public:
     PartitionsK, 
     AccumulatorFragmentIterator_, 
     WarpTileIterator_, 
-    Padding_>;
+    Padding_,
+    FragmentsPerPartition>;
 
   using Shape = Shape_;
   using WarpMmaOperator = WarpMmaOperator_;
@@ -112,7 +115,6 @@ public:
 
   /// Accumulator element
   using ElementAccumulator = typename WarpTileIterator::Element;
-
 
   /// Output element
   using ElementOutput = typename OutputTileIterator::Element;
@@ -138,6 +140,9 @@ public:
   
   /// Number of warps
   using WarpCount = typename Base::WarpCount;
+
+  int const kSmemTiles = Base::kFragmentsPerIteration > 1 ? Base::kFragmentsPerIteration : kPartitionsK;
+  int const kSmemPointerOffset = Base::SharedStorage::StorageShape::kCount / kSmemTiles;
 
 public:
 
@@ -166,7 +171,10 @@ public:
     int lane_idx                     ///< Id of thread within warp
   ):
     Base(shared_storage, thread_idx, warp_idx, lane_idx),
-    shared_load_iterator_(shared_storage.reference(), thread_idx) { }
+    shared_load_iterator_(shared_storage.reference(), thread_idx) 
+  {
+    
+  }
 
   /// Streams the result to global memory
   CUTLASS_DEVICE
@@ -177,7 +185,7 @@ public:
     OutputTileIterator source_iterator) {         ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
     
     if (!output_op.is_source_needed()) {
-      compute_source_not_needed_(output_op, destination_iterator, accumulators);
+      compute_source_not_needed_(output_op, destination_iterator, accumulators);  
     }
     else {
       compute_source_needed_(output_op, destination_iterator, accumulators, source_iterator);
@@ -185,6 +193,8 @@ public:
   }
 
 private:
+
+  static_assert(kPartitionsK == 1 || Base::kFragmentsPerIteration == 1, "One of these must be exactly 1.");
   
   /// Streams the result to global memory
   CUTLASS_DEVICE
@@ -205,7 +215,7 @@ private:
     // 
 
     CUTLASS_PRAGMA_UNROLL
-    for (int iter = 0; iter < OutputTileIterator::kIterations; ++iter) {
+    for (int iter = 0; iter < OutputTileIterator::kIterations; iter += Base::kFragmentsPerIteration) {
 
       //
       // Convert and store fragment
@@ -213,12 +223,24 @@ private:
       
       __syncthreads();
 
-      typename AccumulatorFragmentIterator::Fragment accum_fragment;
 
-      accum_fragment_iterator.load(accum_fragment);
-      ++accum_fragment_iterator;
+      CUTLASS_PRAGMA_UNROLL
+      for (int p = 0; p < Base::kFragmentsPerIteration; ++p) {
+        typename AccumulatorFragmentIterator::Fragment accum_fragment;
 
-      this->warp_tile_iterator_.store(accum_fragment);
+        accum_fragment_iterator.load(accum_fragment);
+        ++accum_fragment_iterator;
+
+        this->warp_tile_iterator_.store(accum_fragment); 
+
+        if (p < Base::kFragmentsPerIteration - 1) {
+          this->warp_tile_iterator_.add_pointer_offset(kSmemPointerOffset);
+        }
+      }
+
+      if (Base::kFragmentsPerIteration > 1) {
+        this->warp_tile_iterator_.add_pointer_offset(kSmemPointerOffset * (1 - Base::kFragmentsPerIteration));
+      }
 
       __syncthreads();
 
@@ -226,45 +248,53 @@ private:
       // Load fragments from shared memory
       //
 
-      typename SharedLoadIterator::Fragment aligned_accum_fragment[kPartitionsK];
+      CUTLASS_PRAGMA_UNROLL
+      for (int p = 0; p < Base::kFragmentsPerIteration; ++p) {
 
-      shared_load_iterator_.load(aligned_accum_fragment[0]);
 
-      // If the number of k-slices is > 1 - perform a reduction amongst the k-slices
-      if (kPartitionsK > 1)
-      {
-        plus <typename SharedLoadIterator::Fragment> add_fragments;
-        const int tile_row_offset = Base::SharedStorage::StorageShape::kRow / PartitionsK;
+        typename SharedLoadIterator::Fragment aligned_accum_fragment[kPartitionsK];
 
-        CUTLASS_PRAGMA_UNROLL
-        for ( int i = 1; i < kPartitionsK; ++i) {
-          shared_load_iterator_.add_tile_offset({tile_row_offset , 0});
-          shared_load_iterator_.load(aligned_accum_fragment[i]);
-          aligned_accum_fragment[0] = add_fragments(aligned_accum_fragment[0], aligned_accum_fragment[i]);
+        shared_load_iterator_.load(aligned_accum_fragment[0]);
+
+        if (p < Base::kFragmentsPerIteration - 1) {
+          shared_load_iterator_.add_pointer_offset(kSmemPointerOffset);
+        }
+        else if (kPartitionsK > 1) {
+
+          plus <typename SharedLoadIterator::Fragment> add_fragments;
+
+          CUTLASS_PRAGMA_UNROLL
+          for ( int i = 1; i < kPartitionsK; ++i) {
+            shared_load_iterator_.add_pointer_offset(kSmemPointerOffset);
+            shared_load_iterator_.load(aligned_accum_fragment[i]);
+            aligned_accum_fragment[0] = add_fragments(aligned_accum_fragment[0], aligned_accum_fragment[i]);
+          }
+
+          shared_load_iterator_.add_pointer_offset((1 - kPartitionsK) * kSmemPointerOffset);
         }
 
-        shared_load_iterator_.add_tile_offset({-1 * (kPartitionsK-1) * tile_row_offset, 0});
+        //
+        // Compute the output result
+        //
+
+        typename OutputTileIterator::Fragment output_fragment;
+
+        apply_output_operator_source_not_needed_(output_fragment, output_op, aligned_accum_fragment[0]);
+
+
+        //
+        // Store the final result
+        //
+
+        destination_iterator.store(output_fragment);
+        ++destination_iterator;
       }
 
-      //
-      // Compute the output result
-      //
-     
-      typename OutputTileIterator::Fragment output_fragment;
-
-      apply_output_operator_source_not_needed_(output_fragment, output_op, aligned_accum_fragment[0]);
-
-
-      //
-      // Store the final result
-      //
-
-      destination_iterator.store(output_fragment);
-      ++destination_iterator;
- 
+      if (Base::kFragmentsPerIteration > 1) {
+        shared_load_iterator_.add_pointer_offset(kSmemPointerOffset * (1 - Base::kFragmentsPerIteration));
+      }
     }
   }
-
   
   /// Streams the result to global memory
   CUTLASS_DEVICE
@@ -323,19 +353,18 @@ private:
       shared_load_iterator_.load(aligned_accum_fragment[0]);
 
       // If the number of k-slices is > 1 - perform a reduction amongst the k-slices
-      if (kPartitionsK > 1)
-      {
+      if (kPartitionsK > 1) {
+
         plus <typename SharedLoadIterator::Fragment> add_fragments;
-        const int tile_row_offset = Base::SharedStorage::StorageShape::kRow / PartitionsK;
 
         CUTLASS_PRAGMA_UNROLL
         for ( int i = 1; i < kPartitionsK; ++i) {
-          shared_load_iterator_.add_tile_offset({tile_row_offset , 0});
+          shared_load_iterator_.add_pointer_offset(kSmemPointerOffset);
           shared_load_iterator_.load(aligned_accum_fragment[i]);
           aligned_accum_fragment[0] = add_fragments(aligned_accum_fragment[0], aligned_accum_fragment[i]);
         }
 
-        shared_load_iterator_.add_tile_offset({-1 * (kPartitionsK-1) * tile_row_offset, 0});
+        shared_load_iterator_.add_pointer_offset((1 - kPartitionsK) * kSmemPointerOffset);
       }
 
       //

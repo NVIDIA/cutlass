@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -187,10 +187,10 @@ struct global_load<AccessType,
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
-    /// Fragment type to store loaded data
+    /// Fragment type to store data
     typename AccessType,
-    /// The bytes of loading
-    int LoadBytes
+    /// The bytes of storing
+    int StoreBytes
     >
 struct global_store;
 
@@ -293,7 +293,6 @@ struct global_store<AccessType, 1> {
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
 
 } // namespace arch
 } // namespace cutlass

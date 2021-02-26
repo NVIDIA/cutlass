@@ -1,6 +1,19 @@
 # NVIDIA CUTLASS Changelog
 
 # CUTLASS 2.x
+
+## [2.5.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.5.0) (2021-02-26)
+  * Tensor reductions
+    * User-supplied reduction operations across one or more dimensions of tensors with affine layouts
+    * Optimizations for vectorized memory accesses
+    * Large tensor support, up to 2^63 elements (however, each dimension is limited to an extent of 2^31)
+  * Fused inlined operations on Convolution input
+    * Vector broadcast and transformation on Convolution input
+  * Optimizations for 3-D convolution
+    * Tile iterators using precomputed delta table for three spatial dimensions
+    * Performance parity with 2-D convolution implementation
+  
+
 ## [2.4.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.4.0) (2020-11-19)
   * Implicit GEMM convolution kernels supporting CUDA and Tensor Cores on NVIDIA GPUs
     * Operators: forward (Fprop), backward data gradient (Dgrad), and backward weight gradient (Wgrad) convolution
@@ -126,7 +139,7 @@
 
 ## Copyright
 
-Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

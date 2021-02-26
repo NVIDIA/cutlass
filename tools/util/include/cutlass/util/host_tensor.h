@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -238,7 +238,7 @@ public:
   Element * host_data() { return host_.data(); }
 
   /// Gets pointer to host data with a pointer offset
-  Element * host_data_ptr_offset(LongIndex ptr_element_offset) { return host_.data() + ptr_element_offset; }
+  Element * host_data_ptr_offset(LongIndex ptr_element_offset) { return &ReferenceFactory<Element>::get(host_.data(), ptr_element_offset); }
 
   /// Gets a reference to an element in host memory
   Reference host_data(LongIndex idx) {
@@ -257,7 +257,7 @@ public:
   Element * device_data() { return device_.get(); }
 
   /// Gets pointer to device data with a pointer offset
-  Element * device_data_ptr_offset(LongIndex ptr_element_offset) { return device_.get() + ptr_element_offset; }
+  Element * device_data_ptr_offset(LongIndex ptr_element_offset) { return &ReferenceFactory<Element>::get(device_data(), ptr_element_offset); }
 
   /// Gets pointer to device data
   Element const * device_data() const { return device_.get(); }

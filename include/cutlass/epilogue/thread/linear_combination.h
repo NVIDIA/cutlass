@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -33,6 +33,7 @@
 #include "cutlass/array.h"
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
+#include "cutlass/epilogue/thread/scale_type.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -51,6 +52,7 @@ template <
   int Count,                                           ///< Number of elements computed per operation
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
+  ScaleType::Kind Scale = ScaleType::Default,          ///< Control Alpha and Beta scaling
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
 >
 class LinearCombination {
@@ -140,6 +142,10 @@ public:
   /// Returns true if source is needed
   CUTLASS_HOST_DEVICE
   bool is_source_needed() const {
+    if (Scale == ScaleType::NoBetaScaling) return true;
+
+    if (Scale == ScaleType::OnlyAlphaScaling) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -208,3 +214,5 @@ public:
 } // namespace thread
 } // namespace epilogue
 } // namespace cutlass
+
+/////////////////////////////////////////////////////////////////////////////////////////////////

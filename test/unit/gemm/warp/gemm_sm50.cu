@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -35,7 +35,7 @@
 #include "testbed.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
+// NT SMEM layout
 TEST(SM50_warp_gemm_f32_col_row_col, 32x16x1_4x4x1) {
 
   using Policy = cutlass::gemm::warp::MmaSimtPolicy<
@@ -58,6 +58,78 @@ TEST(SM50_warp_gemm_f32_col_row_col, 32x16x1_4x4x1) {
   test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8> >().run();
 }
 
+// TN SMEM layout
+TEST(SM50_warp_gemm_f32_row_col_col, 32x16x1_4x4x1) {
+
+  using Policy = cutlass::gemm::warp::MmaSimtPolicy<
+    cutlass::MatrixShape<8, 4>,
+    cutlass::layout::ColumnMajorInterleaved<2>,
+    cutlass::gemm::GemmShape<4, 4, 1>
+  >;
+
+  using Mma = cutlass::gemm::warp::MmaSimt<
+    cutlass::gemm::GemmShape<32, 16, 8>,
+    float,
+    cutlass::layout::RowMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8> >().run();
+}
+
+// TT SMEM layout
+TEST(SM50_warp_gemm_f32_row_row_col, 32x16x1_4x4x1) {
+
+  using Policy = cutlass::gemm::warp::MmaSimtPolicy<
+    cutlass::MatrixShape<8, 4>,
+    cutlass::layout::ColumnMajorInterleaved<2>,
+    cutlass::gemm::GemmShape<4, 4, 1>
+  >;
+
+  using Mma = cutlass::gemm::warp::MmaSimt<
+    cutlass::gemm::GemmShape<32, 16, 8>,
+    float,
+    cutlass::layout::RowMajor,
+    float,
+    cutlass::layout::RowMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8> >().run();
+}
+
+// NN SMEM layout
+TEST(SM50_warp_gemm_f32_col_col_col, 32x16x1_4x4x1) {
+
+  using Policy = cutlass::gemm::warp::MmaSimtPolicy<
+    cutlass::MatrixShape<8, 4>,
+    cutlass::layout::ColumnMajorInterleaved<2>,
+    cutlass::gemm::GemmShape<4, 4, 1>
+  >;
+
+  using Mma = cutlass::gemm::warp::MmaSimt<
+    cutlass::gemm::GemmShape<32, 16, 8>,
+    float,
+    cutlass::layout::ColumnMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8> >().run();
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// NT SMEM layout
 TEST(SM50_warp_gemm_f32_col_row_row, 16x32x1_4x4x1) {
 
   using Policy = cutlass::gemm::warp::MmaSimtPolicy<
@@ -80,8 +152,31 @@ TEST(SM50_warp_gemm_f32_col_row_row, 16x32x1_4x4x1) {
   test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8> >().run();
 }
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
+// TN SMEM layout
+TEST(SM50_warp_gemm_f32_row_col_row, 16x32x1_4x4x1) {
 
+  using Policy = cutlass::gemm::warp::MmaSimtPolicy<
+    cutlass::MatrixShape<4, 8>,
+    cutlass::layout::RowMajorInterleaved<2>,
+    cutlass::gemm::GemmShape<4, 4, 1>
+  >;
+
+  using Mma = cutlass::gemm::warp::MmaSimt<
+    cutlass::gemm::GemmShape<16, 32, 8>,
+    float,
+    cutlass::layout::RowMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    float,
+    cutlass::layout::RowMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8> >().run();
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// NT SMEM layout
 TEST(SM50_warp_gemm_f32_col_row_col, 32x16x1_2x2x1) {
 
   using Policy = cutlass::gemm::warp::MmaSimtPolicy<
@@ -126,8 +221,52 @@ TEST(SM50_warp_gemm_f32_col_row_row, 32x16x1_2x2x1) {
   test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8>>().run();
 }
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
+// TN SMEM layout
+TEST(SM50_warp_gemm_f32_row_col_col, 32x16x1_2x2x1) {
 
+  using Policy = cutlass::gemm::warp::MmaSimtPolicy<
+    cutlass::MatrixShape<8, 4>,
+    cutlass::layout::ColumnMajorInterleaved<2>,
+    cutlass::gemm::GemmShape<2, 2, 1>
+  >;
+
+  using Mma = cutlass::gemm::warp::MmaSimt<
+    cutlass::gemm::GemmShape<32, 16, 8>,
+    float,
+    cutlass::layout::RowMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8>>().run();
+}
+
+TEST(SM50_warp_gemm_f32_row_col_row, 32x16x1_2x2x1) {
+
+  using Policy = cutlass::gemm::warp::MmaSimtPolicy<
+    cutlass::MatrixShape<8, 4>,
+    cutlass::layout::RowMajorInterleaved<2>,
+    cutlass::gemm::GemmShape<2, 2, 1>
+  >;
+
+  using Mma = cutlass::gemm::warp::MmaSimt<
+    cutlass::gemm::GemmShape<32, 16, 8>,
+    float,
+    cutlass::layout::RowMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    float,
+    cutlass::layout::RowMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8>>().run();
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// NT SMEM layout
 TEST(SM50_warp_gemm_f32_col_row_col, 32x64x1_4x4x1) {
 
   using Policy = cutlass::gemm::warp::MmaSimtPolicy<
@@ -172,6 +311,50 @@ TEST(SM50_warp_gemm_f32_col_row_row, 32x64x1_4x4x1) {
   test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8>>().run();
 }
 
+// TN SMEM layout
+TEST(SM50_warp_gemm_f32_row_col_col, 32x64x1_4x4x1) {
+
+  using Policy = cutlass::gemm::warp::MmaSimtPolicy<
+    cutlass::MatrixShape<8, 4>,
+    cutlass::layout::ColumnMajorInterleaved<2>,
+    cutlass::gemm::GemmShape<4, 4, 1>
+  >;
+
+  using Mma = cutlass::gemm::warp::MmaSimt<
+    cutlass::gemm::GemmShape<64, 32, 8>,
+    float,
+    cutlass::layout::RowMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8>>().run();
+}
+
+TEST(SM50_warp_gemm_f32_row_col_row, 32x64x1_4x4x1) {
+
+  using Policy = cutlass::gemm::warp::MmaSimtPolicy<
+    cutlass::MatrixShape<4, 8>,
+    cutlass::layout::RowMajorInterleaved<2>,
+    cutlass::gemm::GemmShape<4, 4, 1>
+  >;
+
+  using Mma = cutlass::gemm::warp::MmaSimt<
+    cutlass::gemm::GemmShape<32, 64, 8>,
+    float,
+    cutlass::layout::RowMajor,
+    float,
+    cutlass::layout::ColumnMajor,
+    float,
+    cutlass::layout::RowMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8>>().run();
+}
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM50_warp_gemm_complex_f32_col_row_col, 64x32x1_2x2x1) {
@@ -409,5 +592,4 @@ TEST(SM50_warp_gemm_complex_f64_col_row_row, 32x16x1_1x1x1) {
 
   test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8>>().run();
 }
-
 /////////////////////////////////////////////////////////////////////////////////////////////////

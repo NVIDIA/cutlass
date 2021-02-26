@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -73,7 +73,7 @@ inline __device__ void ldsm(Array<unsigned, MatrixCount> & D, void const* ptr);
 #endif
 */
 
-#if (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2)
+#if (! defined (__clang__) && __CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2)
   extern "C" {
   //
   // This NVVM intrinsic is subject to change in future versions of CUDA.
@@ -91,7 +91,7 @@ inline __device__ unsigned cutlass_get_smem_pointer(void *ptr) {
 
 // We prefer to use the new CVTA intrinsics if they are available, otherwise we will fall back to
 // the previous internal intrinsics if they are available.
-#if (defined(__CUDA_ARCH__) && __CUDACC_VER_MAJOR__ >= 11)
+#if (! defined (__clang__) && defined(__CUDA_ARCH__) && __CUDACC_VER_MAJOR__ >= 11)
   //
   // This NVVM intrinsic converts an address in shared memory to a plain
   // unsigned integer. This is necessary to pass to shared memory instructions
@@ -104,7 +104,7 @@ inline __device__ unsigned cutlass_get_smem_pointer(void *ptr) {
   /// CUTLASS helper to get SMEM pointer
   return static_cast<unsigned>(__cvta_generic_to_shared(ptr));
 
-#elif (defined(__CUDA_ARCH__) &&  __CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2)
+#elif (! defined (__clang__) && defined(__CUDA_ARCH__) &&  __CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2)
 
   return __nvvm_get_smem_pointer(ptr);
 
@@ -120,7 +120,10 @@ inline __device__ unsigned cutlass_get_smem_pointer(void *ptr) {
 
 #else
 
-  return 0;
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_NOT_IMPLEMENTED();
+    return 0;
+
 #endif
 }
   
@@ -146,7 +149,9 @@ inline __device__ void ldsm<layout::RowMajor, 1>(
 
   #else
 
-    assert(0);
+    CUTLASS_UNUSED(D);
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_NOT_IMPLEMENTED();
 
   #endif
 }
@@ -168,7 +173,9 @@ inline __device__ void ldsm<layout::RowMajor, 2>(
 
   #else
 
-    assert(0);
+    CUTLASS_UNUSED(D);
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_NOT_IMPLEMENTED();
 
   #endif
 }
@@ -190,7 +197,9 @@ inline __device__ void ldsm<layout::RowMajor, 4>(
 
   #else
 
-    assert(0);
+    CUTLASS_UNUSED(D);
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_NOT_IMPLEMENTED();
 
   #endif
 }
@@ -216,7 +225,9 @@ inline __device__ void ldsm<layout::ColumnMajor, 1>(
 
   #else
 
-    assert(0);
+    CUTLASS_UNUSED(D);
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_NOT_IMPLEMENTED();
 
   #endif
 }
@@ -238,7 +249,9 @@ inline __device__ void ldsm<layout::ColumnMajor, 2>(
 
   #else
 
-    assert(0);
+    CUTLASS_UNUSED(D);
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_NOT_IMPLEMENTED();
 
   #endif
 }
@@ -260,7 +273,9 @@ inline __device__ void ldsm<layout::ColumnMajor, 4>(
 
   #else
 
-    assert(0);
+    CUTLASS_UNUSED(D);
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_NOT_IMPLEMENTED();
 
   #endif
 }

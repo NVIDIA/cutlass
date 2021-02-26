@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -111,9 +111,7 @@ template <
     /// epilogue
     bool SplitKSerial,
     /// Operation performed by GEMM
-    typename Operator,
-    /// Beta is zero or not
-    bool IsBetaZero = false>
+    typename Operator>
 struct DefaultGemm;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -295,16 +293,14 @@ template <
     /// epilogue
     bool SplitKSerial,
     /// Operation performed by GEMM
-    typename Operator,
-    /// Is Beta zero or not
-    bool IsBetaZero>
+    typename Operator>
 struct DefaultGemm<
     ElementA, layout::ColumnMajorInterleaved<InterleavedK>, kAlignmentA,
     ElementB, layout::RowMajorInterleaved<InterleavedK>, kAlignmentB, ElementC,
     layout::ColumnMajorInterleaved<InterleavedK>, int32_t,
     arch::OpClassTensorOp, arch::Sm80, ThreadblockShape, WarpShape,
     InstructionShape, EpilogueOutputOp, ThreadblockSwizzle, Stages,
-    SplitKSerial, Operator, IsBetaZero> {
+    SplitKSerial, Operator> {
   using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
   using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
   using LayoutC = layout::ColumnMajorInterleaved<InterleavedK>;
@@ -324,8 +320,7 @@ struct DefaultGemm<
   using Epilogue = typename cutlass::epilogue::threadblock::
       DefaultInterleavedEpilogueTensorOp<
           ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
-          64 / sizeof_bits<ElementC>::value, InterleavedK,
-          IsBetaZero>::Epilogue;
+          64 / sizeof_bits<ElementC>::value, InterleavedK>::Epilogue;
 
   /// Define the kernel-level GEMM operator.
   using GemmKernel = kernel::Gemm<Mma, Epilogue, ThreadblockSwizzle, SplitKSerial>;
@@ -361,16 +356,14 @@ template <
     /// epilogue
     bool SplitKSerial,
     /// Operation performed by GEMM
-    typename Operator,
-    /// Is Beta zero or not
-    bool IsBetaZero>
+    typename Operator>
 struct DefaultGemm<ElementA, layout::ColumnMajorInterleaved<InterleavedK>,
                    kAlignmentA, ElementB,
                    layout::RowMajorInterleaved<InterleavedK>, kAlignmentB,
                    ElementC, layout::ColumnMajorInterleaved<InterleavedK>,
                    int32_t, arch::OpClassTensorOp, arch::Sm75, ThreadblockShape,
                    WarpShape, InstructionShape, EpilogueOutputOp,
-                   ThreadblockSwizzle, 2, SplitKSerial, Operator, IsBetaZero> {
+                   ThreadblockSwizzle, 2, SplitKSerial, Operator> {
   using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
   using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
   using LayoutC = layout::ColumnMajorInterleaved<InterleavedK>;
@@ -389,8 +382,7 @@ struct DefaultGemm<ElementA, layout::ColumnMajorInterleaved<InterleavedK>,
   using Epilogue = typename cutlass::epilogue::threadblock::
       DefaultInterleavedEpilogueTensorOp<
           ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
-          64 / sizeof_bits<ElementC>::value, InterleavedK,
-          IsBetaZero>::Epilogue;
+          64 / sizeof_bits<ElementC>::value, InterleavedK>::Epilogue;
 
   /// Define the kernel-level GEMM operator.
   using GemmKernel = kernel::Gemm<Mma, Epilogue, ThreadblockSwizzle, SplitKSerial>;
@@ -682,7 +674,7 @@ struct DefaultGemm<int8_t, LayoutA, kAlignmentA, int8_t, LayoutB, kAlignmentB,
                    ElementC, LayoutC, ElementAccumulator, arch::OpClassSimt,
                    ArchTag, ThreadblockShape, WarpShape, GemmShape<1, 1, 4>,
                    EpilogueOutputOp, ThreadblockSwizzle, 2, SplitKSerial,
-                   Operator, false> {
+                   Operator> {
   using InstructionShape = GemmShape<1, 1, 4>;
   using ElementA = int8_t;
   using ElementB = int8_t;
@@ -703,8 +695,7 @@ struct DefaultGemm<int8_t, LayoutA, kAlignmentA, int8_t, LayoutB, kAlignmentB,
       WarpShape,
       InstructionShape,
       2,
-      Operator,
-      false
+      Operator
       >::ThreadblockMma;
 
   static int const kEpilogueElementsPerAccess = EpilogueOutputOp::kCount;

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -109,7 +109,19 @@ struct ConvReferenceDispatcher<
     Conv2dConfiguration const &config = 
       *static_cast<Conv2dConfiguration const *>(configuration);
 
-    ConvKind const conv_kind = ConvKindMap<kConvolutionalOperator>::kId;
+    // TODO: make below code more general.  It is fixed for NHWC now.
+    layout::TensorNHWC layout_a;
+    layout::TensorNHWC layout_b;
+    layout::TensorNHWC layout_c;
+
+    layout_a.stride() =
+        make_Coord(config.stride_a[0], config.stride_a[1], config.stride_a[2]);
+
+    layout_b.stride() =
+        make_Coord(config.stride_b[0], config.stride_b[1], config.stride_b[2]);
+
+    layout_c.stride() =
+        make_Coord(config.stride_c[0], config.stride_c[1], config.stride_c[2]);
 
     if (kProvider == Provider::kReferenceHost) {
 
@@ -127,10 +139,10 @@ struct ConvReferenceDispatcher<
       >(
         kConvolutionalOperator,
         config.problem_size,
-        {ptr_A, config.layout_a(conv_kind)},
-        {ptr_B, config.layout_b(conv_kind)},
-        {ptr_C, config.layout_c(conv_kind)},
-        {ptr_D, config.layout_c(conv_kind)},
+        {ptr_A, layout_a},
+        {ptr_B, layout_b},
+        {ptr_C, layout_c},
+        {ptr_D, layout_c},
         alpha,
         beta
       );
@@ -152,10 +164,10 @@ struct ConvReferenceDispatcher<
       >(
         kConvolutionalOperator,
         config.problem_size,
-        {ptr_A, config.layout_a(conv_kind)},
-        {ptr_B, config.layout_b(conv_kind)},
-        {ptr_C, config.layout_c(conv_kind)},
-        {ptr_D, config.layout_c(conv_kind)},
+        {ptr_A, layout_a},
+        {ptr_B, layout_b},
+        {ptr_C, layout_c},
+        {ptr_D, layout_c},
         alpha,
         beta,
         stream

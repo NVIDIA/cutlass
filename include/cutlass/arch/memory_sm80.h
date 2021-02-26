@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -74,15 +74,16 @@ template <
     /// Size of the access in bytes
     int SizeInBytes>
 struct cp_async<SizeInBytes, CacheOperation::Always> {
-  // Make sure the size is supported.
-  static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
-                "Size is not supported");
 
   /// Copy
   CUTLASS_DEVICE
   cp_async(void *smem_ptr, void const *global_ptr, bool pred_guard = true) {
     #if CUDA_CP_ASYNC_ACTIVATED
-    
+ 
+      // Make sure the size is supported.
+      static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
+                "Size is not supported");
+   
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
 
       asm volatile(
@@ -108,15 +109,16 @@ template <
     /// Size of the access in bytes
     int SizeInBytes>
 struct cp_async_zfill<SizeInBytes, CacheOperation::Always> {
-  // Make sure the size is supported.
-  static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
-                "Size is not supported");
 
   /// Copy with zero fill
   CUTLASS_DEVICE
   cp_async_zfill(void *smem_ptr, void const *global_ptr, bool pred_guard) {
     #if CUDA_CP_ASYNC_ACTIVATED
-    
+
+      // Make sure the size is supported.
+      static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
+                "Size is not supported");
+   
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
       int src_in_bytes = (pred_guard ? SizeInBytes : 0);
 
@@ -146,16 +148,13 @@ template <
     /// Size of the access in bytes
     int SizeInBytes>
 struct cp_async<SizeInBytes, CacheOperation::Global> {
-  // Make sure the size is supported.
-  static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
-                "Size is not supported");
 
   /// Copy
   CUTLASS_DEVICE
   cp_async(void *smem_ptr, void const *global_ptr, bool pred_guard = true) {
     #if CUDA_CP_ASYNC_ACTIVATED
     
-      static_assert(SizeInBytes == 16, 
+      static_assert(SizeInBytes == 16,
         "cp.async only supports CacheOperation::Global when access size is 16B.");
 
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
@@ -183,16 +182,13 @@ template <
     /// Size of the access in bytes
     int SizeInBytes>
 struct cp_async_zfill<SizeInBytes, CacheOperation::Global> {
-  // Make sure the size is supported.
-  static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
-                "Size is not supported");
 
   /// Copy with zero fill
   CUTLASS_DEVICE
   cp_async_zfill(void *smem_ptr, void const *global_ptr, bool pred_guard = true) {
     #if CUDA_CP_ASYNC_ACTIVATED
 
-      static_assert(SizeInBytes == 16, 
+      static_assert(SizeInBytes == 16,
         "cp.async only supports CacheOperation::Global when access size is 16B.");
 
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -149,6 +149,11 @@ public:
                       + s * ThreadMap::Delta::kStrided;  
       
     }
+  }
+
+  CUTLASS_HOST_DEVICE
+  static Params getParams(Conv3dProblemSize const &problem_size, Layout const &layout) {
+    return Params(problem_size, layout);
   }
 
   /// Overrides the internal iteration index

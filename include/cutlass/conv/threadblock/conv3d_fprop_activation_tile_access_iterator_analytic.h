@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -46,6 +46,7 @@
 #include "cutlass/layout/matrix.h"
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv3d_problem_size.h"
+#include "cutlass/conv/threadblock/conv3d_params.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -91,25 +92,7 @@ public:
   // Parameters structure
   //
 
-  struct Params {
-
-    Layout layout;
-
-    //
-    // Methods
-    //
-
-    CUTLASS_HOST_DEVICE
-    Params() { }
-
-    CUTLASS_HOST_DEVICE
-    Params(
-      ConvProblemSize const &problem_size, 
-      Layout const &layout
-    ): layout(layout) {
-
-    }
-  };
+  using Params = Conv3dAnalyticParams<Layout>;
 
 private:
 
@@ -166,6 +149,11 @@ public:
     }
 
     set_iteration_index(0);
+  }
+
+  CUTLASS_HOST_DEVICE
+  static Params getParams(Conv3dProblemSize const &problem_size, Layout const &layout) {
+    return Params(problem_size, layout);
   }
 
   /// Overrides the internal iteration index

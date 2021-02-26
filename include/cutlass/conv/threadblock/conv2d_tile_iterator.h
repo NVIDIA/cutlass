@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -91,6 +91,12 @@ public:
     MatrixCoord const &threadblock_offset = MatrixCoord()
   ):
     tile_access_iterator_(params, problem_size, ptr, thread_idx, threadblock_offset) { }
+
+  CUTLASS_HOST_DEVICE
+  static Params getParams(ConvProblemSize const &problem_size, Layout const &layout) {
+    return TileAccessIterator::getParams(problem_size, layout);
+  }
+
 
   /// Adds a pointer offset in units of Element
   CUTLASS_HOST_DEVICE
