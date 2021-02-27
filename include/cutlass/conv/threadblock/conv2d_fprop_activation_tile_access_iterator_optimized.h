@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -95,33 +95,7 @@ public:
   // Parameters structure
   //
 
-  struct Params : Conv2dFpropActivationIteratorOptimizedParams<Layout> {
-
-    CUTLASS_HOST_DEVICE
-    Params() { }
-
-    CUTLASS_HOST_DEVICE
-    Params(Conv2dFpropActivationIteratorOptimizedParams<Layout> const &base): 
-      Conv2dFpropActivationIteratorOptimizedParams<Layout>(base) { }
-
-    CUTLASS_HOST_DEVICE
-    Params(
-      Conv2dProblemSize const &problem_size, 
-      Layout const &layout
-    ):
-      Conv2dFpropActivationIteratorOptimizedParams<Layout>(
-        problem_size,
-        layout,
-        sizeof_bits<Element>::value,
-        {Shape::kRow, Shape::kColumn},
-        ThreadMap::kThreads,
-        ThreadMap::kElementsPerAccess,
-        {ThreadMap::Iterations::kContiguous, ThreadMap::Iterations::kStrided},
-        {ThreadMap::Delta::kContiguous, ThreadMap::Delta::kStrided}
-      ) {
-
-    }  
-  };
+  using Params = Conv2dFpropActivationIteratorOptimizedParams<Layout>;
 
 private:
 
@@ -232,6 +206,18 @@ public:
     }
 
     set_iteration_index(0);
+  }
+
+  CUTLASS_HOST_DEVICE
+  static Params getParams(Conv2dProblemSize const &problem_size, Layout const &layout) {
+    return Params(problem_size,
+                  layout,
+                  sizeof_bits<Element>::value,
+                  {Shape::kRow, Shape::kColumn},
+                  ThreadMap::kThreads,
+                  ThreadMap::kElementsPerAccess,
+                  {ThreadMap::Iterations::kContiguous, ThreadMap::Iterations::kStrided},
+                  {ThreadMap::Delta::kContiguous, ThreadMap::Delta::kStrided});
   }
 
 private:

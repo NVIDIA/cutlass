@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -47,37 +47,40 @@ namespace device {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/*! Gemm device-level operator. This is an interface to efficient CUTLASS GEMM kernels that may
-  be invoked from host code.
+/*! Gemm device-level operator. This is an interface to efficient CUTLASS GEMM
+  kernels that may be invoked from host code.
 
   The contributions of this class are:
-    
-    1. At compile time, it maps data types and high-level structural parameters onto 
-       specific CUTLASS components.
 
-    2. At runtime, it maps logical arguments to GEMM problems to kernel parameters.
+    1. At compile time, it maps data types and high-level structural parameters
+  onto specific CUTLASS components.
+
+    2. At runtime, it maps logical arguments to GEMM problems to kernel
+  parameters.
 
     3. At runtime, it launches kernels on the device.
 
-  The intent is to provide a convenient mechanism for interacting with most plausible GEMM
-  configurations for each supported architecture. Consequently, not all parameters are exposed
-  to the top-level interface. Rather, sensible defaults at each level of the CUTLASS hierarchy
-  are selected to tradeoff simplicity of the interface with flexibility. We expect 
-  most configurations to be specified at this level. Applications with more exotic requirements 
-  may construct their kernels of interest using CUTLASS components at the threadblock, warp, 
-  and thread levels of abstraction.
+  The intent is to provide a convenient mechanism for interacting with most
+  plausible GEMM configurations for each supported architecture. Consequently,
+  not all parameters are exposed to the top-level interface. Rather, sensible
+  defaults at each level of the CUTLASS hierarchy are selected to tradeoff
+  simplicity of the interface with flexibility. We expect most configurations to
+  be specified at this level. Applications with more exotic requirements may
+  construct their kernels of interest using CUTLASS components at the
+  threadblock, warp, and thread levels of abstraction.
 
-  CUTLASS exposes computations using the functor design pattern in which objects compose some
-  internal state with an overloaded function call operator. This enables decoupling of
-  initialization from execution, possibly reducing overhead during steady state phases of
-  application execution.
+  CUTLASS exposes computations using the functor design pattern in which objects
+  compose some internal state with an overloaded function call operator. This
+  enables decoupling of initialization from execution, possibly reducing
+  overhead during steady state phases of application execution.
 
-  CUTLASS device-level operators expose an Arguments structure encompassing each logical
-  input to the computation. This is distinct from the kernel-level Params structure pattern
-  which contains application-specific precomputed state needed by the device code.
+  CUTLASS device-level operators expose an Arguments structure encompassing each
+  logical input to the computation. This is distinct from the kernel-level
+  Params structure pattern which contains application-specific precomputed state
+  needed by the device code.
 
-  Example of a CUTLASS GEMM operator implementing the functionality of cuBLAS's SGEMM NN
-  is as follows:
+  Example of a CUTLASS GEMM operator implementing the functionality of cuBLAS's
+  SGEMM NN is as follows:
 
     //
     // Instantiate the CUTLASS GEMM operator.
@@ -111,46 +114,48 @@ namespace device {
     template <
       /// Element type for A matrix operand
       typename ElementA,
-      
+
       /// Layout type for A matrix operand
       typename LayoutA,
-      
+
       /// Element type for B matrix operand
       typename ElementB,
-      
+
       /// Layout type for B matrix operand
       typename LayoutB,
-      
+
       /// Element type for C and D matrix operands
       typename ElementC,
-      
+
       /// Layout type for C and D matrix operands
       typename LayoutC,
-      
+
       /// Element type for internal accumulation
       typename ElementAccumulator,
 
       /// Operator class tag
       typename OperatorClass,
-      
-      /// Tag indicating architecture to tune for
+
+      /// Tag indicating architecture to tune for.  This is the minimum SM that
+      /// supports the intended feature. The device kernel can be built
+      /// targeting any SM larger than this number.
       typename ArchTag,
-      
+
       /// Threadblock-level tile size (concept: GemmShape)
       typename ThreadblockShape,
-      
+
       /// Warp-level tile size (concept: GemmShape)
       typename WarpShape,
-      
+
       /// Warp-level tile size (concept: GemmShape)
       typename InstructionShape,
-      
+
       /// Epilogue output operator
       typename EpilogueOutputOp,
-      
+
       /// Threadblock-level swizzling operator
       typename ThreadblockSwizzle,
-      
+
       /// Number of stages used in the pipelined mainloop
       int Stages
     >
@@ -173,7 +178,7 @@ template <
     typename ElementAccumulator_ = ElementC_,
     /// Operator class tag
     typename OperatorClass_ = arch::OpClassSimt,
-    /// Tag indicating architecture to tune for
+    /// Tag indicating architecture to tune for.
     typename ArchTag_ = arch::Sm70,
     /// Threadblock-level tile size (concept: GemmShape)
     typename ThreadblockShape_ = typename DefaultGemmConfiguration<
@@ -192,7 +197,8 @@ template <
         OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
         ElementAccumulator_>::EpilogueOutputOp,
     /// Threadblock-level swizzling operator
-    typename ThreadblockSwizzle_ = threadblock::GemmIdentityThreadblockSwizzle<>,
+    typename ThreadblockSwizzle_ =
+        threadblock::GemmIdentityThreadblockSwizzle<>,
     /// Number of stages used in the pipelined mainloop
     int Stages =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
@@ -201,12 +207,11 @@ template <
     ComplexTransform TransformA = ComplexTransform::kNone,
     /// Complex elementwise transformation on B operand
     ComplexTransform TransformB = ComplexTransform::kNone,
-    /// Multiply-add operator 
+    /// Multiply-add operator
     // (selects complex or gaussian complex)
     typename Operator_ = arch::OpMultiplyAddComplex,
     /// If true, kernel supports split-K with serial reduction
-    bool SplitKSerial = false
->
+    bool SplitKSerial = false>
 class GemmComplex {
  public:
 

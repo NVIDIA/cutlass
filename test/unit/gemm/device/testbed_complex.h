@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -101,6 +101,7 @@ struct TestbedComplex : public Testbed<Gemm> {
     return this->compare_reference(problem_size, alpha, beta);
   }
 
+  /// Returns true if the CUDA device is sufficient to execute the kernel.
 	bool sufficient() const {
 		//
 		// Determine SMEM requirements and waive if not satisfied
@@ -136,10 +137,13 @@ struct TestbedComplex : public Testbed<Gemm> {
     ElementCompute alpha = ElementCompute(1), 
     ElementCompute beta = ElementCompute(0)) {
 
-		// Waive the test if device not sufficient
-		if (!sufficient()) {
-			return true;
-		}
+    // Waive test if insufficient CUDA device
+    if (!sufficient()) {
+      if (CUTLASS_TEST_UNIT_ENABLE_WARNINGS) {
+        std::cerr << "Test waived due to insufficient CUDA device." << std::endl;
+      }
+      return true;
+    }
 
 		//
 		// Initialize workspace

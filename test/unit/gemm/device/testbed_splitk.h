@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -61,12 +61,49 @@ struct TestbedSplitK : public Testbed<Gemm> {
   ):
     Base(init_A_, init_B_, init_C_, seed_) { }
 
+  /// Returns true if the CUDA device is sufficient to execute the kernel.
+  bool sufficient() const {
+    //
+    // Determine SMEM requirements and waive if not satisfied
+    //
+
+    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+
+    if (properties.sharedMemPerMultiprocessor < smem_size) {
+      return false;
+    }
+
+    return true;
+  }
+  
   /// Executes one test
   bool run(
     cutlass::gemm::GemmCoord problem_size, 
     int split_k_slices,
     ElementCompute alpha = ElementCompute(1), 
     ElementCompute beta = ElementCompute(0)) {
+
+    // Waive test if insufficient CUDA device
+    if (!sufficient()) {
+      if (CUTLASS_TEST_UNIT_ENABLE_WARNINGS) {
+        std::cerr << "Test waived due to insufficient CUDA device." << std::endl;
+      }
+      return true;
+    }
 
     this->initialize(problem_size);
 

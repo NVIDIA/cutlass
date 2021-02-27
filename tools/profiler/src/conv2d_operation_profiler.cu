@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -381,24 +381,9 @@ Status Conv2dOperationProfiler::initialize_configuration(
   
   conv_workspace_.configuration.split_k_mode = static_cast<conv::SplitKMode>(static_cast<int>(problem_.split_k_mode));
 
-  conv_workspace_.configuration.layout_activations.stride() = make_Coord(
-    int(problem_.c), 
-    int(problem_.w) * int(problem_.c),
-    int(problem_.h) * int(problem_.w) * int(problem_.c)
-  );
-
-  conv_workspace_.configuration.layout_filters.stride() = make_Coord(
-    int(problem_.c), 
-    int(problem_.s) * int(problem_.c),
-    int(problem_.r) * int(problem_.s) * int(problem_.c)
-  );
-
-  conv_workspace_.configuration.layout_output.stride() = make_Coord(
-    int(problem_.k), 
-    int(problem_.q) * int(problem_.k),
-    int(problem_.q) * int(problem_.p) * int(problem_.k)
-  );
-
+  conv_workspace_.set_stride_vector(
+      problem_, operation_desc.conv_kind, operation_desc.A.layout,
+      operation_desc.B.layout, operation_desc.C.layout);
 
   // initialize library::ConvArguments
   conv_workspace_.arguments.A            = nullptr;
@@ -540,9 +525,12 @@ bool Conv2dOperationProfiler::initialize_reduction_configuration_(
   conv_workspace_.reduction_configuration.problem_size     = problem_.eq_gemm_size(conv_kind).mn();
   conv_workspace_.reduction_configuration.partitions       = int(problem_.split_k_slices);
   conv_workspace_.reduction_configuration.partition_stride = problem_.eq_gemm_size(conv_kind).mn().product();
-  conv_workspace_.reduction_configuration.ldw              = conv_workspace_.configuration.layout_c(conv_kind).stride()[tensor_c_stride_idx];
-  conv_workspace_.reduction_configuration.lds              = conv_workspace_.configuration.layout_c(conv_kind).stride()[tensor_c_stride_idx];
-  conv_workspace_.reduction_configuration.ldd              = conv_workspace_.configuration.layout_c(conv_kind).stride()[tensor_c_stride_idx];
+  conv_workspace_.reduction_configuration.ldw =
+      conv_workspace_.configuration.stride_c[tensor_c_stride_idx];
+  conv_workspace_.reduction_configuration.lds =
+      conv_workspace_.configuration.stride_c[tensor_c_stride_idx];
+  conv_workspace_.reduction_configuration.ldd =
+      conv_workspace_.configuration.stride_c[tensor_c_stride_idx];
 
   // find reduction operation 
   library::ReductionFunctionalKey reduction_key(
@@ -616,7 +604,7 @@ Status Conv2dOperationProfiler::initialize_workspace(
       operation_desc.A.element,
       operation_desc.A.layout,
       problem_.extent_a(operation_desc.conv_kind),
-      conv_workspace_.stride_a(operation_desc.conv_kind),
+      conv_workspace_.configuration.stride_a,
       conv_workspace_.problem_count
     );
 
@@ -626,7 +614,7 @@ Status Conv2dOperationProfiler::initialize_workspace(
       operation_desc.B.element,
       operation_desc.B.layout,
       problem_.extent_b(operation_desc.conv_kind),
-      conv_workspace_.stride_b(operation_desc.conv_kind),
+      conv_workspace_.configuration.stride_b,
       conv_workspace_.problem_count
     );
 
@@ -636,7 +624,7 @@ Status Conv2dOperationProfiler::initialize_workspace(
       operation_desc.C.element,
       operation_desc.C.layout,
       problem_.extent_c(operation_desc.conv_kind),
-      conv_workspace_.stride_c(operation_desc.conv_kind),
+      conv_workspace_.configuration.stride_c,
       conv_workspace_.problem_count
     );
 
@@ -645,7 +633,7 @@ Status Conv2dOperationProfiler::initialize_workspace(
       operation_desc.C.element,
       operation_desc.C.layout,
       problem_.extent_c(operation_desc.conv_kind),
-      conv_workspace_.stride_c(operation_desc.conv_kind),
+      conv_workspace_.configuration.stride_c,
       conv_workspace_.problem_count
     );
 
@@ -654,10 +642,9 @@ Status Conv2dOperationProfiler::initialize_workspace(
       operation_desc.C.element,
       operation_desc.C.layout,
       problem_.extent_c(operation_desc.conv_kind),
-      conv_workspace_.stride_c(operation_desc.conv_kind),
+      conv_workspace_.configuration.stride_c,
       conv_workspace_.problem_count
     );
-    
   }
 
   //

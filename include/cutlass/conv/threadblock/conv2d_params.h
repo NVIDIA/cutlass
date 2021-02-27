@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -68,7 +68,7 @@ struct Conv2dAnalyticParams {
 
   CUTLASS_HOST_DEVICE
   Conv2dAnalyticParams(
-    Conv2dProblemSize const &problem_size,
+    Conv2dProblemSize const &,  // unused; placeholder to match other Params interfaces.
     Layout const &layout
   ): layout(layout) {
 
@@ -168,7 +168,10 @@ struct Conv2dFpropActivationIteratorOptimizedParams<layout::TensorNHWC> {
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
   ): 
-    layout(layout), PQ(problem_size.P * problem_size.Q), pq_divmod(PQ), q_divmod(problem_size.Q) {
+    layout(layout), 
+    PQ(problem_size.P * problem_size.Q), 
+    pq_divmod(PQ), 
+    q_divmod(problem_size.Q) {
 
     TRACE_CONV_INITIALIZERS("conv2d_fprop", "activation", 
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
@@ -176,7 +179,9 @@ struct Conv2dFpropActivationIteratorOptimizedParams<layout::TensorNHWC> {
     int conv_sign = (problem_size.mode == Mode::kConvolution ? -1 : 1);
 
     // next S
-    inc_next[0] = conv_sign * (int64_t(layout.stride()[0]) * problem_size.dilation_w) * element_size_bits / 8;
+    inc_next[0] = conv_sign * (
+      int64_t(layout.stride()[0]) * problem_size.dilation_w
+    ) * element_size_bits / 8;
 
     // next R
     inc_next[1] = conv_sign * (
@@ -388,7 +393,7 @@ struct Conv2dDgradOutputGradientIteratorOptimizedParams {
 
   int filter_k_delta;     // number of logical elements to add to filter_k_
 
-  int HW;                   // product of H*W
+  int HW;                  // product of H*W
 
   FastDivmod hw_divmod;
   FastDivmod w_divmod;
@@ -411,7 +416,10 @@ struct Conv2dDgradOutputGradientIteratorOptimizedParams {
     layout::PitchLinearCoord threadmap_iterations,
     layout::PitchLinearCoord threadmap_delta
   ): 
-    layout(layout), HW(problem_size.H *problem_size.W), hw_divmod(HW), w_divmod(problem_size.W) {
+    layout(layout), 
+    HW(problem_size.H *problem_size.W), 
+    hw_divmod(HW), 
+    w_divmod(problem_size.W) {
     
     TRACE_CONV_INITIALIZERS("conv2d_dgrad", "output_gradient", 
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
@@ -419,7 +427,9 @@ struct Conv2dDgradOutputGradientIteratorOptimizedParams {
     int conv_sign = (problem_size.mode == Mode::kConvolution ? 1 : -1);
 
     // next S
-    inc_next[0] = conv_sign * (layout.stride()[0] * problem_size.dilation_w) * element_size_bits / 8;
+    inc_next[0] = conv_sign * (
+      layout.stride()[0] * problem_size.dilation_w
+    ) * element_size_bits / 8;
 
     // next R
     inc_next[1] = conv_sign * (

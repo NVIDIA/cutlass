@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -82,6 +82,9 @@ DeviceAllocation *DeviceContext::allocate_tensor(
     if(!options.initialization.fix_data_distribution) {
       // change data distribution based on bit width
       switch(type) {
+        case library::NumericTypeID::kF16:
+          data_distribution.set_uniform(-3, 3, 0);
+          break;
         case library::NumericTypeID::kB1:
           data_distribution.set_uniform(0, 1, 0);
           break;

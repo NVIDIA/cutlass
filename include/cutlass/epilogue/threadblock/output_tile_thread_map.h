@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -370,6 +370,11 @@ struct OutputTileOptimalThreadMap {
 
 
     using Shape = Shape_;
+
+    using TileShape = MatrixShape<
+      Shape::kTile * Shape::kCluster * Shape::kGroup * Shape::kRow,
+      Shape::kColumn
+    >;
 
     using Iterations = OutputTileShape<
       Detail::RowArrangement::kIterationsColumn,

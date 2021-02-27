@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -68,6 +68,47 @@ TEST(SM80_Device_Conv3d_Fprop_Analytic_ImplicitGemm_tf32ndhwc_tf32ndhwc_f32ndhwc
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     3,
     cutlass::arch::OpMultiplyAdd
+  >::Kernel;
+
+  using Conv3dFprop = cutlass::conv::device::ImplicitGemmConvolution<Conv3dFpropKernel>;
+
+  /// Run all unit test sizes with device-level Conv3d instance
+  EXPECT_TRUE(test::conv::device::TestAllConv3d<Conv3dFprop>());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Device_Conv3d_Fprop_Optimized_ImplicitGemm_tf32ndhwc_tf32ndhwc_f32ndhwc_tensor_op_f32,
+  128x128_32x3_64x64x32) {
+
+  /// Conv operation element types for the Gemm equivalent (ImplicitGemm)
+  using ElementA           = cutlass::tfloat32_t;
+  using ElementB           = cutlass::tfloat32_t;
+  using ElementC           = float;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+
+  /// Device-level Conv2d instance
+  using Conv3dFpropKernel = typename cutlass::conv::kernel::DefaultConv3dFprop<
+    ElementA, cutlass::layout::TensorNDHWC,
+    ElementB, cutlass::layout::TensorNDHWC,
+    ElementC, cutlass::layout::TensorNDHWC,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<128, 128, 16>,
+    cutlass::gemm::GemmShape<64, 64, 16>,
+    cutlass::gemm::GemmShape<16, 8, 8>,
+    cutlass::epilogue::thread::LinearCombination<
+      ElementC,
+      128 / cutlass::sizeof_bits<ElementC>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3,
+    cutlass::arch::OpMultiplyAdd,
+    cutlass::conv::IteratorAlgorithm::kOptimized
   >::Kernel;
 
   using Conv3dFprop = cutlass::conv::device::ImplicitGemmConvolution<Conv3dFpropKernel>;

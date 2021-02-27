@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -182,7 +182,15 @@ class RegularTileAccessIterator<
     return prev;
   }
 
-  /// Adds a tile offset
+  /// Adds a tile offset in the unit of tile.
+  /// In GEMM/Conv implementation, this is used to move in the k dimension in the shared memory.
+  /// Below layouts are the shared memory layouts.  Current SM50 SIMT kernels only use col major A and row major B.
+  ///   For row major A operand, k dimension is contiguous dimension;
+  ///   For col major A operand, k dimension is strided dimension;
+  ///   For row major B operand, k dimension is strided dimension;
+  ///   For col major B operand, k dimension is contiguous dimension.
+  /// Below two classes map col/row major to the pitch linear coordinates used
+  /// in this base class.
   CUTLASS_DEVICE
   void add_tile_offset(TensorCoord const &coord) {
     add_pointer_offset(coord.contiguous() * Shape::kContiguous +

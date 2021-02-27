@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -107,9 +107,25 @@ struct TestbedConv3dProblemSizes {
     ));
 
     conv3d_default_sizes.push_back(cutlass::conv::Conv3dProblemSize(
-      {1, 1, 16, 16, minimum_channel_size}, // input size  (NDHWC)
-      {8, 1, 3, 3, minimum_channel_size},   // filter size (KTRSC)
-      cutlass::Coord<3>({0, 1, 1}),         // padding (pad_d, pad_h, pad_w)
+      {1, 1, 1, 8, minimum_channel_size}, // input size  (NDHWC)
+      {8, 1, 1, 3, minimum_channel_size},   // filter size (KTRSC)
+      cutlass::Coord<3>({1, 1, 1}),         // padding (pad_d, pad_h, pad_w)
+      cutlass::Coord<3>({1, 1, 1}),         // stride (stride_d, stride_h, stride_w)
+      cutlass::Coord<3>({1, 1, 1})          // dilation (dilation_d, dilation_h, dilation_w) 
+    ));
+
+    conv3d_default_sizes.push_back(cutlass::conv::Conv3dProblemSize(
+      {1, 8, 8, 8, minimum_channel_size}, // input size  (NDHWC)
+      {8, 3, 3, 3, minimum_channel_size},   // filter size (KTRSC)
+      cutlass::Coord<3>({1, 1, 1}),         // padding (pad_d, pad_h, pad_w)
+      cutlass::Coord<3>({1, 1, 1}),         // stride (stride_d, stride_h, stride_w)
+      cutlass::Coord<3>({1, 1, 1})          // dilation (dilation_d, dilation_h, dilation_w) 
+    ));
+
+    conv3d_default_sizes.push_back(cutlass::conv::Conv3dProblemSize(
+      {1, 16, 16, 16, minimum_channel_size}, // input size  (NDHWC)
+      {8, 3, 3, 3, minimum_channel_size},   // filter size (KTRSC)
+      cutlass::Coord<3>({1, 1, 1}),         // padding (pad_d, pad_h, pad_w)
       cutlass::Coord<3>({1, 1, 1}),         // stride (stride_d, stride_h, stride_w)
       cutlass::Coord<3>({1, 1, 1})          // dilation (dilation_d, dilation_h, dilation_w) 
     ));
@@ -137,6 +153,7 @@ struct TestbedConv3dProblemSizes {
       cutlass::Coord<3>({1, 1, 1}),        // stride (stride_d, stride_h, stride_w)
       cutlass::Coord<3>({1, 1, 1})         // dilation (dilation_d, dilation_h, dilation_w) 
     ));
+
 
     conv3d_default_sizes.push_back(cutlass::conv::Conv3dProblemSize(
       {1, 11, 15, 19, 64},              // input size  (NDHWC)

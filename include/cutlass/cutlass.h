@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -31,6 +31,16 @@
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#define CUTLASS_UNUSED(expr) do { (void)(expr); } while (0)
+
+#if defined(_MSC_VER)
+  #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __FUNCSIG__)
+#else
+  #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __PRETTY_FUNCTION__)
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,6 +53,7 @@ namespace cutlass {
 #define CUTLASS_DEVICE __forceinline__ __device__
 #else
 #define CUTLASS_HOST_DEVICE inline
+#define CUTLASS_DEVICE inline
 #endif
 
 /// Status code returned by CUTLASS operations

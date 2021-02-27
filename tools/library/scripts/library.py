@@ -187,7 +187,6 @@ DataTypeSize = {
 }
 
 ###################################################################################################
-
 #
 class ComplexTransform(enum.Enum):
   none = enum_auto()
@@ -312,7 +311,7 @@ TransposedLayout = {
 #
 ShortLayoutTypeNames = {
   LayoutType.ColumnMajor: 'n',
-  LayoutType.ColumnMajorInterleaved32: 'n2',
+  LayoutType.ColumnMajorInterleaved2: 'n2',
   LayoutType.ColumnMajorInterleaved32: 'n32',
   LayoutType.ColumnMajorInterleaved64: 'n64',
   LayoutType.RowMajor: 't',
@@ -343,6 +342,8 @@ class OpcodeClass(enum.Enum):
   Simt = enum_auto()
   TensorOp = enum_auto()
   WmmaTensorOp = enum_auto()
+  SparseTensorOp = enum_auto()
+
 
 OpcodeClassNames = {
   OpcodeClass.Simt: 'simt',

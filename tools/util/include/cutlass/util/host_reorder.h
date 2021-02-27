@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -62,15 +62,15 @@ void reorder_column(TensorRef<Element, Layout> dest,
   }
 }
 
-template <int Interleaved, typename Element, typename Layout>
+template <int ColumnInterleaved, int LayoutInterleaved = ColumnInterleaved, typename Element, typename Layout>
 void reorder_convK(TensorRef<Element, Layout> dest,
                     TensorRef<Element, Layout> src,
                     cutlass::gemm::GemmCoord problem_size) {
 
-    TensorRef<Element, layout::RowMajorInterleaved<Interleaved>> mappedDest(dest.data(), dest.stride(0));
-    TensorRef<Element, layout::RowMajorInterleaved<Interleaved>> mappedSrc(src.data(), src.stride(0));
+    TensorRef<Element, layout::RowMajorInterleaved<LayoutInterleaved>> mappedDest(dest.data(), dest.stride(0));
+    TensorRef<Element, layout::RowMajorInterleaved<LayoutInterleaved>> mappedSrc(src.data(), src.stride(0));
     
-    reorder_column<Interleaved>(
+    reorder_column<ColumnInterleaved>(
         mappedDest, mappedSrc, problem_size);
 }
 

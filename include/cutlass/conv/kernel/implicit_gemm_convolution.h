@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -216,8 +216,7 @@ struct ImplicitGemmConvolution {
     ):
       problem_size(args.problem_size),
       implicit_gemm_problem_size(cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size)),
-      grid_tiled_shape(grid_tiled_shape),
-      iterator_A(args.problem_size, args.ref_A.layout()),
+      iterator_A(Mma::IteratorA::getParams(args.problem_size, args.ref_A.layout())),
       ptr_A(args.ref_A.data()),
       iterator_B(args.problem_size, args.ref_B.layout()),
       ptr_B(args.ref_B.data()),

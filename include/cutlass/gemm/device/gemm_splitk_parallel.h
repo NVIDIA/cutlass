@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -72,7 +72,9 @@ template <
     typename ElementAccumulator_ = ElementC_,
     /// Operator class tag
     typename OperatorClass_ = arch::OpClassSimt,
-    /// Tag indicating architecture to tune for
+    /// Tag indicating architecture to tune for.  This is the minimum SM that
+      /// supports the intended feature. The device kernel can be built
+      /// targeting any SM larger than this number.
     typename ArchTag_ = arch::Sm70,
     /// Threadblock-level tile size (concept: GemmShape)
     typename ThreadblockShape_ = typename DefaultGemmConfiguration<
@@ -425,7 +427,9 @@ template <
     typename ElementAccumulator_,
     /// Operator class tag
     typename OperatorClass_,
-    /// Tag indicating architecture to tune for
+    /// Tag indicating architecture to tune for.  This is the minimum SM that
+      /// supports the intended feature. The device kernel can be built
+      /// targeting any SM larger than this number.
     typename ArchTag_,
     /// Threadblock-level tile size (concept: GemmShape)
     typename ThreadblockShape_,

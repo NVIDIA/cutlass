@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -87,6 +87,7 @@ install(
 set(CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_GEMM   --operation=Gemm       --providers=cutlass --verification-providers=cublas,device      --junit-output=test_cutlass_profiler_gemm)
 set(CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_CONV2D --operation=Conv2d     --providers=cutlass --verification-providers=cudnn,device       --junit-output=test_cutlass_profiler_conv2d)
 set(CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_CONV3D --operation=Conv3d     --providers=cutlass --verification-providers=cudnn,device,host  --junit-output=test_cutlass_profiler_conv3d)
+set(CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_SPGEMM --operation=SparseGemm --providers=cutlass --verification-providers=cublas,device,host --junit-output=test_cutlass_profiler_spgemm)
 cutlass_add_executable_tests(
   test_profiler cutlass_profiler
   DEPENDEES test_all
@@ -94,5 +95,6 @@ cutlass_add_executable_tests(
     CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_GEMM
     CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_CONV2D
     CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_CONV3D
+    CUTLASS_PROFILER_TEST_COMMAND_OPTIONS_SPGEMM
   DISABLE_EXECUTABLE_INSTALL_RULE
   )

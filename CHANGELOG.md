@@ -1,6 +1,22 @@
 # NVIDIA CUTLASS Changelog
 
 # CUTLASS 2.x
+
+## [2.5.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.5.0) (2021-02-26)
+  * Tensor reductions
+    * _m_-to-_n_ reductions of tensors with affine layout
+    * [Specializations](/test/unit/reduction/device/tensor_reduce_contiguous.cu) for reductions including contiguous dimension
+    * [Specializations](/test/unit/reduction/device/tensor_reduce_strided.cu) for reductions excluding contiguous dimension
+    * Custom reduction functors such as `cutlass::logical_and`
+    * Large tensor support, up to 2^63 elements (however, each dimension is limited to an extent of 2^31)
+  * Optimizations for 3-D convolution
+    * [Optimized tile iterators](include/cutlass/conv/threadblock/conv3d_fprop_activation_tile_access_iterator_optimized.h) using precomputed delta table for 3-D convolution
+    * Full coverage of [forward](test/unit/conv/device/conv3d_fprop_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm80.cu) and [backwards](test/unit/conv/device/conv3d_dgrad_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm80.cu) passes for 3D convolution
+  * [Fused Convolution+Convolution example](/examples/13_two_tensor_op_fusion/README.md)
+  * Corrections and bug fixes reported by the CUTLASS community
+    * Thank you for filing these issues!
+  
+
 ## [2.4.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.4.0) (2020-11-19)
   * Implicit GEMM convolution kernels supporting CUDA and Tensor Cores on NVIDIA GPUs
     * Operators: forward (Fprop), backward data gradient (Dgrad), and backward weight gradient (Wgrad) convolution
@@ -126,7 +142,7 @@
 
 ## Copyright
 
-Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -41,7 +41,6 @@
 #include "cutlass/conv/threadblock/implicit_gemm_pipelined.h"
 #include "cutlass/conv/threadblock/implicit_gemm_multistage.h"
 #include "cutlass/conv/kernel/implicit_gemm_convolution.h"
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -101,4 +100,3 @@ struct DefaultConvEpilogue<
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

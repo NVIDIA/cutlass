@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -659,7 +659,7 @@ bool GemmOperationProfiler::verify_with_cublas_(
     gemm_workspace_.arguments.B = gemm_workspace_.B->data();
     gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
     gemm_workspace_.arguments.C = gemm_workspace_.Reference->data();
-    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Reference->batch_stride();
+    gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.Reference->batch_stride();
     gemm_workspace_.arguments.D = gemm_workspace_.Reference->data();
     gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Reference->batch_stride();
     gemm_workspace_.arguments.alpha = problem_.alpha.data();

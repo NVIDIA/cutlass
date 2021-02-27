@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -76,8 +76,7 @@ TEST(SM80_Device_Gemm_s4n_s4t_s4n_tensor_op_s32, 64x128x128_32x64x128) {
     32,
     32,
     false,
-    cutlass::arch::OpMultiplyAddSaturate,
-    true
+    cutlass::arch::OpMultiplyAddSaturate
   >;
 
   test::gemm::device::MultistageInterleavedTestbed<Gemm, 64> testbed;
@@ -117,8 +116,7 @@ TEST(SM80_Device_Gemm_s4n_s4t_s4n_tensor_op_s32, 128x128x128_64x64x128) {
     32,
     32,
     false,
-    cutlass::arch::OpMultiplyAddSaturate,
-    true
+    cutlass::arch::OpMultiplyAddSaturate
   >;
 
   test::gemm::device::MultistageInterleavedTestbed<Gemm, 64> testbed;
@@ -158,8 +156,7 @@ TEST(SM80_Device_Gemm_s4n_s4t_s4n_tensor_op_s32, 256x128x128_64x64x128) {
     32,
     32,
     false,
-    cutlass::arch::OpMultiplyAddSaturate,
-    true
+    cutlass::arch::OpMultiplyAddSaturate
   >;
 
   test::gemm::device::MultistageInterleavedTestbed<Gemm, 64> testbed;
@@ -199,8 +196,7 @@ TEST(SM80_Device_Gemm_s4n_s4t_s4n_tensor_op_s32, 128x256x128_64x64x128) {
     32,
     32,
     false,
-    cutlass::arch::OpMultiplyAddSaturate,
-    true
+    cutlass::arch::OpMultiplyAddSaturate
   >;
 
   test::gemm::device::MultistageInterleavedTestbed<Gemm, 64> testbed;

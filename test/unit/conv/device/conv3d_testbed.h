@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -204,10 +204,14 @@ public:
     ElementCompute alpha = ElementCompute(1),
     ElementCompute beta = ElementCompute()) {
 
-		// Waive test if CUDA device is insufficient.
-		if (!sufficient()) {
-			return true;
-		}
+
+    // Waive test if insufficient CUDA device
+    if (!sufficient()) {
+      if (CUTLASS_TEST_UNIT_ENABLE_WARNINGS) {
+        std::cerr << "Test waived due to insufficient CUDA device." << std::endl;
+      }
+      return true;
+    }
 
 #if 0 //display conv2d problem size for debugging
     std::cout << problem_size << std::endl
@@ -413,11 +417,6 @@ bool TestAllConv3d(
   //
   TestbedConv3dProblemSizes conv3d_problems(128/cutlass::sizeof_bits<typename ImplicitGemm::ElementA>::value);
 
-  //
-  // Get conv problem sizes to run conv operator 
-  //
-  //TestbedConv3dProblemSizes conv_problems(128/cutlass::sizeof_bits<typename ImplicitGemm::ElementA>::value);
-
   // Vector of conv3d problem sizes to avoid duplicate runs
   Conv3dProblemVector conv_tested_sizes;
 
@@ -443,12 +442,17 @@ bool TestAllConv3d(
       // Procedurally disable certain cases
       //
   
-      // CUTLASS DGRAD's unity stride specialization only support stride {1, 1} 
+      // CUTLASS DGRAD's unity stride specialization only support stride {1, 1, 1} 
       if ((ImplicitGemm::kConvolutionalOperator == 
             cutlass::conv::Operator::kDgrad) && 
-          (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
-            cutlass::conv::StrideSupport::kUnity)) {
-        if (!((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
+          ((ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+            cutlass::conv::StrideSupport::kUnity) ||
+           (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorB::kStrideSupport == 
+            cutlass::conv::StrideSupport::kUnity))) {
+        if (!((conv_problem.stride_d == 1) &&
+              (conv_problem.stride_h == 1) && 
+              (conv_problem.stride_w == 1))
+          ) {
           continue;
         }
       }

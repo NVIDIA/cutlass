@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -1355,6 +1355,60 @@ struct PreferredRoundingMode {
 template <>
 struct PreferredRoundingMode<tfloat32_t, float> {
   static FloatRoundStyle const kRound = FloatRoundStyle::round_half_ulp_truncate;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Packs predicates into an array.
+template <int N>
+struct PackPredicates {
+  using result_type = Array<uint1b_t, N>;
+
+  static_assert(!(N % 4), "Must pack predicates in a count that is a multiple of 4");
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(bool const predicates[]) {
+
+    result_type packed;
+    packed.clear();
+
+    int const kWordSize = 8;
+    uint8_t *bytes = reinterpret_cast<uint8_t *>(packed.data());
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      int word_idx = (i / kWordSize);
+      int bit_idx = (i % kWordSize);
+
+      uint8_t mask = ((predicates[i] ? 1u : 0u) << bit_idx);
+      bytes[word_idx] = (bytes[word_idx] | mask);
+    }
+    return packed;
+  }
+};
+
+/// Packs predicates into an array
+template <int N>
+struct UnpackPredicates {
+  using result_type = Array<uint1b_t, N>;
+
+  static_assert(!(N % 4), "Must unpack predicates in a count that is a multiple of 4");
+
+  CUTLASS_HOST_DEVICE
+  void operator()(bool predicates[], result_type const &packed) {
+
+    int const kWordSize = 8;
+    uint8_t const *bytes = reinterpret_cast<uint8_t const *>(packed.data());
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      int word_idx = (i / kWordSize);
+      int bit_idx = (i % kWordSize);
+
+      predicates[i] = bool((bytes[word_idx] >> bit_idx) & 0x1);
+    }
+
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

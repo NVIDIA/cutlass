@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -133,7 +133,9 @@ namespace device {
       /// Operator class tag
       typename OperatorClass,
       
-      /// Tag indicating architecture to tune for
+      /// Tag indicating architecture to tune for.  This is the minimum SM that
+      /// supports the intended feature. The device kernel can be built
+      /// targeting any SM larger than this number.
       typename ArchTag,
       
       /// Threadblock-level tile size (concept: GemmShape)
@@ -257,8 +259,7 @@ class GemmArray {
     ThreadblockSwizzle,
     kStages,
     false,
-    Operator,
-    false
+    Operator
   >::GemmKernel;
 
   using GemmKernel = kernel::GemmArray<typename DefaultGemmKernel::Mma, typename DefaultGemmKernel::Epilogue, ThreadblockSwizzle>;

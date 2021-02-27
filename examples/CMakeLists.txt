@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification, are permitted
 # provided that the following conditions are met:
@@ -78,10 +78,11 @@ foreach(EXAMPLE
   10_planar_complex
   11_planar_complex_array
   12_gemm_bias_relu
-  13_fused_two_gemms
+  13_two_tensor_op_fusion  
   14_ampere_tf32_tensorop_gemm
   15_ampere_sparse_tensorop_gemm
-  22_ampere_tensorop_conv2dfprop
+  16_ampere_tensorop_conv2dfprop
+  17_fprop_per_channel_bias
   )
 
   add_subdirectory(${EXAMPLE})

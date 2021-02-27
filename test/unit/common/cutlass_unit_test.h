@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -58,4 +58,8 @@ void FilterArchitecture();
 #define CUTLASS_TEST_L0(NAME_STATIC,NAME_DYNAMIC,...)   CUTLASS_TEST_LEVEL_ACTIVE(0,NAME_STATIC,NAME_DYNAMIC,__VA_ARGS__)
 #define CUTLASS_TEST_L1(NAME_STATIC,NAME_DYNAMIC,...)   CUTLASS_TEST_LEVEL_ACTIVE(1,NAME_STATIC,NAME_DYNAMIC,__VA_ARGS__)
 #define CUTLASS_TEST_L2(NAME_STATIC,NAME_DYNAMIC,...)   CUTLASS_TEST_LEVEL_ACTIVE(2,NAME_STATIC,NAME_DYNAMIC,__VA_ARGS__)
+#endif
+
+#if !defined(CUTLASS_TEST_UNIT_ENABLE_WARNINGS)
+#define CUTLASS_TEST_UNIT_ENABLE_WARNINGS false
 #endif

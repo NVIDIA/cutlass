@@ -249,7 +249,7 @@ CUDA exposes warp-level matrix operations in the CUDA C++ WMMA API. The CUDA C++
 
 # Copyright
 
-Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
 
 ```
   Redistribution and use in source and binary forms, with or without modification, are permitted

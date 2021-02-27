@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -133,7 +133,9 @@ namespace device {
       /// Operator class tag
       typename OperatorClass,
       
-      /// Tag indicating architecture to tune for
+      /// Tag indicating architecture to tune for.  This is the minimum SM that
+      /// supports the intended feature. The device kernel can be built
+      /// targeting any SM larger than this number.
       typename ArchTag,
       
       /// Threadblock-level tile size (concept: GemmShape)
@@ -211,9 +213,7 @@ template <
     /// Operation performed by GEMM
     typename Operator_ = typename DefaultGemmConfiguration<
         OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::Operator,
-    /// Whether Beta is zero or not
-    bool IsBetaZero = false>
+        ElementAccumulator_>::Operator>
 class SparseGemm {
  public:
 
@@ -241,7 +241,6 @@ class SparseGemm {
   static int const kAlignmentB = AlignmentB;
   static int const kAlignmentC = EpilogueOutputOp::kCount;
   static bool const kSplitKSerial = SplitKSerial;
-  static bool const kIsBetaZero = IsBetaZero;
   static ComplexTransform const kTransformA = ComplexTransform::kNone;
   static ComplexTransform const kTransformB = ComplexTransform::kNone;
 
@@ -265,8 +264,7 @@ class SparseGemm {
     ThreadblockSwizzle,
     kStages,
     kSplitKSerial,
-    Operator,
-    kIsBetaZero
+    Operator
   >::GemmKernel;
 
   using ElementE = typename GemmKernel::ElementE;

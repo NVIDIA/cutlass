@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -112,7 +112,13 @@ struct Mma<
   );
 
 #else
-    assert(0);
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+
 #endif
   }
 };
@@ -178,7 +184,13 @@ struct Mma<
   );
 
 #else
-    assert(0);
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+
 #endif
   }
 };
@@ -230,7 +242,13 @@ struct Mma<gemm::GemmShape<16, 8, 8>, 32, tfloat32_t, layout::RowMajor,
           "f"(C[0]), "f"(C[1]), "f"(C[2]), "f"(C[3]));
 
 #else
-    assert(0);
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+
 #endif
   }
 };
@@ -291,7 +309,13 @@ struct Mma<
   );
 
 #else
-    assert(0);
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+
 #endif
   }
 };
@@ -352,7 +376,13 @@ struct Mma<
           "f"(C[0]), "f"(C[1]), "f"(C[2]), "f"(C[3]));
 
 #else
-    assert(0);
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+
 #endif
   }
 };
@@ -413,7 +443,13 @@ struct Mma<
           "f"(C[0]), "f"(C[1]), "f"(C[2]), "f"(C[3]));
 
 #else
-    assert(0);
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+
 #endif
   }
 };
@@ -472,7 +508,13 @@ struct Mma<
       : "d"(A), "d"(B), "d"(C[0]), "d"(C[1]));
 
 #else
-    assert(0);
+
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+    
 #endif
   }
 };

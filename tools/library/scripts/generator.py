@@ -929,10 +929,10 @@ def GenerateSM75_TensorOp_8816_Interleaved(manifest, args):
     operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
 
-#    conv_layout = (LayoutType.TensorNC32HW32, LayoutType.TensorC32RSK32, LayoutType.TensorNC32HW32)
-#
-#    operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
-#      data_type_mixed, 16, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
+    conv_layout = (LayoutType.TensorNC32HW32, LayoutType.TensorC32RSK32, LayoutType.TensorNC32HW32)
+
+    operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
+      data_type_mixed, 16, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
 
     for op in operations:
       op.C.alignment = 8
@@ -1069,10 +1069,10 @@ def GenerateSM75_TensorOp_8832_Interleaved(manifest, args):
       operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
 
-#      conv_layout = (LayoutType.TensorNC64HW64, LayoutType.TensorC64RSK64, LayoutType.TensorNC64HW64)
-#  
-#      operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
-#        data_type_mixed, 32, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
+      conv_layout = (LayoutType.TensorNC64HW64, LayoutType.TensorC64RSK64, LayoutType.TensorNC64HW64)
+  
+      operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
+        data_type_mixed, 32, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
 
       for op in operations:
         op.C.alignment = 16 
@@ -1644,10 +1644,10 @@ def GenerateSM80_TensorOp_16832_Interleaved(manifest, args):
     operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
  
-#    conv_layout = (LayoutType.TensorNC32HW32, LayoutType.TensorC32RSK32, LayoutType.TensorNC32HW32)
-#
-#    operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
-#      data_type_mixed, 16, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
+    conv_layout = (LayoutType.TensorNC32HW32, LayoutType.TensorC32RSK32, LayoutType.TensorNC32HW32)
+
+    operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
+      data_type_mixed, 16, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
  
     for op in operations:
       op.C.alignment = 8
@@ -1825,10 +1825,10 @@ def GenerateSM80_TensorOp_16864_Interleaved(manifest, args):
     operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
  
-#    conv_layout = (LayoutType.TensorNC64HW64, LayoutType.TensorC64RSK64, LayoutType.TensorNC64HW64)
-#  
-#    operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
-#      data_type_mixed, 32, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
+    conv_layout = (LayoutType.TensorNC64HW64, LayoutType.TensorC64RSK64, LayoutType.TensorNC64HW64)
+  
+    operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
+      data_type_mixed, 32, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
  
     for op in operations:
       op.C.alignment = 16 
@@ -2096,7 +2096,6 @@ def GenerateSM80_TensorOp_1688_complex(manifest, args):
   max_cc = 1024
 
   tile_descriptions = [
-    TileDescription([64, 64, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
     TileDescription([128, 64, 16], 4, [4, 2, 1], math_inst, min_cc, max_cc),
     TileDescription([64, 128, 16], 4, [2, 4, 1], math_inst, min_cc, max_cc),
     TileDescription([64, 64, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),

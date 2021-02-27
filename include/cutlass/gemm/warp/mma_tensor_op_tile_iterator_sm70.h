@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -238,7 +238,7 @@ public:
         pointer_[0] = pointer_[1];
         pointer_[1] = tmp_pointer;
       }
-      contiguous_offset = contiguous_offset / 2;
+      contiguous_offset = contiguous_offset / 2 * 2;
     }
 
     int offset = (strided_offset * InstructionShape::kStrided) * stride_ *

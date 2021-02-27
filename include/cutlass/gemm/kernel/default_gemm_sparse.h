@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -112,9 +112,7 @@ template <
     /// epilogue
     bool SplitKSerial,
     /// Operation performed by GEMM
-    typename Operator,
-    /// Beta is zero or not
-    bool IsBetaZero = false>
+    typename Operator>
 struct DefaultSparseGemm;
 
 ////////////////////////////////////////////////////////////////////////////////

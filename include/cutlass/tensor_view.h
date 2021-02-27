@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -219,7 +219,9 @@ class TensorView : public TensorRef<Element_, Layout_> {
     TensorCoord const& location = TensorCoord()       ///< resulting view's origin within the old view
   ) const {
 
-    return TensorView(ref(), extent.clamp(extent_ - location)).add_coord_offset(location);
+    TensorView result(this->ref(), extent.clamp(extent_ - location));
+    result.add_coord_offset(location);
+    return result;
   }
 
   /// Returns the number of scalar elements needed to store tensor.

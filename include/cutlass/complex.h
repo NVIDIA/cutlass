@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -52,6 +52,23 @@ enum class ComplexTransform {
   kConjugate
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Defines ComplexTransform inversions
+template <ComplexTransform kTransform>
+struct InvertComplexTransform;
+
+/// Invert ComplexTransform from kNone to kConjugate
+template <>
+struct InvertComplexTransform<ComplexTransform::kNone> {
+  static ComplexTransform const transform = ComplexTransform::kConjugate;
+};
+
+/// Invert ComplexTransform from kConjugate to kNone
+template <>
+struct InvertComplexTransform<ComplexTransform::kConjugate> {
+  static ComplexTransform const transform = ComplexTransform::kNone;
+};
+/////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 //
@@ -289,6 +306,30 @@ CUTLASS_HOST_DEVICE T const &imag(complex<T> const &z) {
 template <typename T>
 CUTLASS_HOST_DEVICE T &imag(complex<T> &z) {
   return z.imag();
+}
+
+/// Returns the real part of the real number
+template <typename T>
+CUTLASS_HOST_DEVICE T const &real(T const &r) {
+  return r;
+}
+
+/// Returns the real part of the real number
+template <typename T>
+CUTLASS_HOST_DEVICE T &real(T &r) {
+  return r;
+}
+
+/// Returns the imaginary part of the real number
+template <typename T>
+CUTLASS_HOST_DEVICE T const &imag(T const &r) {
+  return T();
+}
+
+/// Returns the imaginary part of the complex number
+template <typename T>
+CUTLASS_HOST_DEVICE T &imag(T &r) {
+  return T();
 }
 
 //

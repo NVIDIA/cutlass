@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -45,13 +45,30 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <typename T>
+struct Identity {
+  CUTLASS_HOST_DEVICE
+  T operator()(T value) const {
+    return value;
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// ReLu operator - propagates NaNs
 template <typename T>
 struct ReLu {
   CUTLASS_HOST_DEVICE
-  T operator()(T const & threshold, T const &value) const {
+  T operator()(T const & threshold, T value) const {
     if (value < threshold) {
       value = threshold;
+    }
+    return value;
+  }
+  CUTLASS_HOST_DEVICE
+  T operator()(T value) const {
+    if (value < T()) {
+      value = T();
     }
     return value;
   }
@@ -107,6 +124,15 @@ struct Sigmoid<Array<T, N> > {
   }
 };
 
+//
+// GELU function definitions implemented as described by
+//   Hendrycks, D., and Gimpel, K. in
+//   "Gaussian Error Linear Units (GELUs)." (2020)
+//   https://arxiv.org/pdf/1606.08415.pdf
+//
+// Floating-point constants are Taylor coefficients described in the paper.
+//
+
 // GELU operator
 template <typename T>
 struct GELU {
@@ -134,8 +160,74 @@ struct GELU<Array<T, N> > {
     GELU<T> gelu_op;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < int(rhs.size()); ++i) {
+    for (int i = 0; i < N; ++i) {
       y[i] = gelu_op(rhs[i]);
+    }
+
+    return y;
+  }
+};
+
+// GELU operator implemented using the Taylor series approximation
+template <typename T>
+struct GELU_taylor {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &z) const {
+
+    T k0 = T(0.7978845608028654);
+    T k1 = T(0.044715);
+
+    return T(cutlass::constants::half<T>() * z * 
+      (cutlass::constants::one<T>() + fast_tanh(k0 * z * (cutlass::constants::one<T>() + k1 * z * z))));
+  }
+};
+
+template <typename T, int N>
+struct GELU_taylor<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    Array<T, N> y;
+    GELU_taylor<T> gelu_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      y[i] = gelu_op(rhs[i]);
+    }
+
+    return y;
+  }
+};
+
+/// Computes backwards pass for GELU operator assuming d_t is the layer gradient and
+/// z is computed from the forward pass.
+template <typename T>
+struct dGELU {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &d_t, T const &z) const {
+
+    T k0 = T(0.7978845608028654);
+    T k1 = T(0.044715);
+    T k2 = T(0.1070322243);
+
+    T tanh_out = fast_tanh(k0 * z * (1 + k1 * z * z));
+
+    T ff = constants::half<T>() * z * ((1 - tanh_out * tanh_out) * (k0 + k2 * z * z)) + 
+      constants::half<T>() * (1 + tanh_out);
+
+    return ff * d_t;
+  }
+};
+
+template <typename T, int N>
+struct dGELU<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &d_t, Array<T, N> const &z) const {
+    Array<T, N> y;
+    dGELU<T> gelu_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      y[i] = gelu_op(d_t[i], z[i]);
     }
 
     return y;
