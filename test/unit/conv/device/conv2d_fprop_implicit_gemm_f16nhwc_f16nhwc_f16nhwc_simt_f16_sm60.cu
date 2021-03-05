@@ -38,7 +38,7 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM60_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt_f16,
-  32x64_8x2_32x32x8) {
+  128x128_8x2_64x64x8) {
 
   /// Conv operation element types for the Gemm equivalent (ImplicitGemm)
   using ElementA           = cutlass::half_t;
@@ -59,8 +59,8 @@ TEST(SM60_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt
     ElementAccumulator,
     cutlass::arch::OpClassSimt,
     cutlass::arch::Sm60,
-    cutlass::gemm::GemmShape<32, 64, 8>,
-    cutlass::gemm::GemmShape<32, 32, 8>, 
+    cutlass::gemm::GemmShape<128, 128, 8>,
+    cutlass::gemm::GemmShape<64, 64, 8>, 
     cutlass::gemm::GemmShape<1, 1, 1>,
     cutlass::epilogue::thread::LinearCombination<
       ElementC,
@@ -83,8 +83,8 @@ TEST(SM60_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt
 
 ////////////////////////////////////////////////////////////////////////////////
 
-TEST(SM60_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt_f16,
-  32x128_8x2_16x64x8) {
+TEST(SM60_Device_Conv2d_Fprop_Optimized_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt_f16,
+  128x128_8x2_64x64x8) {
 
   /// Conv operation element types for the Gemm equivalent (ImplicitGemm)
   using ElementA           = cutlass::half_t;
@@ -105,8 +105,8 @@ TEST(SM60_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt
     ElementAccumulator,
     cutlass::arch::OpClassSimt,
     cutlass::arch::Sm60,
-    cutlass::gemm::GemmShape<32, 128, 8>,
-    cutlass::gemm::GemmShape<16, 64, 8>, 
+    cutlass::gemm::GemmShape<128, 128, 8>,
+    cutlass::gemm::GemmShape<64, 64, 8>, 
     cutlass::gemm::GemmShape<1, 1, 1>,
     cutlass::epilogue::thread::LinearCombination<
       ElementC,
