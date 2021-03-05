@@ -37,7 +37,7 @@
 
 
 ////////////////////////////////////////////////////////////////////////////////
-TEST(SM50_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt_f16,
+TEST(SM60_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt_f16,
   32x64_8x2_32x32x8) {
 
   /// Conv operation element types for the Gemm equivalent (ImplicitGemm)
@@ -50,15 +50,15 @@ TEST(SM50_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt
 
   /// Device-level Conv2d instance
   using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
-    ElementA,
+    ElementA, 
     cutlass::layout::TensorNHWC,
-    ElementB,
+    ElementB, 
     cutlass::layout::TensorNHWC,
-    ElementC,
+    ElementC, 
     cutlass::layout::TensorNHWC,
     ElementAccumulator,
     cutlass::arch::OpClassSimt,
-    cutlass::arch::Sm50,
+    cutlass::arch::Sm60,
     cutlass::gemm::GemmShape<32, 64, 8>,
     cutlass::gemm::GemmShape<32, 32, 8>, 
     cutlass::gemm::GemmShape<1, 1, 1>,
@@ -83,7 +83,7 @@ TEST(SM50_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt
 
 ////////////////////////////////////////////////////////////////////////////////
 
-TEST(SM50_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt_f16,
+TEST(SM60_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt_f16,
   32x128_8x2_16x64x8) {
 
   /// Conv operation element types for the Gemm equivalent (ImplicitGemm)
@@ -96,15 +96,15 @@ TEST(SM50_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt
 
   /// Device-level Conv2d instance
   using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
-    ElementA,
+    ElementA, 
     cutlass::layout::TensorNHWC,
-    ElementB,
+    ElementB, 
     cutlass::layout::TensorNHWC,
-    ElementC,
+    ElementC, 
     cutlass::layout::TensorNHWC,
     ElementAccumulator,
     cutlass::arch::OpClassSimt,
-    cutlass::arch::Sm50,
+    cutlass::arch::Sm60,
     cutlass::gemm::GemmShape<32, 128, 8>,
     cutlass::gemm::GemmShape<16, 64, 8>, 
     cutlass::gemm::GemmShape<1, 1, 1>,
@@ -116,7 +116,7 @@ TEST(SM50_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_simt
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<4>,
     2,
-    cutlass::arch::OpMultiplyAddComplex,
+    cutlass::arch::OpMultiplyAdd,
     cutlass::conv::IteratorAlgorithm::kOptimized
   >::Kernel;
 

@@ -103,7 +103,7 @@ cutlass_test_unit_add_executable(
   conv2d_wgrad_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm50.cu 
 
   # F16
-  conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_simt_f16_sm50.cu
+  conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_simt_f16_sm60.cu
 )
 
 if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 80)
