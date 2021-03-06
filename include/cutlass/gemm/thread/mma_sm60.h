@@ -70,14 +70,16 @@ struct Mma_HFMA2;
 // Specialization for NNN  //
 /////////////////////////////
 
-template <typename Shape>
+template <typename Shape_>
 struct Mma_HFMA2 <
-  Shape,
+  Shape_,
   layout::ColumnMajor,
   layout::ColumnMajor,
   layout::ColumnMajor,
   true
   > {
+
+  using Shape = Shape_;
 
   static_assert(
     !(Shape::kM % 2),
@@ -159,14 +161,16 @@ struct Mma_HFMA2 <
 // Specialization for NNT  //
 /////////////////////////////
 
-template <typename Shape>
+template <typename Shape_>
 struct Mma_HFMA2<
-  Shape,
+  Shape_,
   layout::ColumnMajor,
   layout::ColumnMajor,
   layout::RowMajor,
   true
   > {
+
+  using Shape = Shape_;
 
   static_assert(
     !(Shape::kN % 2),
@@ -253,14 +257,16 @@ struct Mma_HFMA2<
 // Specialization for NTN  //
 /////////////////////////////
 
-template <typename Shape>
+template <typename Shape_>
 struct Mma_HFMA2 <
-  Shape,
+  Shape_,
   layout::ColumnMajor,
   layout::RowMajor,
   layout::ColumnMajor,
   true
   > {
+
+  using Shape = Shape_;
 
   static_assert(
     !(Shape::kM % 2),
@@ -342,14 +348,16 @@ struct Mma_HFMA2 <
 // Specialization for NTT  //
 /////////////////////////////
 
-template <typename Shape>
+template <typename Shape_>
 struct Mma_HFMA2<
-  Shape,
+  Shape_,
   layout::ColumnMajor,
   layout::RowMajor,
   layout::RowMajor,
   true
   > {
+
+  using Shape = Shape_;
 
   static_assert(
     !(Shape::kN % 2),
@@ -431,14 +439,16 @@ struct Mma_HFMA2<
 // Specialization for TNN  //
 /////////////////////////////
 
-template <typename Shape>
+template <typename Shape_>
 struct Mma_HFMA2 <
-  Shape,
+  Shape_,
   layout::RowMajor,
   layout::ColumnMajor,
   layout::ColumnMajor,
   true
   > {
+
+  using Shape = Shape_;
 
   static_assert(
     !(Shape::kM % 2),
@@ -524,14 +534,16 @@ struct Mma_HFMA2 <
 // Specialization for TNT  //
 /////////////////////////////
 
-template <typename Shape>
+template <typename Shape_>
 struct Mma_HFMA2 <
-  Shape,
+  Shape_,
   layout::RowMajor,
   layout::ColumnMajor,
   layout::RowMajor,
   true
   > {
+
+  using Shape = Shape_;
 
   static_assert(
     !(Shape::kN % 2),
@@ -617,14 +629,16 @@ struct Mma_HFMA2 <
 // Specialization for TTN  //
 /////////////////////////////
 
-template <typename Shape>
+template <typename Shape_>
 struct Mma_HFMA2 <
-  Shape,
+  Shape_,
   layout::RowMajor,
   layout::RowMajor,
   layout::ColumnMajor,
   true
   > {
+
+  using Shape = Shape_;
 
   static_assert(
     !(Shape::kM % 2),
@@ -711,14 +725,16 @@ struct Mma_HFMA2 <
 // Specialization for TTT  //
 /////////////////////////////
 
-template <typename Shape>
+template <typename Shape_>
 struct Mma_HFMA2<
-  Shape,
+  Shape_,
   layout::RowMajor,
   layout::RowMajor,
   layout::RowMajor,
   true
   > {
+
+  using Shape = Shape_;
 
   static_assert(
     !(Shape::kN % 2),
@@ -800,14 +816,16 @@ struct Mma_HFMA2<
 // Specialization for TNT + Inner Product  or 1x1x2K + LayoutC = T //
 /////////////////////////////////////////////////////////////////////
 
-template <typename Shape, typename LayoutA, typename LayoutB>
+template <typename Shape_, typename LayoutA, typename LayoutB>
 struct Mma_HFMA2<
-  Shape,
+  Shape_,
   LayoutA,
   LayoutB,
   layout::RowMajor,
   false
   > {
+
+  using Shape = Shape_;
 
   static_assert(
     !(Shape::kK % 2),
@@ -882,14 +900,16 @@ struct Mma_HFMA2<
 // Specialization for TNN + Inner Product  or 1x1x2K + LayoutC = N //
 /////////////////////////////////////////////////////////////////////
 
-template <typename Shape, typename LayoutA, typename LayoutB>
+template <typename Shape_, typename LayoutA, typename LayoutB>
 struct Mma_HFMA2<
-  Shape,
+  Shape_,
   LayoutA,
   LayoutB,
   layout::ColumnMajor,
   false
   > {
+
+  using Shape = Shape_;
 
   static_assert(
     !(Shape::kK % 2),
