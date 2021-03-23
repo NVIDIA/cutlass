@@ -347,7 +347,7 @@ public:
       return Status::kErrorWorkspaceNull;
     }
     
-    params_.update(args, workspace);
+    params_.update(args, workspace, stream);
     
     return Status::kSuccess;
   }
