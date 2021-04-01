@@ -74,7 +74,8 @@ public:
 
   static int const kWarpCount = 
     (ThreadblockShape::kM / WarpShape::kM) * 
-    (ThreadblockShape::kN / WarpShape::kN);
+    (ThreadblockShape::kN / WarpShape::kN) *
+    (ThreadblockShape::kK / WarpShape::kK);
 
   /// Argument structure
   using Arguments = typename ImplicitGemmKernel::Arguments;

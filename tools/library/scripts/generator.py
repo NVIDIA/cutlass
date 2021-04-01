@@ -701,6 +701,7 @@ def GenerateSM75_TensorOp_1688(manifest, args):
       TileDescription([ 64, 128, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 128, 64], 2, [1, 2, 2], math_inst, min_cc, max_cc),
     ]
 
     data_type = [
