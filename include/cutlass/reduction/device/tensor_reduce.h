@@ -170,7 +170,7 @@ struct TensorReduction {
     cudaStream_t stream = nullptr) {
 
     int64_t src_stride[3];
-    int64_t dst_stride[2];
+    int64_t dst_stride[3];
 
     switch (reduction_index) {
     case 0:
