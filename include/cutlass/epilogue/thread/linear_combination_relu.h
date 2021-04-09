@@ -357,9 +357,11 @@ public:
     ReLu<ComputeFragment> relu;
 
     if (Scale == ScaleType::NoBetaScaling)
-      intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
+        intermediate = converted_source;
     else
-      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+        intermediate = mul_add_source(beta_, converted_source);                         // X =  beta * C + uniform
+
+    intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
 
     // Compute threshold optionally
     intermediate = relu(threshold_, intermediate);
