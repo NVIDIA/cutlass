@@ -139,7 +139,7 @@ struct GELU {
   CUTLASS_HOST_DEVICE
   T operator()(T const &scalar) const {
     return T(cutlass::constants::half<T>() * scalar *
-      (cutlass::constants::one<T>() + erff( scalar / cutlass::constants::root_two<T>() )));
+      (cutlass::constants::one<T>() + (T)erff((float)(scalar / cutlass::constants::root_two<T>()))));
   }
 };
 
@@ -149,6 +149,15 @@ struct GELU<float> {
   float operator()(float const &scalar) const {
     return cutlass::constants::half<float>() * scalar *
       (cutlass::constants::one<float>() + erff( scalar / cutlass::constants::root_two<float>() ));
+  }
+};
+
+template <>
+struct GELU<double> {
+  CUTLASS_HOST_DEVICE
+  float operator()(double const &scalar) const {
+    return cutlass::constants::half<double>() * scalar *
+      (cutlass::constants::one<double>() + erf( scalar / cutlass::constants::root_two<double>() ));
   }
 };
 
