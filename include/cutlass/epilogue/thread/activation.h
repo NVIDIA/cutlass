@@ -155,7 +155,7 @@ struct GELU<float> {
 template <>
 struct GELU<double> {
   CUTLASS_HOST_DEVICE
-  float operator()(double const &scalar) const {
+  double operator()(double const &scalar) const {
     return cutlass::constants::half<double>() * scalar *
       (cutlass::constants::one<double>() + erf( scalar / cutlass::constants::root_two<double>() ));
   }

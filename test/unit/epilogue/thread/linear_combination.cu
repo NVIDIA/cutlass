@@ -148,14 +148,12 @@ TEST(Epilogue_thread_linear_combination_gelu, device_side_f16_f16_ptr) {
   }
 
   cutlass::Array<ElementOutput, kCount> destination = linear_combination_op(accum, accum);
-
-  const float sqrt2 = sqrtf(2.0f);
   cutlass::epilogue::thread::GELU<ElementOutput> gelu_func;
+
   for (int i = 0; i < kCount; ++i) {
     ElementOutput expected = gelu_func(accum[i]);
     ElementOutput got = destination[i];
-    ElementOutput diff(fabs((float)(expected - got)));
-    EXPECT_TRUE(diff <= std::numeric_limits<cutlass::half_t>::epsilon());
+    EXPECT_TRUE(expected == got);
   }
 }
 
