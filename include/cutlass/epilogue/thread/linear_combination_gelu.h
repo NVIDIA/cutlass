@@ -134,6 +134,7 @@ public:
   /// Functionally required for serial reduction in the epilogue
   CUTLASS_HOST_DEVICE
   void set_k_partition(int k_partition, int k_partition_count) {
+    CUTLASS_UNUSED(k_partition_count);
     if (k_partition) {
       beta_ = ElementCompute(1);
     }
