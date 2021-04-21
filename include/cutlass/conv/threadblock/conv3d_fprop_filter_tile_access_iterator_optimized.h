@@ -89,6 +89,8 @@ public:
   static_assert(ThreadMap::Iterations::kContiguous == 1,
     "Require Iterations::kContiguous == 1");
 
+  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
+
   //
   // Parameters structure
   //

@@ -60,7 +60,8 @@ template <
   typename Shape_,
   typename Element_,
   typename Layout_,
-  typename ThreadMap_
+  typename ThreadMap_,
+  bool Aligned = true
 >
 class Conv2dFpropActivationTileAccessIteratorOptimized {
 public:
@@ -74,7 +75,8 @@ public:
   using Layout = Layout_;
   using TensorCoord = typename Layout::TensorCoord;
   using ThreadMap = ThreadMap_;
-  using AccessType = AlignedArray<Element, ThreadMap::kElementsPerAccess>;
+  static int const AccessSize = Aligned ? ThreadMap::kElementsPerAccess : 1;
+  using AccessType = AlignedArray<Element, AccessSize>;
   using TensorRef = cutlass::TensorRef<Element, Layout>;
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
@@ -97,12 +99,15 @@ public:
 
   using Params = Conv2dFpropActivationIteratorOptimizedParams<Layout>;
 
+  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
+
 private:
 
   Conv2dFpropActivationIteratorOptimizedParams<Layout> const &params_;
   Conv2dProblemSize const &problem_size_;
   LongIndex iteration_contiguous_;
   LongIndex iteration_strided_;
+  LongIndex iteration_vector_;
 
   // One pointer per access
   char const *pointer_[ThreadMap::Iterations::kStrided];
@@ -112,7 +117,7 @@ private:
   int filter_s_;
   int filter_c_;
 
-  Index masks_[ThreadMap::Iterations::kStrided][2];
+  Index masks_[ThreadMap::Iterations::kStrided][kAccessesPerVector][2];
 
 public:
 
@@ -180,7 +185,11 @@ public:
         int h = offset_p[s_idx] * problem_size_.stride_h - problem_size_.pad_h + r_ * problem_size_.dilation_h;
 
         bool pred = (offset_n[s_idx] < problem_size_.N && h >= 0 && h < problem_size_.H);
-        masks_[s_idx][0] |= (pred << r);
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
+          masks_[s_idx][v_idx][0] |= (pred << r);
+        }
       }
     }
 
@@ -197,13 +206,18 @@ public:
         int w = offset_q[s_idx] * problem_size_.stride_w - problem_size_.pad_w + s_ * problem_size_.dilation_w;
 
         bool pred = (w >= 0 && w < problem_size_.W);
-        masks_[s_idx][1] |= (pred << s);
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
+          masks_[s_idx][v_idx][1] |= (pred << s);
+        }
       }
     }
 
-    if (filter_c_ >= problem_size.C) {
-      clear_mask();
-    }
+      CUTLASS_PRAGMA_UNROLL
+      for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
+        clear_mask_(filter_c_ + v_idx >= problem_size_.C, v_idx);
+      }
 
     set_iteration_index(0);
   }
@@ -250,7 +264,7 @@ private:
   
   /// Clears the predicates
   CUTLASS_HOST_DEVICE
-  void clear_mask_(bool clear) {
+  void clear_mask_(bool clear, int index) {
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
 
@@ -268,10 +282,10 @@ private:
           "  mov.u32 %0, m;\n"
           "}\n" 
         :
-          "=r"(masks_[s][0])
+          "=r"(masks_[s][index][0])
        : 
           "r"((int)clear),
-          "r"(masks_[s][0])
+          "r"(masks_[s][index][0])
       );
       asm volatile(
           "{\n"
@@ -283,15 +297,15 @@ private:
           "  mov.u32 %0, m;\n"
           "}\n" 
         :
-          "=r"(masks_[s][1])
+          "=r"(masks_[s][index][1])
        : 
           "r"((int)clear),
-          "r"(masks_[s][1])
+          "r"(masks_[s][index][1])
       );
       #else
         if (clear) {
-          masks_[s][0] = 0;
-          masks_[s][1] = 0;
+          masks_[s][index][0] = 0;
+          masks_[s][index][1] = 0;
         }
       #endif
     }
@@ -302,8 +316,11 @@ public:
   /// Overrides the internal iteration index
   CUTLASS_HOST_DEVICE
   void set_iteration_index(Index index) {
-    iteration_contiguous_ = index % ThreadMap::Iterations::kContiguous;
-    iteration_strided_ = index / ThreadMap::Iterations::kContiguous;
+    iteration_vector_ = index % kAccessesPerVector;
+    int residual_access = index / kAccessesPerVector;
+
+    iteration_contiguous_ = residual_access % ThreadMap::Iterations::kContiguous;
+    iteration_strided_ = residual_access / ThreadMap::Iterations::kContiguous;
   }
 
   /// Adds a pointer offset in units of element
@@ -338,7 +355,10 @@ public:
       filter_c_ += params_.filter_c_delta;
     }
 
-    clear_mask_(filter_c_ >= problem_size_.C);
+      CUTLASS_PRAGMA_UNROLL
+      for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
+        clear_mask_(filter_c_ + v_idx >= problem_size_.C, v_idx);
+      }
   }
 
   /// Clears the predicates
@@ -346,8 +366,11 @@ public:
   void clear_mask() {
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
-      masks_[s][0] = Mask(0);
-      masks_[s][1] = Mask(0);
+      CUTLASS_PRAGMA_UNROLL
+      for (int v = 0; v < kAccessesPerVector; ++v) {
+        masks_[s][v][0] = Mask(0);
+        masks_[s][v][1] = Mask(0);
+      }
     }
   }
 
@@ -355,20 +378,27 @@ public:
   bool valid() {
 
     return 
-      (masks_[iteration_strided_][0] & (Index(1) << filter_r_)) &&
-      (masks_[iteration_strided_][1] & (Index(1) << filter_s_));
+      (masks_[iteration_strided_][iteration_vector_][0] & (Index(1) << filter_r_)) &&
+      (masks_[iteration_strided_][iteration_vector_][1] & (Index(1) << filter_s_));
   }
 
   /// Returns a pointer to the vector starting at the current coordinate
   CUTLASS_HOST_DEVICE
   AccessType const *get() const {
 
-    return reinterpret_cast<AccessType const *>(pointer_[iteration_strided_]);
+    return reinterpret_cast<AccessType const *>(pointer_[iteration_strided_]) + iteration_vector_;
   }
 
   /// Increments to the next memory access
   CUTLASS_HOST_DEVICE
   Conv2dFpropActivationTileAccessIteratorOptimized &operator++() {
+
+    ++iteration_vector_;
+    if (iteration_vector_ < kAccessesPerVector) {
+      return *this;
+    }
+
+    iteration_vector_ = 0;
 
     ++iteration_contiguous_;
     if (iteration_contiguous_ < ThreadMap::Iterations::kContiguous) {
@@ -390,7 +420,7 @@ public:
   static Status can_implement(Conv2dProblemSize const &problem_size) {
 
     // check alignment constraint on iterator's contiguous dimension
-    if (problem_size.C % (128/sizeof_bits<Element>::value)) {
+    if (Aligned && problem_size.C % (128/sizeof_bits<Element>::value)) {
       return Status::kErrorInvalidProblem;
     }
 

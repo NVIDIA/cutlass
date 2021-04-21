@@ -195,7 +195,8 @@ public:
     IteratorA &iterator_A, IteratorB &iterator_B,
     int group_start_A = 0, int group_start_B = 0) {
 
-    iterator_A.set_iteration_index(group_start_A);
+    iterator_A.set_iteration_index(group_start_A *
+                                   IteratorA::kAccessesPerVector);
     this->smem_iterator_A_.set_iteration_index(group_start_A);
       
     // Async Copy for operand A
@@ -208,18 +209,22 @@ public:
                 this->smem_iterator_A_.get());
 
         int const kSrcBytes = sizeof_bits<typename IteratorA::Element>::value *
-                              IteratorA::ThreadMap::kElementsPerAccess / 8;
+                              IteratorA::ThreadMap::kElementsPerAccess /
+                              IteratorA::kAccessesPerVector / 8;
 
-        cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
-                dst_ptr, iterator_A.get(), iterator_A.valid());
-
-        ++iterator_A;
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
+          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
+                  dst_ptr + v, iterator_A.get(), iterator_A.valid());
+          ++iterator_A;
+        }
 
         ++this->smem_iterator_A_;
       }
     }
 
-    iterator_B.set_iteration_index(group_start_B);
+    iterator_B.set_iteration_index(group_start_B *
+                                   IteratorB::kAccessesPerVector);
 
     this->smem_iterator_B_.set_iteration_index(group_start_B);
     
@@ -232,12 +237,15 @@ public:
                 this->smem_iterator_B_.get());
         
         int const kSrcBytes = sizeof_bits<typename IteratorB::Element>::value *
-                              IteratorB::ThreadMap::kElementsPerAccess / 8;
+                              IteratorB::ThreadMap::kElementsPerAccess /
+                              IteratorB::kAccessesPerVector / 8;
 
-        cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
-                dst_ptr, iterator_B.get(), iterator_B.valid());
-
-        ++iterator_B;
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
+          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
+                  dst_ptr + v, iterator_B.get(), iterator_B.valid());
+          ++iterator_B;
+        }
         ++this->smem_iterator_B_;
       }
     }
@@ -279,14 +287,18 @@ public:
           reinterpret_cast<typename IteratorA::AccessType *>(
             this->smem_iterator_A_.get());
 
-        int const kSrcBytes =
-            sizeof_bits<typename IteratorA::Element>::value *
-            IteratorA::ThreadMap::kElementsPerAccess / 8;
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
+          int const kSrcBytes = 
+              sizeof_bits<typename IteratorA::Element>::value *
+              IteratorA::ThreadMap::kElementsPerAccess /
+              IteratorA::kAccessesPerVector / 8;
 
-        cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
-          dst_ptr, iterator_A.get(), iterator_A.valid());
+          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
+            dst_ptr + v, iterator_A.get(), iterator_A.valid());
 
-        ++iterator_A;
+          ++iterator_A;
+        }
         ++this->smem_iterator_A_;
       }
 
@@ -300,14 +312,18 @@ public:
           reinterpret_cast<typename IteratorB::AccessType *>(
               this->smem_iterator_B_.get());
 
-        int const kSrcBytes =
-            sizeof_bits<typename IteratorB::Element>::value *
-            IteratorB::ThreadMap::kElementsPerAccess / 8;
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
+          int const kSrcBytes =
+              sizeof_bits<typename IteratorB::Element>::value *
+              IteratorB::ThreadMap::kElementsPerAccess /
+              IteratorB::kAccessesPerVector / 8;
 
-        cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
-            dst_ptr, iterator_B.get(), iterator_B.valid());
+          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
+              dst_ptr + v, iterator_B.get(), iterator_B.valid());
 
-        ++iterator_B;
+          ++iterator_B;
+        }
         ++this->smem_iterator_B_;
       }
 

@@ -82,6 +82,8 @@ public:
   static StrideSupport const kStrideSupport = StrideSupport_;
   static int const kConvDim = 3;
   using ConvProblemSize = typename conv::Conv3dProblemSize;
+
+  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
   
   //
   // Parameters structure

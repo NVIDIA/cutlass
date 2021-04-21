@@ -93,6 +93,8 @@ public:
 
   using Params = Conv3dAnalyticParams<Layout>;
 
+  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
+
 private:
 
   Params const &params_;

@@ -88,6 +88,8 @@ public:
 
   using Params = Conv2dWgradOutputGradientIteratorOptimizedParams;
 
+  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
+
 private:
 
   Conv2dWgradOutputGradientIteratorOptimizedParams const &params_;

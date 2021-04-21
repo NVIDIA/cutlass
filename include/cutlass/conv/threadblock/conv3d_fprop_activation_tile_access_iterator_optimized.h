@@ -97,6 +97,8 @@ public:
 
   using Params = Conv3dFpropActivationIteratorOptimizedParams<Layout>;
 
+  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
+
 private:
 
   Conv3dFpropActivationIteratorOptimizedParams<Layout> const &params_;
