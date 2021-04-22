@@ -57,8 +57,8 @@ using ElementInputA = cutlass::int4b_t;             // <- data type of elements 
 using ElementInputB = cutlass::int4b_t;             // <- data type of elements in input matrix B
 using ElementOutput = int32_t;                      // <- data type of elements in output matrix D
 
-// The code section below describes matrix layout of input and output matrices. Column Major for
-// Matrix A, Row Major for Matrix B and Row Major for Matrix C
+// The code section below describes matrix layout of input and output matrices. Row Major for
+// Matrix A, Column Major for Matrix B and Row Major for Matrix C
 using LayoutInputA = cutlass::layout::RowMajor;
 using LayoutInputB = cutlass::layout::ColumnMajor;
 using LayoutOutput = cutlass::layout::RowMajor;
