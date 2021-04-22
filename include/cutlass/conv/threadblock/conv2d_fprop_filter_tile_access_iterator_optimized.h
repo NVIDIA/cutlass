@@ -61,7 +61,7 @@ template <
   typename Element_,
   typename Layout_,
   typename ThreadMap_,
-  bool Aligned = true
+  int AccessSize = ThreadMap_::kElementsPerAccess
 >
 class Conv2dFpropFilterTileAccessIteratorOptimized{
 public:
@@ -74,7 +74,6 @@ public:
   using Element = Element_;
   using Layout = Layout_;
   using ThreadMap = ThreadMap_;
-  static int const AccessSize = Aligned ? ThreadMap::kElementsPerAccess : 1;
   using AccessType = AlignedArray<Element, AccessSize>;
   using TensorRef = cutlass::TensorRef<Element, Layout>;
   using TensorCoord = typename Layout::TensorCoord;
@@ -178,7 +177,7 @@ public:
     }
 
     for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
-      clear_mask_(filter_c_ + v_idx >= problem_size_.C, v_idx);
+      clear_mask_(filter_c_ + v_idx * AccessSize >= problem_size_.C, v_idx);
     }
 
     pointer_ += (
@@ -249,7 +248,7 @@ public:
     }
 
     for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
-      clear_mask_(filter_c_ + v_idx >= problem_size_.C, v_idx);
+      clear_mask_(filter_c_ + v_idx * AccessSize >= problem_size_.C, v_idx);
     }
       
     pointer_ += next;
@@ -301,7 +300,7 @@ public:
   static Status can_implement(Conv2dProblemSize const &problem_size) {
 
     // check alignment constraint on iterator's contiguous dimension
-    if (Aligned && problem_size.C % (128/sizeof_bits<Element>::value)) {
+    if (problem_size.C % AccessSize) {
       return Status::kErrorInvalidProblem;
     }
 
