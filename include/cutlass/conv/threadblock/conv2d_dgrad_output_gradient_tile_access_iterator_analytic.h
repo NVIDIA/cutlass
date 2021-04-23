@@ -341,6 +341,8 @@ public:
   // Parameters structure
   //
 
+  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
+
   struct Params {
 
     Layout layout;

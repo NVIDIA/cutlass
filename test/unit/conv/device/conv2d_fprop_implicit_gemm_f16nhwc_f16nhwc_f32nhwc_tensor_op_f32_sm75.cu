@@ -118,4 +118,133 @@ TEST(SM75_Device_Conv2d_Fprop_Optimized_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_ten
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_Device_Conv2d_Fprop_Optimized_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_align1,
+  128x128_32x2_64x64x32) {
+
+  /// Conv operation element types for the Gemm equivalent (ImplicitGemm)
+  using ElementA           = cutlass::half_t;
+  using ElementB           = cutlass::half_t;
+  using ElementC           = float;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+
+  /// Device-level Conv2d instance
+  using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
+    ElementA, cutlass::layout::TensorNHWC,
+    ElementB, cutlass::layout::TensorNHWC,
+    ElementC, cutlass::layout::TensorNHWC,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm75,
+    cutlass::gemm::GemmShape<128, 128, 32>,
+    cutlass::gemm::GemmShape<64, 64, 32>,
+    cutlass::gemm::GemmShape<16, 8, 8>,
+    cutlass::epilogue::thread::LinearCombination<
+      ElementC,
+      128 / cutlass::sizeof_bits<ElementC>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    2,
+    cutlass::arch::OpMultiplyAdd,
+    cutlass::conv::IteratorAlgorithm::kOptimized,
+    1,
+    1
+  >::Kernel;
+
+  using Conv2dFprop = cutlass::conv::device::ImplicitGemmConvolution<Conv2dFpropKernel>;
+
+  /// Run all unit test sizes with device-level Conv2d instance
+  EXPECT_TRUE(test::conv::device::TestAllConv2d<Conv2dFprop>());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_Device_Conv2d_Fprop_Optimized_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_align2,
+  128x128_32x2_64x64x32) {
+
+  /// Conv operation element types for the Gemm equivalent (ImplicitGemm)
+  using ElementA           = cutlass::half_t;
+  using ElementB           = cutlass::half_t;
+  using ElementC           = float;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+
+  /// Device-level Conv2d instance
+  using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
+    ElementA, cutlass::layout::TensorNHWC,
+    ElementB, cutlass::layout::TensorNHWC,
+    ElementC, cutlass::layout::TensorNHWC,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm75,
+    cutlass::gemm::GemmShape<128, 128, 32>,
+    cutlass::gemm::GemmShape<64, 64, 32>,
+    cutlass::gemm::GemmShape<16, 8, 8>,
+    cutlass::epilogue::thread::LinearCombination<
+      ElementC,
+      128 / cutlass::sizeof_bits<ElementC>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    2,
+    cutlass::arch::OpMultiplyAdd,
+    cutlass::conv::IteratorAlgorithm::kOptimized,
+    2,
+    2
+  >::Kernel;
+
+  using Conv2dFprop = cutlass::conv::device::ImplicitGemmConvolution<Conv2dFpropKernel>;
+
+  /// Run all unit test sizes with device-level Conv2d instance
+  EXPECT_TRUE(test::conv::device::TestAllConv2d<Conv2dFprop>());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM75_Device_Conv2d_Fprop_Optimized_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_align4,
+  128x128_32x2_64x64x32) {
+
+  /// Conv operation element types for the Gemm equivalent (ImplicitGemm)
+  using ElementA           = cutlass::half_t;
+  using ElementB           = cutlass::half_t;
+  using ElementC           = float;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+
+  /// Device-level Conv2d instance
+  using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
+    ElementA, cutlass::layout::TensorNHWC,
+    ElementB, cutlass::layout::TensorNHWC,
+    ElementC, cutlass::layout::TensorNHWC,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm75,
+    cutlass::gemm::GemmShape<128, 128, 32>,
+    cutlass::gemm::GemmShape<64, 64, 32>,
+    cutlass::gemm::GemmShape<16, 8, 8>,
+    cutlass::epilogue::thread::LinearCombination<
+      ElementC,
+      128 / cutlass::sizeof_bits<ElementC>::value,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    2,
+    cutlass::arch::OpMultiplyAdd,
+    cutlass::conv::IteratorAlgorithm::kOptimized,
+    4,
+    4
+  >::Kernel;
+
+  using Conv2dFprop = cutlass::conv::device::ImplicitGemmConvolution<Conv2dFpropKernel>;
+
+  /// Run all unit test sizes with device-level Conv2d instance
+  EXPECT_TRUE(test::conv::device::TestAllConv2d<Conv2dFprop>());
+}
+
+////////////////////////////////////////////////////////////////////////////////
 #endif  // CUTLASS_ARCH_MMA_SM75_SUPPORTED

@@ -615,6 +615,11 @@ struct DefaultConv2dFprop <
   using WarpMmaTensorOp = typename MmaCore::MmaTensorOp;
   using MmaPolicy = typename MmaCore::MmaPolicy;
 
+  static cutlass::arch::CacheOperation::Kind const CacheOpB =
+      ((sizeof_bits<ElementA>::value * AlignmentB) == 128)
+          ? cutlass::arch::CacheOperation::Global
+          : cutlass::arch::CacheOperation::Always;
+
   // Define the Mma
   using Mma = threadblock::ImplicitGemmMultistage<
     ThreadblockShape,
@@ -623,7 +628,7 @@ struct DefaultConv2dFprop <
     arch::CacheOperation::Always,
     IteratorB,
     SmemIteratorB,
-    arch::CacheOperation::Always,
+    CacheOpB,
     MmaPolicy,
     Stages 
   >;

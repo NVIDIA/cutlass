@@ -176,6 +176,7 @@ public:
       }
     }
 
+    CUTLASS_PRAGMA_UNROLL
     for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
       clear_mask_(filter_c_ + v_idx * AccessSize >= problem_size_.C, v_idx);
     }
@@ -212,7 +213,6 @@ public:
     #else
       if (clear) {
         predicates_[index] = 0;
-        predicates_[index] = 0;
       }
     #endif
   }
@@ -247,6 +247,7 @@ public:
       filter_c_ += params_.filter_c_delta;
     }
 
+    CUTLASS_PRAGMA_UNROLL
     for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
       clear_mask_(filter_c_ + v_idx * AccessSize >= problem_size_.C, v_idx);
     }
