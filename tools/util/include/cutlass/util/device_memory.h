@@ -263,7 +263,7 @@ public:
       smart_ptr.reset(device_memory::allocate<T>(p.capacity));
       capacity = p.capacity;
     }
-    copy_device_to_device(smart_ptr.get(), p.get(), capacity);
+    device_memory::copy_device_to_device(smart_ptr.get(), p.get(), capacity);
     return *this;
   }
 
