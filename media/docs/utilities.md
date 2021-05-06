@@ -200,7 +200,7 @@ int main() {
     minimum);
 
   // Initialize in device memory
-  cutlass::reference::device::TensorFill(
+  cutlass::reference::device::TensorFillRandomUniform(
     tensor.device_view(),
     seed,
     maximum,
@@ -211,7 +211,7 @@ int main() {
 ```
 
 
-`TensorFillRandomUniform()` for initializing elements to a random uniform distribution.
+`TensorFillRandomGaussian()` for initializing elements to a random Gaussian distribution.
 The device-side implementation uses CURAND to generate random numbers.
 ```c++
 #include <cutlass/layout/matrix.h>
