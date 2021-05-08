@@ -29,6 +29,8 @@
 #include "../../common/cutlass_unit_test.h"
 
 #include "cutlass/epilogue/thread/linear_combination.h"
+#include "cutlass/epilogue/thread/linear_combination_gelu.h"
+#include "cutlass/epilogue/thread/activation.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -114,6 +116,43 @@ TEST(Epilogue_thread_linear_combination, device_side_f16_f32_ptr) {
 
     ElementOutput got = destination[i];
     
+    EXPECT_TRUE(expected == got);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Epilogue_thread_linear_combination_gelu, device_side_f16_f16_ptr) {
+
+  using Element = cutlass::half_t;
+  using ElementOutput = cutlass::half_t;
+  int const kCount = 8;
+
+  using LinearCombination = cutlass::epilogue::thread::LinearCombinationGELU<
+    ElementOutput,
+    kCount,
+    Element,
+    Element>;
+
+  Element alpha = Element(1);
+  Element beta = Element(0);
+
+  typename LinearCombination::Params params(&alpha, &beta);
+
+  LinearCombination linear_combination_op(params);
+
+  cutlass::Array<Element, kCount> accum;
+
+  for (int i = 0; i < kCount; ++i) {
+    accum[i] = Element((float)i * 0.3f);
+  }
+
+  cutlass::Array<ElementOutput, kCount> destination = linear_combination_op(accum, accum);
+  cutlass::epilogue::thread::GELU<ElementOutput> gelu_func;
+
+  for (int i = 0; i < kCount; ++i) {
+    ElementOutput expected = gelu_func(accum[i]);
+    ElementOutput got = destination[i];
     EXPECT_TRUE(expected == got);
   }
 }
