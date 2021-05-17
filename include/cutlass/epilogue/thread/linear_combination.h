@@ -177,7 +177,11 @@ public:
     multiplies<ComputeFragment> mul_add_source;
     multiply_add<ComputeFragment> mul_add_accumulator;
 
-    intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
+    if (Scale == ScaleType::NoBetaScaling)
+      intermediate = converted_source;
+    else
+      intermediate = mul_add_source(beta_, converted_source);                           // X =  beta * C + uniform
+
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
 
     // Convert to destination numeric type
