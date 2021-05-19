@@ -483,69 +483,16 @@ struct NumericConverterClamp {
   using result_type = T;
   using source_type = S;
 
-  static_assert((platform::is_same<result_type, int32_t>::value ||
-                 platform::is_same<result_type, int8_t>::value ||
-                 platform::is_same<result_type, cutlass::int4b_t>::value),
-                "Clamp is only needed for integer types");
-
   CUTLASS_HOST_DEVICE
     static result_type convert(source_type const & s) {
     NumericConverter<result_type, source_type> convert_op;
-    result_type const kClamp_max =
-        (0x1U << (sizeof_bits<result_type>::value - 1)) - 1;
-    result_type const kClamp_min = -kClamp_max - 1;
-    bool is_int_min = !(s > kClamp_min);
-    bool is_int_max = !(s < kClamp_max);
-    return is_int_min ? kClamp_min : (is_int_max ? kClamp_max : convert_op(s));
-  }
-
-  CUTLASS_HOST_DEVICE
-    result_type operator()(source_type const &s) {
-    return convert(s);
-  }
-};
-
-/// Partial specialization for clamping from a single-precision float.
-template <
-  typename T
->
-struct NumericConverterClamp<T, float> {
-
-  using result_type = T;
-  using source_type = float;
-
-  static_assert((platform::is_same<result_type, int32_t>::value ||
-                 platform::is_same<result_type, int16_t>::value ||
-                 platform::is_same<result_type, uint16_t>::value ||
-                 platform::is_same<result_type, int8_t>::value ||
-                 platform::is_same<result_type, uint8_t>::value ||
-                 platform::is_same<result_type, cutlass::int4b_t>::value ||
-                 platform::is_same<result_type, cutlass::uint4b_t>::value),
-                "Clamp is only needed for integer types");
-
-  CUTLASS_HOST_DEVICE
-    static result_type convert(source_type const & s) {
-
-    NumericConverter<result_type, double> convert_op;
-    double kClamp_max, kClamp_min;
-
-    if (platform::is_same<result_type, int32_t>::value ||
-                 platform::is_same<result_type, int16_t>::value ||
-                 platform::is_same<result_type, int8_t>::value ||
-                 platform::is_same<result_type, cutlass::int4b_t>::value) {
-      kClamp_max = double((1LLU << (sizeof_bits<result_type>::value - 1)) - 1);
-      kClamp_min = -kClamp_max - 1;
-    } else {
-      kClamp_max = double((1LLU << (sizeof_bits<result_type>::value)) - 1);
-      kClamp_min = 0;
-    }
-
-    double source = s;
-
-    source = fmax(source, kClamp_min);
-    source = fmin(source, kClamp_max);
-
-    return convert_op(source);
+    result_type const kClamp_max = platform::numeric_limits<result_type>::max();
+    result_type const kClamp_min = platform::numeric_limits<result_type>::lowest();
+    if (s < (source_type)kClamp_min) 
+      return kClamp_min;
+    if (s > (source_type)kClamp_max)
+      return kClamp_max;
+    return convert_op(s);
   }
 
   CUTLASS_HOST_DEVICE
