@@ -783,5 +783,58 @@ void swap(unique_ptr<T, Deleter>& lhs, unique_ptr<T, Deleter>& rhs) noexcept {
 }
 #endif
 
+/// std::numeric_limits
+template <class T>
+struct numeric_limits;
+
+template <>
+struct numeric_limits<int32_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr int32_t lowest() noexcept { return -2147483647 - 1;}
+  CUTLASS_HOST_DEVICE
+  static constexpr int32_t max() noexcept { return 2147483647;}
+};
+
+template <>
+struct numeric_limits<int16_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr int16_t lowest() noexcept { return -32768;}
+  CUTLASS_HOST_DEVICE
+  static constexpr int16_t max() noexcept { return 32767;}
+};
+
+template <>
+struct numeric_limits<int8_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr int8_t lowest() noexcept { return -128;}
+  CUTLASS_HOST_DEVICE
+  static constexpr int8_t max() noexcept { return 127;}
+};
+
+
+template <>
+struct numeric_limits<uint32_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr uint32_t lowest() noexcept { return 0;}
+  CUTLASS_HOST_DEVICE
+  static constexpr uint32_t max() noexcept { return 4294967295;}
+};
+
+template <>
+struct numeric_limits<uint16_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr uint16_t lowest() noexcept { return 0;}
+  CUTLASS_HOST_DEVICE
+  static constexpr uint16_t max() noexcept { return 65535;}
+};
+
+template <>
+struct numeric_limits<uint8_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr uint8_t lowest() noexcept { return 0;}
+  CUTLASS_HOST_DEVICE
+  static constexpr uint8_t max() noexcept { return 255;}
+};
+
 }  // namespace platform
 }  // namespace cutlass

@@ -200,4 +200,25 @@ struct sizeof_bits<uint4b_t> {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace platform {
+
+template <>
+struct numeric_limits<cutlass::int4b_t> {
+  CUTLASS_HOST_DEVICE
+  static cutlass::int4b_t const lowest() noexcept { return -8;}
+  CUTLASS_HOST_DEVICE
+  static cutlass::int4b_t const max() noexcept { return 7;}
+};
+
+template <>
+struct numeric_limits<cutlass::uint4b_t> {
+  CUTLASS_HOST_DEVICE
+  static cutlass::uint4b_t const lowest() noexcept { return 0;}
+  CUTLASS_HOST_DEVICE
+  static cutlass::uint4b_t const max() noexcept { return 15;}
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+} // namespace platform
 } // namespace cutlass
