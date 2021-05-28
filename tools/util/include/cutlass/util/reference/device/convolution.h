@@ -273,7 +273,7 @@ __global__ void Conv3dFprop(
           int filter_s = S;   
 
           if (problem_size.mode == cutlass::conv::Mode::kConvolution) {
-            filter_t = problem_size.T - 1 - R;
+            filter_t = problem_size.T - 1 - T;
             filter_r = problem_size.R - 1 - R;
             filter_s = problem_size.S - 1 - S;
           }
