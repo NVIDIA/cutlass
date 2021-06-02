@@ -148,7 +148,6 @@ cudaError_t CutlassSgemmNN(
 /// Kernel to initialize a matrix with small integers.
 __global__ void InitializeMatrix_kernel(
   float *matrix,
-  int ldm,
   int rows,
   int columns,
   int seed = 0) {
@@ -157,7 +156,7 @@ __global__ void InitializeMatrix_kernel(
   int j = threadIdx.y + blockIdx.y * blockDim.y;
 
   if (i < rows && j < columns) {
-    int offset = i + j * ldm;
+    int offset = i + j * rows;
 
     // Generate arbitrary elements.
     int const k = 16807;
@@ -169,7 +168,7 @@ __global__ void InitializeMatrix_kernel(
 }
 
 /// Simple function to initialize a matrix to arbitrary small integers.
-cudaError_t InitializeMatrix(float *matrix, int ldm, int rows, int columns, int seed = 0) {
+cudaError_t InitializeMatrix(float *matrix, int rows, int columns, int seed = 0) {
 
   dim3 block(16, 16);
   dim3 grid(
@@ -177,7 +176,7 @@ cudaError_t InitializeMatrix(float *matrix, int ldm, int rows, int columns, int 
     (columns + block.y - 1) / block.y
   );
 
-  InitializeMatrix_kernel<<< grid, block >>>(matrix, ldm, rows, columns, seed);
+  InitializeMatrix_kernel<<< grid, block >>>(matrix, rows, columns, seed);
 
   return cudaGetLastError();
 }
@@ -185,10 +184,10 @@ cudaError_t InitializeMatrix(float *matrix, int ldm, int rows, int columns, int 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Allocates device memory for a matrix then fills with arbitrary small integers.
-cudaError_t AllocateMatrix(float **matrix, int ldm, int rows, int columns, int seed = 0) {
+cudaError_t AllocateMatrix(float **matrix, int rows, int columns, int seed = 0) {
   cudaError_t result;
 
-  size_t sizeof_matrix = sizeof(float) * ldm * columns;
+  size_t sizeof_matrix = sizeof(float) * columns;
 
   // Allocate device memory.
   result = cudaMalloc(reinterpret_cast<void **>(matrix), sizeof_matrix);
@@ -209,7 +208,7 @@ cudaError_t AllocateMatrix(float **matrix, int ldm, int rows, int columns, int s
   }
 
   // Initialize matrix elements to arbitrary small integers.
-  result = InitializeMatrix(*matrix, ldm, rows, columns, seed);
+  result = InitializeMatrix(*matrix, rows, columns, seed);
 
   if (result != cudaSuccess) {
     std::cerr << "Failed to initialize matrix: "
@@ -304,20 +303,20 @@ cudaError_t TestCutlassGemm(int M, int N, int K, float alpha, float beta) {
   // Allocate matrices in GPU device memory with arbitrary seeds.
   //
 
-  result = AllocateMatrix(&A, lda, M, K, 0);
+  result = AllocateMatrix(&A, M, K, 0);
 
   if (result !=  cudaSuccess) {
     return result;
   }
 
-  result = AllocateMatrix(&B, ldb, K, N, 17);
+  result = AllocateMatrix(&B, K, N, 17);
 
   if (result !=  cudaSuccess) {
     cudaFree(A);
     return result;
   }
 
-  result = AllocateMatrix(&C_cutlass, ldc, M, N, 101);
+  result = AllocateMatrix(&C_cutlass, M, N, 101);
 
   if (result != cudaSuccess) {
     cudaFree(A);
@@ -325,7 +324,7 @@ cudaError_t TestCutlassGemm(int M, int N, int K, float alpha, float beta) {
     return result;
   }
 
-  result = AllocateMatrix(&C_reference, ldc, M, N, 101);
+  result = AllocateMatrix(&C_reference, M, N, 101);
 
   if (result != cudaSuccess) {
     cudaFree(A);
