@@ -566,7 +566,9 @@ protected:
     operator_args.ldb = int(configuration->ldb);
     operator_args.ldc = int(configuration->ldc);
     operator_args.ldd = int(configuration->ldd);
-    
+
+    operator_args.batch_stride_D = int(configuration->problem_size.m()) * int(configuration->problem_size.n());
+
     return Status::kSuccess;
   }
 

@@ -46,7 +46,7 @@ void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest) {
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
-    128 / cutlass::sizeof_bits<ElementOutput>::value,
+    1,
     ElementAccumulator,
     ElementCompute
   >;
@@ -81,7 +81,7 @@ void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest) {
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
-    128 / cutlass::sizeof_bits<ElementOutput>::value,
+    1,
     ElementAccumulator,
     ElementCompute
   >;
@@ -115,7 +115,7 @@ void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest)
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
-    128 / cutlass::sizeof_bits<ElementOutput>::value,
+    1,
     ElementAccumulator,
     ElementCompute
   >;
