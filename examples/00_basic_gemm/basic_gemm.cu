@@ -187,7 +187,7 @@ cudaError_t InitializeMatrix(float *matrix, int rows, int columns, int seed = 0)
 cudaError_t AllocateMatrix(float **matrix, int rows, int columns, int seed = 0) {
   cudaError_t result;
 
-  size_t sizeof_matrix = sizeof(float) * columns;
+  size_t sizeof_matrix = sizeof(float) * rows * columns;
 
   // Allocate device memory.
   result = cudaMalloc(reinterpret_cast<void **>(matrix), sizeof_matrix);
