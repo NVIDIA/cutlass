@@ -338,6 +338,9 @@ using HandlePtr = std::unique_ptr<Handle>;
 /// Finds conv2d operation instances with Conv2d::ElementC = Reduction::ElementWorkspace
 Operation const* find_conv_operation_for_parallel_reduction(Operation const *operation);
 /////////////////////////////////////////////////////////////////////////////////////////////////
+/// Finds gemm operation instances with ElementC = Reduction::ElementWorkspace
+Operation const* find_gemm_operation_for_parallel_reduction(Operation const *operation);
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library
 } // namespace cutlass

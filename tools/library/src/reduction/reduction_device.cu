@@ -35,9 +35,9 @@
 namespace cutlass {
 namespace library {
 
-// naming convention initialize_reduce_[ReductionOp]_[EpilogueOp]_[ElementWorkspace]_[ElementAccumulator]_[ElementOutput]
+// naming convention initialize_reduce_[ReductionOp]_[EpilogueOp]_[ElementWorkspace]_[ElementAccumulator]_[ElementOutput]_[Aligments]
 
-void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest) {
+void initialize_reduce_add_linear_combination_f32_f32_f16_align16(Manifest &manifest) {
 
   using ElementWorkspace = float; 
   using ElementAccumulator = float;
@@ -46,7 +46,7 @@ void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest) {
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
-    1,
+    128 / cutlass::sizeof_bits<ElementOutput>::value,
     ElementAccumulator,
     ElementCompute
   >;
@@ -67,12 +67,79 @@ void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest) {
 
   manifest.append(new ReductionOperation<
     Operation_reduce_add_linear_combination_f32_f32_f16>(
-      "reduce_add_linear_combination_f32_f32_f16"
+      "reduce_add_linear_combination_f32_f32_f16_align16"
   ));
 }
 
+void initialize_reduce_add_linear_combination_f32_f32_f16_align4(Manifest &manifest) {
 
-void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest) {
+  using ElementWorkspace = float; 
+  using ElementAccumulator = float;
+  using ElementOutput = cutlass::half_t;
+  using ElementCompute = float;
+
+  using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
+    ElementOutput,
+    32 / cutlass::sizeof_bits<ElementOutput>::value,
+    ElementAccumulator,
+    ElementCompute
+  >;
+
+  using ReductionOp = cutlass::reduction::thread::ReduceAdd<
+    ElementAccumulator, 
+    typename EpilogueOutputOp::ElementAccumulator,
+    EpilogueOutputOp::kCount
+  >;
+
+  using Operation_reduce_add_linear_combination_f32_f32_f16 = cutlass::reduction::device::ReduceSplitK<
+    cutlass::reduction::kernel::ReduceSplitK<
+      cutlass::MatrixShape<4, 32 * EpilogueOutputOp::kCount>,
+      EpilogueOutputOp,
+      ReductionOp
+    >
+  >;
+
+  manifest.append(new ReductionOperation<
+    Operation_reduce_add_linear_combination_f32_f32_f16>(
+      "reduce_add_linear_combination_f32_f32_f16_align4"
+  ));
+}
+
+void initialize_reduce_add_linear_combination_f32_f32_f16_align2(Manifest &manifest) {
+
+  using ElementWorkspace = float; 
+  using ElementAccumulator = float;
+  using ElementOutput = cutlass::half_t;
+  using ElementCompute = float;
+
+  using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
+    ElementOutput,
+    16 / cutlass::sizeof_bits<ElementOutput>::value,
+    ElementAccumulator,
+    ElementCompute
+  >;
+
+  using ReductionOp = cutlass::reduction::thread::ReduceAdd<
+    ElementAccumulator, 
+    typename EpilogueOutputOp::ElementAccumulator,
+    EpilogueOutputOp::kCount
+  >;
+
+  using Operation_reduce_add_linear_combination_f32_f32_f16 = cutlass::reduction::device::ReduceSplitK<
+    cutlass::reduction::kernel::ReduceSplitK<
+      cutlass::MatrixShape<4, 32 * EpilogueOutputOp::kCount>,
+      EpilogueOutputOp,
+      ReductionOp
+    >
+  >;
+
+  manifest.append(new ReductionOperation<
+    Operation_reduce_add_linear_combination_f32_f32_f16>(
+      "reduce_add_linear_combination_f32_f32_f16_align2"
+  ));
+}
+
+void initialize_reduce_add_linear_combination_f32_f32_f32_align16(Manifest &manifest) {
 
   using ElementWorkspace = float; 
   using ElementAccumulator = float;
@@ -81,7 +148,7 @@ void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest) {
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
-    1,
+    128 / cutlass::sizeof_bits<ElementOutput>::value,
     ElementAccumulator,
     ElementCompute
   >;
@@ -102,11 +169,45 @@ void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest) {
 
   manifest.append(new ReductionOperation<
     Operation_reduce_add_linear_combination_f32_f32_f32>(
-      "reduce_add_linear_combination_f32_f32_f32"
+      "reduce_add_linear_combination_f32_f32_f32_align16"
   ));
 }
 
-void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest) {
+void initialize_reduce_add_linear_combination_f32_f32_f32_align4(Manifest &manifest) {
+
+  using ElementWorkspace = float; 
+  using ElementAccumulator = float;
+  using ElementOutput = float;
+  using ElementCompute = float;
+
+  using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
+    ElementOutput,
+    32 / cutlass::sizeof_bits<ElementOutput>::value,
+    ElementAccumulator,
+    ElementCompute
+  >;
+
+  using ReductionOp = cutlass::reduction::thread::ReduceAdd<
+    ElementAccumulator, 
+    typename EpilogueOutputOp::ElementAccumulator,
+    EpilogueOutputOp::kCount
+  >;
+
+  using Operation_reduce_add_linear_combination_f32_f32_f32 = cutlass::reduction::device::ReduceSplitK<
+    cutlass::reduction::kernel::ReduceSplitK<
+      cutlass::MatrixShape<4, 32 * EpilogueOutputOp::kCount>,
+      EpilogueOutputOp,
+      ReductionOp
+    >
+  >;
+
+  manifest.append(new ReductionOperation<
+    Operation_reduce_add_linear_combination_f32_f32_f32>(
+      "reduce_add_linear_combination_f32_f32_f32_align4"
+  ));
+}
+
+void initialize_reduce_add_linear_combination_cf32_cf32_cf32_align16(Manifest &manifest) {
 
   using ElementWorkspace = cutlass::complex<float>; 
   using ElementAccumulator = cutlass::complex<float>;
@@ -115,7 +216,7 @@ void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest)
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
-    1,
+    128 / cutlass::sizeof_bits<ElementOutput>::value,
     ElementAccumulator,
     ElementCompute
   >;
@@ -136,7 +237,7 @@ void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest)
 
   manifest.append(new ReductionOperation<
     Operation_reduce_add_linear_combination_cf32_cf32_cf32>(
-      "reduce_add_linear_combination_cf32_cf32_cf32"
+      "reduce_add_linear_combination_cf32_cf32_cf32_align16"
   ));
 }
 

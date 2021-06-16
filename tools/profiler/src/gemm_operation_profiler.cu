@@ -400,7 +400,6 @@ void GemmOperationProfiler::initialize_result_(
 bool GemmOperationProfiler::initialize_reduction_configuration_(
   library::Operation const *operation,
   ProblemSpace::Problem const &problem) {
-
   library::GemmDescription const &gemm_desc =
     static_cast<library::GemmDescription const&>(operation->description());
 
@@ -413,9 +412,9 @@ bool GemmOperationProfiler::initialize_reduction_configuration_(
   }
 
   /// initialize library::ReductionConfiguration
-  gemm_workspace_.reduction_configuration.problem_size      = gemm::GemmCoord(int(problem_.m), int(problem_.n), int(problem_.k)).mn();
+  gemm_workspace_.reduction_configuration.problem_size      = gemm::GemmCoord(int(problem_.n), int(problem_.m), int(problem_.k)).mn();
   gemm_workspace_.reduction_configuration.partitions        = int(problem_.split_k_slices);
-  gemm_workspace_.reduction_configuration.partition_stride  = gemm::GemmCoord(int(problem_.m), int(problem_.n), int(problem_.k)).mn().product();
+  gemm_workspace_.reduction_configuration.partition_stride  = gemm::GemmCoord(int(problem_.n), int(problem_.m), int(problem_.k)).mn().product();
   gemm_workspace_.reduction_configuration.ldw               = problem_.ldc;
   gemm_workspace_.reduction_configuration.lds               = problem_.ldc;
   gemm_workspace_.reduction_configuration.ldd               = problem_.ldc;
@@ -450,9 +449,17 @@ Status GemmOperationProfiler::initialize_workspace(
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
-  
+
+  library::Operation const* underlying_operation = operation;
+
+  if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+    if (!(underlying_operation = library::find_gemm_operation_for_parallel_reduction(operation))) {
+      return Status::kErrorNotSupported;
+    }
+  }
+
   library::GemmDescription const &operation_desc = 
-    static_cast<library::GemmDescription const &>(operation->description());
+    static_cast<library::GemmDescription const &>(underlying_operation->description());
 
   // Compute the number of copies of the problem to avoid L2 camping.
   if (!options.profiling.workspace_count) {
@@ -522,7 +529,6 @@ Status GemmOperationProfiler::initialize_workspace(
     gemm_workspace_.Reference->copy_from_device(gemm_workspace_.C->data());
   }
 
-
   //
   // Initialize the CUTLASS operation
   //
@@ -555,7 +561,7 @@ Status GemmOperationProfiler::initialize_workspace(
           &gemm_workspace_.reduction_configuration,
           gemm_workspace_.reduction_host_workspace.data(),
           nullptr);
-
+        
         if (status != Status::kSuccess) {
           return status;
         }
@@ -626,8 +632,24 @@ bool GemmOperationProfiler::verify_cutlass(
   //
   // Run the CUTLASS operation
   //
+  // initialize gemm underlying operation to handle parallel reduction
+  library::Operation const * underlying_operation = operation;
 
-  results_.back().status = operation->run(
+  if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+    if (!(underlying_operation = library::find_gemm_operation_for_parallel_reduction(operation))) {
+      results_.back().disposition = Disposition::kFailed;
+      return false;
+    }
+  }
+
+#if 0
+  std::cout << "profiling       : " << std::endl
+            << "gemm            : " << operation->description().name << std::endl
+            << "underlying gemm : " << underlying_operation->description().name() << std::endl
+            << "reduction       : " << reduction_op_->description().name() << std::endl;
+#endif
+
+  results_.back().status = underlying_operation->run(
     &gemm_workspace_.arguments, 
     gemm_workspace_.host_workspace.data(),
     gemm_workspace_.device_workspace.data());
@@ -1043,6 +1065,15 @@ Status GemmOperationProfiler::profile_cutlass_(
 
   GpuTimer timer;
 
+  // initialize gemm underlying operation to handle parallel reduction
+  library::Operation const * underlying_operation = operation;
+
+  if (problem_.split_k_mode == library::SplitKMode::kParallel) {
+    if (!(underlying_operation = library::find_gemm_operation_for_parallel_reduction(operation))) {
+      return Status::kErrorNotSupported;
+    }
+  }
+
   //
   // Optional sleep to limit power consumption and thermals
   //
@@ -1073,7 +1104,7 @@ Status GemmOperationProfiler::profile_cutlass_(
     }
 
     // Execute the CUTLASS operation
-    status = operation->run(
+    status = underlying_operation->run(
       &gemm_workspace_.arguments,
       host_workspace,
       device_workspace);
