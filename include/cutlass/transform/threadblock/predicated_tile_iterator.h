@@ -65,14 +65,14 @@ namespace threadblock {
 /// Adding a logical coordinate offset may be performed at the time the iterator is constructed.
 /// Subsequent additions to logical coordinate offset may be performed but are relatively expensive.
 ///
-/// Vistitation order is intended to first visit a "residual" tile that may be partially full in
+/// Visitation order is intended to first visit a "residual" tile that may be partially full in
 /// both the advance dimension and the steady-state dimension. This is assumed to be the last
 /// tile in the iteration sequence. Advancing an iterator that has just been constructed moves to
 /// the first tile that is full in the advance dimension and recomputes predicates. Subsequent
 /// accesses may be performed without updating internal predicates and are efficient in terms of
 /// live register state and pointer arithmetic instructions.
 ///
-/// To be efficient, this assumes the iteraor will be dereferenced and advanced at least once
+/// To be efficient, this assumes the iterator will be dereferenced and advanced at least once
 /// outside any looping structure to minimize integer arithmetic. 
 ///
 /// Acceses out of bounds are safe so long as `clear_mask()` is called prior to dereferencing
