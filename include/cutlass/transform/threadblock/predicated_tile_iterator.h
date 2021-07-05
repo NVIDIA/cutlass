@@ -150,7 +150,7 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
-      "Specialization for pitch-linear iterator may along advance along the "
+      "Specialization for pitch-linear iterator may advance along the "
       "contiguous(rank=0) or strided(rank=1) dimension.");
 
   using Shape = Shape_;
