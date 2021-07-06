@@ -36,18 +36,25 @@ namespace library {
 ///////////////////////////////////////////////////////////////////////////////////////////////
 //                             CUTLASS Reduction Instances                                   //
 ///////////////////////////////////////////////////////////////////////////////////////////////
-void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest);
-void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest);
-void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest);
+void initialize_reduce_add_linear_combination_f32_f32_f16_align16(Manifest &manifest);
+void initialize_reduce_add_linear_combination_f32_f32_f32_align16(Manifest &manifest);
+void initialize_reduce_add_linear_combination_cf32_cf32_cf32_align16(Manifest &manifest);
+void initialize_reduce_add_linear_combination_f32_f32_f16_align4(Manifest &manifest);
+void initialize_reduce_add_linear_combination_f32_f32_f32_align4(Manifest &manifest);
+void initialize_reduce_add_linear_combination_f32_f32_f16_align2(Manifest &manifest);
+
 
 //
 // Entry point to construct operations
 //
 void initialize_all_reduction_op(Manifest &manifest) {
 
-  initialize_reduce_add_linear_combination_f32_f32_f16(manifest);
-  initialize_reduce_add_linear_combination_f32_f32_f32(manifest);
-  initialize_reduce_add_linear_combination_cf32_cf32_cf32(manifest);
+  initialize_reduce_add_linear_combination_f32_f32_f16_align16(manifest);
+  initialize_reduce_add_linear_combination_f32_f32_f32_align16(manifest);
+  initialize_reduce_add_linear_combination_cf32_cf32_cf32_align16(manifest);
+  initialize_reduce_add_linear_combination_f32_f32_f16_align4(manifest);
+  initialize_reduce_add_linear_combination_f32_f32_f32_align4(manifest);
+  initialize_reduce_add_linear_combination_f32_f32_f16_align2(manifest);
 
 }
 
