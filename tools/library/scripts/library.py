@@ -525,7 +525,15 @@ class TileDescription:
     self.maximum_compute_capability = max_compute
 
   def procedural_name(self):
-    return "%dx%d_%dx%d" % (self.threadblock_shape[0], self.threadblock_shape[1], self.threadblock_shape[2], self.stages)
+    return "%dx%dx%d_%dx%dx%d_%d" % (
+      self.threadblock_shape[0],
+      self.threadblock_shape[1],
+      self.threadblock_shape[2],
+      self.warp_count[0],
+      self.warp_count[1],
+      self.warp_count[2],
+      self.stages
+    )
 
 #
 class TensorDescription:
