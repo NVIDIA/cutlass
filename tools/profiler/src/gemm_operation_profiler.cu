@@ -303,8 +303,8 @@ void GemmOperationProfiler::GemmProblem::initialize_result(
 /// Extracts the problem dimensions
 Status GemmOperationProfiler::initialize_configuration(
   Options const &options,  
-  PerformanceReport &report,
-  DeviceContext &device_context,
+  PerformanceReport &/*report*/,
+  DeviceContext &/*device_context*/,
   library::Operation const *operation,
   ProblemSpace const &problem_space,
   ProblemSpace::Problem const &problem) {
@@ -354,7 +354,7 @@ Status GemmOperationProfiler::initialize_configuration(
 /// Initializes the performance result
 void GemmOperationProfiler::initialize_result_(
   PerformanceResult &result,
-  Options const &options,  
+  Options const &/*options*/,  
   library::GemmDescription const &operation_desc,
   ProblemSpace const &problem_space) {
 
@@ -376,11 +376,11 @@ void GemmOperationProfiler::initialize_result_(
 /// Initializes workspace
 Status GemmOperationProfiler::initialize_workspace(
   Options const &options,  
-  PerformanceReport &report,
+  PerformanceReport &/*report*/,
   DeviceContext &device_context,
   library::Operation const *operation,
-  ProblemSpace const &problem_space,
-  ProblemSpace::Problem const &problem) {
+  ProblemSpace const &/*problem_space*/,
+  ProblemSpace::Problem const &/*problem*/) {
   
   library::GemmDescription const &operation_desc = 
     static_cast<library::GemmDescription const &>(operation->description());
@@ -606,11 +606,11 @@ bool GemmOperationProfiler::verify_cutlass(
 /// Verifies CUTLASS against references
 bool GemmOperationProfiler::verify_with_cublas_(
   Options const &options,  
-  PerformanceReport &report,
+  PerformanceReport &/*report*/,
   DeviceContext &device_context,
   library::Operation const *operation,
-  ProblemSpace const &problem_space,
-  ProblemSpace::Problem const &problem) {
+  ProblemSpace const &/*problem_space*/,
+  ProblemSpace::Problem const &/*problem*/) {
 
 
 #if CUTLASS_ENABLE_CUBLAS
@@ -727,11 +727,11 @@ bool GemmOperationProfiler::verify_with_cublas_(
 /// Verifies CUTLASS against host and device references
 bool GemmOperationProfiler::verify_with_reference_(
   Options const &options,  
-  PerformanceReport &report,
+  PerformanceReport &/*report*/,
   DeviceContext &device_context,
   library::Operation const *operation,
-  ProblemSpace const &problem_space,
-  ProblemSpace::Problem const &problem) {
+  ProblemSpace const &/*problem_space*/,
+  ProblemSpace::Problem const &/*problem*/) {
 
   library::GemmDescription const &gemm_desc = 
     static_cast<library::GemmDescription const &>(operation->description());
@@ -871,11 +871,11 @@ bool GemmOperationProfiler::verify_with_reference_(
 /// Measures performance results
 bool GemmOperationProfiler::profile(
   Options const &options,  
-  PerformanceReport &report,
-  DeviceContext &device_context,
+  PerformanceReport &/*report*/,
+  DeviceContext &/*device_context*/,
   library::Operation const *operation,
-  ProblemSpace const &problem_space,
-  ProblemSpace::Problem const &problem) {
+  ProblemSpace const &/*problem_space*/,
+  ProblemSpace::Problem const &/*problem*/) {
 
   if (options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
 

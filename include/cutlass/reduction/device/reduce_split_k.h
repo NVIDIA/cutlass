@@ -123,13 +123,13 @@ public:
   ReduceSplitK() { }
 
   /// Determines whether the ReduceSplitK can execute the given problem.
-  static Status can_implement(Arguments const &args) {
+  static Status can_implement(Arguments const & /*args*/) {
 
     return Status::kSuccess;
   }
 
   /// Gets the workspace size
-  static size_t get_workspace_size(Arguments const &args) {
+  static size_t get_workspace_size(Arguments const & /*args*/) {
     // needs no additional workspace
     return 0;
   }
@@ -137,8 +137,8 @@ public:
   /// Initializes Reduction state from arguments.
   Status initialize(
     Arguments const &args, 
-    void *workspace = nullptr, 
-    cudaStream_t stream = nullptr) {
+    void */*workspace*/ = nullptr, 
+    cudaStream_t /*stream*/ = nullptr) {
     
     // initialize the params structure from the arguments
     params_ = typename ReductionKernel::Params(
@@ -157,7 +157,7 @@ public:
    }
 
   /// Initializes Reduction kernel state from arguments.
-  Status update(Arguments const &args, void *workspace = nullptr) {
+  Status update(Arguments const &args, void */*workspace*/ = nullptr) {
 
     // update the params structure from the arguments
     params_.workspace.reset(args.workspace.non_const_ref().data());
