@@ -175,7 +175,7 @@ template <
     typename ElementAccumulator_ = ElementC_,
     /// Operator class tag
     typename OperatorClass_ = arch::OpClassSimt,
-    /// Tag indicating architecture to tune for
+    /// Tag indicating architecture to volta for
     typename ArchTag_ = arch::Sm70,
     /// Threadblock-level tile size (concept: GemmShape)
     typename ThreadblockShape_ = typename DefaultGemmConfiguration<
