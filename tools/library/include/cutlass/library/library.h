@@ -378,7 +378,6 @@ struct OperationDescription {
   //
   OperationDescription(
     char const * name = "unknown",
-    Provider Provider = Provider::kInvalid,
     OperationKind kind = OperationKind::kInvalid, 
     TileDescription const & tile_description = TileDescription()
   ):
