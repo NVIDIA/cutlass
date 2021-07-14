@@ -131,16 +131,19 @@ public:
       CUTLASS_PRAGMA_UNROLL
       for (int c = 0; c < ThreadMap::Iterations::kContiguous; ++c) {
 
-        cutlass::arch::global_load<
-          AccessType,
-          sizeof(AccessType)
-        >(
-          frag_ptr[c + s * ThreadMap::Iterations::kContiguous],
-          tile_access_iterator_.get() + pointer_offset,
-          tile_access_iterator_.valid()
-        );
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < tile_access_iterator_.kAccessesPerVector; ++v) {
+          cutlass::arch::global_load<
+            AccessType,
+            sizeof(AccessType)
+          >(
+            frag_ptr[(c + s * ThreadMap::Iterations::kContiguous) * tile_access_iterator_.kAccessesPerVector + v],
+            tile_access_iterator_.get() + pointer_offset,
+            tile_access_iterator_.valid()
+          );
 
-        ++tile_access_iterator_;
+          ++tile_access_iterator_;
+        }
       }
     }
   }
