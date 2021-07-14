@@ -276,7 +276,7 @@ public:
     layout::PitchLinearShape<Shape::kColumn, Shape::kRow>,
     Element,
     layout::PitchLinear,
-    (kAdvanceRank == 0 ? 1 : 0),
+    1,
     ThreadMap,
     kAlignment
   >;
@@ -398,7 +398,7 @@ public:
     layout::PitchLinearShape<Shape::kRow, Shape::kColumn>,
     Element,
     layout::PitchLinear,
-    (kAdvanceRank == 0 ? 0 : 1),
+    1,
     ThreadMap
   >;
 
