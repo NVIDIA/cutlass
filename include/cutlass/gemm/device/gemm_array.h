@@ -376,8 +376,8 @@ public:
 
     cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
       args.problem_size,
-      args.batch_count,
-      {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK});
+      {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
+      args.batch_count);
 
     // Initialize the Params structure
     params_ = typename GemmKernel::Params{
