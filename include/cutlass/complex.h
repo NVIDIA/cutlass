@@ -442,7 +442,7 @@ CUTLASS_HOST_DEVICE complex<T> polar(T const &r, T const &theta = T()) {
 /// Computes the complex exponential of z.
 template <typename T>
 CUTLASS_HOST_DEVICE complex<T> exp(complex<T> const &z) {
-  return complex<T>(real(z) * cos(imag(z)), real(z) * sin(imag(z)));
+  return complex<T>(exp(real(z)) * cos(imag(z)), exp(real(z)) * sin(imag(z)));
 }
 
 /// Computes the complex exponential of z.
