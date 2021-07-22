@@ -64,7 +64,7 @@ private:
   library::LayoutTypeID layout_;
 
   /// Stride vector
-  std::vector<int> stride_;
+  std::vector<int64_t> stride_;
 
   /// Extent vector
   std::vector<int> extent_;
@@ -84,7 +84,7 @@ public:
   static size_t bytes(library::NumericTypeID type, size_t capacity);
 
   /// Returns the stride of a packed layout
-  static std::vector<int> get_packed_layout(
+  static std::vector<int64_t> get_packed_layout(
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent);
 
@@ -93,7 +93,7 @@ public:
     void *bytes,
     library::LayoutTypeID layout_id,
     std::vector<int> const &extent,
-    std::vector<int> &stride);
+    std::vector<int64_t> &stride);
 
   /// Returns true if two blocks have exactly the same value
   static bool block_compare_equal(
@@ -124,7 +124,7 @@ public:
     library::NumericTypeID type, 
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>(),
+    std::vector<int64_t> const &stride = std::vector<int64_t>(),
     int batch_count = 1);
 
   ~DeviceAllocation();
@@ -139,7 +139,7 @@ public:
     library::NumericTypeID type, 
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>(),
+    std::vector<int64_t> const &stride = std::vector<int64_t>(),
     int batch_count = 1);
 
   /// Returns a buffer owning the tensor reference
@@ -162,7 +162,7 @@ public:
   library::LayoutTypeID layout() const;
 
   /// Gets the stride vector
-  std::vector<int> const & stride() const;
+  std::vector<int64_t> const & stride() const;
 
   /// Gets the extent vector
   std::vector<int> const & extent() const;
@@ -193,6 +193,9 @@ public:
 
   /// Initializes a host allocation to a random distribution using std::cout
   void initialize_random_sparsemeta_host(int seed, int MetaSizeInBits);
+  
+  /// Uniformly fills a tensor with a value when provided o.w. zero
+  void fill(double value);
 
   /// Copies from an equivalent-sized tensor in device memory
   void copy_from_device(void const *ptr);

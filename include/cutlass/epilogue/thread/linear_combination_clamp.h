@@ -43,6 +43,17 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace detail {
+
+/// Single source of truth for whether to unroll for `LinearCombinationClamp()`
+constexpr bool LinearCombinationClampIsHeavy() {
+  return false;
+}
+
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Applies a linear combination operator to an array of elements then clamps the output before
 /// converting to the output element type.
 ///
@@ -51,6 +62,8 @@ namespace thread {
 template <
   typename ElementOutput_,                             ///< Data type used to load and store tensors
   int Count,                                           ///< Number of elements computed per operation
+                                                       ///< Usually it is 128/sizeof_bits<ElementOutput_>,
+                                                       ///< but we use 64 or 32 sometimes when there are not enough data to store
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
   ScaleType::Kind Scale = ScaleType::Default,          ///< Control Alpha and Beta scaling
@@ -70,6 +83,8 @@ public:
   using ComputeFragment = Array<ElementCompute, kCount>;
 
   static FloatRoundStyle const kRound = Round;
+
+  static bool const kIsHeavy = detail::LinearCombinationClampIsHeavy();
 
   /// Host-constructable parameters structure
   struct Params {
@@ -282,6 +297,8 @@ public:
 
   static FloatRoundStyle const kRound = Round;
 
+  static bool const kIsHeavy = detail::LinearCombinationClampIsHeavy();
+
   /// Host-constructable parameters structure
   struct Params {
 
@@ -396,10 +413,9 @@ public:
     // Convert floats back to INT
     FragmentAccumulator scaled_accumulator;
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kCount; ++i) {
-      scaled_accumulator[i] = __float2int_rn(intermediate[i]);
-    }
+    NumericArrayConverter<int, ElementCompute, kCount, Round> compute_converter;
+
+    scaled_accumulator = compute_converter(intermediate);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, int, kCount, Round> destination_converter;
@@ -427,10 +443,9 @@ public:
     // Convert floats back to INT
     FragmentAccumulator scaled_accumulator;
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kCount; ++i) {
-      scaled_accumulator[i] = __float2int_rn(intermediate[i]);
-    }
+    NumericArrayConverter<int, ElementCompute, kCount, Round> compute_converter;
+
+    scaled_accumulator = compute_converter(intermediate);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, int, kCount, Round> destination_converter;
@@ -486,6 +501,8 @@ class FastLinearCombinationClamp {
   using ComputeFragment = Array<ElementCompute, kCount>;
 
   static FloatRoundStyle const kRound = Round;
+
+  static bool const kIsHeavy = false;
 
   /// Host-constructable parameters structure
   struct Params {

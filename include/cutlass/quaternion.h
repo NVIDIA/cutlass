@@ -30,6 +30,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
+#include "cutlass/real.h"
 #include "cutlass/coord.h"
 #include "cutlass/matrix.h"
 #include "cutlass/fast_math.h"
@@ -82,18 +83,27 @@ public:
   // Methods
   //
 
-  /// Constructs a quaternion
+  /// Constructs a quaternion q = 0
+  CUTLASS_HOST_DEVICE
+  Quaternion() {
+    Base::at(kX) = Element();
+    Base::at(kY) = Element();
+    Base::at(kZ) = Element();
+    Base::at(kW) = Element();
+  }
+
+  /// Constructs a quaternion q = w + 0*i + 0*j + 0*k
   CUTLASS_HOST_DEVICE
   Quaternion(
-    Element w_ = Element(1)
+    Element w_
   ) {
-    Base::at(kX) = Element(0);
-    Base::at(kY) = Element(0);
-    Base::at(kZ) = Element(0);
+    Base::at(kX) = Element();
+    Base::at(kY) = Element();
+    Base::at(kZ) = Element();
     Base::at(kW) = w_;
   }
 
-  /// Constructs a quaternion
+  /// Constructs a quaternion q = w + x*i + y*j + z*k
   CUTLASS_HOST_DEVICE
   Quaternion(
     Element x_,
@@ -355,7 +365,21 @@ Quaternion<Element> make_Quaternion(Element x, Element y, Element z, Element w) 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Returns the magnitude of the complex number
+/// Returns the real part of the quaternion number
+template <typename Element>
+CUTLASS_HOST_DEVICE 
+Element const &real(Quaternion<Element> const &q) {
+  return q.w();
+}
+
+/// Returns the real part of the quaternion number
+template <typename Element>
+CUTLASS_HOST_DEVICE
+Element &real(Quaternion<Element> &q) {
+  return q.w();
+}
+
+/// Returns the magnitude of the quaternion number
 template <typename Element>
 CUTLASS_HOST_DEVICE
 Element abs(Quaternion<Element> const &q) {
@@ -599,13 +623,38 @@ Matrix3x1<Element> spinor_rotation_inv(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-//
-// Output operators
-//
+/// Partial specialization for Quaternion-valued type.
+template <typename T>
+struct RealType< Quaternion<T> > {
+  using Type = T;
 
-template <typename Element>
-std::ostream &operator<<(std::ostream &out, Quaternion<Element> const &q) {
-  return out << q.w() << "+i" << q.x() << "+j" << q.y() << "+k" << q.z();
+  /// Number of elements
+  static int const kExtent = Quaternion<T>::kExtent;
+
+CUTLASS_HOST_DEVICE
+  static Quaternion<T> from_real(double x) {
+    return Quaternion<T>(static_cast<T>(x));
+  }
+};
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <>
+CUTLASS_HOST_DEVICE
+cutlass::Quaternion<half_t> from_real<cutlass::Quaternion<half_t> >(double r) {
+  return cutlass::Quaternion<half_t>(half_t(r));
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+cutlass::Quaternion<float> from_real<cutlass::Quaternion<float> >(double r) {
+  return cutlass::Quaternion<float>(float(r));
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+cutlass::Quaternion<double> from_real<cutlass::Quaternion<double> >(double r) {
+  return cutlass::Quaternion<double>(r);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

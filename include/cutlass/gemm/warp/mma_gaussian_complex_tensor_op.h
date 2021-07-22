@@ -159,6 +159,9 @@ public:
   /// Indicates class of matrix operator
   using OperatorClass = arch::OpClassTensorOp;
 
+  /// Indicates math operator 
+  using MathOperator = typename ArchMmaOperator::Operator;
+  
   /// Complex transform on A operand
   static ComplexTransform const kTransformA = TransformA;
 

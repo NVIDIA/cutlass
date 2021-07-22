@@ -66,7 +66,9 @@ __global__ void GemmPipelined(
   // Compute threadblock location
   ThreadblockSwizzle threadblock_swizzle;
 
-  cutlass::gemm::GemmCoord tb_tile_offset = threadblock_swizzle.get_tile_offset(grid_tiled_shape);
+  int swizzle_log_tile = ThreadblockSwizzle().get_log_tile(grid_tiled_shape);
+
+  cutlass::gemm::GemmCoord tb_tile_offset = threadblock_swizzle.get_tile_offset(swizzle_log_tile);
 
   if (grid_tiled_shape.m() <= tb_tile_offset.m() ||
     grid_tiled_shape.n() <= tb_tile_offset.n()) {
@@ -131,7 +133,7 @@ __global__ void GemmPipelined(
     warp_id, 
     lane_id);
 
-  tb_tile_offset = threadblock_swizzle.get_tile_offset(grid_tiled_shape);
+  tb_tile_offset = threadblock_swizzle.get_tile_offset(swizzle_log_tile);
 
   //assume identity swizzle
   MatrixCoord threadblock_offset(

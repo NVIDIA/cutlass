@@ -34,6 +34,7 @@ add_custom_target(
   cutlass_test_unit_gemm_device_wmma
   cutlass_test_unit_gemm_device_tensorop_planar_complex
   cutlass_test_unit_gemm_device_sparse_tensorop_sm80
+  cutlass_test_unit_gemv_device
 )
 
 add_custom_target(
@@ -50,6 +51,7 @@ add_custom_target(
   test_unit_gemm_device_wmma
   test_unit_gemm_device_tensorop_planar_complex
   test_unit_gemm_device_sparse_tensorop_sm80
+  test_unit_gemv_device
 )
 
 cutlass_test_unit_add_executable(
@@ -65,6 +67,11 @@ cutlass_test_unit_add_executable(
   simt_cgemm_nt_sm50.cu
   simt_cgemm_tn_sm50.cu
   simt_cgemm_tt_sm50.cu
+
+  simt_qgemm_nn_sm50.cu
+  simt_qgemm_nt_sm50.cu
+  simt_qgemm_tn_sm50.cu
+  simt_qgemm_tt_sm50.cu
 
   simt_dgemm_nn_sm50.cu
   simt_dgemm_nt_sm50.cu
@@ -203,6 +210,7 @@ cutlass_test_unit_add_executable(
 
   gemm_f32n_f32n_f32t_tensor_op_f32_sm80.cu
   gemm_f32n_f32n_f32t_tensor_op_bf16_f32_sm80.cu
+
 )
 
 cutlass_test_unit_add_executable(
@@ -331,4 +339,37 @@ cutlass_test_unit_add_executable(
   gemm_s8t_s8n_s32t_tensor_op_s32_sparse_sm80.cu
   gemm_s4t_s4n_s32t_tensor_op_s32_sparse_sm80.cu
 )
+
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemv_device
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemv.cu
+)
+
+if (NOT CUDA_COMPILER MATCHES "[Cc]lang")
+
+add_dependencies(
+  cutlass_test_unit_gemm_device
+  cutlass_test_unit_gemm_device_gemm_with_fused_epilogue_tensorop
+  )
+
+add_dependencies(
+  test_unit_gemm_device
+  test_unit_gemm_device_gemm_with_fused_epilogue_tensorop
+  )
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_gemm_with_fused_epilogue_tensorop
+  
+  gemm_with_reduction_f16n_f16n_f16n_tensorop_f32_sm75.cu
+  gemm_with_broadcast_f16n_f16n_f16n_tensorop_f32_sm75.cu
+
+  gemm_with_reduction_f16t_f16n_f16n_tensorop_f32_sm80.cu
+)
+
+endif()
 

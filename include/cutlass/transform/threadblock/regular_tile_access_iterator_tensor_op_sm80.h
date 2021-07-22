@@ -74,6 +74,7 @@ class RegularTileAccessIterator<
 
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
+  using StrideIndex = typename Layout::Stride::Index;
 
   using TensorRef = TensorRef<Element, Layout>;
   using TensorCoord = typename Layout::TensorCoord;
@@ -107,7 +108,7 @@ class RegularTileAccessIterator<
   //
 
   /// Stride value
-  Index stride_;
+  StrideIndex stride_;
 
   /// Internal pointer to first access of tile
   AccessType *pointer_;
@@ -437,6 +438,7 @@ class RegularTileAccessIterator<
 
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
+  using StrideIndex = typename Layout::Stride::Index;
 
   using TensorRef = TensorRef<Element, Layout>;
   using TensorCoord = typename Layout::TensorCoord;
@@ -471,7 +473,7 @@ class RegularTileAccessIterator<
   //
 
   /// Stride value
-  Index stride_;
+  StrideIndex stride_;
 
   /// Internal pointer to first access of tile
   AccessType *pointer_;
@@ -811,6 +813,7 @@ class RegularTileAccessIterator<
 
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
+  using StrideIndex = typename Layout::Stride::Index;
 
   using TensorRef = TensorRef<Element, Layout>;
   using TensorCoord = typename Layout::TensorCoord;
@@ -844,7 +847,7 @@ class RegularTileAccessIterator<
   //
 
   /// Stride value
-  Index stride_;
+  StrideIndex stride_;
 
   /// Internal pointer to first access of tile
   AccessType *pointer_;
@@ -1175,6 +1178,7 @@ class RegularTileAccessIterator<
 
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
+  using StrideIndex = typename Layout::Stride::Index;
 
   using TensorRef = TensorRef<Element, Layout>;
   using TensorCoord = typename Layout::TensorCoord;
@@ -1211,7 +1215,7 @@ class RegularTileAccessIterator<
   //
 
   /// Stride value
-  Index stride_;
+  StrideIndex stride_;
 
   /// Internal pointer to first access of tile
   AccessType *pointer_;

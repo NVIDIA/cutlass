@@ -81,7 +81,7 @@ public:
   >;
 
   using ReductionDevice = cutlass::reduction::device::ReduceSplitK<ReductionKernel>;
-
+  using ReductionStrideIndex = typename ReductionDevice::StrideIndex;
 
 public:
 
@@ -161,7 +161,7 @@ public:
     initialize_tensor(tensor_A.host_view(), init_A, seed); 
     initialize_tensor(tensor_B.host_view(), init_B, seed * 17); 
     initialize_tensor(tensor_C.host_view(), init_C, seed * 39);
-
+    
     tensor_A.sync_device();
     tensor_B.sync_device();
     tensor_C.sync_device();
@@ -214,7 +214,7 @@ public:
 
 #if 0 //display conv2d problem size for debugging
     std::cout << problem_size << std::endl
-              << "alpha, beta: (" << float(alpha) << ", " << float(beta) << ")" << std::endl
+              << "alpha, beta: (" << alpha << ", " << beta << ")" << std::endl
               << "split_k_mode: " << ((split_k_mode == cutlass::conv::SplitKMode::kSerial) ? "(serial)" : "(parallel)") << std::endl
               << std::endl;
 #endif
@@ -262,7 +262,7 @@ public:
     if (status != cutlass::Status::kSuccess) {
       return false;
     }
-  
+
     // run conv2d operator
     status = conv2d_op();
     
@@ -270,6 +270,7 @@ public:
     if (status != cutlass::Status::kSuccess) {
       return false;
     }
+
 
     if (split_k_mode == cutlass::conv::SplitKMode::kParallel) {
 
@@ -280,10 +281,20 @@ public:
         cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, problem_size).mn(),
         problem_size.split_k_slices,
         cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
-        {reinterpret_cast<ElementAccumulator*> (workspace.get()), tensor_C.stride(Conv2d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {tensor_D_computed.device_data(), tensor_C.stride(Conv2d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {tensor_C.device_data(), tensor_C.stride(Conv2d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {alpha, beta} // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
+        {
+          reinterpret_cast<ElementAccumulator*> (workspace.get()),
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        {
+          tensor_D_computed.device_data(),
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        {
+          tensor_C.device_data(),
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
+        {alpha, beta} 
       );
 
       status = reduction_op.initialize(reduction_args, nullptr);
@@ -302,7 +313,11 @@ public:
       }
     }
     bool passed = false;
-    
+
+    cudaError_t result = cudaDeviceSynchronize();
+    EXPECT_EQ(result, cudaSuccess) << " device reference error: " 
+                                   << cudaGetErrorString(result);
+
     tensor_D_computed.sync_host();
 
 #if CUTLASS_CONV_TEST_UNIT_REFERENCE_DEVICE_ENABLED
@@ -325,10 +340,6 @@ public:
       tensor_D_reference.device_ref(),
       alpha, 
       beta);
-
-    cudaError_t result = cudaDeviceSynchronize();
-    EXPECT_EQ(result, cudaSuccess) << " device reference error: " 
-                                   << cudaGetErrorString(result);
 
     // sync host (copy device data to host) for dumping error output in case of mismatches
     tensor_D_reference.sync_host();
@@ -445,7 +456,7 @@ bool TestAllConv2d(
   Conv2dProblemVector const *problem_vectors[] = {
     &conv_test_sizes,                               // run user specified sizes
     &conv_problems.conv2d_default_sizes,            // run default and cudnn bug sizes
-    &conv_problems.conv2d_resnet50_sizes,           // run resnet50 sizes
+    //&conv_problems.conv2d_resnet50_sizes,           // run resnet50 sizes
 #if CUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED 
     &conv_problems.conv2d_rigorous_sizes,           // run large and rigorous sizes if enabled
 #endif
@@ -467,7 +478,7 @@ bool TestAllConv2d(
       // Procedurally disable certain cases
       //
   
-      // CUTLASS DGRAD's unity stride specialization only support stride {1, 1} 
+      // CUTLASS DGRAD's *unity* stride specialization only support stride {1, 1} 
       if ((ImplicitGemm::kConvolutionalOperator == 
             cutlass::conv::Operator::kDgrad) && 
           (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
@@ -477,6 +488,18 @@ bool TestAllConv2d(
         }
       }
 
+      // CUTLASS DGRAD's *strided* stride specialization supports all stride {stride_h, stride_w} 
+      // Although strided dgrad works for all stride combinations, we are only going 
+      // to run strided dgrad for non-unity strides 
+      if ((ImplicitGemm::kConvolutionalOperator == 
+            cutlass::conv::Operator::kDgrad) && 
+          (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+            cutlass::conv::StrideSupport::kStrided)) {
+         if (((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
+           continue;
+         }
+      }
+      
       //
       // Test
       //
@@ -491,7 +514,7 @@ bool TestAllConv2d(
       if (!passed) {
         return false;
       }
-
+      
       // test mode = convolution
       passed = testbed.run(
         conv_problem.reset_mode(cutlass::conv::Mode::kConvolution),
@@ -501,6 +524,30 @@ bool TestAllConv2d(
         return false;
       }
     }
+  }
+
+  // CUTLASS DGRAD's *strided* specialization does not support split-k mode 
+  if ((ImplicitGemm::kConvolutionalOperator == 
+          cutlass::conv::Operator::kDgrad) && 
+      (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+        cutlass::conv::StrideSupport::kStrided)) {
+
+    passed = testbed.run(
+      cutlass::conv::Conv2dProblemSize(
+      {1, 56, 56, 8},   // input size (NHWC)
+      {8, 1, 1, 8},     // filter size (KRSC)
+      {0, 0, 0, 0},     // padding (pad_h, _, pad_w, _)
+      {2, 2},           // stride (stride_h, stride_w)
+      {1, 1}),          // dilation (dilation_h, dilation_w)
+      cutlass::conv::SplitKMode::kSerial,
+      cutlass::from_real<typename ImplicitGemm::ElementCompute>(2.0), 
+      cutlass::from_real<typename ImplicitGemm::ElementCompute>(2.0));
+
+    if (!passed) {
+      return false;
+    }
+
+    return passed;
   }
 
   // Sweep split-k-slice using serial and prallel reduction with non-unity alpha and non-zero beta for 

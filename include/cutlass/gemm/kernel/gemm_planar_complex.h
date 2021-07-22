@@ -123,14 +123,14 @@ public:
     void * ptr_D_real;
     void * ptr_D_imag;
 
-    int lda_real;
-    int lda_imag;
-    int ldb_real;
-    int ldb_imag;
-    int ldc_real;
-    int ldc_imag;
-    int ldd_real;
-    int ldd_imag;
+    typename LayoutA::Stride::Index lda_real;
+    typename LayoutA::Stride::Index lda_imag;
+    typename LayoutB::Stride::Index ldb_real;
+    typename LayoutB::Stride::Index ldb_imag;
+    typename LayoutC::Stride::Index ldc_real;
+    typename LayoutC::Stride::Index ldc_imag;
+    typename LayoutC::Stride::Index ldd_real;
+    typename LayoutC::Stride::Index ldd_imag;
     
     int64_t batch_stride_A;
     int64_t batch_stride_A_imag;
@@ -173,14 +173,14 @@ public:
       void const * ptr_C_imag,
       void * ptr_D_real,
       void * ptr_D_imag,
-      int lda_real,
-      int lda_imag,
-      int ldb_real,
-      int ldb_imag,
-      int ldc_real,
-      int ldc_imag,
-      int ldd_real,
-      int ldd_imag,
+      typename LayoutA::Stride::Index lda_real,
+      typename LayoutA::Stride::Index lda_imag,
+      typename LayoutB::Stride::Index ldb_real,
+      typename LayoutB::Stride::Index ldb_imag,
+      typename LayoutC::Stride::Index ldc_real,
+      typename LayoutC::Stride::Index ldc_imag,
+      typename LayoutC::Stride::Index ldd_real,
+      typename LayoutC::Stride::Index ldd_imag,
       int64_t batch_stride_A = 0,
       int64_t batch_stride_A_imag = 0,
       int64_t batch_stride_B = 0,
@@ -245,6 +245,7 @@ public:
   struct Params {
     cutlass::gemm::GemmCoord problem_size;
     cutlass::gemm::GemmCoord grid_tiled_shape;
+    int swizzle_log_tile;
     
     typename Mma::IteratorA::Params params_A_real;
     typename Mma::IteratorA::Params params_A_imag;
@@ -289,6 +290,7 @@ public:
     Params():
       batch_count(0),
       gemm_k_size(0),
+      swizzle_log_tile(0),
       mode(cutlass::gemm::GemmUniversalMode::kGemm),
       ptr_A_real(nullptr),
       ptr_A_imag(nullptr),
@@ -317,6 +319,7 @@ public:
     ):
       problem_size(args.problem_size),
       grid_tiled_shape(grid_tiled_shape),
+      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
       params_A_real(args.lda_real),
       params_A_imag(args.lda_imag),
       params_B_real(args.ldb_real),
@@ -412,6 +415,12 @@ public:
     return Status::kSuccess;
   }
 
+  static size_t get_extra_workspace_size(Arguments const &args,
+                                         cutlass::gemm::GemmCoord const &grid_tiled_shape) {
+
+    return 0;
+  }
+
   /// Executes one GEMM
   CUTLASS_DEVICE
   void operator()(Params const &params, SharedStorage &shared_storage) {
@@ -420,7 +429,7 @@ public:
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord threadblock_tile_offset =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_offset.m() ||
@@ -551,7 +560,7 @@ public:
     //
 
     threadblock_tile_offset =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     //assume identity swizzle
     MatrixCoord threadblock_offset(

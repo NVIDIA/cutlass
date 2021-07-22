@@ -45,6 +45,8 @@
 
 #include "testbed_utils.h"
 
+#include "cutlass/layout/matrix.h"
+
 namespace test {
 namespace gemm {
 namespace device {
@@ -58,6 +60,9 @@ struct Testbed {
   using ElementCompute = typename Gemm::GemmKernel::Epilogue::OutputOp::ElementCompute;
 
   /// Initialization
+  typename Gemm::LayoutA::Stride stride_factor_A;
+  typename Gemm::LayoutB::Stride stride_factor_B;
+  typename Gemm::LayoutC::Stride stride_factor_C;
   cutlass::Distribution::Kind init_A;
   cutlass::Distribution::Kind init_B;
   cutlass::Distribution::Kind init_C;
@@ -79,6 +84,23 @@ struct Testbed {
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = 2080
   ):
+    stride_factor_A(typename Gemm::LayoutA::Stride()),
+    stride_factor_B(typename Gemm::LayoutB::Stride()),
+    stride_factor_C(typename Gemm::LayoutC::Stride()),
+    init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_) { }
+
+  Testbed(
+    typename Gemm::LayoutA::Stride stride_factor_A_,
+    typename Gemm::LayoutB::Stride stride_factor_B_,
+    typename Gemm::LayoutC::Stride stride_factor_C_,
+    cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
+    uint64_t seed_ = 2080
+  ):
+    stride_factor_A(stride_factor_A_),
+    stride_factor_B(stride_factor_B_),
+    stride_factor_C(stride_factor_C_),
     init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_) { }
 
   /// Helper to initialize a tensor view
@@ -139,11 +161,11 @@ struct Testbed {
     // Allocate the GEMM workspace
     //
 
-    tensor_A.resize(problem_size.mk());
-    tensor_B.resize(problem_size.kn());
-    tensor_C.resize(problem_size.mn());
-    tensor_D.resize(problem_size.mn());
-    reference_D.resize(problem_size.mn(), false);
+    tensor_A.resize(problem_size.mk(), cutlass::layout::Affine2Layout_Factory<typename Gemm::LayoutA>::layout_factory(problem_size.mk(), stride_factor_A));
+    tensor_B.resize(problem_size.kn(), cutlass::layout::Affine2Layout_Factory<typename Gemm::LayoutB>::layout_factory(problem_size.kn(), stride_factor_B));
+    tensor_C.resize(problem_size.mn(), cutlass::layout::Affine2Layout_Factory<typename Gemm::LayoutC>::layout_factory(problem_size.mn(), stride_factor_C));
+    tensor_D.resize(problem_size.mn(), cutlass::layout::Affine2Layout_Factory<typename Gemm::LayoutC>::layout_factory(problem_size.mn(), stride_factor_C));
+    reference_D.resize(problem_size.mn(), cutlass::layout::Affine2Layout_Factory<typename Gemm::LayoutC>::layout_factory(problem_size.mn(), stride_factor_C), false);
 
     EXPECT_TRUE(initialize_tensor(tensor_A.host_view(), init_A, seed + 2019));
     EXPECT_TRUE(initialize_tensor(tensor_B.host_view(), init_B, seed + 2018));
@@ -153,7 +175,7 @@ struct Testbed {
     // in the upper left corner of each operand.
     tensor_A.host_view().at({0, 0}) = typename Gemm::ElementA(1);
     tensor_B.host_view().at({0, 0}) = typename Gemm::ElementB(1);
-    tensor_C.host_view().at({0, 0}) = typename Gemm::ElementC(1);
+    tensor_C.host_view().at(cutlass::make_Coord(0, 0)) = typename Gemm::ElementC(1);
 
     cutlass::reference::host::TensorCopy(reference_D.host_view(), tensor_C.host_view());
 
@@ -226,7 +248,7 @@ struct Testbed {
     //
     // Verify
     //
-
+    
     cutlass::reference::host::Gemm<
         typename Gemm::ElementA, typename Gemm::LayoutA,
         typename Gemm::ElementB, typename Gemm::LayoutB,
@@ -347,7 +369,10 @@ struct Testbed {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Gemm>
-bool TestAllGemm() {
+bool TestAllGemm(
+    const typename Gemm::LayoutA::Stride& stride_factor_A = typename Gemm::LayoutA::Stride(),
+    const typename Gemm::LayoutB::Stride& stride_factor_B = typename Gemm::LayoutB::Stride(),
+    const typename Gemm::LayoutC::Stride& stride_factor_C = typename Gemm::LayoutC::Stride()) {
   bool passed = true;
 
   int const kMinimumOperandElementSize = 
@@ -393,7 +418,7 @@ bool TestAllGemm() {
     2.0
   };
 
-  Testbed<Gemm> testbed;
+  Testbed<Gemm> testbed(stride_factor_A, stride_factor_B, stride_factor_C);
 
   using ElementCompute = typename Gemm::EpilogueOutputOp::ElementCompute;
 
@@ -414,7 +439,6 @@ bool TestAllGemm() {
             for (auto beta : problem_beta) {
 
               cutlass::gemm::GemmCoord problem_size(m, n, k);
-
               passed = testbed.run(
                 problem_size, 
                 split_k,

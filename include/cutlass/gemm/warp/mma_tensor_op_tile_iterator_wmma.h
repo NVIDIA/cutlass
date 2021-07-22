@@ -130,6 +130,9 @@ class MmaTensorOpWmmaMultiplicandTileIterator<
   /// Long Index type
   using LongIndex = typename TensorRef::LongIndex;
 
+  /// Stride Index type
+  using StrideIndex = typename TensorRef::Layout::Stride::Index;
+
   /// Coordinate for an element in the tensor
   using TensorCoord = typename TensorRef::TensorCoord;
 
@@ -180,7 +183,7 @@ private:
   Index byte_offset_;
   
   /// Stride in units of number of elements
-  Index stride_;
+  StrideIndex stride_;
 
   /// Layout of shared memory
   Layout layout_;
@@ -375,6 +378,9 @@ class MmaTensorOpWmmaMultiplicandTileIterator<
   /// Long Index type
   using LongIndex = typename TensorRef::LongIndex;
 
+  /// Stride Index type
+  using StrideIndex = typename TensorRef::Layout::Stride::Index;
+
   /// Coordinate for an element in the tensor
   using TensorCoord = typename TensorRef::TensorCoord;
 
@@ -425,7 +431,7 @@ private:
   Index byte_offset_;
   
   /// Stride in units of number of elements
-  Index stride_;
+  StrideIndex stride_;
 
   /// Layout of shared memory
   Layout layout_;

@@ -236,6 +236,7 @@ class SparseGemm {
   using EpilogueOutputOp = EpilogueOutputOp_;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
   using Operator = Operator_;
+  using MathOperator = Operator;
   static int const kStages = Stages;
   static int const kAlignmentA = AlignmentA;
   static int const kAlignmentB = AlignmentB;

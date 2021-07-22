@@ -68,7 +68,7 @@ struct TensorReductionAffineStridedParams {
   static int const kBatchSize = BatchSize;
 
   Coord<kRank> extent;                          /// Extent of source tensor
-  FastDivmodU64 divmod[kRank - 2];              /// FastDivmod by each strided rank
+  FastDivmodU64 divmod[kRank - 1];              /// FastDivmod by each strided rank
   int64_t dst_stride[kReducedRank - 1];         /// stride (units of bytes) - I, J
   int64_t src_stride[kRank - 1];                /// stride (units of bytes) - I, J, K
   int64_t workspace_stride;                     /// stride (units of bytes) between workspace
@@ -120,7 +120,7 @@ struct TensorReductionAffineStridedParams {
     reduction_identity(reduction_identity_) {
 
     // Initialize divisors for fast div-mod
-    for (int p = 1; p < kRank - 1; ++p) {
+    for (int p = 1; p < kRank; ++p) {
       divmod[p - 1] = FastDivmodU64(uint64_t(extent[p]));
     }
 
@@ -204,7 +204,7 @@ private:
     uint64_t linear_idx) const {
 
     // Decompose into coordinate
-    coord = CoordinateDecomposition<kInnerRank>(linear_idx, &params.divmod[kReducedRank]);
+    coord = CoordinateDecomposition<kInnerRank>(linear_idx, &params.divmod[kReducedRank - 1]);
 
     // Compute linear offset
     src_offset = 0;

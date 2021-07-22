@@ -39,6 +39,7 @@
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv2d_problem_size.h"
 #include "cutlass/conv/conv3d_problem_size.h"
+#include <iostream>
 
 namespace cutlass {
 namespace reference {
@@ -243,7 +244,21 @@ void Conv2dDgrad(
 
                   p = p / problem_size.stride_h;
                   q = q / problem_size.stride_w;
-                  
+#if 0
+                  std::cout << "row:" 
+                  << n * problem_size.H * problem_size.W +
+                    h * problem_size.W +
+                    w << " "
+                  << "n, p, q: (" 
+                  << n << ", "
+                  << p << ", "
+                  << q << ") * "
+                  << "r, s: (" 
+                  << r << ", "
+                  << s << ") [" 
+                  << ((p < problem_size.P && q < problem_size.Q) ? "true":"false") << "]"        
+                  << std::endl;
+#endif
                   if (p < problem_size.P && q < problem_size.Q) {
 
                     ElementA a = tensor_dy.at(cutlass::make_Coord(n, p, q, k));

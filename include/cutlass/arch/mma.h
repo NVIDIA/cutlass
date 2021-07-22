@@ -30,6 +30,7 @@
 
 #include "cutlass/array.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/functional.h"
 
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/arch/arch.h"
@@ -130,11 +131,12 @@ template <
   /// Layout of C matrix (concept: MatrixLayout)
   typename LayoutC,
   /// Inner product operator
-  typename Operator
+  typename Operator_
 >
-struct Mma<gemm::GemmShape<1, 1, 1>, 1, ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, Operator> {
+struct Mma<gemm::GemmShape<1, 1, 1>, 1, ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, Operator_> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = Operator_;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -144,7 +146,9 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, ElementA, LayoutA, ElementB, LayoutB, El
     Array<ElementC, 1> const &c
   ) {
 
-    d[0] = a[0] * b[0] + c[0];
+    multiply_add<ElementA, ElementB, ElementC> op;
+
+    d[0] = op(a[0], b[0], c[0]);
   }
 };
 

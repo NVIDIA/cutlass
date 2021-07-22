@@ -49,7 +49,9 @@ namespace thread {
 ///
 template <
   typename ElementOutput_,                             ///< Data type used to load and store tensors
-  int Count,                                           ///< Number of elements computed per operation
+  int Count,                                           ///< Number of elements computed per operation.
+                                                       ///< Usually it is 128/sizeof_bits<ElementOutput_>,
+                                                       ///< but we use 64 or 32 sometimes when there are not enough data to store
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
   ScaleType::Kind Scale = ScaleType::Default,          ///< Control Alpha and Beta scaling
@@ -146,6 +148,8 @@ public:
 
     if (Scale == ScaleType::OnlyAlphaScaling) return false;
 
+    if (Scale == ScaleType::Nothing) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -167,11 +171,17 @@ public:
     NumericArrayConverter<ElementCompute, ElementOutput, kCount, Round> source_converter;
     NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
 
-    ComputeFragment converted_source = source_converter(source);
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
+
     ComputeFragment converted_accumulator = accumulator_converter(accumulator);
 
-    // Perform binary operations
+    if (Scale == ScaleType::Nothing)
+      return destination_converter(converted_accumulator);
 
+    ComputeFragment converted_source = source_converter(source);
+
+    // Perform binary operations
     ComputeFragment intermediate;
 
     multiplies<ComputeFragment> mul_add_source;
@@ -180,12 +190,9 @@ public:
     if (Scale == ScaleType::NoBetaScaling)
       intermediate = converted_source;
     else
-      intermediate = mul_add_source(beta_, converted_source);                           // X =  beta * C + uniform
+      intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
 
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
-
-    // Convert to destination numeric type
-    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
 
     return destination_converter(intermediate);
   }
@@ -198,16 +205,19 @@ public:
     // Convert source to interal compute numeric type
     NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
 
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
+
     ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+
+    if (Scale == ScaleType::Nothing)
+      return destination_converter(converted_accumulator);
 
     // Perform binary operations
     ComputeFragment intermediate;
     multiplies<ComputeFragment> mul_accumulator;
 
     intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum 
-
-    // Convert to destination numeric type
-    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
 
     return destination_converter(intermediate);
   }

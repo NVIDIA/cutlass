@@ -204,9 +204,15 @@ class TensorRef {
 
   /// Constructs a TensorRef with a pointer and layout object.
   CUTLASS_HOST_DEVICE
+  TensorRef(): ptr_(nullptr) {
+  
+  }
+
+  /// Constructs a TensorRef with a pointer and layout object.
+  CUTLASS_HOST_DEVICE
   TensorRef(
-    Element *ptr = nullptr,                   ///< pointer to start of tensor
-    Layout const &layout = Layout()           ///< layout object containing stride and mapping function
+    Element *ptr,                   ///< pointer to start of tensor
+    Layout const &layout            ///< layout object containing stride and mapping function
   ):
     ptr_(ptr), layout_(layout) {
   
@@ -286,13 +292,13 @@ class TensorRef {
 
   /// Returns the layout object's stride in a given physical dimension
   CUTLASS_HOST_DEVICE
-  Index stride(int dim) const {
+  typename Layout::Stride::Index stride(int dim) const {
     return layout_.stride().at(dim);
   }
 
   /// Returns the layout object's stride in a given physical dimension
   CUTLASS_HOST_DEVICE
-  Index & stride(int dim) {
+  typename Layout::Stride::Index & stride(int dim) {
     return layout_.stride().at(dim);
   }
 

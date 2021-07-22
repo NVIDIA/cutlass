@@ -22,6 +22,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+
 /*! \file
     \brief Unit tests for threadblock-level GEMM
 */
@@ -3824,4 +3825,5 @@ TEST(SM80_gemm_threadblock_crosswise_f64,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
 #endif

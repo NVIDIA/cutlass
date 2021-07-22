@@ -119,12 +119,12 @@ cudaError_t cutlass_hgemm_nn(
   int K,
   cutlass::half_t alpha,
   cutlass::half_t const *A,
-  int lda,
+  cutlass::layout::ColumnMajor::Stride::Index lda,
   cutlass::half_t const *B,
-  int ldb,
+  cutlass::layout::ColumnMajor::Stride::Index ldb,
   cutlass::half_t beta,
   cutlass::half_t *C,
-  int ldc) {
+  cutlass::layout::ColumnMajor::Stride::Index ldc) {
 
   // Define the GEMM operation
   using Gemm = cutlass::gemm::device::Gemm<

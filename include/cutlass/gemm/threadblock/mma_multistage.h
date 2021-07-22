@@ -77,6 +77,8 @@ template <
     typename Policy_,
     /// Number of stages,
     int Stages,
+    /// Use zfill or predicate for out-of-bound cp.async
+    bool UseZfill = false,
     /// Used for partial specialization
     typename Enable = bool>
 class MmaMultistage : 
@@ -228,8 +230,13 @@ public:
         for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_A.get();
 
-          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
-              dst_ptr + v, gmem_ptr, iterator_A.valid());
+          if (UseZfill) {
+            cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
+                dst_ptr + v, gmem_ptr, iterator_A.valid());
+          } else {
+            cutlass::arch::cp_async<kSrcBytes, kCacheOpA>(
+                dst_ptr + v, gmem_ptr, iterator_A.valid());
+          }
 
           ++iterator_A;
         }
@@ -258,8 +265,13 @@ public:
         for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_B.get();
 
-          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
-              dst_ptr + v, gmem_ptr, iterator_B.valid());
+          if (UseZfill) {
+            cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
+                dst_ptr + v, gmem_ptr, iterator_B.valid());
+          } else {
+            cutlass::arch::cp_async<kSrcBytes, kCacheOpB>(
+                dst_ptr + v, gmem_ptr, iterator_B.valid());
+          }
 
           ++iterator_B;
         }
@@ -514,10 +526,12 @@ public:
 
     }
     
-    // commit and drain all pending and predicated LDGSTS pnz from the GEMM mainloop
-    cutlass::arch::cp_async_fence();
-    cutlass::arch::cp_async_wait<0>();
-    __syncthreads();
+    if (UseZfill) {
+      // commit and drain all pending and predicated LDGSTS pnz from the GEMM mainloop
+      cutlass::arch::cp_async_fence();
+      cutlass::arch::cp_async_wait<0>();
+      __syncthreads();
+    }
 
   }
 };

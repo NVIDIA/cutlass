@@ -98,7 +98,11 @@ struct alignas(4) tfloat32_t {
   CUTLASS_HOST_DEVICE
   explicit tfloat32_t(int x) {
     float flt = static_cast<float>(x);
+    #if defined(__CUDA_ARCH__)
     storage = reinterpret_cast<uint32_t const &>(flt);
+    #else
+    std::memcpy(&storage, &flt, sizeof(storage));
+    #endif
   }
 
   /// Converts to float
@@ -108,8 +112,14 @@ struct alignas(4) tfloat32_t {
     // Conversions to IEEE single-precision requires clearing dont-care bits
     // of the mantissa.
     unsigned bits = (storage & ~0x1fffu);
-    
+
+    #if defined(__CUDA_ARCH__)    
     return reinterpret_cast<float const &>(bits);
+    #else
+    float flt;
+    std::memcpy(&flt, &bits, sizeof(flt));
+    return flt;
+    #endif
   }
 
   /// Converts to float
@@ -353,8 +363,8 @@ tfloat32_t operator+(tfloat32_t const& lhs, tfloat32_t const& rhs) {
 
 CUTLASS_HOST_DEVICE
 tfloat32_t operator-(tfloat32_t const& lhs) {
-  float x = -reinterpret_cast<float const &>(lhs);
-  return reinterpret_cast<tfloat32_t const &>(x);
+  float x = -static_cast<float>(lhs);
+  return static_cast<tfloat32_t>(x);
 }
 
 CUTLASS_HOST_DEVICE

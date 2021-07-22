@@ -36,6 +36,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/uint128.h"
 #include "cutlass/coord.h"
+#include "cutlass/numeric_types.h"
 
 /**
  * \file
@@ -49,6 +50,20 @@ namespace cutlass {
 /******************************************************************************
  * Static math utilities
  ******************************************************************************/
+
+/// Mixed precision dot product 
+template <typename Index, typename LongIndex, int N>
+CUTLASS_HOST_DEVICE LongIndex dot(
+  Coord<N, Index> const &coord, 
+  Coord<N, LongIndex> const &stride, 
+  LongIndex acc = LongIndex()) {
+  
+  CUTLASS_PRAGMA_UNROLL
+  for (int n = 0; n < N; ++n) {
+    acc += LongIndex(coord[n]) * stride[n];
+  }
+  return acc;
+}
 
 /**
  * Statically determine if N is a power-of-two
@@ -270,11 +285,32 @@ struct FastDivmod {
     fast_divmod(quotient, remainder, dividend, divisor, multiplier, shift_right);
   }
 
+
+  /// Computes integer division and modulus using precomputed values. This is computationally
+  /// inexpensive.
+  ///
+  /// Simply returns the quotient
+  CUTLASS_HOST_DEVICE
+  int divmod(int &remainder, int dividend) const {
+    int quotient;
+    fast_divmod(quotient, remainder, dividend, divisor, multiplier, shift_right);
+    return quotient;
+  }
+
   /// Computes integer division and modulus using precomputed values. This is computationally
   /// inexpensive.
   CUTLASS_HOST_DEVICE
   void operator()(int &quotient, int64_t &remainder, int64_t dividend) const {
     fast_divmod(quotient, remainder, dividend, divisor, multiplier, shift_right);
+  }
+
+  /// Computes integer division and modulus using precomputed values. This is computationally
+  /// inexpensive.
+  CUTLASS_HOST_DEVICE
+  int divmod(int64_t &remainder, int64_t dividend) const {
+    int quotient;
+    fast_divmod(quotient, remainder, dividend, divisor, multiplier, shift_right);
+    return quotient;
   }
 };
 
@@ -387,7 +423,7 @@ struct FastDivmodU64 {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Computes the coordinate decomposition from a linear index.
+/// Computes the coordinate decomposition from a linear index (64-bit linear index => coord<int32_t>)
 ///
 /// This decomposition is accelerated by the FastDivmodU64 object. It is assumed that
 /// a coordinate of <Rank> indices can be decomposed by <Rank - 1> div/mod operations.
@@ -426,6 +462,89 @@ CUTLASS_HOST_DEVICE Coord<Rank> CoordinateDecomposition(
   coord[0] = int(linear_idx);
 
   return coord;
+}
+
+/// Computes the coordinate decomposition from a linear index (32-bit linear index => coord<int32_t>)
+template <int Rank>
+CUTLASS_HOST_DEVICE Coord<Rank> CoordinateDecomposition(
+  int linear_idx,                    ///< Linear index to decompose
+  FastDivmod const *divmod) {          ///< Pointer to array of Rank-1 FastDivmodU64 objects
+
+  static_assert(Rank > 0, "CoordinateDecomposition requires Rank=1 or greater.");
+
+  Coord<Rank> coord;
+
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = Rank; i > 1; --i) {
+    int remainder;
+    linear_idx = divmod[i - 2].divmod(remainder, linear_idx);
+    coord[i - 1] = int(remainder);
+  }
+
+  coord[0] = int(linear_idx);
+
+  return coord;
+}
+
+template <int Rank>
+CUTLASS_HOST_DEVICE Coord<Rank> CoordinateDecompositionLittleEndian(
+  uint64_t linear_idx,                    ///< Linear index to decompose
+  FastDivmodU64 const *divmod) {          ///< Pointer to array of Rank-1 FastDivmodU64 objects
+
+  static_assert(Rank > 0, "CoordinateDecomposition requires Rank=1 or greater.");
+
+  Coord<Rank> coord;
+
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Rank - 1; ++i) {
+    uint64_t remainder;
+    linear_idx = divmod[i].divmod(remainder, linear_idx);
+    coord[i] = int(remainder);
+  }
+
+  coord[Rank - 1] = int(linear_idx);
+
+  return coord;
+}
+
+/// Computes the coordinate decomposition from a linear index (32-bit linear index => coord<int32_t>)
+template <int Rank>
+CUTLASS_HOST_DEVICE Coord<Rank> CoordinateDecompositionLittleEndian(
+  int linear_idx,                    ///< Linear index to decompose
+  FastDivmod const *divmod) {          ///< Pointer to array of Rank-1 FastDivmodU64 objects
+
+  static_assert(Rank > 0, "CoordinateDecomposition requires Rank=1 or greater.");
+
+  Coord<Rank> coord;
+
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = 0; i < Rank - 1; ++i) {
+    int remainder;
+    linear_idx = divmod[i].divmod(remainder, linear_idx);
+    coord[i] = int(remainder);
+  }
+
+  coord[Rank - 1] = int(linear_idx);
+
+  return coord;
+}
+
+/// Safely computes the offset of a linear index in bytes for all types
+template <typename Element>
+CUTLASS_HOST_DEVICE int64_t OffsetBytes(int64_t index) {
+
+  static_assert(
+    (sizeof_bits<Element>::value >= 8 && !(sizeof_bits<Element>::value % 8)) || 
+    (sizeof_bits<Element>::value <  8 && !(8 % sizeof_bits<Element>::value)), 
+    "Size of numeric type in bits must either be divisible by 8 bits, or 8 bits must be divisible by the size.");
+
+  if (sizeof_bits<Element>::value >= 8) {
+    return index * (sizeof_bits<Element>::value / 8);
+  }
+  else {
+    int const kElementsPerByte = ((8 / sizeof_bits<Element>::value) + ((sizeof_bits<Element>::value >= 8) ? 1 : 0));
+    return index / kElementsPerByte;
+  }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -563,6 +682,24 @@ double fast_sqrt(double theta) {
   return ::sqrt(theta);
   #else
   return std::sqrt(theta);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+float fast_exp(float x) {
+  #if defined(__CUDA_ARCH__)
+  return ::exp(x);
+  #else
+  return std::exp(x);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+double fast_exp(double x) {
+  #if defined(__CUDA_ARCH__)
+  return ::exp(x);
+  #else
+  return std::exp(x);
   #endif
 }
 

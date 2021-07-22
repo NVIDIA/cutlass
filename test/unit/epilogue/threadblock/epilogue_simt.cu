@@ -32,6 +32,7 @@
 
 #include "cutlass/aligned_buffer.h"
 #include "cutlass/complex.h"
+#include "cutlass/quaternion.h"
 
 #include "cutlass/gemm/warp/mma_simt.h"
 #include "cutlass/gemm/warp/mma_simt_policy.h"
@@ -1088,4 +1089,80 @@ TEST(SM50_Epilogue_threadblock_epilogue, simt_complex_f64_128x128_32x64x8) {
   EXPECT_TRUE(passed);
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Quaternion-valued single-precision
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM50_Epilogue_threadblock_epilogue, simt_quaternion_f32_32x64_32x64x8) {
+
+  //
+  // Define the warp-level matrix multiply
+  //
+
+  using Element = cutlass::Quaternion<float>;
+  using ElementOutput = Element;
+  using ElementAccumulator = Element;
+  using ElementCompute = Element;
+  int const kElementsPerAccess = 1;
+
+  using Shape = cutlass::gemm::GemmShape<32, 64, 8>;
+  using WarpShape = cutlass::gemm::GemmShape<32, 64, 8>;
+  
+  using ElementC = ElementAccumulator;
+  using LayoutA = cutlass::layout::ColumnMajor;
+  using LayoutB = cutlass::layout::RowMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+
+  using ElementOutput = Element;
+  using ElementAccumulator = Element;
+  using ElementCompute = Element;
+
+  using WarpMmaSimt = cutlass::gemm::warp::MmaSimt<
+    WarpShape,
+    Element,
+    LayoutA,
+    Element,
+    LayoutB,
+    Element,
+    LayoutC,
+    cutlass::gemm::warp::MmaSimtPolicy<
+      cutlass::MatrixShape<4, 8>,
+      cutlass::layout::RowMajorInterleaved<2>,
+      cutlass::gemm::GemmShape<2, 2, 1>
+    >
+  >;
+
+  //
+  // Output operator
+  //
+
+  using OutputOp = cutlass::epilogue::thread::LinearCombination<
+    ElementOutput,
+    kElementsPerAccess,
+    ElementAccumulator,
+    ElementCompute
+  >;
+
+  //
+  // Define the epilogue
+  //
+
+  using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueSimt<
+    Shape,
+    WarpMmaSimt,
+    OutputOp,
+    kElementsPerAccess
+  >::Epilogue;
+
+  //
+  // Instantiate epilogue
+  //
+
+  EpilogueTestbed<Epilogue> testbed;
+
+  bool passed = testbed.run_all();
+
+  EXPECT_TRUE(passed);
+}

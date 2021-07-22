@@ -48,6 +48,10 @@ addition to its own input activation tile. Therefore the input activation warp t
 2nd GEMM/Conv only depends on the output warp accumulator of the 1st GEMM/Conv in the
 register file, and the operation can be fully register-file-resident.
 
+When applying the above constraint to convolutions, it is required that the 2nd Convolution
+kernel doesn't have halos such that data used by each threadblock doesn't depend on any other
+threadblock. Typically this requires the 2nd Convolution uses 1x1 filter without any paddings.
+
 # Copyright
 
 Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.

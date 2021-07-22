@@ -17,7 +17,7 @@ from library import *
 class Conv2dOperation:
   #
   def __init__(self, conv_kind, iterator_algorithm, arch, tile_description, A, B, C, element_epilogue, \
-    stride_support, epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity4):
+    stride_support, epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity1):
 
     self.operation_kind = OperationKind.Conv2d
     self.arch = arch

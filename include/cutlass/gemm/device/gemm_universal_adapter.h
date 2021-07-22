@@ -121,7 +121,7 @@ public:
   // warp-level, arch-level (instruction), math operator 
   using WarpMmaOperator = typename GemmKernel::Mma::Policy::Operator;
   using ArchMmaOperator = typename WarpMmaOperator::ArchMmaOperator;
-  using MathOperator = typename ArchMmaOperator::Operator;
+  using MathOperator = typename WarpMmaOperator::MathOperator;
   
   // Operator class and arch tag extract bottom-up 
   // set it for top-level gemm device-level template
@@ -161,13 +161,11 @@ public:
   using TensorRefC = TensorRef<ElementC const, LayoutC>;
   using TensorRefD = TensorRef<ElementC, LayoutC>;
 
-  using ElementAccumulator = typename GemmKernel::Mma::Policy::Operator::ElementC;
-
   static int const kStages = GemmKernel::Mma::kStages;
 
   using EpilogueOutputOp = typename GemmKernel::EpilogueOutputOp;
+  using ElementAccumulator = typename EpilogueOutputOp::ElementAccumulator;
   using ThreadblockSwizzle = typename GemmKernel::ThreadblockSwizzle;
-  using Operator = typename GemmKernel::Operator;
 
   using UnderlyingOperator = GemmUniversalBase<GemmKernel>;
   using Arguments = typename UnderlyingOperator::Arguments;

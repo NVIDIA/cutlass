@@ -196,7 +196,7 @@ private:
   CUTLASS_HOST_DEVICE
   TensorCoord at_(int offset_npq, int k) const {
 
-    // The subseqnet fast_divmod() operations are equivalent to the following logical computation:
+    // The subsequent fast_divmod() operations are equivalent to the following logical computation:
     //
     //
     // int npq = offset_npq;

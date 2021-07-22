@@ -253,7 +253,7 @@ class InterleavedEpilogue {
       //
 
       typename OutputTileIterator::Fragment output_fragment;
-      apply_output_operator_(output_op, output_fragment, accum_fragment, source_fragment);
+      apply_output_operator_source_needed_(output_op, output_fragment, accum_fragment, source_fragment);
 
       //
       // Store the final result
@@ -268,7 +268,7 @@ class InterleavedEpilogue {
  private:
   /// Helper to invoke the output functor over each vector of output
   CUTLASS_DEVICE
-  void apply_output_operator_(
+  void apply_output_operator_source_needed_(
     OutputOp const &output_op,                    ///< Output operator
       typename OutputTileIterator::Fragment &output_fragment,
       typename AccumulatorFragmentIterator::Fragment const

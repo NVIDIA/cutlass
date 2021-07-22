@@ -2,6 +2,33 @@
 
 # CUTLASS 2.x
 
+## [2.6.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.6.0) (2021-07-22)
+  * Optimal performance when compiled with the [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit)
+    * Adopt the new L2 prefetch feature in [cp.async](/include/cutlass/arch/memory.h) and [global load](/include/cutlass/arch/memory_sm80.h)
+  * Fused operators with GEMM and Convolution
+    * [Fused broadcast in epilogue](test/unit/gemm/device/gemm_with_broadcast_f16n_f16n_f16n_tensorop_f32_sm75.cu)
+    * [Fused partial reduction in epilogue](/test/unit/gemm/device/gemm_with_reduction_f16n_f16n_f16n_tensorop_f32_sm75.cu)
+  * 64b tensor strides and leading dimensions support for GEMMs
+  * Affine rank=2 matrix layouts 
+    * Row stride and column stride for matrices using [cutlass::layout::AffineRank2](/include/cutlass/layout/matrix.h)
+    * Support [FP64 tensor core](/examples/18_ampere_fp64_tensorop_affine2_gemm/ampere_fp64_tensorop_affine2_gemm.cu) and SIMT GEMM.
+  * [Batched GEMV](/test/unit/gemm/device/gemv.cu) preview implementation
+  * [New strided Dgrad](test/unit/gemm/device/conv2d_strided_dgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu) implementation
+    * Accelerates over previous implementation by cutting down redundant math by 4x
+    * Support using new `Dy` and `w` analytic iterators and existing `cutlass::conv::device::ImplicitGemmConvolution` iterface
+  * Quaternion-valued GEMM and Convolution in single- and double-precision (targeting CUDA Cores)
+    * Updates to [quaternion.h](/include/cutlass/quaternion.h) and [functional.h](/include/cutlass/functional.h)
+    * SDK Example for [GEMM](/examples/21_quaternion_gemm/quaternion_gemm.cu) and [Convolution](/examples/22_quaternion_gemm/quaternion_conv.cu)
+    * [Unit tests for GEMM](/test/unit/gemm/device/simt_qgemm_nn_sm50.cu) and [Convolution](/test/unit/conv/device/conv2d_fprop_implicit_gemm_qf32nhwc_qf32nhwc_qf32nhwc_simt_f32_sm50.cu)
+  * Many improvements to the epilogue.
+    * Provide an [option](/include/cutlass/epilogue/threadblock/epilogue.h) to not fully unroll the epilogue to reduce the code size and improve the performance when using complicated elementwise operations
+    * Performance improvement for FP16 tensor core kernels
+    * Bug fixes    
+  * Updated minimum CUDA Toolkit requirement to 10.2
+    * [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit) recommended
+  * Corrections and bug fixes reported by the CUTLASS community
+    * Thank you for filing these issues!
+
 ## [2.5.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.5.0) (2021-02-26)
   * Tensor reductions
     * _m_-to-_n_ reductions of tensors with affine layout

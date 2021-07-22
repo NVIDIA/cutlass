@@ -81,6 +81,48 @@ TEST(SM80_Device_GemmPlanarComplex_f16t_f16n_f32n_tensor_op_f32_16816, 64x64x32_
   EXPECT_TRUE(test::gemm::device::TestAllGemmPlanarComplex<Gemm>());
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+using gemm_planar_complex_f16_s16816_tn_base = typename cutlass::gemm::kernel::DefaultGemmPlanarComplexUniversal<
+  cutlass::half_t,
+  cutlass::layout::RowMajor,
+  cutlass::ComplexTransform::kNone,
+  8,
+  cutlass::half_t,
+  cutlass::layout::ColumnMajor,
+  cutlass::ComplexTransform::kNone,
+  8,
+  cutlass::half_t,
+  cutlass::layout::RowMajor,
+  float,
+  cutlass::arch::OpClassTensorOp,
+  cutlass::arch::Sm80,
+  cutlass::gemm::GemmShape<64, 64, 32>,
+  cutlass::gemm::GemmShape<32, 32, 32>,
+  cutlass::gemm::GemmShape<16, 8, 16>,
+  cutlass::epilogue::thread::LinearCombinationPlanarComplex<
+    float,
+    4,
+    float,
+    float
+  >,
+  cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+  3,
+  cutlass::arch::OpMultiplyAdd
+>::GemmKernel;
+
+struct gemm_planar_complex_f16_s16816_tn : gemm_planar_complex_f16_s16816_tn_base {
+
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Device_GemmPlanarComplex_f16t_f16n_f16n_tensor_op_f32_16816, 64x64x32_32x32x32) {
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<gemm_planar_complex_f16_s16816_tn>;
+
+  EXPECT_TRUE(test::gemm::device::TestAllGemmPlanarComplex<Gemm>());
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -121,6 +163,49 @@ struct gemm_planar_complex_s16816_hc : gemm_planar_complex_s16816_hc_base {
 TEST(SM80_Device_GemmPlanarComplex_f16h_f16c_f32n_tensor_op_f32_16816, 64x64x32_32x32x32) {
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<gemm_planar_complex_s16816_hc>;
+
+  EXPECT_TRUE(test::gemm::device::TestAllGemmPlanarComplex<Gemm>());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+using gemm_planar_complex_f16_s16816_hc_base = typename cutlass::gemm::kernel::DefaultGemmPlanarComplexUniversal<
+  cutlass::half_t,
+  cutlass::layout::RowMajor,
+  cutlass::ComplexTransform::kConjugate,
+  8,
+  cutlass::half_t,
+  cutlass::layout::ColumnMajor,
+  cutlass::ComplexTransform::kConjugate,
+  8,
+  cutlass::half_t,
+  cutlass::layout::RowMajor,
+  float,
+  cutlass::arch::OpClassTensorOp,
+  cutlass::arch::Sm80,
+  cutlass::gemm::GemmShape<64, 64, 32>,
+  cutlass::gemm::GemmShape<32, 32, 32>,
+  cutlass::gemm::GemmShape<16, 8, 16>,
+  cutlass::epilogue::thread::LinearCombinationPlanarComplex<
+    float,
+    4,
+    float,
+    float
+  >,
+  cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+  3,
+  cutlass::arch::OpMultiplyAdd
+>::GemmKernel;
+
+struct gemm_planar_complex_f16_s16816_hc : gemm_planar_complex_f16_s16816_hc_base {
+
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Device_GemmPlanarComplex_f16h_f16c_f16n_tensor_op_f32_16816, 64x64x32_32x32x32) {
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<gemm_planar_complex_f16_s16816_hc>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemmPlanarComplex<Gemm>());
 }
@@ -168,6 +253,50 @@ TEST(SM80_Device_GemmPlanarComplex_f16n_f16t_f32n_tensor_op_f32_16816, 64x64x32_
   EXPECT_TRUE(test::gemm::device::TestAllGemmPlanarComplex<Gemm>());
 }
 
+
+////////////////////////////////////////////////////////////////////////////////
+
+using gemm_planar_complex_f16_s16816_nt_base = typename cutlass::gemm::kernel::DefaultGemmPlanarComplexUniversal<
+  cutlass::half_t,
+  cutlass::layout::ColumnMajor,
+  cutlass::ComplexTransform::kNone,
+  8,
+  cutlass::half_t,
+  cutlass::layout::RowMajor,
+  cutlass::ComplexTransform::kNone,
+  8,
+  cutlass::half_t,
+  cutlass::layout::RowMajor,
+  float,
+  cutlass::arch::OpClassTensorOp,
+  cutlass::arch::Sm80,
+  cutlass::gemm::GemmShape<64, 64, 32>,
+  cutlass::gemm::GemmShape<32, 32, 32>,
+  cutlass::gemm::GemmShape<16, 8, 16>,
+  cutlass::epilogue::thread::LinearCombinationPlanarComplex<
+    float,
+    4,
+    float,
+    float
+  >,
+  cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+  3,
+  cutlass::arch::OpMultiplyAdd
+>::GemmKernel;
+
+struct gemm_planar_complex_f16_s16816_nt : gemm_planar_complex_f16_s16816_nt_base {
+
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Device_GemmPlanarComplex_f16n_f16t_f16n_tensor_op_f32_16816, 64x64x32_32x32x32) {
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<gemm_planar_complex_f16_s16816_nt_base>;
+
+  EXPECT_TRUE(test::gemm::device::TestAllGemmPlanarComplex<Gemm>());
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 using gemm_planar_complex_s16816_ch_base = typename cutlass::gemm::kernel::DefaultGemmPlanarComplexUniversal<
@@ -211,6 +340,48 @@ TEST(SM80_Device_GemmPlanarComplex_f16c_f16h_f32n_tensor_op_f32_16816, 64x64x32_
   EXPECT_TRUE(test::gemm::device::TestAllGemmPlanarComplex<Gemm>());
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+using gemm_planar_complex_cf16_s16816_ch_base = typename cutlass::gemm::kernel::DefaultGemmPlanarComplexUniversal<
+  cutlass::half_t,
+  cutlass::layout::ColumnMajor,
+  cutlass::ComplexTransform::kConjugate,
+  8,
+  cutlass::half_t,
+  cutlass::layout::RowMajor,
+  cutlass::ComplexTransform::kConjugate,
+  8,
+  cutlass::half_t,
+  cutlass::layout::RowMajor,
+  float,
+  cutlass::arch::OpClassTensorOp,
+  cutlass::arch::Sm80,
+  cutlass::gemm::GemmShape<64, 64, 32>,
+  cutlass::gemm::GemmShape<32, 32, 32>,
+  cutlass::gemm::GemmShape<16, 8, 16>,
+  cutlass::epilogue::thread::LinearCombinationPlanarComplex<
+    float,
+    4,
+    float,
+    float
+  >,
+  cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+  3,
+  cutlass::arch::OpMultiplyAdd
+>::GemmKernel;
+
+struct gemm_planar_complex_cf16_s16816_ch : gemm_planar_complex_cf16_s16816_ch_base {
+
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Device_GemmPlanarComplex_f16c_f16h_f16n_tensor_op_f32_16816, 64x64x32_32x32x32) {
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<gemm_planar_complex_cf16_s16816_ch>;
+
+  EXPECT_TRUE(test::gemm::device::TestAllGemmPlanarComplex<Gemm>());
+}
 ////////////////////////////////////////////////////////////////////////////////
 
 #endif // #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)

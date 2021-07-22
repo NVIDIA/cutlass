@@ -532,6 +532,379 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
                                         MatrixShape<0, 0>, WarpCount::kK>;
 };
 
+////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for double-precision
+///
+///   A: column-major
+///   B: column-major
+///   Operator: tensor op class
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Number of stages
+    int Stages,
+    /// Operation performed by MMA
+    typename Operator_,
+    /// Cache operation of operand A
+    cutlass::arch::CacheOperation::Kind CacheOpA,
+    /// Cache operation of operand B
+    cutlass::arch::CacheOperation::Kind CacheOpB>
+struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
+                      layout::AffineRank2ColumnMajor, double, layout::AffineRank2ColumnMajor, double,
+                      LayoutC_, arch::OpClassTensorOp, Stages, Operator_,
+                      false, CacheOpA, CacheOpB> {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = InstructionShape_;
+  using ElementA = double;
+  using LayoutA = layout::AffineRank2ColumnMajor;
+  using ElementB = double;
+  using LayoutB = layout::AffineRank2ColumnMajor;
+  using ElementC = double;
+  using LayoutC = LayoutC_;
+  static int const kStages = Stages;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::ColumnMajor,
+                              ElementB,
+                              layout::ColumnMajor,
+                              ElementC,
+                              LayoutC,
+                              arch::OpClassTensorOp,
+                              kStages,
+                              Operator,
+                              false,
+                              kCacheOpA,
+                              kCacheOpB>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+};
+
+/// Partial specialization for double-precision
+///
+///   A: column-major
+///   B: row-major
+///   Operator: tensor op class
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Number of stages
+    int Stages,
+    /// Operation performed by MMA
+    typename Operator_,
+    /// Cache operation of operand A
+    cutlass::arch::CacheOperation::Kind CacheOpA,
+    /// Cache operation of operand B
+    cutlass::arch::CacheOperation::Kind CacheOpB>
+struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
+                      layout::AffineRank2ColumnMajor, double, layout::AffineRank2RowMajor, double,
+                      LayoutC_, arch::OpClassTensorOp, Stages, Operator_,
+                      false, CacheOpA, CacheOpB> {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = InstructionShape_;
+  using ElementA = double;
+  using LayoutA = layout::AffineRank2ColumnMajor;
+  using ElementB = double;
+  using LayoutB = layout::AffineRank2RowMajor;
+  using ElementC = double;
+  using LayoutC = LayoutC_;
+  static int const kStages = Stages;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::ColumnMajor,
+                              ElementB,
+                              layout::RowMajor,
+                              ElementC,
+                              LayoutC,
+                              arch::OpClassTensorOp,
+                              kStages,
+                              Operator,
+                              false,
+                              kCacheOpA,
+                              kCacheOpB>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for double-precision
+///
+///   A: row-major
+///   B: column-major
+///   Operator: tensor op class
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Number of stages
+    int Stages,
+    /// Operation performed by MMA
+    typename Operator_,
+    /// Cache operation of operand A
+    cutlass::arch::CacheOperation::Kind CacheOpA,
+    /// Cache operation of operand B
+    cutlass::arch::CacheOperation::Kind CacheOpB>
+struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
+                      layout::AffineRank2RowMajor, double, layout::AffineRank2ColumnMajor, double,
+                      LayoutC_, arch::OpClassTensorOp, Stages, Operator_,
+                      false, CacheOpA, CacheOpB> {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = InstructionShape_;
+  using ElementA = double;
+  using LayoutA = layout::AffineRank2RowMajor;
+  using ElementB = double;
+  using LayoutB = layout::AffineRank2ColumnMajor;
+  using ElementC = double;
+  using LayoutC = LayoutC_;
+  static int const kStages = Stages;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::RowMajor,
+                              ElementB,
+                              layout::ColumnMajor,
+                              ElementC,
+                              LayoutC,
+                              arch::OpClassTensorOp,
+                              kStages,
+                              Operator,
+                              false,
+                              kCacheOpA,
+                              kCacheOpB>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+///
+/// Partial specialization for double-precision
+///
+///   A: row-major
+///   B: row-major
+///   Operator: tensor op class
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Number of stages
+    int Stages,
+    /// Operation performed by MMA
+    typename Operator_,
+    /// Cache operation of operand A
+    cutlass::arch::CacheOperation::Kind CacheOpA,
+    /// Cache operation of operand B
+    cutlass::arch::CacheOperation::Kind CacheOpB>
+struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
+                      layout::AffineRank2RowMajor, double, layout::AffineRank2RowMajor, double,
+                      LayoutC_, arch::OpClassTensorOp, Stages, Operator_,
+                      false, CacheOpA, CacheOpB> {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = InstructionShape_;
+  using ElementA = double;
+  using LayoutA = layout::AffineRank2RowMajor;
+  using ElementB = double;
+  using LayoutB = layout::AffineRank2RowMajor;
+  using ElementC = double;
+  using LayoutC = LayoutC_;
+  static int const kStages = Stages;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::RowMajor,
+                              ElementB,
+                              layout::RowMajor,
+                              ElementC,
+                              LayoutC,
+                              arch::OpClassTensorOp,
+                              kStages,
+                              Operator,
+                              false,
+                              kCacheOpA,
+                              kCacheOpB>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1639,6 +2012,10 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   static const int numElementsB = 128 / sizeof_bits<ElementB>::value;
   static const int LaneM = cutlass::const_min(numElementsA, ThreadTileM);
   static const int LaneN = cutlass::const_min(numElementsB, ThreadTileN);
+
+  static_assert(!((Shape::kK / 32) % LaneN),
+                "Padding must be divisible by Lane");
+
   // these should have max of thread tile also
   using LaneMmaShape = cutlass::gemm::GemmShape<
       LaneM,
@@ -1947,6 +2324,10 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   static const int numElementsB = 128 / sizeof_bits<ElementB>::value;
   static const int LaneM = cutlass::const_min(numElementsA, ThreadTileM);
   static const int LaneN = cutlass::const_min(numElementsB, ThreadTileN);
+
+  static_assert(!((Shape::kK / 32) % LaneM) && !((Shape::kK / 32) % LaneN),
+                "Padding must be divisible by Lane");
+
   // these should have max of thread tile also
   using LaneMmaShape = cutlass::gemm::GemmShape<
       LaneM,
@@ -2100,6 +2481,10 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
   static const int numElementsB = 128 / sizeof_bits<ElementB>::value;
   static const int LaneM = cutlass::const_min(numElementsA, ThreadTileM);
   static const int LaneN = cutlass::const_min(numElementsB, ThreadTileN);
+
+  static_assert(!((Shape::kK / 32) % LaneM),
+                "Padding must be divisible by Lane");
+
   // these should have max of thread tile also
   using LaneMmaShape = cutlass::gemm::GemmShape<
       LaneM,
@@ -2128,6 +2513,388 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
     MatrixShape<Shape::kK / 32, 0>,
     MatrixShape<0, 0>,
     WarpCount::kK>;
+};
+
+/// Partial specialization for SIMT GEMMs using multistage pipeline.
+///
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
+    /// Data type of A operand
+    typename ElementA_,
+    /// Data type of B operand
+    typename ElementB_,
+    /// Data type of accumulator
+    typename ElementC_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Number of stages
+    int Stages,
+    /// Operation performed by Simt
+    typename Operator_,
+    /// Cache operation of operand A
+    cutlass::arch::CacheOperation::Kind CacheOpA,
+    /// Cache operation of operand B
+    cutlass::arch::CacheOperation::Kind CacheOpB>
+struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
+                      layout::AffineRank2ColumnMajor, ElementB_, layout::AffineRank2RowMajor,
+                      ElementC_, LayoutC_, arch::OpClassSimt, Stages, Operator_,
+                      false, CacheOpA, CacheOpB> {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = InstructionShape_;
+  using ElementA = ElementA_;
+  using LayoutA = layout::AffineRank2ColumnMajor;
+  using ElementB = ElementB_;
+  using LayoutB = layout::AffineRank2RowMajor;
+  using ElementC = ElementC_;
+  using LayoutC = LayoutC_;
+  static int const kStages = Stages;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::ColumnMajor,
+                              ElementB,
+                              layout::RowMajor,
+                              ElementC,
+                              LayoutC,
+                              arch::OpClassSimt,
+                              kStages,
+                              Operator,
+                              false,
+                              kCacheOpA,
+                              kCacheOpB>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+};
+
+/// Partial specialization for SIMT GEMMs using multistage pipeline.
+///
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
+    /// Data type of A operand
+    typename ElementA_,
+    /// Data type of B operand
+    typename ElementB_,
+    /// Data type of accumulator
+    typename ElementC_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Number of stages
+    int Stages,
+    /// Operation performed by Simt
+    typename Operator_,
+    /// Cache operation of operand A
+    cutlass::arch::CacheOperation::Kind CacheOpA,
+    /// Cache operation of operand B
+    cutlass::arch::CacheOperation::Kind CacheOpB>
+struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
+                      layout::AffineRank2RowMajor, ElementB_, layout::AffineRank2ColumnMajor,
+                      ElementC_, LayoutC_, arch::OpClassSimt, Stages, Operator_,
+                      false, CacheOpA, CacheOpB> {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = InstructionShape_;
+  using ElementA = ElementA_;
+  using LayoutA = layout::AffineRank2RowMajor;
+  using ElementB = ElementB_;
+  using LayoutB = layout::AffineRank2ColumnMajor;
+  using ElementC = ElementC_;
+  using LayoutC = LayoutC_;
+  static int const kStages = Stages;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::RowMajor,
+                              ElementB,
+                              layout::ColumnMajor,
+                              ElementC,
+                              LayoutC,
+                              arch::OpClassSimt,
+                              kStages,
+                              Operator,
+                              false,
+                              kCacheOpA,
+                              kCacheOpB>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+};
+
+/// Partial specialization for SIMT GEMMs using multistage pipeline.
+///
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
+    /// Data type of A operand
+    typename ElementA_,
+    /// Data type of B operand
+    typename ElementB_,
+    /// Data type of accumulator
+    typename ElementC_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Number of stages
+    int Stages,
+    /// Operation performed by Simt
+    typename Operator_,
+    /// Cache operation of operand A
+    cutlass::arch::CacheOperation::Kind CacheOpA,
+    /// Cache operation of operand B
+    cutlass::arch::CacheOperation::Kind CacheOpB>
+struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
+                      layout::AffineRank2ColumnMajor, ElementB_, layout::AffineRank2ColumnMajor,
+                      ElementC_, LayoutC_, arch::OpClassSimt, Stages, Operator_,
+                      false, CacheOpA, CacheOpB> {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = InstructionShape_;
+  using ElementA = ElementA_;
+  using LayoutA = layout::AffineRank2ColumnMajor;
+  using ElementB = ElementB_;
+  using LayoutB = layout::AffineRank2ColumnMajor;
+  using ElementC = ElementC_;
+  using LayoutC = LayoutC_;
+  static int const kStages = Stages;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::ColumnMajor,
+                              ElementB,
+                              layout::ColumnMajor,
+                              ElementC,
+                              LayoutC,
+                              arch::OpClassSimt,
+                              kStages,
+                              Operator,
+                              false,
+                              kCacheOpA,
+                              kCacheOpB>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+
+};
+
+/// Partial specialization for SIMT GEMMs using multistage pipeline.
+///
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
+    /// Data type of A operand
+    typename ElementA_,
+    /// Data type of B operand
+    typename ElementB_,
+    /// Data type of accumulator
+    typename ElementC_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Number of stages
+    int Stages,
+    /// Operation performed by Simt
+    typename Operator_,
+    /// Cache operation of operand A
+    cutlass::arch::CacheOperation::Kind CacheOpA,
+    /// Cache operation of operand B
+    cutlass::arch::CacheOperation::Kind CacheOpB>
+struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
+                      layout::AffineRank2RowMajor, ElementB_, layout::AffineRank2RowMajor, ElementC_,
+                      LayoutC_, arch::OpClassSimt, Stages, Operator_,
+                      false, CacheOpA, CacheOpB> {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = InstructionShape_;
+  using ElementA = ElementA_;
+  using LayoutA = layout::AffineRank2RowMajor;
+  using ElementB = ElementB_;
+  using LayoutB = layout::AffineRank2RowMajor;
+  using ElementC = ElementC_;
+  using LayoutC = LayoutC_;
+  static int const kStages = Stages;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::RowMajor,
+                              ElementB,
+                              layout::RowMajor,
+                              ElementC,
+                              LayoutC,
+                              arch::OpClassSimt,
+                              kStages,
+                              Operator,
+                              false,
+                              kCacheOpA,
+                              kCacheOpB>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+
 };
 
 ////////////////////////////////////////////////////////////////////////////////

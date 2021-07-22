@@ -71,6 +71,7 @@ public:
 
   static cutlass::conv::Operator const kConvolutionalOperator = ImplicitGemmKernel::kConvolutionalOperator;
   static cutlass::conv::IteratorAlgorithm const kIteratorAlgorithm = ImplicitGemmKernel::kIteratorAlgorithm;
+  static cutlass::conv::StrideSupport const kStrideSupport = ImplicitGemmKernel::kStrideSupport;
 
   static int const kWarpCount = 
     (ThreadblockShape::kM / WarpShape::kM) * 
@@ -104,12 +105,37 @@ public:
       return status;
     }
 
+    // check for unsupported problem sizes for strided dgrad implementation
+    if (kConvolutionalOperator == conv::Operator::kDgrad && 
+      kStrideSupport == conv::StrideSupport::kStrided) {
+
+      // Unity stride (1x1) is supported by strided dgrad but disabled for performance 
+      // reasons. For unity stride, use strided dgrad optimized unity stride specialization.
+      // Note that unit tests strided dgrad for unity stride to make sure that strided 
+      // dgrad implemetnation is functionaly sound. 
+      // Strided dgrad implementation also support mixed strides, i.e., (1x2) and (2x1)
+      if(args.problem_size.stride_h == 1 && args.problem_size.stride_w == 1) {
+        return Status::kErrorNotSupported;
+      }
+
+      // split-k (serial or parallel) is not supported for strided dgrad
+      if(args.problem_size.split_k_slices > 1) {
+        return Status::kErrorNotSupported;
+      }
+      
+      // dilation > {1x1} is not supported for strided dgrad
+      if(args.problem_size.dilation_h > 1 || args.problem_size.dilation_w > 1) {
+        return Status::kErrorNotSupported;
+      }
+    }
+
     // Determine grid shape
     ThreadblockSwizzle threadblock_swizzle;
 
     dim3 grid = threadblock_swizzle.get_grid_shape(
       threadblock_swizzle.get_tiled_shape(
-        cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size),
+        kConvolutionalOperator,
+        args.problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
         args.problem_size.split_k_slices));
 
@@ -131,7 +157,8 @@ public:
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord grid_tiled_shape = threadblock_swizzle.get_tiled_shape(
-        cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size),
+        kConvolutionalOperator,
+        args.problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
         args.problem_size.split_k_slices);
 
@@ -219,6 +246,7 @@ public:
 
   /// Runs the kernel using initialized state.
   Status run(cudaStream_t stream = nullptr) {
+
 
     ThreadblockSwizzle threadblock_swizzle;
 

@@ -28,53 +28,14 @@
 #include "b2b_conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f16_sm75.h"
 #include "b2b_conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f16_sm80.h"
 
-int run() {
-
-  cudaDeviceProp props;
-
-  cudaError_t error = cudaGetDeviceProperties(&props, 0);
-  if (error != cudaSuccess) {
-    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
-    return -1;
-  }
-
-  if (!(props.major * 10 + props.minor >= 75)) {
-    std::cerr << "Turing Tensor Ops must be run on a machine with compute capability at least 75."
-              << std::endl;
-
-    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
-    return 0;
-  }
-
-#if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
-  std::cout << "Running on SM80" << std::endl;
-  run_nonfused_conv2d_fprop_optimized_f16_sm80();
-  run_fused_conv2d_fprop_optimized_f16_sm80();
-  run_nonfused_conv2d_fprop_optimized_s8_sm80();
-  run_fused_conv2d_fprop_optimized_s8_sm80();
-#elif defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
-  std::cout << "Running on SM75" << std::endl;
-  run_nonfused_conv2d_fprop_optimized_f16_sm75();
-  run_fused_conv2d_fprop_optimized_f16_sm75();
-  run_nonfused_conv2d_fprop_optimized_s8_sm75();
-  run_fused_conv2d_fprop_optimized_s8_sm75();
-#endif
-
-  return 0;
-}
-
-int main() {
-
+int run_sm75() {
   bool notSupported = false;
 
   // Turing Tensor Core operations exposed with mma.sync are first available in CUDA 10.2.
   //
   // CUTLASS must be compiled with CUDA 10.2 Toolkit to run these examples.
   if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2))) {
-    std::cerr << "Tensor Core operations used in this example must be compiled with CUDA 10.2 Toolkit or later." << std::endl;
-
     notSupported = true;
-
   }
 
   cudaDeviceProp props;
@@ -85,10 +46,7 @@ int main() {
     return -1;
   }
 
-  if (!(props.major * 10 + props.minor >= 75)) {
-    std::cerr << "Tensor Ops used in this example must be run on a machine with compute capability at least 75."
-              << std::endl;
-
+  if (!(props.major == 7 && props.minor >= 5)) {
     notSupported = true;
   }
 
@@ -96,7 +54,83 @@ int main() {
     // Returning zero so this test passes on older Toolkits. Its actions are no-op.
     return 0;
   }
-    
-  return run();
+
+  bool pass = 1;
+ 
+  std::cout << "Running on SM75" << std::endl;
+  pass &= run_nonfused_conv2d_fprop_optimized_f16_sm75();
+  pass &= run_fused_conv2d_fprop_optimized_f16_sm75();
+  pass &= run_nonfused_conv2d_fprop_optimized_s8_sm75();
+  pass &= run_fused_conv2d_fprop_optimized_s8_sm75();
+
+  if(pass)
+    return 1;
+  else
+    return -1;
+
+}
+
+int run_sm80() {
+  bool notSupported = false;
+
+  // Ampere Tensor Core operations exposed with mma.sync are first available in CUDA 11.0.
+  //
+  // CUTLASS must be compiled with CUDA 11 Toolkit to run Conv2dFprop examples.
+  if (!(__CUDACC_VER_MAJOR__ > 11 || (__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ >= 0))) {
+    notSupported = true;
+  }
+
+  cudaDeviceProp props;
+
+  cudaError_t error = cudaGetDeviceProperties(&props, 0);
+  if (error != cudaSuccess) {
+    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
+    return -1;
+  }
+
+  if (!(props.major == 8 && props.minor >= 0)) {
+    notSupported = true;
+  }
+
+  if (notSupported) {
+    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
+    return 0;
+  }
+
+  bool pass = 1;
+ 
+  std::cout << "Running on SM80" << std::endl;
+  pass &= run_nonfused_conv2d_fprop_optimized_f16_sm80();
+  pass &= run_fused_conv2d_fprop_optimized_f16_sm80();
+  pass &= run_nonfused_conv2d_fprop_optimized_s8_sm80();
+  pass &= run_fused_conv2d_fprop_optimized_s8_sm80();
+
+  if(pass)
+    return 1;
+  else
+    return -1;
+
+}
+
+
+int main() {
+
+  int result = 0;
+
+  result = run_sm80();
+
+  if(!result) { // not supported
+    result = run_sm75();
+
+    if(!result) {
+      std::cout << "This example isn't supported on current architecture" << std::endl;
+    }
+
+  }
+
+  if(result >= 0)
+    return 0;
+  else
+    return -1;
 }
 

@@ -34,6 +34,8 @@
 #include "cutlass/array.h"
 #include "cutlass/coord.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/matrix.h"
+#include "cutlass/quaternion.h"
 #include "cutlass/matrix_shape.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/tensor_view.h"
@@ -147,6 +149,45 @@ std::ostream & operator<<(std::ostream &out, MatrixShape<Row, Column> const &mat
   out << "cutlass::MatrixShape::(kRow, kColumn) {"
     << cutlass::MatrixShape<Row,Column>::kRow <<","
     << cutlass::MatrixShape<Row,Column>::kColumn <<"}";
+  return out;
+}
+
+
+/// Prints matrix to ostream
+template <typename Element, int Rows, int Columns>
+std::ostream & operator<<(std::ostream &out, Matrix<Element, Rows, Columns> const &rhs) {
+
+  for (int i = 0; i < Rows; ++i) {
+    for (int j = 0; j < Columns; ++j) {
+      ScalarIO<Element> element(rhs.at(i, j));
+      out << (j ? ", " : "") << element;
+    }
+    out << "\\n";
+  }
+
+  return out;
+}
+
+template <typename T>
+std::ostream &operator<<(std::ostream &out, Quaternion<T> const &rhs) {
+
+  out << ScalarIO<T>(rhs.w()) << " ";
+  if (rhs.x() >= 0) {
+    out << "+";
+  }
+
+  out << ScalarIO<T>(rhs.x()) << "*i ";
+  if (rhs.y() >= 0) {
+    out << "+";
+  }
+
+  out << ScalarIO<T>(rhs.y()) << "*j ";
+  if (rhs.z() >= 0) {
+    out << "+";
+  }
+
+  out << ScalarIO<T>(rhs.z()) << "*k";
+
   return out;
 }
 

@@ -33,6 +33,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/threadblock/default_mma.h"
 #include "cutlass/gemm/threadblock/threadblock_swizzle.h"
+#include "cutlass/conv/threadblock/threadblock_swizzle.h"
 #include "cutlass/epilogue/threadblock/default_epilogue_simt.h"
 #include "cutlass/epilogue/threadblock/default_epilogue_tensor_op.h"
 #include "cutlass/epilogue/threadblock/default_epilogue_volta_tensor_op.h"
@@ -41,6 +42,9 @@
 #include "cutlass/conv/threadblock/implicit_gemm_pipelined.h"
 #include "cutlass/conv/threadblock/implicit_gemm_multistage.h"
 #include "cutlass/conv/kernel/implicit_gemm_convolution.h"
+#include "cutlass/conv/kernel/implicit_gemm_convolution_strided_dgrad.h"
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -62,7 +66,7 @@ struct DefaultConvEpilogue {
   using Epilogue = typename epilogue::threadblock::DefaultEpilogueTensorOp<
     Shape,
     WarpMmaTensorOp,
-    1,
+    PartitionsK,
     OutputOp,
     OutputOp::kCount
   >::Epilogue;
@@ -85,7 +89,49 @@ struct DefaultConvEpilogue<
   using Epilogue = typename epilogue::threadblock::DefaultEpilogueVoltaTensorOp<
     Shape,
     WarpMmaTensorOp,
-    1,
+    PartitionsK,
+    OutputOp,
+    OutputOp::kCount
+  >::Epilogue;
+};
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Defaults for strided Dgrad
+template <
+  typename ArchTag,
+  typename Shape,
+  typename WarpMmaTensorOp,
+  int PartitionsK,
+  typename OutputOp
+>
+struct DefaultConvEpilogueStridedDgrad {
+  using Epilogue = typename epilogue::threadblock::DefaultEpilogueTensorOpStridedDgrad<
+    Shape,
+    WarpMmaTensorOp,
+    PartitionsK,
+    OutputOp,
+    OutputOp::kCount
+  >::Epilogue;
+};
+
+template <
+  typename Shape,
+  typename WarpMmaTensorOp,
+  int PartitionsK,
+  typename OutputOp
+>
+struct DefaultConvEpilogueStridedDgrad<
+  arch::Sm70,
+  Shape,
+  WarpMmaTensorOp,
+  PartitionsK,
+  OutputOp
+> {
+
+  using Epilogue = typename epilogue::threadblock::DefaultEpilogueVoltaTensorOpStridedDgrad<
+    Shape,
+    WarpMmaTensorOp,
+    PartitionsK,
     OutputOp,
     OutputOp::kCount
   >::Epilogue;

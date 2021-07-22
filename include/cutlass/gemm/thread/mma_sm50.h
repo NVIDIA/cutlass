@@ -125,7 +125,7 @@ struct MmaGeneric {
       reinterpret_cast<ElementB const *>(&B), LayoutB::packed({Shape::kK, Shape::kN}));
 
     TensorRef<ElementC, LayoutC> d_ref(
-      reinterpret_cast<ElementC *>(&D), LayoutC::packed({ Shape::kM, Shape::kN }));
+      reinterpret_cast<ElementC *>(&D), LayoutC::packed(make_Coord(Shape::kM, Shape::kN)));
 
     MmaOp mma_op;
 

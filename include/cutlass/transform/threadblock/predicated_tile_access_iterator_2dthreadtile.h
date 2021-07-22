@@ -46,6 +46,7 @@
 #include "cutlass/predicate_vector.h"
 #include "cutlass/tensor_ref.h"
 #include "cutlass/tensor_view.h"
+#include "cutlass/transform/threadblock/predicated_tile_access_iterator_params.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -86,6 +87,7 @@ class PredicatedTileAccessIterator2dThreadTile<Shape_, Element_, layout::PitchLi
 
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
+  using StrideIndex = typename Layout::Stride::Index;
 
   using TensorRef = TensorRef<Element, Layout>;
   using TensorView = TensorView<Element, Layout>;
@@ -108,50 +110,30 @@ class PredicatedTileAccessIterator2dThreadTile<Shape_, Element_, layout::PitchLi
   /// Predicate vector stores mask to guard accesses
   using Mask = Array<uint32_t, kPredicateWordCount>;
 
-  /// Parameters object is precomputed state and is host-constructible
-  class Params {
+  /// Uses a non-template class
+  struct Params : PredicatedTileAccessIteratorParams {
+
    public:
     friend PredicatedTileAccessIterator2dThreadTile;
 
-   private:
-    /// stride of pitch-linear layout (units of Element)
-    int stride_;
-    /// amount (in byte) to increment pointer to move to next access along
-    /// strided dimension
-    int inc_strided_;
-    /// amount (in byte) to increment pointer from last access to first access
-    /// of next tile
-    int inc_next_;
-    /// amount (in byte) to increment pointer from first access of current tile
-    /// to first access of next tile
-    int inc_advance_;
-
-   public:
+    using Base = PredicatedTileAccessIteratorParams;
 
     // Default ctor
     CUTLASS_HOST_DEVICE
-    Params(): stride_(0), inc_strided_(0), inc_next_(0), inc_advance_(0) { }
+    Params() { }
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout) : stride_(layout.stride(0)) {
+    Params(Layout const &layout) : 
+      Base(layout.stride(0),
+            MakePredicatedTileAccessIteratorDesc<Shape, Element, Layout, kAdvanceRank, ThreadMap>()()
+        ) { }
 
-      inc_strided_ =
-          (stride_ * ThreadMap::Delta::kStrided) * int(sizeof(Element));
-
-      if (kAdvanceRank) {
-        // advance along strided dimension
-        inc_advance_ = Shape::kStrided * stride_ * int(sizeof(Element));
-      } else {
-        // advance along contiguous dimension
-        inc_advance_ = Shape::kContiguous * int(sizeof(Element));
-      }
-
-      inc_next_ = inc_advance_ - (ThreadMap::Iterations::kStrided - 1) *
-                                     ThreadMap::Delta::kStrided * stride_ *
-                                     int(sizeof(Element));
-    };
+    CUTLASS_HOST_DEVICE
+    Params(Base const &base) : 
+      Base(base) { }
   };
+
 
  private:
   /// Internal pointer type permits fast address arithmetic
@@ -537,7 +519,12 @@ class PredicatedTileAccessIterator2dThreadTile<Shape_, Element_, layout::ColumnM
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
     Params(Layout const &layout)
-        : params_(layout::PitchLinear(layout.stride(0))){};
+        : params_(layout::PitchLinear(layout.stride(0))){}
+
+    /// Construct the Params object given a pitch-linear tensor's layout
+    CUTLASS_HOST_DEVICE
+    Params(typename UnderlyingIterator::Params::Base const &base) 
+        : params_(base) {}
   };
 
  private:
@@ -711,7 +698,12 @@ class PredicatedTileAccessIterator2dThreadTile<Shape_, Element_, layout::RowMajo
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
     Params(Layout const &layout)
-        : params_(layout::PitchLinear(layout.stride(0))){};
+        : params_(layout::PitchLinear(layout.stride(0))){}
+
+    /// Construct the Params object given a pitch-linear tensor's layout
+    CUTLASS_HOST_DEVICE
+    Params(typename UnderlyingIterator::Params::Base const &base) 
+        : params_(base) {}
   };
 
  private:

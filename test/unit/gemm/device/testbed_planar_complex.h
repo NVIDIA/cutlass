@@ -103,8 +103,8 @@ public:
     cutlass::reference::host::TensorFillRandomUniform(
         tensor_C.host_view(), seed * 2020, scope_max, scope_min, 0);
 
-    cutlass::reference::host::TensorFill(tensor_D.host_view());
-    cutlass::reference::host::TensorFill(tensor_D_ref.host_view());
+    cutlass::reference::host::TensorFill(tensor_D.host_view(), cutlass::complex<ElementC>());
+    cutlass::reference::host::TensorFill(tensor_D_ref.host_view(), cutlass::complex<ElementC>());
 
     tensor_A.sync_device();
     tensor_B.sync_device();
@@ -162,10 +162,10 @@ public:
     ElementC *ptr_C = tensor_C.device_data();
     ElementC *ptr_D = tensor_D.device_data();
 
-    int lda = tensor_A.layout().stride(0);
-    int ldb = tensor_B.layout().stride(0);
-    int ldc = tensor_C.layout().stride(0);
-    int ldd = tensor_D.layout().stride(0);
+    typename LayoutA::Stride::Index lda = tensor_A.layout().stride(0);
+    typename LayoutB::Stride::Index ldb = tensor_B.layout().stride(0);
+    typename LayoutC::Stride::Index ldc = tensor_C.layout().stride(0);
+    typename LayoutC::Stride::Index ldd = tensor_D.layout().stride(0);
 
     int64_t imag_stride_A = tensor_A.imaginary_stride();
     int64_t imag_stride_B = tensor_B.imaginary_stride();
@@ -266,15 +266,15 @@ template <typename Gemm>
 bool TestAllGemmPlanarComplex() {
 
   int M[] = {
-    16, 264,
+    16, 64, 72, 144, 264, 520,
   };
 
   int N[] = {
-    16, 248,
+    16, 64, 72, 144, 248, 264, 520
   };
 
   int K[] = {
-    8, 96,
+    8, 64, 72, 96,  264, 520
   };
 
   using ElementCompute = typename Gemm::EpilogueOutputOp::ElementCompute;

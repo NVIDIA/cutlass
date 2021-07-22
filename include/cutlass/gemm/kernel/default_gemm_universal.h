@@ -95,6 +95,8 @@ template <
     int Stages,
     /// Operation performed by GEMM
     typename Operator,
+    /// Use zfill or predicate for SM80 out-of-bound cp.async
+    bool UseZfill = false,
     ///
     typename Enable = void
     >
@@ -141,7 +143,10 @@ template <
     /// Number of stages used in the pipelined mainloop
     int Stages,
     /// Operation performed by GEMM
-    typename Operator>
+    typename Operator,
+    /// Use zfill or predicate for SM80 out-of-bound cp.async
+    bool UseZfill
+>
 struct DefaultGemmUniversal<
   ElementA,
   LayoutA,
@@ -163,6 +168,7 @@ struct DefaultGemmUniversal<
   ThreadblockSwizzle,
   Stages,
   Operator,
+  UseZfill,
   typename std::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
@@ -185,13 +191,14 @@ struct DefaultGemmUniversal<
     ThreadblockSwizzle,
     Stages,
     true,
-    Operator
+    Operator,
+    UseZfill
   >::GemmKernel;
 
     /// Define the kernel in terms of the default kernel
   using GemmKernel = kernel::GemmUniversal<
     typename DefaultGemmKernel::Mma,
-    typename DefaultGemmKernel::Epilogue, 
+    typename DefaultGemmKernel::Epilogue,
     ThreadblockSwizzle
   >;
 };
@@ -242,7 +249,9 @@ template <
     /// Number of stages used in the pipelined mainloop
     int Stages,
     /// Operation performed by GEMM
-    typename Operator
+    typename Operator,
+    /// Use zfill or predicate for SM80 out-of-bound cp.async
+    bool UseZfill
   >
 struct DefaultGemmUniversal<
   ElementA,
@@ -265,6 +274,7 @@ struct DefaultGemmUniversal<
   ThreadblockSwizzle,
   Stages,
   Operator,
+  UseZfill,
   typename std::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 

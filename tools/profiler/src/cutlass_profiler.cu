@@ -67,6 +67,15 @@ CutlassProfiler::~CutlassProfiler() {
 /// Execute the program
 int CutlassProfiler::operator()() {
 
+  if (options_.cmdline.num_naked_args() > 0) {
+    std::cerr << "Unknown args: \n";
+    options_.cmdline.print_naked_args(std::cerr);
+    std::cerr << "\n\n\n";
+
+    print_usage_(std::cout);
+    return 1;
+  }
+
   if (options_.about.help) {
     if (options_.operation_kind == library::OperationKind::kInvalid) {
       print_usage_(std::cout);

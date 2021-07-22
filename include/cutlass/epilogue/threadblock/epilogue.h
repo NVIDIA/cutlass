@@ -54,6 +54,7 @@
 
 #include "cutlass/epilogue/threadblock/epilogue_base.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
+#include "cutlass/util/index_sequence.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -74,7 +75,9 @@ template <
   typename SharedLoadIterator_,             ///< Threadblock-scoped tile iterator loading from SMEM
   typename OutputOp_,                       ///< Output operator
   typename Padding_,                        ///< Padding added to SMEM allocation to avoid bank conflicts (concept: MatrixShape)
-  int FragmentsPerPartition = 1                 ///< Used to coarsten the epilogue granularity
+  int FragmentsPerPartition = 1,            ///< Used to coarsten the epilogue granularity
+  int IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
+    (!IsEpilogueFunctorHeavy<OutputOp_>::value)
 >
 class Epilogue : 
   public EpilogueBase<
@@ -141,8 +144,8 @@ public:
   /// Number of warps
   using WarpCount = typename Base::WarpCount;
 
-  int const kSmemTiles = Base::kFragmentsPerIteration > 1 ? Base::kFragmentsPerIteration : kPartitionsK;
-  int const kSmemPointerOffset = Base::SharedStorage::StorageShape::kCount / kSmemTiles;
+  static int constexpr kSmemTiles = Base::kFragmentsPerIteration > 1 ? Base::kFragmentsPerIteration : kPartitionsK;
+  static int constexpr kSmemPointerOffset = Base::SharedStorage::StorageShape::kCount / kSmemTiles;
 
 public:
 
@@ -194,8 +197,52 @@ public:
 
 private:
 
+  template <class Seq>
+  struct acc2smem_source_not_needed;
+
+  template <size_t... Seq>
+  struct acc2smem_source_not_needed<cutlass::index_sequence<Seq...>> {
+    template <int Advance>
+    CUTLASS_DEVICE static void helper(AccumulatorFragmentIterator accum_fragment_iterator,
+                                      WarpTileIterator &warp_tile_iterator) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < Advance; i++) {
+        ++accum_fragment_iterator;
+      }
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int p = 0; p < Base::kFragmentsPerIteration; ++p) {
+        typename AccumulatorFragmentIterator::Fragment accum_fragment;
+
+        accum_fragment_iterator.load(accum_fragment);
+        ++accum_fragment_iterator;
+
+        warp_tile_iterator.store(accum_fragment);
+        if (p < Base::kFragmentsPerIteration - 1) {
+          warp_tile_iterator.add_pointer_offset(kSmemPointerOffset);
+        }
+      }
+
+      if (Base::kFragmentsPerIteration > 1) {
+        warp_tile_iterator.add_pointer_offset(kSmemPointerOffset *
+                                              (1 - Base::kFragmentsPerIteration));
+      }
+    }
+
+    CUTLASS_DEVICE
+    static void push(size_t pos,
+                     AccumulatorFragmentIterator const &iterator_begin,
+                     WarpTileIterator &warp_tile_iterator) {
+      int dummy[] = {
+          (pos == (Seq * Base::kFragmentsPerIteration)) &&
+          (helper<Seq * Base::kFragmentsPerIteration>(iterator_begin, warp_tile_iterator), 0)...};
+
+      CUTLASS_UNUSED(dummy[0]);
+    }
+  };
+
   static_assert(kPartitionsK == 1 || Base::kFragmentsPerIteration == 1, "One of these must be exactly 1.");
-  
+
   /// Streams the result to global memory
   CUTLASS_DEVICE
   void compute_source_not_needed_(
@@ -214,7 +261,7 @@ private:
     // Iterate over accumulator tile
     // 
 
-    CUTLASS_PRAGMA_UNROLL
+    #pragma unroll(IterationsUnroll ? OutputTileIterator::kIterations / Base::kFragmentsPerIteration : 1)
     for (int iter = 0; iter < OutputTileIterator::kIterations; iter += Base::kFragmentsPerIteration) {
 
       //
@@ -224,23 +271,11 @@ private:
       __syncthreads();
 
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int p = 0; p < Base::kFragmentsPerIteration; ++p) {
-        typename AccumulatorFragmentIterator::Fragment accum_fragment;
-
-        accum_fragment_iterator.load(accum_fragment);
-        ++accum_fragment_iterator;
-
-        this->warp_tile_iterator_.store(accum_fragment); 
-
-        if (p < Base::kFragmentsPerIteration - 1) {
-          this->warp_tile_iterator_.add_pointer_offset(kSmemPointerOffset);
-        }
-      }
-
-      if (Base::kFragmentsPerIteration > 1) {
-        this->warp_tile_iterator_.add_pointer_offset(kSmemPointerOffset * (1 - Base::kFragmentsPerIteration));
-      }
+      acc2smem_source_not_needed<
+          cutlass::make_index_sequence<OutputTileIterator::kIterations /
+                                   Base::kFragmentsPerIteration>>::push(iter,
+                                                                        accum_fragment_iterator,
+                                                                        this->warp_tile_iterator_);
 
       __syncthreads();
 
@@ -295,7 +330,34 @@ private:
       }
     }
   }
-  
+
+  template<class Seq>
+  struct acc2smem_source_needed;
+
+  template <size_t... Seq>
+  struct acc2smem_source_needed<cutlass::index_sequence<Seq...>> {
+    template<int Advance>
+    CUTLASS_DEVICE
+    static void helper(AccumulatorFragmentIterator accum_fragment_iterator,
+                       WarpTileIterator &warp_tile_iterator) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < Advance; i++) {
+        ++accum_fragment_iterator;
+      }
+
+      typename AccumulatorFragmentIterator::Fragment accum_fragment;
+      accum_fragment_iterator.load(accum_fragment);
+      warp_tile_iterator.store(accum_fragment);
+    }
+
+    CUTLASS_DEVICE
+    static void push(size_t pos,
+                     AccumulatorFragmentIterator const &iterator_begin,
+                     WarpTileIterator &warp_tile_iterator) {
+      int dummy[] = {(pos == Seq) && (helper<Seq>(iterator_begin, warp_tile_iterator), 0)...};
+    }
+  };
+
   /// Streams the result to global memory
   CUTLASS_DEVICE
   void compute_source_needed_(
@@ -319,7 +381,7 @@ private:
     // Iterate over accumulator tile
     // 
 
-    CUTLASS_PRAGMA_UNROLL
+    #pragma unroll(IterationsUnroll ? OutputTileIterator::kIterations : 1)
     for (int iter = 0; iter < OutputTileIterator::kIterations; ++iter) {
 
       //
@@ -335,12 +397,8 @@ private:
       
       __syncthreads();
 
-      typename AccumulatorFragmentIterator::Fragment accum_fragment;
-
-      accum_fragment_iterator.load(accum_fragment);
-      ++accum_fragment_iterator;
-
-      this->warp_tile_iterator_.store(accum_fragment);
+      acc2smem_source_needed<cutlass::make_index_sequence<OutputTileIterator::kIterations>>::push(
+          iter, accum_fragment_iterator, this->warp_tile_iterator_);
 
       __syncthreads();
 

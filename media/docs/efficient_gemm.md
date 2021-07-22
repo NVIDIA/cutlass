@@ -24,7 +24,7 @@ for (int cta_n = 0; cta_n < GemmN; cta_n += CtaTileN) {                     // f
       for (int warp_n = 0; warp_n < CtaTileN; warp_n += WarpTileN) {        // for each warp_y                  } warp-level parallelism
         for (int warp_m = 0; warp_m < CtaTileM; warp_m += WarpTileM) {      //    for each warp_x               }
                                                                             //
-          for (int warp_k = 0; warp_k < CtaTileK; warp_k += MmaK) {         //       fully unroll across CtaTileK
+          for (int warp_k = 0; warp_k < CtaTileK; warp_k += WarpTileK) {         //       fully unroll across CtaTileK
                                                                             //         - one iteration of this loop is one "k Group"
                                                                             //
             for (int mma_k = 0; mma_k < WarpTileK; mma_k += MmaK) {         // for each mma instruction         } instruction-level parallelism

@@ -209,4 +209,45 @@ TEST(SM80_Device_Gemm_f64t_f64n_f64t_tensor_op_f64, 128x128x16_32x64x16) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+TEST(SM80_Device_Gemm_f64at_f64an_f64at_tensor_op_f64, 128x128x16_32x64x16) {
+
+  using ElementOutput = double;
+  using ElementAccumulator = double;
+
+  using LayoutA = cutlass::layout::AffineRank2RowMajor;
+  using LayoutB = cutlass::layout::AffineRank2ColumnMajor;
+  using LayoutC = cutlass::layout::AffineRankN<2>;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    double,
+    LayoutA,
+    double,
+    LayoutB,
+    ElementOutput,
+    LayoutC, 
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<128, 128, 16>,
+    cutlass::gemm::GemmShape<32, 64, 16>,
+    cutlass::gemm::GemmShape<8, 8, 4>,
+    cutlass::epilogue::thread::LinearCombination<
+      ElementOutput,
+      1,
+      ElementAccumulator,
+      ElementAccumulator
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3
+  >;
+
+  typename LayoutA::Stride::Index stride_factor_A[] = {3, 4};
+  typename LayoutB::Stride::Index stride_factor_B[] = {5, 6};
+  typename LayoutC::Stride::Index stride_factor_C[] = {7, 8};
+
+  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>(stride_factor_A, stride_factor_B, stride_factor_C));
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 #endif // #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)

@@ -35,6 +35,7 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/matrix_shape.h"
 #include "cutlass/numeric_types.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {

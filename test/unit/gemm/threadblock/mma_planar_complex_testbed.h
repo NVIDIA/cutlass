@@ -67,7 +67,8 @@ __global__ void kernel_mma_planar_complex(
   typename Mma::IteratorB::Params params_B,
   typename Mma::IteratorB::Element *ptr_B,
   int64_t imaginary_stride_B,
-  typename Mma::ElementC *ptr_C, int ldc, int64_t imaginary_stride_C) {
+  typename Mma::ElementC *ptr_C, 
+  typename Mma::LayoutC::Stride::Index ldc, int64_t imaginary_stride_C) {
 
   // Shared storage needed by threadblock-scoped matrix multiply-accumulate
   __shared__ typename Mma::SharedStorage shared_storage;

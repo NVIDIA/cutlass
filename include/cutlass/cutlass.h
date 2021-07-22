@@ -141,26 +141,6 @@ static const int NUM_THREADS_PER_HALF_WARP = NUM_THREADS_PER_WARP / 2;
 static const int NUM_THREADS_PER_QUAD = 4;
 static const int NUM_THREADS_PER_QUAD_PAIR = NUM_THREADS_PER_QUAD * 2;
 
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
-
-/// Computes laneId within a warp
-CUTLASS_DEVICE
-int LaneId() {
-  int ret; 
-  asm ("mov.u32 %0, %%laneid;" : "=r"(ret) : );
-  return ret;
-}
-
-/// Computes SM number the thread is running on
-CUTLASS_DEVICE
-int SmId() {
-  int ret; 
-  asm ("mov.u32 %0, %%smid;" : "=r"(ret) : );
-  return ret;
-}
-
-#endif
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace cutlass

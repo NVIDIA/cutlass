@@ -325,12 +325,12 @@ public:
   }
 
   /// Returns the layout object's stride in a given physical dimension
-  Index stride(int dim) const {
+  LongIndex stride(int dim) const {
     return layout_.stride().at(dim);
   }
 
   /// Returns the layout object's stride in a given physical dimension
-  Index & stride(int dim) {
+  LongIndex & stride(int dim) {
     return layout_.stride().at(dim);
   }
 

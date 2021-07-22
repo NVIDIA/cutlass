@@ -67,7 +67,8 @@ __global__ void kernel_mma(cutlass::gemm::GemmCoord problem_size,
                            typename Mma::IteratorA::TensorRef ref_A,
                            typename Mma::IteratorB::Params params_B,
                            typename Mma::IteratorB::TensorRef ref_B,
-                           typename Mma::ElementC *ptr_C, int ldc) {
+                           typename Mma::ElementC *ptr_C,
+                           typename Mma::LayoutC::Stride::Index ldc) {
   // Shared storage needed by threadblock-scoped matrix multiply-accumulate
   __shared__ typename Mma::SharedStorage shared_storage;
 

@@ -675,66 +675,6 @@ CUTLASS_TEST_L1(SM50_device_cgemm_tn, 128x32x8_64x16x1_8x4_8x4_2x2, {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Elements / Thread:   2 x   2
-//    Threads / Warp:   4 x   8
-//     Warps / Block:   2 x   4
-//       Threadblock:  16 x  64 x 16
-CUTLASS_TEST_L2(SM50_device_cgemm_tn, 16x64x16_8x16x1_2x2_4x8_2x4, {
-    using precision = cutlass::complex<float>;
-    using ThreadblockShape = cutlass::gemm::GemmShape<16, 64, 16>;
-    using WarpShape = cutlass::gemm::GemmShape<8, 16, 16>;
-
-    static int const kEpilogueElementsPerAccess = 1;
-    using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
-    using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
-        precision, kEpilogueElementsPerAccess, precision, precision>;
-
-    using Gemm = cutlass::gemm::device::Gemm<
-        precision, cutlass::layout::RowMajor,
-        precision, cutlass::layout::ColumnMajor,
-        precision, cutlass::layout::RowMajor,
-        precision,
-        cutlass::arch::OpClassSimt,
-        cutlass::arch::Sm50,
-        ThreadblockShape, WarpShape, InstructionShape,
-        EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-        2 // Stages
-    >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
-} )
-
-////////////////////////////////////////////////////////////////////////////////
-// Elements / Thread:   2 x   4
-//    Threads / Warp:   4 x   8
-//     Warps / Block:   2 x   4
-//       Threadblock:  16 x 128 x 16
-CUTLASS_TEST_L2(SM50_device_cgemm_tn, 16x128x16_8x32x1_2x4_4x8_2x4, {
-    using precision = cutlass::complex<float>;
-    using ThreadblockShape = cutlass::gemm::GemmShape<16, 128, 16>;
-    using WarpShape = cutlass::gemm::GemmShape<8, 32, 16>;
-
-    static int const kEpilogueElementsPerAccess = 1;
-    using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
-    using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
-        precision, kEpilogueElementsPerAccess, precision, precision>;
-
-    using Gemm = cutlass::gemm::device::Gemm<
-        precision, cutlass::layout::RowMajor,
-        precision, cutlass::layout::ColumnMajor,
-        precision, cutlass::layout::RowMajor,
-        precision,
-        cutlass::arch::OpClassSimt,
-        cutlass::arch::Sm50,
-        ThreadblockShape, WarpShape, InstructionShape,
-        EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-        2 // Stages
-    >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
-} )
-
-////////////////////////////////////////////////////////////////////////////////
-// Elements / Thread:   2 x   2
 //    Threads / Warp:   8 x   4
 //     Warps / Block:   2 x   4
 //       Threadblock:  32 x  32 x  8
@@ -1094,96 +1034,6 @@ CUTLASS_TEST_L1(SM50_device_cgemm_tn, 256x32x8_64x16x1_8x4_8x4_4x2, {
 } )
 
 ////////////////////////////////////////////////////////////////////////////////
-// Elements / Thread:   2 x   2
-//    Threads / Warp:   4 x   8
-//     Warps / Block:   4 x   4
-//       Threadblock:  32 x  64 x 16
-CUTLASS_TEST_L2(SM50_device_cgemm_tn, 32x64x16_8x16x1_2x2_4x8_4x4, {
-    using precision = cutlass::complex<float>;
-    using ThreadblockShape = cutlass::gemm::GemmShape<32, 64, 16>;
-    using WarpShape = cutlass::gemm::GemmShape<8, 16, 16>;
-
-    static int const kEpilogueElementsPerAccess = 1;
-    using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
-    using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
-        precision, kEpilogueElementsPerAccess, precision, precision>;
-
-    using Gemm = cutlass::gemm::device::Gemm<
-        precision, cutlass::layout::RowMajor,
-        precision, cutlass::layout::ColumnMajor,
-        precision, cutlass::layout::RowMajor,
-        precision,
-        cutlass::arch::OpClassSimt,
-        cutlass::arch::Sm50,
-        ThreadblockShape, WarpShape, InstructionShape,
-        EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-        2 // Stages
-    >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
-} )
-
-////////////////////////////////////////////////////////////////////////////////
-// Elements / Thread:   2 x   4
-//    Threads / Warp:   4 x   8
-//     Warps / Block:   4 x   4
-//       Threadblock:  32 x 128 x 16
-CUTLASS_TEST_L2(SM50_device_cgemm_tn, 32x128x16_8x32x1_2x4_4x8_4x4, {
-    using precision = cutlass::complex<float>;
-    using ThreadblockShape = cutlass::gemm::GemmShape<32, 128, 16>;
-    using WarpShape = cutlass::gemm::GemmShape<8, 32, 16>;
-
-    static int const kEpilogueElementsPerAccess = 1;
-    using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
-    using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
-        precision, kEpilogueElementsPerAccess, precision, precision>;
-
-    using Gemm = cutlass::gemm::device::Gemm<
-        precision, cutlass::layout::RowMajor,
-        precision, cutlass::layout::ColumnMajor,
-        precision, cutlass::layout::RowMajor,
-        precision,
-        cutlass::arch::OpClassSimt,
-        cutlass::arch::Sm50,
-        ThreadblockShape, WarpShape, InstructionShape,
-        EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-        2 // Stages
-    >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
-} )
-
-////////////////////////////////////////////////////////////////////////////////
-// Elements / Thread:   2 x   2
-//    Threads / Warp:   8 x   4
-//     Warps / Block:   4 x   4
-//       Threadblock:  64 x  32 x 16
-CUTLASS_TEST_L2(SM50_device_cgemm_tn, 64x32x16_16x8x1_2x2_8x4_4x4, {
-    using precision = cutlass::complex<float>;
-    using ThreadblockShape = cutlass::gemm::GemmShape<64, 32, 16>;
-    using WarpShape = cutlass::gemm::GemmShape<16, 8, 16>;
-
-    static int const kEpilogueElementsPerAccess = 1;
-    using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
-    using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
-        precision, kEpilogueElementsPerAccess, precision, precision>;
-
-    using Gemm = cutlass::gemm::device::Gemm<
-        precision, cutlass::layout::RowMajor,
-        precision, cutlass::layout::ColumnMajor,
-        precision, cutlass::layout::RowMajor,
-        precision,
-        cutlass::arch::OpClassSimt,
-        cutlass::arch::Sm50,
-        ThreadblockShape, WarpShape, InstructionShape,
-        EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-        2 // Stages
-    >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
-} )
-
-////////////////////////////////////////////////////////////////////////////////
 // Elements / Thread:   4 x   2
 //    Threads / Warp:   4 x   8
 //     Warps / Block:   4 x   4
@@ -1222,36 +1072,6 @@ CUTLASS_TEST_L1(SM50_device_cgemm_tn, 64x128x8_16x32x1_4x4_4x8_4x4, {
     using precision = cutlass::complex<float>;
     using ThreadblockShape = cutlass::gemm::GemmShape<64, 128, 8>;
     using WarpShape = cutlass::gemm::GemmShape<16, 32, 8>;
-
-    static int const kEpilogueElementsPerAccess = 1;
-    using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;
-    using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
-        precision, kEpilogueElementsPerAccess, precision, precision>;
-
-    using Gemm = cutlass::gemm::device::Gemm<
-        precision, cutlass::layout::RowMajor,
-        precision, cutlass::layout::ColumnMajor,
-        precision, cutlass::layout::RowMajor,
-        precision,
-        cutlass::arch::OpClassSimt,
-        cutlass::arch::Sm50,
-        ThreadblockShape, WarpShape, InstructionShape,
-        EpilogueOutputOp,
-        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
-        2 // Stages
-    >;
-    EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
-} )
-
-////////////////////////////////////////////////////////////////////////////////
-// Elements / Thread:   4 x   2
-//    Threads / Warp:   8 x   4
-//     Warps / Block:   4 x   4
-//       Threadblock: 128 x  32 x 16
-CUTLASS_TEST_L2(SM50_device_cgemm_tn, 128x32x16_32x8x1_4x2_8x4_4x4, {
-    using precision = cutlass::complex<float>;
-    using ThreadblockShape = cutlass::gemm::GemmShape<128, 32, 16>;
-    using WarpShape = cutlass::gemm::GemmShape<32, 8, 16>;
 
     static int const kEpilogueElementsPerAccess = 1;
     using InstructionShape = cutlass::gemm::GemmShape<1, 1, 1>;

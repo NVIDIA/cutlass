@@ -33,6 +33,26 @@
 namespace cutlass {
 namespace arch {
 
+#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
+
+/// Computes laneId within a warp
+CUTLASS_DEVICE
+int LaneId() {
+  int ret;
+  asm ("mov.u32 %0, %%laneid;" : "=r"(ret) : );
+  return ret;
+}
+
+/// Computes SM number the thread is running on
+CUTLASS_DEVICE
+int SmId() {
+  int ret;
+  asm ("mov.u32 %0, %%smid;" : "=r"(ret) : );
+  return ret;
+}
+
+#endif
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 struct Sm50 {
   static int const kMinComputeCapability = 50;

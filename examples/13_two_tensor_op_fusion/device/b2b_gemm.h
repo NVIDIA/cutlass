@@ -115,9 +115,7 @@ template <
     /// Operation performed by GEMM
     typename Operator_ = typename DefaultGemmConfiguration<
         OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::Operator,
-    /// Whether Beta is zero or not
-    bool IsBetaZero = false>
+        ElementAccumulator_>::Operator>
 class B2bGemm {
  public:
 
@@ -148,7 +146,6 @@ class B2bGemm {
   static int const kAlignmentB = AlignmentB;
   static int const kAlignmentC = EpilogueOutputOp1::kCount;
   static bool const kSplitKSerial = SplitKSerial;
-  static bool const kIsBetaZero = IsBetaZero;
   static ComplexTransform const kTransformA = ComplexTransform::kNone;
   static ComplexTransform const kTransformB = ComplexTransform::kNone;
 
@@ -175,8 +172,7 @@ class B2bGemm {
     ThreadblockSwizzle,
     kStages,
     kSplitKSerial,
-    Operator,
-    kIsBetaZero
+    Operator
   >::B2bGemmKernel;
 
   /// Argument structure
@@ -422,7 +418,7 @@ public:
     void *workspace = nullptr, 
     cudaStream_t stream = nullptr) {
     
-    Status status = initialize(args, workspace);
+    Status status = initialize(args, workspace, stream);
     
     if (status == Status::kSuccess) {
       status = run(stream);
