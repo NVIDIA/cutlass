@@ -52,7 +52,7 @@ DeviceAllocation *DeviceContext::allocate_tensor(
   library::NumericTypeID type, 
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
-  std::vector<int> const &stride,
+  std::vector<int64_t> const &stride,
   int batch_count) {
 
   device_memory_.emplace_back(type, layout_id, extent, stride, batch_count);
@@ -69,7 +69,7 @@ DeviceAllocation *DeviceContext::allocate_tensor(
   library::NumericTypeID type, 
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
-  std::vector<int> const &stride,
+  std::vector<int64_t> const &stride,
   int batch_count) {
 
   DeviceAllocation *allocation = 
@@ -133,7 +133,7 @@ DeviceAllocation *DeviceContext::allocate_sparsemeta_tensor(
   library::LayoutTypeID layout_id, 
   library::NumericTypeID type_a,
   std::vector<int> const &extent, 
-  std::vector<int> const &stride,
+  std::vector<int64_t> const &stride,
   int batch_count) {
 
   DeviceAllocation *allocation = 

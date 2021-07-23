@@ -139,24 +139,24 @@ public:
     ComplexTransform transform_A,             /// Complex transformation applied to A matrix - ignored for real-valued matrices
 
     void const * ptr_A,                       /// Pointer to A matrix in Global Memory
-    int lda,                                  /// Leading dimension of A matrix
+    int64_t lda,                              /// Leading dimension of A matrix
 
     NumericTypeID element_B,                  /// Data type of B matrix elements
     LayoutTypeID layout_B,                    /// Layout of B matrix
     ComplexTransform transform_B,             /// Complex transformation applied to B matrix - ignored for real-valued matrices
 
     void const * ptr_B,                       /// Pointer to B matrix in Global Memory
-    int ldb,                                  /// Leading dimension of B matrix
+    int64_t ldb,                              /// Leading dimension of B matrix
 
     void const * beta,                        /// Pointer to beta scalar
 
     NumericTypeID element_C,                  /// Data type of C and D matrices
 
     void const * ptr_C,                       /// Pointer to C matrix
-    int ldc,                                  /// Leading dimension of C matrix
+    int64_t ldc,                              /// Leading dimension of C matrix
 
     void * ptr_D,                             /// Pointer to D matrix
-    int ldd                                   /// Leading dimension of D matrix
+    int64_t ldd                               /// Leading dimension of D matrix
   );
   
   /// Executes a GEMM computation: D <= alpha * A*B + beta * C.
@@ -182,24 +182,24 @@ public:
     ComplexTransform transform_A,             /// Complex transformation applied to A matrix - ignored for real-valued matrices
 
     void const * ptr_A,                       /// Pointer to A matrix in Global Memory
-    int lda,                                  /// Leading dimension of A matrix
+    int64_t lda,                                  /// Leading dimension of A matrix
 
     NumericTypeID element_B,                  /// Data type of B matrix elements
     LayoutTypeID layout_B,                    /// Layout of B matrix
     ComplexTransform transform_B,             /// Complex transformation applied to B matrix - ignored for real-valued matrices
 
     void const * ptr_B,                       /// Pointer to B matrix in Global Memory
-    int ldb,                                  /// Leading dimension of B matrix
+    int64_t ldb,                                  /// Leading dimension of B matrix
 
     void const * beta,                        /// Pointer to beta scalar
 
     NumericTypeID element_C,                  /// Data type of C and D matrices
 
     void const * ptr_C,                       /// Pointer to C matrix
-    int ldc,                                  /// Leading dimension of C matrix
+    int64_t ldc,                                  /// Leading dimension of C matrix
 
     void * ptr_D,                             /// Pointer to D matrix
-    int ldd,                                  /// Leading dimension of D matrix
+    int64_t ldd,                                  /// Leading dimension of D matrix
    
     int batch_count = 1,                      /// Batch count or number of split-K slices
  
@@ -231,8 +231,8 @@ public:
 
     void const * ptr_A_real,                  /// Pointer to real part of A matrix
     void const * ptr_A_imag,                  /// Pointer to imaginary part of A matrix
-    int lda_real,                             /// Leading dimension of real part of A matrix
-    int lda_imag,                             /// Leading dimension of imaginary part of A matrix
+    int64_t lda_real,                         /// Leading dimension of real part of A matrix
+    int64_t lda_imag,                         /// Leading dimension of imaginary part of A matrix
 
     NumericTypeID element_B,                  /// Data type of B matrix elements
     LayoutTypeID layout_B,                    /// Layout of B matrix
@@ -240,8 +240,8 @@ public:
 
     void const * ptr_B_real,                  /// Pointer to real part of B matrix
     void const * ptr_B_imag,                  /// Pointer to imaginary part of B matrix 
-    int ldb_real,                             /// Leading dimension of real part of B matrix
-    int ldb_imag,                             /// Leading dimension of imaginary part of B matrix
+    int64_t ldb_real,                         /// Leading dimension of real part of B matrix
+    int64_t ldb_imag,                         /// Leading dimension of imaginary part of B matrix
 
     void const * beta,                        /// Pointer to beta scalar
 
@@ -249,13 +249,13 @@ public:
 
     void const * ptr_C_real,                  /// Pointer to real part of C matrix
     void const * ptr_C_imag,                  /// Pointer to imaginary part of C matrix
-    int ldc_real,                             /// Leading dimension of real part of C matrix
-    int ldc_imag,                             /// Leading dimension of imaginary part of C matrix
+    int64_t ldc_real,                         /// Leading dimension of real part of C matrix
+    int64_t ldc_imag,                         /// Leading dimension of imaginary part of C matrix
 
     void * ptr_D_real,                        /// Pointer to real part of D matrix
     void * ptr_D_imag,                        /// Pointer to imaginary part of D matrix
-    int ldd_real,                             /// Leading dimension of real part of D matrix
-    int ldd_imag,                             /// Leading dimension of imaginary part of D matrix
+    int64_t ldd_real,                         /// Leading dimension of real part of D matrix
+    int64_t ldd_imag,                         /// Leading dimension of imaginary part of D matrix
 
     int batch_count = 1,                      /// Number of batched GEMMs to execute
 
@@ -297,8 +297,8 @@ public:
     void const * const * ptr_A_real,          /// Pointer to array containing pointers to real part of A matrices
     void const * const * ptr_A_imag,          /// Pointer to array containing pointers to imaginary part of A matrices 
 
-    int lda_real,                             /// Leading dimension of real part of A matrix
-    int lda_imag,                             /// Leading dimension of imaginary part of A matrix
+    int64_t lda_real,                         /// Leading dimension of real part of A matrix
+    int64_t lda_imag,                         /// Leading dimension of imaginary part of A matrix
 
     NumericTypeID element_B,                  /// Data type of B matrix elements
     LayoutTypeID layout_B,                    /// Layout of B matrix
@@ -307,8 +307,8 @@ public:
     void const * const * ptr_B_real,          /// Pointer to array containing pointers to real part of B matrices
     void const * const * ptr_B_imag,          /// Pointer to array containing pointers to imaginary part of B matrices
 
-    int ldb_real,                             /// Leading dimension of real part of B matrix
-    int ldb_imag,                             /// Leading dimension of imaginary part of B matrix
+    int64_t ldb_real,                         /// Leading dimension of real part of B matrix
+    int64_t ldb_imag,                         /// Leading dimension of imaginary part of B matrix
 
     void const * beta,                        /// Pointer to beta scalar
 
@@ -317,14 +317,14 @@ public:
     void const * const * ptr_C_real,          /// Pointer to array containing pointers to real part of C matrices
     void const * const * ptr_C_imag,          /// Pointer to array containing poitners to imaginary part of C matrices
 
-    int ldc_real,                             /// Leading dimension of real part of C matrix
-    int ldc_imag,                             /// Leading dimension of imaginary part of C matrix
+    int64_t ldc_real,                         /// Leading dimension of real part of C matrix
+    int64_t ldc_imag,                         /// Leading dimension of imaginary part of C matrix
 
     void * const * ptr_D_real,                /// Pointer to array containing pointers to real part of D matrices
     void * const * ptr_D_imag,                /// Pointer to array containing poitners to imaginary part of D matrices
 
-    int ldd_real,                             /// Leading dimension of real part of D matrix
-    int ldd_imag                              /// Leading dimension of imaginary part of D matrix
+    int64_t ldd_real,                         /// Leading dimension of real part of D matrix
+    int64_t ldd_imag                          /// Leading dimension of imaginary part of D matrix
   );
 
 };

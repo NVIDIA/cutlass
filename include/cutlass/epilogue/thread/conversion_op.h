@@ -65,6 +65,8 @@ public:
 
   static FloatRoundStyle const kRound = Round;
 
+  static bool const kIsHeavy = false;
+
   /// Host-constructable parameters structure
   struct Params {
 

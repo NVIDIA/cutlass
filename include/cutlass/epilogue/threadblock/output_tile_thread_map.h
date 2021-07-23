@@ -164,7 +164,7 @@ template <
 >
 struct RowArrangement<Shape, WarpsRemaining, ElementsPerAccess, ElementSize, true> {
 
-  static int const kMemoryAccessSize = 128;
+  static int const kMemoryAccessSize = 256; // Preferred access size
   static int const kWarpSize = 32;
 
   static int const kElementsPerAccess = ElementsPerAccess;

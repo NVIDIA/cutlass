@@ -32,8 +32,14 @@ endif()
 
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 
-project(CUTLASS VERSION 2.5.0 LANGUAGES CXX)
+project(CUTLASS VERSION 2.6.0 LANGUAGES CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
+
+if (CUDA_VERSION VERSION_LESS 10.2)
+  message(WARNING "CUTLASS ${CUTLASS_VERSION} requires CUDA 10.2 or higher, and strongly recommends CUDA 11.0 or higher.")
+elseif (CUDA_VERSION VERSION_LESS 11.0)
+  message(WARNING "CUTLASS ${CUTLASS_VERSION} support for CUDA ${CUDA_VERSION} is deprecated, please use CUDA 11.0 or higher.")
+endif()
 
 find_package(Doxygen QUIET)
 
@@ -105,7 +111,7 @@ endif()
 if (NOT CUDA_VERSION VERSION_LESS 11.0)
   list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 80)
 endif()
-if (NOT CUDA_VERSION VERSION_LESS 11.1)
+if (NOT CUDA_VERSION VERSION_LESS 11.1 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
   list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 86)
 endif()
 set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
@@ -275,7 +281,14 @@ if(CUDA_COMPILER MATCHES "[Cc]lang")
     message(FATAL_ERROR "Clang 7.0+ required for GPU compilation")
   endif()
 
+  # There are numerous Clang versions that can work with each CUDA toolkit and the 
+  # the checks are not very useful so we are turning them off and using testing to 
+  # ensure the various combinations work properly.
+
   list(APPEND CUTLASS_CUDA_CLANG_FLAGS --cuda-path=${CUDA_TOOLKIT_ROOT_DIR})
+  list(APPEND CUTLASS_CUDA_CLANG_FLAGS -D__NV_NO_HOST_COMPILER_CHECK=1)
+  list(APPEND CUTLASS_CUDA_CLANG_FLAGS -Wno-unknown-cuda-version)
+
   list(APPEND CUTLASS_CUDA_CLANG_FLAGS -mllvm -pragma-unroll-threshold=100000)
   list(APPEND CUTLASS_CUDA_CLANG_FLAGS -mllvm -unroll-threshold=5000)
   list(APPEND CUTLASS_CUDA_CLANG_FLAGS -Wno-unused-command-line-argument)
@@ -294,18 +307,28 @@ if(CUDA_COMPILER MATCHES "[Cc]lang")
   link_libraries(nvidia::cudart)
 endif()
 
+if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+  # CMake 3.18 added support for CUDA_ARCHITECTURES target property. We will use this
+  # property for CMake 3.18+, so we request the NEW behavior for correct compatibility.
+  # https://cmake.org/cmake/help/v3.18/policy/CMP0104.html#policy:CMP0104 
+  cmake_policy(SET CMP0104 NEW)
+endif()
+
 function(cutlass_apply_cuda_gencode_flags TARGET)
 
   set(NVCC_FLAGS)
   set(CLANG_FLAGS)
+  set(__CMAKE_CUDA_ARCHS)
   foreach(ARCH ${CUTLASS_NVCC_ARCHS_ENABLED})
     list(APPEND CLANG_FLAGS --cuda-gpu-arch=sm_${ARCH})
     set(CODES)
     if(CUTLASS_NVCC_EMBED_CUBIN)
       list(APPEND CODES sm_${ARCH})
+      list(APPEND __CMAKE_CUDA_ARCHS ${ARCH}-real)
     endif()
     if(CUTLASS_NVCC_EMBED_PTX)
       list(APPEND CODES compute_${ARCH})
+      list(APPEND __CMAKE_CUDA_ARCHS ${ARCH}-virtual)
     endif()
     list(JOIN CODES "," CODES_STR)
     list(APPEND NVCC_FLAGS -gencode=arch=compute_${ARCH},code=[${CODES_STR}])
@@ -317,6 +340,8 @@ function(cutlass_apply_cuda_gencode_flags TARGET)
       PRIVATE
       $<$<COMPILE_LANGUAGE:CXX>:${CLANG_FLAGS}>
       )
+  elseif(CMAKE_VERSION GREATER_EQUAL 3.18)
+    set_property(TARGET ${TARGET} PROPERTY CUDA_ARCHITECTURES ${__CMAKE_CUDA_ARCHS})
   else()
     target_compile_options(
       ${TARGET}
@@ -542,10 +567,14 @@ function(cutlass_add_executable_tests NAME TARGET)
 # 
 
   set(options DISABLE_EXECUTABLE_INSTALL_RULE)
-  set(oneValueArgs)
+  set(oneValueArgs DISABLE_TESTS)
   set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-    
+
+  if (NOT DEFINED __DISABLE_TESTS)
+    set(__DISABLE_TESTS OFF)
+  endif()
+
   if (NOT __DISABLE_EXECUTABLE_INSTALL_RULE AND CUTLASS_INSTALL_TESTS)
   
     # file(RELATIVE_PATH CMAKE_CURRENT_BINARY_RELATIVE_DIR ${CMAKE_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR})
@@ -609,6 +638,8 @@ function(cutlass_add_executable_tests NAME TARGET)
       NAME c${TEST_NAME}
       COMMAND ${CUTLASS_TEST_EXECUTION_ENVIRONMENT} $<TARGET_FILE:${TARGET}> ${CMD_OPTIONS}
       )
+
+    set_tests_properties(c${TEST_NAME} PROPERTIES DISABLED ${__DISABLE_TESTS})
 
     if (CUTLASS_INSTALL_TESTS)
 

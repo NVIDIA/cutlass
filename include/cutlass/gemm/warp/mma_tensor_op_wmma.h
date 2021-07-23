@@ -109,6 +109,12 @@ public:
   /// Underlying instruction shape
   using InstructionShape = typename Policy::Operator::Shape;
 
+  /// Underlying matrix multiply operator (concept: arch::Mma)
+  using ArchMmaOperator = typename Policy::Operator;
+
+  /// Indicates math operator 
+  using MathOperator = typename ArchMmaOperator::Operator;
+  
   /// Underlying architecture tag
   using ArchTag = typename Policy::Operator::ArchTag;
 

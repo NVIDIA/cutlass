@@ -56,6 +56,8 @@ public:
   using WorkspaceTensorRef = typename ReductionKernel::WorkspaceTensorRef;
   using OutputTensorRef = typename ReductionKernel::OutputTensorRef;
 
+  using StrideIndex = typename ReductionKernel::StrideIndex;
+
   /// Argument structure
   struct Arguments {
 

@@ -81,7 +81,8 @@ public:
   >;
 
   using ReductionDevice = cutlass::reduction::device::ReduceSplitK<ReductionKernel>;
-
+  using ReductionStrideIndex = typename ReductionDevice::StrideIndex;
+  
 public:
 
   /// Initialization
@@ -281,10 +282,20 @@ public:
         cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, problem_size).mn(),
         problem_size.split_k_slices,
         cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
-        {reinterpret_cast<ElementAccumulator*> (workspace.get()), tensor_C.stride(Conv3d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {tensor_D_computed.device_data(), tensor_C.stride(Conv3d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {tensor_C.device_data(), tensor_C.stride(Conv3d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {alpha, beta} // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
+        {
+          reinterpret_cast<ElementAccumulator*> (workspace.get()),
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        {
+          tensor_D_computed.device_data(),
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        {
+          tensor_C.device_data(),
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
+        {alpha, beta}
       );
 
       status = reduction_op.initialize(reduction_args, nullptr);
@@ -304,6 +315,38 @@ public:
     }
     bool passed = false;
 
+    cudaError_t result = cudaDeviceSynchronize();
+    EXPECT_EQ(result, cudaSuccess) << " device reference error: " 
+                                   << cudaGetErrorString(result);
+
+    tensor_D_computed.sync_host();
+
+#if CUTLASS_CONV_TEST_UNIT_REFERENCE_DEVICE_ENABLED
+    
+    cutlass::reference::device::Conv3d<
+      ElementA,
+      LayoutA,
+      ElementB,
+      LayoutB,
+      ElementC,
+      LayoutC,
+      ElementAccumulator,
+      ElementCompute
+    >(
+      kConvolutionalOperator,
+      problem_size,
+      tensor_A.device_ref(),
+      tensor_B.device_ref(),
+      tensor_C.device_ref(),
+      tensor_D_reference.device_ref(),
+      alpha, 
+      beta
+    );
+
+    // sync host (copy device data to host) for dumping error output in case of mismatches
+    tensor_D_reference.sync_host();
+    
+#else
     cutlass::reference::host::Conv3d<
       ElementA,
       LayoutA,
@@ -323,8 +366,7 @@ public:
       alpha,
       beta
     );
-
-    tensor_D_computed.sync_host();
+#endif
 
     passed = cutlass::reference::host::TensorEquals(
       tensor_D_computed.host_view(), 

@@ -58,6 +58,8 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  // assuming all tensors use same type for StrideIndex 
+  using StrideIndex = typename Operator::LayoutA::Index;
   using ElementAccumulator = typename Operator::ElementAccumulator;
   using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
 
@@ -102,7 +104,7 @@ public:
       OpcodeClassMap<typename Operator::OperatorClass>::kId;
 
     description_.tile_description.math_instruction.math_operation =
-      MathOperationMap<typename Operator::Operator>::kId;
+      MathOperationMap<typename Operator::MathOperator>::kId;
 
     description_.tile_description.minimum_compute_capability = 
       ArchMap<typename Operator::ArchTag, typename Operator::OperatorClass>::kMin;
@@ -141,7 +143,6 @@ public:
   using LayoutC = typename Operator::LayoutC;
   using ElementAccumulator = typename Operator::ElementAccumulator;
   using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
-
   using OperatorArguments = typename Operator::Arguments;
 
 public:
@@ -160,10 +161,12 @@ protected:
     GemmConfiguration const *configuration) {
 
     operator_args.problem_size = configuration->problem_size;
-    operator_args.ref_A = {nullptr, int(configuration->lda)};
-    operator_args.ref_B = {nullptr, int(configuration->ldb)};
-    operator_args.ref_C = {nullptr, int(configuration->ldc)};
-    operator_args.ref_D = {nullptr, int(configuration->ldd)};
+
+    operator_args.ref_A = {nullptr, configuration->lda};
+    operator_args.ref_B = {nullptr, configuration->ldb};
+    operator_args.ref_C = {nullptr, configuration->ldc};
+    operator_args.ref_D = {nullptr, configuration->ldd};
+
     operator_args.split_k_slices = configuration->split_k_slices;
 
     return Status::kSuccess;
@@ -360,11 +363,11 @@ protected:
     SparseGemmConfiguration const *configuration) {
 
     operator_args.problem_size = configuration->problem_size;
-    operator_args.ref_A = {nullptr, int(configuration->lda)};
-    operator_args.ref_B = {nullptr, int(configuration->ldb)};
-    operator_args.ref_C = {nullptr, int(configuration->ldc)};
-    operator_args.ref_D = {nullptr, int(configuration->ldd)};
-    operator_args.ref_E = {nullptr, int(configuration->lde)};
+    operator_args.ref_A = {nullptr, configuration->lda};
+    operator_args.ref_B = {nullptr, configuration->ldb};
+    operator_args.ref_C = {nullptr, configuration->ldc};
+    operator_args.ref_D = {nullptr, configuration->ldd};
+    operator_args.ref_E = {nullptr, configuration->lde};
 
     return Status::kSuccess;
   }
@@ -562,10 +565,10 @@ protected:
     operator_args.problem_size = configuration->problem_size;
     operator_args.batch_count = configuration->batch_count;
 
-    operator_args.lda = int(configuration->lda);
-    operator_args.ldb = int(configuration->ldb);
-    operator_args.ldc = int(configuration->ldc);
-    operator_args.ldd = int(configuration->ldd);
+    operator_args.lda = (configuration->lda);
+    operator_args.ldb = (configuration->ldb);
+    operator_args.ldc = (configuration->ldc);
+    operator_args.ldd = (configuration->ldd);
     
     return Status::kSuccess;
   }
@@ -755,14 +758,15 @@ protected:
     operator_args.problem_size = configuration->problem_size;
     operator_args.batch_count = configuration->batch_count;
 
-    operator_args.lda_real = int(configuration->lda_real);
-    operator_args.lda_imag = int(configuration->lda_imag);
-    operator_args.ldb_real = int(configuration->ldb_real);
-    operator_args.ldb_imag = int(configuration->ldb_imag);
-    operator_args.ldc_real = int(configuration->ldc_real);
-    operator_args.ldc_imag = int(configuration->ldc_imag);
-    operator_args.ldd_real = int(configuration->ldd_real);
-    operator_args.ldd_imag = int(configuration->ldd_imag);
+
+    operator_args.lda_real = configuration->lda_real;
+    operator_args.lda_imag = configuration->lda_imag;
+    operator_args.ldb_real = configuration->ldb_real;
+    operator_args.ldb_imag = configuration->ldb_imag;
+    operator_args.ldc_real = configuration->ldc_real;
+    operator_args.ldc_imag = configuration->ldc_imag;
+    operator_args.ldd_real = configuration->ldd_real;
+    operator_args.ldd_imag = configuration->ldd_imag;
 
     return Status::kSuccess;
   }
@@ -960,14 +964,14 @@ protected:
     operator_args.problem_size = configuration->problem_size;
     operator_args.batch_count = configuration->batch_count;
 
-    operator_args.lda_real = int(configuration->lda_real);
-    operator_args.lda_imag = int(configuration->lda_imag);
-    operator_args.ldb_real = int(configuration->ldb_real);
-    operator_args.ldb_imag = int(configuration->ldb_imag);
-    operator_args.ldc_real = int(configuration->ldc_real);
-    operator_args.ldc_imag = int(configuration->ldc_imag);
-    operator_args.ldd_real = int(configuration->ldd_real);
-    operator_args.ldd_imag = int(configuration->ldd_imag);
+    operator_args.lda_real = configuration->lda_real;
+    operator_args.lda_imag = configuration->lda_imag;
+    operator_args.ldb_real = configuration->ldb_real;
+    operator_args.ldb_imag = configuration->ldb_imag;
+    operator_args.ldc_real = configuration->ldc_real;
+    operator_args.ldc_imag = configuration->ldc_imag;
+    operator_args.ldd_real = configuration->ldd_real;
+    operator_args.ldd_imag = configuration->ldd_imag;
 
     return Status::kSuccess;
   }

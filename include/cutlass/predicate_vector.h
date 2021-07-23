@@ -129,7 +129,7 @@ struct PredicateVector {
   static int const kBytes = (kPredicates + kPredicatesPerByte - 1) / kPredicatesPerByte;
 
   /// Number of storage elements needed
-  static int const kWordCount = (kBytes + sizeof(Storage) - 1) / sizeof(Storage);
+  static int const kWordCount = (kBytes + int(sizeof(Storage)) - 1) / int(sizeof(Storage));
 
  private:
   //

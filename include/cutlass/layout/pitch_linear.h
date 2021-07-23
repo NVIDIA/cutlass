@@ -29,138 +29,14 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/coord.h"
+#include "cutlass/pitch_linear_coord.h"
 
 namespace cutlass {
 namespace layout {
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Template defining a shape used by pitch-linear operators
-template <
-  int Contiguous,
-  int Strided
->
-struct PitchLinearShape {
-  static int const kContiguous = Contiguous;
-  static int const kStrided = Strided;
-  static int const kCount = Contiguous * Strided;
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Coordinate in pitch-linear space
-struct PitchLinearCoord : public Coord<2, int> {
-public:
-
-  /// Integer-valued index
-  using Index = int;
-
-  /// Base type is a Coord of rank=2
-  using Base = Coord<2, Index>;
-
-private:
-
-  /// Rows dimension
-  static int const kContiguous = 0;
-
-  /// Columns dimension
-  static int const kStrided = 1;
-
-public:
-
-  //
-  // Methods
-  //
-
-  /// Default ctor
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord() { }
-
-  /// Constructs from Coord<2>
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord(Coord<2, Index> const &coord): Base(coord) { }
-
-  /// Helper to construct from a row and column
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord(Index contiguous_, Index strided_): Base(make_Coord(contiguous_, strided_)) { }
-
-  /// Returns the contiguous dimension
-  CUTLASS_HOST_DEVICE
-  Index const & contiguous() const { return this->at(kContiguous); }
-
-  /// Returns the contiguous dimension
-  CUTLASS_HOST_DEVICE
-  Index & contiguous() { return this->at(kContiguous); }
-
-  /// Returns the column of the coordinate
-  CUTLASS_HOST_DEVICE
-  Index const & strided() const { return this->at(kStrided); }
-
-  /// Returns the column of the coordinate
-  CUTLASS_HOST_DEVICE
-  Index & strided() { return this->at(kStrided); }
-
-  //
-  // Coord operators
-  //
-
-  /// Element-wise addition
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord operator+(Base const& b) const {
-    return PitchLinearCoord(Base::operator+(b));
-  }
-
-  /// Element-wise subtraction
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord operator-(Base const& b) const {
-    return PitchLinearCoord(Base::operator-(b));
-  }
-
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord operator-() const {
-    return PitchLinearCoord(-at(0), -at(1));
-  }
-
-  /// Element-wise multiplication
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord operator*(Base const& b) const {
-    return PitchLinearCoord(Base::operator*(b));
-  }
-
-  /// Element-wise division
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord operator/(Base const& b) const {
-    return PitchLinearCoord(Base::operator/(b));
-  }
-
-  /// In-place addition
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord& operator+=(Base const& b) {
-    Base::operator+=(b);
-    return *this;
-  }
-
-  /// In-place subtraction
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord& operator-=(Base const& b) {
-    Base::operator-=(b);
-    return *this;
-  }
-
-  /// In-place multiplication
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord& operator*=(Base const& b) {
-    Base::operator*=(b);
-    return *this;
-  }
-
-  /// In-place division
-  CUTLASS_HOST_DEVICE
-  PitchLinearCoord& operator/=(Base const& b) {
-    Base::operator/=(b);
-    return *this;
-  }
-};
+template <int Contiguous, int Strided>
+  using PitchLinearShape = cutlass::PitchLinearShape < Contiguous, Strided >;
+  using PitchLinearCoord = PitchLinearCoord;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -183,7 +59,7 @@ public:
   using TensorCoord = PitchLinearCoord;
 
   /// Stride vector
-  using Stride = Coord<kStrideRank, Index>;
+  using Stride = Coord<kStrideRank, LongIndex>;
 
 private:
   //
@@ -200,7 +76,7 @@ public:
   
   /// Constructor
   CUTLASS_HOST_DEVICE
-  PitchLinear(Index ldm = 0): stride_(ldm) { }
+  PitchLinear(LongIndex ldm = 0): stride_(ldm) { }
 
   /// Constructor
   CUTLASS_HOST_DEVICE
@@ -223,8 +99,8 @@ public:
   CUTLASS_HOST_DEVICE
   TensorCoord inverse(LongIndex index) const {
     return make_Coord(
-      Index(index % stride_[0]),
-      Index(index / stride_[0])
+      TensorCoord::Index(index % stride_[0]),
+      TensorCoord::Index(index / stride_[0])
     );
   }
 
@@ -242,13 +118,13 @@ public:
 
   /// Returns the stride of the layout
   CUTLASS_HOST_DEVICE
-  Index stride(int rank) const {
+  LongIndex stride(int rank) const {
     return stride_[rank];
   }
 
   /// Returns the stride of the layout
   CUTLASS_HOST_DEVICE
-  Index & stride(int rank) {
+  LongIndex & stride(int rank) {
     return stride_[rank];
   }
 

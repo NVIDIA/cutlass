@@ -354,18 +354,27 @@ private:
   /// Internal reference
   cutlass::TensorRef<Element, layout::RowMajor> ref_;
 
+  /// Extent of tensor
+  MatrixCoord extent_;
+
+  /// Origin
+  MatrixCoord origin_;
+
+  /// Used to conditionally enable extents checking
+  bool divisible_;
+
 public:
   
   /// Default ctor constructs null iterator
   CUTLASS_HOST_DEVICE
-  MmaSimtTileIterator() { }
+  MmaSimtTileIterator() : divisible_(true) { }
 
   /// Constructor from TensorRef
   CUTLASS_HOST_DEVICE
   MmaSimtTileIterator(
     TensorRef ref, 
     int lane_id
-  ) {
+  ) : extent_(Shape::kRow, Shape::kColumn), divisible_ (true) {
 
     // compute offset based on thread ID and lane layout
     typename Policy::LaneLayout lane_layout = Policy::get_lane_layout();
@@ -373,12 +382,35 @@ public:
     MatrixCoord lane_offset = lane_layout.inverse(lane_id) * 
       MatrixCoord(Policy::LaneMmaShape::kM, 0);
 
+    origin_ = lane_offset;
+
     ref.add_coord_offset(lane_offset);
 
     ref_.reset(ref.data(), ref.stride(0));
 
   }
   
+  /// Constructor from TensorRef
+  CUTLASS_HOST_DEVICE
+  MmaSimtTileIterator(
+    TensorRef ref,
+    TensorCoord extent, 
+    int lane_id
+  ) : extent_(extent), divisible_ (false) {
+
+    // compute offset based on thread ID and lane layout
+    typename Policy::LaneLayout lane_layout = Policy::get_lane_layout();
+
+    MatrixCoord lane_offset = lane_layout.inverse(lane_id) * 
+      MatrixCoord(Policy::LaneMmaShape::kM, 0);
+
+    origin_ = lane_offset;
+    
+    ref.add_coord_offset(lane_offset);
+
+    ref_.reset(ref.data(), ref.stride(0));
+
+  }
 
   /// Adds a pointer offset to internal pointer(s) to advance through memory
   CUTLASS_HOST_DEVICE
@@ -391,9 +423,13 @@ public:
   CUTLASS_HOST_DEVICE
   MmaSimtTileIterator &add_tile_offset(TensorCoord const &coord) {
 
-    ref_.add_coord_offset({
+    TensorCoord coord_offset(
       coord.row() * Shape::kRow, 
-      coord.column() * Shape::kColumn});
+      coord.column() * Shape::kColumn);
+    
+    origin_ += coord_offset;
+
+    ref_.add_coord_offset(coord_offset);
 
     return *this;
   }
@@ -426,11 +462,21 @@ public:
       for (int m = 0; m < Iterations::kRow; ++m) {
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < Policy::LaneMmaShape::kM; i++) {
-        
-          frag[m * Policy::LaneMmaShape::kM + i + k * Iterations::kRow] = 
-            *(ref_.data() + 
-              ref_.offset({m * Policy::WarpShape::kRow * Policy::LaneMmaShape::kM + i, k}) + 
-              pointer_offset);
+          
+          MatrixCoord offset(m * Policy::WarpShape::kRow * Policy::LaneMmaShape::kM + i, k);
+            
+          MatrixCoord access_coord = origin_ + offset;
+
+          int frag_idx = m * Policy::LaneMmaShape::kM + i + k * Iterations::kRow;
+
+          if (divisible_ || 
+              (access_coord.row() < extent_.row() && access_coord.column() < extent_.column())) {
+          
+            frag[frag_idx] = *(ref_.data() + ref_.offset(offset) + pointer_offset);
+          }
+          else {
+            frag[frag_idx] = Element();
+          }
         }
       }
     }
@@ -765,18 +811,27 @@ private:
   /// Internal reference
   cutlass::TensorRef<Element, layout::ColumnMajor> ref_;
 
+  /// Extent of tensor
+  MatrixCoord extent_;
+
+  /// Origin
+  MatrixCoord origin_;
+
+  /// Used to conditionally enable extents checking
+  bool divisible_;
+
 public:
   
   /// Default ctor constructs null iterator
   CUTLASS_HOST_DEVICE
-  MmaSimtTileIterator() { }
+  MmaSimtTileIterator(): divisible_(true) { }
 
   /// Constructor from TensorRef
   CUTLASS_HOST_DEVICE
   MmaSimtTileIterator(
     TensorRef ref, 
     int lane_id
-  ) {
+  ): extent_(Shape::kRow, Shape::kColumn), divisible_(true) {
 
     // compute offset based on thread ID and lane layout
     typename Policy::LaneLayout lane_layout = Policy::get_lane_layout();
@@ -784,11 +839,34 @@ public:
     MatrixCoord lane_offset = lane_layout.inverse(lane_id) * 
       MatrixCoord(0, Policy::LaneMmaShape::kN);
 
+    origin_ = lane_offset;
+
     ref.add_coord_offset(lane_offset);
 
     ref_.reset(ref.data(), ref.stride(0));
   }
-  
+
+  /// Constructor from TensorRef
+  CUTLASS_HOST_DEVICE
+  MmaSimtTileIterator(
+    TensorRef ref,
+    TensorCoord extent, 
+    int lane_id
+  ): extent_(extent), divisible_(false) {
+
+    // compute offset based on thread ID and lane layout
+    typename Policy::LaneLayout lane_layout = Policy::get_lane_layout();
+
+    MatrixCoord lane_offset = lane_layout.inverse(lane_id) * 
+      MatrixCoord(0, Policy::LaneMmaShape::kN);
+
+    origin_ = lane_offset;
+
+    ref.add_coord_offset(lane_offset);
+
+    ref_.reset(ref.data(), ref.stride(0));
+  }
+
   /// Adds a pointer offset to internal pointer(s) to advance through memory
   CUTLASS_HOST_DEVICE
   MmaSimtTileIterator &add_pointer_offset(LongIndex offset) {
@@ -800,9 +878,13 @@ public:
   CUTLASS_HOST_DEVICE
   MmaSimtTileIterator &add_tile_offset(TensorCoord const &coord) {
 
-    ref_.add_coord_offset({
+    TensorCoord coord_offset(
       coord.row() * Shape::kRow, 
-      coord.column() * Shape::kColumn});
+      coord.column() * Shape::kColumn);
+
+    origin_ += coord_offset;
+
+    ref_.add_coord_offset(coord_offset);
 
     return *this;
   }
@@ -835,10 +917,21 @@ public:
       for (int n = 0; n < Iterations::kColumn; ++n) {
         CUTLASS_PRAGMA_UNROLL
         for (int i = 0; i < Policy::LaneMmaShape::kN; ++i) {
-          frag[n * Policy::LaneMmaShape::kN + i + k * Iterations::kColumn] = 
-            *(ref_.data() + 
-              ref_.offset({k, n * Policy::WarpShape::kColumn * Policy::LaneMmaShape::kN + i}) + 
-              pointer_offset);
+
+          MatrixCoord offset(k, n * Policy::WarpShape::kColumn * Policy::LaneMmaShape::kN + i);
+            
+          MatrixCoord access_coord = origin_ + offset;
+
+          int frag_idx = n * Policy::LaneMmaShape::kN + i + k * Iterations::kColumn;
+
+          if (divisible_ || 
+              (access_coord.row() < extent_.row() && access_coord.column() < extent_.column())) {
+
+            frag[frag_idx] = *(ref_.data() + ref_.offset(offset) + pointer_offset);
+          }
+          else {
+            frag[frag_idx] = Element();
+          }
         }
       }
     }

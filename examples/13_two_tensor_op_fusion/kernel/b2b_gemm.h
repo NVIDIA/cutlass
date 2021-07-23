@@ -66,6 +66,7 @@ struct B2bGemm {
     cutlass::gemm::GemmCoord problem_size_0;
     cutlass::gemm::GemmCoord problem_size_1;
     cutlass::gemm::GemmCoord grid_tiled_shape;
+    int swizzle_log_tile;
     typename B2bMma::IteratorA0::Params params_A0;
     typename B2bMma::IteratorA0::TensorRef ref_A0;
     typename B2bMma::IteratorB0::Params params_B0;
@@ -91,7 +92,7 @@ struct B2bGemm {
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): semaphore(0), gemm_k_iterations_0(0), gemm_k_size_0(0),
+    Params(): swizzle_log_tile(0), semaphore(0), gemm_k_iterations_0(0), gemm_k_size_0(0),
         gemm_k_iterations_1(0), gemm_k_size_1(0) { }
 
     CUTLASS_HOST_DEVICE
@@ -112,6 +113,7 @@ struct B2bGemm {
       problem_size_0(problem_size_0),
       problem_size_1(problem_size_1),
       grid_tiled_shape(grid_tiled_shape),
+      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
       params_A0(ref_A0.layout()),
       ref_A0(ref_A0),
       params_B0(ref_B0.layout()),
@@ -211,7 +213,7 @@ struct B2bGemm {
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord threadblock_tile_offset =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_offset.m() ||
@@ -315,7 +317,7 @@ struct B2bGemm {
     //
 
     threadblock_tile_offset =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     //assume identity swizzle
     MatrixCoord threadblock_offset(

@@ -158,7 +158,7 @@ using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSw
 constexpr int NumStages = 3;
 
 // This code section describe iterator algorithm selected is Analytic or Optimized
-static cutlass::conv::IteratorAlgorithm const IteratorAlgorithm = cutlass::conv::IteratorAlgorithm::kAnalytic;
+static cutlass::conv::IteratorAlgorithm const IteratorAlgorithm = cutlass::conv::IteratorAlgorithm::kOptimized;
 
 // This code section describes the epilogue part of the kernel, we use default value
 using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
@@ -188,7 +188,6 @@ using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
 >::Kernel;
 
 using ImplicitGemm = cutlass::conv::device::ImplicitGemmConvolution<Conv2dFpropKernel>;
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -755,6 +754,3 @@ int main(int argc, char const **args) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-

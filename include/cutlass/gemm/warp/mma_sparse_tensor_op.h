@@ -119,6 +119,9 @@ public:
   /// Underlying matrix multiply operator (concept: arch::Mma)
   using ArchMmaOperator = typename Base::ArchMmaOperator;
 
+  /// Indicates math operator 
+  using MathOperator = typename ArchMmaOperator::Operator;
+  
   /// Architecture tag from underlying instruction
   using ArchTag = typename Base::ArchTag;
 

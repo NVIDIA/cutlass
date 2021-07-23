@@ -32,6 +32,7 @@
 #include "../common/cutlass_unit_test.h"
 
 #include "cutlass/complex.h"
+#include "cutlass/constants.h"
 #include "cutlass/numeric_conversion.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -81,6 +82,42 @@ TEST(complex, f16_to_f32_conversion) {
 
   EXPECT_TRUE(source.real() == 1.5_hf && source.imag() == -1.25_hf && 
     dest.real() == 1.5f && dest.imag() == -1.25f);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(complex, exp_f32) {
+  
+  cutlass::complex<float> Z[] = {
+    {1, 1},
+    {2   ,  cutlass::constants::pi<float>()/2.0f   },
+    {0.5f,  cutlass::constants::pi<float>()        },
+    {0.25f,  cutlass::constants::pi<float>()*3/4.0f },
+    {0, 0},
+  };
+
+  cutlass::complex<double> Expected[] = {
+    {1.4686939399158851, 2.2873552871788423}, 
+    {4.524491950137825e-16, 7.38905609893065},
+    {-1.6487212707001282, 2.019101226849069e-16}, 
+    {-0.9079430793557842, 0.9079430793557843},
+    {1, 0}
+  };
+
+  double tolerance = 0.00001;
+
+  for (int i = 0; cutlass::real(Z[i]); ++i) {
+    double e_r = cutlass::real(Expected[i]);
+    double e_i = cutlass::real(Expected[i]);
+
+    cutlass::complex<float> got = cutlass::exp(Z[i]);
+    float g_r = cutlass::real(got);
+    float g_i = cutlass::real(got);
+
+    EXPECT_TRUE(
+      std::abs(g_r - e_r) < tolerance && std::abs(g_i - e_i) < tolerance
+    ) << "Expected(" << Expected[i] << "), Got(" << got << ")";
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

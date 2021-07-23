@@ -36,6 +36,7 @@
 // Cutlass includes
 #include "cutlass/cutlass.h"
 #include "cutlass/complex.h"
+#include "cutlass/quaternion.h"
 #include "cutlass/array.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/subbyte_reference.h"
@@ -216,6 +217,56 @@ struct RandomGaussianFunc<complex<Element> > {
     }
 
     return complex<Element>(reals[0], reals[1]);
+  }
+};
+
+/// Partial specialization for initializing a complex value.
+template <typename Element>
+struct RandomGaussianFunc<Quaternion<Element> > {
+
+  uint64_t seed;
+  double mean;
+  double stddev;
+  int int_scale;
+  double pi;
+
+  //
+  // Methods
+  //
+  RandomGaussianFunc(
+    uint64_t seed_ = 0,
+    double mean_ = 0,
+    double stddev_ = 1,
+    int int_scale_ = -1
+  ):
+    seed(seed_), mean(mean_), stddev(stddev_), int_scale(int_scale_), pi(std::acos(-1)) {
+      std::srand((unsigned)seed);
+  }
+
+  /// Compute random value and update RNG state
+  Quaternion<Element> operator()() const {
+
+    Element reals[4];
+
+    for (int i = 0; i < 4; ++i) {
+      // Box-Muller transform to generate random numbers with Normal distribution
+      double u1 = double(std::rand()) / double(RAND_MAX);
+      double u2 = double(std::rand()) / double(RAND_MAX);
+
+      // Compute Gaussian random value
+      double rnd = std::sqrt(-2 * std::log(u1)) * std::cos(2 * pi * u2);
+      rnd = mean + stddev * rnd;
+
+      if (int_scale >= 0) {
+        rnd = double(int(rnd * double(1 << int_scale)));
+        reals[i] = from_real<Element>(rnd / double(1 << int_scale));
+      }
+      else {
+        reals[i] = from_real<Element>(rnd);
+      }
+    }
+
+    return Quaternion<Element>(reals[0], reals[1], reals[2], reals[3]);
   }
 };
 
@@ -429,6 +480,58 @@ struct RandomUniformFunc<complex<Element> > {
   }
 };
 
+/// Partial specialization for initializing a Quaternion value.
+template <typename Element>
+struct RandomUniformFunc<Quaternion<Element> > {
+
+  using Real = typename RealType<Element>::Type;
+
+  uint64_t seed;
+  double range;
+  double min;
+  int int_scale;
+
+  //
+  // Methods
+  //
+
+  RandomUniformFunc(
+    uint64_t seed_ = 0,
+    double max = 1,
+    double min_ = 0,
+    int int_scale_ = -1
+  ):
+    seed(seed_), range(max - min_), min(min_), int_scale(int_scale_) {
+      std::srand((unsigned)seed);
+    }
+
+
+  /// Compute random value and update RNG state
+  Quaternion<Element> operator()() const {
+
+    Element reals[4];
+
+    for (int i = 0; i < 4; ++i) {
+      double rnd = double(std::rand()) / double(RAND_MAX);
+
+      rnd = min + range * rnd;
+
+      // Random values are cast to integer after scaling by a power of two to facilitate error
+      // testing
+
+      if (int_scale >= 0) {
+        rnd = double(int(rnd * double(1 << int_scale)));
+        reals[i] = from_real<Element>(Real(rnd / double(1 << int_scale)));
+      }
+      else {
+        reals[i] = from_real<Element>(Real(rnd));
+      }
+    }
+
+    return make_Quaternion(reals[0], reals[1], reals[2], reals[3]);
+  }
+};
+
 /// Computes a random Gaussian distribution
 template <
   typename Element,               ///< Element type
@@ -508,6 +611,32 @@ void TensorFillRandomUniform(
   
   TensorFillRandomUniform(dst.view_real(), seed, max, min, bits);
   TensorFillRandomUniform(dst.view_imag(), ~seed, max, min, bits);
+}
+
+
+/// Fills a tensor with random values with a uniform random distribution.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillRandomUniform(
+  TensorView<Quaternion<Element>, Layout> dst,        ///< destination tensor
+  uint64_t seed,                                      ///< seed for RNG
+  double max = 1,                                     ///< upper bound of distribution
+  double min = 0,                                     ///< lower bound for distribution
+  int bits = -1) {                                    ///< If non-negative, specifies number of fractional bits that 
+                                                      ///  are not truncated to zero. Permits reducing precision of
+                                                      ///  data.                 
+  detail::RandomUniformFunc<Quaternion<Element>> random_func(seed, max, min, bits);
+
+  detail::TensorFillRandomUniformFunc<Quaternion<Element>, Layout> func(
+    dst,
+    random_func
+  );
+
+  TensorForEach(
+    dst.extent(),
+    func
+  );
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

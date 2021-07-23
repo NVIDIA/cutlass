@@ -79,12 +79,8 @@ struct Mma_HFMA2 <
   true
   > {
 
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
-
-  static_assert(
-    !(Shape::kM % 2),
-    "Mma_HFMA2 requires the M dimension to be divisible by 2."
-  );
 
    /// A operand storage
   using FragmentA = Array<half_t, Shape::kMK>;
@@ -97,6 +93,11 @@ struct Mma_HFMA2 <
 
   /// Underlying mathematical operator
   using Operator = arch::OpMultiplyAdd;
+
+  static_assert(
+    !(Shape::kM % 2),
+    "Mma_HFMA2 requires the M dimension to be divisible by 2."
+  );
 
   //
   // Methods
@@ -170,12 +171,8 @@ struct Mma_HFMA2<
   true
   > {
 
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
-
-  static_assert(
-    !(Shape::kN % 2),
-    "Mma_HFMA2 requires the N dimension to be divisible by 2."
-  );
 
    /// A operand storage
   using FragmentA = Array<half_t, Shape::kMK>;
@@ -188,6 +185,11 @@ struct Mma_HFMA2<
 
   /// Underlying mathematical operator
   using Operator = arch::OpMultiplyAdd;
+
+  static_assert(
+    !(Shape::kN % 2),
+    "Mma_HFMA2 requires the N dimension to be divisible by 2."
+  );
 
   //
   // Methods
@@ -266,12 +268,8 @@ struct Mma_HFMA2 <
   true
   > {
 
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
-
-  static_assert(
-    !(Shape::kM % 2),
-    "Mma_HFMA2 requires the GEMM M dimension to be divisible by 2."
-  );
 
   /// A operand storage
   using FragmentA = Array<half_t, Shape::kMK>;
@@ -284,6 +282,11 @@ struct Mma_HFMA2 <
 
   /// Underlying mathematical operator
   using Operator = arch::OpMultiplyAdd;
+
+  static_assert(
+    !(Shape::kM % 2),
+    "Mma_HFMA2 requires the GEMM M dimension to be divisible by 2."
+  );
 
   //
   // Methods
@@ -357,14 +360,10 @@ struct Mma_HFMA2<
   true
   > {
 
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
 
-  static_assert(
-    !(Shape::kN % 2),
-    "Mma_HFMA2 requires the N dimension to be divisible by 2."
-  );
-
-   /// A operand storage
+  /// A operand storage
   using FragmentA = Array<half_t, Shape::kMK>;
 
   /// B operand storage
@@ -375,6 +374,12 @@ struct Mma_HFMA2<
 
   /// Underlying mathematical operator
   using Operator = arch::OpMultiplyAdd;
+
+  static_assert(
+    !(Shape::kN % 2),
+    "Mma_HFMA2 requires the N dimension to be divisible by 2."
+  );
+
   //
   // Methods
   //
@@ -448,14 +453,10 @@ struct Mma_HFMA2 <
   true
   > {
 
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
 
-  static_assert(
-    !(Shape::kM % 2),
-    "Mma_HFMA2 requires the M dimension to be divisible by 2."
-  );
-
-   /// A operand storage
+  /// A operand storage
   using FragmentA = Array<half_t, Shape::kMK>;
 
   /// B operand storage
@@ -466,6 +467,11 @@ struct Mma_HFMA2 <
 
   /// Underlying mathematical operator
   using Operator = arch::OpMultiplyAdd;
+
+  static_assert(
+    !(Shape::kM % 2),
+    "Mma_HFMA2 requires the M dimension to be divisible by 2."
+  );
 
   //
   // Methods
@@ -543,12 +549,8 @@ struct Mma_HFMA2 <
   true
   > {
 
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
-
-  static_assert(
-    !(Shape::kN % 2),
-    "Mma_HFMA2 requires the N dimension to be divisible by 2."
-  );
 
    /// A operand storage
   using FragmentA = Array<half_t, Shape::kMK>;
@@ -561,6 +563,11 @@ struct Mma_HFMA2 <
 
   /// Underlying mathematical operator
   using Operator = arch::OpMultiplyAdd;
+
+  static_assert(
+    !(Shape::kN % 2),
+    "Mma_HFMA2 requires the N dimension to be divisible by 2."
+  );
 
   //
   // Methods
@@ -638,12 +645,8 @@ struct Mma_HFMA2 <
   true
   > {
 
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
-
-  static_assert(
-    !(Shape::kM % 2),
-    "Mma_HFMA2 requires the M dimension to be divisible by 2."
-  );
 
    /// A operand storage
   using FragmentA = Array<half_t, Shape::kMK>;
@@ -656,6 +659,11 @@ struct Mma_HFMA2 <
 
   /// Underlying mathematical operator
   using Operator = arch::OpMultiplyAdd;
+
+  static_assert(
+    !(Shape::kM % 2),
+    "Mma_HFMA2 requires the M dimension to be divisible by 2."
+  );
 
   //
   // Methods
@@ -734,14 +742,10 @@ struct Mma_HFMA2<
   true
   > {
 
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
 
-  static_assert(
-    !(Shape::kN % 2),
-    "Mma_HFMA2 requires the N dimension to be divisible by 2."
-  );
-
-   /// A operand storage
+  /// A operand storage
   using FragmentA = Array<half_t, Shape::kMK>;
 
   /// B operand storage
@@ -752,6 +756,11 @@ struct Mma_HFMA2<
 
   /// Underlying mathematical operator
   using Operator = arch::OpMultiplyAdd;
+
+  static_assert(
+    !(Shape::kN % 2),
+    "Mma_HFMA2 requires the N dimension to be divisible by 2."
+  );
 
   //
   // Methods
@@ -825,14 +834,10 @@ struct Mma_HFMA2<
   false
   > {
 
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
 
-  static_assert(
-    !(Shape::kK % 2),
-    "Mma_HFMA2 requires the K dimension to be divisible by 2."
-  );
-
-   /// A operand storage
+  /// A operand storage
   using FragmentA = Array<half_t, Shape::kMK>;
 
   /// B operand storage
@@ -843,6 +848,11 @@ struct Mma_HFMA2<
 
   /// Underlying mathematical operator
   using Operator = arch::OpMultiplyAdd;
+
+  static_assert(
+    !(Shape::kK % 2),
+    "Mma_HFMA2 requires the K dimension to be divisible by 2."
+  );
 
   //
   // Methods
@@ -909,14 +919,10 @@ struct Mma_HFMA2<
   false
   > {
 
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
 
-  static_assert(
-    !(Shape::kK % 2),
-    "Mma_HFMA2 requires the K dimension to be divisible by 2."
-  );
-
-   /// A operand storage
+  /// A operand storage
   using FragmentA = Array<half_t, Shape::kMK>;
 
   /// B operand storage
@@ -927,7 +933,12 @@ struct Mma_HFMA2<
 
   /// Underlying mathematical operator
   using Operator = arch::OpMultiplyAdd;
-  
+
+  static_assert(
+    !(Shape::kK % 2),
+    "Mma_HFMA2 requires the K dimension to be divisible by 2."
+  );
+
   //
   // Methods
   //

@@ -123,6 +123,9 @@ class MmaVoltaTensorOpMultiplicandTileIterator<
   /// Long Index type
   using LongIndex = typename TensorRef::LongIndex;
 
+  /// Long Index type
+  using StrideIndex = typename TensorRef::Layout::Stride::Index;
+
   /// Coordinate for an element in the tensor
   using TensorCoord = typename TensorRef::TensorCoord;
 
@@ -171,7 +174,7 @@ public:
 private:
 
   /// Layout object storing stride values
-  Index stride_;
+  StrideIndex stride_;
 
   /// Shared memory base pointers - not advanced
   AccessType const *pointer_[kPointerCount];
@@ -436,6 +439,9 @@ class MmaVoltaTensorOpMultiplicandTileIterator<
   /// Long Index type
   using LongIndex = typename TensorRef::LongIndex;
 
+  /// Long Index type
+  using StrideIndex = typename TensorRef::Layout::Stride::Index;
+
   /// Coordinate for an element in the tensor
   using TensorCoord = typename TensorRef::TensorCoord;
 
@@ -480,7 +486,7 @@ public:
 private:
 
   /// Layout object storing stride values
-  Index stride_;
+  StrideIndex stride_;
 
   /// Shared memory base pointers - not advanced
   AccessType const *pointer_;
@@ -1526,6 +1532,9 @@ class MmaVoltaTensorOpMultiplicandTileIterator<
   /// Long Index type
   using LongIndex = typename TensorRef::LongIndex;
 
+  /// Long Index type
+  using StrideIndex = typename TensorRef::Layout::Stride::Index;
+
   /// Coordinate for an element in the tensor
   using TensorCoord = typename TensorRef::TensorCoord;
 
@@ -1566,7 +1575,7 @@ class MmaVoltaTensorOpMultiplicandTileIterator<
  private:
 
   /// Layout object storing stride values
-  Index stride_;
+  StrideIndex stride_;
 
   /// Shared memory base pointers - not advanced
   AccessType const *pointer_;

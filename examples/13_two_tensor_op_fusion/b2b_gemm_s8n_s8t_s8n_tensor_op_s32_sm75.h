@@ -39,14 +39,12 @@
 #include "device/b2b_gemm.h"
 #include "b2b_interleaved_gemm_run.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
-
 ////////////////////////////////////////////////////////////////////////////////
 
 cutlass::gemm::GemmCoord gemm_s8_sm75_problem_size_0(128*1600, 64, 576);
 cutlass::gemm::GemmCoord gemm_s8_sm75_problem_size_1(128*1600, 128, 64);
 
-void run_nonfused_gemm_s8() {
+bool run_nonfused_gemm_s8() {
 
   using ElementOutput = int8_t;
   using ElementAccumulator = int32_t;
@@ -80,7 +78,8 @@ void run_nonfused_gemm_s8() {
       ElementOutput,
       64 / cutlass::sizeof_bits<ElementOutput>::value,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     2
@@ -116,9 +115,11 @@ void run_nonfused_gemm_s8() {
     std::cout << "Pass\n";
   else
     std::cout << "Fail\n";
+
+  return pass;
 }
 
-void run_fused_gemm_s8() {
+bool run_fused_gemm_s8() {
 
   using ElementOutput = int8_t;
   using ElementAccumulator = int32_t;
@@ -140,7 +141,8 @@ void run_fused_gemm_s8() {
       ElementOutput,
       InstructionShape::kM * InstructionShape::kN / 32,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >;
 
   using EpilogueOutputOp1 = 
@@ -150,8 +152,6 @@ void run_fused_gemm_s8() {
       ElementAccumulator,
       ElementCompute
     >;
-
-
 
   using B2bGemm = cutlass::gemm::device::B2bGemm<
     int8_t,
@@ -183,7 +183,7 @@ void run_fused_gemm_s8() {
   else
     std::cout << "Fail\n";
 
+  return passed;
+
 }
 ////////////////////////////////////////////////////////////////////////////////
-
-#endif  // #if defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)

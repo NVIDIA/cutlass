@@ -412,39 +412,61 @@ Coord<Rank, Index> operator/(Coord<Rank, Index> coord, Index s) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Helper to make a 2-element coordinate
+template <typename T> 
 CUTLASS_HOST_DEVICE
-Coord<1> make_Coord(int _0) {
-  int values[1] = {_0};
-  return Coord<1>(values);
+Coord<1, T> make_Coord(T _0) {
+  T values[1] = {_0};
+  return Coord<1, T>(values);
 }
 
 /// Helper to make a 2-element coordinate
+template <typename T> 
 CUTLASS_HOST_DEVICE
-Coord<2> make_Coord(int _0, int _1) {
-  int values[2] = {_0, _1};
-  return Coord<2>(values);
+Coord<2, T> make_Coord(T _0, T _1) {
+  T values[2] = {_0, _1};
+  return Coord<2, T>(values);
 }
 
 /// Helper to make a 3-element coordinate
+template <typename T> 
 CUTLASS_HOST_DEVICE
-Coord<3> make_Coord(int _0, int _1, int _2) {
-  int values[3] = {_0, _1, _2};
-  return Coord<3>(values);
+Coord<3, T> make_Coord(T _0, T _1, T _2) {
+  T values[3] = {_0, _1, _2};
+  return Coord<3, T>(values);
 }
 
 /// Helper to make a 4-element coordinate
+template <typename T> 
 CUTLASS_HOST_DEVICE
-Coord<4> make_Coord(int _0, int _1, int _2, int _3) {
-  int values[4] = {_0, _1, _2, _3};
-  return Coord<4>(values);
+Coord<4, T> make_Coord(T _0, T _1, T _2, T _3) {
+  T values[4] = {_0, _1, _2, _3};
+  return Coord<4, T>(values);
 }
 
 /// Helper to make a 5-element coordinate
+template <typename T> 
 CUTLASS_HOST_DEVICE
-Coord<5> make_Coord(int _0, int _1, int _2, int _3, int _4) {
-  int values[5] = {_0, _1, _2, _3, _4};
-  return Coord<5>(values);
+Coord<5, T> make_Coord(T _0, T _1, T _2, T _3, T _4) {
+  T values[5] = {_0, _1, _2, _3, _4};
+  return Coord<5, T>(values);
 }
+
+/// Helper to make a 1-element coordinate
+template <int N, typename T> 
+CUTLASS_HOST_DEVICE
+Coord<N, T>make_Coord_with_padding(T _0) {
+  Coord<N, T> coord;
+
+  CUTLASS_PRAGMA_UNROLL
+  for (int i = N - 1; i > 0; --i) {
+    coord[i] = 0;
+  }
+
+  coord[0] = _0;
+
+  return coord;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace cutlass

@@ -39,14 +39,12 @@
 #include "device/b2b_gemm.h"
 #include "b2b_gemm_run.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
-
 ////////////////////////////////////////////////////////////////////////////////
 
 cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_0(128*1600, 64, 576);
 cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_1(128*1600, 128, 64);
 
-void run_nonfused_gemm_f16_sm80() {
+bool run_nonfused_gemm_f16_sm80() {
 
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
@@ -80,7 +78,8 @@ void run_nonfused_gemm_f16_sm80() {
       ElementOutput,
       128 / cutlass::sizeof_bits<ElementOutput>::value,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     3
@@ -116,9 +115,11 @@ void run_nonfused_gemm_f16_sm80() {
     std::cout << "Pass\n";
   else
     std::cout << "Fail\n";
+
+  return pass;
 }
 
-void run_fused_gemm_f16_sm80() {
+bool run_fused_gemm_f16_sm80() {
 
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
@@ -140,7 +141,8 @@ void run_fused_gemm_f16_sm80() {
       ElementOutput,
       InstructionShape::kM * InstructionShape::kN / 32,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >;
 
   using EpilogueOutputOp1 = 
@@ -183,7 +185,7 @@ void run_fused_gemm_f16_sm80() {
   else
     std::cout << "Fail\n";
 
+  return passed;
+
 }
 ////////////////////////////////////////////////////////////////////////////////
-
-#endif  //#if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)

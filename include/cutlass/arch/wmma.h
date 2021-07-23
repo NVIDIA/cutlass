@@ -29,7 +29,7 @@
 #pragma once
 
 // CUTLASS WMMA does not support clang at present.
-#if !defined(__clang__)
+#if !(defined(__clang__) && defined(__CUDA__))
 
 #if (__CUDACC_VER_MAJOR__ >= 9)
 #if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 700))
@@ -52,7 +52,7 @@
 #endif
 #endif
 
-#endif //!defined(__clang__)
+#endif //!(defined(__clang__) && defined(__CUDA__))
 
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
 

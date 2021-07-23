@@ -36,8 +36,6 @@
 #include "device/b2b_implicit_gemm_convolution.h"
 #include "b2b_conv2d_run.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
-
 ////////////////////////////////////////////////////////////////////////////////
 
 cutlass::conv::Conv2dProblemSize conv2d_f16_sm80_problem_size_0 (
@@ -57,7 +55,7 @@ cutlass::conv::Conv2dProblemSize conv2d_f16_sm80_problem_size_1 (
     {128, 56, 56, 64}     // output size (NPQK)
   );
 
-void run_nonfused_conv2d_fprop_f16_sm80() {
+bool run_nonfused_conv2d_fprop_f16_sm80() {
 
   using ElementA           = cutlass::half_t;
   using ElementB           = cutlass::half_t;
@@ -90,7 +88,8 @@ void run_nonfused_conv2d_fprop_f16_sm80() {
       ElementC,
       128 / cutlass::sizeof_bits<ElementC>::value,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     3,
@@ -135,9 +134,10 @@ void run_nonfused_conv2d_fprop_f16_sm80() {
   else
     std::cout << "Fail\n";
 
+  return pass;
 }
 
-void run_fused_conv2d_fprop_f16_sm80() {
+bool run_fused_conv2d_fprop_f16_sm80() {
 
   using ElementA           = cutlass::half_t; 
   using ElementB           = cutlass::half_t; 
@@ -161,7 +161,8 @@ void run_fused_conv2d_fprop_f16_sm80() {
       ElementC,
       InstructionShape::kM * InstructionShape::kN / 32,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >;
 
   using EpilogueOutputOp1 = 
@@ -205,9 +206,10 @@ void run_fused_conv2d_fprop_f16_sm80() {
   else
     std::cout << "Fail\n";
 
+  return pass;
 }
 
-void run_nonfused_conv2d_fprop_optimized_f16_sm80() {
+bool run_nonfused_conv2d_fprop_optimized_f16_sm80() {
 
   using ElementA           = cutlass::half_t;
   using ElementB           = cutlass::half_t;
@@ -240,7 +242,8 @@ void run_nonfused_conv2d_fprop_optimized_f16_sm80() {
       ElementC,
       128 / cutlass::sizeof_bits<ElementC>::value,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     3,
@@ -285,9 +288,10 @@ void run_nonfused_conv2d_fprop_optimized_f16_sm80() {
   else
     std::cout << "Fail\n";
 
+  return pass;
 }
 
-void run_fused_conv2d_fprop_optimized_f16_sm80() {
+bool run_fused_conv2d_fprop_optimized_f16_sm80() {
 
   using ElementA           = cutlass::half_t; 
   using ElementB           = cutlass::half_t; 
@@ -311,7 +315,8 @@ void run_fused_conv2d_fprop_optimized_f16_sm80() {
       ElementC,
       InstructionShape::kM * InstructionShape::kN / 32,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >;
 
   using EpilogueOutputOp1 = 
@@ -355,9 +360,8 @@ void run_fused_conv2d_fprop_optimized_f16_sm80() {
   else
     std::cout << "Fail\n";
 
+  return pass;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-#endif  // if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 

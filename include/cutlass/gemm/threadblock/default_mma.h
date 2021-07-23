@@ -86,7 +86,9 @@ template <
     typename Operator,
     /// Store the accumulators in row major or column major.  Row major is used
     /// when output layout is interleaved.
-    bool AccumulatorsInRowMajor = false
+    bool AccumulatorsInRowMajor = false,
+    /// Use zfill or predicate for SM80 out-of-bound cp.async 
+    bool UseZfill = false
     >
 struct DefaultMma;
 
@@ -108,6 +110,8 @@ template <
     int kAlignmentB,
     /// Element type for internal accumulation
     typename ElementAccumulator,
+    /// Layout type for C and D matrix operand
+    typename LayoutC,
     /// Tag indicating architecture to tune for
     typename ArchTag,
     /// Threadblock-level tile size (concept: GemmShape)
@@ -119,13 +123,19 @@ template <
     /// Operation performed by GEMM
     typename Operator>
 struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
-                  kAlignmentB, ElementAccumulator, layout::RowMajor,
+                  kAlignmentB, ElementAccumulator, LayoutC,
                   arch::OpClassSimt, ArchTag, ThreadblockShape, WarpShape,
                   InstructionShape, 2, Operator, false> {
+
+
+  static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
+             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
+             "simt epilogue must be row major");
+
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
-      ElementB, LayoutB, ElementAccumulator, layout::RowMajor,
+      ElementB, LayoutB, ElementAccumulator, LayoutC,
       arch::OpClassSimt, 2, Operator>;
 
   // Define iterators over tiles from the A operand
@@ -144,7 +154,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using ThreadblockMma = cutlass::gemm::threadblock::MmaPipelined<
       typename MmaCore::Shape, IteratorA, typename MmaCore::SmemIteratorA,
       IteratorB, typename MmaCore::SmemIteratorB, ElementAccumulator,
-      layout::RowMajor, typename MmaCore::MmaPolicy>;
+      LayoutC, typename MmaCore::MmaPolicy>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -342,6 +352,8 @@ template <
     int kAlignmentB,
     /// Element type for internal accumulation
     typename ElementAccumulator,
+    /// Layout type for C and D matrix operand
+    typename LayoutC,
     /// Tag indicating architecture to tune for
     typename ArchTag,
     /// Threadblock-level tile size (concept: GemmShape)
@@ -356,13 +368,18 @@ template <
     typename Operator
     >
 struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
-                  kAlignmentB, ElementAccumulator, layout::RowMajor,
+                  kAlignmentB, ElementAccumulator, LayoutC,
                   arch::OpClassSimt, ArchTag, ThreadblockShape, WarpShape,
                   InstructionShape, Stages, Operator, false> {
+
+  static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
+             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
+             "simt epilogue must be row major");
+
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
-      ElementB, LayoutB, ElementAccumulator, layout::RowMajor, arch::OpClassSimt,
+      ElementB, LayoutB, ElementAccumulator, LayoutC, arch::OpClassSimt,
       Stages, Operator>;
 
   // Define iterators over tiles from the A operand
@@ -385,7 +402,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using ThreadblockMma = cutlass::gemm::threadblock::MmaMultistage<
       typename MmaCore::Shape, IteratorA, typename MmaCore::SmemIteratorA,
       MmaCore::kCacheOpA, IteratorB, typename MmaCore::SmemIteratorB,
-      MmaCore::kCacheOpB, ElementAccumulator, layout::RowMajor,
+      MmaCore::kCacheOpB, ElementAccumulator, LayoutC,
       typename MmaCore::MmaPolicy, Stages>;
 };
 
@@ -407,6 +424,8 @@ template <
     int kAlignmentB,
     /// Element type for internal accumulation
     typename ElementAccumulator,
+    /// Layout type for C and D matrix operand
+    typename LayoutC,
     /// Tag indicating architecture to tune for
     typename ArchTag,
     /// Threadblock-level tile size (concept: GemmShape)
@@ -418,12 +437,19 @@ template <
     /// Number of stages used in the multistage mainloop
     int Stages,
     /// Operation perfomed by GEMM
-    typename Operator
+    typename Operator,
+    /// Use zfill or predicate for SM80 out-of-bound cp.async 
+    bool UseZfill
     >
 struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
-                  kAlignmentB, ElementAccumulator, layout::RowMajor,
+                  kAlignmentB, ElementAccumulator, LayoutC,
                   arch::OpClassTensorOp, ArchTag, ThreadblockShape, WarpShape,
-                  InstructionShape, Stages, Operator, false> {
+                  InstructionShape, Stages, Operator, false, UseZfill> {
+
+  static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
+             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
+             "simt epilogue must be row major");
+
   static cutlass::arch::CacheOperation::Kind const CacheOpA =
       ((sizeof_bits<ElementA>::value * kAlignmentA) == 128)
           ? cutlass::arch::CacheOperation::Global
@@ -437,7 +463,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
-      ElementB, LayoutB, ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp,
+      ElementB, LayoutB, ElementAccumulator, LayoutC, arch::OpClassTensorOp,
       Stages, Operator, false, CacheOpA, CacheOpB>;
 
   // Define iterators over tiles from the A operand
@@ -460,8 +486,8 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using ThreadblockMma = cutlass::gemm::threadblock::MmaMultistage<
       typename MmaCore::Shape, IteratorA, typename MmaCore::SmemIteratorA,
       MmaCore::kCacheOpA, IteratorB, typename MmaCore::SmemIteratorB,
-      MmaCore::kCacheOpB, ElementAccumulator, layout::RowMajor,
-      typename MmaCore::MmaPolicy, Stages>;
+      MmaCore::kCacheOpB, ElementAccumulator, LayoutC,
+      typename MmaCore::MmaPolicy, Stages, UseZfill>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

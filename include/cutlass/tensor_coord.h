@@ -74,6 +74,11 @@ struct Tensor4DCoord : public Coord<4> {
   CUTLASS_HOST_DEVICE
   Tensor4DCoord(Index n, Index h, Index w, Index c): Base(make_Coord(n, h, w, c)) { }
 
+  /// Helper to construct from N, H, W, and C, which are LongIndex type
+  CUTLASS_HOST_DEVICE
+  Tensor4DCoord(LongIndex n, LongIndex h, LongIndex w, LongIndex c)
+    : Base(make_Coord(Index(n), Index(h), Index(w), Index(c))) { }
+
   /// Returns the batch of the coordinate
   CUTLASS_HOST_DEVICE
   Index const & n() const { return this->at(kN); }
@@ -207,6 +212,11 @@ struct Tensor5DCoord : public Coord<5> {
   /// Helper to construct from N, D, H, W, and C.
   CUTLASS_HOST_DEVICE
   Tensor5DCoord(Index n, Index d, Index h, Index w, Index c): Base(make_Coord(n, d, h, w, c)) { }
+
+  /// Helper to construct from N, D, H, W, and C, which are LongIndex type
+  CUTLASS_HOST_DEVICE
+  Tensor5DCoord(LongIndex n, LongIndex d, LongIndex h, LongIndex w, LongIndex c)
+    : Base(make_Coord(Index(n), Index(d), Index(h), Index(w), Index(c))) { }
 
   /// Returns the batch of the coordinate
   CUTLASS_HOST_DEVICE

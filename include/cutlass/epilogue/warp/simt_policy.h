@@ -84,6 +84,12 @@ struct SimtPolicy<WarpShape_, Operator_, layout::RowMajor, MmaSimtPolicy_> {
 
   /// Number of accesses made in one iteration
   static int const kAccessesPerIteration = kElementsPerIteration / kElementsPerAccess;
+
+  /// Number of elements in between accumulator chunks of (LaneMmaShape::kM x LaneMmaShape::kN)
+  using Delta = MatrixShape<
+    MmaSimtPolicy::WarpShape::kRow * MmaSimtPolicy::LaneMmaShape::kM,
+    MmaSimtPolicy::WarpShape::kColumn * MmaSimtPolicy::LaneMmaShape::kN
+  >;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

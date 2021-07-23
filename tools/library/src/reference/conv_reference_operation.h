@@ -115,13 +115,19 @@ struct ConvReferenceDispatcher<
     layout::TensorNHWC layout_c;
 
     layout_a.stride() =
-        make_Coord(config.stride_a[0], config.stride_a[1], config.stride_a[2]);
+        make_Coord(int32_t(config.stride_a[0]), 
+                   int32_t(config.stride_a[1]), 
+                   int32_t(config.stride_a[2]));
 
     layout_b.stride() =
-        make_Coord(config.stride_b[0], config.stride_b[1], config.stride_b[2]);
+        make_Coord(int32_t(config.stride_b[0]), 
+                   int32_t(config.stride_b[1]), 
+                   int32_t(config.stride_b[2]));
 
     layout_c.stride() =
-        make_Coord(config.stride_c[0], config.stride_c[1], config.stride_c[2]);
+        make_Coord(int32_t(config.stride_c[0]), 
+                   int32_t(config.stride_c[1]), 
+                   int32_t(config.stride_c[2]));
 
     if (kProvider == Provider::kReferenceHost) {
 

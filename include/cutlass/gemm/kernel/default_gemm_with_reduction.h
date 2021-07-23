@@ -107,7 +107,8 @@ struct DefaultGemmWithReduction {
     EpilogueOutputOp,
     ThreadblockSwizzle,
     Stages,
-    Operator
+    Operator,
+    true 
   >::GemmKernel;
 
   // Replace epilogue
@@ -128,7 +129,6 @@ struct DefaultGemmWithReduction {
     ThreadblockSwizzle
   >;
 };
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

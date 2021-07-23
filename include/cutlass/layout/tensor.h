@@ -101,6 +101,16 @@ public:
   ): 
     stride_(make_Coord(stride_w, stride_h, stride_n)) { }
 
+  /// Constructor
+  // Once convolutions implement 64b stride this ctor can be deleted
+  CUTLASS_HOST_DEVICE
+  TensorNHWC(Coord<kStrideRank, LongIndex> const &stride): 
+    stride_(make_Coord(
+      static_cast<typename Stride::Index>(stride[0]), 
+      static_cast<typename Stride::Index>(stride[1]), 
+      static_cast<typename Stride::Index>(stride[2]))
+    ) { }
+
   /// Helper returns a layout to a tightly packed NHWC tensor.
   CUTLASS_HOST_DEVICE
   static TensorNHWC packed(TensorCoord const &extent) {
@@ -323,6 +333,16 @@ public:
   ):
     stride_(make_Coord(stride_w, stride_h, stride_n)) { }
 
+  /// Constructor
+  // Once convolutions implement 64b stride this ctor can be deleted
+  CUTLASS_HOST_DEVICE
+  TensorNCxHWx(Coord<kStrideRank, LongIndex> const &stride): 
+    stride_(make_Coord(
+      static_cast<typename Stride::Index>(stride[0]), 
+      static_cast<typename Stride::Index>(stride[1]), 
+      static_cast<typename Stride::Index>(stride[2]))
+    ) { }
+
   /// Helper returns a layout to a tightly packed tensor
   CUTLASS_HOST_DEVICE
   static TensorNCxHWx packed(TensorCoord const &extent) {
@@ -421,6 +441,17 @@ public:
     typename Stride::Index stride_n     ///< number of elements between adjacent N coordinates
   ):
     stride_(make_Coord(stride_w, stride_h, stride_n)) { }
+
+  /// Constructor
+  // Once convolutions implement 64b stride this ctor can be deleted
+  CUTLASS_HOST_DEVICE
+  TensorCxRSKx(Coord<kStrideRank, LongIndex> const &stride): 
+    stride_(make_Coord(
+      static_cast<typename Stride::Index>(stride[0]), 
+      static_cast<typename Stride::Index>(stride[1]), 
+      static_cast<typename Stride::Index>(stride[2]))
+    ) { }
+
 
   /// Helper returns a layout to a tightly packed tensor
   CUTLASS_HOST_DEVICE
@@ -523,6 +554,17 @@ public:
     typename Stride::Index hwc, 
     typename Stride::Index dhwc): 
   stride_(make_Coord(c, wc, hwc, dhwc)) { }
+
+  /// Constructor
+  // Once convolutions implement 64b stride this ctor can be deleted
+  CUTLASS_HOST_DEVICE
+  TensorNDHWC(Coord<kStrideRank, LongIndex> const &stride): 
+    stride_(make_Coord(
+      static_cast<typename Stride::Index>(stride[0]), 
+      static_cast<typename Stride::Index>(stride[1]), 
+      static_cast<typename Stride::Index>(stride[2]),
+      static_cast<typename Stride::Index>(stride[3]))
+    ) { }
 
   /// Helper returns a layout to a tightly packed NHWC tensor.
   CUTLASS_HOST_DEVICE

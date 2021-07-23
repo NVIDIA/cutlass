@@ -32,6 +32,7 @@
     backward data gradient (Dgrad), and backward weight gradient (Wgrad). 
 */
 
+
 #pragma once
 
 #include "cutlass/cutlass.h"
@@ -62,11 +63,26 @@ template <
   typename ThreadMap_,
   conv::StrideSupport StrideSupport_ = conv::StrideSupport::kUnity
 >
-class Conv2dDgradOutputGradientTileAccessIteratorOptimized {
-public:
+class Conv2dDgradOutputGradientTileAccessIteratorOptimized;
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
-  static_assert(StrideSupport_ == conv::StrideSupport::kUnity,
-    "Only unit-stride dgrad is supported at this time.");
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Conv2dDgradOutputGradientTileAccessIteratorOptimized unity stride dgrad is optimized for dgrad
+// with problem stride = {1x1}
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  typename Shape_,
+  typename Element_,
+  typename ThreadMap_
+>
+class Conv2dDgradOutputGradientTileAccessIteratorOptimized <
+  Shape_,
+  Element_,
+  ThreadMap_,
+  conv::StrideSupport::kUnity
+>  {
+public:
   
   //
   // Types
@@ -417,5 +433,3 @@ public:
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-

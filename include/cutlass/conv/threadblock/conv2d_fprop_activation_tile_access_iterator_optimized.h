@@ -99,7 +99,7 @@ public:
 
 private:
 
-  Conv2dFpropActivationIteratorOptimizedParams<Layout> const &params_;
+  Params const &params_;
   Conv2dProblemSize const &problem_size_;
   LongIndex iteration_contiguous_;
   LongIndex iteration_strided_;
@@ -118,7 +118,7 @@ public:
 
   CUTLASS_HOST_DEVICE
   Conv2dFpropActivationTileAccessIteratorOptimized(
-    Conv2dFpropActivationIteratorOptimizedParams<Layout> const &params,
+    Params const &params,
     Conv2dProblemSize const &problem_size,
     Element const *ptr,
     int thread_idx,

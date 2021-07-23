@@ -109,6 +109,9 @@ public:
   /// Underlying matrix multiply operator (concept: arch::Mma)
   using ArchMmaOperator = typename Policy::Operator;
 
+  /// Indicates math operator 
+  using MathOperator = typename ArchMmaOperator::Operator;
+  
   /// Underlying instruction shape
   using InstructionShape = typename ArchMmaOperator::Shape;
 

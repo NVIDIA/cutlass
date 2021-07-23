@@ -1,8 +1,8 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 2.5
+# CUTLASS 2.6
 
-_CUTLASS 2.5 - February 2021_
+_CUTLASS 2.6 - July 2021_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
@@ -34,12 +34,24 @@ See the [Quick Start Guide](/media/docs/quickstart.md) to get started quickly.
 See the [functionality listing](/media/docs/functionality.md) for the list of operations
 supported at each level of the execution model hierarchy.
 
+# What's New in CUTLASS 2.6
+CUTLASS 2.6 is a minor update to CUTLASS adding:
+- Fused [broadcast](test/unit/gemm/device/gemm_with_broadcast_f16n_f16n_f16n_tensorop_f32_sm75.cu) and [reductions](/test/unit/gemm/device/gemm_with_reduction_f16n_f16n_f16n_tensorop_f32_sm75.cu) in the epilogues of GEMM and Convolution
+- [Quaternion-valued GEMM](/examples/21_quaternion_gemm/quaternion_gemm.cu) and [Convolution](/examples/22_quaternion_conv/quaternion_conv.cu) in single-precision
+- [New strided Dgrad](test/unit/gemm/device/conv2d_strided_dgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu) implementation offers up to 4x performance improvements over previous strided Dgrad
+- 64-bit strides for large tensor allocations
+- [General affine layouts](/examples/18_ampere_fp64_tensorop_affine2_gemm/ampere_fp64_tensorop_affine2_gemm.cu) fp64 tensor core and simt GEMM
+- Enhanced functionality, boosted performance, and bug fixes in the epilogue.
+- Optimal performance when compiled with the [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit)
+- Adopt new L2 prefetch feature in [ptx instruction](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#ptx-isa-version-7-4).
+- Numerous updates from the community (thanks!)
+- See the [CHANGELOG](CHANGELOG.md) for more details
+
 # What's New in CUTLASS 2.5
 CUTLASS 2.5 is a minor update to CUTLASS adding:
 - [Tensor reductions](/test/unit/reduction/device/tensor_reduce_contiguous.cu)
 - [Optimizations for 3-D convolution](include/cutlass/conv/threadblock/conv3d_fprop_activation_tile_access_iterator_optimized.h)
 - [Fused Convolution+Convolution example](/examples/13_two_tensor_op_fusion/README.md)
-- See the [CHANGELOG](CHANGELOG.md) for more details
 
 # What's New in CUTLASS 2.4
 CUTLASS 2.4 is a significant update to CUTLASS adding:
@@ -52,7 +64,7 @@ CUTLASS 2.4 is a significant update to CUTLASS adding:
 CUTLASS 2.3 is a minor update to CUTLASS adding:
 - GEMMs targeting structured [Sparse Tensor Cores](test/unit/gemm/device/gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu) in NVIDIA Ampere Architecture GPUs
 - Fast SGEMM kernels targeting GeForce RTX 30-series CUDA Cores
-- Intended to be compiled with [CUDA 11.1 Toolkit](https://developer.nvidia.com/cuda-toolkit)
+- Intended to be compiled with [CUDA 11.1 Toolkit](https://developer.nvidia.com/cuda-toolkit) or later
 
 # What's New in CUTLASS 2.2
 
@@ -62,7 +74,7 @@ CUTLASS 2.2 is a significant update to CUTLASS adding:
 - Tensor Core-accelerated GEMMs targeting Tensor Float 32, BFloat16, and double-precision data types
 - Deep software pipelines using asynchronous copy
 - Described in [GTC 2020 Webinar (SR 21745)](https://developer.nvidia.com/gtc/2020/video/s21745)
-- Intended to be compiled with [CUDA 11 Toolkit](https://developer.nvidia.com/cuda-toolkit)
+- Intended to be compiled with [CUDA 11 Toolkit](https://developer.nvidia.com/cuda-toolkit) or later
 
 # What's New in CUTLASS 2.1
 
@@ -95,8 +107,8 @@ using CUDA 11.0 Toolkit. Tensor Core operations are implemented using CUDA's
 # Compatibility
 
 CUTLASS requires a C++11 host compiler and 
-performs best when built with the [CUDA 11.1 Toolkit](https://developer.nvidia.com/cuda-toolkit).
-It is compatible with CUDA 9.2, CUDA 10.0, CUDA 10.1, CUDA 10.2, and CUDA 11.0.
+performs best when built with the [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit).
+It is also compatible with CUDA 10.2, CUDA 11.0, CUDA 11.1, CUDA 11.2, and CUDA 11.3.
 
 We have tested the following environments.
 
@@ -106,12 +118,16 @@ We have tested the following environments.
 |                 | Microsoft Visual Studio 2017|
 | Ubuntu 16.04 | GCC 5.4.0 |
 | Ubuntu 18.04 | GCC 7.5.0 |
+| Ubuntu 20.04 | GCC 10.2.0 |
 
 Additionally, CUTLASS may be built with clang. 
 See [these instructions](media/docs/quickstart.md#clang) for more details.
 
 CUTLASS runs successfully on the following NVIDIA GPUs, and it is expected to be efficient on
-any Maxwell-, Pascal-, Volta-, Turing-, or NVIDIA Ampere- architecture NVIDIA GPU.
+any Maxwell-, Pascal-, Volta-, Turing-, or NVIDIA Ampere- architecture NVIDIA GPU. 
+
+For all GPUs, we recommend compiling with the [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit)
+for best performance. 
 
 |**GPU**|**CUDA Compute Capability**|**Minimum CUDA Toolkit**|**CUDA Toolkit Enabling Native Tensor Cores**|
 |---|---|---|---|
@@ -510,6 +526,7 @@ CUTLASS is released by NVIDIA Corporation as Open Source software under the
 # Contributors
 
 The official list of CUTLASS developers and contributors is available here: [CONTRIBUTORS](CONTRIBUTORS.md).
+
 
 # Copyright
 

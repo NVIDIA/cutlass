@@ -70,11 +70,14 @@ public:
 
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
+  using StrideIndex = typename Layout::Stride::Index;
 
   using TensorRef = TensorRef<Element, Layout>;
   using TensorCoord = typename Layout::TensorCoord;
 
   using Fragment = Array<Element, ThreadMap::Iterations::kCount * ThreadMap::kElementsPerAccess>;
+  
+  using AccessType = AlignedArray<Element, ThreadMap::kElementsPerAccess, kAlignment>;
 
   static_assert(kAdvanceRank == 0 || kAdvanceRank == 1, 
     "Advance rank may only be along the contiguous or strided dimensions.");
@@ -84,8 +87,6 @@ private:
   //
   // Types
   //
-  
-  using AccessType = AlignedArray<Element, ThreadMap::kElementsPerAccess, kAlignment>;
 
   //
   // Data members
@@ -95,7 +96,7 @@ private:
   uint8_t *pointer_;
 
   /// Stride quantity
-  Index stride_;
+  StrideIndex stride_;
 
   /// Amount to increment pointer along strided dimension
   Index increment_strided_;
@@ -242,6 +243,30 @@ public:
         (coord.contiguous() * Shape::kContiguous + coord.strided() * Shape::kStrided * stride_) / 8;
     add_pointer_offset(offset);
   }
+
+  /// Overrides the internal iteration index
+  CUTLASS_HOST_DEVICE
+  void set_iteration_index(int index) {
+  }
+
+    /// Returns a pointer
+  CUTLASS_HOST_DEVICE
+  AccessType *get() const {
+#if 0
+    AccessType *access_ptr = pointer_[iteration_strided_ & 1];
+    int stride_idx = (iteration_strided_ & ~1);
+
+    int access_offset = stride_idx * ThreadMap::Delta::kStrided * stride_ +
+                        iteration_contiguous_ * ThreadMap::Delta::kContiguous /
+                            ThreadMap::kElementsPerAccess;
+
+    char *access_byte_ptr =
+        reinterpret_cast<char *>(access_ptr + access_offset);
+    return reinterpret_cast<AccessType *>(access_byte_ptr + byte_offset_);
+#endif
+    return reinterpret_cast<AccessType *>(pointer_);
+  }
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -280,6 +305,8 @@ public:
     ThreadMap,
     kAlignment
   >;
+
+  using AccessType = typename Underlying::AccessType;
 
   static_assert(kAdvanceRank == 0 || kAdvanceRank == 1, 
     "Advance rank may only be along the row or column dimensions.");
@@ -364,6 +391,17 @@ public:
     iterator_.add_tile_offset({coord.column(), coord.row()});
   }
 
+  /// Overrides the internal iteration index
+  CUTLASS_HOST_DEVICE
+  void set_iteration_index(int index) {
+  }
+
+  /// Returns a pointer
+  CUTLASS_HOST_DEVICE
+  AccessType *get() const {
+    return iterator_.get();
+  }
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -401,6 +439,8 @@ public:
     (kAdvanceRank == 0 ? 0 : 1),
     ThreadMap
   >;
+
+  using AccessType = typename Underlying::AccessType;
 
   static_assert(kAdvanceRank == 0 || kAdvanceRank == 1, 
     "Advance rank may only be along the row or column dimensions.");
@@ -483,6 +523,17 @@ public:
   CUTLASS_DEVICE
   void add_tile_offset(TensorCoord const &coord) {
     iterator_.add_tile_offset({coord.row(), coord.column()});
+  }
+
+  /// Overrides the internal iteration index
+  CUTLASS_HOST_DEVICE
+  void set_iteration_index(int index) {
+  }
+
+  /// Returns a pointer
+  CUTLASS_HOST_DEVICE
+  AccessType *get() const {
+    return iterator_.get();
   }
 
 };

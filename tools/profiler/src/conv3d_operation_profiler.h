@@ -268,7 +268,7 @@ public:
       A(nullptr), B(nullptr), C(nullptr), Computed(nullptr), Reference(nullptr) { }
 
       // Returns stride vector for tensor A
-      std::vector<int> stride_a(library::ConvKind const &conv_kind) {
+      std::vector<int64_t> stride_a(library::ConvKind const &conv_kind) {
         return {        
           configuration.layout_a(conv_kind).stride()[0],
           configuration.layout_a(conv_kind).stride()[1],
@@ -278,7 +278,7 @@ public:
       }
 
       // Returns stride vector for tensor B
-      std::vector<int> stride_b(library::ConvKind const &conv_kind) {
+      std::vector<int64_t> stride_b(library::ConvKind const &conv_kind) {
 
         return {        
           configuration.layout_b(conv_kind).stride()[0],
@@ -289,7 +289,7 @@ public:
       }
 
       // Returns stride vector for tensor C
-      std::vector<int> stride_c(library::ConvKind const &conv_kind) {
+      std::vector<int64_t> stride_c(library::ConvKind const &conv_kind) {
 
         return {        
           configuration.layout_c(conv_kind).stride()[0],

@@ -51,6 +51,8 @@ namespace thread {
 template <
   typename ElementOutput_,                             ///< Data type used to load and store tensors
   int Count,                                           ///< Number of elements computed per operation
+                                                       ///< Usually it is 128/sizeof_bits<ElementOutput_>,
+                                                       ///< but we use 64 or 32 sometimes when there are not enough data to store
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
@@ -61,6 +63,8 @@ public:
   using ElementOutput = ElementOutput_;
   using ElementAccumulator = ElementAccumulator_;
   using ElementCompute = ElementCompute_;
+
+  static bool const kIsHeavy = true;
 
   static int const kCount = Count;
 
@@ -134,10 +138,11 @@ public:
   /// Functionally required for serial reduction in the epilogue
   CUTLASS_HOST_DEVICE
   void set_k_partition(int k_partition, int k_partition_count) {
-    CUTLASS_UNUSED(k_partition_count);
     if (k_partition) {
       beta_ = ElementCompute(1);
     }
+
+    CUTLASS_UNUSED(k_partition_count);
   }
   
   /// Computes: D = gelu( alpha * accumulator + beta * source )

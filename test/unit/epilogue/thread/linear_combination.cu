@@ -122,13 +122,14 @@ TEST(Epilogue_thread_linear_combination, device_side_f16_f32_ptr) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+
 TEST(Epilogue_thread_linear_combination_gelu, device_side_f16_f16_ptr) {
 
   using Element = cutlass::half_t;
   using ElementOutput = cutlass::half_t;
   int const kCount = 8;
 
-  using LinearCombination = cutlass::epilogue::thread::LinearCombinationGELU<
+  using LinearCombinationGELU = cutlass::epilogue::thread::LinearCombinationGELU<
     ElementOutput,
     kCount,
     Element,
@@ -137,9 +138,9 @@ TEST(Epilogue_thread_linear_combination_gelu, device_side_f16_f16_ptr) {
   Element alpha = Element(1);
   Element beta = Element(0);
 
-  typename LinearCombination::Params params(&alpha, &beta);
+  typename LinearCombinationGELU::Params params(&alpha, &beta);
 
-  LinearCombination linear_combination_op(params);
+  LinearCombinationGELU linear_combination_op(params);
 
   cutlass::Array<Element, kCount> accum;
 

@@ -1856,3 +1856,4 @@ TEST(SM80_warp_gemm_tensor_op_canonical_tf32_col_row, 32x32x8_64x32x8_8x8x4) {
 
 #endif // if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 
+

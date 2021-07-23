@@ -56,6 +56,8 @@
 #include "cutlass/epilogue/warp/tile_iterator_tensor_op_mixed.h"
 #include "cutlass/epilogue/threadblock/default_thread_map_tensor_op.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
+#include "cutlass/epilogue/threadblock/predicated_tile_iterator_strided_dgrad.h"
+#include "cutlass/epilogue/threadblock/predicated_tile_iterator_affine.h"
 #include "cutlass/epilogue/threadblock/shared_load_iterator.h"
 #include "cutlass/epilogue/threadblock/shared_load_iterator_mixed.h"
 
@@ -325,6 +327,188 @@ struct DefaultEpilogueTensorOp {
                                         typename WarpMmaTensorOp::Policy::Operator::ElementC,
                                         typename WarpMmaTensorOp::Policy::Operator::FragmentC,
                                         LayoutC> >::type;
+
+  /// Support several implementations depending on structure of epilogue
+  using DefaultIterators = detail::DefaultIteratorsTensorOp<
+    ElementOutput,
+    ElementAccumulator,
+    kElementsPerAccess,
+    Shape,
+    typename WarpMmaTensorOp::Shape,
+    typename WarpMmaTensorOp::Policy::Operator::Shape,
+    typename OutputTileThreadMap::CompactedThreadMap
+  >;
+
+  using WarpTileIterator = typename DefaultIterators::WarpTileIterator;
+  using SharedLoadIterator = typename DefaultIterators::SharedLoadIterator;
+
+  /// Hard-coded padding elements added 
+  using Padding = cutlass::MatrixShape<0, 64 / sizeof_bits<ElementAccumulator>::value * 4>;
+
+  static int const kFragmentsPerIteration = (kPartitionsK == 1 ? DefaultIterators::kFragmentsPerIteration : 1);
+
+  //
+  // Define the epilogue
+  //
+  using Epilogue = cutlass::epilogue::threadblock::Epilogue<
+    Shape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    OutputTileIterator,
+    AccumulatorFragmentIterator,
+    WarpTileIterator,
+    SharedLoadIterator,
+    OutputOp,
+    Padding,
+    kFragmentsPerIteration
+  >;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// Defines sensible defaults for epilogues for TensorOps.
+template <
+  typename Shape_,
+  typename WarpMmaTensorOp_,
+  int PartitionsK,
+  typename OutputOp_,
+  int ElementsPerAccess
+>
+struct DefaultEpilogueTensorOpStridedDgrad {
+
+  using Shape = Shape_;
+  using WarpMmaTensorOp = WarpMmaTensorOp_;
+  static int const kPartitionsK = PartitionsK;
+  using OutputOp = OutputOp_;
+  static int const kElementsPerAccess = ElementsPerAccess;
+
+  using ElementOutput = typename OutputOp::ElementOutput;
+  using LayoutC = typename WarpMmaTensorOp::LayoutC;
+  using ElementAccumulator = typename WarpMmaTensorOp::ElementC;
+
+  //
+  // Thread map
+  //
+
+  using OutputTileThreadMap = typename cutlass::epilogue::threadblock::DefaultThreadMapTensorOp<
+    Shape,
+    typename WarpMmaTensorOp::Shape,
+    kPartitionsK,
+    ElementOutput,
+    kElementsPerAccess
+  >::Type;
+
+  using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIteratorStridedDgrad<
+    OutputTileThreadMap,
+    ElementOutput
+  >;
+
+  using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,
+                                    cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
+                                        typename WarpMmaTensorOp::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::ElementC,
+                                        typename WarpMmaTensorOp::Policy::Operator::FragmentC,
+                                        LayoutC>,
+                                    cutlass::epilogue::warp::FragmentIteratorTensorOp<
+                                        typename WarpMmaTensorOp::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::ElementC,
+                                        typename WarpMmaTensorOp::Policy::Operator::FragmentC,
+                                        LayoutC> >::type;
+
+  /// Support several implementations depending on structure of epilogue
+  using DefaultIterators = detail::DefaultIteratorsTensorOp<
+    ElementOutput,
+    ElementAccumulator,
+    kElementsPerAccess,
+    Shape,
+    typename WarpMmaTensorOp::Shape,
+    typename WarpMmaTensorOp::Policy::Operator::Shape,
+    typename OutputTileThreadMap::CompactedThreadMap
+  >;
+
+  using WarpTileIterator = typename DefaultIterators::WarpTileIterator;
+  using SharedLoadIterator = typename DefaultIterators::SharedLoadIterator;
+
+  /// Hard-coded padding elements added 
+  using Padding = cutlass::MatrixShape<0, 64 / sizeof_bits<ElementAccumulator>::value * 4>;
+
+  static int const kFragmentsPerIteration = (kPartitionsK == 1 ? DefaultIterators::kFragmentsPerIteration : 1);
+
+  //
+  // Define the epilogue
+  //
+  using Epilogue = cutlass::epilogue::threadblock::Epilogue<
+    Shape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    OutputTileIterator,
+    AccumulatorFragmentIterator,
+    WarpTileIterator,
+    SharedLoadIterator,
+    OutputOp,
+    Padding,
+    kFragmentsPerIteration
+  >;
+};
+
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// Defines sensible defaults for epilogues for TensorOps.
+template <
+  int Rank,
+  typename Shape_,
+  typename WarpMmaTensorOp_,
+  int PartitionsK,
+  typename OutputOp_,
+  int ElementsPerAccess
+>
+struct DefaultEpilogueTensorOpAffineRankN {
+
+  using Shape = Shape_;
+  using WarpMmaTensorOp = WarpMmaTensorOp_;
+  static int const kPartitionsK = PartitionsK;
+  using OutputOp = OutputOp_;
+  static int const kElementsPerAccess = ElementsPerAccess;
+
+  using ElementOutput = typename OutputOp::ElementOutput;
+  using LayoutC = typename WarpMmaTensorOp::LayoutC;
+  using ElementAccumulator = typename WarpMmaTensorOp::ElementC;
+
+  //
+  // Thread map
+  //
+
+  using OutputTileThreadMap = typename cutlass::epilogue::threadblock::DefaultThreadMapTensorOp<
+    Shape,
+    typename WarpMmaTensorOp::Shape,
+    kPartitionsK,
+    ElementOutput,
+    kElementsPerAccess
+  >::Type;
+
+  using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIteratorAffineRankN<
+    OutputTileThreadMap,
+    ElementOutput,
+    Rank
+  >;
+
+  // Map to the row major iterator since the iterator selection for affineN is the same.
+  using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,
+                                    cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
+                                        typename WarpMmaTensorOp::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::ElementC,
+                                        typename WarpMmaTensorOp::Policy::Operator::FragmentC,
+                                        layout::RowMajor>,
+                                    cutlass::epilogue::warp::FragmentIteratorTensorOp<
+                                        typename WarpMmaTensorOp::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::Shape,
+                                        typename WarpMmaTensorOp::Policy::Operator::ElementC,
+                                        typename WarpMmaTensorOp::Policy::Operator::FragmentC,
+                                        layout::RowMajor> >::type;
 
   /// Support several implementations depending on structure of epilogue
   using DefaultIterators = detail::DefaultIteratorsTensorOp<

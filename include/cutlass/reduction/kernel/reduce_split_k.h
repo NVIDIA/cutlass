@@ -67,6 +67,7 @@ public:
 
   using WorkspaceTensorRef = TensorRef<ElementWorkspace, layout::RowMajor>;
   using OutputTensorRef = TensorRef<ElementOutput, layout::RowMajor>;
+  using StrideIndex = typename WorkspaceTensorRef::Layout::Stride::Index;
 
   using FragmentWorkspace = AlignedArray<ElementWorkspace, kElementsPerAccess>;
   using FragmentAccumulator = Array<ElementAccumulator, kElementsPerAccess>;
@@ -145,8 +146,8 @@ public:
 
     // Determine CTA position
     MatrixCoord thread_offset(
-      int(blockIdx.x) * Shape::kRow + threadIdx.y,
-      int(blockIdx.y) * Shape::kColumn + threadIdx.x * kElementsPerAccess
+      MatrixCoord::Index(int(blockIdx.x) * Shape::kRow + threadIdx.y),
+      MatrixCoord::Index(int(blockIdx.y) * Shape::kColumn + threadIdx.x * kElementsPerAccess)
     );
 
     // One guard conditional

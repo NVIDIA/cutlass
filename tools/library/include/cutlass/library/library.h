@@ -933,13 +933,13 @@ struct Conv2dConfiguration {
   conv::Conv2dProblemSize problem_size;
 
   // stride of operand A
-  std::vector<int> stride_a;
+  std::vector<int64_t> stride_a;
 
   // stride of operand B
-  std::vector<int> stride_b;
+  std::vector<int64_t> stride_b;
 
   // stride of operand C
-  std::vector<int> stride_c;
+  std::vector<int64_t> stride_c;
 };
 
 

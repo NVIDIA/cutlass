@@ -117,9 +117,7 @@ class TensorView : public TensorRef<Element_, Layout_> {
 
   /// Constructs a TensorView object
   CUTLASS_HOST_DEVICE
-  TensorView(TensorCoord const &extent = TensorCoord()): extent_(extent) {
-
-  }
+  TensorView() { }
 
   /// Constructs a TensorView object
   CUTLASS_HOST_DEVICE

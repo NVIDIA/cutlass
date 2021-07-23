@@ -158,7 +158,7 @@ public:
 
   /// Loads a fragment from memory
   CUTLASS_DEVICE
-  void load_with_pointer_offset(Fragment &frag, Index pointer_offset) {
+  void load_with_pointer_offset(Fragment &frag, Index pointer_offset) const {
 
 
     CUTLASS_PRAGMA_UNROLL
@@ -200,7 +200,7 @@ public:
 
   /// Loads a fragment
   CUTLASS_DEVICE
-  void load(Fragment &frag) {
+  void load(Fragment &frag) const {
 
     load_with_pointer_offset(frag, 0);
   }

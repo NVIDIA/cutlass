@@ -209,6 +209,7 @@ struct B2bImplicitGemmConvolution {
     cutlass::gemm::GemmCoord grid_tiled_shape;
     gemm::GemmCoord implicit_gemm_problem_size_0;
     gemm::GemmCoord implicit_gemm_problem_size_1;
+    int swizzle_log_tile;
     int gemm_k_iterations_0;
     int gemm_k_iterations_1;
     typename B2bMma::IteratorA0::Params iterator_A0;
@@ -233,7 +234,7 @@ struct B2bImplicitGemmConvolution {
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): gemm_k_iterations_0(0), gemm_k_iterations_1(0) { }
+    Params(): swizzle_log_tile(0), gemm_k_iterations_0(0), gemm_k_iterations_1(0) { }
 
     /// 
     CUTLASS_HOST_DEVICE
@@ -245,7 +246,6 @@ struct B2bImplicitGemmConvolution {
       problem_size_1(args.problem_size_1),
       implicit_gemm_problem_size_0(cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size_0)),
       implicit_gemm_problem_size_1(cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size_1)),
-      grid_tiled_shape(grid_tiled_shape),
       iterator_A0(B2bMma::IteratorA0::getParams(args.problem_size_0, args.ref_A0.layout())),
       ptr_A0(args.ref_A0.data()),
       iterator_B0(args.problem_size_0, args.ref_B0.layout()),
@@ -272,6 +272,8 @@ struct B2bImplicitGemmConvolution {
         implicit_gemm_problem_size_0,
         {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
         args.problem_size_0.split_k_slices);
+
+      swizzle_log_tile = ThreadblockSwizzle().get_log_tile(grid_tiled_shape);
     }
   };
 
@@ -296,7 +298,7 @@ struct B2bImplicitGemmConvolution {
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord threadblock_tile_idx =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_idx.m() ||
@@ -379,7 +381,7 @@ struct B2bImplicitGemmConvolution {
     
     // Compute logical position within grid
     threadblock_tile_idx =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // If performing a reduction via split-K, fetch the initial synchronization
     if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {

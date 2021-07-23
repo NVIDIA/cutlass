@@ -437,6 +437,10 @@ class SwizzlingFunctor(enum.Enum):
   Identity2 = enum_auto()
   Identity4 = enum_auto()
   Identity8 = enum_auto()
+  Horizontal = enum_auto()
+  StridedDgradIdentity1 = enum_auto()
+  StridedDgradIdentity4 = enum_auto()
+  StridedDgradHorizontal = enum_auto()
 
 #
 SwizzlingFunctorTag = {
@@ -444,6 +448,10 @@ SwizzlingFunctorTag = {
   SwizzlingFunctor.Identity2: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<2>',
   SwizzlingFunctor.Identity4: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<4>',
   SwizzlingFunctor.Identity8: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<8>',
+  SwizzlingFunctor.Horizontal: 'cutlass::gemm::threadblock::GemmHorizontalThreadblockSwizzle',
+  SwizzlingFunctor.StridedDgradIdentity1: 'cutlass::conv::threadblock::StridedDgradIdentityThreadblockSwizzle<1>',
+  SwizzlingFunctor.StridedDgradIdentity4: 'cutlass::conv::threadblock::StridedDgradIdentityThreadblockSwizzle<4>',
+  SwizzlingFunctor.StridedDgradHorizontal: 'cutlass::conv::threadblock::StridedDgradHorizontalThreadblockSwizzle',
 }
 
 ###################################################################################################

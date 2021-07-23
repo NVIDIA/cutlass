@@ -29,6 +29,7 @@
 #include "../common/cutlass_unit_test.h"
 
 #include "cutlass/functional.h"
+#include "cutlass/core_io.h"
 
 #include "cutlass/layout/matrix.h"
 #include "cutlass/util/host_tensor.h"
@@ -78,16 +79,16 @@ __global__ void trinary_operator(
 
   Operator op;
 
-  Element a_x = *a;
-  Element b_x = *b;
-  Element c_x = *c;
+  Element a_x = a[blockIdx.x];
+  Element b_x = b[blockIdx.x];
+  Element c_x = c[blockIdx.x];
 
   CUTLASS_PRAGMA_NO_UNROLL
   for (int i = 0; i < Iterations; ++i) {
     c_x = op(a_x, b_x, c_x);
   }
   
-  *d = c_x;
+  d[blockIdx.x] = c_x;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -421,3 +422,67 @@ TEST(Functional, multiply_add_bf16x17) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <typename T>
+cutlass::Quaternion<T> random_quaternion(int range) {
+  return cutlass::Quaternion<T>{
+    T((rand() % range * 2) - range),
+    T((rand() % range * 2) - range),
+    T((rand() % range * 2) - range),
+    T((rand() % range * 2) - range)
+  };
+}
+
+template <typename T>
+void Functional_multiply_add_QuaternionT() {
+
+  using Element = cutlass::Quaternion<T>;
+  using Operator = cutlass::multiply_add<Element, Element, Element>;
+  using HostTensor = cutlass::HostTensor<Element, cutlass::layout::RowMajor>;
+
+  int const kM = 128;
+  int const kRange = 8;
+
+  HostTensor A({kM, 1});
+  HostTensor B({kM, 1});
+  HostTensor C({kM, 1});
+  HostTensor D({kM, 1});
+
+  srand(2021);
+
+  for (int m = 0; m < kM; ++m) {
+    A.at({m, 0}) = random_quaternion<T>(kRange);
+    B.at({m, 0}) = random_quaternion<T>(kRange);
+    C.at({m, 0}) = random_quaternion<T>(kRange);
+  }
+
+  A.sync_device();
+  B.sync_device();
+  C.sync_device();
+  D.sync_device();
+
+  test::core::kernel::trinary_operator<Element, Operator><<< dim3(kM,1), dim3(1,1) >>>(
+    D.device_data(),
+    A.device_data(),
+    B.device_data(),
+    C.device_data()
+  );
+
+  D.sync_host();
+  
+  for (int m = 0; m < kM; ++m) {
+
+    Element a = A.at({m, 0});
+    Element b = B.at({m, 0});
+    Element c = C.at({m, 0});
+    Element got = D.at({m, 0});
+    Element expected = a * b + c;
+
+    EXPECT_TRUE(got == expected);
+  }
+}
+
+TEST(Functional, multiply_add_quaternion_f32) {
+  Functional_multiply_add_QuaternionT<float>();
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////

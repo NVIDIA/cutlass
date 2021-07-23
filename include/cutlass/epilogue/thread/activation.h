@@ -180,6 +180,7 @@ struct GELU<Array<T, N> > {
 // GELU operator implemented using the Taylor series approximation
 template <typename T>
 struct GELU_taylor {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   T operator()(T const &z) const {
 
@@ -193,6 +194,7 @@ struct GELU_taylor {
 
 template <typename T, int N>
 struct GELU_taylor<Array<T, N> > {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &rhs) const {
     Array<T, N> y;
@@ -250,4 +252,3 @@ struct dGELU<Array<T, N> > {
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

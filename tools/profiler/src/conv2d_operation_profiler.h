@@ -274,9 +274,9 @@ public:
                            library::LayoutTypeID const &layout_a,
                            library::LayoutTypeID const &layout_b,
                            library::LayoutTypeID const &layout_c) {
-      std::vector<int> stride_activations;
-      std::vector<int> stride_filters;
-      std::vector<int> stride_output;
+      std::vector<int64_t> stride_activations;
+      std::vector<int64_t> stride_filters;
+      std::vector<int64_t> stride_output;
 
       // Strides for interleaved fprop
       if (conv_kind == library::ConvKind::kFprop &&

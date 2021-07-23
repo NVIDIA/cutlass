@@ -77,6 +77,38 @@ struct Conv2dAnalyticParams {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Parameters structure used for Conv2dDgradOutputGradientTileAccessIteratorAnalyticParams
+struct Conv2dDgradOutputGradientTileAccessIteratorAnalyticParams {
+  
+  using Layout = layout::TensorNHWC;
+
+  Layout layout;
+  int tiled_rows_per_filter;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  Conv2dDgradOutputGradientTileAccessIteratorAnalyticParams() { }
+
+  CUTLASS_HOST_DEVICE
+  Conv2dDgradOutputGradientTileAccessIteratorAnalyticParams(
+    Conv2dProblemSize const &problem_size,
+    Layout const &layout,                            ///< layout object
+    int element_size_bits,                           ///< size of each element in bits
+    MatrixCoord threadblock_shape
+  ): layout(layout) {
+    
+    int tile_m_per_filter = strided_dgrad_tile_m_per_filter(problem_size, threadblock_shape.row());
+  
+    tiled_rows_per_filter = tile_m_per_filter * threadblock_shape.row();
+    
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 #if TRACE_CONV_PARAMS_INITIALIZERS_ENABLED
 
 CUTLASS_HOST_DEVICE
@@ -199,6 +231,32 @@ struct Conv2dFpropActivationIteratorOptimizedParams<layout::TensorNHWC> {
     // logical offset added to internal channel counter - units are elements, not bytes
     filter_c_delta = threadblock_shape.column() * problem_size.split_k_slices;
   }
+
+#if 0
+  /// Prints internal state.
+  CUTLASS_HOST_DEVICE
+  void print() {
+    auto stride = layout.stride();
+    printf(
+      "Conv2dFpropActivationIteratorOptimizedParams:\n"
+      "  layout(w: %d, h: %d, n: %d)\n"
+      "  inc_next[%ld, %ld, %ld]\n"
+      "  filter_c_delta(%d) - PQ(%d)\n"
+      "  pq_divmod(divisor: %d, multiplier: %u, shift_right: %u)\n"
+      "  q_divmod(divisor: %d, multiplier: %u, shift_right: %u)\n",
+      stride[0], stride[1], stride[2],
+      inc_next[0], inc_next[1], inc_next[2],
+      filter_c_delta,
+      PQ,
+      pq_divmod.divisor,
+      pq_divmod.multiplier,
+      pq_divmod.shift_right,
+      q_divmod.divisor,
+      q_divmod.multiplier,
+      q_divmod.shift_right
+    );
+  }
+#endif  
 };
 
 /// Parameters structure used for Conv2dFpropActivationTileIteratorOptimized
@@ -324,6 +382,23 @@ struct Conv2dFpropFilterIteratorOptimizedParams<layout::TensorNHWC>
 
     filter_c_delta = threadblock_shape.row() * problem_size.split_k_slices;
   }
+
+#if 0
+  /// Prints internal state.
+  CUTLASS_HOST_DEVICE
+  void print() {
+    auto stride = layout.stride();
+    printf(
+      "Conv2dFpropFilterIteratorOptimizedParams:\n"
+      "  layout[%d, %d, %d]\n"
+      "  RS(%d), filter_c_delta(%d), inc_next(k: %ld, rs: %ld, c: %ld)\n",
+      stride[0], stride[1], stride[2],
+      RS,
+      filter_c_delta,
+      inc_next_k, inc_next_rs, inc_next_c
+    );
+  }
+#endif
 };
 
 template<int Interleaved_>
@@ -382,6 +457,9 @@ struct Conv2dFpropFilterIteratorOptimizedParams<layout::TensorCxRSKx<Interleaved
   }
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Dgrad Optimized Dy params (layout::TensorNHWC)
+/////////////////////////////////////////////////////////////////////////////////////////////////
 /// Parameters object for Conv2d DGRAD OutputGradient (dy) iterator
 struct Conv2dDgradOutputGradientIteratorOptimizedParams {
 
@@ -449,7 +527,9 @@ struct Conv2dDgradOutputGradientIteratorOptimizedParams {
   }
 };
 
-/// Parameters object for Conv2d DGRAD Filter (w) iterator
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Dgrad Optimized w params (layout::TensorNHWC)
+/////////////////////////////////////////////////////////////////////////////////////////////////
 struct Conv2dDgradFilterIteratorOptimizedParams {
 
   using Layout = layout::TensorNHWC;
@@ -607,6 +687,25 @@ struct Conv2dWgradActivationIteratorOptimizedParams {
       TRACE_CONV_INITIALIZERS("conv2d_wgrad", "activation", 
         element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
     }
+};
+
+struct PredicatedScaleBiasVectorAccessIteratorParams {
+  public:
+    /// Default ctor
+    CUTLASS_HOST_DEVICE
+    PredicatedScaleBiasVectorAccessIteratorParams() { }
+
+    // Default ctor
+    CUTLASS_HOST_DEVICE
+    PredicatedScaleBiasVectorAccessIteratorParams(
+      Conv2dProblemSize const &problem_size,
+      layout::PitchLinear const &layout) {}
+
+    // Default ctor
+    CUTLASS_HOST_DEVICE
+    PredicatedScaleBiasVectorAccessIteratorParams(
+      Conv2dProblemSize const &problem_size,
+      layout::RowMajor const &layout) {}
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

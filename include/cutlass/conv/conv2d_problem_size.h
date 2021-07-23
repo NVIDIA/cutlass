@@ -284,6 +284,27 @@ public:
 
     return cutlass::MatrixCoord ({dilation_h, dilation_w});
   }
+
+  /////////////////////////////////////////////////////////////////
+  //        Methods used for strided dgrad implementation
+  /////////////////////////////////////////////////////////////////
+  /// Number of filter r positions to accumulate in gemm-k dim
+  CUTLASS_HOST_DEVICE
+  int num_gemm_k_filter_r(int r) const {
+    return ((R - r + stride_h - 1) / stride_h);
+  }
+
+  /// Number of filter s positions to accumulate in gemm-k dim
+  CUTLASS_HOST_DEVICE
+  int num_gemm_k_filter_s(int s) const {
+    return ((S - s + stride_w - 1) / stride_w);
+  }
+
+  /// Number of filter positions to accumulate in gemm-k dim
+  CUTLASS_HOST_DEVICE
+  int num_gemm_k_filter_positions(int r, int s) const {
+    return num_gemm_k_filter_r(r) * num_gemm_k_filter_s(s);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -443,6 +464,27 @@ int64_t implicit_gemm_tensor_c_size(
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                  Strided dgrad helper functions                                 //
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Returns number of CTAs tile M to cover valid MMAs per starting filter postion
+CUTLASS_HOST_DEVICE
+int strided_dgrad_tile_m_per_filter(
+  Conv2dProblemSize const &problem_size,
+  int tile_size_m) {
+
+  // Compute NHW rows in Dx output that needs MMA per starting filter position
+  int rows_h_per_filter = (problem_size.H + problem_size.stride_h - 1) / problem_size.stride_h;
+  int rows_w_per_filter = (problem_size.W + problem_size.stride_w - 1) / problem_size.stride_w;
+  int rows_nhw_per_filter = problem_size.N * rows_h_per_filter * rows_w_per_filter;
+
+  // Number of CTAs tile M to cover valid MMAs per starting filter postion
+  int tile_m_per_filter = (rows_nhw_per_filter + tile_size_m - 1) / tile_size_m;
+
+  return tile_m_per_filter;
+}
+
 
 } // namespace conv
 } // namespace cutlass

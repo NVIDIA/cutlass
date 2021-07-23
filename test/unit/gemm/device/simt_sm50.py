@@ -45,14 +45,15 @@ warpShapeMin = 8*8
 
 threadblockEdgeMax = 256
 
-#      char,      type             bits/elem, max tile,    L0 threadblock tiles
+#      char,      type               bits/elem, max tile,   L0 threadblock tiles
 precisions = [
-       ["c", "cutlass::complex<float>",   64,  64*128, [ [ 64, 128], [ 64,  32]             ] ],
-       ["d", "double",                    64,   64*64, [ [ 64,  64], [ 32,  32]             ] ],
-       ["h", "cutlass::half_t",           16, 128*256, [ [256, 128], [ 64, 128], [ 64,  32] ] ],
-       ["i", "int",                       32, 128*128, [ [128,  64], [ 16, 32]              ] ],
-       ["s", "float",                     32, 128*128, [ [128, 256], [128, 128], [ 64,  64] ] ],
-       ["z", "cutlass::complex<double>", 128,   64*64, [ [ 32,  64], [ 16,  32]             ] ],
+       ["c", "cutlass::complex<float>",     64,  64*128, [ [ 64, 128], [ 64,  32]             ] ],
+       ["q", "cutlass::Quaternion<float>",  64,  64*128, [ [ 64, 128], [ 64,  32]             ] ],
+       ["d", "double",                      64,   64*64, [ [ 64,  64], [ 32,  32]             ] ],
+       ["h", "cutlass::half_t",             16, 128*256, [ [256, 128], [ 64, 128], [ 64,  32] ] ],
+       ["i", "int",                         32, 128*128, [ [128,  64], [ 16, 32]              ] ],
+       ["s", "float",                       32, 128*128, [ [128, 256], [128, 128], [ 64,  64] ] ],
+       ["z", "cutlass::complex<double>",   128,   64*64, [ [ 32,  64], [ 16,  32]             ] ],
        ]
 # L1 will have a single kernel for every unique shape
 # L2 will have everything else
@@ -313,7 +314,7 @@ for precision in precisions:
                     "        cutlass::arch::Sm50,\n"
                     "        ThreadblockShape, WarpShape, InstructionShape,\n"
                     "        EpilogueOutputOp,\n"
-                    "        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,\n"
+                    "        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,\n"
                     "        2 // Stages\n"
                     "    >;\n" % (
                         "Column" if columnMajorA else "Row",

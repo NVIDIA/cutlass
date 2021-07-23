@@ -355,6 +355,145 @@ struct Conv3dDgradFilterIteratorOptimizedParams {
   }
 };
 
+/// Parameters object for Conv3d WGRAD OutputGradient iterator
+struct Conv3dWgradOutputGradientIteratorOptimizedParams {
+
+  using Layout = layout::TensorNDHWC;
+  using LongIndex = typename Layout::LongIndex;
+
+  Layout layout;
+
+  int NZPQ;                // precomputd product of N*Z*P*Q for clearing predicates
+  int ZPQ;                 // product of Z*P*Q
+  unsigned zpq_mul;        // precomputed quantities for fast computation of div/% by ZPQ
+  unsigned zpq_shr;        //    in device code.
+
+  int PQ;                  // product of P*Q
+  unsigned pq_mul;         // precomputed quantities for fast computation of div/% by PQ
+  unsigned pq_shr;         //    in device code.
+
+  unsigned q_mul;          // precomputed quantities for fast computation of div/% by Q
+  unsigned q_shr;          //    in device code.
+
+  LongIndex offset_next_strided;     // offset in units of bytes to next nzpq coordinate within tile
+  LongIndex offset_next_contiguous;  // offset in units of bytes to next k coordinate within tile
+  LongIndex inc_next_nzpq;           // offset in units of bytes to next nzpq position in subsequent tile
+
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  Conv3dWgradOutputGradientIteratorOptimizedParams() { }
+
+  CUTLASS_HOST_DEVICE
+  Conv3dWgradOutputGradientIteratorOptimizedParams(
+    Conv3dProblemSize const &problem_size,
+    Layout const &layout,    
+    int element_size_bits,
+    MatrixCoord threadblock_shape,
+    int thread_count,
+    int access_size, 
+    layout::PitchLinearCoord threadmap_iterations,
+    layout::PitchLinearCoord threadmap_delta
+  ): layout(layout) {
+
+  TRACE_CONV_INITIALIZERS("conv3d_wgrad", "output_gradient", 
+    element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
+
+  // Incremental offsets in unites of bytes (number of elements) * element_size_bits / 8
+  offset_next_strided = (threadmap_delta.strided() * layout.stride()[0])
+                      * element_size_bits / 8;
+
+  offset_next_contiguous = (threadmap_delta.contiguous()) 
+                          * element_size_bits / 8;
+
+  inc_next_nzpq = (threadblock_shape.column() * problem_size.split_k_slices * layout.stride()[0])
+                    * element_size_bits / 8;
+
+  // Precompute several quantities for fast modulo arithmetic.
+  NZPQ = problem_size.N * problem_size.Z * problem_size.P * problem_size.Q;
+  ZPQ = problem_size.Z * problem_size.P * problem_size.Q;
+  find_divisor(zpq_mul, zpq_shr, ZPQ);
+
+  PQ = problem_size.P * problem_size.Q;
+  find_divisor(pq_mul, pq_shr, PQ);
+
+  find_divisor(q_mul, q_shr, problem_size.Q);
+
+  }
+};
+
+/// Parameters object for Conv3d WGRAD Activation Tile Access Iterator
+struct Conv3dWgradActivationIteratorOptimizedParams {
+
+  using Layout = layout::TensorNDHWC;
+
+  Layout layout;
+
+  int RSC;                 // product of R*S*C
+  unsigned rsc_mul;        // precomputed quantities for fast computation of div/% by RSC
+  unsigned rsc_shr;        //    in device code.
+
+  int SC;                  // product of S*C
+  unsigned sc_mul;         // precomputed quantities for fast computation of div/% by SC
+  unsigned sc_shr;         //    in device code.
+
+  unsigned c_mul;          // precomputed quantities for fast computation of div/% by C
+  unsigned c_shr;          //    in device code.
+
+  int ZPQ;                 // product of Z*P*Q
+  unsigned zpq_mul;        // precomputed quantities for fast computation of div/% by ZPQ
+  unsigned zpq_shr;        //    in device code.
+
+  int PQ;                  // product of P*Q
+  unsigned pq_mul;         // precomputed quantities for fast computation of div/% by PQ
+  unsigned pq_shr;         //    in device code.
+
+  unsigned q_mul;          // precomputed quantities for fast computation of div/% by Q
+  unsigned q_shr;          //    in device code.
+
+  //
+  // Methods
+  //
+  CUTLASS_HOST_DEVICE
+  Conv3dWgradActivationIteratorOptimizedParams() { }
+
+  CUTLASS_HOST_DEVICE
+  Conv3dWgradActivationIteratorOptimizedParams(
+    Conv3dProblemSize const &problem_size,
+    Layout const &layout,    
+    int element_size_bits,
+    MatrixCoord threadblock_shape,
+    int thread_count,
+    int access_size, 
+    layout::PitchLinearCoord threadmap_iterations,
+    layout::PitchLinearCoord threadmap_delta
+  ): layout(layout) {
+
+  TRACE_CONV_INITIALIZERS("conv3d_wgrad", "activation", 
+    element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
+
+  // Precompute several quantities for fast modulo arithmetic.
+  RSC = problem_size.R * problem_size.S * problem_size.C;
+  find_divisor(rsc_mul, rsc_shr, RSC);
+
+  SC = problem_size.S * problem_size.C;
+  find_divisor(sc_mul, sc_shr, SC);
+      
+  find_divisor(c_mul, c_shr, problem_size.C);
+
+  ZPQ = problem_size.Z * problem_size.P * problem_size.Q;
+  find_divisor(zpq_mul, zpq_shr, ZPQ);
+
+  PQ = problem_size.P * problem_size.Q;
+  find_divisor(pq_mul, pq_shr, PQ);
+
+  find_divisor(q_mul, q_shr, problem_size.Q);
+
+  }
+};
+
 } // namespace threadblock
 } // namespace conv
 } // namespace cutlass

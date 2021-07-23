@@ -92,7 +92,8 @@ struct ImplicitGemmConvolution {
 
   static int const kStages = Mma::kStages;
   static IteratorAlgorithm const kIteratorAlgorithm = Mma::IteratorA::kIteratorAlgorithm; 
- 
+  static StrideSupport const kStrideSupport = Mma::IteratorA::kStrideSupport;
+
   /// Warp count (concept: GemmShape)
   using WarpCount = typename Mma::WarpCount;
   static int const kThreadCount = 32 * WarpCount::kCount;
@@ -188,6 +189,8 @@ struct ImplicitGemmConvolution {
     ConvProblemSize problem_size;
     cutlass::gemm::GemmCoord grid_tiled_shape;
     gemm::GemmCoord implicit_gemm_problem_size;
+    int swizzle_log_tile;
+
     int gemm_k_iterations;
     typename Mma::IteratorA::Params iterator_A;
     typename Mma::IteratorA::Element const *ptr_A;
@@ -206,7 +209,7 @@ struct ImplicitGemmConvolution {
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): gemm_k_iterations(0) { }
+    Params(): swizzle_log_tile(0), gemm_k_iterations(0) { }
 
     /// 
     CUTLASS_HOST_DEVICE
@@ -236,6 +239,8 @@ struct ImplicitGemmConvolution {
         implicit_gemm_problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
         args.problem_size.split_k_slices);
+
+      swizzle_log_tile = threadblock_swizzle.get_log_tile(grid_tiled_shape);
     }
   };
 
@@ -260,7 +265,7 @@ struct ImplicitGemmConvolution {
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord threadblock_tile_idx =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_idx.m() ||
@@ -327,7 +332,7 @@ struct ImplicitGemmConvolution {
     
     // Compute logical position within grid
     threadblock_tile_idx =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // If performing a reduction via split-K, fetch the initial synchronization
     if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {

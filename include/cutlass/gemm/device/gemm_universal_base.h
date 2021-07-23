@@ -171,9 +171,11 @@ public:
       // GEMM K dimension is greater than one.
       workspace_bytes = sizeof(int) * size_t(grid_tiled_shape.m()) * size_t(grid_tiled_shape.n());
     }
-    
+
     CUTLASS_TRACE_HOST("  workspace_bytes: " << workspace_bytes);
-    
+
+    workspace_bytes += GemmKernel::get_extra_workspace_size(args, grid_tiled_shape);
+ 
     return workspace_bytes;
   }
 

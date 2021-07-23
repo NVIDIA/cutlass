@@ -59,9 +59,13 @@ enum
 #define CUTLASS_ENABLE_F16C 0
 
 #else
+//
+// Standard Library headers belong here to avoid conflicts with NVRTC.
+//
 #include <cmath>
 #include <limits>
 #include <cstdint>
+#include <cstring>
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -211,7 +215,14 @@ struct alignas(2) half_t {
     #endif
 
     // software implementation rounds toward nearest even
-    unsigned const& s = reinterpret_cast<unsigned const &>(flt);
+    unsigned s;
+
+    #if defined(__CUDA_ARCH__)
+    s = reinterpret_cast<unsigned const &>(flt);
+    #else
+    std::memcpy(&s, &flt, sizeof(s));
+    #endif
+
     uint16_t sign = uint16_t((s >> 16) & 0x8000);
     int16_t exp = uint16_t(((s >> 23) & 0xff) - 127);
     int mantissa = s & 0x7fffff;
@@ -340,7 +351,13 @@ struct alignas(2) half_t {
         f = (0xff << 23) | (sign << 31);  //  inf
       }
     }
+    #if defined(__CUDA_ARCH__)
     return reinterpret_cast<float const&>(f);
+    #else
+    float flt;
+    std::memcpy(&flt, &f, sizeof(flt));
+    return flt;
+    #endif
   #endif
   }
 
@@ -354,8 +371,13 @@ struct alignas(2) half_t {
 
   /// Reinterpret cast from CUDA's half type
   CUTLASS_HOST_DEVICE
-  explicit half_t(half const & x): storage(reinterpret_cast<uint16_t const &>(x)) {
-
+  explicit half_t(half const & x) {
+    #if defined(__CUDA_ARCH__)
+    storage = reinterpret_cast<uint16_t const &>(x);
+    #else
+    __half_raw raw(x);
+    std::memcpy(&storage, &raw.x, sizeof(storage));
+    #endif
   }
 
   /// Floating point conversion
@@ -385,7 +407,12 @@ struct alignas(2) half_t {
   /// Assignment
   CUTLASS_HOST_DEVICE
   half_t & operator=(half const &x) {
+    #if defined(__CUDA_ARCH__)
     storage = reinterpret_cast<uint16_t const &>(x);
+    #else
+    __half_raw raw(x);
+    std::memcpy(&storage, &raw.x, sizeof(storage));
+    #endif
     return *this;
   }
 
@@ -416,7 +443,13 @@ struct alignas(2) half_t {
   /// Bitcasts to CUDA's half type
   CUTLASS_HOST_DEVICE
   half to_half() const {
+    #if defined(__CUDA_ARCH__)
     return reinterpret_cast<half const &>(storage);
+    #else
+    __half_raw raw;
+    std::memcpy(&raw.x, &storage, sizeof(raw.x));
+    return half(raw);
+    #endif
   }
 
   /// Accesses raw internal state
@@ -529,11 +562,11 @@ cutlass::half_t sqrt(cutlass::half_t const& h) {
 CUTLASS_HOST_DEVICE
 half_t copysign(half_t const& a, half_t const& b) {
 
-  uint16_t a_mag = (reinterpret_cast<uint16_t const &>(a) & 0x7fff);  
-  uint16_t b_sign = (reinterpret_cast<uint16_t const &>(b) & 0x8000);
+  uint16_t a_mag = (a.raw() & 0x7fff);  
+  uint16_t b_sign = (b.raw() & 0x8000);
   uint16_t result = (a_mag | b_sign);
 
-  return reinterpret_cast<cutlass::half_t const &>(result);
+  return half_t::bitcast(result);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -546,9 +579,9 @@ half_t copysign(half_t const& a, half_t const& b) {
 //
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-namespace cutlass {
-namespace platform {    
+namespace std {
 
+#if !defined(__CUDACC_RTC__)
 /// Numeric limits
 template <>
 struct numeric_limits<cutlass::half_t> {
@@ -594,9 +627,8 @@ struct numeric_limits<cutlass::half_t> {
   /// Returns smallest finite value
   static cutlass::half_t denorm_min() { return cutlass::half_t::bitcast(0x0001); }
 };
-
-}  // namespace platform
-}  // namespace cutlass
+#endif
+}  // namespace std
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //

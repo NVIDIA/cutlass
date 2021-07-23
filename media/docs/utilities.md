@@ -211,7 +211,7 @@ int main() {
 ```
 
 
-`TensorFillRandomGaussian()` for initializing elements to a random Gaussian distribution.
+`TensorFillRandomGaussian()` for initializing elements to a random gaussian distribution.
 The device-side implementation uses CURAND to generate random numbers.
 ```c++
 #include <cutlass/layout/matrix.h>

@@ -65,8 +65,8 @@ __global__ void Gemm(
 
   // Map each thread to a unique tile of the output matrix
   MatrixCoord output_coord(
-    (threadIdx.x + blockIdx.x * blockDim.x) * OutputTile::kRow,
-    (threadIdx.y + blockIdx.y * blockDim.y) * OutputTile::kColumn
+    MatrixCoord::Index((threadIdx.x + blockIdx.x * blockDim.x) * OutputTile::kRow),
+    MatrixCoord::Index((threadIdx.y + blockIdx.y * blockDim.y) * OutputTile::kColumn)
   );
 
   // Compute the general matrix product

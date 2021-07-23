@@ -446,6 +446,7 @@ public:
     cudaError_t result;
 
     int smem_size = int(sizeof(typename GemmKernel::SharedStorage));
+
     if (smem_size >= (48 << 10)) {
       result = cudaFuncSetAttribute(Kernel<GemmKernel>,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
@@ -482,7 +483,7 @@ public:
     void *workspace = nullptr, 
     cudaStream_t stream = nullptr) {
     
-    Status status = initialize(args, workspace, stream);
+    Status status = initialize(args, workspace);
     
     if (status == Status::kSuccess) {
       status = run(stream);
@@ -673,7 +674,7 @@ public:
   /// Initializes GEMM state from arguments.
   Status initialize(Arguments const &args, void *workspace = nullptr, cudaStream_t stream = nullptr) {
 
-    return underlying_operator_.initialize(to_underlying_arguments(args), workspace, stream);
+    return underlying_operator_.initialize(to_underlying_arguments(args), workspace);
   }
 
   /// Lightweight update given a subset of arguments

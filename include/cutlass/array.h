@@ -49,7 +49,7 @@ class Array;
 template <typename T, int N, bool RegisterSized>
 struct sizeof_bits<Array<T, N, RegisterSized> > {
   static int const value =
-    sizeof(typename Array<T, N, RegisterSized>::Storage) * 8 * Array<T, N, RegisterSized>::kStorageElements;
+    int(sizeof(typename Array<T, N, RegisterSized>::Storage)) * 8 * int(Array<T, N, RegisterSized>::kStorageElements);
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -67,7 +67,7 @@ beta * C).
 Now that we setup the properties of data, we have to setup properties of computation.
 
 Second, we create template variables of tile sizes for thread-block, warp and mma-op to 128x128x32,
-64x64x4, 8x8x4 (MxNxK) respectively. When passed to instantiate CUTLASS GEMM kernel, it internally
+64x64x32, 8x8x4 (MxNxK) respectively. When passed to instantiate CUTLASS GEMM kernel, it internally
 deduce the amount of threads needed per thread-block, amount of shared memory, storing data in
 bank-conflict free manner, and ton of other variables required to compose, intialize and launch a
 high performance GEMM kernel. This is the beauty of CUTLASS, it relieves developer from

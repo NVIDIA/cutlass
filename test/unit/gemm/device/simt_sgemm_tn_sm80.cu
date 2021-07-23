@@ -44,7 +44,6 @@
     
 #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 ////////////////////////////////////////////////////////////////////////////////
-    
 TEST(SM80_Device_Gemm_f32t_f32n_f32t_simt_f32, 32x64x8_32x64x1) {
   
   using Element = float;
@@ -130,6 +129,42 @@ TEST(SM80_Device_Gemm_f32t_f32n_f32t_simt_f32, 128x128x8_32x64x1) {
   >;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+}
+
+TEST(SM80_Device_Gemm_f32at_f32an_f32t_simt_f32, 128x128x8_32x64x1) {
+  
+  using Element = float;
+  using LayoutA = cutlass::layout::AffineRank2RowMajor;
+  using LayoutB = cutlass::layout::AffineRank2ColumnMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+
+  using Gemm = cutlass::gemm::device::Gemm<
+    Element, 
+    LayoutA,
+    Element, 
+    LayoutB,
+    Element,
+    LayoutC, 
+    Element,
+    cutlass::arch::OpClassSimt, 
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<128, 128, 8>,
+    cutlass::gemm::GemmShape<32, 64, 8>, 
+    cutlass::gemm::GemmShape<1, 1, 1>,
+    cutlass::epilogue::thread::LinearCombination<
+        Element, 
+        1,
+        Element, 
+        Element>,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 
+    3
+  >;
+
+  typename LayoutA::Stride::Index stride_factor_A[] = {3, 4};
+  typename LayoutB::Stride::Index stride_factor_B[] = {5, 6};
+  typename LayoutC::Stride::Index stride_factor_C[] = {1};
+
+  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>( stride_factor_A, stride_factor_B, stride_factor_C ));
 }
 
 TEST(SM80_Device_Gemm_f32t_f32n_f32t_simt_f32, 64x128x8_32x64x1) {

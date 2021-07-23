@@ -154,6 +154,9 @@ public:
   /// Underlying matrix multiply operator (concept: arch::Mma)
   using ArchMmaOperator = typename ThreadMma::ArchMmaOperator;
 
+  /// Indicates math operator 
+  using MathOperator = typename ArchMmaOperator::Operator;
+  
   /// Shape of the underlying instruction
   using InstructionShape = GemmShape<1,1,use_dp4a ? 4 : 1>;
 

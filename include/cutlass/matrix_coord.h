@@ -46,6 +46,9 @@ public:
   /// Base type is a Coord of rank=2
   using Base = Coord<2, Index>;
 
+  /// LongIndex type
+  using LongIndex = typename Base::LongIndex;
+
 private:
 
   /// Rows dimension
@@ -71,6 +74,10 @@ public:
   /// Helper to construct from a row and column
   CUTLASS_HOST_DEVICE
   MatrixCoord(Index row, Index column): Base(make_Coord(row, column)) { }
+
+  /// Helper to construct from a row and column, which are LongIndex based
+  CUTLASS_HOST_DEVICE
+  MatrixCoord(LongIndex row, LongIndex column): Base(make_Coord(Index(row), Index(column))) { }
 
   /// Returns the row of the coordinate
   CUTLASS_HOST_DEVICE

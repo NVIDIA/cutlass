@@ -62,7 +62,7 @@ public:
   using Element = T;
 
   /// Number of logical elements per stored object
-  static int const kElementsPerStoredItem = (sizeof(Storage) * 8) / sizeof_bits<T>::value;
+  static int const kElementsPerStoredItem = int(sizeof(Storage) * 8) / sizeof_bits<T>::value;
 
   /// Number of storage elements
   static size_t const kStorageElements = N / kElementsPerStoredItem;

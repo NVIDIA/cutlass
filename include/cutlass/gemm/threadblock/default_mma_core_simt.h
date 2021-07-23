@@ -364,6 +364,9 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
   static int const kPaddingM = detail::simt_transpose_padding(kWarpSize, Shape::kK, sizeof_bits<ElementA>::value);
   static int const kPaddingN = detail::simt_transpose_padding(kWarpSize, Shape::kK, sizeof_bits<ElementB>::value);
 
+  static_assert(!(kPaddingM % LaneM) && !(kPaddingN % LaneN),
+                "Padding must be divisible by Lane");
+
   // these should have max of thread tile also
   using LaneMmaShape = cutlass::gemm::GemmShape<
       LaneM,
@@ -525,6 +528,9 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
   static const int LaneN = cutlass::const_min(numElementsB, ThreadTileN);
 
   static int const kPaddingM = detail::simt_transpose_padding(kWarpSize, Shape::kK, sizeof_bits<ElementA>::value);
+
+  static_assert(!(kPaddingM % LaneM),
+                "Padding must be divisible by Lane");
 
   // these should have max of thread tile also
   using LaneMmaShape = cutlass::gemm::GemmShape<
@@ -688,6 +694,9 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
 
   static int const kPaddingN = detail::simt_transpose_padding(kWarpSize, Shape::kK, sizeof_bits<ElementB>::value);
 
+  static_assert(!(kPaddingN % LaneN),
+                "Padding must be divisible by Lane");
+
   // these should have max of thread tile also
   using LaneMmaShape = cutlass::gemm::GemmShape<
       LaneM,
@@ -717,6 +726,354 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
     MatrixShape<0, kPaddingN>, // skew for B matrix to avoid SMEM bank conflicts
     WarpCount::kK
   >;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization:
+///
+///   A: column-major
+///   B: row-major
+///   Operator: simt class
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Data type of A operand
+    typename ElementA_,
+    /// Data type of B operand
+    typename ElementB_,
+    /// Data type of accumulator
+    typename ElementC_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Operation performed by GEMM
+    typename Operator_>
+struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
+                      layout::AffineRank2ColumnMajor, ElementB_, layout::AffineRank2RowMajor,
+                      ElementC_, LayoutC_, arch::OpClassSimt, 2, Operator_
+                     > {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = GemmShape<1, 1, 1>;
+  using ElementA = ElementA_;
+  using LayoutA = layout::AffineRank2ColumnMajor;
+  using ElementB = ElementB_;
+  using LayoutB = layout::AffineRank2RowMajor;
+  using ElementC = ElementC_;
+  using LayoutC = LayoutC_;
+  using OperatorClass = arch::OpClassSimt;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::ColumnMajor,
+                              ElementB,
+                              layout::RowMajor,
+                              ElementC,
+                              LayoutC,
+                              OperatorClass,
+                              2,
+                              Operator>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization:
+///
+///   A: row-major
+///   B: column-major
+///   Operator: simt class
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Data type of A operand
+    typename ElementA_,
+    /// Data type of B operand
+    typename ElementB_,
+    /// Data type of accumulator
+    typename ElementC_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Operation performed by GEMM
+    typename Operator_>
+struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
+                      layout::AffineRank2RowMajor, ElementB_, layout::AffineRank2ColumnMajor,
+                      ElementC_, LayoutC_, arch::OpClassSimt, 2, Operator_
+                     > {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = GemmShape<1, 1, 1>;
+  using ElementA = ElementA_;
+  using LayoutA = layout::AffineRank2RowMajor;
+  using ElementB = ElementB_;
+  using LayoutB = layout::AffineRank2ColumnMajor;
+  using ElementC = ElementC_;
+  using LayoutC = LayoutC_;
+  using OperatorClass = arch::OpClassSimt;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::RowMajor,
+                              ElementB,
+                              layout::ColumnMajor,
+                              ElementC,
+                              LayoutC,
+                              OperatorClass,
+                              2,
+                              Operator>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization:
+///
+///   A: row-major
+///   B: row-major
+///   Operator: simt class
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Data type of A operand
+    typename ElementA_,
+    /// Data type of B operand
+    typename ElementB_,
+    /// Data type of accumulator
+    typename ElementC_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Operation performed by GEMM
+    typename Operator_>
+struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
+                      layout::AffineRank2RowMajor, ElementB_, layout::AffineRank2RowMajor, ElementC_,
+                      LayoutC_, arch::OpClassSimt, 2, Operator_
+                     > {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = GemmShape<1, 1, 1>;
+  using ElementA = ElementA_;
+  using LayoutA = layout::AffineRank2RowMajor;
+  using ElementB = ElementB_;
+  using LayoutB = layout::AffineRank2RowMajor;
+  using ElementC = ElementC_;
+  using LayoutC = LayoutC_;
+  using OperatorClass = arch::OpClassSimt;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::RowMajor,
+                              ElementB,
+                              layout::RowMajor,
+                              ElementC,
+                              LayoutC,
+                              OperatorClass,
+                              2,
+                              Operator>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization:
+///
+///   A: column-major
+///   B: column-major
+///   Operator: simt class
+///
+/// This uses the default warp-level operator given tile sizes
+template <
+    /// Shape of threadblock-scoped matrix multiply operator (concept:
+    /// GemmShape)
+    typename Shape_,
+    /// Shape of warp-level matrix multiply operator (concept: GemmShape)
+    typename WarpShape_,
+    /// Data type of A operand
+    typename ElementA_,
+    /// Data type of B operand
+    typename ElementB_,
+    /// Data type of accumulator
+    typename ElementC_,
+    /// Layout of accumulator
+    typename LayoutC_,
+    /// Operation performed by GEMM
+    typename Operator_>
+struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
+                      layout::AffineRank2ColumnMajor, ElementB_, layout::AffineRank2ColumnMajor,
+                      ElementC_, LayoutC_, arch::OpClassSimt, 2, Operator_
+                     > {
+  using Shape = Shape_;
+  using WarpShape = WarpShape_;
+  using InstructionShape = GemmShape<1, 1, 1>;
+  using ElementA = ElementA_;
+  using LayoutA = layout::AffineRank2ColumnMajor;
+  using ElementB = ElementB_;
+  using LayoutB = layout::AffineRank2ColumnMajor;
+  using ElementC = ElementC_;
+  using LayoutC = LayoutC_;
+  using OperatorClass = arch::OpClassSimt;
+
+  /// Default Operator
+  using Operator = Operator_;
+
+  using Base = DefaultMmaCore<Shape,
+                              WarpShape,
+                              InstructionShape,
+                              ElementA,
+                              layout::ColumnMajor,
+                              ElementB,
+                              layout::ColumnMajor,
+                              ElementC,
+                              LayoutC,
+                              OperatorClass,
+                              2,
+                              Operator>;
+
+  //
+  // Shared memory layouts
+  //
+
+  using SmemLayoutA = typename Base::SmemLayoutA;
+  using SmemLayoutB = typename Base::SmemLayoutB;
+
+  //
+  // Iterators to write to shared memory
+  //
+
+  /// ThreadMap of iterator A
+  using IteratorThreadMapA = typename Base::IteratorThreadMapA;
+
+  /// Shared memory iterator to A operand
+  using SmemIteratorA = typename Base::SmemIteratorA;
+
+  /// Policy of iterator B
+  using IteratorThreadMapB = typename Base::IteratorThreadMapB;
+
+  /// Shared memory iterator to B operand
+  using SmemIteratorB = typename Base::SmemIteratorB;
+
+  //
+  // Warp-level matrix multiply operator
+  //
+
+  /// Policy used to define MmaPipelined
+  using MmaPolicy = typename Base::MmaPolicy;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

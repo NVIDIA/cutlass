@@ -30,6 +30,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/arch/memory.h"
 #include "cutlass/arch/memory_sm75.h"
 #include "cutlass/arch/cache_operation.h"
 
@@ -90,7 +91,11 @@ struct cp_async<SizeInBytes, CacheOperation::Always> {
           "{\n"
           "  .reg .pred p;\n"
           "  setp.ne.b32 p, %0, 0;\n"
+#if CUTLASS_ENABLE_L2_PREFETCH
+          "  @p cp.async.ca.shared.global.L2::128B [%1], [%2], %3;\n"
+#else
           "  @p cp.async.ca.shared.global [%1], [%2], %3;\n"
+#endif
           "}\n" ::"r"((int)pred_guard),
           "r"(smem_int_ptr), "l"(global_ptr), "n"(SizeInBytes));
 
@@ -123,7 +128,11 @@ struct cp_async_zfill<SizeInBytes, CacheOperation::Always> {
       int src_in_bytes = (pred_guard ? SizeInBytes : 0);
 
       asm volatile(
+#if CUTLASS_ENABLE_L2_PREFETCH
+        "cp.async.ca.shared.global.L2::128B [%0], [%1], %2, %3;\n" ::"r"(smem_int_ptr),
+#else
         "cp.async.ca.shared.global [%0], [%1], %2, %3;\n" ::"r"(smem_int_ptr),
+#endif
         "l"(global_ptr), "n"(SizeInBytes), "r"(src_in_bytes));
 
     #else
@@ -163,7 +172,11 @@ struct cp_async<SizeInBytes, CacheOperation::Global> {
           "{\n"
           "  .reg .pred p;\n"
           "  setp.ne.b32 p, %0, 0;\n"
+#if CUTLASS_ENABLE_L2_PREFETCH
+          "  @p cp.async.cg.shared.global.L2::128B [%1], [%2], %3;\n"
+#else
           "  @p cp.async.cg.shared.global [%1], [%2], %3;\n"
+#endif
           "}\n" ::"r"((int)pred_guard),
           "r"(smem_int_ptr), "l"(global_ptr), "n"(SizeInBytes));
 
@@ -195,7 +208,11 @@ struct cp_async_zfill<SizeInBytes, CacheOperation::Global> {
       int src_in_bytes = (pred_guard ? SizeInBytes : 0);
 
       asm volatile(
+#if CUTLASS_ENABLE_L2_PREFETCH
+        "cp.async.cg.shared.global.L2::128B [%0], [%1], %2, %3;\n" ::"r"(smem_int_ptr),
+#else
         "cp.async.cg.shared.global [%0], [%1], %2, %3;\n" ::"r"(smem_int_ptr),
+#endif
         "l"(global_ptr), "n"(SizeInBytes), "r"(src_in_bytes));
 
     #else

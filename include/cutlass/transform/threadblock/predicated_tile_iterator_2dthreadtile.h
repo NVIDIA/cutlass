@@ -194,6 +194,8 @@ class PredicatedTileIterator2dThreadTile<Shape_, Element_, layout::PitchLinear, 
   /// Parameters object is precomputed state and is host-constructible
   class Params {
    public:
+    using Base = typename TileAccessIterator::Params::Base;
+
     friend PredicatedTileIterator2dThreadTile;
 
    private:
@@ -207,6 +209,10 @@ class PredicatedTileIterator2dThreadTile<Shape_, Element_, layout::PitchLinear, 
     
     CUTLASS_HOST_DEVICE
     Params() { }
+
+    CUTLASS_HOST_DEVICE
+    Params(Base const &base) 
+        : params_(base) {}
   };
 
  private:
@@ -443,9 +449,11 @@ public:
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout): params_(layout::PitchLinear(layout.stride(0))) {
+    Params(Layout const &layout): params_(layout::PitchLinear(layout.stride(0))) {}
 
-    }
+    CUTLASS_HOST_DEVICE
+    Params(typename UnderlyingIterator::Params::Base const &base) 
+        : params_(base) {}
   };
 
 
@@ -637,9 +645,11 @@ public:
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout): params_(layout::PitchLinear(layout.stride(0))) {
+    Params(Layout const &layout): params_(layout::PitchLinear(layout.stride(0))) { }
 
-    };
+    CUTLASS_HOST_DEVICE
+    Params(typename UnderlyingIterator::Params::Base const &base) 
+        : params_(base) {}
   };
 
 

@@ -82,7 +82,7 @@ public:
   >;
 
   using ReductionDevice = cutlass::reduction::device::ReduceSplitK<ReductionKernel>;
-
+  using ReductionStrideIndex = typename ReductionDevice::StrideIndex;
 
 public:
 
@@ -245,10 +245,20 @@ public:
         cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, problem_size).mn(),
         problem_size.split_k_slices,
         cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
-        {reinterpret_cast<ElementAccumulator*> (workspace.get()), tensor_C.stride(Conv2d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {tensor_D_computed.device_data(), tensor_C.stride(Conv2d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {tensor_C.device_data(), tensor_C.stride(Conv2d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {alpha, beta} // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
+        {
+          reinterpret_cast<ElementAccumulator*> (workspace.get()),
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        {
+          tensor_D_computed.device_data(),
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        {
+          tensor_C.device_data(),
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
+        {alpha, beta}
       );
 
       status = reduction_op.initialize(reduction_args, nullptr);

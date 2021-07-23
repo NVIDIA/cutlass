@@ -111,9 +111,7 @@ template <
   /// If true, kernel is configured to support serial reduction in the epilogue
   bool SplitKSerial,
   /// Operation performed by GEMM
-  typename Operator,
-  /// Beta is zero or not
-  bool IsBetaZero = false
+  typename Operator
 >
 struct DefaultB2bGemm;
 
@@ -321,9 +319,7 @@ template <
     /// epilogue
     bool SplitKSerial,
     /// Operation performed by GEMM
-    typename Operator,
-    /// Is Beta zero or not
-    bool IsBetaZero>
+    typename Operator>
 struct DefaultB2bGemm<
     ElementA, layout::ColumnMajorInterleaved<InterleavedK>, kAlignmentA,
     ElementB, layout::RowMajorInterleaved<InterleavedK>, kAlignmentB, 
@@ -332,7 +328,7 @@ struct DefaultB2bGemm<
     ThreadblockShape0, ThreadblockShape1, WarpShape0, WarpShape1,
     InstructionShape, EpilogueOutputOp0, EpilogueOutputOp1,
     ThreadblockSwizzle, Stages,
-    SplitKSerial, Operator, IsBetaZero> {
+    SplitKSerial, Operator> {
   using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
   using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
   using LayoutC = layout::ColumnMajorInterleaved<InterleavedK>;
@@ -353,8 +349,7 @@ struct DefaultB2bGemm<
   using Epilogue = typename cutlass::epilogue::threadblock::
       DefaultInterleavedEpilogueTensorOp<
           ThreadblockShape1, typename B2bMma::Operator1, kPartitionsK1, EpilogueOutputOp1,
-          64 / sizeof_bits<ElementC>::value, InterleavedK,
-          IsBetaZero>::Epilogue;
+          64 / sizeof_bits<ElementC>::value, InterleavedK>::Epilogue;
 
   /// Define the kernel-level GEMM operator.
   using B2bGemmKernel = kernel::B2bGemm<B2bMma, Epilogue, ThreadblockSwizzle, SplitKSerial>;
@@ -397,9 +392,7 @@ template <
     /// epilogue
     bool SplitKSerial,
     /// Operation performed by GEMM
-    typename Operator,
-    /// Is Beta zero or not
-    bool IsBetaZero>
+    typename Operator>
 struct DefaultB2bGemm<ElementA, layout::ColumnMajorInterleaved<InterleavedK>,
                    kAlignmentA, ElementB,
                    layout::RowMajorInterleaved<InterleavedK>, kAlignmentB,
@@ -407,7 +400,7 @@ struct DefaultB2bGemm<ElementA, layout::ColumnMajorInterleaved<InterleavedK>,
                    int32_t, arch::OpClassTensorOp, arch::Sm75, 
                    ThreadblockShape0, ThreadblockShape1, WarpShape0, WarpShape1,
                    InstructionShape, EpilogueOutputOp0, EpilogueOutputOp1,
-                   ThreadblockSwizzle, 2, SplitKSerial, Operator, IsBetaZero> {
+                   ThreadblockSwizzle, 2, SplitKSerial, Operator> {
   using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
   using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
   using LayoutC = layout::ColumnMajorInterleaved<InterleavedK>;
@@ -426,8 +419,7 @@ struct DefaultB2bGemm<ElementA, layout::ColumnMajorInterleaved<InterleavedK>,
   using Epilogue = typename cutlass::epilogue::threadblock::
       DefaultInterleavedEpilogueTensorOp<
           ThreadblockShape1, typename B2bMma::Operator1, kPartitionsK1, EpilogueOutputOp1,
-          64 / sizeof_bits<ElementC>::value, InterleavedK,
-          IsBetaZero>::Epilogue;
+          64 / sizeof_bits<ElementC>::value, InterleavedK>::Epilogue;
 
   /// Define the kernel-level GEMM operator.
   using B2bGemmKernel = kernel::B2bGemm<B2bMma, Epilogue, ThreadblockSwizzle, SplitKSerial>;

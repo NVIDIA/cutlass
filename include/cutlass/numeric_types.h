@@ -43,7 +43,7 @@ namespace cutlass {
 /// Defines the size of an element in bits
 template <typename T>
 struct sizeof_bits {
-  static int const value = sizeof(T) * 8;
+  static int const value = int(sizeof(T) * 8);
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

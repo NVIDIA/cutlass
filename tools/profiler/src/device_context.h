@@ -77,7 +77,7 @@ public:
     library::NumericTypeID type, 
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>(),
+    std::vector<int64_t> const &stride = std::vector<int64_t>(),
     int batch_count = 1);
 
   /// Allocates memory of a given type, capacity (elements), and name
@@ -87,7 +87,7 @@ public:
     library::NumericTypeID type, 
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>(),
+    std::vector<int64_t> const &stride = std::vector<int64_t>(),
     int batch_count = 1);
 
   /// Allocates memory for sparse meta data 
@@ -98,7 +98,7 @@ public:
     library::LayoutTypeID layout_id, 
     library::NumericTypeID type_a,
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>(),
+    std::vector<int64_t> const &stride = std::vector<int64_t>(),
     int batch_count = 1);
 
   /// Clears named allocations (but does not necessarily free memory)

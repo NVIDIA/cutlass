@@ -152,7 +152,7 @@ int run() {
   cutlass::HostTensor<ElementInputE, LayoutInputE> tensor_e(
       cutlass::make_Coord(problem_size.m(), problem_size.k() / kSparse / kElementsPerElementE));
   // Same size as the above.  The above one needs to be reordered and stored in this one.
-  cutlass::HostTensor<ElementInputE, ReorderedLayoutInputE> tensor_e_reordered(  
+  cutlass::HostTensor<ElementInputE, ReorderedLayoutInputE> tensor_e_reordered(
       cutlass::make_Coord(problem_size.m(), problem_size.k() / kSparse / kElementsPerElementE));
 
   // Fill input and output matrices on host using CUTLASS helper functions

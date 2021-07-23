@@ -63,7 +63,7 @@ struct OutputTileThreadMapExpr {
   };
 
   int const kWarpSize = 32;
-  int const kMemoryAccessSize = 128;  // size in bytes of the preferred memory access size
+  int const kMemoryAccessSize = 256;  // size in bytes of the preferred memory access size
 
   //
   // Data members

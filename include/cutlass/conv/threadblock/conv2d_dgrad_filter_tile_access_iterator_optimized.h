@@ -62,7 +62,23 @@ template <
   typename ThreadMap_,
   conv::StrideSupport StrideSupport_ = conv::StrideSupport::kUnity
 >
-class Conv2dDgradFilterTileAccessIteratorOptimized {
+class Conv2dDgradFilterTileAccessIteratorOptimized;
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Conv2dDgradFilterTileAccessIteratorOptimized unity strided dgrad is more performant for  dgrad
+// on problem sizes with stride = {1x1}
+template <
+  typename Shape_,
+  typename Element_,
+  typename ThreadMap_
+>
+class Conv2dDgradFilterTileAccessIteratorOptimized <
+  Shape_,
+  Element_,
+  ThreadMap_,
+  conv::StrideSupport::kUnity
+  > {
 public:
   
   //
@@ -79,7 +95,7 @@ public:
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
   static IteratorAlgorithm const kIteratorAlgorithm = conv::IteratorAlgorithm::kOptimized;
-  static StrideSupport const kStrideSupport = StrideSupport_;
+  static StrideSupport const kStrideSupport = conv::StrideSupport::kUnity;
   static int const kConvDim = 2;
   using ConvProblemSize = typename conv::Conv2dProblemSize;
   

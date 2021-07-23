@@ -28,13 +28,14 @@
 #pragma once
 
 #include <fstream>
+#include <cfenv>
 
 #include "../../common/cutlass_unit_test.h"
 
 #include "cutlass/aligned_buffer.h"
 #include "cutlass/half.h"
 #include "cutlass/complex.h"
-
+#include "cutlass/quaternion.h"
 #include "cutlass/epilogue/thread/linear_combination.h"
 
 #include "cutlass/util/host_tensor.h"
@@ -307,10 +308,18 @@ public:
         
         ElementOutput expected;
         if (coord.row() < problem_size.row() && coord.column() < problem_size.column()) {
-          expected = ElementOutput(output_params.alpha * ElementCompute(accumulator_tensor.at(coord)) + 
-            output_params.beta * ElementCompute(source_tensor.at(coord)));
-        }
-        else {
+          ElementCompute intermediate =
+            output_params.alpha * ElementCompute(accumulator_tensor.at(coord)) + 
+            output_params.beta * ElementCompute(source_tensor.at(coord));
+          
+          if (std::numeric_limits<ElementOutput>::is_integer
+              && !std::numeric_limits<ElementCompute>::is_integer) {
+            std::fesetround(FE_TONEAREST);
+            expected = ElementOutput(std::nearbyint(float(cutlass::real(intermediate))));
+          } else {
+            expected = ElementOutput(intermediate);
+          }
+        } else {
           expected = default_output;
         }
 
@@ -322,7 +331,11 @@ public:
             << "-------\n"
             << "Error - output element (" << coord << ") - expected: " 
             << OutputIO(expected) 
-            << ",  got: " << OutputIO(got) << std::endl;
+            << ",  got: " << OutputIO(got)
+            << ",  accum: " << (accumulator_tensor.at(coord))
+            << ",  source: " << OutputIO(source_tensor.at(coord))
+            << ",  alpha: " << (output_params.alpha)
+            << ",  beta: " << (output_params.beta) << "\n";
 
           ++errors;
         }

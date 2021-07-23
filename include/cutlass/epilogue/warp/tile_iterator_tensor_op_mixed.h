@@ -37,6 +37,11 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+// This is an optimization available on CUDA 11.2 and beyond that eliminates branches in the epilogue.
+#define CUTLASS_EPILOGUE_WARP_TILE_ITERATOR_TENSOR_OP_MIXED_OPTIMIZATION_ENABLED ((__CUDACC_VER_MAJOR__ * 10 + __CUDACC_VER_MINOR__) >= 112)
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 namespace cutlass {
 namespace epilogue {
 namespace warp {
@@ -207,13 +212,34 @@ public:
 
     AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
 
+    AccessType *ptr = pointers_[0];
+
+#if CUTLASS_EPILOGUE_WARP_TILE_ITERATOR_TENSOR_OP_MIXED_OPTIMIZATION_ENABLED
+
+    // When the optimization is enabled, small tiles require separate logic.
+    if (WarpShape::kN == 32 && warp_column_ > 0) {
+      ptr = pointers_[1];
+    }
+
+#endif
+
     CUTLASS_PRAGMA_UNROLL
     for (int64_t n = 0; n < Policy::OperatorCount::kColumn; ++n) {
+      
+#if CUTLASS_EPILOGUE_WARP_TILE_ITERATOR_TENSOR_OP_MIXED_OPTIMIZATION_ENABLED
 
+      //
+      // When the optimization is enabled, this expression suffices to obtain the SMEM pointer.
+      //
+      if (WarpShape::kN == 64) {
+        ptr = pointers_[n / 4];
+      }
+
+#else
+      // This is the reference implementation
       int column_idx = warp_column_ + n * Detail::kLanesInQuad * Policy::kElementsPerAccess;
       int ptr_idx = ((column_idx * sizeof_bits<Element>::value) / 1024) % Detail::kPointerCount;
 
-      AccessType *ptr;
       if (ptr_idx == 0) {
         ptr = pointers_[0 % Detail::kPointerCount];
       }
@@ -226,6 +252,8 @@ public:
       else if (ptr_idx == 3) {
         ptr = pointers_[3 % Detail::kPointerCount];
       }
+#endif
+
 
       int offset = n * Detail::kLanesInQuad + pointer_offset / Policy::kElementsPerAccess;
 #if 0
@@ -671,5 +699,9 @@ public:
 } // namespace warp
 } // namespace epilogue
 } // namespace cutlass
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+#undef CUTLASS_EPILOGUE_WARP_TILE_ITERATOR_TENSOR_OP_MIXED_OPTIMIZATION_ENABLED
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

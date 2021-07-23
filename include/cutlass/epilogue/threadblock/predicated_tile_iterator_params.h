@@ -138,11 +138,10 @@ OutputTileThreadMapDesc make_OutputTileThreadMapDesc() {
     make_OutputTileShapeDesc<typename ThreadMap::Count>()
   );
 }
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 //
-// Parameters struct
+// Parameters struct for PredicatedTileIterator
 //
 
 struct PredicatedTileIteratorParams {
@@ -170,9 +169,9 @@ struct PredicatedTileIteratorParams {
   //
 
   CUTLASS_HOST_DEVICE
-  Status initialize(Index stride_, OutputTileThreadMapDesc thread_map) {
+  Status initialize(LongIndex stride_, OutputTileThreadMapDesc thread_map) {
     
-    stride = LongIndex(stride_);
+    stride = stride_;
 
     increment_row = stride * thread_map.delta.row;
 
@@ -207,18 +206,165 @@ struct PredicatedTileIteratorParams {
   }
 
   CUTLASS_HOST_DEVICE
+  Status initialize(Index stride_, OutputTileThreadMapDesc thread_map) {
+    return initialize(LongIndex(stride_), thread_map); 
+  }
+
+  CUTLASS_HOST_DEVICE
   PredicatedTileIteratorParams() {
-    initialize(0, OutputTileThreadMapDesc());
+    initialize(LongIndex(0), OutputTileThreadMapDesc());
   }
 
   CUTLASS_HOST_DEVICE
   PredicatedTileIteratorParams(Index stride, OutputTileThreadMapDesc thread_map) {
+    initialize(stride, thread_map);
+  }
 
+  CUTLASS_HOST_DEVICE
+  PredicatedTileIteratorParams(LongIndex stride, OutputTileThreadMapDesc thread_map) {
     initialize(stride, thread_map);
   }
 };
 
+
 ///////////////////////////////////////////////////////////////////////////////
+//  InterleavedPredicatedTileIterator
+///////////////////////////////////////////////////////////////////////////////
+
+
+/// Predicated tile access iterator descriptor object containing template dependent state
+struct InterleavedPredicatedTileIteratorDesc {
+
+  int element_size_bits;
+  int elements_per_access;
+  int threadmap_warp_size;
+  layout::PitchLinearCoord threadmap_iterations;
+  layout::PitchLinearCoord threadmap_delta;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  InterleavedPredicatedTileIteratorDesc() { }
+
+  CUTLASS_HOST_DEVICE
+  InterleavedPredicatedTileIteratorDesc(
+    int element_size_bits_,
+    int elements_per_access_,
+    int threadmap_warp_size_,
+    layout::PitchLinearCoord threadmap_iterations_,
+    layout::PitchLinearCoord threadmap_delta_
+  ):
+    element_size_bits(element_size_bits_),
+    elements_per_access(elements_per_access_),
+    threadmap_warp_size(threadmap_warp_size_),
+    threadmap_iterations(threadmap_iterations_),
+    threadmap_delta(threadmap_delta_) { }
+};
+
+//
+// Parameters struct InterleavedPredicatedTileIterator
+//
+
+struct InterleavedPredicatedTileIteratorParams {
+
+  using Index = int32_t;
+  using LongIndex = int64_t;
+
+  //
+  // Data members
+  //
+
+  LongIndex stride;               ///< stride in bytes between rows
+  LongIndex advance_row;          ///< amount to add to move to the next 'row' position
+  LongIndex advance_column;       ///< amount to add to move to the next 'column' position
+
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  Status initialize(LongIndex stride_, InterleavedPredicatedTileIteratorDesc desc) {
+    
+    stride = stride_;
+
+    advance_row = desc.threadmap_delta.contiguous() * desc.element_size_bits / 8;
+
+    advance_column = stride_ - desc.threadmap_iterations.contiguous() *
+                               desc.elements_per_access *
+                               desc.element_size_bits *
+                               desc.threadmap_warp_size / 8;
+
+    return Status::kSuccess;
+  }
+
+  CUTLASS_HOST_DEVICE
+  InterleavedPredicatedTileIteratorParams() {
+    initialize(LongIndex(0), InterleavedPredicatedTileIteratorDesc());
+  }
+
+  CUTLASS_HOST_DEVICE
+  InterleavedPredicatedTileIteratorParams(Index stride, InterleavedPredicatedTileIteratorDesc desc) {
+    initialize(stride, desc);
+  }
+
+  CUTLASS_HOST_DEVICE
+  InterleavedPredicatedTileIteratorParams(LongIndex stride, InterleavedPredicatedTileIteratorDesc desc) {
+    initialize(stride, desc);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Helper template to construct an OutputTileShapeDesc from a OutputTileThreadMap template.
+template <typename Element, typename ThreadMap>
+CUTLASS_HOST_DEVICE
+InterleavedPredicatedTileIteratorDesc make_InterleavedPredicatedTileIteratorDesc() {
+  return InterleavedPredicatedTileIteratorDesc(
+    sizeof_bits<Element>::value,
+    ThreadMap::kElementsPerAccess,
+    ThreadMap::kWarpSize,
+    {ThreadMap::Iterations::kContiguous, ThreadMap::Iterations::kStrided},
+    {ThreadMap::Delta::kContiguous, ThreadMap::Delta::kStrided}
+  );
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Helper template to construct an MakePredicatedTileIteratorDesc from a template 
+// dependent state
+template <typename Element, typename Layout,
+   typename ThreadMap>
+  struct MakePredicatedTileIteratorDesc;
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Specialization of PredicatedTileAccessIterator for layout::RowMajor output data.
+template <typename Element, typename ThreadMap>
+struct MakePredicatedTileIteratorDesc <
+    Element, layout::RowMajor, ThreadMap> {
+
+  CUTLASS_HOST_DEVICE
+  OutputTileThreadMapDesc operator()() {
+
+    return make_OutputTileThreadMapDesc<ThreadMap>();
+  }
+};
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Specialization of PredicatedTileAccessIterator for layout::ColumnMajorInterleaved<InterleavedN> output data.
+template <typename Element, typename ThreadMap, int InterleavedN>
+struct MakePredicatedTileIteratorDesc <
+    Element, layout::ColumnMajorInterleaved<InterleavedN>, ThreadMap> {
+
+  CUTLASS_HOST_DEVICE
+  InterleavedPredicatedTileIteratorDesc operator()() {
+
+    return make_InterleavedPredicatedTileIteratorDesc<Element, ThreadMap>();
+  }
+};
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace threadblock
 } // namespace epilogue

@@ -54,7 +54,7 @@ size_t DeviceAllocation::bytes(library::NumericTypeID type, size_t capacity) {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename Layout>
-static std::vector<int> get_packed_layout_stride(std::vector<int> const &extent) {
+static std::vector<int64_t> get_packed_layout_stride(std::vector<int> const &extent) {
 
   typename Layout::TensorCoord extent_coord;
   typename Layout::Stride stride_coord;
@@ -67,25 +67,25 @@ static std::vector<int> get_packed_layout_stride(std::vector<int> const &extent)
     extent_coord[i] = extent.at(i);
   }
 
-  std::vector<int> stride;
+  std::vector<int64_t> stride;
   stride.resize(Layout::kStrideRank, 0);
 
   Layout layout = Layout::packed(extent_coord);
   stride_coord = layout.stride();
 
   for (int i = 0; i < Layout::kStrideRank; ++i) {
-    stride.at(i) = stride_coord[i];
+    stride.at(i) = (int64_t)stride_coord[i];
   }
 
   return stride;
 }
 
 /// Returns the stride of a packed layout
-std::vector<int> DeviceAllocation::get_packed_layout(
+std::vector<int64_t> DeviceAllocation::get_packed_layout(
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent) {
 
-  std::vector<int> stride;
+  std::vector<int64_t> stride;
 
   switch (layout_id) {
     case library::LayoutTypeID::kColumnMajor: 
@@ -159,7 +159,7 @@ static size_t construct_layout_(
   void *bytes,
   library::LayoutTypeID layout_id,
   std::vector<int> const &extent,
-  std::vector<int> &stride) {
+  std::vector<int64_t> &stride) {
 
   if (extent.size() != Layout::kRank) {
     throw std::runtime_error(
@@ -183,7 +183,7 @@ static size_t construct_layout_(
 
   typename Layout::Stride stride_coord;
   for (int i = 0; i < Layout::kStrideRank; ++i) {
-    stride_coord[i] = stride.at(i);
+    stride_coord[i] = (int)stride.at(i);
   }
 
   typename Layout::TensorCoord extent_coord;
@@ -210,7 +210,7 @@ size_t DeviceAllocation::construct_layout(
   void *bytes,
   library::LayoutTypeID layout_id,
   std::vector<int> const &extent,
-  std::vector<int> &stride) {
+  std::vector<int64_t> &stride) {
 
   switch (layout_id) {
     case library::LayoutTypeID::kColumnMajor: 
@@ -309,7 +309,7 @@ DeviceAllocation::DeviceAllocation(
   library::NumericTypeID type, 
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
-  std::vector<int> const &stride,
+  std::vector<int64_t> const &stride,
   int batch_count
 ):
   type_(type), batch_stride_(size_t(0)), capacity_(size_t(0)), pointer_(nullptr), batch_count_(1) {
@@ -370,12 +370,12 @@ DeviceAllocation &DeviceAllocation::reset(
   library::NumericTypeID type, 
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
-  std::vector<int> const &stride,
+  std::vector<int64_t> const &stride,
   int batch_count) {
 
   reset();
 
-  tensor_ref_buffer_.resize(sizeof(pointer_) + (sizeof(int) * library::get_layout_stride_rank(layout_id)), 0);
+  tensor_ref_buffer_.resize(sizeof(pointer_) + (sizeof(int64_t) * library::get_layout_stride_rank(layout_id)), 0);
 
   type_ = type;
 
@@ -422,7 +422,7 @@ library::LayoutTypeID DeviceAllocation::layout() const {
   return layout_;
 }
 
-std::vector<int> const & DeviceAllocation::stride() const {
+std::vector<int64_t> const & DeviceAllocation::stride() const {
   return stride_;
 }
 
@@ -1277,6 +1277,15 @@ struct vector_to_coord {
       vector_to_coord<TensorCoord, Rank - 1>(coord, vec);
     }
   }
+
+  vector_to_coord(TensorCoord &coord, std::vector<int64_t> const &vec) {
+
+    coord[Rank - 1] = (int)vec.at(Rank - 1);
+    
+    if (Rank > 1) {
+      vector_to_coord<TensorCoord, Rank - 1>(coord, vec);
+    }
+  }
 };
 
 /// Permits copying dynamic vectors into static-length vectors 
@@ -1286,6 +1295,11 @@ struct vector_to_coord<TensorCoord, 1> {
   vector_to_coord(TensorCoord &coord, std::vector<int> const &vec) {
 
     coord[0] = vec.at(0);
+  }
+
+  vector_to_coord(TensorCoord &coord, std::vector<int64_t> const &vec) {
+
+    coord[0] = (int)vec.at(0);
   }
 };
 
@@ -1306,7 +1320,7 @@ static void write_tensor_csv_static_tensor_view(
   DeviceAllocation &allocation) {
 
   Coord<Layout::kRank> extent;
-  Coord<Layout::kStrideRank> stride;
+  Coord<Layout::kStrideRank, typename Layout::Stride::Index> stride;
 
   if (allocation.extent().size() != Layout::kRank) {
     throw std::runtime_error("Allocation extent has invalid rank");
@@ -1317,7 +1331,8 @@ static void write_tensor_csv_static_tensor_view(
   }
 
   vector_to_coord<Coord<Layout::kRank>, Layout::kRank>(extent, allocation.extent());
-  vector_to_coord<Coord<Layout::kStrideRank>, Layout::kStrideRank>(stride, allocation.stride());
+  vector_to_coord<Coord<Layout::kStrideRank, typename Layout::Stride::Index>, 
+                        Layout::kStrideRank>(stride, allocation.stride());
 
   Layout layout(stride);
   HostTensor<Element, Layout> host_tensor(extent, layout, false);
@@ -1491,6 +1506,162 @@ void DeviceAllocation::write_tensor_csv(
 
   case library::NumericTypeID::kCF64:
     write_tensor_csv_static_type<cutlass::complex<double> >(out, *this);
+    break;
+
+  default:
+    throw std::runtime_error("Unsupported numeric type");
+  }
+}
+
+template <typename Element, typename Layout>
+static void tensor_fill_tensor_view(DeviceAllocation &allocation, Element val = Element()) {
+  Coord<Layout::kRank> extent;
+  Coord<Layout::kStrideRank, typename Layout::LongIndex> stride;
+
+  if (allocation.extent().size() != Layout::kRank) {
+    throw std::runtime_error("Allocation extent has invalid rank");
+  }
+
+  if (allocation.stride().size() != Layout::kStrideRank) {
+    throw std::runtime_error("Allocation stride has invalid rank");
+  }
+
+  vector_to_coord<Coord<Layout::kRank>, Layout::kRank>(extent, allocation.extent());
+  vector_to_coord<Coord<Layout::kStrideRank, typename Layout::LongIndex>, 
+                        Layout::kStrideRank>(stride, allocation.stride());
+
+  TensorView<Element, Layout> view(
+    static_cast<Element *>(allocation.data()),
+    Layout(stride),
+    extent
+  );
+
+
+  cutlass::reference::device::TensorFill<Element, Layout>(
+    view,
+    val
+  );
+}
+
+template <typename Element>
+static void tensor_fill(DeviceAllocation &allocation, Element val = Element()) {
+  switch (allocation.layout()) {
+    case library::LayoutTypeID::kRowMajor:
+      tensor_fill_tensor_view<Element, layout::RowMajor>(allocation, val);
+      break;
+    case library::LayoutTypeID::kColumnMajor:
+      tensor_fill_tensor_view<Element, layout::ColumnMajor>(allocation, val);
+      break;
+    case library::LayoutTypeID::kTensorNHWC:
+      tensor_fill_tensor_view<Element, layout::TensorNHWC>(allocation, val);
+      break;
+    case library::LayoutTypeID::kTensorNDHWC:
+      tensor_fill_tensor_view<Element, layout::TensorNDHWC>(allocation, val);
+      break;
+    case library::LayoutTypeID::kTensorNC32HW32:
+      tensor_fill_tensor_view<Element, layout::TensorNCxHWx<32>>(allocation, val);
+      break;
+    case library::LayoutTypeID::kTensorNC64HW64:
+      tensor_fill_tensor_view<Element, layout::TensorNCxHWx<64>>(allocation, val);
+      break;
+    case library::LayoutTypeID::kTensorC32RSK32:
+      tensor_fill_tensor_view<Element, layout::TensorCxRSKx<32>>(allocation, val);
+      break;
+    case library::LayoutTypeID::kTensorC64RSK64:
+      tensor_fill_tensor_view<Element, layout::TensorCxRSKx<64>>(allocation, val);
+      break;
+    default:
+    throw std::runtime_error("Unsupported layout");
+      break;
+  }
+}
+
+/// Fills a tensor uniformly with a value (most frequently used to clear the tensor)
+void DeviceAllocation::fill(double val = 0.0) {
+
+  switch (this->type()) {
+  case library::NumericTypeID::kF16:
+    tensor_fill<half_t>(*this, static_cast<half_t>(val));
+    break;
+
+  case library::NumericTypeID::kBF16:
+    tensor_fill<bfloat16_t>(*this, static_cast<bfloat16_t>(val));
+    break;
+
+  case library::NumericTypeID::kTF32:
+    tensor_fill<tfloat32_t>(*this, static_cast<tfloat32_t>(val));
+    break;
+
+  case library::NumericTypeID::kF32:
+    tensor_fill<float>(*this, static_cast<float>(val));
+    break;
+
+  case library::NumericTypeID::kF64:
+    tensor_fill<double>(*this, static_cast<double>(val));
+    break;
+
+  case library::NumericTypeID::kS2:
+    tensor_fill<int2b_t>(*this, static_cast<int2b_t>(val));
+    break;
+
+  case library::NumericTypeID::kS4:
+    tensor_fill<int4b_t>(*this, static_cast<int4b_t>(val));
+    break;
+
+  case library::NumericTypeID::kS8:
+    tensor_fill<int8_t>(*this, static_cast<int8_t>(val));
+    break;
+
+  case library::NumericTypeID::kS16:
+    tensor_fill<int16_t>(*this, static_cast<int16_t>(val));
+    break;
+
+  case library::NumericTypeID::kS32:
+    tensor_fill<int32_t>(*this, static_cast<int32_t>(val));
+    break;
+
+  case library::NumericTypeID::kS64:
+    tensor_fill<int64_t>(*this, static_cast<int64_t>(val));
+    break;
+
+  case library::NumericTypeID::kB1:
+    tensor_fill<uint1b_t>(*this, static_cast<uint1b_t>(val));
+    break;
+
+  case library::NumericTypeID::kU2:
+    tensor_fill<uint2b_t>(*this, static_cast<uint2b_t>(val));
+    break;
+
+  case library::NumericTypeID::kU4:
+    tensor_fill<uint4b_t>(*this, static_cast<uint4b_t>(val));
+    break;
+
+  case library::NumericTypeID::kU8:
+    tensor_fill<uint8_t>(*this, static_cast<uint8_t>(val));
+    break;
+
+  case library::NumericTypeID::kU16:
+    tensor_fill<uint16_t>(*this, static_cast<uint16_t>(val));
+    break;
+
+  case library::NumericTypeID::kU32:
+    tensor_fill<uint32_t>(*this, static_cast<uint32_t>(val));
+    break;
+
+  case library::NumericTypeID::kU64:
+    tensor_fill<uint64_t>(*this, static_cast<uint64_t>(val));
+    break;
+
+  case library::NumericTypeID::kCF16:
+    tensor_fill<cutlass::complex<half_t> >(*this, from_real<half_t>(val));
+    break;
+
+  case library::NumericTypeID::kCF32:
+    tensor_fill<cutlass::complex<float> >(*this, from_real<float>(val));
+    break;
+
+  case library::NumericTypeID::kCF64:
+    tensor_fill<cutlass::complex<double> >(*this, from_real<double>(val));
     break;
 
   default:

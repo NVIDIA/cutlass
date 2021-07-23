@@ -28,9 +28,13 @@ add_custom_target(test_examples)
 function(cutlass_example_add_executable NAME)
 
   set(options)
-  set(oneValueArgs)
+  set(oneValueArgs DISABLE_TESTS)
   set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  if (NOT DEFINED __DISABLE_TESTS)
+    set(__DISABLE_TESTS OFF)
+  endif()
 
   cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS})
 
@@ -60,6 +64,7 @@ function(cutlass_example_add_executable NAME)
     DEPENDEES test_examples ${__DEPENDEES}
     TEST_COMMAND_OPTIONS ${__TEST_COMMAND_OPTIONS}
     DISABLE_EXECUTABLE_INSTALL_RULE
+    DISABLE_TESTS ${__DISABLE_TESTS}
     )
 
 endfunction()
@@ -83,6 +88,11 @@ foreach(EXAMPLE
   15_ampere_sparse_tensorop_gemm
   16_ampere_tensorop_conv2dfprop
   17_fprop_per_channel_bias
+  18_ampere_fp64_tensorop_affine2_gemm
+  19_tensorop_canonical
+  20_simt_canonical
+  21_quaternion_gemm
+  22_quaternion_conv
   )
 
   add_subdirectory(${EXAMPLE})

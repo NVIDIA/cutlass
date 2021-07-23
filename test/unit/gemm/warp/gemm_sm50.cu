@@ -29,6 +29,7 @@
 #include "../../common/cutlass_unit_test.h"
 
 #include "cutlass/complex.h"
+#include "cutlass/quaternion.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/warp/mma_simt.h"
 
@@ -592,4 +593,56 @@ TEST(SM50_warp_gemm_complex_f64_col_row_row, 32x16x1_1x1x1) {
 
   test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8>>().run();
 }
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM50_warp_gemm_quaternion_f32_col_row_col, 16x8x8_1x1x1) {
+
+  using Policy = cutlass::gemm::warp::MmaSimtPolicy<
+    cutlass::MatrixShape<8, 4>,
+    cutlass::layout::ColumnMajorInterleaved<2>,
+    cutlass::gemm::GemmShape<1, 1, 1>
+  >;
+
+  using quaternion_f32_t = cutlass::Quaternion<float>;
+
+  using Mma = cutlass::gemm::warp::MmaSimt<
+    cutlass::gemm::GemmShape<16, 8, 8>,
+    quaternion_f32_t,
+    cutlass::layout::ColumnMajor,
+    quaternion_f32_t,
+    cutlass::layout::RowMajor,
+    quaternion_f32_t,
+    cutlass::layout::ColumnMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8>>().run();
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM50_warp_gemm_quaternion_f32_col_row_row, 16x8x8_1x1x1) {
+
+  using Policy = cutlass::gemm::warp::MmaSimtPolicy<
+    cutlass::MatrixShape<8, 4>,
+    cutlass::layout::ColumnMajorInterleaved<2>,
+    cutlass::gemm::GemmShape<1, 1, 1>
+  >;
+
+  using quaternion_f32_t = cutlass::Quaternion<float>;
+
+  using Mma = cutlass::gemm::warp::MmaSimt<
+    cutlass::gemm::GemmShape<16, 8, 8>,
+    quaternion_f32_t,
+    cutlass::layout::ColumnMajor,
+    quaternion_f32_t,
+    cutlass::layout::RowMajor,
+    quaternion_f32_t,
+    cutlass::layout::RowMajor,
+    Policy
+  >;
+
+  test::gemm::warp::Testbed<Mma, cutlass::gemm::GemmShape<128, 128, 8>>().run();
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////

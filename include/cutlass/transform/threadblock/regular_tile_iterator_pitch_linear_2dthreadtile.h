@@ -79,6 +79,7 @@ public:
 
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
+  using StrideIndex = typename Layout::Stride::Index;
 
   using TensorRef = TensorRef<Element, Layout>;
   using TensorCoord = typename Layout::TensorCoord;
@@ -104,13 +105,13 @@ private:
   uint8_t *pointer_;
 
   /// Stride quantity
-  Index stride_;
+  StrideIndex stride_;
 
   /// Amount to increment pointer along strided dimension
-  Index increment_strided_;
+  LongIndex increment_strided_;
 
   /// Amount to advance pointer between tiles
-  Index increment_advance_;
+  LongIndex increment_advance_;
 
 public:
 
