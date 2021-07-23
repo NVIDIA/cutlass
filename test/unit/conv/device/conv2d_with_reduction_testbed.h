@@ -145,15 +145,12 @@ public:
     tensor_B.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size));
     tensor_C.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
 
-    int gemm_m = problem_size.N * problem_size.P * problem_size.Q;
-    int gemm_n = problem_size.K;
-
     tensor_Reduction.resize({
-      gemm_m, 
-      (gemm_n - 1 + Conv2d::ThreadblockShape::kN) / Conv2d::ThreadblockShape::kN
+      (problem_size.N * problem_size.P * problem_size.Q), 
+      (problem_size.K - 1 + Conv2d::ThreadblockShape::kN) / Conv2d::ThreadblockShape::kN
     });
 
-    tensor_Tensor.resize({gemm_m, gemm_n});
+    tensor_Tensor.resize({(problem_size.N * problem_size.P * problem_size.Q), problem_size.K});
 
     tensor_D_computed.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
     tensor_D_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
