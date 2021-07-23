@@ -527,6 +527,7 @@ CUTLASS is released by NVIDIA Corporation as Open Source software under the
 
 The official list of CUTLASS developers and contributors is available here: [CONTRIBUTORS](CONTRIBUTORS.md).
 
+
 # Copyright
 
 Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
