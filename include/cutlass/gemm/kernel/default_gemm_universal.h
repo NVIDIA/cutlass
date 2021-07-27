@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -95,8 +95,8 @@ template <
     int Stages,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill = false,
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear = SharedMemoryClearOption::kNone,
     ///
     typename Enable = void
     >
@@ -144,8 +144,8 @@ template <
     int Stages,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear
 >
 struct DefaultGemmUniversal<
   ElementA,
@@ -168,7 +168,7 @@ struct DefaultGemmUniversal<
   ThreadblockSwizzle,
   Stages,
   Operator,
-  UseZfill,
+  SharedMemoryClear,
   typename std::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
@@ -192,7 +192,7 @@ struct DefaultGemmUniversal<
     Stages,
     true,
     Operator,
-    UseZfill
+    SharedMemoryClear
   >::GemmKernel;
 
     /// Define the kernel in terms of the default kernel
@@ -250,8 +250,8 @@ template <
     int Stages,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear
   >
 struct DefaultGemmUniversal<
   ElementA,
@@ -274,7 +274,7 @@ struct DefaultGemmUniversal<
   ThreadblockSwizzle,
   Stages,
   Operator,
-  UseZfill,
+  SharedMemoryClear,
   typename std::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 

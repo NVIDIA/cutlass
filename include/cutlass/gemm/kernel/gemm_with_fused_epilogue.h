@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -398,6 +398,27 @@ public:
   /// Executes one GEMM
   CUTLASS_DEVICE
   void operator()(Params const &params, SharedStorage &shared_storage) {
+
+    #if 0
+    //
+    // DO NOT CHECK IN
+    //
+
+    // Fill SMEM with non-zero data to reveal bugs.
+    
+    uint8_t *bytes = reinterpret_cast<uint8_t *>(&shared_storage);
+
+    CUTLASS_PRAGMA_NO_UNROLL
+    for (int i = 0; i < sizeof(shared_storage); ++i) {
+      bytes[i] = 0x11;
+    }
+
+    __syncthreads();
+
+    //
+    // DO NOT CHECK IN
+    //
+    #endif
 
     // Compute threadblock location
     ThreadblockSwizzle threadblock_swizzle;

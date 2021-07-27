@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -451,6 +451,94 @@ struct TestbedGemmWithReduction {
     if (!passed) {
       std::cout << "Failed with batch_count/split_k_slices = " << batch_count << std::endl;
     }
+
+    //
+    // Profile
+    //
+
+    #if 0 // profiling disabled for now.
+
+    int const kWorkspaces = 100;
+
+    cutlass::DeviceAllocation<typename Gemm::ElementA> profiling_tensor_A(tensor_A.capacity() * kWorkspaces);
+    cutlass::DeviceAllocation<typename Gemm::ElementB> profiling_tensor_B(tensor_B.capacity() * kWorkspaces);
+    cutlass::DeviceAllocation<typename Gemm::ElementC> profiling_tensor_C(tensor_C.capacity() * kWorkspaces);
+    cutlass::DeviceAllocation<typename Gemm::ElementC> profiling_tensor_D(tensor_D.capacity() * kWorkspaces);
+    cutlass::DeviceAllocation<typename Gemm::ElementC> profiling_tensor_Reduction(tensor_Reduction.capacity() * kWorkspaces);
+    cutlass::DeviceAllocation<ElementT> profiling_tensor_Tensor(tensor_Tensor.capacity() * kWorkspaces);
+
+    cudaEvent_t events[2];
+    for (auto & event : events) {
+      cudaError_t result = cudaEventCreate(&event);
+      if (result != cudaSuccess) {
+        EXPECT_EQ(result, cudaSuccess) << " cudaEventCreate() failed with error " << cudaGetErrorString(result);
+        return false;
+        break;
+      }
+    }
+
+    int const kWarmupIterations = 5;
+    int const kProfilingIterations = 100;
+
+    for (int i = 0; i < kWarmupIterations; ++i) {
+      status = gemm_op();
+      EXPECT_TRUE(status == cutlass::Status::kSuccess) << to_string(status);
+    }
+    
+
+    cudaError_t result = cudaEventRecord(events[0]);
+    EXPECT_EQ(result, cudaSuccess);
+
+    for (int i = 0; i < kProfilingIterations; ++i) {
+
+      typename Gemm::Arguments arguments{
+        mode,
+        problem_size,
+        batch_count,
+        {alpha, beta},
+        profiling_tensor_A.get() + tensor_A.capacity() * (i % kWorkspaces),
+        profiling_tensor_B.get() + tensor_B.capacity() * (i % kWorkspaces),
+        profiling_tensor_C.get() + tensor_C.capacity() * (i % kWorkspaces),
+        profiling_tensor_D.get() + tensor_D.capacity() * (i % kWorkspaces),
+        profiling_tensor_Reduction.get() + tensor_Reduction.capacity() * (i % kWorkspaces),
+        profiling_tensor_Tensor.get() + tensor_Tensor.capacity() * (i % kWorkspaces),
+        problem_size.m() * problem_size.k(),
+        problem_size.n() * problem_size.k(),
+        problem_size.m() * problem_size.n(),
+        problem_size.m() * problem_size.n(),
+        problem_size.m(),
+        problem_size.m() * problem_size.n(),
+        tensor_A.layout().stride(0),
+        tensor_B.layout().stride(0),
+        tensor_C.layout().stride(0),
+        tensor_D.layout().stride(0),
+        tensor_Reduction.layout().stride(0),
+        tensor_Tensor.layout().stride(0),
+      };
+
+      gemm_op.initialize(arguments, workspace.get());
+      status = gemm_op();
+      EXPECT_TRUE(status == cutlass::Status::kSuccess) << to_string(status);
+    }
+
+    result = cudaEventRecord(events[1]);
+    EXPECT_EQ(result, cudaSuccess);
+
+    result = cudaDeviceSynchronize();
+    EXPECT_EQ(result, cudaSuccess);
+
+    float elapsed_time = 0;
+    result = cudaEventElapsedTime(&elapsed_time, events[0], events[1]);
+    EXPECT_EQ(result, cudaSuccess);
+
+    double average_time = double(elapsed_time) / double(kProfilingIterations);
+
+    std::cout << problem_size << ": " << average_time << " ms" << std::endl;
+
+    for (auto & event : events) {
+      cudaEventDestroy(event);
+    }
+    #endif
 
     return passed;
   }

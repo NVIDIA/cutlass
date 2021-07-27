@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -232,7 +232,7 @@ struct Conv2dFpropActivationIteratorOptimizedParams<layout::TensorNHWC> {
     filter_c_delta = threadblock_shape.column() * problem_size.split_k_slices;
   }
 
-#if 0
+#if ENABLE_CONV2D_PARAMS_PRINT
   /// Prints internal state.
   CUTLASS_HOST_DEVICE
   void print() {
@@ -383,7 +383,7 @@ struct Conv2dFpropFilterIteratorOptimizedParams<layout::TensorNHWC>
     filter_c_delta = threadblock_shape.row() * problem_size.split_k_slices;
   }
 
-#if 0
+#if ENABLE_CONV2D_PARAMS_PRINT
   /// Prints internal state.
   CUTLASS_HOST_DEVICE
   void print() {

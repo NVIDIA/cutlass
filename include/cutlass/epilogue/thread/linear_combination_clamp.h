@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -278,15 +278,7 @@ public:
   using ElementCompute = float;
 
   static_assert(
-      platform::is_same<ElementOutput, int32_t>::value ||
-          platform::is_same<ElementOutput, uint32_t>::value ||
-          platform::is_same<ElementOutput, int16_t>::value ||
-          platform::is_same<ElementOutput, uint16_t>::value ||
-          platform::is_same<ElementOutput, int8_t>::value ||
-          platform::is_same<ElementOutput, uint8_t>::value ||
-          platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
-          platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
-          platform::is_same<ElementOutput, cutlass::uint1b_t>::value,
+      platform::numeric_limits<ElementOutput>::is_integer,
       "This elementwise op expects the output to be int.");
 
   static int const kCount = Count;
@@ -483,15 +475,7 @@ class FastLinearCombinationClamp {
   using ElementCompute = float;
 
   static_assert(
-      platform::is_same<ElementOutput, int32_t>::value ||
-          platform::is_same<ElementOutput, uint32_t>::value ||
-          platform::is_same<ElementOutput, int16_t>::value ||
-          platform::is_same<ElementOutput, uint16_t>::value ||
-          platform::is_same<ElementOutput, int8_t>::value ||
-          platform::is_same<ElementOutput, uint8_t>::value ||
-          platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
-          platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
-          platform::is_same<ElementOutput, cutlass::uint1b_t>::value,
+      platform::numeric_limits<ElementOutput>::is_integer,
       "This elementwise op expects the output to be int.");
 
   static int const kCount = Count;

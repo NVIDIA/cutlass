@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -78,7 +78,7 @@ template <
     /// Number of stages,
     int Stages,
     /// Use zfill or predicate for out-of-bound cp.async
-    bool UseZfill = false,
+    SharedMemoryClearOption SharedMemoryClear = SharedMemoryClearOption::kNone,
     /// Used for partial specialization
     typename Enable = bool>
 class MmaMultistage : 
@@ -230,7 +230,7 @@ public:
         for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_A.get();
 
-          if (UseZfill) {
+          if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
             cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
                 dst_ptr + v, gmem_ptr, iterator_A.valid());
           } else {
@@ -265,7 +265,7 @@ public:
         for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_B.get();
 
-          if (UseZfill) {
+          if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
             cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
                 dst_ptr + v, gmem_ptr, iterator_B.valid());
           } else {
@@ -375,6 +375,55 @@ public:
 
     // Perform accumulation in the 'd' output operand
     accum = src_accum;
+
+    //
+    // Clear the remaining tiles of SMEM. This is a functional requirement for some kernels
+    // so that all accumulator elements outside the GEMM footprint are zero.
+    //
+
+    if (SharedMemoryClear == SharedMemoryClearOption::kClearLastStage) {
+
+      /// Iterator to write threadblock-scoped tile of A operand to shared memory
+      SmemIteratorA last_smem_iterator_A(this->smem_iterator_A_);
+
+      typename IteratorA::AccessType zero_A;
+      zero_A.clear();
+
+      last_smem_iterator_A.set_iteration_index(0);
+
+      // Async Copy for operand A
+      CUTLASS_PRAGMA_UNROLL
+      for (int j = 0; j < Detail::AsyncCopyIterationsPerStageA; ++j) {
+
+        typename IteratorA::AccessType *dst_ptr =
+            reinterpret_cast<typename IteratorA::AccessType *>(
+                last_smem_iterator_A.get());
+
+        *dst_ptr = zero_A;
+
+        ++last_smem_iterator_A;
+      }
+
+      /// Iterator to write threadblock-scoped tile of B operand to shared memory
+      SmemIteratorB last_smem_iterator_B(this->smem_iterator_B_);
+      typename IteratorB::AccessType zero_B;
+
+      zero_B.clear();
+      last_smem_iterator_B.set_iteration_index(0);
+
+      // Async Copy for operand B
+      CUTLASS_PRAGMA_UNROLL
+      for (int j = 0; j < Detail::AsyncCopyIterationsPerStageB; ++j) {
+
+        typename IteratorB::AccessType *dst_ptr =
+            reinterpret_cast<typename IteratorB::AccessType *>(
+                last_smem_iterator_B.get());
+
+        *dst_ptr = zero_B;
+
+        ++last_smem_iterator_B;
+      }
+    }
 
     // Waits until kStages-2 stages have committed.
     cutlass::arch::cp_async_wait<Base::kStages - 2>();
@@ -526,7 +575,7 @@ public:
 
     }
     
-    if (UseZfill) {
+    if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
       // commit and drain all pending and predicated LDGSTS pnz from the GEMM mainloop
       cutlass::arch::cp_async_fence();
       cutlass::arch::cp_async_wait<0>();

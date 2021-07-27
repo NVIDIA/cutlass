@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -424,7 +424,7 @@ struct alignas(2) half_t {
 
   /// Converts to float
   CUTLASS_HOST_DEVICE
-  operator double() const {
+  explicit operator double() const {
     return double(convert(*this));
   }
 
@@ -436,7 +436,7 @@ struct alignas(2) half_t {
 
   /// Casts to bool
   CUTLASS_HOST_DEVICE
-  operator bool() const {
+  explicit operator bool() const {
     return (convert(*this) != 0.0f);
   }
 
@@ -579,9 +579,9 @@ half_t copysign(half_t const& a, half_t const& b) {
 //
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+#if !defined(__CUDACC_RTC__)
 namespace std {
 
-#if !defined(__CUDACC_RTC__)
 /// Numeric limits
 template <>
 struct numeric_limits<cutlass::half_t> {
@@ -627,8 +627,74 @@ struct numeric_limits<cutlass::half_t> {
   /// Returns smallest finite value
   static cutlass::half_t denorm_min() { return cutlass::half_t::bitcast(0x0001); }
 };
-#endif
 }  // namespace std
+#endif
+
+namespace platform {
+
+/// std::numeric_limits
+template <class T>
+struct numeric_limits;
+
+/// Numeric limits
+template <>
+struct numeric_limits<cutlass::half_t> {
+  static bool const is_specialized = true;
+  static bool const is_signed = true;
+  static bool const is_integer = false;
+  static bool const is_exact = false;
+  static bool const has_infinity = true;
+  static bool const has_quiet_NaN = true;
+  static bool const has_signaling_NaN = false;
+#if !defined(__CUDACC_RTC__)
+  static std::float_denorm_style const has_denorm = std::denorm_present;
+#endif
+  static bool const has_denorm_loss = true;
+#if !defined(__CUDACC_RTC__)
+  static std::float_round_style const round_style = std::round_to_nearest;
+#endif
+  static bool const is_iec559 = true;
+  static bool const is_bounded = true;
+  static bool const is_modulo = false;
+  static int const digits = 10;
+
+  /// Least positive value
+  CUTLASS_HOST_DEVICE
+  static cutlass::half_t min() { return cutlass::half_t::bitcast(0x0001); }
+
+  /// Minimum finite value
+  CUTLASS_HOST_DEVICE
+  static cutlass::half_t lowest() { return cutlass::half_t::bitcast(0xfbff); }
+
+  /// Maximum finite value
+  CUTLASS_HOST_DEVICE
+  static cutlass::half_t max() { return cutlass::half_t::bitcast(0x7bff); }
+
+  /// Returns smallest finite value
+  CUTLASS_HOST_DEVICE
+  static cutlass::half_t epsilon() { return cutlass::half_t::bitcast(0x1800); }
+
+  /// Returns smallest finite value
+  CUTLASS_HOST_DEVICE
+  static cutlass::half_t round_error() { return cutlass::half_t(0.5f); }
+
+  /// Returns smallest finite value
+  CUTLASS_HOST_DEVICE
+  static cutlass::half_t infinity() { return cutlass::half_t::bitcast(0x7c00); }
+
+  /// Returns smallest finite value
+  CUTLASS_HOST_DEVICE
+  static cutlass::half_t quiet_NaN() { return cutlass::half_t::bitcast(0x7fff); }
+
+  /// Returns smallest finite value
+  CUTLASS_HOST_DEVICE
+  static cutlass::half_t signaling_NaN() { return cutlass::half_t::bitcast(0x7fff); }
+
+  /// Returns smallest finite value
+  CUTLASS_HOST_DEVICE
+  static cutlass::half_t denorm_min() { return cutlass::half_t::bitcast(0x0001); }
+};
+}  // namespace platform 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //
