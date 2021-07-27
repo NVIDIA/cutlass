@@ -399,27 +399,6 @@ public:
   CUTLASS_DEVICE
   void operator()(Params const &params, SharedStorage &shared_storage) {
 
-    #if 0
-    //
-    // DO NOT CHECK IN
-    //
-
-    // Fill SMEM with non-zero data to reveal bugs.
-    
-    uint8_t *bytes = reinterpret_cast<uint8_t *>(&shared_storage);
-
-    CUTLASS_PRAGMA_NO_UNROLL
-    for (int i = 0; i < sizeof(shared_storage); ++i) {
-      bytes[i] = 0x11;
-    }
-
-    __syncthreads();
-
-    //
-    // DO NOT CHECK IN
-    //
-    #endif
-
     // Compute threadblock location
     ThreadblockSwizzle threadblock_swizzle;
 
