@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -178,6 +178,10 @@ public:
   /// Used for the reduction
   struct ReductionDetail {
 
+    /// If true, accumulator coordinates are computed and out-of-bounds checks are enabled when
+    /// performing the reduction.
+    static bool const kOobCheck = false;
+
     /// Number of threads per warp
     static int const kWarpSize = 32;
 
@@ -301,7 +305,9 @@ public:
         reduction_fragment, 
         destination_iterator, 
         accumulators,
-        tensor_iterator);
+        tensor_iterator,
+        problem_size,
+        threadblock_offset);
     }
     else {
       compute_source_needed_(
@@ -310,7 +316,9 @@ public:
         destination_iterator, 
         accumulators, 
         source_iterator,
-        tensor_iterator);
+        tensor_iterator,
+        problem_size,
+        threadblock_offset);
     }
 
     if (output_op.participates_in_reduction()) {
@@ -433,7 +441,9 @@ private:
     ReductionFragment &reduction_fragment,            ///< Fragment containing the accumulated partial reduction over columns
     OutputTileIterator destination_iterator,          ///< Tile iterator for destination
     AccumulatorTile const &accumulators,              ///< Complete warp-level accumulator tile 
-    TensorTileIterator tensor_iterator                ///< Threadblock tile iterator for additioanl tensor operand
+    TensorTileIterator tensor_iterator,               ///< Threadblock tile iterator for additioanl tensor operand
+    MatrixCoord const &problem_size,                  ///< Problem size needed to guard against out-of-bounds accesses
+    MatrixCoord const &threadblock_offset             ///< Threadblock's initial offset within the problem size space
     ) { 
 
     //
@@ -503,7 +513,8 @@ private:
         compute_fragment, 
         output_op, 
         aligned_accum_fragment[0],
-        tensor_fragment);
+        tensor_fragment,
+        destination_iterator);
 
       //
       // Store the final result
@@ -527,7 +538,9 @@ private:
     OutputTileIterator destination_iterator,      ///< Tile iterator for destination
     AccumulatorTile const &accumulators,          ///< Complete warp-level accumulator tile
     OutputTileIterator source_iterator,           ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
-    TensorTileIterator tensor_iterator            ///< Threadblock tile iterator for additioanl tensor operand
+    TensorTileIterator tensor_iterator,            ///< Threadblock tile iterator for additioanl tensor operand
+    MatrixCoord const &problem_size,                  ///< Problem size needed to guard against out-of-bounds accesses
+    MatrixCoord const &threadblock_offset             ///< Threadblock's initial offset within the problem size space
     ) { 
     
     typename OutputTileIterator::Fragment source_fragment;
@@ -607,7 +620,8 @@ private:
         output_op, 
         aligned_accum_fragment[0], 
         source_fragment,
-        tensor_fragment);
+        tensor_fragment,
+        destination_iterator);
 
       //
       // Convert and store the final result
@@ -630,7 +644,8 @@ private:
     OutputOp const &output_op,                    ///< Output operator
     typename SharedLoadIterator::Fragment const &aligned_accum_fragment,
     typename OutputTileIterator::Fragment const &source_fragment,
-    typename TensorTileIterator::Fragment const &tensor_fragment) {
+    typename TensorTileIterator::Fragment const &tensor_fragment,
+    OutputTileIterator const & destination_iterator) {
       
     ComputeAccessType *compute_frag_ptr = 
       reinterpret_cast<ComputeAccessType *>(&compute_fragment);
@@ -657,17 +672,51 @@ private:
     //
     // Partial reduction over each column
     //
-    
+
     ReductionOp reduction_op;
+
+    typename OutputTileIterator::Mask mask;
+    destination_iterator.get_mask(mask);
 
     CUTLASS_PRAGMA_UNROLL
     for (int column = 0; column < ReductionDetail::kColumnsPerThread; ++column) {
 
+      int column_vector_idx = column / ThreadMap::kElementsPerAccess;
+      bool column_guard = mask.predicates[column_vector_idx];
+
       CUTLASS_PRAGMA_UNROLL
       for (int row = 0; row < ReductionDetail::kRowsPerThread; ++row) {
+
+        bool fetch;
+        if (ReductionDetail::kOobCheck) {
+          int row_idx = (row % ThreadMap::Iterations::kRow);
+          int residual = (row / ThreadMap::Iterations::kRow);
+
+          int group_idx = (residual % ThreadMap::Iterations::kGroup);
+          residual = (residual / ThreadMap::Iterations::kGroup);
+
+          int cluster_idx = (residual % ThreadMap::Iterations::kCluster);
+
+          int row_offset = row_idx * ThreadMap::Delta::kRow 
+            + group_idx * ThreadMap::Delta::kGroup 
+            + cluster_idx * ThreadMap::Delta::kCluster;
+
+          int output_row = destination_iterator.thread_start_row() + row_offset;
+
+          fetch = (output_row < destination_iterator.extent().row() && column_guard);
+        }
+        else {
+          fetch = true;
+        }
+
+        ElementCompute value = ElementCompute();
+        if (fetch) {
+          value = compute_fragment[row * ReductionDetail::kColumnsPerThread + column];
+        }
+
         reduction_fragment[column] = reduction_op(
           reduction_fragment[column], 
-          compute_fragment[row * ReductionDetail::kColumnsPerThread + column]);
+          value);
       }
     }
   }
@@ -679,7 +728,9 @@ private:
     FragmentCompute &compute_fragment,
     OutputOp const &output_op,                    ///< Output operator
     typename SharedLoadIterator::Fragment const &aligned_accum_fragment,
-    typename TensorTileIterator::Fragment const &tensor_fragment) {
+    typename TensorTileIterator::Fragment const &tensor_fragment,
+    OutputTileIterator const & destination_iterator
+  ) {
     
     ComputeAccessType *compute_frag_ptr = 
       reinterpret_cast<ComputeAccessType *>(&compute_fragment);
@@ -706,14 +757,48 @@ private:
 
     ReductionOp reduction_op;
 
+    typename OutputTileIterator::Mask mask;
+    destination_iterator.get_mask(mask);
+
     CUTLASS_PRAGMA_UNROLL
     for (int column = 0; column < ReductionDetail::kColumnsPerThread; ++column) {
 
+      int column_vector_idx = column / ThreadMap::kElementsPerAccess;
+      bool column_guard = mask.predicates[column_vector_idx];
+
       CUTLASS_PRAGMA_UNROLL
       for (int row = 0; row < ReductionDetail::kRowsPerThread; ++row) {
+
+        bool fetch;
+        if (ReductionDetail::kOobCheck) {
+          int row_idx = (row % ThreadMap::Iterations::kRow);
+          int residual = (row / ThreadMap::Iterations::kRow);
+
+          int group_idx = (residual % ThreadMap::Iterations::kGroup);
+          residual = (residual / ThreadMap::Iterations::kGroup);
+
+          int cluster_idx = (residual % ThreadMap::Iterations::kCluster);
+
+          int row_offset = row_idx * ThreadMap::Delta::kRow 
+            + group_idx * ThreadMap::Delta::kGroup 
+            + cluster_idx * ThreadMap::Delta::kCluster;
+
+          int output_row = destination_iterator.thread_start_row() + row_offset;
+
+          fetch = (output_row < destination_iterator.extent().row() && column_guard);
+        }
+        else {
+          fetch = true;
+        }
+
+        ElementCompute value = ElementCompute();
+        if (fetch) {
+          value = compute_fragment[row * ReductionDetail::kColumnsPerThread + column];
+        }
+
         reduction_fragment[column] = reduction_op(
           reduction_fragment[column], 
-          compute_fragment[row * ReductionDetail::kColumnsPerThread + column]);
+          value);
       }
     }
   }

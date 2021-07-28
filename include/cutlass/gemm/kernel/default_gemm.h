@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -112,8 +112,9 @@ template <
     bool SplitKSerial,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill = false>
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear = SharedMemoryClearOption::kNone
+>
 struct DefaultGemm;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -156,13 +157,13 @@ template <
     bool SplitKSerial,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill>
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear>
 struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB, ElementC,
                    LayoutC, ElementAccumulator, arch::OpClassTensorOp,
                    arch::Sm80, ThreadblockShape, WarpShape, InstructionShape,
                    EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
-                   Operator, UseZfill> {
+                   Operator, SharedMemoryClear> {
 
   static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
@@ -173,7 +174,7 @@ struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignment
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, LayoutC, arch::OpClassTensorOp, arch::Sm80,
       ThreadblockShape, WarpShape, InstructionShape, Stages,
-      Operator, false, UseZfill>::ThreadblockMma;
+      Operator, false, SharedMemoryClear>::ThreadblockMma;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
 
@@ -230,8 +231,8 @@ template <
   bool SplitKSerial,
   /// Operation performed by GEMM
   typename Operator,
-  /// Use zfill or predicate for SM80 out-of-bound cp.async
-  bool UseZfill
+  /// Use zfill or predicate for out-of-bound cp.async
+  SharedMemoryClearOption SharedMemoryClear
 >
 struct DefaultGemm<
   ElementA, LayoutA, kAlignmentA,
@@ -248,7 +249,7 @@ struct DefaultGemm<
   2,
   SplitKSerial,
   Operator,
-  UseZfill
+  SharedMemoryClear
 > {
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -318,15 +319,16 @@ template <
     bool SplitKSerial,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill>
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear>
 struct DefaultGemm<
     ElementA, layout::ColumnMajorInterleaved<InterleavedK>, kAlignmentA,
     ElementB, layout::RowMajorInterleaved<InterleavedK>, kAlignmentB, ElementC,
     layout::ColumnMajorInterleaved<InterleavedK>, int32_t,
     arch::OpClassTensorOp, arch::Sm80, ThreadblockShape, WarpShape,
     InstructionShape, EpilogueOutputOp, ThreadblockSwizzle, Stages,
-    SplitKSerial, Operator, UseZfill> {
+    SplitKSerial, Operator, SharedMemoryClear> {
+
   using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
   using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
   using LayoutC = layout::ColumnMajorInterleaved<InterleavedK>;
@@ -338,7 +340,7 @@ struct DefaultGemm<
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, LayoutC, arch::OpClassTensorOp, arch::Sm80,
       ThreadblockShape, WarpShape, InstructionShape, Stages, Operator,
-      true, UseZfill>::ThreadblockMma;
+      true, SharedMemoryClear>::ThreadblockMma;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
 
@@ -383,15 +385,16 @@ template <
     bool SplitKSerial,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill>
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear>
 struct DefaultGemm<ElementA, layout::ColumnMajorInterleaved<InterleavedK>,
                    kAlignmentA, ElementB,
                    layout::RowMajorInterleaved<InterleavedK>, kAlignmentB,
                    ElementC, layout::ColumnMajorInterleaved<InterleavedK>,
                    int32_t, arch::OpClassTensorOp, arch::Sm75, ThreadblockShape,
                    WarpShape, InstructionShape, EpilogueOutputOp,
-                   ThreadblockSwizzle, 2, SplitKSerial, Operator, UseZfill> {
+                   ThreadblockSwizzle, 2, SplitKSerial, Operator, SharedMemoryClear> {
+
   using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
   using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
   using LayoutC = layout::ColumnMajorInterleaved<InterleavedK>;
@@ -448,8 +451,8 @@ template <
   bool SplitKSerial,
   /// Operation performed by GEMM
   typename Operator,
-  /// Use zfill or predicate for SM80 out-of-bound cp.async
-  bool UseZfill
+  /// Use zfill or predicate for out-of-bound cp.async
+  SharedMemoryClearOption SharedMemoryClear
 >
 struct DefaultGemm<
   ElementA, LayoutA, kAlignmentA,
@@ -466,7 +469,7 @@ struct DefaultGemm<
   2,
   SplitKSerial,
   Operator,
-  UseZfill
+  SharedMemoryClear
 > {
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -539,8 +542,8 @@ template <
     bool SplitKSerial,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear
   >
 struct DefaultGemm<
     ElementA,
@@ -562,7 +565,7 @@ struct DefaultGemm<
     2,
     SplitKSerial,
     Operator,
-    UseZfill> {
+    SharedMemoryClear> {
 
   static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
@@ -649,8 +652,8 @@ template <
     bool SplitKSerial,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear
 >
 struct DefaultGemm<ElementA,
                    LayoutA,
@@ -671,7 +674,7 @@ struct DefaultGemm<ElementA,
                    Stages,
                    SplitKSerial,
                    Operator,
-                   UseZfill> {
+                   SharedMemoryClear> {
 
   static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
@@ -682,7 +685,7 @@ struct DefaultGemm<ElementA,
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, LayoutC, arch::OpClassSimt, arch::Sm80,
       ThreadblockShape, WarpShape, GemmShape<1, 1, 1>, Stages,
-      Operator, UseZfill>::ThreadblockMma;
+      Operator, false, SharedMemoryClear>::ThreadblockMma;
 
   static int const kEpilogueElementsPerAccess = EpilogueOutputOp::kCount;
   static_assert(kEpilogueElementsPerAccess == 1, "simt epilogue must operate on scalars");
@@ -744,14 +747,14 @@ template <
     bool SplitKSerial,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear
 >
 struct DefaultGemm<int8_t, LayoutA, kAlignmentA, int8_t, LayoutB, kAlignmentB,
                    ElementC, LayoutC, ElementAccumulator, arch::OpClassSimt,
                    ArchTag, ThreadblockShape, WarpShape, GemmShape<1, 1, 4>,
                    EpilogueOutputOp, ThreadblockSwizzle, 2, SplitKSerial,
-                   Operator, UseZfill> {
+                   Operator, SharedMemoryClear> {
   using InstructionShape = GemmShape<1, 1, 4>;
   using ElementA = int8_t;
   using ElementB = int8_t;
@@ -831,8 +834,8 @@ template <
     bool SplitKSerial,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear
 > 
 struct DefaultGemm<
   ElementA, LayoutA, kAlignmentA, 
@@ -847,7 +850,7 @@ struct DefaultGemm<
   Stages, 
   SplitKSerial,
   Operator,
-  UseZfill> {
+  SharedMemoryClear> {
   /// Define the threadblock-scoped matrix multiply-accumulate
   using Mma = typename cutlass::gemm::threadblock::DefaultMma<
       ElementA, LayoutA, kAlignmentA,
