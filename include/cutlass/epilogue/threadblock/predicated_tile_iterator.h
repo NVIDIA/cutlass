@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -172,7 +172,7 @@ private:
   Mask mask_;
 
   /// Extent of the matrix tile in rows
-  Index extent_row_;
+  TensorCoord extent_;
 
   /// A thread's starting row position (assuming steady-state predicates have been computed)
   Index thread_start_row_;
@@ -184,7 +184,7 @@ private:
   // Static asserts about internal strides
   //
 
-  static_assert(sizeof(extent_row_) == 4, "Expected 32b extents");
+  static_assert(sizeof(extent_.row()) == 4, "Expected 32b extents");
   static_assert(sizeof(thread_start_row_) == 4, "Expected 32b extents");
   static_assert(sizeof(PredicatedTileIteratorParams::stride) == 8, "Expected 64b strides");
 
@@ -209,12 +209,12 @@ public:
     int thread_idx,
     TensorCoord threadblock_offset = TensorCoord()
   ): 
-    params_(params)
+    params_(params),
+    extent_(extent)
   {
 
     TensorCoord thread_offset = ThreadMap::initial_offset(thread_idx) + threadblock_offset;
 
-    extent_row_ = extent.row();
     thread_start_row_ = thread_offset.row();
 
     // Initialize predicates
@@ -222,7 +222,7 @@ public:
     for (int c = 0; c < ThreadMap::Iterations::kColumn; ++c) {
 
       mask_.predicates[c] = ((thread_offset.column() 
-        + ThreadMap::Delta::kColumn * c) < extent.column());
+        + ThreadMap::Delta::kColumn * c) < extent_.column());
     }
 
     // Null pointer performs no accesses
@@ -268,7 +268,7 @@ public:
             + group * ThreadMap::Delta::kGroup 
             + cluster * ThreadMap::Delta::kCluster;
 
-          bool row_guard = ((row_offset + thread_start_row_) < extent_row_);
+          bool row_guard = ((row_offset + thread_start_row_) < extent_.row());
 
           AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset);
 
@@ -332,7 +332,7 @@ public:
             + group * ThreadMap::Delta::kGroup 
             + cluster * ThreadMap::Delta::kCluster;
 
-          bool row_guard = ((row_offset + thread_start_row_) < extent_row_);
+          bool row_guard = ((row_offset + thread_start_row_) < extent_.row());
 
           AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset);
 
@@ -369,6 +369,18 @@ public:
   void store(Fragment const &frag) const {
 
     store_with_byte_offset(frag, 0);
+  }
+
+  /// Need to get the thread start row from the tile iterator
+  CUTLASS_DEVICE
+  int32_t thread_start_row() const {
+    return thread_start_row_;
+  }
+
+  /// Extent of the matrix in rows
+  CUTLASS_DEVICE
+  TensorCoord extent() const {
+    return extent_;
   }
 
   /// Advances to the next position to load or store
@@ -418,7 +430,7 @@ public:
   }
 
   ///< Sets the mask
-  CUTLASS_DEVICE void get_mask(Mask &mask) {
+  CUTLASS_DEVICE void get_mask(Mask &mask) const {
     mask = mask_;
   }
 

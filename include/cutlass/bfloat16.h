@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -139,7 +139,7 @@ struct alignas(2) bfloat16_t {
 
   /// Converts to float
   CUTLASS_HOST_DEVICE
-  operator double() const {
+  explicit operator double() const {
     return double(float(*this));
   }
 
@@ -151,7 +151,7 @@ struct alignas(2) bfloat16_t {
 
   /// Casts to bool
   CUTLASS_HOST_DEVICE
-  operator bool() const {
+  explicit operator bool() const {
     return (float(*this) != 0.0f);
   }
 
