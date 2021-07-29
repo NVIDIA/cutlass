@@ -703,7 +703,7 @@ private:
 
           int output_row = destination_iterator.thread_start_row() + row_offset;
 
-          fetch = (output_row < destination_iterator.extent().row() && column_guard);
+          fetch = (output_row < destination_iterator.extent_row() && column_guard);
         }
         else {
           fetch = true;
@@ -785,7 +785,7 @@ private:
 
           int output_row = destination_iterator.thread_start_row() + row_offset;
 
-          fetch = (output_row < destination_iterator.extent().row() && column_guard);
+          fetch = (output_row < destination_iterator.extent_row() && column_guard);
         }
         else {
           fetch = true;
