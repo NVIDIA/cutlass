@@ -426,13 +426,6 @@ void Options::Profiling::print_usage(std::ostream &out) const {
 
     << "  --profiling-enabled=<bool>                   "
     << "    If true, profiling is actually conducted.\n\n"
-
-    << "  --providers=<providers>                      "
-    << "    List of providers to be profiled for performance. (default: '*')" << end_of_line
-    << "      Gemm providers {cutlass*, cublas*}" << end_of_line
-    << "      Conv2d providers {cutlass*, cudnn*}"
-    << "\n\n";
-
 }
 
 void Options::Profiling::print_options(std::ostream &out, int indent) const {

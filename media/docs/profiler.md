@@ -103,10 +103,6 @@ Profiling:
 
   --profiling-enabled=<bool>                       If true, profiling is actually conducted.
 
-  --providers=<providers>                          List of providers to be profiled for performance. (default: '*')
-                                                   Gemm providers {cutlass*, cublas*}
-                                                   Conv2d providers {cutlass*, cudnn*}
-
 
 Verification:
   --verification-enabled=<bool>                    Whether to perform verification checks.
@@ -243,7 +239,7 @@ Test your changes to gemm kernels with a quick functional test and save results 
    --n=8,56,120,136,256,264,512,520,1024,1032,4096,8192,16384 \
    --k=8,16,32,64,128,256,288,384,504,512,520 \
    --beta=0,1,2 --profiling-iterations=1 \
-   --providers=cutlass --output=functional-test.csv
+   --output=functional-test.csv
 ```
 
 ## Example CUDA Core GEMM Operation
