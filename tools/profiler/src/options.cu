@@ -425,7 +425,7 @@ void Options::Profiling::print_usage(std::ostream &out) const {
     << "    Number of ms to sleep between profiling periods (ms).\n\n"
 
     << "  --profiling-enabled=<bool>                   "
-    << "    If true, profiling is actually conducted.\n\n"
+    << "    If true, profiling is actually conducted.\n\n";
 }
 
 void Options::Profiling::print_options(std::ostream &out, int indent) const {
