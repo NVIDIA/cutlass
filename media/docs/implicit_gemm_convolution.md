@@ -48,7 +48,7 @@ where functions _f_ and _g_ are defined as follows.
 
 ```
 f(p, r) = p * stride_h + R - r - 1 + pad_h
-g(q, s) = h * stride_w + S - s - 1 + pad_w
+g(q, s) = q * stride_w + S - s - 1 + pad_w
 ```
 
 A [host](/tools/util/include/cutlass/util/reference/host/convolution.h) and [device](/tools/util/include/cutlass/util/reference/device/convolution.h) 
