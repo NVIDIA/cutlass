@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -29,7 +29,7 @@
 #pragma once
 
 // CUTLASS WMMA does not support clang at present.
-#if !defined(__clang__)
+#if !(defined(__clang__) && defined(__CUDA__))
 
 #if (__CUDACC_VER_MAJOR__ >= 9)
 #if (!defined(__CUDA_ARCH__) || (__CUDA_ARCH__ >= 700))
@@ -52,7 +52,7 @@
 #endif
 #endif
 
-#endif //!defined(__clang__)
+#endif //!(defined(__clang__) && defined(__CUDA__))
 
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
 

@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -121,6 +121,9 @@ class MmaTensorOpMultiplicandTileIterator<
   /// Long Index type
   using LongIndex = typename TensorRef::LongIndex;
 
+  /// Long Index type
+  using StrideIndex = typename TensorRef::Layout::Stride::Index;
+
   /// Coordinate for an element in the tensor
   using TensorCoord = typename TensorRef::TensorCoord;
 
@@ -166,7 +169,7 @@ public:
 private:
 
   /// Layout object storing stride values
-  Index stride_;
+  StrideIndex stride_;
 
   /// Shared memory base pointers - not advanced
   AccessType const *pointer_;
@@ -877,6 +880,9 @@ class MmaTensorOpMultiplicandTileIterator<
   /// Long Index type
   using LongIndex = typename TensorRef::LongIndex;
 
+  /// Long Index type
+  using StrideIndex = typename TensorRef::Layout::Stride::Index;
+
   /// Coordinate for an element in the tensor
   using TensorCoord = typename TensorRef::TensorCoord;
 
@@ -919,7 +925,7 @@ public:
 private:
 
   /// Layout object storing stride values
-  Index stride_;
+  StrideIndex stride_;
 
   /// Shared memory base pointers - not advanced
   AccessType const *pointer_;
@@ -978,6 +984,16 @@ public:
     if ((k_group_idx_ & 2) ^ (old_k_group_idx & 2)) {
       byte_offset_ ^= 0x40;
     }
+
+    return *this;
+  }
+
+
+  /// Advances an iterator along logical dimensions of matrix in units of whole tiles
+  CUTLASS_DEVICE
+  MmaTensorOpMultiplicandTileIterator &add_tile_offset_negative(TensorCoord const &tile_offset) {
+
+    add_tile_offset(tile_offset); // TODO fix this if it becomes an issue during warp it reset
 
     return *this;
   }
@@ -1237,6 +1253,15 @@ public:
     return *this;
   }
 
+  /// Advances an iterator along logical dimensions of matrix in units of whole tiles
+  CUTLASS_HOST_DEVICE
+  MmaTensorOpMultiplicandTileIterator &add_tile_offset_negative(TensorCoord const &tile_offset) {
+
+    iterator_.add_tile_offset_negative({tile_offset.column(), tile_offset.row()});
+
+    return *this;
+  }
+
   /// Advances the iterator along the advance dimension
   CUTLASS_HOST_DEVICE
   MmaTensorOpMultiplicandTileIterator & operator++() {
@@ -1457,6 +1482,15 @@ public:
   MmaTensorOpMultiplicandTileIterator &add_tile_offset(TensorCoord const &tile_offset) {
 
     iterator_.add_tile_offset({tile_offset.row(), tile_offset.column()});
+
+    return *this;
+  }
+
+  /// Advances an iterator along logical dimensions of matrix in units of whole tiles
+  CUTLASS_HOST_DEVICE
+  MmaTensorOpMultiplicandTileIterator &add_tile_offset_negative(TensorCoord const &tile_offset) {
+
+    iterator_.add_tile_offset_negative({tile_offset.row(), tile_offset.column()});
 
     return *this;
   }

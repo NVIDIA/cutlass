@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -77,7 +77,7 @@ public:
     library::NumericTypeID type, 
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>(),
+    std::vector<int64_t> const &stride = std::vector<int64_t>(),
     int batch_count = 1);
 
   /// Allocates memory of a given type, capacity (elements), and name
@@ -87,7 +87,7 @@ public:
     library::NumericTypeID type, 
     library::LayoutTypeID layout_id, 
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>(),
+    std::vector<int64_t> const &stride = std::vector<int64_t>(),
     int batch_count = 1);
 
   /// Allocates memory for sparse meta data 
@@ -98,7 +98,7 @@ public:
     library::LayoutTypeID layout_id, 
     library::NumericTypeID type_a,
     std::vector<int> const &extent, 
-    std::vector<int> const &stride = std::vector<int>(),
+    std::vector<int64_t> const &stride = std::vector<int64_t>(),
     int batch_count = 1);
 
   /// Clears named allocations (but does not necessarily free memory)

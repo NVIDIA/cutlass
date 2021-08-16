@@ -90,9 +90,17 @@ struct CommandLine {
   /**
    * Returns number of naked (non-flag and non-key-value) commandline parameters
    */
-  template <typename value_t>
-  int num_naked_args() const {
+  size_t num_naked_args() const {
     return args.size();
+  }
+
+  /**
+   * Print naked (non-flag and non-key-value) commandline parameters
+   */
+  void print_naked_args(std::ostream &out) const {
+    for (auto arg : args) {
+      out << "   " << arg <<"\n";
+    }
   }
 
   /**

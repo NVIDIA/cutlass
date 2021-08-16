@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -30,6 +30,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/arch/memory.h"
 #include "cutlass/arch/memory_sm75.h"
 #include "cutlass/arch/cache_operation.h"
 
@@ -90,7 +91,11 @@ struct cp_async<SizeInBytes, CacheOperation::Always> {
           "{\n"
           "  .reg .pred p;\n"
           "  setp.ne.b32 p, %0, 0;\n"
+#if CUTLASS_ENABLE_L2_PREFETCH
+          "  @p cp.async.ca.shared.global.L2::128B [%1], [%2], %3;\n"
+#else
           "  @p cp.async.ca.shared.global [%1], [%2], %3;\n"
+#endif
           "}\n" ::"r"((int)pred_guard),
           "r"(smem_int_ptr), "l"(global_ptr), "n"(SizeInBytes));
 
@@ -123,7 +128,11 @@ struct cp_async_zfill<SizeInBytes, CacheOperation::Always> {
       int src_in_bytes = (pred_guard ? SizeInBytes : 0);
 
       asm volatile(
+#if CUTLASS_ENABLE_L2_PREFETCH
+        "cp.async.ca.shared.global.L2::128B [%0], [%1], %2, %3;\n" ::"r"(smem_int_ptr),
+#else
         "cp.async.ca.shared.global [%0], [%1], %2, %3;\n" ::"r"(smem_int_ptr),
+#endif
         "l"(global_ptr), "n"(SizeInBytes), "r"(src_in_bytes));
 
     #else
@@ -163,7 +172,11 @@ struct cp_async<SizeInBytes, CacheOperation::Global> {
           "{\n"
           "  .reg .pred p;\n"
           "  setp.ne.b32 p, %0, 0;\n"
+#if CUTLASS_ENABLE_L2_PREFETCH
+          "  @p cp.async.cg.shared.global.L2::128B [%1], [%2], %3;\n"
+#else
           "  @p cp.async.cg.shared.global [%1], [%2], %3;\n"
+#endif
           "}\n" ::"r"((int)pred_guard),
           "r"(smem_int_ptr), "l"(global_ptr), "n"(SizeInBytes));
 
@@ -195,7 +208,11 @@ struct cp_async_zfill<SizeInBytes, CacheOperation::Global> {
       int src_in_bytes = (pred_guard ? SizeInBytes : 0);
 
       asm volatile(
+#if CUTLASS_ENABLE_L2_PREFETCH
+        "cp.async.cg.shared.global.L2::128B [%0], [%1], %2, %3;\n" ::"r"(smem_int_ptr),
+#else
         "cp.async.cg.shared.global [%0], [%1], %2, %3;\n" ::"r"(smem_int_ptr),
+#endif
         "l"(global_ptr), "n"(SizeInBytes), "r"(src_in_bytes));
 
     #else

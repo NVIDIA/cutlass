@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -66,7 +66,9 @@ __global__ void GemmPipelined(
   // Compute threadblock location
   ThreadblockSwizzle threadblock_swizzle;
 
-  cutlass::gemm::GemmCoord tb_tile_offset = threadblock_swizzle.get_tile_offset(grid_tiled_shape);
+  int swizzle_log_tile = ThreadblockSwizzle().get_log_tile(grid_tiled_shape);
+
+  cutlass::gemm::GemmCoord tb_tile_offset = threadblock_swizzle.get_tile_offset(swizzle_log_tile);
 
   if (grid_tiled_shape.m() <= tb_tile_offset.m() ||
     grid_tiled_shape.n() <= tb_tile_offset.n()) {
@@ -131,7 +133,7 @@ __global__ void GemmPipelined(
     warp_id, 
     lane_id);
 
-  tb_tile_offset = threadblock_swizzle.get_tile_offset(grid_tiled_shape);
+  tb_tile_offset = threadblock_swizzle.get_tile_offset(swizzle_log_tile);
 
   //assume identity swizzle
   MatrixCoord threadblock_offset(

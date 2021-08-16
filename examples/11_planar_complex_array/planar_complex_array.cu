@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -292,10 +292,11 @@ public:
     int64_t batch_stride_C = int64_t(problem_size.m()) * problem_size.n() * 2;
     int64_t batch_stride_D = int64_t(problem_size.m()) * problem_size.n() * 2;
 
-    int lda = LayoutA::packed({problem_size.m(), problem_size.k()}).stride(0);
-    int ldb = LayoutB::packed({problem_size.k(), problem_size.n()}).stride(0);
-    int ldc = LayoutC::packed({problem_size.m(), problem_size.n()}).stride(0);
-    int ldd = LayoutC::packed({problem_size.m(), problem_size.n()}).stride(0);
+    typename LayoutA::Stride::Index lda = LayoutA::packed({problem_size.m(), problem_size.k()}).stride(0);
+    typename LayoutB::Stride::Index ldb = LayoutB::packed({problem_size.k(), problem_size.n()}).stride(0);
+    typename LayoutC::Stride::Index ldc = LayoutC::packed({problem_size.m(), problem_size.n()}).stride(0);
+    typename LayoutC::Stride::Index ldd = LayoutC::packed({problem_size.m(), problem_size.n()}).stride(0);
+
 
     int64_t imag_stride_A = int64_t(problem_size.m()) * problem_size.k();
     int64_t imag_stride_B = int64_t(problem_size.k()) * problem_size.n();

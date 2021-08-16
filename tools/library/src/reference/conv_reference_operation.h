@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -115,13 +115,19 @@ struct ConvReferenceDispatcher<
     layout::TensorNHWC layout_c;
 
     layout_a.stride() =
-        make_Coord(config.stride_a[0], config.stride_a[1], config.stride_a[2]);
+        make_Coord(int32_t(config.stride_a[0]), 
+                   int32_t(config.stride_a[1]), 
+                   int32_t(config.stride_a[2]));
 
     layout_b.stride() =
-        make_Coord(config.stride_b[0], config.stride_b[1], config.stride_b[2]);
+        make_Coord(int32_t(config.stride_b[0]), 
+                   int32_t(config.stride_b[1]), 
+                   int32_t(config.stride_b[2]));
 
     layout_c.stride() =
-        make_Coord(config.stride_c[0], config.stride_c[1], config.stride_c[2]);
+        make_Coord(int32_t(config.stride_c[0]), 
+                   int32_t(config.stride_c[1]), 
+                   int32_t(config.stride_c[2]));
 
     if (kProvider == Provider::kReferenceHost) {
 

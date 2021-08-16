@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -253,7 +253,7 @@ class InterleavedEpilogue {
       //
 
       typename OutputTileIterator::Fragment output_fragment;
-      apply_output_operator_(output_op, output_fragment, accum_fragment, source_fragment);
+      apply_output_operator_source_needed_(output_op, output_fragment, accum_fragment, source_fragment);
 
       //
       // Store the final result
@@ -268,7 +268,7 @@ class InterleavedEpilogue {
  private:
   /// Helper to invoke the output functor over each vector of output
   CUTLASS_DEVICE
-  void apply_output_operator_(
+  void apply_output_operator_source_needed_(
     OutputOp const &output_op,                    ///< Output operator
       typename OutputTileIterator::Fragment &output_fragment,
       typename AccumulatorFragmentIterator::Fragment const

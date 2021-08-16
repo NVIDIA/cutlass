@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -43,6 +43,17 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace detail {
+
+/// Single source of truth for whether to unroll for `LinearCombinationClamp()`
+constexpr bool LinearCombinationClampIsHeavy() {
+  return false;
+}
+
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Applies a linear combination operator to an array of elements then clamps the output before
 /// converting to the output element type.
 ///
@@ -51,6 +62,8 @@ namespace thread {
 template <
   typename ElementOutput_,                             ///< Data type used to load and store tensors
   int Count,                                           ///< Number of elements computed per operation
+                                                       ///< Usually it is 128/sizeof_bits<ElementOutput_>,
+                                                       ///< but we use 64 or 32 sometimes when there are not enough data to store
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
   ScaleType::Kind Scale = ScaleType::Default,          ///< Control Alpha and Beta scaling
@@ -70,6 +83,8 @@ public:
   using ComputeFragment = Array<ElementCompute, kCount>;
 
   static FloatRoundStyle const kRound = Round;
+
+  static bool const kIsHeavy = detail::LinearCombinationClampIsHeavy();
 
   /// Host-constructable parameters structure
   struct Params {
@@ -186,11 +201,14 @@ public:
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
 
     /// Clamping constant value
-    ElementCompute const kClamp =
-        ElementCompute((1U << (sizeof_bits<ElementOutput>::value - 1)) - 1);
+    ElementCompute const kClampMax =
+        ElementCompute(platform::numeric_limits<ElementOutput>::max());
 
-    intermediate = max_accumulator(intermediate, -kClamp - ElementCompute(1));
-    intermediate = min_accumulator(intermediate, kClamp);
+    ElementCompute const kClampMin =
+        ElementCompute(platform::numeric_limits<ElementOutput>::lowest());
+
+    intermediate = max_accumulator(intermediate, kClampMin);
+    intermediate = min_accumulator(intermediate, kClampMax);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
@@ -220,11 +238,14 @@ public:
     intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
 
     /// Clamping constant value
-    ElementCompute const kClamp =
-        ElementCompute((1U << (sizeof_bits<ElementOutput>::value - 1)) - 1);
+    ElementCompute const kClampMax =
+        ElementCompute(platform::numeric_limits<ElementOutput>::max());
 
-    intermediate = max_accumulator(intermediate, -kClamp - ElementCompute(1));
-    intermediate = min_accumulator(intermediate, kClamp);
+    ElementCompute const kClampMin =
+        ElementCompute(platform::numeric_limits<ElementOutput>::lowest());
+
+    intermediate = max_accumulator(intermediate, kClampMin);
+    intermediate = min_accumulator(intermediate, kClampMax);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
@@ -257,15 +278,7 @@ public:
   using ElementCompute = float;
 
   static_assert(
-      platform::is_same<ElementOutput, int32_t>::value ||
-          platform::is_same<ElementOutput, uint32_t>::value ||
-          platform::is_same<ElementOutput, int16_t>::value ||
-          platform::is_same<ElementOutput, uint16_t>::value ||
-          platform::is_same<ElementOutput, int8_t>::value ||
-          platform::is_same<ElementOutput, uint8_t>::value ||
-          platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
-          platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
-          platform::is_same<ElementOutput, cutlass::uint1b_t>::value,
+      platform::numeric_limits<ElementOutput>::is_integer,
       "This elementwise op expects the output to be int.");
 
   static int const kCount = Count;
@@ -275,6 +288,8 @@ public:
   using ComputeFragment = Array<ElementCompute, kCount>;
 
   static FloatRoundStyle const kRound = Round;
+
+  static bool const kIsHeavy = detail::LinearCombinationClampIsHeavy();
 
   /// Host-constructable parameters structure
   struct Params {
@@ -390,10 +405,9 @@ public:
     // Convert floats back to INT
     FragmentAccumulator scaled_accumulator;
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kCount; ++i) {
-      scaled_accumulator[i] = __float2int_rn(intermediate[i]);
-    }
+    NumericArrayConverter<int, ElementCompute, kCount, Round> compute_converter;
+
+    scaled_accumulator = compute_converter(intermediate);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, int, kCount, Round> destination_converter;
@@ -421,10 +435,9 @@ public:
     // Convert floats back to INT
     FragmentAccumulator scaled_accumulator;
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kCount; ++i) {
-      scaled_accumulator[i] = __float2int_rn(intermediate[i]);
-    }
+    NumericArrayConverter<int, ElementCompute, kCount, Round> compute_converter;
+
+    scaled_accumulator = compute_converter(intermediate);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, int, kCount, Round> destination_converter;
@@ -462,15 +475,7 @@ class FastLinearCombinationClamp {
   using ElementCompute = float;
 
   static_assert(
-      platform::is_same<ElementOutput, int32_t>::value ||
-          platform::is_same<ElementOutput, uint32_t>::value ||
-          platform::is_same<ElementOutput, int16_t>::value ||
-          platform::is_same<ElementOutput, uint16_t>::value ||
-          platform::is_same<ElementOutput, int8_t>::value ||
-          platform::is_same<ElementOutput, uint8_t>::value ||
-          platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
-          platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
-          platform::is_same<ElementOutput, cutlass::uint1b_t>::value,
+      platform::numeric_limits<ElementOutput>::is_integer,
       "This elementwise op expects the output to be int.");
 
   static int const kCount = Count;
@@ -480,6 +485,8 @@ class FastLinearCombinationClamp {
   using ComputeFragment = Array<ElementCompute, kCount>;
 
   static FloatRoundStyle const kRound = Round;
+
+  static bool const kIsHeavy = false;
 
   /// Host-constructable parameters structure
   struct Params {

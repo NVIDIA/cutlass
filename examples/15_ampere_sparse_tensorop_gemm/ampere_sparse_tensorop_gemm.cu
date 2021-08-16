@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -57,8 +57,8 @@ using ElementInputA = cutlass::int4b_t;             // <- data type of elements 
 using ElementInputB = cutlass::int4b_t;             // <- data type of elements in input matrix B
 using ElementOutput = int32_t;                      // <- data type of elements in output matrix D
 
-// The code section below describes matrix layout of input and output matrices. Column Major for
-// Matrix A, Row Major for Matrix B and Row Major for Matrix C
+// The code section below describes matrix layout of input and output matrices. Row Major for
+// Matrix A, Column Major for Matrix B and Row Major for Matrix C
 using LayoutInputA = cutlass::layout::RowMajor;
 using LayoutInputB = cutlass::layout::ColumnMajor;
 using LayoutOutput = cutlass::layout::RowMajor;
@@ -152,7 +152,7 @@ int run() {
   cutlass::HostTensor<ElementInputE, LayoutInputE> tensor_e(
       cutlass::make_Coord(problem_size.m(), problem_size.k() / kSparse / kElementsPerElementE));
   // Same size as the above.  The above one needs to be reordered and stored in this one.
-  cutlass::HostTensor<ElementInputE, ReorderedLayoutInputE> tensor_e_reordered(  
+  cutlass::HostTensor<ElementInputE, ReorderedLayoutInputE> tensor_e_reordered(
       cutlass::make_Coord(problem_size.m(), problem_size.k() / kSparse / kElementsPerElementE));
 
   // Fill input and output matrices on host using CUTLASS helper functions

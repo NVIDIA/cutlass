@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -425,14 +425,7 @@ void Options::Profiling::print_usage(std::ostream &out) const {
     << "    Number of ms to sleep between profiling periods (ms).\n\n"
 
     << "  --profiling-enabled=<bool>                   "
-    << "    If true, profiling is actually conducted.\n\n"
-
-    << "  --providers=<providers>                      "
-    << "    List of providers to be profiled for performance. (default: '*')" << end_of_line
-    << "      Gemm providers {cutlass*, cublas*}" << end_of_line
-    << "      Conv2d providers {cutlass*, cudnn*}"
-    << "\n\n";
-
+    << "    If true, profiling is actually conducted.\n\n";
 }
 
 void Options::Profiling::print_options(std::ostream &out, int indent) const {

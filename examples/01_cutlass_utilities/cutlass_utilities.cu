@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -119,12 +119,12 @@ cudaError_t cutlass_hgemm_nn(
   int K,
   cutlass::half_t alpha,
   cutlass::half_t const *A,
-  int lda,
+  cutlass::layout::ColumnMajor::Stride::Index lda,
   cutlass::half_t const *B,
-  int ldb,
+  cutlass::layout::ColumnMajor::Stride::Index ldb,
   cutlass::half_t beta,
   cutlass::half_t *C,
-  int ldc) {
+  cutlass::layout::ColumnMajor::Stride::Index ldc) {
 
   // Define the GEMM operation
   using Gemm = cutlass::gemm::device::Gemm<

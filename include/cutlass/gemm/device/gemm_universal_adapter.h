@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -121,7 +121,7 @@ public:
   // warp-level, arch-level (instruction), math operator 
   using WarpMmaOperator = typename GemmKernel::Mma::Policy::Operator;
   using ArchMmaOperator = typename WarpMmaOperator::ArchMmaOperator;
-  using MathOperator = typename ArchMmaOperator::Operator;
+  using MathOperator = typename WarpMmaOperator::MathOperator;
   
   // Operator class and arch tag extract bottom-up 
   // set it for top-level gemm device-level template
@@ -161,13 +161,11 @@ public:
   using TensorRefC = TensorRef<ElementC const, LayoutC>;
   using TensorRefD = TensorRef<ElementC, LayoutC>;
 
-  using ElementAccumulator = typename GemmKernel::Mma::Policy::Operator::ElementC;
-
   static int const kStages = GemmKernel::Mma::kStages;
 
   using EpilogueOutputOp = typename GemmKernel::EpilogueOutputOp;
+  using ElementAccumulator = typename EpilogueOutputOp::ElementAccumulator;
   using ThreadblockSwizzle = typename GemmKernel::ThreadblockSwizzle;
-  using Operator = typename GemmKernel::Operator;
 
   using UnderlyingOperator = GemmUniversalBase<GemmKernel>;
   using Arguments = typename UnderlyingOperator::Arguments;

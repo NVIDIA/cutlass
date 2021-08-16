@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -139,7 +139,7 @@ struct GELU {
   CUTLASS_HOST_DEVICE
   T operator()(T const &scalar) const {
     return T(cutlass::constants::half<T>() * scalar *
-      (cutlass::constants::one<T>() + erff( scalar / cutlass::constants::root_two<T>() )));
+      (cutlass::constants::one<T>() + (T)erff((float)(scalar / cutlass::constants::root_two<T>()))));
   }
 };
 
@@ -149,6 +149,15 @@ struct GELU<float> {
   float operator()(float const &scalar) const {
     return cutlass::constants::half<float>() * scalar *
       (cutlass::constants::one<float>() + erff( scalar / cutlass::constants::root_two<float>() ));
+  }
+};
+
+template <>
+struct GELU<double> {
+  CUTLASS_HOST_DEVICE
+  double operator()(double const &scalar) const {
+    return cutlass::constants::half<double>() * scalar *
+      (cutlass::constants::one<double>() + erf( scalar / cutlass::constants::root_two<double>() ));
   }
 };
 
@@ -171,6 +180,7 @@ struct GELU<Array<T, N> > {
 // GELU operator implemented using the Taylor series approximation
 template <typename T>
 struct GELU_taylor {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   T operator()(T const &z) const {
 
@@ -184,6 +194,7 @@ struct GELU_taylor {
 
 template <typename T, int N>
 struct GELU_taylor<Array<T, N> > {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &rhs) const {
     Array<T, N> y;
@@ -241,4 +252,3 @@ struct dGELU<Array<T, N> > {
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

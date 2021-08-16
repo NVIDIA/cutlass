@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -268,7 +268,7 @@ public:
       A(nullptr), B(nullptr), C(nullptr), Computed(nullptr), Reference(nullptr) { }
 
       // Returns stride vector for tensor A
-      std::vector<int> stride_a(library::ConvKind const &conv_kind) {
+      std::vector<int64_t> stride_a(library::ConvKind const &conv_kind) {
         return {        
           configuration.layout_a(conv_kind).stride()[0],
           configuration.layout_a(conv_kind).stride()[1],
@@ -278,7 +278,7 @@ public:
       }
 
       // Returns stride vector for tensor B
-      std::vector<int> stride_b(library::ConvKind const &conv_kind) {
+      std::vector<int64_t> stride_b(library::ConvKind const &conv_kind) {
 
         return {        
           configuration.layout_b(conv_kind).stride()[0],
@@ -289,7 +289,7 @@ public:
       }
 
       // Returns stride vector for tensor C
-      std::vector<int> stride_c(library::ConvKind const &conv_kind) {
+      std::vector<int64_t> stride_c(library::ConvKind const &conv_kind) {
 
         return {        
           configuration.layout_c(conv_kind).stride()[0],

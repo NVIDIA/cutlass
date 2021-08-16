@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -933,13 +933,13 @@ struct Conv2dConfiguration {
   conv::Conv2dProblemSize problem_size;
 
   // stride of operand A
-  std::vector<int> stride_a;
+  std::vector<int64_t> stride_a;
 
   // stride of operand B
-  std::vector<int> stride_b;
+  std::vector<int64_t> stride_b;
 
   // stride of operand C
-  std::vector<int> stride_c;
+  std::vector<int64_t> stride_c;
 };
 
 

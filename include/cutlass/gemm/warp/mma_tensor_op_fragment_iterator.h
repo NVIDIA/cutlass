@@ -90,9 +90,6 @@ class MmaTensorOpFragmentIterator<Shape_, AccumulatorShape_, KBlocksColumn_, Ele
   /// Output operation on fragment
   using OutputOp = OutputOp_;
 
-  /// Whether beta is zero
-  static bool const IsBetaZero = true;
-
   /// Number of participating threads
   static int const kThreads = 32;
 
@@ -273,9 +270,6 @@ class MmaTensorOpFragmentIterator<Shape_, AccumulatorShape_, KBlocksColumn_, Ele
 
   /// Output operation on fragment
   using OutputOp = OutputOp_;
-
-  /// Whether beta is zero
-  static bool const IsBetaZero = true;
 
   /// Number of participating threads
   static int const kThreads = 32;

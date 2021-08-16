@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -27,6 +27,10 @@
     \brief Boost-like numeric conversion operator for CUTLASS numeric types
 */
 #pragma once
+
+#if !defined(__CUDACC_RTC__)
+#include <cfenv>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
@@ -77,29 +81,174 @@ struct NumericConverter {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
-// Partial specializations for float => int8_t
+// Partial specializations for float => int32_t
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
-template <FloatRoundStyle Round>
-struct NumericConverter<int8_t, float, Round> {
 
-  using result_type = int8_t;
+#if defined(__CUDA_ARCH__)
+template <>
+struct NumericConverter<int32_t, float, FloatRoundStyle::round_to_nearest> {
+
+  using result_type = int32_t;
   using source_type = float;
-  static FloatRoundStyle const round_style = Round;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
 
-  CUTLASS_HOST_DEVICE
+  CUTLASS_DEVICE
   static result_type convert(source_type const & s) {
 
-    result_type result = static_cast<int8_t>(s);
-
-    return result;
+    return __float2int_rn(s);
   }
 
-  CUTLASS_HOST_DEVICE
+  CUTLASS_DEVICE
   result_type operator()(source_type const &s) {
     return convert(s);
   }
 };
+
+template <>
+struct NumericConverter<int32_t, float, FloatRoundStyle::round_toward_zero> {
+
+  using result_type = int32_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_toward_zero;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & s) {
+
+    return __float2int_rz(s);
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+#elif !defined(__CUDACC_RTC__)
+
+template <>
+struct NumericConverter<int32_t, float, FloatRoundStyle::round_to_nearest> {
+
+  using result_type = int32_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
+
+  static result_type convert(source_type const & s) {
+    std::fesetround(FE_TONEAREST);
+    return (result_type)std::nearbyint(s);
+  }
+
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+template <>
+struct NumericConverter<int32_t, float, FloatRoundStyle::round_toward_zero> {
+
+  using result_type = int32_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_toward_zero;
+
+  static result_type convert(source_type const & s) {
+    std::fesetround(FE_TOWARDZERO);
+    return (result_type)std::nearbyint(s);
+  }
+
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+#endif
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Partial specializations for float => int8_t
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+#if defined(__CUDA_ARCH__)
+template <>
+struct NumericConverter<int8_t, float, FloatRoundStyle::round_to_nearest> {
+
+  using result_type = int8_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & s) {
+
+    int32_t intermediate = __float2int_rn(s);
+
+    return static_cast<result_type>(intermediate);
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+template <>
+struct NumericConverter<int8_t, float, FloatRoundStyle::round_toward_zero> {
+
+  using result_type = int8_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style =  FloatRoundStyle::round_toward_zero;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & s) {
+
+    int32_t intermediate = __float2int_rz(s);
+
+    return static_cast<result_type>(intermediate);
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+#elif !defined(__CUDACC_RTC__)
+
+template <>
+struct NumericConverter<int8_t, float, FloatRoundStyle::round_to_nearest> {
+
+  using result_type = int8_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style = FloatRoundStyle::round_to_nearest;
+
+  static result_type convert(source_type const & s) {
+    std::fesetround(FE_TONEAREST);
+    int32_t intermediate =  (result_type)std::nearbyint(s);
+    return static_cast<result_type>(intermediate);
+  }
+
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+template <>
+struct NumericConverter<int8_t, float, FloatRoundStyle::round_toward_zero> {
+
+  using result_type = int8_t;
+  using source_type = float;
+  static FloatRoundStyle const round_style =  FloatRoundStyle::round_toward_zero;
+
+  static result_type convert(source_type const & s) {
+    std::fesetround(FE_TOWARDZERO);
+    int32_t intermediate =  (result_type)std::nearbyint(s);
+    return static_cast<result_type>(intermediate);
+  }
+
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+#endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -483,69 +632,16 @@ struct NumericConverterClamp {
   using result_type = T;
   using source_type = S;
 
-  static_assert((platform::is_same<result_type, int32_t>::value ||
-                 platform::is_same<result_type, int8_t>::value ||
-                 platform::is_same<result_type, cutlass::int4b_t>::value),
-                "Clamp is only needed for integer types");
-
   CUTLASS_HOST_DEVICE
     static result_type convert(source_type const & s) {
     NumericConverter<result_type, source_type> convert_op;
-    result_type const kClamp_max =
-        (0x1U << (sizeof_bits<result_type>::value - 1)) - 1;
-    result_type const kClamp_min = -kClamp_max - 1;
-    bool is_int_min = !(s > kClamp_min);
-    bool is_int_max = !(s < kClamp_max);
-    return is_int_min ? kClamp_min : (is_int_max ? kClamp_max : convert_op(s));
-  }
-
-  CUTLASS_HOST_DEVICE
-    result_type operator()(source_type const &s) {
-    return convert(s);
-  }
-};
-
-/// Partial specialization for clamping from a single-precision float.
-template <
-  typename T
->
-struct NumericConverterClamp<T, float> {
-
-  using result_type = T;
-  using source_type = float;
-
-  static_assert((platform::is_same<result_type, int32_t>::value ||
-                 platform::is_same<result_type, int16_t>::value ||
-                 platform::is_same<result_type, uint16_t>::value ||
-                 platform::is_same<result_type, int8_t>::value ||
-                 platform::is_same<result_type, uint8_t>::value ||
-                 platform::is_same<result_type, cutlass::int4b_t>::value ||
-                 platform::is_same<result_type, cutlass::uint4b_t>::value),
-                "Clamp is only needed for integer types");
-
-  CUTLASS_HOST_DEVICE
-    static result_type convert(source_type const & s) {
-
-    NumericConverter<result_type, double> convert_op;
-    double kClamp_max, kClamp_min;
-
-    if (platform::is_same<result_type, int32_t>::value ||
-                 platform::is_same<result_type, int16_t>::value ||
-                 platform::is_same<result_type, int8_t>::value ||
-                 platform::is_same<result_type, cutlass::int4b_t>::value) {
-      kClamp_max = double((1LLU << (sizeof_bits<result_type>::value - 1)) - 1);
-      kClamp_min = -kClamp_max - 1;
-    } else {
-      kClamp_max = double((1LLU << (sizeof_bits<result_type>::value)) - 1);
-      kClamp_min = 0;
-    }
-
-    double source = s;
-
-    source = fmax(source, kClamp_min);
-    source = fmin(source, kClamp_max);
-
-    return convert_op(source);
+    result_type const kClamp_max = platform::numeric_limits<result_type>::max();
+    result_type const kClamp_min = platform::numeric_limits<result_type>::lowest();
+    if (s < (source_type)kClamp_min) 
+      return kClamp_min;
+    if (s > (source_type)kClamp_max)
+      return kClamp_max;
+    return convert_op(s);
   }
 
   CUTLASS_HOST_DEVICE

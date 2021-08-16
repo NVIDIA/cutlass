@@ -24,7 +24,7 @@ for (int cta_n = 0; cta_n < GemmN; cta_n += CtaTileN) {                     // f
       for (int warp_n = 0; warp_n < CtaTileN; warp_n += WarpTileN) {        // for each warp_y                  } warp-level parallelism
         for (int warp_m = 0; warp_m < CtaTileM; warp_m += WarpTileM) {      //    for each warp_x               }
                                                                             //
-          for (int warp_k = 0; warp_k < CtaTileK; warp_k += MmaK) {         //       fully unroll across CtaTileK
+          for (int warp_k = 0; warp_k < CtaTileK; warp_k += WarpTileK) {         //       fully unroll across CtaTileK
                                                                             //         - one iteration of this loop is one "k Group"
                                                                             //
             for (int mma_k = 0; mma_k < WarpTileK; mma_k += MmaK) {         // for each mma instruction         } instruction-level parallelism
@@ -163,7 +163,7 @@ consecutively launched threadblocks to packed two-dimensional regions of the par
 problem to increase the probability that these will access the same tiles of global memory at
 approximately the same time.
 
-Several functions are defined in [cutlass/gemm/threadblock_swizzle.h](cutlass/gemm/threadblock/threadblock_swizzle.h).
+Several functions are defined in [cutlass/gemm/threadblock_swizzle.h](/include/cutlass/gemm/threadblock/threadblock_swizzle.h).
 
 
 ### Parallelized Reductions
@@ -245,6 +245,6 @@ Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
   FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
   BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
   OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-  STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```

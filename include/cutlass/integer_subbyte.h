@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -200,4 +200,36 @@ struct sizeof_bits<uint4b_t> {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace platform {
+
+template <>
+struct numeric_limits<cutlass::int4b_t> {
+  CUTLASS_HOST_DEVICE
+  static cutlass::int4b_t const lowest() noexcept { return -8;}
+  CUTLASS_HOST_DEVICE
+  static cutlass::int4b_t const max() noexcept { return 7;}
+  static constexpr bool is_integer = true;
+};
+
+template <>
+struct numeric_limits<cutlass::uint4b_t> {
+  CUTLASS_HOST_DEVICE
+  static cutlass::uint4b_t const lowest() noexcept { return 0;}
+  CUTLASS_HOST_DEVICE
+  static cutlass::uint4b_t const max() noexcept { return 15;}
+  static constexpr bool is_integer = true;
+};
+
+template <>
+struct numeric_limits<cutlass::uint1b_t> {
+  CUTLASS_HOST_DEVICE
+  static cutlass::uint1b_t const lowest() noexcept { return 0;}
+  CUTLASS_HOST_DEVICE
+  static cutlass::uint4b_t const max() noexcept { return 1;}
+  static constexpr bool is_integer = true;
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+} // namespace platform
 } // namespace cutlass

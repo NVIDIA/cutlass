@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -52,7 +52,7 @@ DeviceAllocation *DeviceContext::allocate_tensor(
   library::NumericTypeID type, 
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
-  std::vector<int> const &stride,
+  std::vector<int64_t> const &stride,
   int batch_count) {
 
   device_memory_.emplace_back(type, layout_id, extent, stride, batch_count);
@@ -69,7 +69,7 @@ DeviceAllocation *DeviceContext::allocate_tensor(
   library::NumericTypeID type, 
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
-  std::vector<int> const &stride,
+  std::vector<int64_t> const &stride,
   int batch_count) {
 
   DeviceAllocation *allocation = 
@@ -133,7 +133,7 @@ DeviceAllocation *DeviceContext::allocate_sparsemeta_tensor(
   library::LayoutTypeID layout_id, 
   library::NumericTypeID type_a,
   std::vector<int> const &extent, 
-  std::vector<int> const &stride,
+  std::vector<int64_t> const &stride,
   int batch_count) {
 
   DeviceAllocation *allocation = 

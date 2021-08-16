@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -45,6 +45,7 @@
 #include "cutlass/layout/matrix.h"
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv3d_problem_size.h"
+#include "cutlass/conv/threadblock/conv3d_params.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -88,61 +89,29 @@ public:
   // Parameters structure
   //
 
-  struct Params {
-
-    Layout layout;
-
-    int NZPQ;                // precomputd product of N*Z*P*Q for clearing predicates
-    int ZPQ;                 // product of Z*P*Q
-    unsigned zpq_mul;        // precomputed quantities for fast computation of div/% by ZPQ
-    unsigned zpq_shr;        //    in device code.
-
-    int PQ;                  // product of P*Q
-    unsigned pq_mul;         // precomputed quantities for fast computation of div/% by PQ
-    unsigned pq_shr;         //    in device code.
-
-    unsigned q_mul;          // precomputed quantities for fast computation of div/% by Q
-    unsigned q_shr;          //    in device code.
-
-    LongIndex offset_next_strided;     // offset in units of bytes to next nzpq coordinate within tile
-    LongIndex offset_next_contiguous;  // offset in units of bytes to next k coordinate within tile
-    LongIndex inc_next_nzpq;           // offset in units of bytes to next nzpq position in subsequent tile
-
+  struct Params : Conv3dWgradOutputGradientIteratorOptimizedParams {
     //
     // Methods
     //
+    CUTLASS_HOST_DEVICE
+    Params() {}
 
     CUTLASS_HOST_DEVICE
-    Params() { }
+    Params(Conv3dWgradOutputGradientIteratorOptimizedParams const &base)
+          : Conv3dWgradOutputGradientIteratorOptimizedParams(base) {}
 
     CUTLASS_HOST_DEVICE
-    Params(
-      Conv3dProblemSize const &problem_size, 
-      Layout const &layout
-    ): layout(layout) {
-
-      // Incremental offsets in unites of bytes (number of elements) * sizeof_bits<Element>::value / 8
-      offset_next_strided = (ThreadMap::Delta::kStrided * layout.stride()[0])
-                          * sizeof_bits<Element>::value / 8;
-
-      offset_next_contiguous = (ThreadMap::Delta::kContiguous) 
-                              * sizeof_bits<Element>::value / 8;
-
-      inc_next_nzpq = (Shape::kColumn * problem_size.split_k_slices * layout.stride()[0])
-                        * sizeof_bits<Element>::value / 8;
-
-      // Precompute several quantities for fast modulo arithmetic.
-      NZPQ = problem_size.N * problem_size.Z * problem_size.P * problem_size.Q;
-      ZPQ = problem_size.Z * problem_size.P * problem_size.Q;
-      find_divisor(zpq_mul, zpq_shr, ZPQ);
-
-      PQ = problem_size.P * problem_size.Q;
-      find_divisor(pq_mul, pq_shr, PQ);
-
-      find_divisor(q_mul, q_shr, problem_size.Q);
-
-    }
-  };
+    Params(Conv3dProblemSize const &problem_size, Layout const &layout)
+          : Conv3dWgradOutputGradientIteratorOptimizedParams(
+            problem_size,
+            layout,
+            sizeof_bits<Element>::value,
+            {Shape::kRow, Shape::kColumn},
+            ThreadMap::kThreads,
+            ThreadMap::kElementsPerAccess,
+            {ThreadMap::Iterations::kContiguous, ThreadMap::Iterations::kStrided},
+            {ThreadMap::Delta::kContiguous, ThreadMap::Delta::kStrided}) {}
+    };
 
 private:
 

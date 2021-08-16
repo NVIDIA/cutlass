@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -31,6 +31,7 @@
     The iterator is specialized for each of the three convolution operators: forward propagation (Fprop),
     backward data gradient (Dgrad), and backward weight gradient (Wgrad). 
 */
+
 
 #pragma once
 
@@ -62,11 +63,26 @@ template <
   typename ThreadMap_,
   conv::StrideSupport StrideSupport_ = conv::StrideSupport::kUnity
 >
-class Conv2dDgradOutputGradientTileAccessIteratorOptimized {
-public:
+class Conv2dDgradOutputGradientTileAccessIteratorOptimized;
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
-  static_assert(StrideSupport_ == conv::StrideSupport::kUnity,
-    "Only unit-stride dgrad is supported at this time.");
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Conv2dDgradOutputGradientTileAccessIteratorOptimized unity stride dgrad is optimized for dgrad
+// with problem stride = {1x1}
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  typename Shape_,
+  typename Element_,
+  typename ThreadMap_
+>
+class Conv2dDgradOutputGradientTileAccessIteratorOptimized <
+  Shape_,
+  Element_,
+  ThreadMap_,
+  conv::StrideSupport::kUnity
+>  {
+public:
   
   //
   // Types
@@ -419,5 +435,3 @@ public:
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-

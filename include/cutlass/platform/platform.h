@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -782,6 +782,65 @@ void swap(unique_ptr<T, Deleter>& lhs, unique_ptr<T, Deleter>& rhs) noexcept {
   lhs.swap(rhs);
 }
 #endif
+
+/// std::numeric_limits
+template <class T>
+struct numeric_limits;
+
+template <>
+struct numeric_limits<int32_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr int32_t lowest() noexcept { return -2147483647 - 1;}
+  CUTLASS_HOST_DEVICE
+  static constexpr int32_t max() noexcept { return 2147483647;}
+  static constexpr bool is_integer = true;
+};
+
+template <>
+struct numeric_limits<int16_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr int16_t lowest() noexcept { return -32768;}
+  CUTLASS_HOST_DEVICE
+  static constexpr int16_t max() noexcept { return 32767;}
+  static constexpr bool is_integer = true;
+};
+
+template <>
+struct numeric_limits<int8_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr int8_t lowest() noexcept { return -128;}
+  CUTLASS_HOST_DEVICE
+  static constexpr int8_t max() noexcept { return 127;}
+  static constexpr bool is_integer = true;
+};
+
+
+template <>
+struct numeric_limits<uint32_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr uint32_t lowest() noexcept { return 0;}
+  CUTLASS_HOST_DEVICE
+  static constexpr uint32_t max() noexcept { return 4294967295;}
+  static constexpr bool is_integer = true;
+};
+
+template <>
+struct numeric_limits<uint16_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr uint16_t lowest() noexcept { return 0;}
+  CUTLASS_HOST_DEVICE
+  static constexpr uint16_t max() noexcept { return 65535;}
+  static constexpr bool is_integer = true;
+};
+
+template <>
+struct numeric_limits<uint8_t> {
+  CUTLASS_HOST_DEVICE
+  static constexpr uint8_t lowest() noexcept { return 0;}
+  CUTLASS_HOST_DEVICE
+  static constexpr uint8_t max() noexcept { return 255;}
+  static constexpr bool is_integer = true;
+};
 
 }  // namespace platform
 }  // namespace cutlass
