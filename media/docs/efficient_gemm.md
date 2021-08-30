@@ -163,7 +163,7 @@ consecutively launched threadblocks to packed two-dimensional regions of the par
 problem to increase the probability that these will access the same tiles of global memory at
 approximately the same time.
 
-Several functions are defined in [cutlass/gemm/threadblock_swizzle.h](cutlass/gemm/threadblock/threadblock_swizzle.h).
+Several functions are defined in [cutlass/gemm/threadblock_swizzle.h](/include/cutlass/gemm/threadblock/threadblock_swizzle.h).
 
 
 ### Parallelized Reductions
