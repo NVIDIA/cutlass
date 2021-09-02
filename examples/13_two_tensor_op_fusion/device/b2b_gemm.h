@@ -390,14 +390,6 @@ public:
       if (result != cudaSuccess) {
         return Status::kErrorInternal;
       }
-
-      result = cudaFuncSetAttribute(
-          Kernel<B2bGemmKernel>,
-          cudaFuncAttributePreferredSharedMemoryCarveout, 100);
-
-      if (result != cudaSuccess) {
-        return Status::kErrorInternal;
-      }
     }
 
     cutlass::Kernel<B2bGemmKernel><<<grid, block, smem_size, stream>>>(params_);

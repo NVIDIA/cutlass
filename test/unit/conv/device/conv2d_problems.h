@@ -281,6 +281,22 @@ struct TestbedConv2dProblemSizes {
       {1, 1}           // dilation (dilation_h, dilation_w) 
     ));
 
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 8, 8, 8},     // input size (NHWC)
+      {8, 3, 3, 8},     // filter size (KRSC)
+      {1, 1, 1, 1},     // padding (pad_h, _, pad_w, _)
+      {3, 3},           // stride (stride_h, stride_w)
+      {1, 1}            // dilation (dilation_h, dilation_w)
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 16, 16, 8},   // input size (NHWC)
+      {8, 3, 3, 8},     // filter size (KRSC)
+      {3, 3, 3, 3},     // padding (pad_h, _, pad_w, _)
+      {3, 3},           // stride (stride_h, stride_w)
+      {1, 1}            // dilation (dilation_h, dilation_w)
+    ));
+
     ////////////////////////////////////////////////////////////////////////////////////
     // Medium input size (1x16x16x128), filter size (1x1, 2x2, 3x3, 5x5), stride (1, 1) 
     ////////////////////////////////////////////////////////////////////////////////////
@@ -390,6 +406,25 @@ struct TestbedConv2dProblemSizes {
     ));
     
     ////////////////////////////////////////////////////////////////////////////////////
+    // Medium input size padding > stride, asymmetric filter, padding and striding
+    ////////////////////////////////////////////////////////////////////////////////////
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 27, 31, 256},     // input size (NHWC)
+      {512, 3, 3, 256},     // filter size (KRSC)
+      {5, 5, 7, 7},         // padding (pad_h, _, pad_w, _)
+      {3, 4},               // stride (stride_h, stride_w)
+      {1, 1}                // dilation (dilation_h, dilation_w)
+    ));
+
+    conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 27, 35, 256},     // input size (NHWC)
+      {512, 7, 5, 256},     // filter size (KRSC)
+      {11, 11, 7, 7},       // padding (pad_h, _, pad_w, _)
+      {3, 5},               // stride (stride_h, stride_w)
+      {1, 1}                // dilation (dilation_h, dilation_w)
+    ));
+
+    ////////////////////////////////////////////////////////////////////////////////////
     // Medium input size *mixed* stride (1, 2) and (2, 1), 
     // filter (3, 3), default padding
     ////////////////////////////////////////////////////////////////////////////////////
@@ -417,6 +452,14 @@ struct TestbedConv2dProblemSizes {
       {256, 2, 2, 256},  // filter size (KRSC)
       {0, 0, 0, 0},      // padding (pad_h, _, pad_w, _)
       {2, 2},            // stride (stride_h, stride_w)
+      {1, 1}             // dilation (dilation_h, dilation_w)
+    ));
+   
+   conv2d_default_sizes.push_back(cutlass::conv::Conv2dProblemSize(
+      {1, 32, 32, 16},  // input size  (NHWC)
+      {32, 3, 3, 16},  // filter size (KRSC)
+      {1, 1, 1, 1},      // padding (pad_h, _, pad_w, _)
+      {6, 2},            // stride (stride_h, stride_w)
       {1, 1}             // dilation (dilation_h, dilation_w)
     ));
 

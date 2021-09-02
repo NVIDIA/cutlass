@@ -23,7 +23,8 @@
   * Many improvements to the epilogue.
     * Provide an [option](/include/cutlass/epilogue/threadblock/epilogue.h) to not fully unroll the epilogue to reduce the code size and improve the performance when using complicated elementwise operations
     * Performance improvement for FP16 tensor core kernels
-    * Bug fixes    
+    * Bug fixes
+  * Enhanced Clang support and the combination of Clang 13 and CUDA 11.4 can build and run kernels from Pascal and Ampere.   
   * Updated minimum CUDA Toolkit requirement to 10.2
     * [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit) recommended
   * Corrections and bug fixes reported by the CUTLASS community

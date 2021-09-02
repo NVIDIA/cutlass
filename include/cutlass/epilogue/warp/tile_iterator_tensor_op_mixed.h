@@ -256,20 +256,7 @@ public:
 
 
       int offset = n * Detail::kLanesInQuad + pointer_offset / Policy::kElementsPerAccess;
-#if 0
-      // Using inline PTX to avoid generic memory
-      AccessType *smem_ptr = pointers_[ptr_idx];
-      smem_ptr[offset] = frag_ptr[n];
-#else
-      uint32_t smem_addr = arch::cutlass_get_smem_pointer(ptr);
-      uint32_t const *data = reinterpret_cast<uint32_t const *>(frag_ptr + n);
-      uint32_t offset_in_bytes = offset * sizeof(AccessType);
-
-      asm volatile(
-        "{ .reg .u32 smem_ptr; add.u32 smem_ptr, %0, %1; st.shared.v2.u32 [smem_ptr], {%2, %3}; }\n"
-        : : "r"(smem_addr), "r"(offset_in_bytes), "r"(data[0]), "r"(data[1])
-      );
-#endif
+      ptr[offset] = frag_ptr[n];
     }
   }
 

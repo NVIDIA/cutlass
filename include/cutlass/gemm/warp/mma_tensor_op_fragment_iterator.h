@@ -49,7 +49,6 @@ class MmaTensorOpFragmentIterator;
 
 
 // Partial specialization for col-major accumulator tile
-// And Element type is the same as Accumulator Element type
 
 template <
     /// Shape of warp tile to load (concept: MatrixShape)
@@ -58,13 +57,15 @@ template <
     typename AccumulatorShape_,
     /// KBlocks columns to compute residual
     int KBlocksColumn_,    
+    /// Accumulator Element type
+    typename ElementAccumulator_,
     /// Element type
     typename Element_,
     /// Shape of one matrix product operation (concept: MatrixShape)
     typename InstructionShape_,
     /// Output operation on fragment
     typename OutputOp_>
-class MmaTensorOpFragmentIterator<Shape_, AccumulatorShape_, KBlocksColumn_, Element_, Element_,
+class MmaTensorOpFragmentIterator<Shape_, AccumulatorShape_, KBlocksColumn_, ElementAccumulator_, Element_,
                                          cutlass::layout::ColumnMajor,
                                          InstructionShape_, OutputOp_> {
  public:
@@ -77,6 +78,9 @@ class MmaTensorOpFragmentIterator<Shape_, AccumulatorShape_, KBlocksColumn_, Ele
 
   /// KBlocks columns to compute residual
   static int const kKBlockColumn = KBlocksColumn_;
+
+  /// Accumulator Element type
+  using ElementAccumulator = ElementAccumulator_;
 
   /// Element type
   using Element = Element_;
@@ -143,13 +147,14 @@ public:
   using Fragment = Array<Element, Shape::kCount / kThreads>;
 
   /// Accumulator Fragment object
-  using AccumulatorFragment = Array<Element, AccumulatorShape::kCount / kThreads>;
+  using AccumulatorFragment = Array<ElementAccumulator, AccumulatorShape::kCount / kThreads>;
 
 
 private:
 
   /// Internal access type
-  using AccessType = Array<Element, kElementsPerAccess>;
+  using AccessType = Array<ElementAccumulator, kElementsPerAccess>;
+  using FragmentAccessType = Array<Element, kElementsPerAccess>;
 
 private:
   //
@@ -203,10 +208,10 @@ public:
     if (output_op.is_source_needed()) //beta must be zero
       assert(0);
 
-    AccessType src_fragment;
+    FragmentAccessType src_fragment;
     src_fragment.clear();
 
-    AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
+    FragmentAccessType *frag_ptr = reinterpret_cast<FragmentAccessType *>(&frag);
 
     int index = index_ * MmaIterations::kCount;
 

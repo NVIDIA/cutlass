@@ -309,9 +309,12 @@ struct DefaultEpilogueTensorOp {
     kElementsPerAccess
   >::Type;
 
+  static bool const UseCUDAStore = platform::is_same<ElementOutput, double>::value;
+
   using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
     OutputTileThreadMap,
-    ElementOutput
+    ElementOutput,
+    UseCUDAStore
   >;
 
   using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,

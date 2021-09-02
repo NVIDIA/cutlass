@@ -222,6 +222,7 @@ public:
     Element *pointer,
     TensorCoord extent,
     int thread_idx,
+    FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
     int start_r, int start_s,
     TensorCoord threadblock_offset = TensorCoord()
   ): 
@@ -238,9 +239,12 @@ public:
       s = (params_.problem_size.S - 1 - s);
     }
 
-    // check if start_h_ and start_w_ are always positive
-    start_h_ = std::abs((params_.problem_size.pad_h - r) % params_.problem_size.stride_h);
-    start_w_ = std::abs((params_.problem_size.pad_w - s) % params_.problem_size.stride_w);
+    // compute starting coordinates in Dx start_h_ and start_w_
+    strided_dgrad_starting_coords(
+      params_.problem_size, 
+      stride_h_divmod, stride_w_divmod, 
+      r, s, 
+      start_h_, start_w_);
 
     p_ = (params_.problem_size.H - start_h_ + params_.problem_size.stride_h - 1) / params_.problem_size.stride_h;
     q_ = (params_.problem_size.W - start_w_ + params_.problem_size.stride_w - 1) / params_.problem_size.stride_w;

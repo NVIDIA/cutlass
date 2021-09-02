@@ -82,9 +82,10 @@ template <
     /// when output layout is interleaved.
     bool AccumulatorsInRowMajor = false,
     /// Use zfill or predicate for SM80 out-of-bound cp.async 
-    bool UseZfill = false
+    SharedMemoryClearOption SharedMemoryClear = SharedMemoryClearOption::kNone
     >
 struct DefaultMmaWithReduction {
+
   static cutlass::arch::CacheOperation::Kind const CacheOpA =
       ((sizeof_bits<ElementA>::value * kAlignmentA) == 128)
           ? cutlass::arch::CacheOperation::Global
@@ -122,7 +123,7 @@ struct DefaultMmaWithReduction {
       typename MmaCore::Shape, IteratorA, typename MmaCore::SmemIteratorA,
       MmaCore::kCacheOpA, IteratorB, typename MmaCore::SmemIteratorB,
       MmaCore::kCacheOpB, ElementAccumulator, layout::RowMajor,
-      typename MmaCore::MmaPolicy, Stages, UseZfill>;
+      typename MmaCore::MmaPolicy, Stages, SharedMemoryClear>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

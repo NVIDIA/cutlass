@@ -370,12 +370,10 @@ public:
     for (int stage = 0; stage < Base::kStages - 1;
          ++stage, --gemm_k_iterations) {
 
-      if (gemm_k_iterations == 0) {
-        iterator_A_real.clear_mask();
-        iterator_A_imag.clear_mask();
-        iterator_B_real.clear_mask();
-        iterator_B_imag.clear_mask();
-      }
+      iterator_A_real.clear_mask(gemm_k_iterations == 0);
+      iterator_A_imag.clear_mask(gemm_k_iterations == 0);
+      iterator_B_real.clear_mask(gemm_k_iterations == 0);
+      iterator_B_imag.clear_mask(gemm_k_iterations == 0);
 
       iterator_A_real.set_iteration_index(0);
       iterator_A_imag.set_iteration_index(0);
@@ -501,12 +499,10 @@ public:
     ++this->warp_tile_iterator_A_;
     ++this->warp_tile_iterator_B_;
 
-    if (gemm_k_iterations == 0) {
-      iterator_A_real.clear_mask();
-      iterator_A_imag.clear_mask();
-      iterator_B_real.clear_mask();
-      iterator_B_imag.clear_mask();
-    }
+    iterator_A_real.clear_mask(gemm_k_iterations == 0);
+    iterator_A_imag.clear_mask(gemm_k_iterations == 0);
+    iterator_B_real.clear_mask(gemm_k_iterations == 0);
+    iterator_B_imag.clear_mask(gemm_k_iterations == 0);
 
     // Start issuing the first group of the next stage outside of the mainloop
     copy_tiles_and_advance(iterator_A_real, iterator_A_imag, iterator_B_real, iterator_B_imag);
@@ -611,12 +607,10 @@ public:
           }
 
           --gemm_k_iterations;
-          if (gemm_k_iterations == 0) {
-            iterator_A_real.clear_mask();
-            iterator_A_imag.clear_mask();
-            iterator_B_real.clear_mask();
-            iterator_B_imag.clear_mask();
-          }
+          iterator_A_real.clear_mask(gemm_k_iterations == 0);
+          iterator_A_imag.clear_mask(gemm_k_iterations == 0);
+          iterator_B_real.clear_mask(gemm_k_iterations == 0);
+          iterator_B_imag.clear_mask(gemm_k_iterations == 0);
         }
 
         warp_mma_planar_complex(

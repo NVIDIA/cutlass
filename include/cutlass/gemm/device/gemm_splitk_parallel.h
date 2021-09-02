@@ -352,14 +352,6 @@ public:
       if (result != cudaSuccess) {
         return Status::kErrorInternal;
       }
-
-      result = cudaFuncSetAttribute(
-        Kernel<GemmKernel>,
-        cudaFuncAttributePreferredSharedMemoryCarveout, 100);
-
-      if (result != cudaSuccess) {
-        return Status::kErrorInternal;
-      }
     }
 
     Kernel<GemmKernel><<<grid, block, smem_size, stream>>>(gemm_params_);

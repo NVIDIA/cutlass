@@ -47,6 +47,7 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/matrix_coord.h"
 #include "cutlass/conv/convolution.h"
+#include "cutlass/functional.h"
 
 namespace cutlass {
 namespace conv {
@@ -485,6 +486,27 @@ int strided_dgrad_tile_m_per_filter(
   return tile_m_per_filter;
 }
 
+// Computes starting Dx coord (h, w) for given starting filter postion
+CUTLASS_HOST_DEVICE
+void strided_dgrad_starting_coords(
+  Conv2dProblemSize const &problem_size,
+  FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+  int r, int s,
+  int &start_h, int &start_w) {
+
+  // function locals for remainder by fast divmod
+  int pad_h_rem_, pad_w_rem_;
+
+  // start_h  = std::abs(problem_size.stride_h - ((problem_size.pad_h % problem_size.stride_h) - r)) % problem_size.stride_h;
+  stride_h_divmod.divmod(pad_h_rem_, problem_size.pad_h);
+  int r_ = std::abs(problem_size.stride_h - (pad_h_rem_ - r));
+  stride_h_divmod.divmod(start_h, r_);
+
+  //start_w  = std::abs(problem_size.stride_w - ((problem_size.pad_w % problem_size.stride_w) - s)) % problem_size.stride_w;
+  stride_w_divmod.divmod(pad_w_rem_, problem_size.pad_w);
+  int s_ = std::abs(problem_size.stride_w - (pad_w_rem_ - s));
+  stride_w_divmod.divmod(start_w, s_);
+}
 
 } // namespace conv
 } // namespace cutlass

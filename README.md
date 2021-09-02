@@ -41,9 +41,11 @@ CUTLASS 2.6 is a minor update to CUTLASS adding:
 - [New strided Dgrad](test/unit/conv/device/conv2d_strided_dgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu) implementation offers up to 4x performance improvements over previous strided Dgrad
 - 64-bit strides for large tensor allocations
 - [General affine layouts](/examples/18_ampere_fp64_tensorop_affine2_gemm/ampere_fp64_tensorop_affine2_gemm.cu) fp64 tensor core and simt GEMM
+- [Batched GEMV](/test/unit/gemm/device/gemv.cu) preview implementation
 - Enhanced functionality, boosted performance, and bug fixes in the epilogue.
 - Optimal performance when compiled with the [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit)
 - Adopt new L2 prefetch feature in [ptx instruction](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#ptx-isa-version-7-4).
+- Enhanced Clang support and the combination of Clang 13 and CUDA 11.4 can build and run kernels from Pascal and Ampere.
 - Numerous updates from the community (thanks!)
 - See the [CHANGELOG](CHANGELOG.md) for more details
 

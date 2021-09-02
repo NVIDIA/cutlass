@@ -62,7 +62,8 @@ namespace threadblock {
 ///
 template <
   typename ThreadMap_,       ///< Thread map (conept: OutputTileThreadMap)
-  typename Element_          ///< Element data type
+  typename Element_,         ///< Element data type
+  bool UseCUDAStore = false
 >
 class PredicatedTileIterator {
 public:
@@ -341,10 +342,17 @@ public:
 
             bool guard = row_guard && mask_.predicates[column];
 
-            cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
-                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column],
-                (void *)&memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess],
-                guard);
+            if (UseCUDAStore) {
+              if (guard) {
+                memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess] =
+                    frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column];
+              }
+            } else {
+              cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
+                  frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column],
+                  (void *)&memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess],
+                  guard);
+            }
           }
 
           if (row + 1 < ThreadMap::Iterations::kRow) {
