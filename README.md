@@ -34,6 +34,8 @@ See the [Quick Start Guide](/media/docs/quickstart.md) to get started quickly.
 See the [functionality listing](/media/docs/functionality.md) for the list of operations
 supported at each level of the execution model hierarchy.
 
+See the [CHANGELOG](CHANGELOG.md) for descriptions of recent updates.
+
 # What's New in CUTLASS 2.6
 CUTLASS 2.6 is a minor update to CUTLASS adding:
 - Fused [broadcast](test/unit/gemm/device/gemm_with_broadcast_f16n_f16n_f16n_tensorop_f32_sm75.cu) and [reductions](/test/unit/gemm/device/gemm_with_reduction_f16n_f16n_f16n_tensorop_f32_sm75.cu) in the epilogues of GEMM and Convolution
@@ -47,7 +49,6 @@ CUTLASS 2.6 is a minor update to CUTLASS adding:
 - Adopt new L2 prefetch feature in [ptx instruction](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#ptx-isa-version-7-4).
 - Enhanced Clang support and the combination of Clang 13 and CUDA 11.4 can build and run kernels from Pascal and Ampere.
 - Numerous updates from the community (thanks!)
-- See the [CHANGELOG](CHANGELOG.md) for more details
 
 # What's New in CUTLASS 2.5
 CUTLASS 2.5 is a minor update to CUTLASS adding:
