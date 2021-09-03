@@ -206,9 +206,12 @@ $ cmake .. -DCUTLASS_NVCC_ARCHS="50;53"          # compiles for NVIDIA Maxwell G
 
 ## Clang
 
-For experimental purposes, CUTLASS may be compiled with 
-[clang 8.0](https://github.com/llvm/llvm-project/releases/download/llvmorg-8.0.1/clang+llvm-8.0.1-amd64-unknown-freebsd11.tar.xz) using the 
+For experimental purposes, CUTLASS has been verified to compile with the following versions of Clang and CUDA.
+
+* [clang 8.0](https://github.com/llvm/llvm-project/releases/download/llvmorg-8.0.1/clang+llvm-8.0.1-amd64-unknown-freebsd11.tar.xz) using the 
 [CUDA 10.0 Toolkit](https://developer.nvidia.com/cuda-10.0-download-archive).
+* [clang release/13.x](https://github.com/llvm/llvm-project/tree/release/13.x) using [CUDA 11.4](https://developer.nvidia.com/cuda-toolkit-archive)
+
 At this time, compiling with clang enables the CUTLASS SIMT GEMM kernels (sgemm, dgemm, hgemm, igemm)
 but does not enable TensorCores.
 
@@ -216,6 +219,8 @@ but does not enable TensorCores.
 $ mkdir build && cd build
 
 $ cmake -DCUDA_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
+# Add -DCMAKE_CXX_FLAGS=-D__NV_NO_HOST_COMPILER_CHECK=1 -DCMAKE_CUDA_FLAGS=-D__NV_NO_HOST_COMPILER_CHECK=1 if compiler
+# checks fail during CMake configuration.
 
 $ make test_unit -j
 ```

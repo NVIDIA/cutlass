@@ -78,23 +78,15 @@ TEST(SM80_Device_Conv2d_Strided_Dgrad_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f32n
 
   test::conv::device::Conv2dProblemVector problem_size_list;
 
+
 #if 0 // run specific problem size in the unit test first
     problem_size_list.push_back(cutlass::conv::Conv2dProblemSize(
-      {1, 56, 56, 8},   // input size (NHWC)
-      {8, 1, 1, 8},   // filter size (KRSC)
-      {0, 0, 0, 0},       // padding (pad_h, _, pad_w, _)
-      {2, 2},             // stride (stride_h, stride_w)
-      {1, 1}              // dilation (dilation_h, dilation_w)
+      {1, 4, 4, 8},     // input size (NHWC)
+      {8, 3, 3, 8},     // filter size (KRSC)
+      {0, 0, 0, 0},         // padding (pad_h, _, pad_w, _)
+      {3, 3},               // stride (stride_h, stride_w)
+      {1, 1}                // dilation (dilation_h, dilation_w)
     ));
-
-    problem_size_list.push_back(cutlass::conv::Conv2dProblemSize(
-      {1, 55, 55, 8},   // input size (NHWC)
-      {8, 1, 1, 8},   // filter size (KRSC)
-      {0, 0, 0, 0},       // padding (pad_h, _, pad_w, _)
-      {2, 2},             // stride (stride_h, stride_w)
-      {1, 1}              // dilation (dilation_h, dilation_w)
-    ));
-
 #endif
 
   /// Run all unit test sizes with device-level Conv2d instance

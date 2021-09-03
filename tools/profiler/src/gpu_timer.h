@@ -29,6 +29,7 @@
 #pragma once
 
 #include <cuda_runtime.h>
+#include "cutlass/cutlass.h"
 
 namespace cutlass {
 namespace profiler {

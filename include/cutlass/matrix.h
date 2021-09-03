@@ -14030,15 +14030,15 @@ struct Matrix<Element_, 4, 4> {
 
   /// Returns a perspective projection matrix typical of OpenGL applications
   CUTLASS_HOST_DEVICE
-  static Matrix perspective(Element near, Element far, Element fovH, Element fovV) {
+  static Matrix perspective(Element near_plane, Element far_plane, Element fovH, Element fovV) {
     Element aspect = fovH / fovV;
     Element f = Element(cos(fovV)) / Element(fovH);
-    Element Q = near - far;
+    Element Q = near_plane - far_plane;
 
     return Matrix(
       f / aspect, 0,                0,                           0,
       0,          f,                0,                           0,
-      0,          0, (near + far) / Q, Element(2) * far * near / Q,
+      0,          0, (near_plane + far_plane) / Q, Element(2) * far_plane * near_plane / Q,
       0,          0,                -1,                          0
     );
   }

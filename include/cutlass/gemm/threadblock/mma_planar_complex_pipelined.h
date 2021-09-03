@@ -308,13 +308,11 @@ public:
     int smem_write_stage_idx = 1;
 
     // Avoid reading out of bounds
-    if (gemm_k_iterations <= 1) {
-      iterator_A_real.clear_mask();
-      iterator_A_imag.clear_mask();
-      
-      iterator_B_real.clear_mask();
-      iterator_B_imag.clear_mask();
-    }
+    iterator_A_real.clear_mask(gemm_k_iterations <= 1);
+    iterator_A_imag.clear_mask(gemm_k_iterations <= 1);
+    
+    iterator_B_real.clear_mask(gemm_k_iterations <= 1);
+    iterator_B_imag.clear_mask(gemm_k_iterations <= 1);
 
     // Issue loads during the first warp-level matrix multiply-add *AFTER* issuing 
     // shared memory loads (which have the tighest latency requirement).
@@ -392,12 +390,10 @@ public:
           ++iterator_B_imag;
 
           // Avoid reading out of bounds if this was the last loop iteration
-          if (gemm_k_iterations <= 2) {
-            iterator_A_real.clear_mask();
-            iterator_A_imag.clear_mask();
-            iterator_B_real.clear_mask();
-            iterator_B_imag.clear_mask();
-          }
+          iterator_A_real.clear_mask(gemm_k_iterations <= 2);
+          iterator_A_imag.clear_mask(gemm_k_iterations <= 2);
+          iterator_B_real.clear_mask(gemm_k_iterations <= 2);
+          iterator_B_imag.clear_mask(gemm_k_iterations <= 2);
         }
 
         warp_mma_planar_complex(

@@ -1312,6 +1312,7 @@ def GenerateSM80_TensorOp_16816(manifest, args):
       TileDescription([256,  64, 32],  4, [4, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 256, 32],  4, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 32],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 32],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 32],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 32],  6, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -1392,7 +1393,7 @@ def GenerateSM80_SparseTensorOp_16832(manifest, args):
   max_cc = 1024
   max_cc_smem_limited = 80
 
-  alignment_constraints = [8, 4, 2]
+  alignment_constraints = [8]
 
   for math_inst in math_instructions:
     tile_descriptions = [
@@ -1967,6 +1968,8 @@ def GenerateSM80_TensorOp_1688(manifest, args):
       TileDescription([256,  64, 16],  4, [4, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 256, 16],  4, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 16],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 16],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 16],  3, [2, 2, 1], math_inst, min_cc, max_cc),            
       TileDescription([128,  64, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 16], 10, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -2051,6 +2054,8 @@ def GenerateSM80_TensorOp_1688_fast_math(manifest, args):
       TileDescription([256,  64, 16],  4, [4, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 256, 16],  4, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 16],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 16],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 16],  3, [2, 2, 1], math_inst, min_cc, max_cc),            
       TileDescription([128,  64, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 16], 10, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -2100,7 +2105,7 @@ def GenerateSM80_SparseTensorOp_16816_fast_math(manifest, args):
   max_cc = 1024
   max_cc_smem_limited = 80
 
-  alignment_constraints = [4, 2, 1]
+  alignment_constraints = [4]
 
   for math_inst in math_instructions:
     tile_descriptions = [

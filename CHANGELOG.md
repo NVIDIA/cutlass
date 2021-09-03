@@ -2,6 +2,12 @@
 
 # CUTLASS 2.x
 
+## [2.6.1](https://github.com/NVIDIA/cutlass/releases/tag/v2.6.1) (2021-09-03)
+  * Arbitrary padding and striding for CUTLASS Strided DGRAD Convolution operator (Analytic Iterators)
+  * Tuning for GEMMs fused with partial reductions
+  * Corrections and bug fixes reported by the CUTLASS community
+    * Thank you for filing these issues!
+
 ## [2.6.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.6.0) (2021-07-22)
   * Optimal performance when compiled with the [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit)
     * Adopt the new L2 prefetch feature in [cp.async](/include/cutlass/arch/memory.h) and [global load](/include/cutlass/arch/memory_sm80.h)
@@ -23,7 +29,8 @@
   * Many improvements to the epilogue.
     * Provide an [option](/include/cutlass/epilogue/threadblock/epilogue.h) to not fully unroll the epilogue to reduce the code size and improve the performance when using complicated elementwise operations
     * Performance improvement for FP16 tensor core kernels
-    * Bug fixes    
+    * Bug fixes
+  * Enhanced Clang support and the combination of Clang 13 and CUDA 11.4 can build and run kernels from Pascal and Ampere.   
   * Updated minimum CUDA Toolkit requirement to 10.2
     * [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit) recommended
   * Corrections and bug fixes reported by the CUTLASS community

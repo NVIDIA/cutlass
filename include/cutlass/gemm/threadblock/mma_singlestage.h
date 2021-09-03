@@ -196,10 +196,8 @@ public:
     Operator warp_mma;
 
     // Avoid reading out of bounds
-    if (gemm_k_iterations <= 1) {
-      iterator_A.clear_mask();
-      iterator_B.clear_mask();
-    }
+    iterator_A.clear_mask(gemm_k_iterations <= 1);
+    iterator_B.clear_mask(gemm_k_iterations <= 1);
 
     //
     // Mainloop
@@ -247,10 +245,8 @@ public:
       ++iterator_B;
 
       // Avoid reading out of bounds if this was the last loop iteration
-      if (gemm_k_iterations <= 2) {
-        iterator_A.clear_mask();
-        iterator_B.clear_mask();
-      }
+      iterator_A.clear_mask(gemm_k_iterations <= 2);
+      iterator_B.clear_mask(gemm_k_iterations <= 2);
     }
 
   }
