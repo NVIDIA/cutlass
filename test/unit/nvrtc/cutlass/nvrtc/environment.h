@@ -25,6 +25,7 @@
 #pragma once
 
 #include <stddef.h>
+#include "cutlass/cutlass.h"
 
 namespace cutlass {
 namespace nvrtc {

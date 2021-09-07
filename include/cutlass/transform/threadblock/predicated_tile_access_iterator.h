@@ -245,10 +245,10 @@ class PredicatedTileAccessIteratorPredicates {
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() {
+  void clear_mask(bool enable = true) {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kPredicateWordCount; ++i) {
-      predicates_[i] = 0u;
+      predicates_[i] = enable ? 0u : predicates_[i];
     }
 
   }
@@ -551,8 +551,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() {
-    the_predicates.clear_mask();
+  void clear_mask(bool enable = true) {
+    the_predicates.clear_mask(enable);
   }
 
   /// Clears the predicate set efficiently
@@ -741,7 +741,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { iterator_.clear_mask(); }
+  void clear_mask(bool enable = true) { iterator_.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
@@ -922,7 +922,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { iterator_.clear_mask(); }
+  void clear_mask(bool enable = true) { iterator_.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
@@ -1224,7 +1224,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { the_predicates.clear_mask(); }
+  void clear_mask(bool enable = true) { the_predicates.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
@@ -1401,7 +1401,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMa
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { iterator_.clear_mask(); }
+  void clear_mask(bool enable = true) { iterator_.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
@@ -1578,7 +1578,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2RowMajor
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { iterator_.clear_mask(); }
+  void clear_mask(bool enable = true) { iterator_.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
@@ -1764,7 +1764,7 @@ class PredicatedTileAccessIterator<Shape_, Element_,
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { iterator_.clear_mask(); }
+  void clear_mask(bool enable = true) { iterator_.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
@@ -1948,7 +1948,7 @@ class PredicatedTileAccessIterator<Shape_, Element_,
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { iterator_.clear_mask(); }
+  void clear_mask(bool enable = true) { iterator_.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE

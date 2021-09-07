@@ -20,7 +20,6 @@ class EmitOperationKindLibrary:
     self.generated_path = generated_path
     self.kind = kind
     self.args = args
-
     self.emitters = {
       OperationKind.Gemm: EmitGemmConfigurationLibrary
       , OperationKind.Conv2d: EmitConv2dConfigurationLibrary  
@@ -347,7 +346,7 @@ class Manifest:
 
     with interface_emitters[target](generated_path, self.operation_count, self.args) as iface_emitter:
       for operation_kind, configurations in self.operations.items():
-          iface_emitter.emit(OperationKindNames[operation_kind])
+        iface_emitter.emit(OperationKindNames[operation_kind])
 
       source_files += iface_emitter.source_files
 

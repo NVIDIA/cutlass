@@ -141,8 +141,8 @@ struct DefaultMmaWithReductionCore {
   using SmemLayoutB = typename Base::SmemLayoutB;
   using WarpCount = typename Base::WarpCount;
 
-  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = CacheOpA;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = CacheOpB;
    
   // Define the warp-level tensor op
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaWithReductionTensorOp<

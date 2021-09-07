@@ -791,7 +791,7 @@ bool GemmOperationProfiler::verify_with_reference_(
     handle.set_provider(provider);
 
     Status status = handle.gemm_universal(
-      library::GemmUniversalMode::kGemm,
+      problem_.mode,
       gemm_workspace_.configuration.problem_size.m(),
       gemm_workspace_.configuration.problem_size.n(),
       gemm_workspace_.configuration.problem_size.k(),

@@ -203,7 +203,27 @@ private:
 
 public:
 
-  /// Constructor
+  /// Constructor (output gradient (Dy) OperandA ctor)
+  CUTLASS_HOST_DEVICE
+  TileIteratorStridedDgrad(
+    Params const &params,
+    ConvProblemSize const &problem_size,
+    Element const *ptr,
+    int thread_idx,
+    FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+    int start_r, int start_s,
+    MatrixCoord const &threadblock_offset = MatrixCoord()
+  ):
+    tile_access_iterator_(
+      params, 
+      problem_size, 
+      ptr, 
+      thread_idx, 
+      stride_h_divmod, stride_w_divmod, 
+      start_r, start_s, 
+      threadblock_offset) { }
+
+  /// Constructor (filter (w) OperandB ctor)
   CUTLASS_HOST_DEVICE
   TileIteratorStridedDgrad(
     Params const &params,
@@ -213,7 +233,12 @@ public:
     int start_r, int start_s,
     MatrixCoord const &threadblock_offset = MatrixCoord()
   ):
-    tile_access_iterator_(params, problem_size, ptr, thread_idx, start_r, start_s, threadblock_offset) { }
+    tile_access_iterator_(params, 
+      problem_size, 
+      ptr, 
+      thread_idx, 
+      start_r, start_s, 
+      threadblock_offset) { }
 
   CUTLASS_HOST_DEVICE
   static Params getParams(ConvProblemSize const &problem_size, Layout const &layout) {

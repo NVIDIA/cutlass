@@ -395,10 +395,8 @@ public:
     for (int stage = 0; stage < Base::kStages - 1;
          ++stage, --gemm_k_iterations_0) {
 
-      if (gemm_k_iterations_0 == 0) {
-        iterator_A0.clear_mask();
-        iterator_B0.clear_mask();
-      }
+      iterator_A0.clear_mask(gemm_k_iterations_0 == 0);
+      iterator_B0.clear_mask(gemm_k_iterations_0 == 0);
 
       iterator_A0.set_iteration_index(0);
       this->smem_iterator_A0_.set_iteration_index(0);
@@ -490,10 +488,8 @@ public:
     ++this->warp_tile_iterator_A0_;
     ++this->warp_tile_iterator_B0_;
 
-    if (gemm_k_iterations_0 == 0) {
-      iterator_A0.clear_mask();
-      iterator_B0.clear_mask();
-    }
+    iterator_A0.clear_mask(gemm_k_iterations_0 == 0);
+    iterator_B0.clear_mask(gemm_k_iterations_0 == 0);
 
     int smem_write_stage_idx = Base::kStages - 1;
     int smem_read_stage_idx = 0;
@@ -601,10 +597,8 @@ public:
           }
 
           --gemm_k_iterations_0;
-          if (gemm_k_iterations_0 == 0) {
-            iterator_A0.clear_mask();
-            iterator_B0.clear_mask();
-          }
+          iterator_A0.clear_mask(gemm_k_iterations_0 == 0);
+          iterator_B0.clear_mask(gemm_k_iterations_0 == 0);
         }
 
         // Do any conversions feeding the first stage at the end of the loop so
@@ -634,9 +628,7 @@ public:
     for (int stage = 0; stage < Base::kStages - 1;
          ++stage, --gemm_k_iterations_1) {
 
-      if (gemm_k_iterations_1 == 0) {
-        iterator_B1.clear_mask();
-      }
+      iterator_B1.clear_mask(gemm_k_iterations_1 == 0);
 
       iterator_B1.set_iteration_index(0);
       this->smem_iterator_B1_.set_iteration_index(0);
@@ -694,9 +686,7 @@ public:
     ++warp_tile_iterator_A1_;
     ++this->warp_tile_iterator_B1_;
 
-    if (gemm_k_iterations_1 == 0) {
-      iterator_B1.clear_mask();
-    }
+    iterator_B1.clear_mask(gemm_k_iterations_1 == 0);
 
     smem_write_stage_idx = Base::kStages - 1;
     smem_read_stage_idx = 0;
@@ -793,9 +783,7 @@ public:
             ++smem_read_stage_idx;
           }
 
-          if (gemm_k_iterations_1 == 1) {
-            iterator_B1.clear_mask();
-          }
+          iterator_B1.clear_mask(gemm_k_iterations_1 == 1);
         }
 
         // Do any conversions feeding the first stage at the end of the loop so

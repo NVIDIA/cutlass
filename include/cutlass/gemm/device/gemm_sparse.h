@@ -438,14 +438,6 @@ public:
       if (result != cudaSuccess) {
         return Status::kErrorInternal;
       }
-
-      result = cudaFuncSetAttribute(
-          Kernel<GemmKernel>,
-          cudaFuncAttributePreferredSharedMemoryCarveout, 100);
-
-      if (result != cudaSuccess) {
-        return Status::kErrorInternal;
-      }
     }
 
     return Status::kSuccess;

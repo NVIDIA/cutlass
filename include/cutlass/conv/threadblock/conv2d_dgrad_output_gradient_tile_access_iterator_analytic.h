@@ -132,7 +132,6 @@ private:
   int offset_p_[ThreadMap::Iterations::kStrided];
   int offset_q_[ThreadMap::Iterations::kStrided];
 
-
 public:
 
   CUTLASS_HOST_DEVICE
@@ -141,6 +140,7 @@ public:
     Conv2dProblemSize const &problem_size,
     Element const *ptr,
     int thread_idx,
+    FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
     int start_r, int start_s,
     MatrixCoord const &threadblock_offset = MatrixCoord()     // threadblock offset - units are whole CTA tiles
   ):
@@ -166,9 +166,12 @@ public:
     }
 
     // Starting h, w positions for filter position in gemm_k=0
-    int start_h = std::abs((problem_size_.pad_h - filter_r) % problem_size_.stride_h);
-    int start_w = std::abs((problem_size_.pad_w - filter_s) % problem_size_.stride_w);
-
+    int start_h, start_w;
+    strided_dgrad_starting_coords(
+      problem_size_, 
+      stride_h_divmod, stride_w_divmod, 
+      filter_r, filter_s, 
+      start_h, start_w);
 
     // Effective P and Q for filter position required for remapping NHW rows
     int P = (problem_size_.H - start_h + problem_size_.stride_h - 1) / problem_size_.stride_h;

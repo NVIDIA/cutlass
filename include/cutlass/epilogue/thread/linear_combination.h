@@ -174,12 +174,12 @@ public:
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
 
+    ComputeFragment converted_source = source_converter(source);
     ComputeFragment converted_accumulator = accumulator_converter(accumulator);
 
     if (Scale == ScaleType::Nothing)
       return destination_converter(converted_accumulator);
 
-    ComputeFragment converted_source = source_converter(source);
 
     // Perform binary operations
     ComputeFragment intermediate;

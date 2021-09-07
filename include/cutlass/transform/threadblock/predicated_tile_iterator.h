@@ -288,7 +288,7 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { address_iterator_.clear_mask(); }
+  void clear_mask(bool enable = true) { address_iterator_.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
@@ -530,8 +530,8 @@ public:
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() {
-    iterator_.clear_mask();
+  void clear_mask(bool enable = true) {
+    iterator_.clear_mask(enable);
   }
 
   /// Clears the predicate set efficiently
@@ -738,8 +738,8 @@ public:
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() {
-    iterator_.clear_mask();
+  void clear_mask(bool enable = true) {
+    iterator_.clear_mask(enable);
   }
 
   /// Clears the predicate set efficiently
@@ -946,7 +946,7 @@ class PredicatedTileIterator<Shape_, Element_, layout::AffineRankN<2>, AdvanceRa
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { address_iterator_.clear_mask(); }
+  void clear_mask(bool enable = true) { address_iterator_.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
@@ -1184,8 +1184,8 @@ public:
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() {
-    iterator_.clear_mask();
+  void clear_mask(bool enable = true) {
+    iterator_.clear_mask(enable);
   }
 
   /// Clears the predicate set efficiently
@@ -1388,8 +1388,8 @@ public:
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() {
-    iterator_.clear_mask();
+  void clear_mask(bool enable = true) {
+    iterator_.clear_mask(enable);
   }
 
   /// Clears the predicate set efficiently
@@ -1600,7 +1600,7 @@ class PredicatedTileIterator<Shape_, Element_,
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { iterator_.clear_mask(); }
+  void clear_mask(bool enable = true) { iterator_.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
@@ -1785,7 +1785,7 @@ class PredicatedTileIterator<Shape_, Element_,
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
-  void clear_mask() { iterator_.clear_mask(); }
+  void clear_mask(bool enable = true) { iterator_.clear_mask(enable); }
 
   /// Clears the predicate set efficiently
   CUTLASS_HOST_DEVICE
