@@ -95,24 +95,17 @@ class Conv2dOperation:
 
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
     
-    threadblock = "%dx%d_%dx%d" % (
-      self.tile_description.threadblock_shape[0],
-      self.tile_description.threadblock_shape[1],
-      self.tile_description.threadblock_shape[2],
-      self.tile_description.stages
-    )
-
     if self.stride_support == StrideSupport.Unity:
-      configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_unity_stride"
+      configuration_name = "cutlass_${opcode_class}_${extended_name}_${tile_name}_${layout}_unity_stride"
     else:
-      configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}"
+      configuration_name = "cutlass_${opcode_class}_${extended_name}_${tile_name}_${layout}"
 
     return SubstituteTemplate(
       configuration_name,
       {
         'opcode_class': opcode_class_name,
         'extended_name': self.extended_name(),
-        'threadblock': threadblock,
+        'tile_name': self.tile_description.procedural_name(),
         'layout': self.layout_name(),
       }
     )
