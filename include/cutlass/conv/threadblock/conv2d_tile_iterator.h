@@ -68,6 +68,7 @@ public:
   using Params = typename TileAccessIterator::Params;
   static int const kConvDim = TileAccessIterator::kConvDim;
   using ConvProblemSize = typename TileAccessIterator::ConvProblemSize;
+  static int const kAccessesPerVector = TileAccessIterator::kAccessesPerVector;
 
   /// Fragment object to be loaded or stored
   using Fragment = cutlass::Array<
@@ -130,17 +131,22 @@ public:
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
       CUTLASS_PRAGMA_UNROLL
       for (int c = 0; c < ThreadMap::Iterations::kContiguous; ++c) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < kAccessesPerVector; ++v) {
 
-        cutlass::arch::global_load<
-          AccessType,
-          sizeof(AccessType)
-        >(
-          frag_ptr[c + s * ThreadMap::Iterations::kContiguous],
-          tile_access_iterator_.get() + pointer_offset,
-          tile_access_iterator_.valid()
-        );
+          int idx = v + kAccessesPerVector * (c + s * ThreadMap::Iterations::kContiguous);
 
-        ++tile_access_iterator_;
+          cutlass::arch::global_load<
+            AccessType,
+            sizeof(AccessType)
+          >(
+            frag_ptr[idx],
+            tile_access_iterator_.get() + pointer_offset,
+            tile_access_iterator_.valid()
+          );
+  
+          ++tile_access_iterator_;
+        }
       }
     }
   }

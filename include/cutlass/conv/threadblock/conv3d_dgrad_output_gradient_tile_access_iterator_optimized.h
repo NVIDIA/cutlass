@@ -86,7 +86,7 @@ public:
   static int const kConvDim = 3;
   using ConvProblemSize = typename conv::Conv3dProblemSize;
   using Coord3D = Coord<3>;
-
+  static int const kAccessesPerVector = 1;
   using Mask = uint64_t;
 
   //
@@ -401,7 +401,6 @@ public:
     }
 
     clear_mask_(filter_k_ >= problem_size_.K);
-
   }
 
 

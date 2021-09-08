@@ -105,6 +105,18 @@ public:
       return status;
     }
 
+    static int const kAlignmentC = ImplicitGemmKernel::Epilogue::OutputTileIterator::kElementsPerAccess;
+    if (kConvolutionalOperator == conv::Operator::kFprop) {
+      if (args.problem_size.K % kAlignmentC)
+        return Status::kErrorMisalignedOperand;
+    } else if (kConvolutionalOperator == conv::Operator::kDgrad) {
+       if (args.problem_size.C % kAlignmentC)
+        return Status::kErrorMisalignedOperand;
+    } else if (kConvolutionalOperator == conv::Operator::kWgrad) {
+       if (args.problem_size.C % kAlignmentC)
+        return Status::kErrorMisalignedOperand;
+    }
+
     // check for unsupported problem sizes for strided dgrad implementation
     if (kConvolutionalOperator == conv::Operator::kDgrad && 
       kStrideSupport == conv::StrideSupport::kStrided) {
