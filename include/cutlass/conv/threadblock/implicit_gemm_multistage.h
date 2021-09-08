@@ -216,6 +216,7 @@ public:
         for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
           cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
                   dst_ptr + v, iterator_A.get(), iterator_A.valid());
+
           ++iterator_A;
         }
 
@@ -244,6 +245,7 @@ public:
         for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
           cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
                   dst_ptr + v, iterator_B.get(), iterator_B.valid());
+
           ++iterator_B;
         }
         ++this->smem_iterator_B_;
@@ -289,16 +291,17 @@ public:
 
         CUTLASS_PRAGMA_UNROLL
         for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
-          int const kSrcBytes = 
-              sizeof_bits<typename IteratorA::Element>::value *
-              IteratorA::ThreadMap::kElementsPerAccess /
-              IteratorA::kAccessesPerVector / 8;
+        int const kSrcBytes =
+            sizeof_bits<typename IteratorA::Element>::value *
+            IteratorA::ThreadMap::kElementsPerAccess /
+            IteratorA::kAccessesPerVector / 8;
 
           cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
             dst_ptr + v, iterator_A.get(), iterator_A.valid());
 
           ++iterator_A;
         }
+
         ++this->smem_iterator_A_;
       }
 
@@ -313,17 +316,18 @@ public:
               this->smem_iterator_B_.get());
 
         CUTLASS_PRAGMA_UNROLL
-        for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
+        for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
           int const kSrcBytes =
               sizeof_bits<typename IteratorB::Element>::value *
               IteratorB::ThreadMap::kElementsPerAccess /
               IteratorB::kAccessesPerVector / 8;
-
+  
           cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
               dst_ptr + v, iterator_B.get(), iterator_B.valid());
-
+  
           ++iterator_B;
         }
+
         ++this->smem_iterator_B_;
       }
 

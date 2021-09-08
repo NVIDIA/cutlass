@@ -61,7 +61,7 @@ template <
   typename Element_,
   typename Layout_,
   typename ThreadMap_,
-  int AccessSize = ThreadMap_::kElementsPerAccess
+  typename AccessType_ = cutlass::AlignedArray<Element_, ThreadMap_::kElementsPerAccess>
 >
 class Conv2dFpropFilterTileAccessIteratorOptimized{
 public:
@@ -74,7 +74,7 @@ public:
   using Element = Element_;
   using Layout = Layout_;
   using ThreadMap = ThreadMap_;
-  using AccessType = AlignedArray<Element, AccessSize>;
+  using AccessType = AccessType_;
   using TensorRef = cutlass::TensorRef<Element, Layout>;
   using TensorCoord = typename Layout::TensorCoord;
   using Index = typename Layout::Index;
@@ -83,14 +83,17 @@ public:
   static StrideSupport const kStrideSupport = conv::StrideSupport::kStrided;
   static int const kConvDim = 2;
   using ConvProblemSize = typename conv::Conv2dProblemSize;
+ 
+  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
   
+  static_assert(!(ThreadMap::kElementsPerAccess % AccessType::kElements), 
+    "Vectors implied by the thread map must be divisible by the access type.");
+ 
   //
   // Simplifying assertions
   //
   static_assert(ThreadMap::Iterations::kContiguous == 1,
     "Require Iterations::kContiguous == 1");
-
-  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
 
   //
   // Parameters structure
@@ -170,6 +173,7 @@ public:
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
       uint32_t pred = ((column + s * ThreadMap::Delta::kStrided < problem_size_.K) ? 1u : 0);
+
       CUTLASS_PRAGMA_UNROLL
       for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
         predicates_[v_idx] |= (pred << s);
@@ -178,7 +182,7 @@ public:
 
     CUTLASS_PRAGMA_UNROLL
     for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
-      clear_mask_(filter_c_ + v_idx * AccessSize >= problem_size_.C, v_idx);
+      clear_mask(v_idx, filter_c_ + v_idx * AccessType::kElements >= problem_size_.C);
     }
 
     pointer_ += (
@@ -188,41 +192,11 @@ public:
     set_iteration_index(0);
   }
 
-  /// Clears the predicates
-  CUTLASS_HOST_DEVICE
-  void clear_mask_(bool clear, int index) {
-    // We are using inline PTX assembly here to avoid an CUDA C++ compilation
-    // artifact in which control flow instructions are generated. Instead, our
-    // intent is to predicate the mov instructions.
-    #if defined(__CUDA_ARCH__)
-    asm volatile(
-        "{\n"
-        "  .reg .pred p;\n"
-        "  .reg .u32  m;"
-        "  mov.u32 m, %2;"
-        "  setp.ne.b32 p, %1, 0;\n"
-        "  @p mov.u32 m, 0;\n"
-        "  mov.u32 %0, m;\n"
-        "}\n" 
-      :
-        "=r"(predicates_[index])
-      : 
-        "r"((int)clear),
-        "r"(predicates_[index])
-    );
-    #else
-      if (clear) {
-        predicates_[index] = 0;
-      }
-    #endif
-  }
-
   /// Overrides the internal iteration index
   CUTLASS_HOST_DEVICE
   void set_iteration_index(Index index) {
     iteration_vector_ = index % kAccessesPerVector;
     int residual_access = index / kAccessesPerVector;
-
     iteration_contiguous_ = residual_access % ThreadMap::Iterations::kContiguous;
     iteration_strided_ = residual_access / ThreadMap::Iterations::kContiguous;
   }
@@ -246,13 +220,19 @@ public:
       next = params_.inc_next_c;
       filter_c_ += params_.filter_c_delta;
     }
-
+ 
     CUTLASS_PRAGMA_UNROLL
     for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
-      clear_mask_(filter_c_ + v_idx * AccessSize >= problem_size_.C, v_idx);
+      clear_mask(v_idx, filter_c_ + v_idx * AccessType::kElements >= problem_size_.C);
     }
       
     pointer_ += next;
+  }
+
+  /// Clears the predicates
+  CUTLASS_HOST_DEVICE
+  void clear_mask(int v, bool clear = true) {
+    predicates_[v] = clear ? 0u : predicates_[v];
   }
 
   /// Returns true if the current coordinate is within the filter tensor W
@@ -274,7 +254,6 @@ public:
     if (iteration_vector_ < kAccessesPerVector) {
       return *this;
     }
-
     iteration_vector_ = 0;
 
     ++iteration_contiguous_;
@@ -301,7 +280,7 @@ public:
   static Status can_implement(Conv2dProblemSize const &problem_size) {
 
     // check alignment constraint on iterator's contiguous dimension
-    if (problem_size.C % AccessSize) {
+    if (problem_size.C % AccessType::kElements) {
       return Status::kErrorInvalidProblem;
     }
 

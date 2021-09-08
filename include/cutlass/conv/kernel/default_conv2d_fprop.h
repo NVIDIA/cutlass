@@ -66,11 +66,11 @@ template <
   int Stages,
   typename MathOperatorTag,
   conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kAnalytic,
+  conv::StrideSupport StrideSupport = StrideSupport::kStrided,
   /// Access granularity of A matrix in units of elements
   int AlignmentA = 128 / cutlass::sizeof_bits<ElementA>::value,
   /// Access granularity of B matrix in units of elements
-  int AlignmentB = 128 / cutlass::sizeof_bits<ElementB>::value,
-  conv::StrideSupport StrideSupport = StrideSupport::kStrided
+  int AlignmentB = 128 / cutlass::sizeof_bits<ElementB>::value
 > struct DefaultConv2dFprop;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -95,6 +95,7 @@ template <
   typename ThreadblockSwizzle,
   int Stages,
   typename MathOperatorTag,
+  conv::StrideSupport StrideSupport, 
   int AlignmentA,
   int AlignmentB
 >
@@ -116,6 +117,7 @@ struct DefaultConv2dFprop <
   Stages,
   MathOperatorTag,
   IteratorAlgorithm::kAnalytic,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -128,22 +130,26 @@ struct DefaultConv2dFprop <
 
   // Define iterators over tiles from the A operand
   using ThreadMapA = typename MmaCore::IteratorThreadMapA;
+  using AccessTypeA = cutlass::AlignedArray<ElementA, AlignmentA>;
   using IteratorA =
     cutlass::conv::threadblock::Conv2dFpropActivationTileAccessIteratorAnalytic<
       cutlass::MatrixShape<ThreadblockShape::kM, ThreadblockShape::kK>,
       ElementA, LayoutA,
-      ThreadMapA
+      ThreadMapA,
+      AccessTypeA
     >;
 
   using SmemIteratorA = typename MmaCore::SmemIteratorA;
 
   // Define iterators over tiles from the B operand
   using ThreadMapB = typename MmaCore::IteratorThreadMapB;
+  using AccessTypeB = cutlass::AlignedArray<ElementB, AlignmentB>;
   using IteratorB =
     cutlass::conv::threadblock::Conv2dFpropFilterTileAccessIteratorAnalytic<
       cutlass::MatrixShape<ThreadblockShape::kK, ThreadblockShape::kN>,
       ElementB, LayoutB,
-      ThreadMapB
+      ThreadMapB,
+      AccessTypeB
     >;
   
   using SmemIteratorB = typename MmaCore::SmemIteratorB;
@@ -151,6 +157,11 @@ struct DefaultConv2dFprop <
   // Warp-level GEMM components
   using WarpMmaTensorOp = typename MmaCore::MmaTensorOp;
   using MmaPolicy = typename MmaCore::MmaPolicy;
+
+  static cutlass::arch::CacheOperation::Kind const CacheOpB =
+      ((sizeof_bits<ElementB>::value * AlignmentB) == 128)
+          ? cutlass::arch::CacheOperation::Global
+          : cutlass::arch::CacheOperation::Always;
 
   // Define the Mma
   using Mma = threadblock::ImplicitGemmMultistage<
@@ -160,7 +171,7 @@ struct DefaultConv2dFprop <
     arch::CacheOperation::Always,
     IteratorB,
     SmemIteratorB,
-    arch::CacheOperation::Global,
+    CacheOpB,
     MmaPolicy,
     Stages 
   >;
@@ -203,9 +214,10 @@ template <
   typename ThreadblockSwizzle,
   int Stages,
   typename MathOperatorTag,
-  int InterleavedK,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
-  int AlignmentB
+  int AlignmentB,
+  int InterleavedK
 >
 struct DefaultConv2dFprop <
   ElementA,
@@ -225,6 +237,7 @@ struct DefaultConv2dFprop <
   Stages,
   MathOperatorTag,
   IteratorAlgorithm::kAnalytic,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -325,6 +338,7 @@ template <
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
   typename MathOperatorTag,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
   int AlignmentB
 >
@@ -346,6 +360,7 @@ struct DefaultConv2dFprop <
   2,
   MathOperatorTag,
   IteratorAlgorithm::kAnalytic,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -358,12 +373,14 @@ struct DefaultConv2dFprop <
 
   // Define iterators over tiles from the A operand
   using ThreadMapA = typename MmaCore::IteratorThreadMapA;
+  using AccessTypeA = cutlass::AlignedArray<ElementA, AlignmentA>;
   using IteratorA =
     cutlass::conv::threadblock::TileIterator<
       cutlass::conv::threadblock::Conv2dFpropActivationTileAccessIteratorAnalytic<
         cutlass::MatrixShape<ThreadblockShape::kM, ThreadblockShape::kK>,
         ElementA, LayoutA,
-        ThreadMapA
+        ThreadMapA,
+        AccessTypeA
       >
     >;
 
@@ -371,12 +388,14 @@ struct DefaultConv2dFprop <
 
   // Define iterators over tiles from the B operand
   using ThreadMapB = typename MmaCore::IteratorThreadMapB;
+  using AccessTypeB = cutlass::AlignedArray<ElementB, AlignmentB>;
   using IteratorB =
     cutlass::conv::threadblock::TileIterator<
       cutlass::conv::threadblock::Conv2dFpropFilterTileAccessIteratorAnalytic<
         cutlass::MatrixShape<ThreadblockShape::kK, ThreadblockShape::kN>,
         ElementB, LayoutB,
-        ThreadMapB
+        ThreadMapB,
+        AccessTypeB
       >
     >;
   
@@ -435,9 +454,10 @@ template <
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
   typename MathOperatorTag,
-  int InterleavedK,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
-  int AlignmentB
+  int AlignmentB,
+  int InterleavedK
 >
 struct DefaultConv2dFprop <
   ElementA,
@@ -457,6 +477,7 @@ struct DefaultConv2dFprop <
   2,
   MathOperatorTag,
   IteratorAlgorithm::kAnalytic,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -561,6 +582,7 @@ template <
   typename ThreadblockSwizzle,
   int Stages,
   typename MathOperatorTag,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
   int AlignmentB
 >
@@ -582,6 +604,7 @@ struct DefaultConv2dFprop <
   Stages,
   MathOperatorTag,
   IteratorAlgorithm::kOptimized,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -595,26 +618,28 @@ struct DefaultConv2dFprop <
 
   // Define iterators over tiles from the A operand
   using ThreadMapA = typename MmaCore::IteratorThreadMapA;
+  using AccessTypeA = cutlass::AlignedArray<ElementA, AlignmentA>;
   using IteratorA =
     cutlass::conv::threadblock::Conv2dFpropActivationTileAccessIteratorOptimized<
       cutlass::MatrixShape<ThreadblockShape::kM, ThreadblockShape::kK>,
       ElementA,
       LayoutA,
       ThreadMapA,
-      AlignmentA
+      AccessTypeA
     >;
 
   using SmemIteratorA = typename MmaCore::SmemIteratorA;
 
   // Define iterators over tiles from the B operand 
   using ThreadMapB = typename MmaCore::IteratorThreadMapB;
+  using AccessTypeB = cutlass::AlignedArray<ElementB, AlignmentB>;
   using IteratorB =
     cutlass::conv::threadblock::Conv2dFpropFilterTileAccessIteratorOptimized<
       cutlass::MatrixShape<ThreadblockShape::kK, ThreadblockShape::kN>,
       ElementB,
       LayoutB,
       ThreadMapB,
-      AlignmentB
+      AccessTypeB
     >;
   
   using SmemIteratorB = typename MmaCore::SmemIteratorB;
@@ -624,7 +649,7 @@ struct DefaultConv2dFprop <
   using MmaPolicy = typename MmaCore::MmaPolicy;
 
   static cutlass::arch::CacheOperation::Kind const CacheOpB =
-      ((sizeof_bits<ElementA>::value * AlignmentB) == 128)
+      ((sizeof_bits<ElementB>::value * AlignmentB) == 128)
           ? cutlass::arch::CacheOperation::Global
           : cutlass::arch::CacheOperation::Always;
 
@@ -679,9 +704,10 @@ template <
   typename ThreadblockSwizzle,
   int Stages,
   typename MathOperatorTag,
-  int InterleavedK,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
-  int AlignmentB
+  int AlignmentB,
+  int InterleavedK
 >
 struct DefaultConv2dFprop <
   ElementA,
@@ -701,6 +727,7 @@ struct DefaultConv2dFprop <
   Stages,
   MathOperatorTag,
   IteratorAlgorithm::kOptimized,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -774,6 +801,8 @@ struct DefaultConv2dFprop <
   >;
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Defines a kernel for Conv2dFprop specialzation for Optimized IteratorAlgorithm
 /// and 2 stage pipeline.
 template <
@@ -791,6 +820,7 @@ template <
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
   typename MathOperatorTag,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
   int AlignmentB
 >
@@ -812,6 +842,7 @@ struct DefaultConv2dFprop <
   2,
   MathOperatorTag,
   IteratorAlgorithm::kOptimized,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -824,6 +855,7 @@ struct DefaultConv2dFprop <
 
   // Define iterators over tiles from the A operand
   using ThreadMapA = typename MmaCore::IteratorThreadMapA;
+  using AccessTypeA = cutlass::AlignedArray<ElementA, AlignmentA>;
   using IteratorA =
     cutlass::conv::threadblock::TileIterator<
       cutlass::conv::threadblock::Conv2dFpropActivationTileAccessIteratorOptimized<
@@ -831,7 +863,7 @@ struct DefaultConv2dFprop <
         ElementA,
         LayoutA,
         ThreadMapA,
-        AlignmentA
+        AccessTypeA 
       >
     >;
 
@@ -839,6 +871,7 @@ struct DefaultConv2dFprop <
 
   // Define iterators over tiles from the B operand
   using ThreadMapB = typename MmaCore::IteratorThreadMapB;
+  using AccessTypeB = cutlass::AlignedArray<ElementB, AlignmentB>;
   using IteratorB =
     cutlass::conv::threadblock::TileIterator<
       cutlass::conv::threadblock::Conv2dFpropFilterTileAccessIteratorOptimized<
@@ -846,7 +879,7 @@ struct DefaultConv2dFprop <
         ElementB,
         LayoutB,
         ThreadMapB,
-        AlignmentB
+        AccessTypeB
       >
     >;
   
@@ -905,9 +938,10 @@ template <
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
   typename MathOperatorTag,
-  int InterleavedK,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
-  int AlignmentB
+  int AlignmentB,
+  int InterleavedK
 >
 struct DefaultConv2dFprop <
   ElementA,
@@ -927,6 +961,7 @@ struct DefaultConv2dFprop <
   2,
   MathOperatorTag,
   IteratorAlgorithm::kOptimized,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -1023,6 +1058,7 @@ template <
   typename ThreadblockSwizzle,
   int Stages,
   typename MathOperatorTag,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
   int AlignmentB
 >
@@ -1044,6 +1080,7 @@ struct DefaultConv2dFprop <
   Stages,
   MathOperatorTag,
   IteratorAlgorithm::kAnalytic,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -1132,6 +1169,7 @@ template <
   typename ThreadblockSwizzle,
   int Stages,
   typename MathOperatorTag,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
   int AlignmentB
 >
@@ -1153,6 +1191,7 @@ struct DefaultConv2dFprop <
   Stages,
   MathOperatorTag,
   IteratorAlgorithm::kOptimized,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -1241,6 +1280,7 @@ template <
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
   typename MathOperatorTag,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
   int AlignmentB
 >
@@ -1262,6 +1302,7 @@ struct DefaultConv2dFprop <
   2,
   MathOperatorTag,
   IteratorAlgorithm::kAnalytic,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {
@@ -1351,6 +1392,7 @@ template <
   typename EpilogueOutputOp,
   typename ThreadblockSwizzle,
   typename MathOperatorTag,
+  conv::StrideSupport StrideSupport,
   int AlignmentA,
   int AlignmentB
 >
@@ -1372,6 +1414,7 @@ struct DefaultConv2dFprop <
   2,
   MathOperatorTag,
   IteratorAlgorithm::kOptimized,
+  StrideSupport,
   AlignmentA,
   AlignmentB
 > {

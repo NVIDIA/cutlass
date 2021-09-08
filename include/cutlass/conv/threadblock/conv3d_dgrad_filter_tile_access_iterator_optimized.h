@@ -82,8 +82,7 @@ public:
   static StrideSupport const kStrideSupport = StrideSupport_;
   static int const kConvDim = 3;
   using ConvProblemSize = typename conv::Conv3dProblemSize;
-
-  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
+  static int const kAccessesPerVector = 1;
   
   //
   // Parameters structure
@@ -217,7 +216,8 @@ public:
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
       if (filter_k_ + s * ThreadMap::Delta::kStrided >= problem_size_.K) {
-        uint32_t kClearMask = ((1u << ThreadMap::Iterations::kContiguous) - 1) << (s * ThreadMap::Iterations::kContiguous); 
+        uint32_t kClearMask = ((1u << ThreadMap::Iterations::kContiguous) - 1) << (s * ThreadMap::Iterations::kContiguous);
+
         predicates_ = (predicates_ & (~kClearMask));
       }
     }
@@ -281,5 +281,3 @@ public:
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-

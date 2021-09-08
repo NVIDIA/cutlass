@@ -228,7 +228,6 @@ struct DefaultConv3dDgrad <
 
   // Define iterators over tiles from the A operand
   using ThreadMapA = typename MmaCore::IteratorThreadMapA;
-
   using IteratorA =
     cutlass::conv::threadblock::Conv3dDgradOutputGradientTileAccessIteratorOptimized<
       cutlass::MatrixShape<ThreadblockShape::kM, ThreadblockShape::kK>,

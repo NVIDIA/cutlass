@@ -116,6 +116,7 @@ public:
     cutlass::Distribution::Kind dist_kind,
     uint64_t seed) {
 
+//cutlass::reference::host::TensorFill(view, Element(1.0f));
     if (dist_kind == cutlass::Distribution::Uniform) {
 
       int scope;

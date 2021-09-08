@@ -79,10 +79,10 @@ public:
   static int const kConvDim = 3;
   using ConvProblemSize = typename conv::Conv3dProblemSize;
   
+  static int const kAccessesPerVector = 1;
+ 
   static_assert(sizeof_bits<Element>::value >= 8,
     "WGRAD requires elements of size 8b or greater.");
-
-  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
 
   //
   // Parameters structure

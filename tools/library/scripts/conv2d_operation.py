@@ -103,9 +103,9 @@ class Conv2dOperation:
     )
 
     if self.stride_support == StrideSupport.Unity:
-      configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_unity_stride"
+      configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_align${alignment}_unity_stride"
     else:
-      configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}"
+      configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_align${alignment}"
 
     return SubstituteTemplate(
       configuration_name,
@@ -114,6 +114,7 @@ class Conv2dOperation:
         'extended_name': self.extended_name(),
         'threadblock': threadblock,
         'layout': self.layout_name(),
+        'alignment': "%d" % self.A.alignment,
       }
     )
 
@@ -156,7 +157,9 @@ class EmitConv2dInstance:
     ${stages},
     ${math_operator},
     ${iterator_algorithm},
-    ${stride_support}
+    ${stride_support},
+    ${align_a},
+    ${align_b}
   >::Kernel;
 """
 
@@ -198,7 +201,9 @@ class EmitConv2dInstance:
       'iterator_algorithm_name': IteratorAlgorithmNames[operation.iterator_algorithm].capitalize(),
       'stride_support': StrideSupportTag[operation.stride_support],
       'math_operator': 'cutlass::arch::OpMultiplyAddComplex' if operation.is_complex() else \
-      MathOperationTag[operation.tile_description.math_instruction.math_operation] 
+      MathOperationTag[operation.tile_description.math_instruction.math_operation],
+      'align_a': str(operation.A.alignment),
+      'align_b': str(operation.B.alignment),
     }
 
     return SubstituteTemplate(self.template, values)
@@ -341,4 +346,3 @@ void initialize_${configuration_name}(Manifest &manifest) {
 
 ###################################################################################################
 ###################################################################################################
-

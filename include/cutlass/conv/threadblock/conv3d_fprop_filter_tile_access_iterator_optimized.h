@@ -82,14 +82,13 @@ public:
   static StrideSupport const kStrideSupport = conv::StrideSupport::kStrided;
   static int const kConvDim = 3;
   using ConvProblemSize = typename conv::Conv3dProblemSize;
+  static int const kAccessesPerVector = 1;
   
   //
   // Simplifying assertions
   //
   static_assert(ThreadMap::Iterations::kContiguous == 1,
     "Require Iterations::kContiguous == 1");
-
-  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
 
   //
   // Parameters structure
@@ -156,7 +155,7 @@ public:
     params_(params), 
     problem_size_(problem_size),
     pointer_(reinterpret_cast<char const *>(ptr)),
-    predicates_(0),
+    predicates_{0},
     filter_trs_(0),
     filter_c_(0) {
 

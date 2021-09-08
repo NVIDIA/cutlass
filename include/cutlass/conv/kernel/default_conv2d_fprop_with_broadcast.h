@@ -65,7 +65,11 @@ template <
   int Stages,
   typename MathOperatorTag,
   conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kAnalytic,
-  conv::StrideSupport StrideSupport = StrideSupport::kStrided
+  conv::StrideSupport StrideSupport = StrideSupport::kStrided,
+  /// Access granularity of A matrix in units of elements
+  int AlignmentA = 128 / cutlass::sizeof_bits<ElementA>::value,
+  /// Access granularity of B matrix in units of elements
+  int AlignmentB = 128 / cutlass::sizeof_bits<ElementB>::value
 >
 struct DefaultConv2dFpropWithBroadcast {
 
@@ -84,7 +88,9 @@ struct DefaultConv2dFpropWithBroadcast {
     Stages,
     MathOperatorTag,
     IteratorAlgorithm,
-    StrideSupport
+    StrideSupport,
+    AlignmentA,
+    AlignmentB
   >::Kernel;
 
   // Replace epilogue

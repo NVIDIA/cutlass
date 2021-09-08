@@ -61,7 +61,8 @@ template <
   typename Shape_,
   typename Element_,
   typename ThreadMap_,
-  conv::StrideSupport StrideSupport_ = conv::StrideSupport::kUnity
+  conv::StrideSupport StrideSupport_ = conv::StrideSupport::kUnity,
+  typename AccessType_ = cutlass::AlignedArray<Element_, ThreadMap_::kElementsPerAccess>
 >
 class Conv2dDgradOutputGradientTileAccessIteratorOptimized;
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -74,14 +75,16 @@ class Conv2dDgradOutputGradientTileAccessIteratorOptimized;
 template <
   typename Shape_,
   typename Element_,
-  typename ThreadMap_
+  typename ThreadMap_,
+  typename AccessType_
 >
 class Conv2dDgradOutputGradientTileAccessIteratorOptimized <
   Shape_,
   Element_,
   ThreadMap_,
-  conv::StrideSupport::kUnity
->  {
+  conv::StrideSupport::kUnity,
+  AccessType_
+> {
 public:
   
   //
@@ -93,7 +96,7 @@ public:
   using Layout = layout::TensorNHWC;
   using TensorCoord = typename Layout::TensorCoord;
   using ThreadMap = ThreadMap_;
-  using AccessType = AlignedArray<Element, ThreadMap::kElementsPerAccess>;
+  using AccessType = AccessType_;
   using TensorRef = cutlass::TensorRef<Element, Layout>;
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
@@ -101,7 +104,12 @@ public:
   static StrideSupport const kStrideSupport = conv::StrideSupport::kUnity;
   static int const kConvDim = 2;
   using ConvProblemSize = typename conv::Conv2dProblemSize;
+ 
+  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
   
+  static_assert(!(ThreadMap::kElementsPerAccess % AccessType::kElements), 
+    "Vectors implied by the thread map must be divisible by the access type.");
+ 
   using Mask = uint64_t;
 
   //
@@ -116,14 +124,13 @@ public:
 
   using Params = Conv2dDgradOutputGradientIteratorOptimizedParams;
 
-  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
-
 private:
 
   Conv2dDgradOutputGradientIteratorOptimizedParams const &params_;
   Conv2dProblemSize const &problem_size_;
   LongIndex iteration_contiguous_;
   LongIndex iteration_strided_;
+  LongIndex iteration_vector_;
 
   // One pointer per access
   char const *pointer_[ThreadMap::Iterations::kStrided];
@@ -133,7 +140,7 @@ private:
   int filter_s_;
   int filter_k_;
 
-  Index masks_[ThreadMap::Iterations::kStrided][2];
+  Index masks_[ThreadMap::Iterations::kStrided][kAccessesPerVector][2];
 
 public:
 
@@ -201,7 +208,11 @@ public:
         int p = offset_h[s_idx] + problem_size_.pad_h - r_ * problem_size_.dilation_h;
 
         bool pred = (offset_n[s_idx] < problem_size_.N && p >= 0 && p < problem_size_.P);
-        masks_[s_idx][0] |= (pred << r);
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
+          masks_[s_idx][v_idx][0] |= (pred << r);
+        }
       }
     }
 
@@ -218,12 +229,17 @@ public:
         int q = offset_w[s_idx] + problem_size_.pad_w - s_ * problem_size_.dilation_w;
 
         bool pred = (q >= 0 && q < problem_size_.Q);
-        masks_[s_idx][1] |= (pred << s);
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
+          masks_[s_idx][v_idx][1] |= (pred << s);
+        }
       }
     }
 
-    if (filter_k_ >= problem_size.K) {
-      clear_mask();
+    CUTLASS_PRAGMA_UNROLL
+    for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
+      clear_mask(v_idx, filter_k_ >= problem_size.K);
     }
 
     set_iteration_index(0);
@@ -269,62 +285,15 @@ private:
     }
   }
   
-  /// Clears the predicates
-  CUTLASS_HOST_DEVICE
-  void clear_mask_(bool clear) {
-    CUTLASS_PRAGMA_UNROLL
-    for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
-
-      // We are using inline PTX assembly here to avoid an CUDA C++ compilation
-      // artifact in which control flow instructions are generated. Instead, our
-      // intent is to predicate the mov instructions.
-      #if defined(__CUDA_ARCH__)
-      asm volatile(
-          "{\n"
-          "  .reg .pred p;\n"
-          "  .reg .u32  m;"
-          "  mov.u32 m, %2;"
-          "  setp.ne.b32 p, %1, 0;\n"
-          "  @p mov.u32 m, 0;\n"
-          "  mov.u32 %0, m;\n"
-          "}\n" 
-        :
-          "=r"(masks_[s][0])
-       : 
-          "r"((int)clear),
-          "r"(masks_[s][0])
-      );
-      asm volatile(
-          "{\n"
-          "  .reg .pred p;\n"
-          "  .reg .u32  m;"
-          "  mov.u32 m, %2;"
-          "  setp.ne.b32 p, %1, 0;\n"
-          "  @p mov.u32 m, 0;\n"
-          "  mov.u32 %0, m;\n"
-          "}\n" 
-        :
-          "=r"(masks_[s][1])
-       : 
-          "r"((int)clear),
-          "r"(masks_[s][1])
-      );
-      #else
-        if (clear) {
-          masks_[s][0] = 0;
-          masks_[s][1] = 0;
-        }
-      #endif
-    }
-  }
-  
 public:
 
   /// Overrides the internal iteration index
   CUTLASS_HOST_DEVICE
   void set_iteration_index(Index index) {
-    iteration_contiguous_ = index % ThreadMap::Iterations::kContiguous;
-    iteration_strided_ = index / ThreadMap::Iterations::kContiguous;
+    iteration_vector_ = index % kAccessesPerVector;
+    int residual_access = index / kAccessesPerVector;
+    iteration_contiguous_ = residual_access % ThreadMap::Iterations::kContiguous;
+    iteration_strided_ = residual_access / ThreadMap::Iterations::kContiguous;
   }
 
   /// Adds a pointer offset in units of element
@@ -359,16 +328,32 @@ public:
       filter_k_ += params_.filter_k_delta;
     }
 
-    clear_mask_(filter_k_ >= problem_size_.K);
+    CUTLASS_PRAGMA_UNROLL
+    for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
+      clear_mask(v_idx, (filter_k_ + v_idx * AccessType::kElements) >= problem_size_.K);
+    }
   }
 
   /// Clears the predicates
   CUTLASS_HOST_DEVICE
-  void clear_mask() {
+  void clear_mask(bool clear = true) {
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
-      masks_[s][0] = Mask(0);
-      masks_[s][1] = Mask(0);
+      CUTLASS_PRAGMA_UNROLL
+      for (int v = 0; v < kAccessesPerVector; ++v) {
+        masks_[s][v][0] = clear ? Mask(0) : masks_[s][v][0];
+        masks_[s][v][1] = clear ? Mask(0) : masks_[s][v][1];
+      }
+    }
+  }
+
+  /// Clears the predicates
+  CUTLASS_HOST_DEVICE
+  void clear_mask(int v, bool clear = true) {
+    CUTLASS_PRAGMA_UNROLL
+    for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
+      masks_[s][v][0] = clear ? Mask(0) : masks_[s][v][0];
+      masks_[s][v][1] = clear ? Mask(0) : masks_[s][v][1];
     }
   }
 
@@ -376,20 +361,25 @@ public:
   bool valid() {
 
     return 
-      (masks_[iteration_strided_][0] & (Index(1) << filter_r_)) &&
-      (masks_[iteration_strided_][1] & (Index(1) << filter_s_));
+      (masks_[iteration_strided_][iteration_vector_][0] & (Index(1) << filter_r_)) &&
+      (masks_[iteration_strided_][iteration_vector_][1] & (Index(1) << filter_s_));
   }
 
   /// Returns a pointer to the vector starting at the current coordinate
   CUTLASS_HOST_DEVICE
   AccessType const *get() const {
 
-    return reinterpret_cast<AccessType const *>(pointer_[iteration_strided_]);
+    return reinterpret_cast<AccessType const *>(pointer_[iteration_strided_]) + iteration_vector_;
   }
 
   /// Increments to the next memory access
   CUTLASS_HOST_DEVICE
   Conv2dDgradOutputGradientTileAccessIteratorOptimized &operator++() {
+    ++iteration_vector_;
+    if (iteration_vector_ < kAccessesPerVector) {
+      return *this;
+    }
+    iteration_vector_ = 0;
 
     ++iteration_contiguous_;
     if (iteration_contiguous_ < ThreadMap::Iterations::kContiguous) {
@@ -416,7 +406,7 @@ public:
     }
 
     // check alignment constraint on iterator's contiguous dimension
-    if (problem_size.K % (128/sizeof_bits<Element>::value)) {
+    if (problem_size.K % AccessType::kElements) {
       return Status::kErrorNotSupported;
     }
 

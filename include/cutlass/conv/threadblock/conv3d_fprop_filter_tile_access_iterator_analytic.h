@@ -80,6 +80,7 @@ public:
   static StrideSupport const kStrideSupport = conv::StrideSupport::kStrided;
   static int const kConvDim = 3;
   using ConvProblemSize = typename conv::Conv3dProblemSize;
+  static int const kAccessesPerVector = 1;
   
   //
   // Simplifying assertions
@@ -92,8 +93,6 @@ public:
   //
 
   using Params = Conv3dAnalyticParams<Layout>;
-
-  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
 
 private:
 

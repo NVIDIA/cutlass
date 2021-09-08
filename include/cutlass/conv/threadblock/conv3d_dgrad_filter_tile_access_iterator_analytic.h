@@ -79,11 +79,10 @@ public:
   static StrideSupport const kStrideSupport = conv::StrideSupport::kStrided;
   static int const kConvDim = 3;
   using ConvProblemSize = typename conv::Conv3dProblemSize;
+  static int const kAccessesPerVector = 1;
   
   static_assert(sizeof_bits<Element>::value >= 8, 
     "DGRAD requires elements of size 8b or larger.");
-
-  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
   
   //
   // Parameters structure
@@ -261,5 +260,3 @@ public:
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-
