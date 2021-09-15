@@ -192,6 +192,32 @@ struct GELU_taylor {
   }
 };
 
+template <int N>
+struct GELU_taylor<Array<half_t, N> > {
+  static const bool kIsHeavy=true;
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(Array<half_t, N> const &z) const {
+    
+    using T = half_t;
+    Array<half_t, N> y;
+    
+    half_t k0 = half_t(0.7978845608028654);
+    half_t k1 = half_t(0.044715);
+
+    multiply_add<Array<half_t, N>> fma;
+    multiplies<Array<half_t, N>>     mul;
+    plus<Array<half_t, N>>         add;
+
+    fast_tanh_op<Array<half_t, N>> tanh;
+
+    Array<half_t, N> u = mul(mul(k0, z), fma(mul(k1, z), z, cutlass::constants::one<T>()));
+
+    y = mul(mul(z, cutlass::constants::half<T>()), add(cutlass::constants::one<T>(), tanh(u)));
+
+    return y;
+  }
+};
+
 template <typename T, int N>
 struct GELU_taylor<Array<T, N> > {
   static const bool kIsHeavy=true;

@@ -50,7 +50,6 @@
 #include "cutlass/array.h"
 #include "cutlass/complex.h"
 #include "cutlass/tensor_view.h"
-
 #include "cutlass/util/reference/device/tensor_foreach.h"
 #include "cutlass/util/distribution.h"
 

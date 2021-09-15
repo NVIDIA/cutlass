@@ -210,9 +210,9 @@ public:
   CUTLASS_HOST_DEVICE
   TensorCoord at() const {
 
-    int c = offset_c_[iteration_contiguous_];
     int k = offset_k_[iteration_strided_];
-
+    int c = offset_c_[iteration_contiguous_] + iteration_vector_ * AccessType::kElements;
+    
     return TensorCoord(k, filter_r_, filter_s_, c);
   }
 
@@ -222,7 +222,7 @@ public:
 
     TensorCoord coord = at();
 
-    return coord.n() < problem_size_.K && (coord.c() + iteration_vector_ * AccessType::kElements) < problem_size_.C;
+    return coord.n() < problem_size_.K && coord.c() < problem_size_.C;
   }
 
   /// Returns a pointer to the vector starting at the current coordinate
@@ -232,7 +232,7 @@ public:
     TensorCoord coord = at();
     LongIndex offset = params_.layout(coord);
 
-    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8) + iteration_vector_;
+    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8);
 
   }
 
@@ -250,6 +250,7 @@ public:
       return *this;
     }
     iteration_contiguous_ = 0;
+
     ++iteration_strided_;
     if (iteration_strided_ < ThreadMap::Iterations::kStrided) {
       return *this;
@@ -408,8 +409,8 @@ public:
   CUTLASS_HOST_DEVICE
   TensorCoord at() const {
 
-    int c = offset_c_[iteration_contiguous_];
     int k = offset_k_[iteration_strided_];
+    int c = offset_c_[iteration_contiguous_] + iteration_vector_ * AccessType::kElements;
 
     return TensorCoord(k, filter_r_, filter_s_, c);
   }
@@ -420,7 +421,7 @@ public:
 
     TensorCoord coord = at();
 
-    return coord.n() < problem_size_.K && (coord.c() + iteration_vector_ * AccessType::kElements) < problem_size_.C;
+    return coord.n() < problem_size_.K && coord.c() < problem_size_.C;
   }
 
   /// Returns a pointer to the vector starting at the current coordinate
@@ -430,7 +431,7 @@ public:
     TensorCoord coord = at();
     LongIndex offset = params_.layout(coord);
 
-    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8) + iteration_vector_;
+    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8);
   }
 
   /// Increments to the next memory access

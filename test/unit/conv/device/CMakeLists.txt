@@ -134,7 +134,7 @@ cutlass_test_unit_add_executable(
   conv2d_wgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm70.cu
 )
 
-# Conv2d - F16 input, F32 output, F32 accumulation - SM75
+# Conv - F16 input, F32 output, F32 accumulation - SM75
 cutlass_test_unit_add_executable(
   cutlass_test_unit_conv_device_tensorop_f32_sm75
 
@@ -144,11 +144,13 @@ cutlass_test_unit_add_executable(
 
   conv2d_fprop_with_broadcast_sm75.cu
   conv2d_fprop_with_reduction_sm75.cu
+
+  conv3d_wgrad_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm75.cu
 )
 
 if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 80)
   
-  # Conv2d - F16 input, F16 output, F16 accumulation 
+  # Conv - F16 input, F16 output, F16 accumulation 
   cutlass_test_unit_add_executable(
     cutlass_test_unit_conv_device_tensorop_f16_sm80
   
@@ -157,24 +159,23 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 80)
     conv2d_wgrad_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f16_sm80.cu 
   )
 
-  # Conv2d - F16 input, F32 output, F32 accumulation
-  
+  # Conv - F16 input, F32 output, F32 accumulation
   cutlass_test_unit_add_executable(
     cutlass_test_unit_conv_device_tensorop_f32_sm80
 
+    # Conv2d
     conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu
     conv2d_dgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu
     conv2d_wgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu
   
-    conv3d_wgrad_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm75.cu
-    conv3d_wgrad_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm80.cu
-
-    # Strided Dgrad 
+    # Conv2d (Strided Dgrad)
     conv2d_strided_dgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu
+
+    # Conv3d
+    conv3d_wgrad_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm80.cu
   )
 
-  # Conv2d - TF32 input, F32 output, F32 accumulation
-  
+  # Conv - TF32 input, F32 output, F32 accumulation
   cutlass_test_unit_add_executable(
     cutlass_test_unit_conv_device_tensorop_f32_tf32_sm80
   
@@ -192,7 +193,6 @@ endif()
 if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 75)
 
   # Conv2d - S8 input, S32 output, S32 accumulation
-
   cutlass_test_unit_add_executable(
     cutlass_test_unit_conv_device_tensorop_s32
     conv2d_fprop_implicit_gemm_s8nhwc_s8nhwc_s32nhwc_tensor_op_s32_sm75.cu
@@ -200,7 +200,6 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 75)
   )
   
   # Conv2d - S8 interleaved input, S8 interleaved output, S32 accumulation
-
   cutlass_test_unit_add_executable(
     cutlass_test_unit_conv_device_tensorop_s32_interleaved  
     conv2d_fprop_implicit_gemm_s8ncxhwx_s8cxrskx_s8ncxhwx_tensor_op_s32_sm75.cu

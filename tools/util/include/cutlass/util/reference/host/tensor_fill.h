@@ -42,7 +42,6 @@
 #include "cutlass/subbyte_reference.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/tensor_view_planar_complex.h"
-
 #include "cutlass/util/distribution.h"
 #include "tensor_foreach.h"
 

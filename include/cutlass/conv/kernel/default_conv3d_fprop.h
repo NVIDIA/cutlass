@@ -66,7 +66,7 @@ template <
   typename ThreadblockSwizzle,
   int Stages,
   typename MathOperatorTag,
-  conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kAnalytic,
+  conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kOptimized,
   conv::StrideSupport StrideSupport = StrideSupport::kStrided
 > struct DefaultConv3dFprop;
 

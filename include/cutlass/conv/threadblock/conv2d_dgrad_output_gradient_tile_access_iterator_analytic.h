@@ -268,11 +268,13 @@ public:
     p += (conv_sign * (filter_r_ / problem_size_.stride_h));
     q += (conv_sign * (filter_s_ / problem_size_.stride_w));
 
+    int k = filter_k_ + iteration_vector_ * AccessType::kElements; 
+
     return TensorCoord(
       n, 
       p, 
       q, 
-      filter_k_);
+      k);
   }
 
 
@@ -286,7 +288,7 @@ public:
       coord.n() < problem_size_.N &&
       coord.h() >= 0 && coord.h() < problem_size_.P &&
       coord.w() >= 0 && coord.w() < problem_size_.Q &&
-      (coord.c() + iteration_vector_ * AccessType::kElements) < problem_size_.K;
+      coord.c() < problem_size_.K;
   }
 
   /// Returns a pointer to the vector starting at the current coordinate
@@ -296,7 +298,7 @@ public:
     TensorCoord coord = at();
     LongIndex offset = params_.layout(coord);
 
-    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8) + iteration_vector_;
+    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8);
   }
 
   /// Increments to the next memory access
@@ -313,6 +315,7 @@ public:
       return *this;
     }
     iteration_contiguous_ = 0;
+
     ++iteration_strided_;
     if (iteration_strided_ < ThreadMap::Iterations::kStrided) {
       return *this;
@@ -516,7 +519,9 @@ public:
     int p = (h + problem_size_.pad_h - r * problem_size_.dilation_h) / problem_size_.stride_h;
     int q = (w + problem_size_.pad_w - s * problem_size_.dilation_w) / problem_size_.stride_w;
 
-    return TensorCoord(n, p, q, filter_k_);
+    int k = filter_k_ + iteration_vector_ * AccessType::kElements;
+
+    return TensorCoord(n, p, q, k);
 
   }
 
@@ -529,7 +534,7 @@ public:
     return coord.n() < problem_size_.N &&
       coord.h() >= 0 && coord.h() < problem_size_.P &&
       coord.w() >= 0 && coord.w() < problem_size_.Q &&
-      (coord.c() + iteration_vector_ * AccessType::kElements) < problem_size_.K;
+      coord.c() < problem_size_.K;
   }
 
   /// Returns a pointer to the vector starting at the current coordinate
@@ -539,7 +544,7 @@ public:
     TensorCoord coord = at();
     LongIndex offset = params_.layout(coord);
 
-    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8) + iteration_vector_;
+    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8);
   }
 
   /// Increments to the next memory access

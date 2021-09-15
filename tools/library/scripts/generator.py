@@ -162,10 +162,11 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
   # iterator algorithm (analytic and optimized)
   iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
 
-  # by default, only generate the largest tile size
+  # by default, only generate the largest tile size, largest alignment, and optimized iterator
   if manifest.args.kernels == '':
     tile_descriptions = [tile_descriptions[0],]
     alignment_constraints = [alignment_constraints[0],]
+    iterator_algorithms = [IteratorAlgorithm.Optimized]
 
   operations = []
 
@@ -212,12 +213,21 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
         # better for problem sizes with large activation channel count
         swizzling_functor_strided_dgrad_ = SwizzlingFunctor.StridedDgradIdentity1
   
-        new_operation = Conv2dOperation(ConvKind.Dgrad, IteratorAlgorithm.Analytic, tile.minimum_compute_capability, tile,\
-          A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_strided_dgrad_)
+        if IteratorAlgorithm.Analytic in iterator_algorithms:
+          new_operation = Conv2dOperation(ConvKind.Dgrad, IteratorAlgorithm.Analytic, tile.minimum_compute_capability, tile,\
+            A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_strided_dgrad_)
   
-        manifest.append(new_operation)
-        operations.append(new_operation)
+          manifest.append(new_operation)
+          operations.append(new_operation)
         
+        # Strided support for Optimized Dgrad
+        if IteratorAlgorithm.Optimized in iterator_algorithms:
+          new_operation = Conv2dOperation(ConvKind.Dgrad, IteratorAlgorithm.Optimized, tile.minimum_compute_capability, tile,\
+            A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_strided_dgrad_)
+  
+          manifest.append(new_operation)
+          operations.append(new_operation)
+  
       #
       # Conv2d Wgrad
       #
@@ -246,33 +256,69 @@ def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignme
   # iterator algorithm (analytic and optimized)
   iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
 
-  # by default, only generate the largest tile size
+  # by default, only generate the largest tile size and optimized iterators
   if manifest.args.kernels == '':
     tile_descriptions = [tile_descriptions[0],]
+    iterator_algorithms = [IteratorAlgorithm.Optimized]
 
   operations = []
 
+  # All tile sizes for Conv3dFprop and Conv3dWgrad
   for tile in tile_descriptions:
-    for conv_kind in conv_kinds:
+    A = TensorDescription(element_a, layout, alignment)
+    B = TensorDescription(element_b, layout, alignment)
+    C = TensorDescription(element_c, layout, alignment_c)
+    
+    #
+    # Conv3d Fprop
+    #
+    if ConvKind.Fprop in conv_kinds:
+      # Strided support for Analytic and Optimized Fprop
       for iterator_algorithm in iterator_algorithms:
-        A = TensorDescription(element_a, layout, alignment)
-        B = TensorDescription(element_b, layout, alignment)
-        C = TensorDescription(element_c, layout, alignment_c)
-        
-        # optimized conv3d iterator algorithm is only for Wgrad
-        if (iterator_algorithm == IteratorAlgorithm.Optimized) \
-          and ((conv_kind == ConvKind.Fprop) or (conv_kind == ConvKind.Dgrad)):
-          continue
-
-        # strided support for Fprop (Analytic/Optimized), Dgrad (Analytic), and Wgrad (Analytic)
-        new_operation = Conv3dOperation(conv_kind, iterator_algorithm, tile.minimum_compute_capability, tile,\
-         A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor)
-
+        new_operation = Conv3dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
+                                        A, B, C, element_epilogue, StrideSupport.Strided)
+        manifest.append(new_operation)
+        operations.append(new_operation)
+    #
+    # Conv3d Wgrad
+    #
+    if ConvKind.Wgrad in conv_kinds:
+     
+      # Strided support for Analytic and Optimized Wgrad
+      for iterator_algorithm in iterator_algorithms:
+        new_operation = Conv3dOperation(ConvKind.Wgrad, iterator_algorithm, tile.minimum_compute_capability, tile,\
+          A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor)
         manifest.append(new_operation)
         operations.append(new_operation)
 
+  # All tile sizes for Conv3dDgrad
+  for tile in tile_descriptions:
+    
+    A = TensorDescription(element_a, layout, alignment)
+    B = TensorDescription(element_b, layout, alignment)
+    C = TensorDescription(element_c, layout, alignment_c)
+    
+    #
+    # Conv3d Dgrad
+    #
+    if ConvKind.Dgrad in conv_kinds:
+      # Unity stride for Optimized Dgrad
+      new_operation = Conv3dOperation(ConvKind.Dgrad, IteratorAlgorithm.Optimized, tile.minimum_compute_capability, tile,\
+        A, B, C, element_epilogue, StrideSupport.Unity, epilogue_functor)
+      
+      manifest.append(new_operation)
+      operations.append(new_operation)
+      
+      # Strided support for Analytic Dgrad 
+      # Conv3dDgrad has a naive strided support which does not cut down redundant MMAs   
+      new_operation = Conv3dOperation(ConvKind.Dgrad, IteratorAlgorithm.Analytic, tile.minimum_compute_capability, tile,\
+        A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor)
+      
+      manifest.append(new_operation)
+      operations.append(new_operation)
 
   return operations
+
 
 ###################################################################################################
 ###################################################################################################
@@ -1158,7 +1204,7 @@ def GenerateSM75_TensorOp_88128(manifest, args):
     data_type = [DataType.b1, DataType.b1, DataType.s32, DataType.s32]
 
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
-      data_type, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
+      data_type, alignment_constraints)
 
 #
 
@@ -1934,7 +1980,7 @@ def GenerateSM80_TensorOp_168256(manifest, args):
     data_type = [DataType.b1, DataType.b1, DataType.s32, DataType.s32]
 
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
-      data_type, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
+      data_type, alignment_constraints)
 
 #
 

@@ -66,7 +66,7 @@ template <
   typename ThreadblockSwizzle,
   int Stages,
   typename MathOperatorTag,
-  conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kAnalytic,
+  conv::IteratorAlgorithm IteratorAlgorithm = IteratorAlgorithm::kOptimized,
   conv::StrideSupport StrideSupport = StrideSupport::kStrided,
   /// Access granularity of A matrix in units of elements
   int AlignmentA = 128 / cutlass::sizeof_bits<ElementA>::value,

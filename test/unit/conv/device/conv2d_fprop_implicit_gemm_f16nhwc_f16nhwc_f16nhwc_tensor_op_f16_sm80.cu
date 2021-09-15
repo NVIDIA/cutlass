@@ -170,6 +170,25 @@ TEST(SM80_Device_Conv2d_Fprop_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_tens
     {1, 1}             // dilation (dilation_h, dilation_w)
   ));
 
+  // run specific problem size in the unit test first
+  problem_size_list.push_back(cutlass::conv::Conv2dProblemSize(
+    {1, 4, 4, 14},     // input size (NHWC)
+    {8, 3, 3, 14},     // filter size (KRSC)
+    {0, 0, 0, 0},      // padding (pad_h, _, pad_w, _)
+    {3, 3},            // stride (stride_h, stride_w)
+    {1, 1}             // dilation (dilation_h, dilation_w)
+  ));
+
+  // run specific problem size in the unit test first
+  problem_size_list.push_back(cutlass::conv::Conv2dProblemSize(
+    {1, 23, 56, 98},     // input size (NHWC)
+    {128, 3, 3, 98},     // filter size (KRSC)
+    {4, 0, 5, 0},      // padding (pad_h, _, pad_w, _)
+    {3, 3},            // stride (stride_h, stride_w)
+    {1, 1}             // dilation (dilation_h, dilation_w)
+  ));
+
+
   /// Run all unit test sizes with device-level Conv2d instance
   EXPECT_TRUE(test::conv::device::TestAllConv2d<Conv2dFprop>(problem_size_list));
 }
@@ -224,6 +243,25 @@ TEST(SM80_Device_Conv2d_Fprop_Optimized_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_ten
     {3, 3},            // stride (stride_h, stride_w)
     {1, 1}             // dilation (dilation_h, dilation_w)
   ));
+
+  // run specific problem size in the unit test first
+  problem_size_list.push_back(cutlass::conv::Conv2dProblemSize(
+    {1, 4, 4, 14},     // input size (NHWC)
+    {8, 3, 3, 14},     // filter size (KRSC)
+    {0, 0, 0, 0},      // padding (pad_h, _, pad_w, _)
+    {3, 3},            // stride (stride_h, stride_w)
+    {1, 1}             // dilation (dilation_h, dilation_w)
+  ));
+
+  // run specific problem size in the unit test first
+  problem_size_list.push_back(cutlass::conv::Conv2dProblemSize(
+    {1, 23, 56, 98},     // input size (NHWC)
+    {128, 3, 3, 98},     // filter size (KRSC)
+    {4, 0, 5, 0},      // padding (pad_h, _, pad_w, _)
+    {3, 3},            // stride (stride_h, stride_w)
+    {1, 1}             // dilation (dilation_h, dilation_w)
+  ));
+
 
   /// Run all unit test sizes with device-level Conv2d instance
   EXPECT_TRUE(test::conv::device::TestAllConv2d<Conv2dFprop>(problem_size_list));
@@ -280,6 +318,24 @@ TEST(SM80_Device_Conv2d_Fprop_Optimized_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_ten
     {1, 1}             // dilation (dilation_h, dilation_w)
   ));
 
+  // run specific problem size in the unit test first
+  problem_size_list.push_back(cutlass::conv::Conv2dProblemSize(
+    {1, 4, 4, 28},     // input size (NHWC)
+    {8, 3, 3, 28},     // filter size (KRSC)
+    {0, 0, 0, 0},      // padding (pad_h, _, pad_w, _)
+    {3, 3},            // stride (stride_h, stride_w)
+    {1, 1}             // dilation (dilation_h, dilation_w)
+  ));
+
+  // run specific problem size in the unit test first
+  problem_size_list.push_back(cutlass::conv::Conv2dProblemSize(
+    {1, 23, 56, 100},     // input size (NHWC)
+    {128, 3, 3, 100},     // filter size (KRSC)
+    {4, 0, 5, 0},      // padding (pad_h, _, pad_w, _)
+    {3, 3},            // stride (stride_h, stride_w)
+    {1, 1}             // dilation (dilation_h, dilation_w)
+  ));
+  
   /// Run all unit test sizes with device-level Conv2d instance
   EXPECT_TRUE(test::conv::device::TestAllConv2d<Conv2dFprop>(problem_size_list));
 }
