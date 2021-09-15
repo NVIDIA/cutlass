@@ -103,8 +103,8 @@ template <
     int Stages,
     /// Operation performed by GEMM
     typename Operator,
-    /// Use zfill or predicate for SM80 out-of-bound cp.async
-    bool UseZfill = false,
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear = SharedMemoryClearOption::kNone,
     ///
     typename Enable = void>
 struct DefaultGemmWithKReduction {
@@ -116,7 +116,7 @@ struct DefaultGemmWithKReduction {
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, kReduceKForA, arch::Sm80,
       ThreadblockShape, WarpShape, InstructionShape, Stages,
-      Operator, false, UseZfill>::ThreadblockMma;
+      Operator, false, SharedMemoryClear>::ThreadblockMma;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
 

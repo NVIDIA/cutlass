@@ -103,7 +103,6 @@ Profiling:
 
   --profiling-enabled=<bool>                       If true, profiling is actually conducted.
 
-
 Verification:
   --verification-enabled=<bool>                    Whether to perform verification checks.
 

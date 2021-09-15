@@ -68,6 +68,7 @@ public:
   using Params = typename TileAccessIterator::Params;
   static int const kConvDim = TileAccessIterator::kConvDim;
   using ConvProblemSize = typename TileAccessIterator::ConvProblemSize;
+  static int const kAccessesPerVector = TileAccessIterator::kAccessesPerVector;
 
   /// Fragment object to be loaded or stored
   using Fragment = cutlass::Array<
@@ -130,17 +131,22 @@ public:
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
       CUTLASS_PRAGMA_UNROLL
       for (int c = 0; c < ThreadMap::Iterations::kContiguous; ++c) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < kAccessesPerVector; ++v) {
 
-        cutlass::arch::global_load<
-          AccessType,
-          sizeof(AccessType)
-        >(
-          frag_ptr[c + s * ThreadMap::Iterations::kContiguous],
-          tile_access_iterator_.get() + pointer_offset,
-          tile_access_iterator_.valid()
-        );
+          int idx = v + kAccessesPerVector * (c + s * ThreadMap::Iterations::kContiguous);
 
-        ++tile_access_iterator_;
+          cutlass::arch::global_load<
+            AccessType,
+            sizeof(AccessType)
+          >(
+            frag_ptr[idx],
+            tile_access_iterator_.get() + pointer_offset,
+            tile_access_iterator_.valid()
+          );
+  
+          ++tile_access_iterator_;
+        }
       }
     }
   }
@@ -200,7 +206,27 @@ private:
 
 public:
 
-  /// Constructor
+  /// Constructor (output gradient (Dy) OperandA ctor)
+  CUTLASS_HOST_DEVICE
+  TileIteratorStridedDgrad(
+    Params const &params,
+    ConvProblemSize const &problem_size,
+    Element const *ptr,
+    int thread_idx,
+    FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+    int start_r, int start_s,
+    MatrixCoord const &threadblock_offset = MatrixCoord()
+  ):
+    tile_access_iterator_(
+      params, 
+      problem_size, 
+      ptr, 
+      thread_idx, 
+      stride_h_divmod, stride_w_divmod, 
+      start_r, start_s, 
+      threadblock_offset) { }
+
+  /// Constructor (filter (w) OperandB ctor)
   CUTLASS_HOST_DEVICE
   TileIteratorStridedDgrad(
     Params const &params,
@@ -210,7 +236,12 @@ public:
     int start_r, int start_s,
     MatrixCoord const &threadblock_offset = MatrixCoord()
   ):
-    tile_access_iterator_(params, problem_size, ptr, thread_idx, start_r, start_s, threadblock_offset) { }
+    tile_access_iterator_(params, 
+      problem_size, 
+      ptr, 
+      thread_idx, 
+      start_r, start_s, 
+      threadblock_offset) { }
 
   CUTLASS_HOST_DEVICE
   static Params getParams(ConvProblemSize const &problem_size, Layout const &layout) {

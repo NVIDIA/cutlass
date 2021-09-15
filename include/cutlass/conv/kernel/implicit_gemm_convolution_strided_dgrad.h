@@ -199,7 +199,8 @@ struct ImplicitGemmConvolutionStridedDgrad {
   struct Params {
     ConvProblemSize problem_size;
     cutlass::gemm::GemmCoord grid_tiled_shape;
-    FastDivmod filter_s_divmod;
+    FastDivmod stride_h_divmod;
+    FastDivmod stride_w_divmod;
     int gemm_k_iterations;
     typename Mma::IteratorA::Params iterator_A;
     typename Mma::IteratorA::Element const *ptr_A;
@@ -227,7 +228,8 @@ struct ImplicitGemmConvolutionStridedDgrad {
       int *semaphore = nullptr
     ):
       problem_size(args.problem_size),
-      filter_s_divmod(args.problem_size.stride_w),
+      stride_h_divmod(args.problem_size.stride_h),
+      stride_w_divmod(args.problem_size.stride_w),
       iterator_A(Mma::IteratorA::getParams(args.problem_size, args.ref_A.layout())),
       ptr_A(args.ref_A.data()),
       iterator_B(args.problem_size, args.ref_B.layout()),
@@ -297,7 +299,7 @@ struct ImplicitGemmConvolutionStridedDgrad {
     // int start_s = filter_tile_m % (params.problem_size.stride_w);
 
     int start_r, start_s;
-    params.filter_s_divmod(start_r, start_s, filter_tile_m);
+    params.stride_w_divmod(start_r, start_s, filter_tile_m);
 
     typename Mma::FragmentC accumulators;
 
@@ -320,6 +322,7 @@ struct ImplicitGemmConvolutionStridedDgrad {
         params.problem_size,
         params.ptr_A,
         thread_idx,
+        params.stride_h_divmod, params.stride_w_divmod,
         start_r, start_s,
         MatrixCoord(
           threadblock_tile_idx.m() * Mma::Shape::kM,
@@ -386,6 +389,7 @@ struct ImplicitGemmConvolutionStridedDgrad {
       params.ptr_D,
       ConvOutputIteratorParameter::extent(params.problem_size),
       thread_idx,
+      params.stride_h_divmod, params.stride_w_divmod,
       start_r, start_s,
       threadblock_offset
     );
@@ -396,6 +400,7 @@ struct ImplicitGemmConvolutionStridedDgrad {
       params.ptr_C,
       ConvOutputIteratorParameter::extent(params.problem_size),
       thread_idx,
+      params.stride_h_divmod, params.stride_w_divmod,
       start_r, start_s,
       threadblock_offset
     );

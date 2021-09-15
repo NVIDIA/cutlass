@@ -82,6 +82,7 @@ public:
   static StrideSupport const kStrideSupport = conv::StrideSupport::kStrided;
   static int const kConvDim = 3;
   using ConvProblemSize = typename conv::Conv3dProblemSize;
+  static int const kAccessesPerVector = 1;
   
   //
   // Simplifying assertions
@@ -154,7 +155,7 @@ public:
     params_(params), 
     problem_size_(problem_size),
     pointer_(reinterpret_cast<char const *>(ptr)),
-    predicates_(0),
+    predicates_{0},
     filter_trs_(0),
     filter_c_(0) {
 
