@@ -582,6 +582,13 @@ public:
       __threadfence();
     }
 
+    // Execute the epilogue operator to update the destination tensor.
+    epilogue(
+      output_op, 
+      iterator_D, 
+      accumulators, 
+      iterator_C); 
+ 
     if ((kReduceKForA && threadblock_tile_offset.n() == 0)
      || (!kReduceKForA && threadblock_tile_offset.m() == 0)) {
 
@@ -610,14 +617,7 @@ public:
             && (threadblock_tile_offset.k() > 0));
       }
     }
-
-    // Execute the epilogue operator to update the destination tensor.
-    epilogue(
-      output_op, 
-      iterator_D, 
-      accumulators, 
-      iterator_C); 
-    
+   
     //
     // Release the semaphore
     //

@@ -209,7 +209,9 @@ public:
     int h = p * problem_size_.stride_h - problem_size_.pad_h + r * problem_size_.dilation_h;
     int w = q * problem_size_.stride_w - problem_size_.pad_w + s * problem_size_.dilation_w;
 
-    return TensorCoord(n, h, w, filter_c_);
+    int c = filter_c_ + iteration_vector_ * AccessType::kElements; 
+
+    return TensorCoord(n, h, w, c);
   }
 
   /// Returns true if the current coordinate is within the activations tensor X
@@ -221,7 +223,7 @@ public:
     return coord.n() < problem_size_.N &&
       coord.h() >= 0 && coord.h() < problem_size_.H &&
       coord.w() >= 0 && coord.w() < problem_size_.W &&
-      (coord.c() + iteration_vector_ * AccessType::kElements) < problem_size_.C;
+      coord.c() < problem_size_.C;
   }
 
   /// Returns a pointer to the vector starting at the current coordinate
@@ -231,7 +233,7 @@ public:
     TensorCoord coord = at();
     LongIndex offset = params_.layout(coord);
     
-    AccessType const *ptr = reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8) + iteration_vector_;
+    AccessType const *ptr = reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8);
 
     return ptr;
   }

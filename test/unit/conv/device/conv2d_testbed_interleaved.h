@@ -48,6 +48,8 @@
 #include "cutlass/core_io.h"
 #include "cutlass/util/tensor_view_io.h"
 
+#include "cache_testbed_output.h"
+
 namespace test {
 namespace conv {
 namespace device {
@@ -280,6 +282,50 @@ public:
     
     tensor_D_computed.sync_host();
 
+    //
+    // Reference check - support caching results
+    //
+
+    CachedTestKey cached_test_key = CreateCachedConv2dTestKey<
+        ElementA, LayoutA,
+        ElementB, LayoutB,
+        ElementC, LayoutC,
+        ElementAccumulator,
+        ElementCompute
+      >(
+        kConvolutionalOperator,
+        problem_size, 
+        alpha, 
+        beta, 
+        tensor_A.host_view(),
+        tensor_B.host_view(),
+        tensor_C.host_view()
+      );
+
+    //
+    // Look for the cached key
+    //
+
+    bool cached_result_loaded = false;
+    CachedTestResult cached_test_result;
+
+    std::string conv2d_result_cache_name = 
+      std::string("cached_results_") + CUTLASS_TARGET_NAME + ".txt";
+
+    if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
+
+      CachedTestResultListing cached_results(conv2d_result_cache_name);
+
+      auto cached = cached_results.find(cached_test_key);
+
+      cached_result_loaded = cached.first;
+      if (cached_result_loaded) {
+        cached_test_result = cached.second;
+      }
+    }
+    
+    if (!cached_result_loaded) {
+
 #if CUTLASS_CONV_TEST_UNIT_REFERENCE_DEVICE_ENABLED
 
     cutlass::reference::device::Conv2d<
@@ -332,9 +378,32 @@ public:
       beta);
 
 #endif
-    passed = cutlass::reference::host::TensorEquals(
-      tensor_D_computed.host_view(), 
-      tensor_D_reference.host_view());
+
+      if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
+
+        cached_test_result.D = TensorHash(tensor_D_reference.host_view());
+
+        CachedTestResultListing cached_results(conv2d_result_cache_name);
+
+        cached_results.append(cached_test_key, cached_test_result);
+        cached_results.write(conv2d_result_cache_name);
+      }
+    } // if (!cached_result_loaded)
+
+    uint32_t tensor_D_hash = TensorHash(tensor_D_computed.host_view());
+
+    if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
+      passed = (tensor_D_hash == cached_test_result.D);
+
+      EXPECT_EQ(tensor_D_hash, cached_test_result.D) 
+        << "Hash-based comparison failed for key:" << "\n" << cached_test_key << "\n";
+    }
+    else {
+
+      passed = cutlass::reference::host::TensorEquals(
+        tensor_D_computed.host_view(), 
+        tensor_D_reference.host_view());
+    }
 
     EXPECT_TRUE(passed);
 
@@ -345,12 +414,12 @@ public:
         << (split_k_mode == cutlass::conv::SplitKMode::kSerial ? "serial_reduction_" : "parallel_reduction_")
         << (Conv2d::kConvolutionalOperator == cutlass::conv::Operator::kFprop ? "fprop_" :
             (Conv2d::kConvolutionalOperator == cutlass::conv::Operator::kDgrad ? "dgrad_" : "wgrad_")) 
-        << "nhwc_"
+        << "ncxhwx_"
         << problem_size.N << "x"
         << problem_size.H << "x"
         << problem_size.W << "x"
         << problem_size.C 
-        << "_krsc_"
+        << "_cxrskx_"
         << problem_size.K << "x"
         << problem_size.R << "x"
         << problem_size.S << "x"
@@ -381,10 +450,18 @@ public:
       results
         << "\nA:\n" << tensor_A.host_view() << "\n"
         << "\nB:\n" << tensor_B.host_view() << "\n"
-        << "\nB_reordered =\n" << tensor_B_reordered.host_view() << "\n"
-        << "\nC:\n" << tensor_C.host_view() << "\n"
-        << "\nD reference:\n" << tensor_D_reference.host_view() << "\n"
-        << "\nD computed:\n" << tensor_D_computed.host_view() << "\n";
+        << "\nC:\n" << tensor_C.host_view() << "\n";
+
+      results << "\nD reference (hash: " << cached_test_result.D << ")\n";
+
+      if (!cached_result_loaded) {
+        results
+          << tensor_D_reference.host_view() << "\n";  
+      }
+
+      results
+        << "\nD computed (hash: " << tensor_D_hash << ")\n" 
+        << tensor_D_computed.host_view() << "\n";
 
     }
 

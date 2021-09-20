@@ -51,7 +51,6 @@
 #include "cutlass/matrix_coord.h"
 #include "cutlass/tensor_coord.h"
 #include "cutlass/layout/tensor.h"
-
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv2d_problem_size.h"

@@ -183,8 +183,9 @@ public:
   TensorCoord at() const {
 
     int k = offset_k_[iteration_strided_];
+    int c = filter_c_ + iteration_vector_ * AccessType::kElements;
 
-    return TensorCoord(k, filter_r_, filter_s_, filter_c_);
+    return TensorCoord(k, filter_r_, filter_s_, c);
   }
 
   /// Returns true if the current coordinate is within the activations tensor W
@@ -194,7 +195,7 @@ public:
     TensorCoord coord = at();
 
     return coord.n() < problem_size_.K &&
-      (coord.c() + iteration_vector_ * AccessType::kElements) < problem_size_.C;
+      coord.c() < problem_size_.C;
   }
 
   /// Returns a pointer to the vector starting at the current coordinate
@@ -204,7 +205,7 @@ public:
     TensorCoord coord = at();
     LongIndex offset = params_.layout(coord);
     
-    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8) + iteration_vector_;
+    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8);
   }
 
   /// Increments to the next memory access

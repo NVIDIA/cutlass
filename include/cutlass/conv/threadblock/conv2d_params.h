@@ -527,6 +527,64 @@ struct Conv2dDgradOutputGradientIteratorOptimizedParams {
   }
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Strided Dgrad Optimized Dy params (layout::TensorNHWC)
+/////////////////////////////////////////////////////////////////////////////////////////////////
+struct Conv2dStridedDgradOutputGradientIteratorOptimizedParams {
+  
+  using Layout = layout::TensorNHWC;
+
+  Layout layout;
+  
+  int64_t inc_next[3];    // {next S, next R, next K}
+
+  int filter_k_delta;     // number of logical elements to add to filter_k_
+
+  int tiled_rows_per_filter;
+
+  int conv_sign;
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  Conv2dStridedDgradOutputGradientIteratorOptimizedParams() { }
+
+  CUTLASS_HOST_DEVICE
+  Conv2dStridedDgradOutputGradientIteratorOptimizedParams(
+    Conv2dProblemSize const &problem_size,
+    Layout const &layout,                            ///< layout object
+    int element_size_bits,                           ///< size of each element in bits
+    MatrixCoord threadblock_shape
+  ): layout(layout) {
+    
+    int tile_m_per_filter = strided_dgrad_tile_m_per_filter(problem_size, threadblock_shape.row());
+  
+    tiled_rows_per_filter = tile_m_per_filter * threadblock_shape.row();
+
+    conv_sign = (problem_size.mode == Mode::kConvolution ? 1 : -1);
+
+    // next S
+    inc_next[0] = conv_sign * (
+      layout.stride()[0] * problem_size.dilation_w
+    ) * element_size_bits / 8;
+
+    // next R
+    inc_next[1] = conv_sign * (
+        layout.stride()[1] * problem_size.dilation_h
+      ) * element_size_bits / 8;
+
+    // next K
+    inc_next[2] = (
+        threadblock_shape.column() * problem_size.split_k_slices
+      ) * element_size_bits / 8;
+
+    // logical offset added to internal channel counter - units are elements, not bytes
+    filter_k_delta = threadblock_shape.column() * problem_size.split_k_slices;
+  }
+};
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // Dgrad Optimized w params (layout::TensorNHWC)
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -582,6 +640,73 @@ struct Conv2dDgradFilterIteratorOptimizedParams {
   }
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// StridedDgrad Optimized w params (layout::TensorNHWC)
+/////////////////////////////////////////////////////////////////////////////////////////////////
+struct Conv2dStridedDgradFilterIteratorOptimizedParams {
+
+  using Layout = layout::TensorNHWC;
+
+  Layout layout;
+  int RS;
+  int filter_k_delta;
+
+  int64_t inc_next_strided;   // offset in units of bytes to next K coordinate within tile
+  int64_t inc_next[3];        // {next S, next R, next K}
+  int64_t reset_bytes;        // offset in units of bytes to move back the pointer 
+  //
+  // Methods
+  //
+  CUTLASS_HOST_DEVICE
+  Conv2dStridedDgradFilterIteratorOptimizedParams() { }
+
+  CUTLASS_HOST_DEVICE
+  Conv2dStridedDgradFilterIteratorOptimizedParams(
+    Conv2dProblemSize const &problem_size,
+    Layout const &layout,    
+    int element_size_bits,                        ///< size of each element in bits
+    MatrixCoord threadblock_shape,
+    int thread_count,
+    int access_size, 
+    layout::PitchLinearCoord threadmap_iterations,
+    layout::PitchLinearCoord threadmap_delta
+  ): 
+    layout(layout), RS(problem_size.R * problem_size.S) {
+
+    TRACE_CONV_INITIALIZERS("conv2d_dgrad", "filter", 
+      element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
+
+    inc_next_strided = (layout.stride()[2] * threadmap_delta.strided() * element_size_bits) / 8;
+
+    // next S
+    inc_next[0] =
+      ( layout.stride()[0] * problem_size.stride_w
+        //- (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+      ) * element_size_bits / 8;
+
+    // next R
+    inc_next[1] =
+      ( layout.stride()[1] * problem_size.stride_h
+        //- (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+      ) * element_size_bits / 8;
+
+    // next K
+    inc_next[2] =
+      (
+        threadblock_shape.row() * problem_size.split_k_slices * layout.stride()[2]
+        //- (problem_size.R * problem_size.S - 1) * layout.stride()[0]
+        //- (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+      ) * element_size_bits / 8;
+
+    // offset in units of bytes to move the pointer in backward direction
+    reset_bytes = (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+            * element_size_bits / 8;
+
+    filter_k_delta = threadblock_shape.row() * problem_size.split_k_slices;
+  }
+};
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Parameters object for Conv2d WGRAD Output Gradient (dy) iterator

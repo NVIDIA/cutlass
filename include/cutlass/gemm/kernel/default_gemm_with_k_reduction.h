@@ -126,7 +126,7 @@ struct DefaultGemmWithKReduction {
           ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
           EpilogueOutputOp::kCount>::Epilogue;
 
-  /// Define the epilogue
+  /// Define the epilogue of the reduction vector
   using EpilogueGemmKReduction =
       typename cutlass::epilogue::threadblock::EpilogueGemmKReduction<
           ElementAccumulator, ElementC, ThreadblockShape, typename Mma::Operator, kReduceKForA>;

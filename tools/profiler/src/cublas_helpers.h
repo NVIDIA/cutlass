@@ -34,7 +34,6 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
 #include "cutlass/library/util.h"
-
 #include "options.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

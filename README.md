@@ -1,15 +1,15 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 2.6
+# CUTLASS 2.7
 
-_CUTLASS 2.6.1 - September 2021_
+_CUTLASS 2.7 - September 2021_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
-high-performance matrix-multiplication (GEMM) at all levels and scales within CUDA.
-It incorporates strategies for hierarchical decomposition and data movement similar
-to those used to implement cuBLAS.  CUTLASS decomposes these "moving parts" into
-reusable, modular software components abstracted by C++ template classes.  These
-thread-wide, warp-wide, block-wide, and device-wide primitives can be specialized
+high-performance matrix-multiplication (GEMM) and related computations at all levels 
+and scales within CUDA. It incorporates strategies for hierarchical decomposition and 
+data movement similar to those used to implement cuBLAS and cuDNN.  CUTLASS decomposes 
+these "moving parts" into reusable, modular software components abstracted by C++ template 
+classes.  These thread-wide, warp-wide, block-wide, and device-wide primitives can be specialized
 and tuned via custom tiling sizes, data types, and other algorithmic policy. The
 resulting flexibility simplifies their use as building blocks within custom kernels
 and applications.
@@ -20,14 +20,14 @@ multiply-accumulate abstractions for half-precision floating
 point (FP16), BFloat16 (BF16), Tensor Float 32 (TF32),
 single-precision floating point (FP32), double-precision floating
 point (FP64) types, integer data types (4b and 8b), and binary data types (1b). 
-
-Furthermore, CUTLASS demonstrates warp-synchronous matrix multiply operations 
+CUTLASS demonstrates warp-synchronous matrix multiply operations 
 targeting the  programmable, high-throughput _Tensor Cores_ implemented by 
 NVIDIA's Volta, Turing, and Ampere architectures.
 
-Additionaly, CUTLASS implements high-performance convolution (implicit GEMM). 
-Implicit GEMM is the formulation of a convolution operation as a GEMM. This allows CUTLASS 
-to build convolutions by reusing highly optimized warp-wide GEMM components and below. 
+CUTLASS implements high-performance Convolution via the implicit GEMM algorithm.
+Implicit GEMM is the formulation of a convolution operation as a GEMM thereby taking advantage of
+CUTLASS's modular GEMM pipeline. 
+This allows CUTLASS to build convolutions by reusing highly optimized warp-wide GEMM components and below. 
 
 See the [Quick Start Guide](/media/docs/quickstart.md) to get started quickly.
 
@@ -35,6 +35,16 @@ See the [functionality listing](/media/docs/functionality.md) for the list of op
 supported at each level of the execution model hierarchy.
 
 See the [CHANGELOG](CHANGELOG.md) for descriptions of recent updates.
+
+# What's New in CUTLASS 2.7
+CUTLASS 2.7 is a minor update to CUTLASS adding:
+- Mainloop fusion for GEMM: [summation over A or B](/examples/23_ampere_gemm_operand_reduction_fusion/ampere_gemm_operand_reduction_fusion.cu)
+- [Optimizations for strided DGRAD](/include/cutlass/conv/kernel/default_conv2d_dgrad.h)
+- [Half-precision GELU_taylor activation functions](/include/cutlass/epilogue/thread/activation.h#L196)
+- Tuning and bug fixes to [fused GEMM + GEMM example](/examples/13_two_tensor_op_fusion/)
+- Support for smaller than 128b aligned Convolutions: [see examples](test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f16_sm80.cu#L272)
+- Caching of results to accelerate Convolution [unit tests](test/unit/conv/device/cache_testbed_output.h)
+- Numerous updates from the community (thanks!)
 
 # What's New in CUTLASS 2.6
 CUTLASS 2.6 is a minor update to CUTLASS adding:

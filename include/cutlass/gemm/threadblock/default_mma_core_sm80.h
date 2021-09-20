@@ -1111,8 +1111,8 @@ struct DefaultMmaCore<
   using ElementC = complex<double>;
   using LayoutC = LayoutC_;
   static int const kStages = Stages;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Global;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Global;
   static const ComplexTransform TransformA = TransformA_;
   static const ComplexTransform TransformB = TransformB_;
 

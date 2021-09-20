@@ -34,6 +34,7 @@
 #endif
 
 #include "cutlass/cutlass.h"
+#include "cutlass/array.h"
 #include "cutlass/uint128.h"
 #include "cutlass/coord.h"
 #include "cutlass/numeric_types.h"
@@ -724,7 +725,13 @@ double fast_log(double x) {
 CUTLASS_HOST_DEVICE
 float fast_tanh(float x) {
   #if defined(__CUDA_ARCH__)
-  return ::tanhf(x);
+    #if (__CUDACC_VER_MAJOR__ >= 11) && (__CUDA_ARCH__ >= 750)
+      float y;
+      asm volatile ( "tanh.approx.f32 %0, %1; " : "=f"(y) : "f"(x));
+      return y;
+    #else
+      return ::tanhf(x);
+    #endif
   #else
   return std::tanh(x);
   #endif
@@ -738,6 +745,74 @@ double fast_tanh(double x) {
   return std::tanh(x);
   #endif
 }
+
+CUTLASS_HOST_DEVICE
+half_t fast_tanh(half_t x) {
+  #if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 11) && (__CUDA_ARCH__ >= 750)
+  
+  asm volatile ( "tanh.approx.f16 %0, %1;" : "=h"(x.raw()) : "h"(x.raw()));
+  return x;
+
+  #else
+  return half_t(fast_tanh(float(x)));
+  #endif
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename T>
+struct fast_tanh_op {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &rhs) const {
+    return fast_tanh(rhs);
+  }
+};
+
+#if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 11) && (__CUDA_ARCH__ >= 750)
+template <int N>
+struct fast_tanh_op<Array<half_t, N>> {
+  CUTLASS_DEVICE
+  Array<half_t, N> operator()(Array<half_t, N> const &rhs) const {
+    
+    Array<half_t, N> result;
+
+    // use x2 specialization
+    uint32_t const *in  = reinterpret_cast<uint32_t const *>(&rhs);
+    uint32_t *out = reinterpret_cast<uint32_t *>(&result);
+    
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      asm volatile ("tanh.approx.f16x2 %0, %1;" : "=r"(out[i]) : "r"(in[i]));
+    }
+
+    // residual
+    if (N % 2) {
+      uint16_t const *in = reinterpret_cast<uint16_t const *>(&rhs);
+      uint16_t *out = reinterpret_cast<uint16_t *>(&result);
+      asm volatile ("tanh.approx.f16 %0, %1;" : "=h"(out[N - 1]) : "h"(in[N - 1])); 
+    }
+
+    return result;
+  }
+};
+#endif // #if defined(__CUDA_ARCH__)
+
+template <typename T, int N>
+struct fast_tanh_op<Array<T, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    
+    fast_tanh_op<T> fast_op;
+    Array<T, N> y;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      y[i] = fast_op(rhs[i]);
+    }
+
+    return y;
+  }
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
