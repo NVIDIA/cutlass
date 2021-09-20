@@ -67,7 +67,8 @@ TEST(SM80_Device_Conv3d_Dgrad_Analytic_ImplicitGemm_tf32ndhwc_tf32ndhwc_f32ndhwc
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
     3,
-    cutlass::arch::OpMultiplyAdd
+    cutlass::arch::OpMultiplyAdd,
+    cutlass::conv::IteratorAlgorithm::kAnalytic
   >::Kernel;
 
   using Conv3dDgrad = cutlass::conv::device::ImplicitGemmConvolution<Conv3dDgradKernel>;

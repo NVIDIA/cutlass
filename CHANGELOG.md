@@ -1,6 +1,16 @@
 # NVIDIA CUTLASS Changelog
 
-# CUTLASS 2.x
+## [2.7.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.7.0) (2021-09-24)
+  * Mainloop fusion for GEMM: [summation over A or B](/examples/23_ampere_gemm_operand_reduction_fusion/ampere_gemm_operand_reduction_fusion.cu)
+  * [Strided DGRAD (optimized iterators)](/include/cutlass/conv/kernel/default_conv2d_dgrad.h)
+  * [Half-precision GELU_taylor activation functions](/include/cutlass/epilogue/thread/activation.h#L196)
+    * Use these when accumulation and epilogue compute types are all `cutlass::half_t`
+  * Tuning and bug fixes to [fused GEMM + GEMM example](/examples/13_two_tensor_op_fusion/)
+  * Support for smaller than 128b aligned Convolutions: [see examples](test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f16_sm80.cu#L272)
+  * Caching of results to accelerate Convolution [unit tests](test/unit/conv/device/cache_testbed_output.h)
+    * Can be enabled or disabled by running `cmake .. -DCUTLASS_TEST_ENABLE_CACHED_RESULTS=OFF`
+  * Corrections and bug fixes reported by the CUTLASS community
+    * Thank you for filing these issues!
 
 ## [2.6.1](https://github.com/NVIDIA/cutlass/releases/tag/v2.6.1) (2021-09-03)
   * Arbitrary padding and striding for CUTLASS Strided DGRAD Convolution operator (Analytic Iterators)

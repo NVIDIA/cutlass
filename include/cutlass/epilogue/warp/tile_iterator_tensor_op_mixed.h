@@ -234,8 +234,9 @@ public:
       if (WarpShape::kN == 64) {
         ptr = pointers_[n / 4];
       }
-
-#else
+      else 
+#endif
+    {
       // This is the reference implementation
       int column_idx = warp_column_ + n * Detail::kLanesInQuad * Policy::kElementsPerAccess;
       int ptr_idx = ((column_idx * sizeof_bits<Element>::value) / 1024) % Detail::kPointerCount;
@@ -252,7 +253,8 @@ public:
       else if (ptr_idx == 3) {
         ptr = pointers_[3 % Detail::kPointerCount];
       }
-#endif
+    }
+
 
 
       int offset = n * Detail::kLanesInQuad + pointer_offset / Policy::kElementsPerAccess;

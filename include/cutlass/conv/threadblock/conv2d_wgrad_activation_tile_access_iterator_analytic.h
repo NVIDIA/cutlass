@@ -183,10 +183,13 @@ public:
     int r, s, c;
 
     if (kAccessesPerVector == 1) {
+      /// One 128b aligned access fetching more than one element
+      c = filter_c_[iteration_contiguous_];
       r = filter_r_[iteration_contiguous_];
       s = filter_s_[iteration_contiguous_];
-      c = filter_c_[iteration_contiguous_];
-    }  else {
+    }  
+    else {
+      /// Multiple access to support non-128b alignment in contiguous dimenstion
       c = (filter_c_[iteration_contiguous_] + iteration_vector_ * AccessType::kElements) % problem_size_.C;
       int wrap_c = (filter_c_[iteration_contiguous_] + iteration_vector_ * AccessType::kElements) / problem_size_.C;
       s = (filter_s_[iteration_contiguous_] + wrap_c) % problem_size_.S;

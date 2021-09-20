@@ -378,11 +378,21 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
              "simt epilogue must be row major");
 
+  static cutlass::arch::CacheOperation::Kind const CacheOpA =
+      ((sizeof_bits<ElementA>::value * kAlignmentA) == 128)
+          ? cutlass::arch::CacheOperation::Global
+          : cutlass::arch::CacheOperation::Always;
+
+  static cutlass::arch::CacheOperation::Kind const CacheOpB =
+      ((sizeof_bits<ElementB>::value * kAlignmentB) == 128)
+          ? cutlass::arch::CacheOperation::Global
+          : cutlass::arch::CacheOperation::Always;
+
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
       ElementB, LayoutB, ElementAccumulator, LayoutC, arch::OpClassSimt,
-      Stages, Operator>;
+      Stages, Operator, false, CacheOpA, CacheOpB>;
 
   // Define iterators over tiles from the A operand
   using ThreadMapA = typename MmaCore::IteratorThreadMapA;

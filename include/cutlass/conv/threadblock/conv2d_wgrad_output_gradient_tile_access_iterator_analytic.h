@@ -182,7 +182,9 @@ public:
     int p = residual / problem_size_.Q;
     int q = residual % problem_size_.Q;
 
-    return TensorCoord(n, p, q, filter_k_[iteration_contiguous_]);
+    int k = filter_k_[iteration_contiguous_] + iteration_vector_ * AccessType::kElements;
+
+    return TensorCoord(n, p, q, k);
   }
 
 
@@ -194,7 +196,7 @@ public:
     return coord.n() < problem_size_.N &&
       coord.h() < problem_size_.P &&
       coord.w() < problem_size_.Q &&
-      (coord.c() + iteration_vector_ * AccessType::kElements) < problem_size_.K;
+      coord.c() < problem_size_.K;
   }
 
   /// Returns a pointer to the vector starting at the current coordinate
@@ -204,7 +206,7 @@ public:
     TensorCoord coord = at();
     LongIndex offset = params_.layout(coord);
 
-    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8) + iteration_vector_;
+    return reinterpret_cast<AccessType const *>(pointer_ + offset * sizeof_bits<Element>::value / 8);
   }
 
   /// Increments to the next memory access

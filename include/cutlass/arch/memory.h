@@ -225,6 +225,34 @@ struct global_store;
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+template <typename AccessType>
+struct global_store<AccessType, 64> {
+  CUTLASS_DEVICE
+  global_store(AccessType const &D, void *ptr, bool pred_guard) {
+  uint4 const *data = reinterpret_cast<uint4 const *>(&D);
+
+  asm volatile(
+      "{\n"
+      "  .reg .pred p;\n"
+      "  setp.ne.b32 p, %5, 0;\n"
+      "  @p st.global.v4.u32 [%0], {%1, %2, %3, %4};\n"
+      "  @p st.global.v4.u32 [%6], {%7, %8, %9, %10};\n"
+      "  @p st.global.v4.u32 [%11], {%12, %13, %14, %15};\n"
+      "  @p st.global.v4.u32 [%16], {%17, %18, %19, %20};\n"
+      "}\n"
+      :
+      : "l"(ptr), "r"(data[0].x), "r"(data[0].y), "r"(data[0].z),
+        "r"(data[0].w), "r"((int)pred_guard), "l"(((uint8_t *)ptr) + 16),
+        "r"(data[1].x), "r"(data[1].y), "r"(data[1].z), "r"(data[1].w), 
+        "l"(((uint8_t *)ptr) + 32),
+        "r"(data[2].x), "r"(data[2].y), "r"(data[2].z), "r"(data[2].w),
+        "l"(((uint8_t *)ptr) + 48),
+        "r"(data[3].x), "r"(data[3].y), "r"(data[3].z), "r"(data[2].w));
+  }
+};
+
+
 template <typename AccessType>
 struct global_store<AccessType, 32> {
   CUTLASS_DEVICE

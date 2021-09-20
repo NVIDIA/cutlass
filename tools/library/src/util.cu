@@ -28,7 +28,6 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/complex.h"
-
 #include "cutlass/layout/matrix.h"
 
 #include "cutlass/library/library.h"

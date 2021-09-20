@@ -32,7 +32,7 @@ endif()
 
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 
-project(CUTLASS VERSION 2.6.0 LANGUAGES CXX)
+project(CUTLASS VERSION 2.7.0 LANGUAGES CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
 if (CUDA_VERSION VERSION_LESS 10.2)
@@ -188,9 +188,17 @@ set(CUTLASS_LIBRARY_IGNORE_KERNELS "" CACHE STRING "Comma delimited list of kern
 
 # Test Levels L0, L1, L2
 set(CUTLASS_TEST_LEVEL "0" CACHE STRING "Level of tests to compile.")
+
+
+set(CUTLASS_TEST_ENABLE_CACHED_RESULTS ON CACHE BOOL "Enable caching and reuse of test results in unit tests")
+
 set_property(CACHE CUTLASS_TEST_LEVEL PROPERTY STRINGS 0 1 2)
 list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_TEST_LEVEL=${CUTLASS_TEST_LEVEL})
 list(APPEND CUTLASS_CUDA_CLANG_FLAGS -DCUTLASS_TEST_LEVEL=${CUTLASS_TEST_LEVEL})
+
+if (CUTLASS_TEST_ENABLE_CACHED_RESULTS)
+list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_TEST_ENABLE_CACHED_RESULTS=1)
+endif()
 
 #
 # CUDA 10.1 introduces "mma" in PTX performing collective matrix multiply operations.
@@ -244,7 +252,7 @@ if (NOT MSVC AND CUTLASS_NVCC_KEEP)
   # MSVC flow handles caching already, but for other generators we handle it here.
   set(CUTLASS_NVCC_KEEP_DIR ${CMAKE_CURRENT_BINARY_DIR}/tmp CACHE PATH "Location to store NVCC scratch files")
   file(MAKE_DIRECTORY ${CUTLASS_NVCC_KEEP_DIR})
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS --keep) # --keep-dir may not work with nvcc for some directories.
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS --keep -v) # --keep-dir may not work with nvcc for some directories.
   list(APPEND CUTLASS_CUDA_CLANG_FLAGS -save-temps=${CUTLASS_NVCC_KEEP_DIR})
 endif()
 
@@ -572,15 +580,28 @@ function(cutlass_add_executable_tests NAME TARGET)
 # TEST_COMMAND_OPTIONS: A list of variables (i.e. by reference params) which contain command line arguments
 #   to pass to the test executable. A unique test with suffix _0, _1, ... is generated for each set of 
 #   options given. If this option is not used, a single test with no arguments is generated.
+# RESULT_CACHE_FILE: A file to be installed alongside the test executable with pre-computed
+#   test results to speed up test runtime.
 # 
 
   set(options DISABLE_EXECUTABLE_INSTALL_RULE)
-  set(oneValueArgs DISABLE_TESTS)
+  set(oneValueArgs DISABLE_TESTS RESULT_CACHE_FILE)
   set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   if (NOT DEFINED __DISABLE_TESTS)
     set(__DISABLE_TESTS OFF)
+  endif()
+
+  if (__RESULT_CACHE_FILE)
+
+    add_custom_command(
+      TARGET ${TARGET}
+      POST_BUILD
+      COMMAND ${CMAKE_COMMAND}
+      ARGS -E copy ${__RESULT_CACHE_FILE} "$<TARGET_FILE_DIR:${TARGET}>"
+      )
+
   endif()
 
   if (NOT __DISABLE_EXECUTABLE_INSTALL_RULE AND CUTLASS_INSTALL_TESTS)
@@ -591,6 +612,15 @@ function(cutlass_add_executable_tests NAME TARGET)
       TARGETS ${TARGET}
       RUNTIME DESTINATION ${CUTLASS_TEST_INSTALL_BINDIR}
       )
+
+    if (__RESULT_CACHE_FILE)
+
+     install(
+       FILES ${__RESULT_CACHE_FILE}
+       DESTINATION ${CUTLASS_TEST_INSTALL_BINDIR}/
+       )
+
+    endif()
   
   endif()
 
