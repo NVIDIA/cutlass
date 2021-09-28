@@ -76,7 +76,7 @@ struct Wmma<
     platform::is_same<cutlass::gemm::GemmShape<16, 16, 16>, Shape>::value ||
     platform::is_same<cutlass::gemm::GemmShape< 8, 32, 16>, Shape>::value ||
     platform::is_same<cutlass::gemm::GemmShape<32,  8, 16>, Shape>::value,
-    "Supported list of wmma operator shape for s8 multiplicands are: 16x16x16, 8x328x16, and 32x8x16");
+    "Supported list of wmma operator shape for s8 multiplicands are: 16x16x16, 8x32x16, and 32x8x16");
 
 
   // Wmma Fragment
@@ -157,7 +157,7 @@ struct Wmma<
     platform::is_same<cutlass::gemm::GemmShape<16, 16, 16>, Shape>::value ||
     platform::is_same<cutlass::gemm::GemmShape< 8, 32, 16>, Shape>::value ||
     platform::is_same<cutlass::gemm::GemmShape<32,  8, 16>, Shape>::value,
-    "Supported list of wmma operator shape for u8 multiplicands are: 16x16x16, 8x328x16, and 32x8x16");
+    "Supported list of wmma operator shape for u8 multiplicands are: 16x16x16, 8x32x16, and 32x8x16");
 
   // Wmma Fragment
   using FragmentA = nvcuda::wmma::fragment<
