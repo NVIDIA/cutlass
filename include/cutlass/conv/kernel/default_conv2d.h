@@ -41,6 +41,7 @@
 #include "cutlass/conv/threadblock/conv2d_tile_iterator.h"
 #include "cutlass/conv/threadblock/implicit_gemm_pipelined.h"
 #include "cutlass/conv/threadblock/implicit_gemm_multistage.h"
+#include "cutlass/conv/threadblock/implicit_gemm_singlestage.h"
 #include "cutlass/conv/kernel/implicit_gemm_convolution.h"
 #include "cutlass/conv/kernel/implicit_gemm_convolution_strided_dgrad.h"
 
