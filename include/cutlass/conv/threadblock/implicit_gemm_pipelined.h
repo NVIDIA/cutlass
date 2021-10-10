@@ -75,7 +75,7 @@ template <
     typename IteratorA_::Element, 
     IteratorA_::Fragment::kElements>,
   ///
-  /// Transformation applied to A operand
+  /// Transformation applied to B operand
   typename TransformB_ = NumericArrayConverter<
     typename SmemIteratorB_::Element, 
     typename IteratorB_::Element, 
