@@ -113,8 +113,8 @@ struct DefaultMultistageMmaComplexCore<
   static ComplexTransform const kTransformA = TransformA;
   static ComplexTransform const kTransformB = TransformB;
   using Operator = Operator_;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Global;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Global;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
   /// Number of warps present
   using WarpCount = GemmShape<Shape::kM / WarpShape::kM,
@@ -242,8 +242,8 @@ struct DefaultMultistageMmaComplexCore<
   using Operator = Operator_;
   static ComplexTransform const kTransformA = TransformA;
   static ComplexTransform const kTransformB = TransformB;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Global;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Global;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
   /// Number of warps present
   using WarpCount = GemmShape<Shape::kM / WarpShape::kM,
@@ -371,8 +371,8 @@ struct DefaultMultistageMmaComplexCore<
   static ComplexTransform const kTransformA = TransformA;
   static ComplexTransform const kTransformB = TransformB;
   using Operator = Operator_;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Global;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Global;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
   /// Number of warps present
   using WarpCount = GemmShape<Shape::kM / WarpShape::kM,
@@ -501,8 +501,8 @@ struct DefaultMultistageMmaComplexCore<
   static ComplexTransform const kTransformA = TransformA;
   static ComplexTransform const kTransformB = TransformB;
   using Operator = Operator_;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Global;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Global;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
   /// Number of warps present
   using WarpCount = GemmShape<Shape::kM / WarpShape::kM,
@@ -581,7 +581,6 @@ struct DefaultMultistageMmaComplexCore<
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-
 /// Partial specialization for complex floating-point
 ///
 ///   A: column-major
@@ -1159,8 +1158,8 @@ struct DefaultMultistageMmaComplexCore<
   static ComplexTransform const kTransformA = TransformA;
   static ComplexTransform const kTransformB = TransformB;
   using Operator = Operator_;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpA = CacheOpA;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpB = CacheOpB;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
   /// Number of warps present
   using WarpCount = GemmShape<Shape::kM / WarpShape::kM,
@@ -1326,8 +1325,8 @@ struct DefaultMultistageMmaComplexCore<
   static ComplexTransform const kTransformA = TransformA;
   static ComplexTransform const kTransformB = TransformB;
   using Operator = Operator_;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpA = CacheOpA;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpB = CacheOpB;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
   /// Number of warps present
   using WarpCount = GemmShape<Shape::kM / WarpShape::kM,
@@ -1490,8 +1489,8 @@ struct DefaultMultistageMmaComplexCore<
   static ComplexTransform const kTransformA = TransformA;
   static ComplexTransform const kTransformB = TransformB;
   using Operator = Operator_;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpA = CacheOpA;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpB = CacheOpB;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
   /// Number of warps present
   using WarpCount = GemmShape<Shape::kM / WarpShape::kM,
@@ -1660,8 +1659,8 @@ struct DefaultMultistageMmaComplexCore<
   static ComplexTransform const kTransformA = TransformA;
   static ComplexTransform const kTransformB = TransformB;
   using Operator = Operator_;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpA = CacheOpA;
-  static cutlass::arch::CacheOperation::Kind const kCacheOpB = CacheOpB;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
+  static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
   /// Number of warps present
   using WarpCount = GemmShape<Shape::kM / WarpShape::kM,
@@ -1774,6 +1773,7 @@ struct DefaultMultistageMmaComplexCore<
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+
 
 }  // namespace threadblock
 }  // namespace gemm

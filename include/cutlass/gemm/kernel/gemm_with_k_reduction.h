@@ -579,7 +579,6 @@ public:
 
       semaphore.wait(threadblock_tile_offset.k());
 
-      __threadfence();
     }
 
     // Execute the epilogue operator to update the destination tensor.

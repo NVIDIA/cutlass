@@ -626,8 +626,12 @@ public:
     else if (params.mode == GemmUniversalMode::kArray) {
       ptr_C = static_cast<ElementC * const *>(params.ptr_C)[threadblock_tile_offset.k()];
       ptr_D = static_cast<ElementC * const *>(params.ptr_D)[threadblock_tile_offset.k()];
-      ptr_Tensor = static_cast<typename Epilogue::ElementTensor * const *>(params.ptr_Tensor)[threadblock_tile_offset.k()];
-      ptr_Vector = static_cast<typename Epilogue::ElementVector * const *>(params.ptr_Vector)[threadblock_tile_offset.k()];
+      if (ptr_Tensor) {
+        ptr_Tensor = static_cast<typename Epilogue::ElementTensor * const *>(params.ptr_Tensor)[threadblock_tile_offset.k()];
+      }
+      if (ptr_Vector) {
+        ptr_Vector = static_cast<typename Epilogue::ElementVector * const *>(params.ptr_Vector)[threadblock_tile_offset.k()];
+      }
     }
     #endif
 
@@ -679,7 +683,6 @@ public:
 
       semaphore.wait(threadblock_tile_offset.k());
 
-      __threadfence();
     }
     #endif
 

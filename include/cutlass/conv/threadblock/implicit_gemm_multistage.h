@@ -376,6 +376,20 @@ public:
     warp_mma.transform(warp_transformed_frag_A[0], warp_transformed_frag_B[0],
                        warp_loaded_frag_A[0], warp_loaded_frag_B[0]);
 
+    // tf32x3 kernels use staging accumulation. warp_mma uses a temporary
+    // accumulator and this temporary accumulator is added to the final
+    // accumulator once in every mainloop iteration.
+    plus<FragmentC> plus_accum;
+
+    FragmentC tmp_accum;
+
+    if (platform::is_same<typename Operator::MathOperator,
+                          arch::OpMultiplyAddFastF32>::value
+      || platform::is_same<typename Operator::MathOperator,
+                           arch::OpMultiplyAddComplexFastF32>::value) {
+      tmp_accum.clear();
+    }
+
     //
     // Mainloop
     //
@@ -426,12 +440,29 @@ public:
         copy_tiles_and_advance(iterator_A, iterator_B, group_start_iteration_A,
                                group_start_iteration_B);
 
-        warp_mma(
-                accum, 
-                warp_transformed_frag_A[warp_mma_k % 2],
-                 warp_transformed_frag_B[warp_mma_k % 2], 
-                 accum
-                );
+        if (platform::is_same<typename Operator::MathOperator,
+                              arch::OpMultiplyAddFastF32>::value
+          || platform::is_same<typename Operator::MathOperator,
+                               arch::OpMultiplyAddComplexFastF32>::value) {
+          warp_mma(
+            tmp_accum, 
+            warp_transformed_frag_A[warp_mma_k % 2],
+            warp_transformed_frag_B[warp_mma_k % 2], 
+            tmp_accum
+          );
+
+          if (warp_mma_k == 0) {
+            accum = plus_accum(accum, tmp_accum);
+            tmp_accum.clear();
+          }
+        } else {
+          warp_mma(
+            accum, 
+            warp_transformed_frag_A[warp_mma_k % 2],
+            warp_transformed_frag_B[warp_mma_k % 2], 
+            accum
+          );
+        }
 
         if (warp_mma_k + 1 == Base::kWarpGemmIterations)
           warp_mma.transform(warp_transformed_frag_A[(warp_mma_k + 1) % 2],
@@ -483,6 +514,13 @@ public:
 
     }
 
+    if (platform::is_same<typename Operator::MathOperator,
+                          arch::OpMultiplyAddFastF32>::value
+      || platform::is_same<typename Operator::MathOperator,
+                           arch::OpMultiplyAddComplexFastF32>::value) {
+      accum = plus_accum(accum, tmp_accum); 
+    }
+  
     // Insert fence and wait for all outstanding cp.async operations to commit.
     cutlass::arch::cp_async_fence();
     cutlass::arch::cp_async_wait<0>();

@@ -352,7 +352,6 @@ public:
     FragmentCompute tmp_Accum = NumericArrayConverter<ElementCompute, ElementAccumulator, kElementsPerAccess>()(AB);
     FragmentCompute tmp_C = NumericArrayConverter<ElementCompute, ElementC, kElementsPerAccess>()(frag_C);
     FragmentCompute result_Z;
-    FragmentCompute result_T;
 
     bool conditions[kElementsPerAccess];
 
@@ -397,7 +396,6 @@ public:
 
     FragmentCompute tmp_Accum = NumericArrayConverter<ElementCompute, ElementAccumulator, kElementsPerAccess>()(AB);
     FragmentCompute result_Z;
-    FragmentCompute result_T;
 
     bool conditions[kElementsPerAccess];
 

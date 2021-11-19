@@ -207,9 +207,9 @@ public:
     int lane_idx                                        ///< ID of each thread within a warp
   ):
     Base(shared_storage, thread_idx, warp_idx, lane_idx),
-    smem_iterator_A_(shared_storage.sharedStorage0.operand_A_ref(), thread_idx), 
-    smem_iterator_B0_(shared_storage.sharedStorage0.operand_B_ref(), thread_idx),
-    smem_iterator_B1_(shared_storage.sharedStorage1.operand_B_ref(), thread_idx) {
+    smem_iterator_A_(shared_storage.shared_storage0.operand_A_ref(), thread_idx), 
+    smem_iterator_B0_(shared_storage.shared_storage0.operand_B_ref(), thread_idx),
+    smem_iterator_B1_(shared_storage.shared_storage1.operand_B_ref(), thread_idx) {
 
 
     // Compute warp location within threadblock tile by mapping the warp_id to three coordinates:

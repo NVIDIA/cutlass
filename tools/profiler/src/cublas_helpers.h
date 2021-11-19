@@ -187,7 +187,7 @@ struct cublasGemmExDispatcher {
   cudaDataType_t data_type_C;
   cudaDataType_t compute_data_type;
 
-#if (__CUDA_VER_MAJOR__ >= 11)
+#if (__CUDACC_VER_MAJOR__ >= 11)
   cublasComputeType_t compute_type;
 #endif
 

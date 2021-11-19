@@ -231,6 +231,9 @@ public:
     /// Prints human-readable text to stdout. If false, nothing is written to stdout
     bool verbose;
 
+    /// Sort results by (currently by flops-per-byte)
+    bool sort_results;
+
     //
     // Methods
     //

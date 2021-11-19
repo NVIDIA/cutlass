@@ -60,8 +60,10 @@ int run_sm75() {
   std::cout << "Running on SM75" << std::endl;
   pass &= run_nonfused_conv2d_fprop_optimized_f16_sm75();
   pass &= run_fused_conv2d_fprop_optimized_f16_sm75();
+  pass &= run_fused_conv2d_fprop_optimized_f16_sm75_rf_res();
   pass &= run_nonfused_conv2d_fprop_optimized_s8_sm75();
   pass &= run_fused_conv2d_fprop_optimized_s8_sm75();
+  pass &= run_fused_conv2d_fprop_optimized_s8_sm75_rf_res();
 
   if(pass)
     return 1;

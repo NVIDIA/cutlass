@@ -55,6 +55,8 @@ public:
   using LayoutC = typename B2bImplicitGemmKernel::LayoutC;
   using ElementAccumulator = typename B2bImplicitGemmKernel::ElementAccumulator;
   using ElementCompute = typename B2bImplicitGemmKernel::ElementCompute;
+  using ElementScaleBias = typename B2bImplicitGemmKernel::ElementScaleBias;
+  using LayoutScaleBias = typename B2bImplicitGemmKernel::LayoutScaleBias;
   using OperatorClass = typename B2bImplicitGemmKernel::OperatorClass;
   using ArchTag = typename B2bImplicitGemmKernel::ArchTag;
   using ThreadblockShape0 = typename B2bImplicitGemmKernel::ThreadblockShape0;
@@ -125,6 +127,26 @@ public:
 
       return Status::kErrorInvalidProblem;
     }
+
+    // Determine if fusion sizes are valid
+
+    cutlass::gemm::GemmCoord problem_size_0 = implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size_0);
+    cutlass::gemm::GemmCoord problem_size_1 = implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size_1);
+
+    if(problem_size_0.m() != problem_size_1.m())
+      return Status::kErrorInvalidProblem;
+
+    if(problem_size_0.n() != problem_size_1.k())
+      return Status::kErrorInvalidProblem;
+
+    if(args.problem_size_1.R != 1 || args.problem_size_1.S != 1)
+      return Status::kErrorInvalidProblem;
+
+    if(problem_size_0.n() > ThreadblockShape0::kN)
+      return Status::kErrorInvalidProblem;
+    
+    if(problem_size_1.n() > ThreadblockShape1::kN)
+      return Status::kErrorInvalidProblem;
 
     return Status::kSuccess;
   }
@@ -209,6 +231,8 @@ public:
     params_.ptr_A0 = args.ref_A0.data();
     params_.ptr_B0 = args.ref_B0.data();
     params_.ptr_C0 = args.ref_C0.data();
+    params_.ptr_Scale0 = args.ref_Scale0.data();
+    params_.ptr_Bias0 = args.ref_Bias0.data();
     params_.ptr_B1 = args.ref_B1.data();
     params_.ptr_C1 = args.ref_C1.data();
     params_.ptr_D1 = args.ref_D1.data();

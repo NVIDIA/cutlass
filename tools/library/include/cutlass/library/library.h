@@ -193,7 +193,9 @@ enum class MathOperationID {
   kMultiplyAddSaturate,
   kMultiplyAddFastBF16,
   kMultiplyAddFastF16,
+  kMultiplyAddFastF32,              
   kMultiplyAddComplex,
+  kMultiplyAddComplexFastF32,      
   kMultiplyAddGaussianComplex,
   kXorPopc,
   kInvalid

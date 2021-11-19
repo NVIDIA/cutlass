@@ -36,6 +36,8 @@
 #include "cutlass/complex.h"
 #include "cutlass/semaphore.h"
 
+#include "cutlass/layout/matrix.h"
+
 #include "cutlass/trace.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -574,7 +576,6 @@ public:
 
       semaphore.wait(threadblock_tile_offset.k());
 
-      __threadfence();
     }
 
 

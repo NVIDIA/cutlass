@@ -70,6 +70,12 @@ template <
   /// Iterates over the intermediate accumulator tile
   //  (concept::MmaTensorOpFragmentIterator) 
   typename FragmentIteratorA1_,
+  /// Iterates over vectors of scale and bias vector in global memory
+  //  (concept: VectorIterator)
+  typename IteratorAccumulatorScaleBias_,
+  /// FragmentIterator to load Scale or Bias vector from threadblock fragment
+  typename FragmentIteratorA1ScaleBias_,
+  //  (concept: VectorFragmentIterator) 
   /// Iterates over tiles of B operand in global memory
   //  (concept: ReadableTileIterator | ForwardTileIterator | MaskedTileIterator)
   typename IteratorB1_,
@@ -92,13 +98,13 @@ template <
     typename IteratorA0_::Element, 
     IteratorA0_::Fragment::kElements>,
   ///
-  /// Transformation applied to A operand
+  /// Transformation applied to B operand
   typename TransformB0_ = NumericArrayConverter<
     typename SmemIteratorB0_::Element, 
     typename IteratorB0_::Element, 
     IteratorB0_::Fragment::kElements>,
   ///
-  /// Transformation applied to A operand
+  /// Transformation applied to B operand
   typename TransformB1_ = NumericArrayConverter<
     typename SmemIteratorB1_::Element, 
     typename IteratorB1_::Element, 
@@ -106,7 +112,8 @@ template <
   /// Used for partial specialization
   typename Enable = bool
 >
-class B2bImplicitGemmPipelined : public gemm::threadblock::B2bMmaBase<Shape0_, Shape1_, Policy0_, Policy1_, 2> {
+class B2bImplicitGemmPipelined : 
+  public gemm::threadblock::B2bMmaBase<Shape0_, Shape1_, Policy0_, Policy1_, 2> {
 public:
 
   ///< Base class
@@ -121,16 +128,23 @@ public:
   using SmemIteratorB0 = SmemIteratorB0_;
 
   using Shape1 = Shape1_;             ///< Size of the Gemm problem - concept: gemm::GemmShape<>
-  using FragmentIteratorA1 = FragmentIteratorA1_;     ///< Iterates over tiles of A operand in global memory
+  using FragmentIteratorA1 = FragmentIteratorA1_;     ///< Iterates over tiles of A1 operand from accumulator tile
+  using IteratorAccumulatorScaleBias = IteratorAccumulatorScaleBias_;   ///< Iterates over tiles of the scale and bias vectors in global memory
+  using FragmentIteratorA1ScaleBias = 
+    FragmentIteratorA1ScaleBias_;     ///< WarpIterator to load Scale or Bias vector from the threadblock fragment
   using IteratorB1 = IteratorB1_;     ///< Iterates over tiles of B operand in global memory
   using Policy1 = Policy1_;           ///< Policy1 describing tuning details
 
   using SmemIteratorB1 = SmemIteratorB1_;
 
+
   using ElementC = ElementC_;       ///< Data type of accumulator matrix
   using LayoutC = LayoutC_;         ///< Layout of accumulator matrix
   
   using OutputOp = OutputOp_;       ///< Epilogue after 1st Gemm
+
+  static const bool PerChannelScale = (OutputOp::kScale ==
+      epilogue::thread::ScaleType::OnlyAlphaPerChannelScaling);
 
   using TransformA0 = TransformA0_;
   using TransformB0 = TransformB0_;
@@ -151,6 +165,9 @@ public:
 
   /// Warp-level Mma
   using Operator0 = typename Policy0::Operator;
+
+  /// Fragment of Scale and Bias loaded from global memory
+  using FragmentA1ScaleBias = typename IteratorAccumulatorScaleBias::Fragment;
 
   /// Fragment of operand B loaded from global memory
   using FragmentB1 = typename IteratorB1::Fragment;
@@ -182,6 +199,9 @@ private:
   using WarpFragmentB0 = typename Operator0::FragmentB;
   /// Warp Fragment of operand A1 loaded from accmulator tile
   using WarpFragmentA1 = typename FragmentIteratorA1::Fragment;
+  /// Warp Fragment of operand A1 scale and bias loaded from threadblock fragment
+  using WarpFragmentA1ScaleBias =
+      typename FragmentIteratorA1ScaleBias::Fragment;
   using WarpFragmentB1 = typename Operator1::FragmentB;
 
 protected:
@@ -206,9 +226,9 @@ public:
     int lane_idx                                        ///< ID of each thread within a warp
   ):
     Base(shared_storage, thread_idx, warp_idx, lane_idx),
-    smem_iterator_A_(shared_storage.sharedStorage0.operand_A_ref(), thread_idx),
-    smem_iterator_B0_(shared_storage.sharedStorage0.operand_B_ref(), thread_idx),
-    smem_iterator_B1_(shared_storage.sharedStorage1.operand_B_ref(), thread_idx) {
+    smem_iterator_A_(shared_storage.shared_storage0.operand_A_ref(), thread_idx),
+    smem_iterator_B0_(shared_storage.shared_storage0.operand_B_ref(), thread_idx),
+    smem_iterator_B1_(shared_storage.shared_storage1.operand_B_ref(), thread_idx) {
 
     // Compute warp location within threadblock tile by mapping the warp_id to
     // three coordinates:
@@ -240,9 +260,11 @@ public:
     FragmentC1 &accum,                                 ///< destination accumulator tile
     IteratorA0 iterator_A,                             ///< iterator over A operand in global memory
     IteratorB0 iterator_B0,                            ///< iterator over B0 operand in global memory
+    IteratorAccumulatorScaleBias iterator_A1_scale,    ///< iterator over A1 operand scale vectors in global memory
+    IteratorAccumulatorScaleBias iterator_A1_bias,     ///< iterator over A1 operand bias vectors in global memory
     IteratorB1 iterator_B1,                            ///< iterator over B1 operand in global memory
     FragmentC0 const &src_accum,                       ///< source accumulator tile
-    OutputOp output_op_0,                               ///< epilogue operation after 1st Gemm
+    OutputOp output_op_0,                              ///< epilogue operation after 1st Gemm
     TransformA0 transform_A0 = TransformA0(),            ///< transformation applied to A0 fragment
     TransformB0 transform_B0 = TransformB0(),           ///< transformation applied to B0 fragment
     TransformB1 transform_B1 = TransformB1()) {         ///< transformation applied to B1 fragment
@@ -370,18 +392,33 @@ public:
     /// Iterator to load a warp-scoped tile of A1 operand from intermediate accumulator tile
     FragmentIteratorA1 warp_tile_iterator_A1_(accum0);
 
+
+
     //
     // Prologue
     //
 
+    FragmentA1ScaleBias tb_frag_A1_scale;
+    FragmentA1ScaleBias tb_frag_A1_bias;
+    FragmentIteratorA1ScaleBias warp_tile_iterator_A1_scale_(tb_frag_A1_scale);
+    FragmentIteratorA1ScaleBias warp_tile_iterator_A1_bias_(tb_frag_A1_bias);
     FragmentB1 tb_frag_B1;
 
+    if(PerChannelScale)
+        tb_frag_A1_scale.clear();
+    tb_frag_A1_bias.clear();
     tb_frag_B1.clear();
 
     // The last kblock is loaded in the prolog
+    if(PerChannelScale)
+        iterator_A1_scale.load(tb_frag_A1_scale);
+    iterator_A1_bias.load(tb_frag_A1_bias);
     iterator_B1.load(tb_frag_B1);
 
 
+    if(PerChannelScale)
+        ++iterator_A1_scale;
+    ++iterator_A1_bias;
     ++iterator_B1;
 
     this->smem_iterator_B1_.store(transform_B1(tb_frag_B1));
@@ -391,15 +428,24 @@ public:
     __syncthreads();
 
     // Pair of fragments used to overlap shared memory loads and math instructions
+    WarpFragmentA1ScaleBias warp_frag_A1_scale[2];
+    WarpFragmentA1ScaleBias warp_frag_A1_bias[2];
     WarpFragmentA1 warp_frag_A1[2];
     WarpFragmentB1 warp_frag_B1[2];
 
     this->warp_tile_iterator_B1_.set_kgroup_index(0);
 
-    warp_tile_iterator_A1_.load(warp_frag_A1[0], output_op_0);
+    if(PerChannelScale)
+        warp_tile_iterator_A1_scale_.load(warp_frag_A1_scale[0]);
+    warp_tile_iterator_A1_bias_.load(warp_frag_A1_bias[0]);
+    warp_tile_iterator_A1_.load(warp_frag_A1[0], warp_frag_A1_scale[0], 
+        warp_frag_A1_bias[0], output_op_0);
     this->warp_tile_iterator_B1_.load(warp_frag_B1[0]);
 
     ++warp_tile_iterator_A1_;
+    if(PerChannelScale)
+        ++warp_tile_iterator_A1_scale_;
+    ++warp_tile_iterator_A1_bias_;
     ++this->warp_tile_iterator_B1_;
 
     Operator1 warp_mma1;
@@ -447,13 +493,31 @@ public:
           }
 
           smem_write_stage_idx ^= 1;
+
+          if(PerChannelScale) {
+            tb_frag_A1_scale.clear();
+            iterator_A1_scale.load(tb_frag_A1_scale);
+            ++iterator_A1_scale;
+          }
+          tb_frag_A1_bias.clear();
+          iterator_A1_bias.load(tb_frag_A1_bias);
+          ++iterator_A1_bias;
         }
 
         this->warp_tile_iterator_B1_.set_kgroup_index((warp_mma_k + 1) % Base::kWarpGemmIterations1);
         
-        warp_tile_iterator_A1_.load(warp_frag_A1[(warp_mma_k + 1) % 2], output_op_0);
+        if(PerChannelScale)
+          warp_tile_iterator_A1_scale_.load(warp_frag_A1_scale[(warp_mma_k + 1) % 2]);
+        warp_tile_iterator_A1_bias_.load(warp_frag_A1_bias[(warp_mma_k + 1) % 2]);
+        warp_tile_iterator_A1_.load(warp_frag_A1[(warp_mma_k + 1) % 2], 
+            warp_frag_A1_scale[(warp_mma_k + 1) % 2], 
+            warp_frag_A1_bias[(warp_mma_k + 1) % 2], 
+            output_op_0);
         this->warp_tile_iterator_B1_.load(warp_frag_B1[(warp_mma_k + 1) % 2]);
 
+        if(PerChannelScale)
+          ++warp_tile_iterator_A1_scale_;
+        ++warp_tile_iterator_A1_bias_;
         ++warp_tile_iterator_A1_;
         ++this->warp_tile_iterator_B1_;
 

@@ -32,76 +32,13 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/device/gemm_universal_base.h"
+#include "cutlass/gemm/kernel/gemm_transpose_operands.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace gemm {
 namespace device {
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace detail {
-
-  template <
-    typename ElementA_, 
-    typename LayoutA_, 
-    ComplexTransform TransformA,
-    int AlignmentA,
-    typename ElementB_,
-    typename LayoutB_,
-    ComplexTransform TransformB,
-    int AlignmentB,
-    typename LayoutC_,
-    bool Transpose
-  >
-  struct MapArguments {
-    using ElementA = ElementA_;
-    using LayoutA = LayoutA_;
-    static ComplexTransform const kTransformA = TransformA;
-    static int const kAlignmentA = AlignmentA; 
-    using ElementB = ElementB_;
-    using LayoutB = LayoutB_;
-    static ComplexTransform const kTransformB = TransformB;
-    static int const kAlignmentB = AlignmentB; 
-    using LayoutC = LayoutC_;
-  };
-
-  template <
-    typename ElementA_, 
-    typename LayoutA_, 
-    ComplexTransform TransformA,
-    int AlignmentA,
-    typename ElementB_,
-    typename LayoutB_,
-    ComplexTransform TransformB,
-    int AlignmentB,
-    typename LayoutC_
-  >
-  struct MapArguments<
-    ElementA_,
-    LayoutA_,
-    TransformA,
-    AlignmentA, 
-    ElementB_,
-    LayoutB_,
-    TransformB,
-    AlignmentB,
-    LayoutC_,
-    true
-  > {
-    using ElementA = ElementB_;
-    using LayoutA = typename layout::LayoutTranspose<LayoutB_>::type;
-    static ComplexTransform const kTransformA = TransformB;
-    static int const kAlignmentA = AlignmentB; 
-    using ElementB = ElementA_;
-    using LayoutB = typename layout::LayoutTranspose<LayoutA_>::type;
-    static ComplexTransform const kTransformB = TransformA;
-    static int const kAlignmentB = AlignmentA; 
-    using LayoutC = typename layout::LayoutTranspose<LayoutC_>::type;
-  };
-
-};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -129,7 +66,7 @@ public:
   using ArchTag = typename WarpMmaOperator::ArchTag;
 
   // Type, layout, and complex transform deliberately exchanged with B
-  using MapArguments = detail::MapArguments<
+  using MapArguments = kernel::detail::MapArguments<
     typename GemmKernel::ElementA,
     typename GemmKernel::LayoutA,
     GemmKernel::kTransformA,

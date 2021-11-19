@@ -33,6 +33,9 @@
 #include "cutlass/array.h"
 #include "cutlass/tensor_ref.h"
 #include "cutlass/matrix_shape.h"
+
+#include "cutlass/arch/memory_sm75.h"
+
 #include "cutlass/layout/matrix.h"
 
 #include "cutlass/gemm/gemm.h"
@@ -224,8 +227,15 @@ public:
     for (int k = 0; k < Iterations::kColumn; ++k) {
       CUTLASS_PRAGMA_UNROLL
       for (int m = 0; m < Iterations::kRow; ++m) {
+
+        // This logic has been replaced with calls to inline PTX to guarantee vectorization.
+        #if 0
         dst_ptr[m + k * Iterations::kRow] = 
           *(ref_.data() + ref_.offset({m * Policy::WarpShape::kRow, k}) + pointer_offset / Policy::LaneMmaShape::kM);
+        #endif
+
+        auto ptr = ref_.data() + ref_.offset({m * Policy::WarpShape::kRow, k}) + pointer_offset / Policy::LaneMmaShape::kM;
+        arch::shared_load(dst_ptr[m + k * Iterations::kRow], ptr);
       }
     }
   }
@@ -680,8 +690,14 @@ public:
     for (int k = 0; k < Iterations::kRow; ++k) {
       CUTLASS_PRAGMA_UNROLL
       for (int n = 0; n < Iterations::kColumn; ++n) {
+
+        #if 0
         dst_ptr[n + k * Iterations::kColumn] = 
           *(ref_.data() + ref_.offset({k, n * Policy::WarpShape::kColumn}) + pointer_offset / Policy::LaneMmaShape::kN);
+        #endif
+
+        void const *ptr = ref_.data() + ref_.offset({k, n * Policy::WarpShape::kColumn}) + pointer_offset / Policy::LaneMmaShape::kN;
+        arch::shared_load(dst_ptr[n + k * Iterations::kColumn], ptr);
       }
     }
   }

@@ -439,7 +439,6 @@ struct ImplicitGemmConvolutionWithFusedEpilogue {
 
       semaphore.wait(threadblock_tile_idx.k());
 
-      __threadfence();
     }
     // Each split-k-slice writes to a unique tensor location
     else if (params.split_k_mode == SplitKMode::kParallel) {
