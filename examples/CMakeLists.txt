@@ -93,6 +93,7 @@ foreach(EXAMPLE
   20_simt_canonical
   21_quaternion_gemm
   22_quaternion_conv
+  23_ampere_gemm_operand_reduction_fusion
   )
 
   add_subdirectory(${EXAMPLE})

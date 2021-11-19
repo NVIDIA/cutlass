@@ -47,7 +47,7 @@ You may also filter kernels by name by supplying a filter string with flag `CUTL
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=80 -DCUTLASS_LIBRARY_KERNELS=s16816gemm,s16816fprop*128x128
 ```
-See more examples on selectively compiling CUTLASS GEMM and convolution kernels [here](media/docs/quickstart.md#example-cmake-commands).
+See more examples on selectively compiling CUTLASS GEMM and convolution kernels [here](quickstart.md#example-cmake-commands).
 
 You may explicitly exclude cuBLAS and cuDNN as dependencies with the following CMake flags.
 - `-DCUTLASS_ENABLE_CUBLAS=OFF`
