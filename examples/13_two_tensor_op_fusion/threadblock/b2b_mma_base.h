@@ -180,8 +180,8 @@ class B2bMmaBase {
   using SharedStorage0 = SharedStorage<Shape0, Policy0>;
   using SharedStorage1 = SharedStorage<Shape1, Policy1>;
   union B2bMmaSharedStorage {
-    SharedStorage0 sharedStorage0;
-    SharedStorage1 sharedStorage1;
+    SharedStorage0 shared_storage0;
+    SharedStorage1 shared_storage1;
   };
 
 
@@ -197,7 +197,7 @@ class B2bMmaBase {
   /// Iterator to load a warp-scoped tile of B0 operand from shared memory
   typename Operator0::IteratorB warp_tile_iterator_B0_;
 
-  /// Iterator to load a warp-scoped tile of B0 operand from shared memory
+  /// Iterator to load a warp-scoped tile of B1 operand from shared memory
   typename Operator1::IteratorB warp_tile_iterator_B1_;
 
 public:
@@ -214,9 +214,9 @@ public:
       ///< ID of each thread within a warp
       int lane_idx
     ):
-      warp_tile_iterator_A0_(shared_storage.sharedStorage0.operand_A_ref(), lane_idx),
-      warp_tile_iterator_B0_(shared_storage.sharedStorage0.operand_B_ref(), lane_idx),
-      warp_tile_iterator_B1_(shared_storage.sharedStorage1.operand_B_ref(), lane_idx) {
+      warp_tile_iterator_A0_(shared_storage.shared_storage0.operand_A_ref(), lane_idx),
+      warp_tile_iterator_B0_(shared_storage.shared_storage0.operand_B_ref(), lane_idx),
+      warp_tile_iterator_B1_(shared_storage.shared_storage1.operand_B_ref(), lane_idx) {
 
   }
 };

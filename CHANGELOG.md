@@ -1,5 +1,29 @@
 # NVIDIA CUTLASS Changelog
 
+## [2.8.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.8.0) (2021-11-19)
+
+* **TF32x3:** emulated single-precision using Tensor Cores
+  * 45+ TFLOPs on NVIDIA A100
+  * [GEMM SDK example](/examples/27_ampere_3xtf32_fast_accurate_tensorop_gemm/27_ampere_3xtf32_fast_accurate_tensorop_gemm.cu) (real)
+  * [COMPLEX GEMM SDK example](/examples/29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm/29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm.cu) (complex)
+  * [Implicit GEMM Convolution SDK example](/examples/28_ampere_3xtf32_fast_accurate_tensorop_fprop/ampere_3xtf32_fast_accurate_tensorop_fprop.cu)
+* **Mainloop fusion for Convolution:** convolution with fused per-channel scale-bias-relu
+  * [Conv Fprop SDK example](/examples/25_ampere_fprop_mainloop_fusion/ampere_fprop_mainloop_fusion.cu)
+  * [Conv WGrad SDK example](/examples/26_ampere_wgrad_mainloop_fusion/ampere_wgrad_mainloop_fusion.cu) 
+  * [cutlass::conv::device::ImplicitGemmConvolutionFusion](/include/cutlass/conv/device/implicit_gemm_convolution_fusion.h)
+* **Grouped GEMM:** similar to batched GEMM with distinct problem size per group
+  * [SDK example](/examples/24_gemm_grouped) with performance comparison with Batched Strided GEMM
+  * [cutlass::gemm::device::GemmGrouped](/include/cutlass/gemm/device/gemm_grouped.h)
+* [Implicit GEMM Convolution fusion](/examples/13_two_tensor_op_fusion/) supports staging 1st convolution's output accumulator in the shared memory on Turing. This allows more flexible warp tile sizes and less regsiter pressue.
+* Optimal performance using [**CUDA 11.5**](https://developer.nvidia.com/cuda-downloads)
+* Updates from the community (thanks!)
+
+* **Deprecation announcement:** CUTLASS plans to deprecate the following platforms in the future. Let us know if this affects your use case.
+  * Maxwell and Pascal GPU architectures
+  * Ubuntu 16.04
+  * CUDA 10.2
+
+
 ## [2.7.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.7.0) (2021-09-24)
   * Mainloop fusion for GEMM: [summation over A or B](/examples/23_ampere_gemm_operand_reduction_fusion/ampere_gemm_operand_reduction_fusion.cu)
   * [Strided DGRAD (optimized iterators)](/include/cutlass/conv/kernel/default_conv2d_dgrad.h)

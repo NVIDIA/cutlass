@@ -34,6 +34,7 @@
 #include <assert.h>
 #endif
 
+#include "cutlass/cutlass.h"
 #include "mma.h"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/numeric_types.h"
@@ -2109,7 +2110,6 @@ struct Mma<
 
     int const *C = reinterpret_cast<int const *>(&c);
     int *D = reinterpret_cast<int *>(&d);
-
     asm volatile(
         "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.xor.popc {%0,%1,%2,%3}, "
         "{%4,%5,%6,%7}, "
@@ -2119,8 +2119,10 @@ struct Mma<
           "r"(C[0]), "r"(C[1]), "r"(C[2]), "r"(C[3]));
 
 #else
+    
     assert(0);
-#endif
+    
+#endif // defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
   }
 };
 

@@ -30,6 +30,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/warp/mma_complex_tensor_op.h"
+#include "cutlass/gemm/warp/mma_complex_tensor_op_fast_f32.h"
 #include "cutlass/gemm/warp/mma_gaussian_complex_tensor_op.h"
 #include "cutlass/layout/tensor_op_multiplicand_sm80.h"
 
@@ -384,6 +385,73 @@ struct DefaultMmaComplexTensorOp<
 
   // Define the warp-level tensor op
   using Type = cutlass::gemm::warp::MmaComplexTensorOp<
+    WarpShape_,
+    complex<float>,
+    LayoutA,
+    complex<float>,
+    LayoutB,
+    complex<float>,
+    LayoutC, 
+    Policy,
+    TransformA,
+    TransformB>;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// 3xTF32 or 4xTF32 (fast and accurate complex<float> operation)
+/// Partial specialization - input and output types are complex<float> * complex<float> 
+//  Use 3xTF32 or 4xTF32 tensor operation internally
+//  4 real-valued MMA.1688.F32.TF32 operations on TF32 
+//  A = (ar + j ai), B (br +j bi), D = AB
+//  D = dr + j di = 3x[(ar*br - ai*bi) + j (ar*bi + ai*br)]
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+    /// Size of the Gemm problem - concept: gemm::GemmShape<>
+    typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
+    /// Layout of A matrix (concept: MatrixLayout)
+    typename LayoutA,
+    /// Layout of B matrix (concept: MatrixLayout)
+    typename LayoutB,
+    /// Layout of C matrix (concept: MatrixLayout)
+    typename LayoutC,
+    /// Complex transform on A operand
+    ComplexTransform TransformA,
+    /// Complex transform on B operand
+    ComplexTransform TransformB>
+struct DefaultMmaComplexTensorOp<
+    WarpShape_,
+    InstructionShape_,
+    complex<float>,
+    LayoutA,
+    complex<float>,
+    LayoutB,
+    complex<float>,
+    LayoutC,
+    TransformA,
+    TransformB,
+    arch::OpMultiplyAddComplexFastF32> {
+
+  // Complex floating point tensor operation use MMA.1688.F32.TF32 mma instruction
+  using Policy = cutlass::gemm::warp::MmaTensorOpPolicy<
+      cutlass::arch::Mma<
+        InstructionShape_, 
+        32, 
+        tfloat32_t,
+        cutlass::layout::RowMajor,
+        tfloat32_t,
+        cutlass::layout::ColumnMajor,
+        float,
+        cutlass::layout::RowMajor, 
+        arch::OpMultiplyAdd>,
+      cutlass::MatrixShape<1, 1>
+    >;
+
+  // Define the warp-level tensor op
+  using Type = cutlass::gemm::warp::MmaComplexTensorOpFastF32<
     WarpShape_,
     complex<float>,
     LayoutA,

@@ -166,7 +166,7 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using IteratorB1 =
       cutlass::transform::threadblock::PredicatedTileIterator<
           cutlass::MatrixShape<MmaCore1::Shape::kK, MmaCore1::Shape::kN>,
-          ElementB, LayoutB, 0, typename MmaCore1::IteratorThreadMapB>;
+          ElementB, LayoutB, 0, typename MmaCore1::IteratorThreadMapB, kAlignmentB>;
 
   // Define the threadblock-scoped pipelined matrix multiply
   using ThreadblockB2bMma = cutlass::gemm::threadblock::B2bMmaPipelined<

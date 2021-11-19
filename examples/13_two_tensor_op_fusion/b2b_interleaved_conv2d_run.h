@@ -80,18 +80,21 @@ public:
   cutlass::Distribution::Kind init_A;
   cutlass::Distribution::Kind init_B;
   cutlass::Distribution::Kind init_C;
+  cutlass::Distribution::Kind init_Bias;
   uint64_t seed;
 
   cutlass::HostTensor<typename Conv2d0::ElementA, typename Conv2d0::LayoutA> tensor_A0;
   cutlass::HostTensor<typename Conv2d0::ElementB, typename Conv2d0::LayoutB> tensor_B0;
   cutlass::HostTensor<typename Conv2d0::ElementB, typename Conv2d0::LayoutB> tensor_B0_reordered;
   cutlass::HostTensor<typename Conv2d0::ElementC, typename Conv2d0::LayoutC> tensor_C0;
+  cutlass::HostTensor<typename Conv2d0::ElementCompute, typename Conv2d0::LayoutC> tensor_Bias0;
   cutlass::HostTensor<typename Conv2d0::ElementC, typename Conv2d0::LayoutC> tensor_D0_computed;
   cutlass::HostTensor<typename Conv2d0::ElementC, typename Conv2d0::LayoutC> tensor_D0_reference;
 
   cutlass::HostTensor<typename Conv2d1::ElementB, typename Conv2d1::LayoutB> tensor_B1;
   cutlass::HostTensor<typename Conv2d1::ElementB, typename Conv2d1::LayoutB> tensor_B1_reordered;
   cutlass::HostTensor<typename Conv2d1::ElementC, typename Conv2d1::LayoutC> tensor_C1;
+  cutlass::HostTensor<typename Conv2d1::ElementCompute, typename Conv2d0::LayoutC> tensor_Bias1;
   cutlass::HostTensor<typename Conv2d1::ElementC, typename Conv2d1::LayoutC> tensor_D1_computed;
   cutlass::HostTensor<typename Conv2d1::ElementC, typename Conv2d1::LayoutC> tensor_D1_reference;
 
@@ -102,9 +105,10 @@ public:
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_Bias_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = 2080
   ):
-    init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_) {
+    init_A(init_A_), init_B(init_B_), init_C(init_C_), init_Bias(init_Bias_), seed(seed_) {
 
   }
 
@@ -141,6 +145,12 @@ public:
 
       cutlass::reference::host::BlockFillSequential(view.data(), view.capacity());
     } 
+    else if (dist_kind == cutlass::Distribution::AllZeros) {
+      cutlass::reference::host::TensorFill(view, Element(0));
+    }
+    else if (dist_kind == cutlass::Distribution::AllOnes) {
+      cutlass::reference::host::TensorFill(view, Element(1));
+    }
     else {
     }
   }
@@ -153,17 +163,20 @@ public:
     tensor_B0.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size_0));
     tensor_B0_reordered.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size_0));
     tensor_C0.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_0));
+    tensor_Bias0.resize({1, 1, 1, problem_size_0.K});
     tensor_D0_computed.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_0));
     tensor_D0_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_0));
     tensor_B1.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size_1));
     tensor_B1_reordered.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size_1));
     tensor_C1.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_1));
+    tensor_Bias1.resize({1, 1, 1, problem_size_1.K});
     tensor_D1_computed.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_1));
     tensor_D1_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_1));
 
     initialize_tensor(tensor_A0.host_view(), init_A, seed); 
     initialize_tensor(tensor_B0.host_view(), init_B, seed * 17); 
     initialize_tensor(tensor_C0.host_view(), init_C, seed * 39);
+    initialize_tensor(tensor_Bias0.host_view(), init_Bias, seed * 83);
     initialize_tensor(tensor_B1.host_view(), init_B, seed * 18); 
     initialize_tensor(tensor_C1.host_view(), init_C, seed * 40);
 
@@ -177,11 +190,13 @@ public:
     tensor_B0.sync_device();
     tensor_B0_reordered.sync_device();
     tensor_C0.sync_device();
+    tensor_Bias0.sync_device();
     tensor_D0_computed.sync_device();
     tensor_D0_reference.sync_device();
     tensor_B1.sync_device();
     tensor_B1_reordered.sync_device();
     tensor_C1.sync_device();
+    tensor_Bias1.sync_device();
     tensor_D1_computed.sync_device();
     tensor_D1_reference.sync_device();
   }
@@ -392,17 +407,22 @@ public:
   cutlass::Distribution::Kind init_A;
   cutlass::Distribution::Kind init_B;
   cutlass::Distribution::Kind init_C;
+  cutlass::Distribution::Kind init_Scale;
+  cutlass::Distribution::Kind init_Bias;
   uint64_t seed;
 
   cutlass::HostTensor<typename B2bConv2d::ElementA, typename B2bConv2d::LayoutA> tensor_A0;
   cutlass::HostTensor<typename B2bConv2d::ElementB, typename B2bConv2d::LayoutB> tensor_B0;
   cutlass::HostTensor<typename B2bConv2d::ElementB, typename B2bConv2d::LayoutB> tensor_B0_reordered;
   cutlass::HostTensor<typename B2bConv2d::ElementC, typename B2bConv2d::LayoutC> tensor_C0;
+  cutlass::HostTensor<typename B2bConv2d::ElementScaleBias, typename B2bConv2d::LayoutScaleBias> tensor_Scale0;
+  cutlass::HostTensor<typename B2bConv2d::ElementScaleBias, typename B2bConv2d::LayoutScaleBias> tensor_Bias0;
   cutlass::HostTensor<typename B2bConv2d::ElementC, typename B2bConv2d::LayoutC> tensor_D0_reference;
 
   cutlass::HostTensor<typename B2bConv2d::ElementB, typename B2bConv2d::LayoutB> tensor_B1;
   cutlass::HostTensor<typename B2bConv2d::ElementB, typename B2bConv2d::LayoutB> tensor_B1_reordered;
   cutlass::HostTensor<typename B2bConv2d::ElementC, typename B2bConv2d::LayoutC> tensor_C1;
+  cutlass::HostTensor<typename B2bConv2d::ElementCompute, typename B2bConv2d::LayoutC> tensor_Bias1;
   cutlass::HostTensor<typename B2bConv2d::ElementC, typename B2bConv2d::LayoutC> tensor_D1_computed;
   cutlass::HostTensor<typename B2bConv2d::ElementC, typename B2bConv2d::LayoutC> tensor_D1_reference;
 
@@ -413,9 +433,12 @@ public:
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_Scale_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_Bias_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = 2080
   ):
-    init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_) {
+    init_A(init_A_), init_B(init_B_), init_C(init_C_),
+    init_Scale(init_Scale_), init_Bias(init_Bias_), seed(seed_) {
 
   }
 
@@ -452,30 +475,47 @@ public:
 
       cutlass::reference::host::BlockFillSequential(view.data(), view.capacity());
     } 
+    else if (dist_kind == cutlass::Distribution::AllZeros) {
+      cutlass::reference::host::TensorFill(view, Element(0));
+    }
+    else if (dist_kind == cutlass::Distribution::AllOnes) {
+      cutlass::reference::host::TensorFill(view, Element(1));
+    }
     else {
     }
   }
 
   void initialize(
     cutlass::conv::Conv2dProblemSize const &problem_size_0,
-    cutlass::conv::Conv2dProblemSize const &problem_size_1, uint64_t seed = 2019) {
+    cutlass::conv::Conv2dProblemSize const &problem_size_1,
+    ElementCompute alpha0,
+    ElementCompute alpha1,
+    uint64_t seed = 2019) {
         
     tensor_A0.resize(implicit_gemm_tensor_a_extent(kConvolutionalOperator, problem_size_0));
     tensor_B0.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size_0));
     tensor_B0_reordered.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size_0));
     tensor_C0.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_0));
+    if(alpha0 == ElementCompute(0)) //per-channel scale
+        tensor_Scale0.resize({1, problem_size_0.K});
+    tensor_Bias0.resize({1, problem_size_0.K});
     tensor_D0_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_0));
     tensor_B1.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size_1));
     tensor_B1_reordered.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size_1));
     tensor_C1.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_1));
+    tensor_Bias1.resize({1, 1, 1, problem_size_1.K});
     tensor_D1_computed.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_1));
     tensor_D1_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_1));
 
     initialize_tensor(tensor_A0.host_view(), init_A, seed); 
     initialize_tensor(tensor_B0.host_view(), init_B, seed * 17); 
     initialize_tensor(tensor_C0.host_view(), init_C, seed * 39);
+    if(alpha0 == ElementCompute(0)) //per-channel scale
+        initialize_tensor(tensor_Scale0.host_view(), init_Scale, seed * 61);
+    initialize_tensor(tensor_Bias0.host_view(), init_Bias, seed * 83);
     initialize_tensor(tensor_B1.host_view(), init_B, seed * 18); 
     initialize_tensor(tensor_C1.host_view(), init_C, seed * 40);
+    initialize_tensor(tensor_Bias1.host_view(), init_Bias, seed * 84);
 
     //Reorder B0 and B1
     cutlass::reorder_convK<16, InterleavedK>(
@@ -487,10 +527,14 @@ public:
     tensor_B0.sync_device();
     tensor_B0_reordered.sync_device();
     tensor_C0.sync_device();
+    if(alpha0 == ElementCompute(0)) //per-channel scale
+        tensor_Scale0.sync_device();
+    tensor_Bias0.sync_device();
     tensor_D0_reference.sync_device();
     tensor_B1.sync_device();
     tensor_B1_reordered.sync_device();
     tensor_C1.sync_device();
+    tensor_Bias1.sync_device();
     tensor_D1_computed.sync_device();
     tensor_D1_reference.sync_device();
   }
@@ -508,7 +552,7 @@ public:
     int warm_ups = 1,
     int runs = 100) {
 
-    initialize(problem_size_0, problem_size_1);
+    initialize(problem_size_0, problem_size_1, alpha0, alpha1);
 
     // configure the operator
     B2bConv2d b2b_conv2d_op;
@@ -519,6 +563,8 @@ public:
       tensor_A0.device_ref(),
       tensor_B0_reordered.device_ref(),
       tensor_C0.device_ref(),
+      tensor_Scale0.device_ref(),
+      tensor_Bias0.device_ref(),
       tensor_B1_reordered.device_ref(),
       tensor_C1.device_ref(),
       tensor_D1_computed.device_ref(),
@@ -527,7 +573,21 @@ public:
       split_k_mode
     );
 
-    cutlass::Status status = b2b_conv2d_op.initialize(b2b_conv2d_args);
+    cutlass::Status status = b2b_conv2d_op.can_implement(b2b_conv2d_args);
+    
+    if(status != cutlass::Status::kSuccess) {
+        std::cout << "Problem sizes not supported.\n"
+                << "Requirments:\n"
+                << "    problem_size_0.N*P*Q = problem_size_1.N*P*Q\n"
+                << "    problem_size_0.K = problem_size_1.C\n"
+                << "    problem_size_1.R = problem_size_1.S = 1\n"
+                << "    ThreadblockShape0::kN = problem_size_0.K\n"
+                << "    ThreadblockShape1::kN = problem_size_1.K" << std::endl;
+    }
+
+    CUTLASS_CHECK(status);
+
+    status = b2b_conv2d_op.initialize(b2b_conv2d_args);
 
     CUTLASS_CHECK(status);
 
@@ -581,7 +641,10 @@ public:
       tensor_C0.device_ref(),
       tensor_D0_reference.device_ref(),
       alpha0, 
-      beta0);
+      beta0,
+      nullptr, // stream
+      tensor_Scale0.device_ref(),
+      tensor_Bias0.device_ref());
 
     if(relu) {
        cutlass::reference::device::TensorReLu(tensor_D0_reference.device_view()); 
@@ -644,6 +707,8 @@ public:
         << "\nB0:\n" << tensor_B0.host_view() << "\n"
         << "\nB0_reordered:\n" << tensor_B0_reordered.host_view() << "\n"
         << "\nC0:\n" << tensor_C0.host_view() << "\n"
+        << "\nScale0:\n" << tensor_Scale0.host_view() << "\n"
+        << "\nBias0:\n" << tensor_Bias0.host_view() << "\n"
         << "\nB1:\n" << tensor_B1.host_view() << "\n"
         << "\nB1_reordered:\n" << tensor_B1_reordered.host_view() << "\n"
         << "\nC1:\n" << tensor_C1.host_view() << "\n"

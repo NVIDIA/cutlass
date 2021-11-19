@@ -50,7 +50,6 @@
 
 TEST(SM80_Device_GemmUniversal_f16n_f16t_f32t_tensor_op_f32, 64x64x32_32x32x32) {
 
-  /*
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
 
@@ -66,7 +65,6 @@ TEST(SM80_Device_GemmUniversal_f16n_f16t_f32t_tensor_op_f32, 64x64x32_32x32x32) 
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle, 10>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
-  */
 }
 
 ////////////////////////////////////////////////////////////////////////////////

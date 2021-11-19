@@ -260,6 +260,9 @@ int OperationProfiler::profile_all(
       auto min_cc = operation->description().tile_description.minimum_compute_capability;
       auto max_cc = operation->description().tile_description.maximum_compute_capability;
 
+      // Clear named allocations
+      device_context.free();
+
       // Execute compatible cutlass operations if they satisfy the current device's compute capability
       if (operation->description().kind == kind_ &&
         operation->description().provider == library::Provider::kCUTLASS &&
@@ -301,9 +304,12 @@ int OperationProfiler::profile_all(
           problem);
 
         if (status == Status::kErrorInternal) {
-          // Stop profiling if there was an internal error
-          internal_error = true;
-          break;
+          
+          // If there was an internal error, consume the CUDA error and move to the next operation.
+          (void)cudaGetLastError();
+          
+          report.append_results(results_);
+          continue;
         }
         else if (status != Status::kSuccess) {
           // If the workspace could not be initialized for any other reason, continue to
@@ -322,9 +328,12 @@ int OperationProfiler::profile_all(
             problem);
 
           if (status == Status::kErrorInternal) {
-            // Stop profiling if there was an internal error
-            internal_error = true;
-            break;
+
+            // If there was an internal error, consume the CUDA error and move to the next operation.
+            (void)cudaGetLastError();
+
+            report.append_results(results_);
+            continue;
           }
           else if (status != Status::kSuccess) {
             // If the workspace could not be initialized for any other reason, continue to
@@ -382,9 +391,6 @@ int OperationProfiler::profile_all(
             problem_space,
             problem);
         }
-
-        // Clear named allocations
-        device_context.free();
 
         report.append_results(results_);
         results_.clear();

@@ -254,6 +254,10 @@ int64_t GemmOperationProfiler::GemmProblem::flops(library::GemmDescription const
     flops_ *= 4;
     break;
 
+  case library::MathOperationID::kMultiplyAddComplexFastF32:
+    flops_ *= 4;
+    break;
+
   case library::MathOperationID::kMultiplyAddGaussianComplex:
     flops_ *= 3;
     break;

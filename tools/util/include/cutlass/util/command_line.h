@@ -120,7 +120,7 @@ struct CommandLine {
   /**
    * Obtains the boolean value specified for a given commandline parameter --<flag>=<bool>
    */
-  void get_cmd_line_argument(const char* arg_name, bool& val, bool _default = true) const {
+  void get_cmd_line_argument(const char* arg_name, bool& val, bool _default) const {
     val = _default;
     if (check_cmd_line_flag(arg_name)) {
       std::string value;

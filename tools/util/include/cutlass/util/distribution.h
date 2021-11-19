@@ -37,7 +37,7 @@ namespace cutlass {
 /// Distribution type
 struct Distribution {
   /// Variant types
-  enum Kind { Invalid, Uniform, Gaussian, Identity, Sequential };
+  enum Kind { Invalid, Uniform, Gaussian, Identity, Sequential, AllZeros, AllOnes };
 
   /// Distribution state
   union {

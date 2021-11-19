@@ -1170,7 +1170,6 @@ struct Mma<
   ) const {
 
 #if defined(CUTLASS_ARCH_MMA_SM75_ENABLED)
-
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
   using WmmaFragmentA = nvcuda::wmma::fragment<
           nvcuda::wmma::matrix_a,

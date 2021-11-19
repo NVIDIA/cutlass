@@ -102,33 +102,33 @@ struct TestbedComplex : public Testbed<Gemm> {
   }
 
   /// Returns true if the CUDA device is sufficient to execute the kernel.
-	bool sufficient() const {
-		//
-		// Determine SMEM requirements and waive if not satisfied
-		//
-
-		int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
-
-		cudaDeviceProp properties;
-		int device_idx;
-		cudaError_t result = cudaGetDevice(&device_idx);
-	
-		if (result != cudaSuccess) {
-			throw std::runtime_error("cudaGetDevice() API call failed.");
-		}
-		
-		result = cudaGetDeviceProperties(&properties, device_idx);
-
-		if (result != cudaSuccess) {
-			throw std::runtime_error("cudaGetDeviceProperties() failed");
-		}
-
-		if (properties.sharedMemPerMultiprocessor < smem_size) {
-			return false;
-		}
-
-		return true;
-	}
+  bool sufficient() const {
+    //
+    // Determine SMEM requirements and waive if not satisfied
+    //
+    
+    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+    
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+    
+    if (result != cudaSuccess) {
+    	throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+    
+    result = cudaGetDeviceProperties(&properties, device_idx);
+    
+    if (result != cudaSuccess) {
+    	throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+    
+    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    	return false;
+    }
+    
+    return true;
+  }
 
   /// Executes one test
   bool run(
@@ -145,9 +145,9 @@ struct TestbedComplex : public Testbed<Gemm> {
       return true;
     }
 
-		//
-		// Initialize workspace
-		//
+    //
+    // Initialize workspace
+    //
 
     this->initialize(problem_size);
 		

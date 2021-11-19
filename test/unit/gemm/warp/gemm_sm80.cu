@@ -635,7 +635,7 @@ TEST(SM80_warp_gemm_tensor_op_congruous_tf32, 128x128x32_32x32x32_16x8x8) {
 }
 ////////////////////////////////////////////////////////////////////////////////
 
-TEST(SM80_warp_gemm_tensor_op_tn, tf32_round_128x128x32_16x16x32_16x8x8) {
+TEST(SM80_warp_gemm_tensor_op_tn, tf32_round_128x128x32_64x64x32_16x8x8) {
 
   using Shape = cutlass::gemm::GemmShape<64, 64, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
@@ -657,7 +657,7 @@ TEST(SM80_warp_gemm_tensor_op_tn, tf32_round_128x128x32_16x16x32_16x8x8) {
       .run();
 }
 
-TEST(SM80_warp_gemm_tensor_op_nt, tf32_round_128x128x32_16x16x32_16x8x8) {
+TEST(SM80_warp_gemm_tensor_op_nt, tf32_round_128x128x32_64x64x32_16x8x8) {
 
   using Shape = cutlass::gemm::GemmShape<64, 64, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;

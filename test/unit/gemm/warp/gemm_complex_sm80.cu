@@ -689,6 +689,4 @@ TEST(SM80_warp_gemm_complex_tensor_op_f64, 32x32x8_8x8x4_nt) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-
 #endif // #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
-

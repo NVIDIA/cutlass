@@ -619,6 +619,49 @@ struct NumericConverter<tfloat32_t, float, FloatRoundStyle::round_toward_zero> {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
+// Conversion operator for float to tfloat32_t big and small values
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+template <
+  FloatRoundStyle RoundBig = FloatRoundStyle::round_toward_zero,
+  FloatRoundStyle RoundSmall = FloatRoundStyle::round_half_ulp_truncate
+>
+struct NumericConverterFastF32 {
+
+  // result_type holds big tfloat32_t at idx(0) and small tfloat32_t at idx(1)
+  using result_type = Array<tfloat32_t, 2>; 
+
+  // source data type
+  using source_type = float;
+
+  // rounding styles for big and small part
+  static FloatRoundStyle const kRoundBig = RoundBig;
+  static FloatRoundStyle const kRoundSmall = RoundSmall;
+
+  CUTLASS_HOST_DEVICE
+    static result_type convert(source_type const & source) {
+
+    result_type result;
+    NumericConverter<tfloat32_t, float, kRoundBig> convert_big_;
+    NumericConverter<tfloat32_t, float, kRoundSmall> convert_small_;
+
+    // convert and fill tfloat32_t big at idx 0
+    result[0] = convert_big_(source);
+
+    // convert and fill tfloat32_t small at idx 1
+    result[1] = convert_small_(source - static_cast<float>(result[0]));
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+    result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
 // Conversion and Clamp operator for Integers
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////

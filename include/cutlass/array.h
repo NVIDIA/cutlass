@@ -338,6 +338,7 @@ private:
 
 public:
 
+  #if 0
   CUTLASS_HOST_DEVICE
   Array() { }
 
@@ -348,6 +349,7 @@ public:
       storage[i] = x.storage[i];
     }
   }
+  #endif
 
   /// Efficient clear method
   CUTLASS_HOST_DEVICE

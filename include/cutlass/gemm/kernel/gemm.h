@@ -326,7 +326,6 @@ struct Gemm {
 
       semaphore.wait(threadblock_tile_offset.k());
 
-      __threadfence();
     }
 
     // Execute the epilogue operator to update the destination tensor.
@@ -349,7 +348,6 @@ struct Gemm {
         lock = threadblock_tile_offset.k() + 1;
       }
 
-      __threadfence();
       semaphore.release(lock);
     }
   }
