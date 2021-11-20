@@ -41,7 +41,7 @@ CUTLASS 2.8 is an update to CUTLASS adding:
 - [Grouped GEMM:](/examples/24_gemm_grouped) similar to batched GEMM with distinct problem size per group
 - [Implicit GEMM Convolution fusion](/examples/13_two_tensor_op_fusion/) supports staging 1st convolution's output accumulator in the shared memory on Turing.
 - Optimal performance using [CUDA 11.5](https://developer.nvidia.com/cuda-downloads)
-- CUTLASS plans to **deprecate** the following platforms in the future. Let us know if this affects your use case.
+- **Deprecation announcement:** CUTLASS plans to deprecate the following:
   - Maxwell and Pascal GPU architectures
   - Ubuntu 16.04
   - CUDA 10.2

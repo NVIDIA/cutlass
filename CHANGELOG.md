@@ -18,7 +18,7 @@
 * Optimal performance using [**CUDA 11.5**](https://developer.nvidia.com/cuda-downloads)
 * Updates from the community (thanks!)
 
-* **Deprecation announcement:** CUTLASS plans to deprecate the following platforms in the future. Let us know if this affects your use case.
+* **Deprecation announcement:** CUTLASS plans to deprecate the following:
   * Maxwell and Pascal GPU architectures
   * Ubuntu 16.04
   * CUDA 10.2
