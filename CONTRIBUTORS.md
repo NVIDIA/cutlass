@@ -9,7 +9,7 @@ This is the official list of CUTLASS developers and contributors.
 ## DEVELOPERS
 Andrew Kerr  
 Haicheng Wu  
-Manish Gupta 
+Manish Gupta  
 Dustyn Blasig  
 Pradeep Ramani  
 Naila Farooqui  
