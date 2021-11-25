@@ -94,14 +94,6 @@ public:
     }
   }
 
-  /// Copy constructor
-  CUTLASS_HOST_DEVICE
-  Coord(Coord<kRank, Index, LongIndex> const &coord) {
-    for (int i = 0; i < kRank; ++i) {
-      idx[i] = coord[i];
-    }
-  }
-
   /// Returns a slice of the Coord which may be larger or smaller in rank
   /// than this.
   template <int Slice>

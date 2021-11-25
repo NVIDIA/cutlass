@@ -218,13 +218,6 @@ class TensorRef {
   
   }
 
-  /// Converting constructor from TensorRef to non-constant data.
-  CUTLASS_HOST_DEVICE
-  TensorRef(
-    NonConstTensorRef const &ref              ///< TensorRef to non-const data
-  ):
-    ptr_(ref.data()), layout_(ref.layout()) { }
-
   /// Returns a reference to constant-valued tensor.
   CUTLASS_HOST_DEVICE
   ConstTensorRef const_ref() const {
