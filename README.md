@@ -51,7 +51,7 @@ CUTLASS 2.8 is an update to CUTLASS adding:
 
 # Performance
 
-<p align="center"><img src=/media/images/cutlass-performance-plot.png></p>
+<p align="center"><img src=/media/images/cutlass-2.8-gemm-performance.png></p>
 
 CUTLASS primitives are very efficient.  When used to construct device-wide GEMM kernels,
 they exhibit performance comparable to cuBLAS for scalar GEMM
