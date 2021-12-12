@@ -110,6 +110,14 @@ struct Sigmoid<float> {
   }
 };
 
+template <>
+struct Sigmoid<half_t> {
+  CUTLASS_DEVICE
+  half_t operator()(half_t const &scalar) const {
+    return half_t(1) / (half_t(1) + half_t(::hexp(-scalar.to_half())));
+  }
+};
+
 template <typename T, int N>
 struct Sigmoid<Array<T, N> > {
   CUTLASS_HOST_DEVICE
