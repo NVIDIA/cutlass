@@ -124,6 +124,25 @@ struct Sigmoid<Array<T, N> > {
   }
 };
 
+// SiLu (swish) operator
+template <typename T>
+struct SiLu {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &scalar) const {
+    return scalar * Sigmoid<T>(scalar);
+  }
+};
+
+template <typename T, int N>
+struct SiLu<Array<T, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    Sigmoid<Array<T, N>> sigmoid_op;
+    multiplies<Array<T, N>>     mul;
+    return mul(rhs, sigmoid_op(rhs));
+  }
+};
+
 //
 // GELU function definitions implemented as described by
 //   Hendrycks, D., and Gimpel, K. in
