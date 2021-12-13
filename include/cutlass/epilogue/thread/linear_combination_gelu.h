@@ -29,12 +29,8 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
-#include "cutlass/numeric_types.h"
-#include "cutlass/array.h"
-#include "cutlass/functional.h"
-#include "cutlass/numeric_conversion.h"
-
 #include "cutlass/epilogue/thread/activation.h"
+#include "cutlass/epilogue/thread/linear_combination_generic.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -57,153 +53,9 @@ template <
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
 >
-class LinearCombinationGELU {
-public:
+using LinearCombinationGELU = LinearCombinationGeneric<GELU, ElementOutput_, Count, ElementAccumulator_,
+                                                       ElementCompute_, FloatRoundStyle::round_to_nearest, true>;
 
-  using ElementOutput = ElementOutput_;
-  using ElementAccumulator = ElementAccumulator_;
-  using ElementCompute = ElementCompute_;
-
-  static bool const kIsHeavy = true;
-
-  static int const kCount = Count;
-
-  using FragmentOutput = Array<ElementOutput, kCount>;
-  using FragmentAccumulator = Array<ElementAccumulator, kCount>;
-  using ComputeFragment = Array<ElementCompute, kCount>;
-
-  static FloatRoundStyle const kRound = Round;
-
-  /// Host-constructable parameters structure
-  struct Params {
-
-    ElementCompute alpha;                  ///< scales accumulators
-    ElementCompute beta;                   ///< scales source tensor
-    ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
-    ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
-
-    //
-    // Methods
-    //
-
-    CUTLASS_HOST_DEVICE
-    Params(): 
-      alpha(ElementCompute(1)), 
-      beta(ElementCompute(0)), 
-      alpha_ptr(nullptr), 
-      beta_ptr(nullptr) { }
-
-    CUTLASS_HOST_DEVICE
-    Params(
-      ElementCompute alpha,
-      ElementCompute beta
-    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
-
-    }
-
-    CUTLASS_HOST_DEVICE
-    Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
-
-    }
-  };
-
-private:
-
-  //
-  // Data members
-  //
-
-  ElementCompute alpha_;
-  ElementCompute beta_;
-
-public:
-
-  /// Constructs the function object, possibly loading from pointers in host memory
-  CUTLASS_HOST_DEVICE
-  LinearCombinationGELU(Params const &params) {
-
-    alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
-    beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
-  }
-
-  /// Returns true if source is needed
-  CUTLASS_HOST_DEVICE
-  bool is_source_needed() const {
-    return beta_ != ElementCompute(0);
-  }
-
-  /// Functionally required for serial reduction in the epilogue
-  CUTLASS_HOST_DEVICE
-  void set_k_partition(int k_partition, int k_partition_count) {
-    if (k_partition) {
-      beta_ = ElementCompute(1);
-    }
-
-    CUTLASS_UNUSED(k_partition_count);
-  }
-  
-  /// Computes: D = gelu( alpha * accumulator + beta * source )
-  CUTLASS_HOST_DEVICE
-  FragmentOutput operator()(
-    FragmentAccumulator const &accumulator, 
-    FragmentOutput const &source) const {
-
-    // Convert source to interal compute numeric type
-    NumericArrayConverter<ElementCompute, ElementOutput, kCount, Round> source_converter;
-    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
-
-    ComputeFragment converted_source = source_converter(source);
-    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
-
-    // Perform binary operations
-
-    ComputeFragment intermediate;
-
-    multiplies<ComputeFragment> mul_add_source;
-    multiply_add<ComputeFragment> mul_add_accumulator;
-    GELU<ComputeFragment> gelu;
-
-    intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
-
-    intermediate = gelu(intermediate);
-
-    // Convert to destination numeric type
-    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
-
-    return destination_converter(intermediate);
-  }
-
-  /// Computes: D = gelu( alpha * accumulator )
-  CUTLASS_HOST_DEVICE
-  FragmentOutput operator()(
-    FragmentAccumulator const &accumulator) const {
-
-    // Convert source to interal compute numeric type
-    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
-
-    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
-
-    // Perform binary operations
-
-    ComputeFragment intermediate;
-
-    multiplies<ComputeFragment> mul_add_accumulator;
-    GELU<ComputeFragment> gelu;
-
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
-
-    intermediate = gelu(intermediate);
-
-    // Convert to destination numeric type
-    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
-
-    return destination_converter(intermediate);
-  }
-};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

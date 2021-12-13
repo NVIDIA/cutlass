@@ -53,12 +53,8 @@ template <
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
 >
-using LinearCombinationSigmoid = LinearCombinationGeneric<Sigmoid,
-							  ElementOutput_,
-							  Count,
-							  ElementAccumulator_,
-							  ElementCompute_,
-							  FloatRoundStyle::round_to_nearest>;
+using LinearCombinationSigmoid = LinearCombinationGeneric<Sigmoid, ElementOutput_, Count, ElementAccumulator_,
+                                                          ElementCompute_, FloatRoundStyle::round_to_nearest>;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace thread

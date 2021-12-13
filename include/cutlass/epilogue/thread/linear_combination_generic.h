@@ -54,7 +54,8 @@ template <
                                                        ///< but we use 64 or 32 sometimes when there are not enough data to store
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
-  FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
+  FloatRoundStyle Round = FloatRoundStyle::round_to_nearest,
+  bool IsHeavy = false
 >
 class LinearCombinationGeneric {
 public:
@@ -63,6 +64,7 @@ public:
   using ElementAccumulator = ElementAccumulator_;
   using ElementCompute = ElementCompute_;
 
+  static bool const kIsHeavy = IsHeavy;
   static int const kCount = Count;
 
   using FragmentOutput = Array<ElementOutput, kCount>;
