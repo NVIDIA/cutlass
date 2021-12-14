@@ -124,35 +124,6 @@ struct Sigmoid<Array<T, N> > {
   }
 };
 
-template <>
-struct Sigmoid<half_t> {
-  CUTLASS_HOST_DEVICE
-  half_t operator()(half_t const& scalar) const {
-    half_t exp_res;
-    #if defined(__CUDA_ARCH__)
-    exp_res = half_t(::hexp(-scalar.to_half()));
-    #else
-    exp_res = half_t(std::exp(float(-scalar)));
-    #endif
-    return half_t(1) / (half_t(1) + exp_res);
-  }
-};
-
-#if defined(CUTLASS_USE_FAST_MATH)
-template <int N>
-struct Sigmoid<Array<half_t, N>> {
-  CUTLASS_HOST_DEVICE
-  Array<half_t, N> operator()(Array<half_t, N> const& z) const {
-    using T = half_t;
-    multiplies<Array<half_t, N>> mul;
-    plus<Array<half_t, N>> add;
-    fast_tanh_op<Array<half_t, N>> tanh;
-    return mul(add(tanh(mul(z, cutlass::constants::half<T>())), cutlass::constants::one<T>()),
-               cutlass::constants::half<T>());
-  }
-};
-#endif
-
 // SiLu (swish) operator
 template <typename T>
 struct SiLu {
