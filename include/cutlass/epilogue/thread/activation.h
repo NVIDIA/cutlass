@@ -124,7 +124,11 @@ struct Sigmoid<Array<T, N> > {
   }
 };
 
-// SiLu (swish) operator
+// SiLu (swish) operator introduced by Elfwing et al. in the following paper
+// "Sigmoid-Weighted Linear Units for Neural Network Function Approximation in Reinforcement Learning" (2017)
+// https://arxiv.org/pdf/1702.03118.pdf
+// It is used in EfficientNet and YOLOv5, for example.
+// Reference: https://pytorch.org/docs/stable/generated/torch.nn.SiLU.html
 template <typename T>
 struct SiLu {
   CUTLASS_HOST_DEVICE
@@ -143,6 +147,11 @@ struct SiLu<Array<T, N>> {
   }
 };
 
+// Hardswish operator introduced by Howard et al. in the following paper
+// "Searching for MobileNetV3" (2019)
+// https://arxiv.org/pdf/1905.02244.pdf
+// It is used in models based on MobilenetNetV3.
+// Reference: https://pytorch.org/docs/stable/generated/torch.nn.Hardswish.html
 template <typename T>
 struct HardSwish {
   CUTLASS_HOST_DEVICE

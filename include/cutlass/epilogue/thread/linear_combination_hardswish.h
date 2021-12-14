@@ -23,7 +23,7 @@
  *
  **************************************************************************************************/
 /*! \file
-  \brief Functor performing linear combination operations used by epilogues.
+  \brief Functor performing linear combination with HardSwish operations used by epilogues.
 */
 
 #pragma once
@@ -40,9 +40,9 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Applies a linear combination operator to an array of elements.
+/// Applies a linear combination operator followed by the HardSwish activation to an array of elements.
 ///
-/// D = alpha * accumulator + beta * source + uniform
+/// D = hardswish(alpha * accumulator + beta * source + uniform)
 ///
 template <
   typename ElementOutput_,                             ///< Data type used to load and store tensors

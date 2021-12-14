@@ -42,9 +42,9 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Applies a linear combination operator to an array of elements.
+/// Applies a linear combination operator followed by an activation function to an array of elements.
 ///
-/// D = alpha * accumulator + beta * source + uniform
+/// D = activation(alpha * accumulator + beta * source + uniform)
 ///
 template <
   template<typename T> class ActivationFunctor,
