@@ -172,6 +172,32 @@ struct SiLu<Array<T, N>> {
   }
 };
 
+template <typename T>
+struct HardSwish {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &x) const {
+    minimum<T> mn;
+    maximum<T> mx;
+    T relu6 = mn(mx(x + T(3), T(0)), T(6));
+    return x * (relu6 / T(6));
+  }
+};
+
+template <typename T, int N>
+struct HardSwish<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    Array<T, N> y;
+    HardSwish<T> hardswish_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < int(rhs.size()); ++i) {
+      y[i] = hardswish_op(rhs[i]);
+    }
+
+    return y;
+  }
+};
 
 //
 // GELU function definitions implemented as described by
