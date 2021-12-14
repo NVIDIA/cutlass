@@ -124,6 +124,35 @@ struct Sigmoid<Array<T, N> > {
   }
 };
 
+template <>
+struct Sigmoid<half_t> {
+  CUTLASS_HOST_DEVICE
+  half_t operator()(half_t const& scalar) const {
+    half_t exp_res;
+    #if defined(__CUDA_ARCH__)
+    exp_res = half_t(::hexp(-scalar.to_half()));
+    #else
+    exp_res = half_t(std::exp(float(-scalar)));
+    #endif
+    return half_t(1) / (half_t(1) + exp_res);
+  }
+};
+
+#if defined(CUTLASS_USE_FAST_MATH)
+template <int N>
+struct Sigmoid<Array<half_t, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(Array<half_t, N> const& z) const {
+    using T = half_t;
+    multiplies<Array<half_t, N>> mul;
+    plus<Array<half_t, N>> add;
+    fast_tanh_op<Array<half_t, N>> tanh;
+    return mul(add(tanh(mul(z, cutlass::constants::half<T>())), cutlass::constants::one<T>()),
+               cutlass::constants::half<T>());
+  }
+};
+#endif
+
 // SiLu (swish) operator
 template <typename T>
 struct SiLu {
@@ -142,6 +171,7 @@ struct SiLu<Array<T, N>> {
     return mul(rhs, sigmoid_op(rhs));
   }
 };
+
 
 //
 // GELU function definitions implemented as described by
@@ -206,7 +236,7 @@ struct GELU_taylor {
     T k0 = T(0.7978845608028654);
     T k1 = T(0.044715);
 
-    return T(cutlass::constants::half<T>() * z * 
+    return T(cutlass::constants::half<T>() * z *
       (cutlass::constants::one<T>() + fast_tanh(k0 * z * (cutlass::constants::one<T>() + k1 * z * z))));
   }
 };
@@ -216,10 +246,10 @@ struct GELU_taylor<Array<half_t, N> > {
   static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<half_t, N> operator()(Array<half_t, N> const &z) const {
-    
+
     using T = half_t;
     Array<half_t, N> y;
-    
+
     half_t k0 = half_t(0.7978845608028654);
     half_t k1 = half_t(0.044715);
 
@@ -267,7 +297,7 @@ struct dGELU {
 
     T tanh_out = fast_tanh(k0 * z * (1 + k1 * z * z));
 
-    T ff = constants::half<T>() * z * ((1 - tanh_out * tanh_out) * (k0 + k2 * z * z)) + 
+    T ff = constants::half<T>() * z * ((1 - tanh_out * tanh_out) * (k0 + k2 * z * z)) +
       constants::half<T>() * (1 + tanh_out);
 
     return ff * d_t;
