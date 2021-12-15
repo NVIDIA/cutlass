@@ -220,7 +220,7 @@ cublasGemmExDispatcher::cublasGemmExDispatcher(
 
   // cuBLAS introduces a separate cublasComputeType enumerant to more precisely describe
   // internal numerical data types used in the computation.
-#if (__CUDA_VER_MAJOR__ >= 11)
+#if (__CUDACC_VER_MAJOR__ >= 11)
   library::OpcodeClassID const & opcode_class =
     op_desc.tile_description.math_instruction.opcode_class;
 
@@ -253,7 +253,7 @@ cublasGemmExDispatcher::cublasGemmExDispatcher(
         break;
     }
   }
-#endif // __CUDA_VER_MAJOR__ >= 11
+#endif // __CUDACC_VER_MAJOR__ >= 11
 
   if (!good) {
     status = Status::kErrorNotSupported;
@@ -286,7 +286,7 @@ cublasStatus_t cublasGemmExDispatcher::operator()(cublasHandle_t handle) {
       int(configuration.ldc),
       arguments.batch_stride_C,
       configuration.batch_count,
-  #if (__CUDA_VER_MAJOR__ >= 11)
+  #if (__CUDACC_VER_MAJOR__ >= 11)
       compute_type,
   #else
       compute_data_type,
@@ -313,7 +313,7 @@ cublasStatus_t cublasGemmExDispatcher::operator()(cublasHandle_t handle) {
       arguments.D,
       data_type_C,
       int(configuration.ldc),
-  #if (__CUDA_VER_MAJOR__ >= 11)
+  #if (__CUDACC_VER_MAJOR__ >= 11)
       compute_type,
   #else
       compute_data_type,

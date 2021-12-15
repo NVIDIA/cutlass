@@ -282,5 +282,52 @@ inline __device__ void ldsm<layout::ColumnMajor, 4>(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <typename AccessType, int Bytes>
+struct shared_load_op {
+  CUTLASS_DEVICE
+  shared_load_op(AccessType &D, void const *ptr) {
+    D = *reinterpret_cast<AccessType const *>(ptr);  
+  }
+};
+
+template <typename AccessType>
+CUTLASS_DEVICE void shared_load(AccessType &D, void const *ptr) {
+  shared_load_op<AccessType, int(sizeof(AccessType))>(D, ptr);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename AccessType>
+struct shared_load_op<AccessType, 16> {
+  CUTLASS_DEVICE
+  shared_load_op(AccessType &D, void const *ptr) {
+    unsigned addr = cutlass_get_smem_pointer(ptr);
+
+    uint4 v;
+    asm volatile ("ld.shared.v4.b32 {%0, %1, %2, %3}, [%4];" : 
+      "=r"(v.x), "=r"(v.y), "=r"(v.z), "=r"(v.w) : "r"(addr));
+
+    D = reinterpret_cast<AccessType const &>(v);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename AccessType>
+struct shared_load_op<AccessType, 8> {
+  CUTLASS_DEVICE
+  shared_load_op(AccessType &D, void const *ptr) {
+    unsigned addr = cutlass_get_smem_pointer(ptr);
+
+    uint2 v;
+    asm volatile ("ld.shared.v2.b32 {%0, %1}, [%2];" : 
+      "=r"(v.x), "=r"(v.y) : "r"(addr));
+
+    D = reinterpret_cast<AccessType const &>(v);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 } // namespace arch
 } // namespace cutlass

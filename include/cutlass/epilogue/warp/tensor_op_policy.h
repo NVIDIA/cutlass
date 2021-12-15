@@ -83,8 +83,11 @@ struct TensorOpPolicy<WarpShape, OperatorShape, layout::RowMajor> {
   // Number of externally visible iterations
   static int const kIterations = OperatorCount::kRow * kIterationsPerInstruction;
 
+  using TileIterations = MatrixShape<kIterations, 1>;
+
   static int const kAccumulatorRowStride = kElementsPerAccess;
   static int const kAccumulatorColumnStride = kElementsPerAccess * OperatorCount::kRow * kIterationsPerInstruction;
+
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -120,6 +123,14 @@ struct TensorOpPolicy<WarpShape, OperatorShape,
   static int const kIterations = WarpShape::kN / InterleavedK *
                                  OperatorCount::kRow *
                                  kIterationsPerInstruction;
+
+  static int const kElementsPerIteration = InterleavedK / OperatorShape::kN * kElementsPerAccess;
+
+  static int const kAccessPerIteration = kElementsPerIteration / kElementsPerAccess;
+
+  // Number of externally visible iterations
+  //static int const kTileIterations = OperatorCount::kRow * kIterationsPerInstruction;
+  using TileIterations = MatrixShape<1, WarpShape::kN / InterleavedK>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

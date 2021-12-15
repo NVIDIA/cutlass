@@ -210,7 +210,7 @@ std::ostream & operator<<(std::ostream &out, GemmShape<M,N,K> const &gemm_shape)
 /// Default printing to ostream for GemmCoord
 inline
 std::ostream & operator<<(std::ostream &out, GemmCoord const &gemm_coord) {
-  out << "cutlass::gemm::GemmCoord:: {"
+  out << "cutlass::gemm::GemmCoord {"
     << gemm_coord.m() <<","
     << gemm_coord.n() <<","
     << gemm_coord.k() << "}";
@@ -230,7 +230,7 @@ namespace layout {
 template < int Contiguous, int Strided>
 inline
 std::ostream & operator<<(std::ostream &out, PitchLinearShape<Contiguous, Strided> const &pitch_linear_shape) {
-  out << "cutlass::layout::PitchLinearShape::(kContiguous, kStrided) {"
+  out << "cutlass::layout::PitchLinearShape:(kContiguous, kStrided) {"
     << cutlass::layout::PitchLinearShape<Contiguous,Strided>::kContiguous <<","
     << cutlass::layout::PitchLinearShape<Contiguous,Strided>::kStrided <<"}";
   return out;

@@ -154,6 +154,22 @@ void PerformanceReport::append_result(PerformanceResult result) {
   }
 }
 
+void PerformanceReport::sort_results(PerformanceResultVector &results) {
+
+  struct FlopsPerByteCompare
+  {
+    bool operator()(const PerformanceResult &a, const PerformanceResult &b)
+    {
+      double a_flops_per_byte = double(a.flops) / double(a.bytes);
+      double b_flops_per_byte = double(b.flops) / double(b.bytes);
+
+      return (a_flops_per_byte < b_flops_per_byte);
+    }
+  };
+
+  std::stable_sort(results.begin(), results.end(), FlopsPerByteCompare());
+}
+
 void PerformanceReport::append_results(PerformanceResultVector const &results) {
 
   if (options_.report.verbose) {
@@ -173,12 +189,16 @@ PerformanceReport::~PerformanceReport() {
   //
   if (options_.report.verbose && !concatenated_results_.empty()) {
 
+    if (options_.report.sort_results) {
+      sort_results(concatenated_results_);
+    }
+
     std::cout << "\n\n";
     std::cout << "=============================\n\n";
     std::cout << "CSV Results:\n\n";
 
     print_csv_header_(std::cout) << std::endl;
-    
+
     for (auto const &result : concatenated_results_) {
       print_result_csv_(std::cout, result) << "\n";
     }
@@ -273,7 +293,8 @@ std::ostream & PerformanceReport::print_result_pretty_(
 
   out 
     << "           Bytes: " << result.bytes << "  bytes\n"
-    << "           FLOPs: " << result.flops << "  flops\n\n";
+    << "           FLOPs: " << result.flops << "  flops\n"
+    << "           FLOPs/Byte: " << (result.flops / result.bytes) << "\n\n";
 
   if (result.good()) {
 
@@ -309,6 +330,7 @@ std::ostream & PerformanceReport::print_csv_header_(
   out 
     << ",Bytes"
     << ",Flops"
+    << ",Flops/Byte"
     << ",Runtime"
     << ",GB/s"
     << ",GFLOPs"
@@ -345,6 +367,7 @@ std::ostream & PerformanceReport::print_result_csv_(
   out 
     << "," << result.bytes
     << "," << result.flops
+    << "," << result.flops / result.bytes
     << "," << result.runtime;
 
   if (result.good()) {

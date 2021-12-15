@@ -94,6 +94,8 @@ public:
 
   /// Number of times this iterator can be incremented
   static int const kIterations = Policy::kIterations;
+  using TileIterations = typename Policy::TileIterations;
+  static int const kIterationsPerTile = kIterations / TileIterations::kCount;
 
 private:
 
@@ -193,6 +195,8 @@ class FragmentIteratorTensorOp<WarpShape_, OperatorShape_, OperatorElementC_, Op
 
   /// Number of times this iterator can be incremented
   static int const kIterations = Policy::kIterations;
+  using TileIterations = typename Policy::TileIterations;
+  static int const kIterationsPerTile = kIterations / TileIterations::kCount;
 
  private:
   /// Internal access type

@@ -24,6 +24,9 @@ Markus Hohnerbach
 Aditya Atluri  
 David Tanner  
 Manikandan Ananth  
+
+## CUTLASS Product Manager
+Matthew Nicely
   
 ## CONTRIBUTORS
 Timothy Costa  
@@ -56,7 +59,6 @@ Olivier Giroux
 Stephen Jones  
 Rishkul Kulkarni  
 Bryce Lelbach  
-Matthew Nicely  
 Joel McCormack  
 Kyrylo Perelygin  
 

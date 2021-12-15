@@ -40,7 +40,7 @@ class GemmOperation:
   def is_complex(self):
     complex_operators = [
       MathOperation.multiply_add_complex, 
-      MathOperation.multiply_add_complex_gaussian
+      MathOperation.multiply_add_complex_gaussian,
     ]
     return self.tile_description.math_instruction.math_operation in complex_operators
 

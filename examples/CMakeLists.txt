@@ -94,6 +94,12 @@ foreach(EXAMPLE
   21_quaternion_gemm
   22_quaternion_conv
   23_ampere_gemm_operand_reduction_fusion
+  24_gemm_grouped
+  25_ampere_fprop_mainloop_fusion
+  26_ampere_wgrad_mainloop_fusion
+  27_ampere_3xtf32_fast_accurate_tensorop_gemm
+  28_ampere_3xtf32_fast_accurate_tensorop_fprop
+  29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm
   )
 
   add_subdirectory(${EXAMPLE})

@@ -577,6 +577,8 @@ Options::Report::Report(cutlass::CommandLine const &cmdline) {
   cmdline.get_cmd_line_argument("report-not-run", report_not_run, false);
 
   cmdline.get_cmd_line_argument("verbose", verbose, true);
+
+  cmdline.get_cmd_line_argument("sort-results", sort_results, false);
 }
 
 void Options::Report::print_usage(std::ostream &out) const {
@@ -602,7 +604,10 @@ void Options::Report::print_usage(std::ostream &out) const {
     << "      column. Useful for generating pivot tables.\n\n"
 
     << "  --verbose=<bool>                             "
-    << "    Prints human-readable text to stdout. If false, nothing is written to stdout.\n\n";
+    << "    Prints human-readable text to stdout. If false, nothing is written to stdout.\n\n"
+
+    << "  --sort-results=<bool>                        "
+    << "    Sorts results (by flops-per-byte).\n\n";
 }
 
 void Options::Report::print_options(std::ostream &out, int indent) const {

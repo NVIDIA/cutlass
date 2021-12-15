@@ -168,6 +168,15 @@ template <> struct MathOperationMap<cutlass::arch::OpXorPopc> {
   static MathOperationID const kId = MathOperationID::kXorPopc;
 };
 
+
+template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddFastF32> {
+  static MathOperationID const kId = MathOperationID::kMultiplyAddFastF32;
+};
+
+template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddComplexFastF32> {
+  static MathOperationID const kId = MathOperationID::kMultiplyAddComplexFastF32;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T> struct LayoutMap;

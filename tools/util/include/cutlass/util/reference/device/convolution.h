@@ -76,7 +76,9 @@ __global__ void Conv2dFprop(
   TensorRef<ElementC, LayoutC> tensor_y_in,
   TensorRef<ElementC, LayoutC> tensor_y_out,
   ElementCompute alpha,
-  ElementCompute beta
+  ElementCompute beta,
+  TensorRef<ElementCompute, layout::RowMajor> tensor_scale,
+  TensorRef<ElementCompute, layout::RowMajor> tensor_bias
   ) {
 
   ConvertOp convert_op;
@@ -178,13 +180,26 @@ __global__ void Conv2dFprop(
         int thread_k = k_start + n;
         if (thread_k < problem_size.K) {
 
-          ElementCompute c_ref = ElementCompute();
-          if (beta != ElementCompute()) {
-            c_ref = ElementCompute(tensor_y_in.at({thread_n[m], thread_p[m], thread_q[m], thread_k}));
+          if(alpha == ElementCompute()) { // use per-channel scale and bias
+            ElementCompute scale = tensor_scale.at({0, thread_k});
+            ElementCompute bias = tensor_bias.at({0, thread_k});
+            tensor_y_out.at({thread_n[m], thread_p[m], thread_q[m], thread_k}) = convert_op(
+              scale * ElementCompute(accum[m][n]) + bias);
           }
+          else if(tensor_bias.good()) { // use per-channel bias
+            ElementCompute bias = tensor_bias.at({0, thread_k});
+            tensor_y_out.at({thread_n[m], thread_p[m], thread_q[m], thread_k}) = convert_op(
+              alpha * ElementCompute(accum[m][n]) + bias);
+          }
+          else {
+            ElementCompute c_ref = ElementCompute();
+            if (beta != ElementCompute()) {
+              c_ref = ElementCompute(tensor_y_in.at({thread_n[m], thread_p[m], thread_q[m], thread_k}));
+            }
 
-          tensor_y_out.at({thread_n[m], thread_p[m], thread_q[m], thread_k}) = convert_op(
-            alpha * ElementCompute(accum[m][n]) + beta * c_ref);
+            tensor_y_out.at({thread_n[m], thread_p[m], thread_q[m], thread_k}) = convert_op(
+              alpha * ElementCompute(accum[m][n]) + beta * c_ref);
+          }
         }
       } 
     }
@@ -994,7 +1009,9 @@ Status Conv2dFprop(
   TensorRef<ElementC, LayoutC> tensor_y_out,
   ElementCompute alpha,
   ElementCompute beta,
-  cudaStream_t stream = nullptr) {
+  cudaStream_t stream = nullptr,
+  TensorRef<ElementCompute, layout::RowMajor> tensor_scale = TensorRef<ElementCompute, layout::RowMajor>(),
+  TensorRef<ElementCompute, layout::RowMajor> tensor_bias = TensorRef<ElementCompute, layout::RowMajor>() ) {
 
   //
   // Blocking factors improve performance of reference implementation
@@ -1033,7 +1050,9 @@ Status Conv2dFprop(
     tensor_y_in,
     tensor_y_out,
     alpha,
-    beta
+    beta,
+    tensor_scale,
+    tensor_bias
   );
 
   cudaError_t result = cudaPeekAtLastError();
@@ -1423,7 +1442,9 @@ Status Conv2d(
   TensorRef<ElementC, LayoutC> tensor_D,
   ElementCompute alpha,
   ElementCompute beta,
-  cudaStream_t stream = nullptr) {
+  cudaStream_t stream = nullptr,
+  TensorRef<ElementCompute, layout::RowMajor> tensor_scale = TensorRef<ElementCompute, layout::RowMajor>(),
+  TensorRef<ElementCompute, layout::RowMajor> tensor_bias = TensorRef<ElementCompute, layout::RowMajor>() ) {
   
   switch (convolutional_operator) {
   case conv::Operator::kFprop:
@@ -1434,7 +1455,7 @@ Status Conv2d(
       ElementCompute,
       ElementAccumulator,
       ConvertOp, InnerProductOp
-    >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta, stream);
+    >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta, stream, tensor_scale, tensor_bias);
     break;
 
   case conv::Operator::kDgrad:

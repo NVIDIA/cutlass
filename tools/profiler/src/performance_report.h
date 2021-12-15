@@ -86,6 +86,7 @@ public:
 
   void next_problem();
   void append_result(PerformanceResult result);
+  void sort_results(PerformanceResultVector &results);
   void append_results(PerformanceResultVector const &results);
 
 public:

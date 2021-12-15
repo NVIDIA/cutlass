@@ -116,22 +116,11 @@ struct DefaultMultistageMmaComplex<ElementA, LayoutA, ElementB, LayoutB,
                             ElementAccumulator, layout::RowMajor, OperatorClass,
                             ArchTag, ThreadblockShape, WarpShape,
                             InstructionShape, Stages, TransformA, TransformB, Operator> {
-
-  static cutlass::arch::CacheOperation::Kind const CacheOpA =
-      (sizeof_bits<ElementA>::value == 128)
-          ? cutlass::arch::CacheOperation::Global
-          : cutlass::arch::CacheOperation::Always;
-
-  static cutlass::arch::CacheOperation::Kind const CacheOpB =
-      (sizeof_bits<ElementB>::value == 128)
-          ? cutlass::arch::CacheOperation::Global
-          : cutlass::arch::CacheOperation::Always;
-
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMultistageMmaComplexCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA, 
       ElementB, LayoutB, ElementAccumulator, layout::RowMajor, OperatorClass,
-      Stages, TransformA, TransformB, Operator, CacheOpA, CacheOpB>;
+      Stages, TransformA, TransformB, Operator>;
 
   // Define iterators over tiles from the A operand
   using ThreadMapA = typename MmaCore::IteratorThreadMapA;
@@ -156,8 +145,6 @@ struct DefaultMultistageMmaComplex<ElementA, LayoutA, ElementB, LayoutB,
       MmaCore::kCacheOpB, ElementAccumulator, layout::RowMajor,
       typename MmaCore::MmaPolicy, Stages>;
 };
-
-////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace threadblock
 }  // namespace gemm

@@ -192,6 +192,7 @@ cutlass_test_unit_add_executable(
   gemm_f16t_f16t_f32t_tensor_op_f32_sm80.cu
   gemm_bf16n_bf16n_f32t_tensor_op_f32_sm80.cu
   gemm_bf16t_bf16t_bf16t_tensor_op_f32_sm80.cu
+  gemm_f16n_f16n_f16n_direct_store_tensor_op_f32_sm80.cu
 )
 
 cutlass_test_unit_add_executable(
@@ -317,6 +318,15 @@ cutlass_test_unit_add_executable(
   gemm_planar_complex_f16_f16_f32_tensor_op_sm70.cu                              
   gemm_planar_complex_f16_f16_f32_tensor_op_sm75.cu                                         
   gemm_planar_complex_f16_f16_f32_tensor_op_sm80.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_grouped
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_grouped_sm80.cu
 )
 
 cutlass_test_unit_add_executable(
