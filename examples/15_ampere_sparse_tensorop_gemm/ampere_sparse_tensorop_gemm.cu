@@ -296,7 +296,7 @@ int main() {
     return -1;
   }
 
-  if (!((props.major * 10 + props.minor) >= 80)) {
+  if (props.major * 10 + props.minor < 80) {
     std::cerr << "Ampere Tensor Core operations must be run on a machine with compute capability at least 80."
               << std::endl;
     notSupported = true;

@@ -233,7 +233,7 @@ int run() {
       tensor_b.device_ref(), 
       tensor_c_bias.device_ref(), 
       tensor_ref_d.device_ref(),
-      alpha, 0
+      alpha, ElementComputeEpilogue(0)
     );
 
   // Wait for kernels to finish

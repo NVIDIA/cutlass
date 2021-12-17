@@ -58,6 +58,7 @@ struct Identity {
 /// ReLu operator - propagates NaNs
 template <typename T>
 struct ReLu {
+  static const bool kIsHeavy=false;
   CUTLASS_HOST_DEVICE
   T operator()(T const & threshold, T value) const {
     if (value < threshold) {
@@ -76,6 +77,7 @@ struct ReLu {
 
 template <typename T, int N>
 struct ReLu<Array<T, N>> {
+  static const bool kIsHeavy=false;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(T const & threshold, Array<T, N> const &frag) const {
     Array<T, N> result;

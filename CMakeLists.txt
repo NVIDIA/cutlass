@@ -197,8 +197,18 @@ list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_TEST_LEVEL=${CUTLASS_TEST_LEVEL})
 list(APPEND CUTLASS_CUDA_CLANG_FLAGS -DCUTLASS_TEST_LEVEL=${CUTLASS_TEST_LEVEL})
 
 if (CUTLASS_TEST_ENABLE_CACHED_RESULTS)
-list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_TEST_ENABLE_CACHED_RESULTS=1)
+  message(STATUS "Enable caching of reference results in conv unit tests")
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_TEST_ENABLE_CACHED_RESULTS=1)
 endif()
+
+
+set(CUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED ON CACHE BOOL "Enable/Disable rigorous conv problem sizes in conv unit tests")
+
+if (CUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED)
+  message(STATUS "Enable rigorous conv problem sizes in conv unit tests")
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED=1)
+endif()
+
 
 #
 # CUDA 10.1 introduces "mma" in PTX performing collective matrix multiply operations.

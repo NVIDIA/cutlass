@@ -306,6 +306,7 @@ public:
     /// Debug printing
     CUTLASS_DEVICE
     static void print() {
+#if 0
       printf("BroadcastDetail {\n");
       printf(
         "  kColumnsPerThread: %d\nkRowsPerThread: %d\n,kThreadCount: %d\nkThreadsPerRow: %d\n"
@@ -321,6 +322,7 @@ public:
         StorageShape::kCount
       );
       printf("};\n");
+#endif
     }
   };
 
