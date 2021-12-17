@@ -23,7 +23,11 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Implicit GEMM testbed
+    \brief Implicit GEMM for fused epilogue broadcast testbed
+
+    Parallel split-k is not tested because we can just use regular conv kernel
+    when we need to use parallel-splitk.  Broadcast can happen in the reduction
+    kernel.
 */
 #pragma once
 
@@ -53,7 +57,46 @@ namespace test {
 namespace conv {
 namespace device {
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <typename Conv2d>
+struct Conv2dWithBroadcastReferenceOp {
+
+  using OutputOp = typename Conv2d::EpilogueOutputOp;
+
+  using ElementCompute = typename OutputOp::ElementCompute;
+  using ElementZ = typename OutputOp::ElementZ;
+  using ElementT = typename OutputOp::ElementT;
+
+  typename OutputOp::BinaryOp binary_op;
+  typename OutputOp::ElementwiseOp elementwise_op;
+
+  Conv2dWithBroadcastReferenceOp() { }
+
+  void operator()(ElementZ &Z, ElementT &T, ElementCompute conv2d, ElementCompute bias) {
+    ElementCompute t_full = binary_op(conv2d, bias);
+    T = ElementT(t_full);
+
+    ElementCompute z_full = elementwise_op(t_full);
+    Z = ElementZ(z_full);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Fused testbed
+//
+//  Y = CONV(AB, C)
+//
+//  T[n, p, q, k] = ReductionOp(Y[n, p, q, k], Broadcast[k])
+//
+//  Z[n, p, q, k] = Elementwise(T[n, p, q, k])
+//
+
+template <
+  typename Conv2d,
+  typename ReferenceOp = Conv2dWithBroadcastReferenceOp<Conv2d>
+>
 class TestbedConv2dWithBroadcast {
 public:
 
@@ -66,6 +109,8 @@ public:
   using ElementAccumulator = typename Conv2d::ElementAccumulator;
   using ElementCompute = typename Conv2d::ElementCompute;
   using EpilogueOutputOp = typename Conv2d::EpilogueOutputOp;
+  using ElementZ = typename EpilogueOutputOp::ElementZ;
+  using ElementT = typename EpilogueOutputOp::ElementT;
 
   static cutlass::conv::Operator const kConvolutionalOperator = Conv2d::kConvolutionalOperator;
 
@@ -80,8 +125,13 @@ public:
   cutlass::HostTensor<ElementA, LayoutA> tensor_A;
   cutlass::HostTensor<ElementB, LayoutB> tensor_B;
   cutlass::HostTensor<ElementC, LayoutC> tensor_C;
-  cutlass::HostTensor<ElementC, LayoutC> tensor_D_computed;
-  cutlass::HostTensor<ElementC, LayoutC> tensor_D_reference;
+  cutlass::HostTensor<ElementAccumulator, LayoutC> tensor_C_reference;
+  cutlass::HostTensor<ElementZ, LayoutC> tensor_Z_computed;
+  cutlass::HostTensor<ElementZ, LayoutC> tensor_Z_reference;
+  cutlass::HostTensor<ElementT, LayoutC> tensor_T_computed;
+  cutlass::HostTensor<ElementT, LayoutC> tensor_T_reference;
+  cutlass::HostTensor<ElementAccumulator, LayoutC> tensor_Y_reference;
+  cutlass::HostTensor<ElementC, LayoutC> tensor_Broadcast;                 // Input Broadcast
 
 public:
 
@@ -147,18 +197,44 @@ public:
     tensor_A.resize(implicit_gemm_tensor_a_extent(kConvolutionalOperator, problem_size));
     tensor_B.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size));
     tensor_C.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
-    tensor_D_computed.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
-    tensor_D_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
+    tensor_C_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
+    tensor_Z_computed.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
+    tensor_Z_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
+    tensor_T_computed.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
+    tensor_T_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
+    tensor_Y_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size));
+    tensor_Broadcast.resize({
+      1,
+      1,
+      1,
+      implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size).c(),
+    });
 
     initialize_tensor(tensor_A.host_view(), init_A, seed); 
     initialize_tensor(tensor_B.host_view(), init_B, seed * 17); 
     initialize_tensor(tensor_C.host_view(), init_C, seed * 39);
-    
+    initialize_tensor(tensor_Broadcast.host_view(), init_C, seed * 39);
+ 
+    for (int n = 0; n < tensor_C_reference.extent().n(); ++n) {
+      for (int p = 0; p < tensor_C_reference.extent().h(); ++p) {
+        for (int q = 0; q < tensor_C_reference.extent().w(); ++q) {
+          for (int k = 0; k < tensor_C_reference.extent().c(); ++k) {
+            tensor_C_reference.at({n, p, q, k}) = ElementAccumulator(tensor_C.at({n, p, q, k}));
+          }
+        }
+      }
+    }
+   
     tensor_A.sync_device();
     tensor_B.sync_device();
     tensor_C.sync_device();
-    tensor_D_computed.sync_device();
-    tensor_D_reference.sync_device();
+    tensor_Broadcast.sync_device();
+    tensor_C_reference.sync_device();
+    tensor_Z_computed.sync_device();
+    tensor_Z_reference.sync_device();
+    tensor_T_computed.sync_device();
+    tensor_T_reference.sync_device();
+    tensor_Y_reference.sync_device();
   }
 
   bool sufficient() const {
@@ -215,18 +291,21 @@ public:
 
     // configure the operator
     Conv2d conv2d_op;
-
     typename Conv2d::Arguments conv2d_args(
       problem_size,
       tensor_A.device_ref(),
       tensor_B.device_ref(),
       tensor_C.device_ref(),
-      tensor_D_computed.device_ref(),
+      tensor_Z_computed.device_ref(),
       {alpha, beta},
-      split_k_mode
+      split_k_mode,
+      tensor_Broadcast.device_data(),
+      tensor_T_computed.device_data(),
+      0,         // This must be zero
+      implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size).c()
     );
 
-    // find workspace requirement for parallel split-k reduction
+    // initialize the kernel 
     size_t workspace_size = Conv2d::get_workspace_size(conv2d_args);
 
     cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
@@ -237,22 +316,6 @@ public:
       cudaError_t error = cudaGetLastError();
       std::cerr << "This test is not supported: " << cudaGetErrorString(error) << "\n";
       return true;
-    }
-
-    // conv2d operation with parallel split-k-mode
-    if (split_k_mode == cutlass::conv::SplitKMode::kParallel) {
-
-      // conv2d output is written to workspace in global memory
-      conv2d_args.ref_D.reset(reinterpret_cast<ElementC*>(workspace.get()));
-      // accumulate mma for each cta in k-dimension (1.0 * A * B)
-      conv2d_args.output_op = {ElementCompute(1), ElementCompute(0)}; 
-      // update conv2d operator arguments
-      status = conv2d_op.update(conv2d_args, workspace.get());
-    }
-    
-    EXPECT_TRUE(status == cutlass::Status::kSuccess);
-    if (status != cutlass::Status::kSuccess) {
-      return false;
     }
 
     // run conv2d operator
@@ -269,51 +332,12 @@ public:
     EXPECT_EQ(result, cudaSuccess) << " device reference error: " 
                                    << cudaGetErrorString(result);
 
-    tensor_D_computed.sync_host();
+    tensor_T_computed.sync_host();
+    tensor_Z_computed.sync_host();
 
     //
-    // Reference check - support caching results
+    // Reference check
     //
-
-    CachedTestKey cached_test_key = CreateCachedConv2dWithBroadcastTestKey<
-        ElementA, LayoutA,
-        ElementB, LayoutB,
-        ElementC, LayoutC,
-        ElementAccumulator,
-        ElementCompute
-      >(
-        kConvolutionalOperator,
-        problem_size, 
-        alpha, 
-        beta, 
-        tensor_A.host_view(),
-        tensor_B.host_view(),
-        tensor_C.host_view()
-      );
-
-    //
-    // Look for the cached key
-    //
-
-    bool cached_result_loaded = false;
-    CachedTestResult cached_test_result;
-
-    std::string conv2d_result_cache_name = 
-      std::string("cached_results_") + CUTLASS_TARGET_NAME + ".txt";
-
-    if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
-
-      CachedTestResultListing cached_results(conv2d_result_cache_name);
-
-      auto cached = cached_results.find(cached_test_key);
-
-      cached_result_loaded = cached.first;
-      if (cached_result_loaded) {
-        cached_test_result = cached.second;
-      }
-    }
-    
-    if (!cached_result_loaded) {
 
 #if CUTLASS_CONV_TEST_UNIT_REFERENCE_DEVICE_ENABLED
 
@@ -322,22 +346,22 @@ public:
       LayoutA,
       ElementB,
       LayoutB,
-      ElementC,
+      ElementAccumulator,
       LayoutC,
-      ElementCompute,
+      ElementAccumulator,
       ElementAccumulator 
     >(
       kConvolutionalOperator,
       problem_size,
       tensor_A.device_ref(),
       tensor_B.device_ref(),
-      tensor_C.device_ref(),
-      tensor_D_reference.device_ref(),
+      tensor_C_reference.device_ref(),
+      tensor_Y_reference.device_ref(),
       alpha, 
       beta);
 
     // sync host (copy device data to host) for dumping error output in case of mismatches
-    tensor_D_reference.sync_host();
+    tensor_Y_reference.sync_host();
     
 #else 
 
@@ -346,48 +370,50 @@ public:
       LayoutA,
       ElementB,
       LayoutB,
-      ElementC,
+      ElementAccumulator,
       LayoutC,
-      ElementCompute,
+      ElementAccumulator,
       ElementAccumulator
     >(
       kConvolutionalOperator,
       problem_size,
       tensor_A.host_ref(),
       tensor_B.host_ref(),
-      tensor_C.host_ref(),
-      tensor_D_reference.host_ref(),
+      tensor_C_reference.host_ref(),
+      tensor_Y_reference.host_ref(),
       alpha, 
       beta);
 
 #endif
+    ReferenceOp reference_op;
 
-      if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
-
-        cached_test_result.D = TensorHash(tensor_D_reference.host_view());
-
-        CachedTestResultListing cached_results(conv2d_result_cache_name);
-
-        cached_results.append(cached_test_key, cached_test_result);
-        cached_results.write(conv2d_result_cache_name);
+    // compute tensor Z and tensor T
+    for (int n = 0; n < problem_size.N; ++n) {
+      for (int p = 0; p < problem_size.P; ++p) {
+        for (int q = 0; q < problem_size.Q; ++q) {
+          for (int k = 0; k < problem_size.K; ++k) {
+  
+            ElementZ z;
+            ElementT t;
+    
+            reference_op(z, t, tensor_Y_reference.at({n, p, q, k}), tensor_Broadcast.at({0, 0, 0, k}));
+    
+            tensor_Z_reference.at({n, p, q, k}) = z;
+            tensor_T_reference.at({n, p, q, k}) = t;
+          }
+        }
       }
-    } // if (!cached_result_loaded)
-
-
-    uint32_t tensor_D_hash = TensorHash(tensor_D_computed.host_view());
-
-    if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
-      passed = (tensor_D_hash == cached_test_result.D);
-
-      EXPECT_EQ(tensor_D_hash, cached_test_result.D) 
-        << "Hash-based comparison failed for key:" << "\n" << cached_test_key << "\n";
     }
-    else {
 
-      passed = cutlass::reference::host::TensorEquals(
-        tensor_D_computed.host_view(), 
-        tensor_D_reference.host_view());
-    }
+    passed = cutlass::reference::host::TensorEquals(
+      tensor_T_computed.host_view(), 
+      tensor_T_reference.host_view());
+
+    EXPECT_TRUE(passed);
+
+    passed = cutlass::reference::host::TensorEquals(
+      tensor_Z_computed.host_view(), 
+      tensor_Z_reference.host_view());
 
     EXPECT_TRUE(passed);
 
@@ -435,14 +461,16 @@ public:
         << "\nA:\n" << tensor_A.host_view() << "\n"
         << "\nB:\n" << tensor_B.host_view() << "\n"
         << "\nC:\n" << tensor_C.host_view() << "\n"
-        << "\nD reference:\n" << tensor_D_reference.host_view() << "\n"
-        << "\nD computed:\n" << tensor_D_computed.host_view() << "\n";
-
+        << "\nBroadcast:\n" << tensor_Broadcast.host_view() << "\n"
+        << "\nY reference:\n" << tensor_Y_reference.host_view() << "\n"
+        << "\nT reference:\n" << tensor_T_reference.host_view() << "\n"
+        << "\nT computed:\n" << tensor_T_computed.host_view() << "\n"
+        << "\nZ reference:\n" << tensor_Z_reference.host_view() << "\n"
+        << "\nZ computed:\n" << tensor_Z_computed.host_view() << "\n";
     }
 
     return passed;
   }
-
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -582,8 +610,7 @@ bool TestAllConv2dWithBroadcast(
     );
 
   cutlass::conv::SplitKMode split_k_modes [] = {
-    cutlass::conv::SplitKMode::kSerial,
-    cutlass::conv::SplitKMode::kParallel,
+    cutlass::conv::SplitKMode::kSerial
   };
 
   int split_k_slices[] = {

@@ -102,6 +102,12 @@ bool get_cublas_datatype(cublasDataType_t &data_type, library::NumericTypeID ele
     data_type = CUDA_R_16F;
     return true;
     
+  case library::NumericTypeID::kBF16:
+    break;
+  
+  case library::NumericTypeID::kTF32: 
+    break;
+  
   case library::NumericTypeID::kF32:
     data_type = CUDA_R_32F;
     return true;

@@ -56,7 +56,7 @@ TEST(SM75_Device_Conv2d_Fprop_With_Broadcast_Analytic_ImplicitGemm_f16nhwc_f16nh
     cutlass::half_t,
     cutlass::half_t,
     8,
-    cutlass::epilogue::thread::GELU_taylor<float>
+    cutlass::epilogue::thread::ReLu<float>
   >;
 
   /// Device-level Conv2d instance

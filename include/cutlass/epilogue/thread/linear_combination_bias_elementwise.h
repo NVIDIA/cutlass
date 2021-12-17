@@ -201,8 +201,8 @@ public:
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kElementsPerAccess; ++i) {
       ElementCompute z = binary_op(alpha_ * tmp_Accum[i] + beta_ * tmp_C[i], V[i]);
-      result_Z[i] = z;
-      result_T[i] = skip_elementwise_ ? z : elementwise_op(z);
+      result_T[i] = z;
+      result_Z[i] = skip_elementwise_ ? z : elementwise_op(z);
     }
 
     NumericArrayConverter<ElementZ, ElementCompute, kElementsPerAccess> convert_z;
@@ -230,8 +230,8 @@ public:
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kElementsPerAccess; ++i) {
       ElementCompute z = binary_op(alpha_ * tmp_Accum[i], V[i]);
-      result_Z[i] = z;
-      result_T[i] = skip_elementwise_ ? z : elementwise_op(z);
+      result_T[i] = z;
+      result_Z[i] = skip_elementwise_ ? z : elementwise_op(z);
     }
 
     NumericArrayConverter<ElementZ, ElementCompute, kElementsPerAccess> convert_z;
