@@ -171,7 +171,7 @@ struct HardSwish<Array<T, N> > {
     HardSwish<T> hardswish_op;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < int(rhs.size()); ++i) {
+    for (int i = 0; i < N; ++i) {
       y[i] = hardswish_op(rhs[i]);
     }
 
