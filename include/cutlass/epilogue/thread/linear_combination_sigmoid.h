@@ -54,7 +54,7 @@ template <
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
 >
 using LinearCombinationSigmoid = LinearCombinationGeneric<Sigmoid, ElementOutput_, Count, ElementAccumulator_,
-                                                          ElementCompute_, Round>;
+                                                          ElementCompute_, Round, true>;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace thread
