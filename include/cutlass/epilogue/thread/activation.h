@@ -126,6 +126,61 @@ struct Sigmoid<Array<T, N> > {
   }
 };
 
+// SiLu (swish) operator introduced by Elfwing et al. in the following paper
+// "Sigmoid-Weighted Linear Units for Neural Network Function Approximation in Reinforcement Learning" (2017)
+// https://arxiv.org/pdf/1702.03118.pdf
+// It is used in EfficientNet and YOLOv5, for example.
+// Reference: https://pytorch.org/docs/stable/generated/torch.nn.SiLU.html
+template <typename T>
+struct SiLu {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &scalar) const {
+    return scalar * Sigmoid<T>(scalar);
+  }
+};
+
+template <typename T, int N>
+struct SiLu<Array<T, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    Sigmoid<Array<T, N>> sigmoid_op;
+    multiplies<Array<T, N>>     mul;
+    return mul(rhs, sigmoid_op(rhs));
+  }
+};
+
+// Hardswish operator introduced by Howard et al. in the following paper
+// "Searching for MobileNetV3" (2019)
+// https://arxiv.org/pdf/1905.02244.pdf
+// It is used in models based on MobilenetNetV3.
+// Reference: https://pytorch.org/docs/stable/generated/torch.nn.Hardswish.html
+template <typename T>
+struct HardSwish {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &x) const {
+    minimum<T> mn;
+    maximum<T> mx;
+    T relu6 = mn(mx(x + T(3), T(0)), T(6));
+    return x * (relu6 / T(6));
+  }
+};
+
+template <typename T, int N>
+struct HardSwish<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    Array<T, N> y;
+    HardSwish<T> hardswish_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      y[i] = hardswish_op(rhs[i]);
+    }
+
+    return y;
+  }
+};
+
 //
 // GELU function definitions implemented as described by
 //   Hendrycks, D., and Gimpel, K. in
@@ -189,7 +244,7 @@ struct GELU_taylor {
     T k0 = T(0.7978845608028654);
     T k1 = T(0.044715);
 
-    return T(cutlass::constants::half<T>() * z * 
+    return T(cutlass::constants::half<T>() * z *
       (cutlass::constants::one<T>() + fast_tanh(k0 * z * (cutlass::constants::one<T>() + k1 * z * z))));
   }
 };
@@ -199,10 +254,10 @@ struct GELU_taylor<Array<half_t, N> > {
   static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<half_t, N> operator()(Array<half_t, N> const &z) const {
-    
+
     using T = half_t;
     Array<half_t, N> y;
-    
+
     half_t k0 = half_t(0.7978845608028654);
     half_t k1 = half_t(0.044715);
 
@@ -250,7 +305,7 @@ struct dGELU {
 
     T tanh_out = fast_tanh(k0 * z * (1 + k1 * z * z));
 
-    T ff = constants::half<T>() * z * ((1 - tanh_out * tanh_out) * (k0 + k2 * z * z)) + 
+    T ff = constants::half<T>() * z * ((1 - tanh_out * tanh_out) * (k0 + k2 * z * z)) +
       constants::half<T>() * (1 + tanh_out);
 
     return ff * d_t;

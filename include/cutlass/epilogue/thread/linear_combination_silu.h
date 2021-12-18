@@ -23,7 +23,7 @@
  *
  **************************************************************************************************/
 /*! \file
-  \brief Functor performing linear combination with GELU operations used by epilogues.
+  \brief Functor performing linear combination with SiLU operations used by epilogues.
 */
 
 #pragma once
@@ -40,9 +40,9 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Applies a linear combination operator followed by the GELU activation to an array of elements.
+/// Applies a linear combination operator folllowed by the SiLU activation to an array of elements.
 ///
-/// D = gelu(alpha * accumulator + beta * source + uniform)
+/// D = silu(alpha * accumulator + beta * source + uniform)
 ///
 template <
   typename ElementOutput_,                             ///< Data type used to load and store tensors
@@ -53,10 +53,8 @@ template <
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
 >
-using LinearCombinationGELU = LinearCombinationGeneric<GELU, ElementOutput_, Count, ElementAccumulator_,
+using LinearCombinationSilu = LinearCombinationGeneric<SiLu, ElementOutput_, Count, ElementAccumulator_,
                                                        ElementCompute_, Round, true>;
-
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace thread
