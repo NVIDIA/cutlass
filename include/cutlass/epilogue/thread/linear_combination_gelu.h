@@ -54,7 +54,7 @@ template <
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
 >
 using LinearCombinationGELU = LinearCombinationGeneric<GELU, ElementOutput_, Count, ElementAccumulator_,
-                                                       ElementCompute_, FloatRoundStyle::round_to_nearest, true>;
+                                                       ElementCompute_, Round, true>;
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

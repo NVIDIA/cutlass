@@ -54,7 +54,7 @@ template <
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
 >
 using LinearCombinationHardSwish = LinearCombinationGeneric<HardSwish, ElementOutput_, Count, ElementAccumulator_,
-                                                            ElementCompute_, FloatRoundStyle::round_to_nearest>;
+                                                            ElementCompute_, Round>;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace thread
