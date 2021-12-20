@@ -546,6 +546,9 @@ public:
       // Compute threadblock-scoped matrix multiply-add
       int gemm_k_iterations = (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
 
+      // Wait for all threads to finish their epilogue phases from the previous tile.
+      __syncthreads();
+      
       // Compute threadblock-scoped matrix multiply-add
       mma(
         gemm_k_iterations, 
