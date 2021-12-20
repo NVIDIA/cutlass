@@ -134,7 +134,7 @@ struct Sigmoid<Array<half_t, N>> {
 #else
     divides<Array<T, N>> div;
     negate<Array<T, N>> neg;
-    fast_exp_op<Array<T, N>> exp;
+    fast_exp_op<Array<T, N>> fast_exp;
     return div(cutlass::constants::one<T>(),
                add(cutlass::constants::one<T>(),
                    fast_exp(neg(z))));
