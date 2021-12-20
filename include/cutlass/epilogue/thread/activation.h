@@ -98,15 +98,7 @@ template <typename T>
 struct Sigmoid {
   CUTLASS_HOST_DEVICE
   T operator()(T const &scalar) const {
-    return T(1) / (T(1) + exp(-scalar));
-  }
-};
-
-template <>
-struct Sigmoid<float> {
-  CUTLASS_HOST_DEVICE
-  float operator()(float const &scalar) const {
-    return 1.0f / (1.0f + expf(-scalar));
+    return T(1) / (T(1) + fast_exp(-scalar));
   }
 };
 
@@ -123,6 +115,30 @@ struct Sigmoid<Array<T, N> > {
     }
 
     return y;
+  }
+};
+
+template <int N>
+struct Sigmoid<Array<half_t, N>> {
+  using T = half_t;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& z) const {
+    plus<Array<T, N>> add;
+
+#if defined(CUTLASS_USE_TANH_FOR_SIGMOID)
+    multiplies<Array<T, N>> mul;
+    fast_tanh_op<Array<T, N>> tanh;
+    return mul(add(tanh(mul(z, cutlass::constants::half<T>())), cutlass::constants::one<T>()),
+               cutlass::constants::half<T>());
+#else
+    divides<Array<T, N>> div;
+    negate<Array<T, N>> neg;
+    fast_exp_op<Array<T, N>> exp;
+    return div(cutlass::constants::one<T>(),
+               add(cutlass::constants::one<T>(),
+                   fast_exp(neg(z))));
+#endif
   }
 };
 
@@ -180,35 +196,6 @@ struct HardSwish<Array<T, N> > {
     return y;
   }
 };
-
-template <>
-struct Sigmoid<half_t> {
-  CUTLASS_HOST_DEVICE
-  half_t operator()(half_t const& scalar) const {
-    half_t exp_res;
-    #if defined(__CUDA_ARCH__)
-    exp_res = half_t(::hexp(-scalar.to_half()));
-    #else
-    exp_res = half_t(std::exp(float(-scalar)));
-    #endif
-    return half_t(1) / (half_t(1) + exp_res);
-  }
-};
-
-#if defined(CUTLASS_USE_FAST_MATH)
-template <int N>
-struct Sigmoid<Array<half_t, N>> {
-  CUTLASS_HOST_DEVICE
-  Array<half_t, N> operator()(Array<half_t, N> const& z) const {
-    using T = half_t;
-    multiplies<Array<half_t, N>> mul;
-    plus<Array<half_t, N>> add;
-    fast_tanh_op<Array<half_t, N>> tanh;
-    return mul(add(tanh(mul(z, cutlass::constants::half<T>())), cutlass::constants::one<T>()),
-               cutlass::constants::half<T>());
-  }
-};
-#endif
 
 //
 // GELU function definitions implemented as described by
