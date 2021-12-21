@@ -804,7 +804,7 @@ struct fast_exp_op<Array<half_t, N>> {
     // residual
     if (N % 2) {
       half_t last = rhs[N - 1];
-      result[N - 1] = half_t(::hexp(last.raw()));
+      result[N - 1] = half_t(::hexp(last.to_half()));
     }
 
     return result;
