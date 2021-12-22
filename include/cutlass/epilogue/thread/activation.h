@@ -98,15 +98,7 @@ template <typename T>
 struct Sigmoid {
   CUTLASS_HOST_DEVICE
   T operator()(T const &scalar) const {
-    return T(1) / (T(1) + exp(-scalar));
-  }
-};
-
-template <>
-struct Sigmoid<float> {
-  CUTLASS_HOST_DEVICE
-  float operator()(float const &scalar) const {
-    return 1.0f / (1.0f + expf(-scalar));
+    return T(1) / (T(1) + fast_exp(-scalar));
   }
 };
 
@@ -123,6 +115,30 @@ struct Sigmoid<Array<T, N> > {
     }
 
     return y;
+  }
+};
+
+template <int N>
+struct Sigmoid<Array<half_t, N>> {
+  using T = half_t;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& z) const {
+    plus<Array<T, N>> add;
+
+#if defined(CUTLASS_USE_TANH_FOR_SIGMOID)
+    multiplies<Array<T, N>> mul;
+    fast_tanh_op<Array<T, N>> tanh;
+    return mul(add(tanh(mul(z, cutlass::constants::half<T>())), cutlass::constants::one<T>()),
+               cutlass::constants::half<T>());
+#else
+    divides<Array<T, N>> div;
+    negate<Array<T, N>> neg;
+    fast_exp_op<Array<T, N>> fast_exp;
+    return div(cutlass::constants::one<T>(),
+               add(cutlass::constants::one<T>(),
+                   fast_exp(neg(z))));
+#endif
   }
 };
 
