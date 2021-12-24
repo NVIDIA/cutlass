@@ -240,6 +240,8 @@ class MathOperation(enum.Enum):
   xor_popc = enum_auto()
   multiply_add_fast_bf16 = enum_auto()
   multiply_add_fast_f16 = enum_auto()
+  multiply_add_fast_f32 = enum_auto()
+  multiply_add_complex_fast_f32 = enum_auto()
   multiply_add_complex = enum_auto()
   multiply_add_complex_gaussian = enum_auto()
 
@@ -250,6 +252,8 @@ MathOperationTag = {
   MathOperation.xor_popc: 'cutlass::arch::OpXorPopc',
   MathOperation.multiply_add_fast_bf16: 'cutlass::arch::OpMultiplyAddFastBF16',
   MathOperation.multiply_add_fast_f16: 'cutlass::arch::OpMultiplyAddFastF16',
+  MathOperation.multiply_add_fast_f32: 'cutlass::arch::OpMultiplyAddFastF32',
+  MathOperation.multiply_add_complex_fast_f32: 'cutlass::arch::OpMultiplyAddComplexFastF32',
   MathOperation.multiply_add_complex: 'cutlass::arch::OpMultiplyAddComplex',
   MathOperation.multiply_add_complex_gaussian: 'cutlass::arch::OpMultiplyAddGaussianComplex',
 }
