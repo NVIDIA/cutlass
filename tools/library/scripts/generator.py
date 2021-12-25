@@ -2641,6 +2641,9 @@ def GenerateSM80(manifest, args):
   GenerateSM80_TensorOp_1688_fast_math(manifest, args)
   GenerateSM80_SparseTensorOp_16816_fast_math(manifest, args)
   GenerateSM80_TensorOp_1688_complex(manifest, args)
+  # 3xTF32 
+  GenerateSM80_TensorOp_1688_fast_fp32_math(manifest, args)
+  GenerateSM80_TensorOp_1688_fast_fp32_math_complex(manifest, args)
   GenerateSM80_TensorOp_884(manifest, args)
   GenerateSM80_TensorOp_884_complex(manifest, args)
   GenerateSM80_TensorOp_884_complex_gaussian(manifest, args)
