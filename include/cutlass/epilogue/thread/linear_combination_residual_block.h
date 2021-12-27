@@ -109,11 +109,12 @@ public:
     skip_elementwise_ = false;
   }
 
-  /// The "source" tensor corresponds to an input to a residual block
+  /// The "source" tensor corresponds to the residual input
   CUTLASS_HOST_DEVICE
   bool is_source_needed() const { return true; }
 
   /// Functionally required for serial reduction in the epilogue
+  /// IMPORTANT: Split-k is supported only when ActivationOp is Identity.
   CUTLASS_HOST_DEVICE
   void set_k_partition(int k_partition, int k_partition_count) {
     if (k_partition) {

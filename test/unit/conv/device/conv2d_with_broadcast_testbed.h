@@ -491,7 +491,8 @@ public:
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 template <typename ImplicitGemm,
           typename ReferenceOp = Conv2dWithBroadcastReferenceOp<ImplicitGemm>,
-          bool AddBroadcastFirst = false>
+          bool AddBroadcastFirst = false,
+	  bool TestSplitK = true>
 bool TestAllConv2dWithBroadcast(
   const Conv2dProblemVector &conv_test_sizes = Conv2dProblemVector(),
   const Conv2dProblemVector &conv_blacklist_sizes = Conv2dProblemVector()) {
@@ -637,8 +638,8 @@ bool TestAllConv2dWithBroadcast(
     2.0
   };
 
-  // TODO(masahi): Fix tests below for kAddbroadcastfirst = true and split_k case
-  return passed;
+  if (!TestSplitK)
+    return passed;
 
   for (auto split_k_mode : split_k_modes) {
     for (auto split_k_slice : split_k_slices) {

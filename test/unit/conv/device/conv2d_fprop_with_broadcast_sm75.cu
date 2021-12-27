@@ -89,7 +89,8 @@ template <
  typename ElementAccumulator,
  template<typename T> class ActivationOp,
  template<typename T> class BinaryOp,
- template<typename T> class UnaryOp
+ template<typename T> class UnaryOp,
+ bool TestSplitK = true
 >
 void TestResidaulBlock() {
   using ElementA = cutlass::half_t;
@@ -141,7 +142,7 @@ void TestResidaulBlock() {
     }
   };
 
-  bool passed = test::conv::device::TestAllConv2dWithBroadcast<Conv2dFprop, ReferenceOp, true>();
+  bool passed = test::conv::device::TestAllConv2dWithBroadcast<Conv2dFprop, ReferenceOp, true, TestSplitK>();
   EXPECT_TRUE(passed);
 }
 
@@ -154,7 +155,8 @@ TEST(SM75_Device_Conv2d_Fprop_With_Residual_Block_Plus_Analytic_ImplicitGemm_f16
 TEST(SM75_Device_Conv2d_Fprop_With_Residual_Block_Multiply_Analytic_ImplicitGemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32,
      128x128_32x2_64x64x32) {
   // EfficientNet V2
-  TestResidaulBlock<float, cutlass::epilogue::thread::Sigmoid, cutlass::multiplies, cutlass::epilogue::thread::Identity>();
+  // Do not run split-K tests since the activation op is not Identity.
+  TestResidaulBlock<float, cutlass::epilogue::thread::Sigmoid, cutlass::multiplies, cutlass::epilogue::thread::Identity, false>();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
