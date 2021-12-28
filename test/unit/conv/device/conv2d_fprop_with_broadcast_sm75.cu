@@ -85,6 +85,12 @@ TEST(SM75_Device_Conv2d_Fprop_With_Broadcast_Analytic_ImplicitGemm_f16nhwc_f16nh
 }
 
 // Test residual block fusion: UnaryOp(BinaryOp(ActivationOp(Conv2d(X) + bias), residual))
+// LinearCombinationResidualBlock does not support the split-k mode unless ActivationOp is Identity.
+// This is because the activation needs to be applied to the fully accumulated output of the Conv2d op,
+// which only the last thread block would have an access to, before applying BinaryOp.
+// The epilogue functor in the last thread block would have to be given three inputs, namely
+// partial outputs, bias, and residual, but this is not supported in the current interface.
+// Set TestSplitK = false to skip split-k tests with non-trivial ActivationOp.
 template <
  typename ElementAccumulator,
  template<typename T> class ActivationOp,
