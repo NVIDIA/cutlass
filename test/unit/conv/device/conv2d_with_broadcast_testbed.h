@@ -610,6 +610,9 @@ bool TestAllConv2dWithBroadcast(
     return passed;
   }
 
+  if (!TestSplitK)
+    return passed;
+
   // Sweep split-k-slice using serial and prallel reduction with non-unity alpha and non-zero beta for 
   // a single conv2d problem size. Convolution unit tests take a long time to run so only sweep parameters 
   // which are abolutely neccessary to catch functional bugs. The below code does provide option to sweep 
@@ -637,9 +640,6 @@ bool TestAllConv2dWithBroadcast(
   double problem_beta[] = {
     2.0
   };
-
-  if (!TestSplitK)
-    return passed;
 
   for (auto split_k_mode : split_k_modes) {
     for (auto split_k_slice : split_k_slices) {
