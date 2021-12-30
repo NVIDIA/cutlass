@@ -68,8 +68,8 @@ struct ReLu {
   }
   CUTLASS_HOST_DEVICE
   T operator()(T value) const {
-    if (value < T()) {
-      value = T();
+    if (value < T(0)) {
+      value = T(0);
     }
     return value;
   }
@@ -91,6 +91,21 @@ struct ReLu<Array<T, N>> {
     }
     return result;
   }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &frag) const {
+    Array<T, N> result;
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      T value = frag[i];
+      if (value < T(0)) {
+        value = T(0);
+      }
+      result[i] = value;
+    }
+    return result;
+  }
+
 };
 
 // Sigmoid operator
@@ -151,7 +166,8 @@ template <typename T>
 struct SiLu {
   CUTLASS_HOST_DEVICE
   T operator()(T const &scalar) const {
-    return scalar * Sigmoid<T>(scalar);
+    Sigmoid<T> sigmoid;
+    return scalar * sigmoid(scalar);
   }
 };
 

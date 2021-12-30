@@ -95,7 +95,8 @@ struct Conv2dWithBroadcastReferenceOp {
 
 template <
   typename Conv2d,
-  typename ReferenceOp = Conv2dWithBroadcastReferenceOp<Conv2d>
+  typename ReferenceOp,
+  bool AddBroadcastFirst = false
 >
 class TestbedConv2dWithBroadcast {
 public:
@@ -113,7 +114,8 @@ public:
   using ElementT = typename EpilogueOutputOp::ElementT;
 
   static cutlass::conv::Operator const kConvolutionalOperator = Conv2d::kConvolutionalOperator;
-
+  static const bool kAddBroadcastFirst = AddBroadcastFirst;
+  static const bool kStoreT = EpilogueOutputOp::kStoreT;
 public:
 
   /// Initialization
@@ -270,7 +272,7 @@ public:
     cutlass::conv::Conv2dProblemSize const &problem_size,
     cutlass::conv::SplitKMode const &split_k_mode = cutlass::conv::SplitKMode::kSerial,
     ElementCompute alpha = ElementCompute(1),
-    ElementCompute beta = ElementCompute(0)) {
+    ElementCompute beta = ElementCompute(1)) {
 
     // Waive test if insufficient CUDA device
     if (!sufficient()) {
@@ -300,7 +302,7 @@ public:
       {alpha, beta},
       split_k_mode,
       tensor_Broadcast.device_data(),
-      tensor_T_computed.device_data(),
+      kStoreT ? tensor_T_computed.device_data() : nullptr,
       0,         // This must be zero
       implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size).c()
     );
@@ -338,7 +340,8 @@ public:
     //
     // Reference check
     //
-
+    // When kAddBroadcastFirst is true, add bias on the host
+    ElementCompute beta_ref = kAddBroadcastFirst ? ElementCompute(0) : beta;
 #if CUTLASS_CONV_TEST_UNIT_REFERENCE_DEVICE_ENABLED
 
     cutlass::reference::device::Conv2d<
@@ -358,7 +361,7 @@ public:
       tensor_C_reference.device_ref(),
       tensor_Y_reference.device_ref(),
       alpha, 
-      beta);
+      beta_ref);
 
     // sync host (copy device data to host) for dumping error output in case of mismatches
     tensor_Y_reference.sync_host();
@@ -382,7 +385,7 @@ public:
       tensor_C_reference.host_ref(),
       tensor_Y_reference.host_ref(),
       alpha, 
-      beta);
+      beta_ref);
 
 #endif
     ReferenceOp reference_op;
@@ -395,9 +398,16 @@ public:
   
             ElementZ z;
             ElementT t;
-    
-            reference_op(z, t, tensor_Y_reference.at({n, p, q, k}), tensor_Broadcast.at({0, 0, 0, k}));
-    
+	    ElementCompute accum = tensor_Y_reference.at({n, p, q, k});
+	    ElementCompute bias = ElementCompute(tensor_Broadcast.at({0, 0, 0, k}));
+
+            if (kAddBroadcastFirst) {
+              reference_op(z, t, accum + bias,
+                           beta * ElementCompute(tensor_C_reference.at({n, p, q, k})));
+            } else {
+              reference_op(z, t, accum, bias);
+            }
+
             tensor_Z_reference.at({n, p, q, k}) = z;
             tensor_T_reference.at({n, p, q, k}) = t;
           }
@@ -405,11 +415,11 @@ public:
       }
     }
 
-    passed = cutlass::reference::host::TensorEquals(
-      tensor_T_computed.host_view(), 
-      tensor_T_reference.host_view());
-
-    EXPECT_TRUE(passed);
+    if (kStoreT) {
+      passed = cutlass::reference::host::TensorEquals(
+          tensor_T_computed.host_view(), tensor_T_reference.host_view());
+      EXPECT_TRUE(passed);
+    }
 
     passed = cutlass::reference::host::TensorEquals(
       tensor_Z_computed.host_view(), 
@@ -479,10 +489,13 @@ public:
 // Additionaly, each conv2d test can provide conv problem sizes (conv_test_sizes) and blacklist of sizes 
 // (conv_blacklist_sizes)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-template <typename ImplicitGemm>
+template <typename ImplicitGemm,
+          typename ReferenceOp = Conv2dWithBroadcastReferenceOp<ImplicitGemm>,
+          bool AddBroadcastFirst = false,
+	  bool TestSplitK = true>
 bool TestAllConv2dWithBroadcast(
-  const Conv2dProblemVector & conv_test_sizes = Conv2dProblemVector(),
-  const Conv2dProblemVector & conv_blacklist_sizes = Conv2dProblemVector()) {
+  const Conv2dProblemVector &conv_test_sizes = Conv2dProblemVector(),
+  const Conv2dProblemVector &conv_blacklist_sizes = Conv2dProblemVector()) {
 
   bool passed = true;
 
@@ -490,7 +503,7 @@ bool TestAllConv2dWithBroadcast(
   // Testbed object
   //
 
-  TestbedConv2dWithBroadcast<ImplicitGemm> testbed;
+  TestbedConv2dWithBroadcast<ImplicitGemm, ReferenceOp, AddBroadcastFirst> testbed;
 
   //
   // Get conv problem sizes to run conv operator 
@@ -596,6 +609,9 @@ bool TestAllConv2dWithBroadcast(
 
     return passed;
   }
+
+  if (!TestSplitK)
+    return passed;
 
   // Sweep split-k-slice using serial and prallel reduction with non-unity alpha and non-zero beta for 
   // a single conv2d problem size. Convolution unit tests take a long time to run so only sweep parameters 
