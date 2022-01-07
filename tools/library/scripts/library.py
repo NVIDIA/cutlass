@@ -155,7 +155,7 @@ DataTypeTag = {
 DataTypeSize = {
   DataType.b1: 1,
   DataType.u4: 4,
-  DataType.u8: 4,
+  DataType.u8: 8,
   DataType.u16: 16,
   DataType.u32: 32,
   DataType.u64: 64,
