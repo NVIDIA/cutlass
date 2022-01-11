@@ -57,7 +57,7 @@ struct sizeof_bits<Array<T, N, RegisterSized> > {
 /// Returns true if the argument is a power of 2
 CUTLASS_HOST_DEVICE
 constexpr bool ispow2(unsigned x) {
-  return !(x & (x - 1));
+  return x && !(x & (x - 1));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -65,7 +65,12 @@ constexpr bool ispow2(unsigned x) {
 /// Returns the largest power of two not greater than the argument.
 CUTLASS_HOST_DEVICE
 constexpr unsigned floor_pow_2(unsigned x) {
-  return ispow2(x) ? x : floor_pow_2(x >> 1);
+  x |= x >> 1;
+  x |= x >> 2;
+  x |= x >> 4;
+  x |= x >> 8;
+  x |= x >> 16;
+  return (x ^ (x >> 1));
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
