@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -403,7 +403,8 @@ public:
   }
 
   virtual uint64_t get_device_workspace_size(
-    void const *configuration) const {
+    void const *configuration,
+    void const *arguments = nullptr) const {
 
     return 0;
   }

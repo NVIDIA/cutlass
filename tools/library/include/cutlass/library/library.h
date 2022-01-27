@@ -590,7 +590,8 @@ public:
     void const *configuration) const = 0;
   
   virtual uint64_t get_device_workspace_size(
-    void const *configuration) const = 0;
+    void const *configuration,
+    void const *arguments = nullptr) const = 0;
   
   virtual Status initialize(
     void const *configuration, 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -1098,6 +1098,59 @@ Operation const* find_conv_operation_for_parallel_reduction(Operation const *ope
 
   return nullptr;
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Finds gemm operation instances with Gemm::ElementC = Reduction::ElementWorkspace
+Operation const* find_gemm_operation_for_parallel_reduction(Operation const *operation) {
+
+  GemmDescription const &gemm_desc = 
+    static_cast<GemmDescription const &>(operation->description());
+
+  // if the curren gemm operation accumulator and output data type match return operation
+  if(gemm_desc.tile_description.math_instruction.element_accumulator == gemm_desc.C.element) {
+    return operation;
+  }
+
+  // find gemm operation to match gemm output and reduction workspace data type
+  GemmFunctionalKey key(
+    library::Provider::kCUTLASS,
+    gemm_desc.gemm_kind,
+    gemm_desc.tile_description.math_instruction.element_accumulator,
+    gemm_desc.element_epilogue,
+    gemm_desc.A.element,
+    gemm_desc.A.layout,
+    gemm_desc.transform_A,
+    gemm_desc.B.element,
+    gemm_desc.B.layout,
+    gemm_desc.transform_B,
+    gemm_desc.tile_description.math_instruction.element_accumulator);
+
+  // gemm operation table
+  auto gemm_operations = Singleton::get().operation_table.gemm_operations;
+
+  // find ConvFunctionalKey in gemm operation table
+  auto operators_it = gemm_operations.find(key);
+
+  if (operators_it == gemm_operations.end()) {
+    return nullptr;
+  }
+
+  if (operators_it->second.empty()) {
+    return nullptr;
+  }
+
+  // A and B uses the same alignment in the generator.py
+  int alignment = gemm_desc.A.alignment;
+
+  // gemm operation for same compute capability and iterator algorithm
+  GemmPreferenceKey preference_key(
+    gemm_desc.tile_description.minimum_compute_capability, 
+    alignment);
+
+  return find_gemm_operation(operators_it, preference_key);
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library
