@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -93,9 +93,6 @@ void GemmOperationProfiler::print_examples(std::ostream &out) const {
     << "Profile a particular problem size:\n"
     << "  $ cutlass_profiler --operation=Gemm --m=1024 --n=1024 --k=128\n\n"
 
-    << "Profile a particular problem size with split K and paralell reduction:\n"
-    << "  $ cutlass_profiler --operation=Gemm --split_k_mode=parallel --m=1024 --n=1024 --k=128\n\n"
-
     << "Schmoo over problem size and beta:\n"
     << "  $ cutlass_profiler --operation=Gemm --m=1024:4096:256 --n=1024:4096:256 --k=128:8192:128 --beta=0,1,2.5\n\n"
 
@@ -104,6 +101,9 @@ void GemmOperationProfiler::print_examples(std::ostream &out) const {
 
     << "Run when A is f16 with column-major and B is any datatype with row-major (For column major, use column, col, or n. For row major use, row or t):\n"
     << "  $ cutlass_profiler --operation=Gemm --A=f16:column --B=*:row\n\n"
+
+    << "Profile a particular problem size with split K and paralell reduction:\n"
+    << "  $ cutlass_profiler --operation=Gemm --split_k_mode=parallel --split_k_slices=2 --m=1024 --n=1024 --k=128\n\n"
 
     << "Using various input value distribution:\n"
     << "  $ cutlass_profiler --operation=Gemm --dist=uniform,min:0,max:3\n"
@@ -165,8 +165,12 @@ Status GemmOperationProfiler::GemmProblem::parse(
     // defualt value
     this->split_k_mode = library::SplitKMode::kSerial;
   }
-
+  
   this->mode = library::GemmUniversalMode::kGemm;
+  if(this->split_k_mode == library::SplitKMode::kParallel) {
+    this->mode = library::GemmUniversalMode::kGemmSplitKParallel;
+  }
+
   if (!arg_as_int(this->split_k_slices, "split_k_slices", problem_space, problem)) {
     // default value
     this->split_k_slices = 1;
@@ -175,13 +179,8 @@ Status GemmOperationProfiler::GemmProblem::parse(
   if (!arg_as_int(this->batch_count, "batch_count", problem_space, problem)) {
     // default value
     this->batch_count = 1;
-  }
-  else if (this->batch_count > 1) {
+  } else if (this->batch_count > 1) {
     this->mode = library::GemmUniversalMode::kBatched;
-  }
-
-  if(this->split_k_mode == library::SplitKMode::kParallel) {
-    this->mode = library::GemmUniversalMode::kGemmSplitKParallel;
   }
 
   if (this->split_k_slices > 1 && this->batch_count > 1) {
@@ -224,7 +223,7 @@ Status GemmOperationProfiler::GemmProblem::parse(
       return Status::kErrorInternal;
     }
   }
-  
+
   this->lda = DeviceAllocation::get_packed_layout(
     operation_desc.A.layout, {int(this->m), int(this->k)}).front();
 
@@ -337,7 +336,7 @@ Status GemmOperationProfiler::initialize_configuration(
   }
 
   Status status = problem_.parse(operation_desc, problem_space, problem);
-  
+
   if (status != Status::kSuccess) {
     return status;
   }
@@ -389,7 +388,7 @@ void GemmOperationProfiler::initialize_result_(
   result.disposition = Disposition::kNotRun;
   result.status = Status::kSuccess;
   result.operation_name = operation_desc.name;
-  
+
   problem_.initialize_result(result, operation_desc, problem_space);
 
   OperationProfiler::initialize_result_(result, operation_desc, problem_space);
@@ -433,7 +432,7 @@ bool GemmOperationProfiler::initialize_reduction_configuration_(
   );
 
   auto reduction_it = library::Singleton::get().operation_table.reduction_operations.find(reduction_key);
-
+ 
   if (reduction_it == library::Singleton::get().operation_table.reduction_operations.end()) {
     return false;
   }
@@ -463,7 +462,7 @@ Status GemmOperationProfiler::initialize_workspace(
   }
 
   library::GemmDescription const &operation_desc = 
-    static_cast<library::GemmDescription const &>(underlying_operation->description());
+    static_cast<library::GemmDescription const &>(operation->description());
 
   // Compute the number of copies of the problem to avoid L2 camping.
   if (!options.profiling.workspace_count) {
@@ -531,6 +530,11 @@ Status GemmOperationProfiler::initialize_workspace(
     );
 
     gemm_workspace_.Reference->copy_from_device(gemm_workspace_.C->data());
+
+    gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
+    gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
+    gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
+    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
   }
 
   //
@@ -542,13 +546,14 @@ Status GemmOperationProfiler::initialize_workspace(
 
     if (options.execution_mode != ExecutionMode::kDryRun) {
 
-      uint64_t workspace_size = operation->get_host_workspace_size(&gemm_workspace_.configuration);
+      uint64_t workspace_size = underlying_operation->get_host_workspace_size(&gemm_workspace_.configuration);
       gemm_workspace_.host_workspace.resize(workspace_size, 0);
 
-      workspace_size = operation->get_device_workspace_size(&gemm_workspace_.configuration);
+      workspace_size = underlying_operation->get_device_workspace_size(&gemm_workspace_.configuration,
+                                                            &gemm_workspace_.arguments);
       gemm_workspace_.device_workspace.reset(library::NumericTypeID::kU8, workspace_size);
 
-      status = operation->initialize(
+      status = underlying_operation->initialize(
         &gemm_workspace_.configuration,
         gemm_workspace_.host_workspace.data(),
         gemm_workspace_.device_workspace.data());
@@ -565,7 +570,7 @@ Status GemmOperationProfiler::initialize_workspace(
           &gemm_workspace_.reduction_configuration,
           gemm_workspace_.reduction_host_workspace.data(),
           nullptr);
-        
+
         if (status != Status::kSuccess) {
           return status;
         }
@@ -636,7 +641,8 @@ bool GemmOperationProfiler::verify_cutlass(
   //
   // Run the CUTLASS operation
   //
-  // initialize gemm underlying operation to handle parallel reduction
+
+ // initialize gemm underlying operation to handle parallel reduction
   library::Operation const * underlying_operation = operation;
 
   if (problem_.split_k_mode == library::SplitKMode::kParallel) {
@@ -645,13 +651,6 @@ bool GemmOperationProfiler::verify_cutlass(
       return false;
     }
   }
-
-#if 0
-  std::cout << "profiling       : " << std::endl
-            << "gemm            : " << operation->description().name << std::endl
-            << "underlying gemm : " << underlying_operation->description().name() << std::endl
-            << "reduction       : " << reduction_op_->description().name() << std::endl;
-#endif
 
   results_.back().status = underlying_operation->run(
     &gemm_workspace_.arguments, 
@@ -1162,7 +1161,7 @@ Status GemmOperationProfiler::profile_cutlass_(
       gemm_workspace_.reduction_arguments.destination = gemm_workspace_.Computed->batch_data(problem_idx);
     }
 
-    status = operation->run(
+    status = underlying_operation->run(
       arguments,
       host_workspace,
       device_workspace);
@@ -1182,7 +1181,6 @@ Status GemmOperationProfiler::profile_cutlass_(
         return status;
       }
     }
-
   }
 
   //
