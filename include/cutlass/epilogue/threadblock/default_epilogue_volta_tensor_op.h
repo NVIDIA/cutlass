@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -49,7 +49,9 @@
 #include "cutlass/epilogue/thread/reduction_op.h"
 
 #include "cutlass/transform/threadblock/regular_tile_iterator_pitch_linear.h"
+#include "cutlass/epilogue/threadblock/predicated_tile_iterator_strided_dgrad.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
+#include "cutlass/epilogue/threadblock/predicated_tile_iterator_affine.h"
 #include "cutlass/epilogue/threadblock/shared_load_iterator.h"
 
 #include "cutlass/epilogue/warp/fragment_iterator_volta_tensor_op.h"
@@ -102,6 +104,174 @@ struct DefaultEpilogueVoltaTensorOp {
   using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
     OutputTileThreadMap,
     ElementOutput
+  >;
+
+  using AccumulatorFragmentIterator = cutlass::epilogue::warp::FragmentIteratorVoltaTensorOp<
+    typename WarpMmaTensorOp::Shape,
+    gemm::GemmShape<32, 32, 4>,
+    ElementAccumulator,
+    LayoutC
+  >;
+
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorVoltaTensorOp<
+    typename WarpMmaTensorOp::Shape,
+    gemm::GemmShape<32, 32, 4>,
+    ElementAccumulator,
+    LayoutC
+  >;
+
+  static int const kSharedMemAlignment = sizeof_bits<ElementAccumulator>::value * WarpTileIterator::kElementsPerAccess / 8;
+
+  static_assert(kSharedMemAlignment == 8, "Shared memory alignment must be 8B");
+
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIterator<
+    typename OutputTileThreadMap::CompactedThreadMap,
+    ElementAccumulator,
+    kSharedMemAlignment
+  >;
+
+  /// Hard-coded padding elements added 
+  using Padding = typename WarpTileIterator::Padding;
+
+  //
+  // Define the epilogue
+  //
+  using Epilogue = cutlass::epilogue::threadblock::Epilogue<
+    Shape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    OutputTileIterator,
+    AccumulatorFragmentIterator,
+    WarpTileIterator,
+    SharedLoadIterator,
+    OutputOp,
+    Padding
+  >;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Defines sensible defaults for epilogues for TensorOps.
+template <
+  typename Shape_,
+  typename WarpMmaTensorOp_,
+  int PartitionsK,
+  typename OutputOp_,
+  int ElementsPerAccess
+>
+struct DefaultEpilogueVoltaTensorOpStridedDgrad {
+
+  using Shape = Shape_;
+  using WarpMmaTensorOp = WarpMmaTensorOp_;
+  static int const kPartitionsK = PartitionsK;
+  using OutputOp = OutputOp_;
+  static int const kElementsPerAccess = ElementsPerAccess;
+
+  using ElementOutput = typename OutputOp::ElementOutput;
+  using LayoutC = typename WarpMmaTensorOp::LayoutC;
+  using ElementAccumulator = typename WarpMmaTensorOp::ElementC;
+
+  //
+  // Thread map
+  //
+
+  using OutputTileThreadMap = typename cutlass::epilogue::threadblock::DefaultThreadMapVoltaTensorOp<
+    Shape,
+    typename WarpMmaTensorOp::Shape,
+    kPartitionsK,
+    ElementOutput,
+    kElementsPerAccess,
+    ElementAccumulator
+  >::Type;
+
+  using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIteratorStridedDgrad<
+    OutputTileThreadMap,
+    ElementOutput
+  >;
+
+  using AccumulatorFragmentIterator = cutlass::epilogue::warp::FragmentIteratorVoltaTensorOp<
+    typename WarpMmaTensorOp::Shape,
+    gemm::GemmShape<32, 32, 4>,
+    ElementAccumulator,
+    LayoutC
+  >;
+
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorVoltaTensorOp<
+    typename WarpMmaTensorOp::Shape,
+    gemm::GemmShape<32, 32, 4>,
+    ElementAccumulator,
+    LayoutC
+  >;
+
+  static int const kSharedMemAlignment = sizeof_bits<ElementAccumulator>::value * WarpTileIterator::kElementsPerAccess / 8;
+
+  static_assert(kSharedMemAlignment == 8, "Shared memory alignment must be 8B");
+
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIterator<
+    typename OutputTileThreadMap::CompactedThreadMap,
+    ElementAccumulator,
+    kSharedMemAlignment
+  >;
+
+  /// Hard-coded padding elements added 
+  using Padding = typename WarpTileIterator::Padding;
+
+  //
+  // Define the epilogue
+  //
+  using Epilogue = cutlass::epilogue::threadblock::Epilogue<
+    Shape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    OutputTileIterator,
+    AccumulatorFragmentIterator,
+    WarpTileIterator,
+    SharedLoadIterator,
+    OutputOp,
+    Padding
+  >;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Defines sensible defaults for epilogues for TensorOps.
+template <
+  int Rank,
+  typename Shape_,
+  typename WarpMmaTensorOp_,
+  int PartitionsK,
+  typename OutputOp_,
+  int ElementsPerAccess
+>
+struct DefaultEpilogueVoltaTensorOpAffineRankN {
+
+  using Shape = Shape_;
+  using WarpMmaTensorOp = WarpMmaTensorOp_;
+  static int const kPartitionsK = PartitionsK;
+  using OutputOp = OutputOp_;
+  static int const kElementsPerAccess = ElementsPerAccess;
+
+  using ElementOutput = typename OutputOp::ElementOutput;
+  using LayoutC = typename WarpMmaTensorOp::LayoutC;
+  using ElementAccumulator = typename WarpMmaTensorOp::ElementC;
+
+  //
+  // Thread map
+  //
+
+  using OutputTileThreadMap = typename cutlass::epilogue::threadblock::DefaultThreadMapVoltaTensorOp<
+    Shape,
+    typename WarpMmaTensorOp::Shape,
+    kPartitionsK,
+    ElementOutput,
+    kElementsPerAccess,
+    ElementAccumulator
+  >::Type;
+
+  using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIteratorAffineRankN<
+    OutputTileThreadMap,
+    ElementOutput,
+    Rank
   >;
 
   using AccumulatorFragmentIterator = cutlass::epilogue::warp::FragmentIteratorVoltaTensorOp<

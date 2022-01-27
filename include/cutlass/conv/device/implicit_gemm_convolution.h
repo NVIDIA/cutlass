@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -71,6 +71,7 @@ public:
 
   static cutlass::conv::Operator const kConvolutionalOperator = ImplicitGemmKernel::kConvolutionalOperator;
   static cutlass::conv::IteratorAlgorithm const kIteratorAlgorithm = ImplicitGemmKernel::kIteratorAlgorithm;
+  static cutlass::conv::StrideSupport const kStrideSupport = ImplicitGemmKernel::kStrideSupport;
 
   static int const kWarpCount = 
     (ThreadblockShape::kM / WarpShape::kM) * 
@@ -104,12 +105,49 @@ public:
       return status;
     }
 
+    static int const kAlignmentC = ImplicitGemmKernel::Epilogue::OutputTileIterator::kElementsPerAccess;
+    if (kConvolutionalOperator == conv::Operator::kFprop) {
+      if (args.problem_size.K % kAlignmentC)
+        return Status::kErrorMisalignedOperand;
+    } else if (kConvolutionalOperator == conv::Operator::kDgrad) {
+       if (args.problem_size.C % kAlignmentC)
+        return Status::kErrorMisalignedOperand;
+    } else if (kConvolutionalOperator == conv::Operator::kWgrad) {
+       if (args.problem_size.C % kAlignmentC)
+        return Status::kErrorMisalignedOperand;
+    }
+
+    // check for unsupported problem sizes for strided dgrad implementation
+    if (kConvolutionalOperator == conv::Operator::kDgrad && 
+      kStrideSupport == conv::StrideSupport::kStrided) {
+
+      // Unity stride (1x1) is supported by strided dgrad but disabled for performance 
+      // reasons. For unity stride, use strided dgrad optimized unity stride specialization.
+      // Note that unit tests strided dgrad for unity stride to make sure that strided 
+      // dgrad implemetnation is functionaly sound. 
+      // Strided dgrad implementation also support mixed strides, i.e., (1x2) and (2x1)
+      if(args.problem_size.stride_h == 1 && args.problem_size.stride_w == 1) {
+        return Status::kErrorNotSupported;
+      }
+
+      // split-k (serial or parallel) is not supported for strided dgrad
+      if(args.problem_size.split_k_slices > 1) {
+        return Status::kErrorNotSupported;
+      }
+      
+      // dilation > {1x1} is not supported for strided dgrad
+      if(args.problem_size.dilation_h > 1 || args.problem_size.dilation_w > 1) {
+        return Status::kErrorNotSupported;
+      }
+    }
+
     // Determine grid shape
     ThreadblockSwizzle threadblock_swizzle;
 
     dim3 grid = threadblock_swizzle.get_grid_shape(
       threadblock_swizzle.get_tiled_shape(
-        cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size),
+        kConvolutionalOperator,
+        args.problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
         args.problem_size.split_k_slices));
 
@@ -131,7 +169,8 @@ public:
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord grid_tiled_shape = threadblock_swizzle.get_tiled_shape(
-        cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size),
+        kConvolutionalOperator,
+        args.problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
         args.problem_size.split_k_slices);
 
@@ -190,14 +229,6 @@ public:
       if (result != cudaSuccess) {
         return Status::kErrorInternal;
       }
-
-      result = cudaFuncSetAttribute(
-          cutlass::Kernel<ImplicitGemmKernel>,
-          cudaFuncAttributePreferredSharedMemoryCarveout, 100);
-
-      if (result != cudaSuccess) {
-        return Status::kErrorInternal;
-      }
     }
     
     return Status::kSuccess;
@@ -219,6 +250,7 @@ public:
 
   /// Runs the kernel using initialized state.
   Status run(cudaStream_t stream = nullptr) {
+
 
     ThreadblockSwizzle threadblock_swizzle;
 

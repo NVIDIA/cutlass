@@ -17,7 +17,7 @@
 # FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
 # BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
 # OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-# STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 # this file creates the test/unit/gemm/device simt tests
@@ -45,14 +45,15 @@ warpShapeMin = 8*8
 
 threadblockEdgeMax = 256
 
-#      char,      type             bits/elem, max tile,    L0 threadblock tiles
+#      char,      type               bits/elem, max tile,   L0 threadblock tiles
 precisions = [
-       ["c", "cutlass::complex<float>",   64,  64*128, [ [ 64, 128], [ 64,  32]             ] ],
-       ["d", "double",                    64,   64*64, [ [ 64,  64], [ 32,  32]             ] ],
-       ["h", "cutlass::half_t",           16, 128*256, [ [256, 128], [ 64, 128], [ 64,  32] ] ],
-       ["i", "int",                       32, 128*128, [ [128,  64], [ 16, 32]              ] ],
-       ["s", "float",                     32, 128*128, [ [128, 256], [128, 128], [ 64,  64] ] ],
-       ["z", "cutlass::complex<double>", 128,   64*64, [ [ 32,  64], [ 16,  32]             ] ],
+       ["c", "cutlass::complex<float>",     64,  64*128, [ [ 64, 128], [ 64,  32]             ] ],
+       ["q", "cutlass::Quaternion<float>",  64,  64*128, [ [ 64, 128], [ 64,  32]             ] ],
+       ["d", "double",                      64,   64*64, [ [ 64,  64], [ 32,  32]             ] ],
+       ["h", "cutlass::half_t",             16, 128*256, [ [256, 128], [ 64, 128], [ 64,  32] ] ],
+       ["i", "int",                         32, 128*128, [ [128,  64], [ 16, 32]              ] ],
+       ["s", "float",                       32, 128*128, [ [128, 256], [128, 128], [ 64,  64] ] ],
+       ["z", "cutlass::complex<double>",   128,   64*64, [ [ 32,  64], [ 16,  32]             ] ],
        ]
 # L1 will have a single kernel for every unique shape
 # L2 will have everything else
@@ -142,7 +143,7 @@ for precision in precisions:
 " * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,\n"
 " * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;\n"
 " * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,\n"
-" * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\n"
+" * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\n"
 " * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n"
 " *\n"
 " **************************************************************************************************/\n"
@@ -313,7 +314,7 @@ for precision in precisions:
                     "        cutlass::arch::Sm50,\n"
                     "        ThreadblockShape, WarpShape, InstructionShape,\n"
                     "        EpilogueOutputOp,\n"
-                    "        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle,\n"
+                    "        cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,\n"
                     "        2 // Stages\n"
                     "    >;\n" % (
                         "Column" if columnMajorA else "Row",

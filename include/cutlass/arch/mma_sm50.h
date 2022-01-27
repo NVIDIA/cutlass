@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -30,6 +30,8 @@
 
 #include "cutlass/arch/mma.h"
 #include "cutlass/complex.h"
+#include "cutlass/quaternion.h"
+#include "cutlass/functional.h"
 
 #include "cutlass/layout/matrix.h"
 #include "cutlass/gemm/gemm.h"
@@ -379,5 +381,35 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, half_t, LayoutA, half_t, LayoutB, float,
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Matrix multiply-add operation for Quaternions
+template <
+  /// Layout of A matrix
+  typename LayoutA,
+  /// Layout of B matrix
+  typename LayoutB,
+  /// Layout of C matrix
+  typename LayoutC
+>
+struct Mma<gemm::GemmShape<1, 1, 1>, 1, Quaternion<float>, LayoutA, Quaternion<float>, LayoutB, Quaternion<float>, LayoutC, OpMultiplyAdd> {
+
+  using Shape = gemm::GemmShape<1, 1, 1>;
+  using Operator = OpMultiplyAdd;
+  using Element = Quaternion<float>;
+
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    Array<Element, 1> &d,
+    Array<Element, 1> const &a,
+    Array<Element, 1> const &b,
+    Array<Element, 1> const &c
+  ) {
+    multiply_add<Element, Element, Element> op;
+    d[0] = op(a[0], b[0], c[0]);
+  }
+  
+};
+
 }
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////

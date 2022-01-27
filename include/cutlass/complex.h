@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -37,6 +37,8 @@
 
 #include "cutlass/bfloat16.h"
 #include "cutlass/tfloat32.h"
+
+#include "cutlass/fast_math.h"
 
 #if !defined(__CUDACC_RTC__)
 #include <iosfwd>
@@ -442,16 +444,16 @@ CUTLASS_HOST_DEVICE complex<T> polar(T const &r, T const &theta = T()) {
 /// Computes the complex exponential of z.
 template <typename T>
 CUTLASS_HOST_DEVICE complex<T> exp(complex<T> const &z) {
-  return complex<T>(real(z) * cos(imag(z)), real(z) * sin(imag(z)));
+  return complex<T>(fast_exp(real(z)) * fast_cos(imag(z)), fast_exp(real(z)) * fast_sin(imag(z)));
 }
 
-/// Computes the complex exponential of z.
+/// Computes the log of z
 template <typename T>
 CUTLASS_HOST_DEVICE complex<T> log(complex<T> const &z) {
   return complex<T>(log(abs(z)), arg(z));
 }
 
-/// Computes the complex exponential of z.
+/// Computes the log base 10 of z
 template <typename T>
 CUTLASS_HOST_DEVICE complex<T> log10(complex<T> const &z) {
   return log(z) / T(log(T(10)));
@@ -483,6 +485,9 @@ CUTLASS_HOST_DEVICE complex<T> sin(complex<T> const &z) {
 template <typename T>
 struct RealType< complex<T> > {
   using Type = T;
+
+  /// Number of elements
+  static int const kExtent = 2;
 
 CUTLASS_HOST_DEVICE
   static complex<T> from_real(double x) {

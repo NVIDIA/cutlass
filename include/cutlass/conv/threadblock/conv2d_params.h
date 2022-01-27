@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -72,6 +72,38 @@ struct Conv2dAnalyticParams {
     Layout const &layout
   ): layout(layout) {
 
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Parameters structure used for Conv2dDgradOutputGradientTileAccessIteratorAnalyticParams
+struct Conv2dDgradOutputGradientTileAccessIteratorAnalyticParams {
+  
+  using Layout = layout::TensorNHWC;
+
+  Layout layout;
+  int tiled_rows_per_filter;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  Conv2dDgradOutputGradientTileAccessIteratorAnalyticParams() { }
+
+  CUTLASS_HOST_DEVICE
+  Conv2dDgradOutputGradientTileAccessIteratorAnalyticParams(
+    Conv2dProblemSize const &problem_size,
+    Layout const &layout,                            ///< layout object
+    int element_size_bits,                           ///< size of each element in bits
+    MatrixCoord threadblock_shape
+  ): layout(layout) {
+    
+    int tile_m_per_filter = strided_dgrad_tile_m_per_filter(problem_size, threadblock_shape.row());
+  
+    tiled_rows_per_filter = tile_m_per_filter * threadblock_shape.row();
+    
   }
 };
 
@@ -199,6 +231,32 @@ struct Conv2dFpropActivationIteratorOptimizedParams<layout::TensorNHWC> {
     // logical offset added to internal channel counter - units are elements, not bytes
     filter_c_delta = threadblock_shape.column() * problem_size.split_k_slices;
   }
+
+#if ENABLE_CONV2D_PARAMS_PRINT
+  /// Prints internal state.
+  CUTLASS_HOST_DEVICE
+  void print() {
+    auto stride = layout.stride();
+    printf(
+      "Conv2dFpropActivationIteratorOptimizedParams:\n"
+      "  layout(w: %d, h: %d, n: %d)\n"
+      "  inc_next[%ld, %ld, %ld]\n"
+      "  filter_c_delta(%d) - PQ(%d)\n"
+      "  pq_divmod(divisor: %d, multiplier: %u, shift_right: %u)\n"
+      "  q_divmod(divisor: %d, multiplier: %u, shift_right: %u)\n",
+      stride[0], stride[1], stride[2],
+      inc_next[0], inc_next[1], inc_next[2],
+      filter_c_delta,
+      PQ,
+      pq_divmod.divisor,
+      pq_divmod.multiplier,
+      pq_divmod.shift_right,
+      q_divmod.divisor,
+      q_divmod.multiplier,
+      q_divmod.shift_right
+    );
+  }
+#endif  
 };
 
 /// Parameters structure used for Conv2dFpropActivationTileIteratorOptimized
@@ -324,6 +382,23 @@ struct Conv2dFpropFilterIteratorOptimizedParams<layout::TensorNHWC>
 
     filter_c_delta = threadblock_shape.row() * problem_size.split_k_slices;
   }
+
+#if ENABLE_CONV2D_PARAMS_PRINT
+  /// Prints internal state.
+  CUTLASS_HOST_DEVICE
+  void print() {
+    auto stride = layout.stride();
+    printf(
+      "Conv2dFpropFilterIteratorOptimizedParams:\n"
+      "  layout[%d, %d, %d]\n"
+      "  RS(%d), filter_c_delta(%d), inc_next(k: %ld, rs: %ld, c: %ld)\n",
+      stride[0], stride[1], stride[2],
+      RS,
+      filter_c_delta,
+      inc_next_k, inc_next_rs, inc_next_c
+    );
+  }
+#endif
 };
 
 template<int Interleaved_>
@@ -382,6 +457,9 @@ struct Conv2dFpropFilterIteratorOptimizedParams<layout::TensorCxRSKx<Interleaved
   }
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Dgrad Optimized Dy params (layout::TensorNHWC)
+/////////////////////////////////////////////////////////////////////////////////////////////////
 /// Parameters object for Conv2d DGRAD OutputGradient (dy) iterator
 struct Conv2dDgradOutputGradientIteratorOptimizedParams {
 
@@ -449,7 +527,67 @@ struct Conv2dDgradOutputGradientIteratorOptimizedParams {
   }
 };
 
-/// Parameters object for Conv2d DGRAD Filter (w) iterator
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Strided Dgrad Optimized Dy params (layout::TensorNHWC)
+/////////////////////////////////////////////////////////////////////////////////////////////////
+struct Conv2dStridedDgradOutputGradientIteratorOptimizedParams {
+  
+  using Layout = layout::TensorNHWC;
+
+  Layout layout;
+  
+  int64_t inc_next[3];    // {next S, next R, next K}
+
+  int filter_k_delta;     // number of logical elements to add to filter_k_
+
+  int tiled_rows_per_filter;
+
+  int conv_sign;
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  Conv2dStridedDgradOutputGradientIteratorOptimizedParams() { }
+
+  CUTLASS_HOST_DEVICE
+  Conv2dStridedDgradOutputGradientIteratorOptimizedParams(
+    Conv2dProblemSize const &problem_size,
+    Layout const &layout,                            ///< layout object
+    int element_size_bits,                           ///< size of each element in bits
+    MatrixCoord threadblock_shape
+  ): layout(layout) {
+    
+    int tile_m_per_filter = strided_dgrad_tile_m_per_filter(problem_size, threadblock_shape.row());
+  
+    tiled_rows_per_filter = tile_m_per_filter * threadblock_shape.row();
+
+    conv_sign = (problem_size.mode == Mode::kConvolution ? 1 : -1);
+
+    // next S
+    inc_next[0] = conv_sign * (
+      layout.stride()[0] * problem_size.dilation_w
+    ) * element_size_bits / 8;
+
+    // next R
+    inc_next[1] = conv_sign * (
+        layout.stride()[1] * problem_size.dilation_h
+      ) * element_size_bits / 8;
+
+    // next K
+    inc_next[2] = (
+        threadblock_shape.column() * problem_size.split_k_slices
+      ) * element_size_bits / 8;
+
+    // logical offset added to internal channel counter - units are elements, not bytes
+    filter_k_delta = threadblock_shape.column() * problem_size.split_k_slices;
+  }
+};
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Dgrad Optimized w params (layout::TensorNHWC)
+/////////////////////////////////////////////////////////////////////////////////////////////////
 struct Conv2dDgradFilterIteratorOptimizedParams {
 
   using Layout = layout::TensorNHWC;
@@ -502,6 +640,73 @@ struct Conv2dDgradFilterIteratorOptimizedParams {
   }
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// StridedDgrad Optimized w params (layout::TensorNHWC)
+/////////////////////////////////////////////////////////////////////////////////////////////////
+struct Conv2dStridedDgradFilterIteratorOptimizedParams {
+
+  using Layout = layout::TensorNHWC;
+
+  Layout layout;
+  int RS;
+  int filter_k_delta;
+
+  int64_t inc_next_strided;   // offset in units of bytes to next K coordinate within tile
+  int64_t inc_next[3];        // {next S, next R, next K}
+  int64_t reset_bytes;        // offset in units of bytes to move back the pointer 
+  //
+  // Methods
+  //
+  CUTLASS_HOST_DEVICE
+  Conv2dStridedDgradFilterIteratorOptimizedParams() { }
+
+  CUTLASS_HOST_DEVICE
+  Conv2dStridedDgradFilterIteratorOptimizedParams(
+    Conv2dProblemSize const &problem_size,
+    Layout const &layout,    
+    int element_size_bits,                        ///< size of each element in bits
+    MatrixCoord threadblock_shape,
+    int thread_count,
+    int access_size, 
+    layout::PitchLinearCoord threadmap_iterations,
+    layout::PitchLinearCoord threadmap_delta
+  ): 
+    layout(layout), RS(problem_size.R * problem_size.S) {
+
+    TRACE_CONV_INITIALIZERS("conv2d_dgrad", "filter", 
+      element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
+
+    inc_next_strided = (layout.stride()[2] * threadmap_delta.strided() * element_size_bits) / 8;
+
+    // next S
+    inc_next[0] =
+      ( layout.stride()[0] * problem_size.stride_w
+        //- (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+      ) * element_size_bits / 8;
+
+    // next R
+    inc_next[1] =
+      ( layout.stride()[1] * problem_size.stride_h
+        //- (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+      ) * element_size_bits / 8;
+
+    // next K
+    inc_next[2] =
+      (
+        threadblock_shape.row() * problem_size.split_k_slices * layout.stride()[2]
+        //- (problem_size.R * problem_size.S - 1) * layout.stride()[0]
+        //- (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+      ) * element_size_bits / 8;
+
+    // offset in units of bytes to move the pointer in backward direction
+    reset_bytes = (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+            * element_size_bits / 8;
+
+    filter_k_delta = threadblock_shape.row() * problem_size.split_k_slices;
+  }
+};
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Parameters object for Conv2d WGRAD Output Gradient (dy) iterator
@@ -607,6 +812,25 @@ struct Conv2dWgradActivationIteratorOptimizedParams {
       TRACE_CONV_INITIALIZERS("conv2d_wgrad", "activation", 
         element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
     }
+};
+
+struct PredicatedScaleBiasVectorAccessIteratorParams {
+  public:
+    /// Default ctor
+    CUTLASS_HOST_DEVICE
+    PredicatedScaleBiasVectorAccessIteratorParams() { }
+
+    // Default ctor
+    CUTLASS_HOST_DEVICE
+    PredicatedScaleBiasVectorAccessIteratorParams(
+      Conv2dProblemSize const &problem_size,
+      layout::PitchLinear const &layout) {}
+
+    // Default ctor
+    CUTLASS_HOST_DEVICE
+    PredicatedScaleBiasVectorAccessIteratorParams(
+      Conv2dProblemSize const &problem_size,
+      layout::RowMajor const &layout) {}
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

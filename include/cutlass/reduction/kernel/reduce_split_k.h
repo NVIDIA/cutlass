@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -67,6 +67,7 @@ public:
 
   using WorkspaceTensorRef = TensorRef<ElementWorkspace, layout::RowMajor>;
   using OutputTensorRef = TensorRef<ElementOutput, layout::RowMajor>;
+  using StrideIndex = typename WorkspaceTensorRef::Layout::Stride::Index;
 
   using FragmentWorkspace = AlignedArray<ElementWorkspace, kElementsPerAccess>;
   using FragmentAccumulator = Array<ElementAccumulator, kElementsPerAccess>;
@@ -145,8 +146,8 @@ public:
 
     // Determine CTA position
     MatrixCoord thread_offset(
-      int(blockIdx.x) * Shape::kRow + threadIdx.y,
-      int(blockIdx.y) * Shape::kColumn + threadIdx.x * kElementsPerAccess
+      MatrixCoord::Index(int(blockIdx.x) * Shape::kRow + threadIdx.y),
+      MatrixCoord::Index(int(blockIdx.y) * Shape::kColumn + threadIdx.x * kElementsPerAccess)
     );
 
     // One guard conditional

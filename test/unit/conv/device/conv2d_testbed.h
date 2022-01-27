@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -46,6 +46,8 @@
 
 #include "cutlass/core_io.h"
 #include "cutlass/util/tensor_view_io.h"
+
+#include "cache_testbed_output.h"
 
 namespace test {
 namespace conv {
@@ -81,7 +83,7 @@ public:
   >;
 
   using ReductionDevice = cutlass::reduction::device::ReduceSplitK<ReductionKernel>;
-
+  using ReductionStrideIndex = typename ReductionDevice::StrideIndex;
 
 public:
 
@@ -97,6 +99,8 @@ public:
   cutlass::HostTensor<ElementC, LayoutC> tensor_D_computed;
   cutlass::HostTensor<ElementC, LayoutC> tensor_D_reference;
 
+  int tested_problem_count;
+
 public:
 
   TestbedConv2d(
@@ -105,7 +109,7 @@ public:
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = 2080
   ):
-    init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_) {
+    init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_), tested_problem_count(0) {
 
   }
 
@@ -125,7 +129,12 @@ public:
         scope = 2;
       }
       else if (bits == 16) {
-        scope = 3;
+        if (cutlass::sizeof_bits<ElementAccumulator>::value <= 16) {
+          scope = 3;
+        }
+        else {
+          scope = 5;
+        }
       }
       else {
         scope = 8;
@@ -136,6 +145,7 @@ public:
     else if (dist_kind == cutlass::Distribution::Identity) {
 
       cutlass::reference::host::TensorFillIdentity(view);
+
     } 
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
@@ -161,7 +171,7 @@ public:
     initialize_tensor(tensor_A.host_view(), init_A, seed); 
     initialize_tensor(tensor_B.host_view(), init_B, seed * 17); 
     initialize_tensor(tensor_C.host_view(), init_C, seed * 39);
-
+    
     tensor_A.sync_device();
     tensor_B.sync_device();
     tensor_C.sync_device();
@@ -212,9 +222,12 @@ public:
       return true;
     }
 
-#if 0 //display conv2d problem size for debugging
+    // increment tested problem count run by the testbed
+    tested_problem_count++;
+
+#if 0 // display conv2d problem size for debugging
     std::cout << problem_size << std::endl
-              << "alpha, beta: (" << float(alpha) << ", " << float(beta) << ")" << std::endl
+              << "alpha, beta: (" << alpha << ", " << beta << ")" << std::endl
               << "split_k_mode: " << ((split_k_mode == cutlass::conv::SplitKMode::kSerial) ? "(serial)" : "(parallel)") << std::endl
               << std::endl;
 #endif
@@ -262,7 +275,7 @@ public:
     if (status != cutlass::Status::kSuccess) {
       return false;
     }
-  
+
     // run conv2d operator
     status = conv2d_op();
     
@@ -270,6 +283,7 @@ public:
     if (status != cutlass::Status::kSuccess) {
       return false;
     }
+
 
     if (split_k_mode == cutlass::conv::SplitKMode::kParallel) {
 
@@ -280,10 +294,20 @@ public:
         cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, problem_size).mn(),
         problem_size.split_k_slices,
         cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
-        {reinterpret_cast<ElementAccumulator*> (workspace.get()), tensor_C.stride(Conv2d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {tensor_D_computed.device_data(), tensor_C.stride(Conv2d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {tensor_C.device_data(), tensor_C.stride(Conv2d::ImplicitGemmKernel::kTensorCStrideIdx)},
-        {alpha, beta} // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
+        {
+          reinterpret_cast<ElementAccumulator*> (workspace.get()),
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        {
+          tensor_D_computed.device_data(),
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        {
+          tensor_C.device_data(),
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+        },
+        // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
+        {alpha, beta} 
       );
 
       status = reduction_op.initialize(reduction_args, nullptr);
@@ -302,8 +326,56 @@ public:
       }
     }
     bool passed = false;
-    
+
+    cudaError_t result = cudaDeviceSynchronize();
+    EXPECT_EQ(result, cudaSuccess) << " device reference error: " 
+                                   << cudaGetErrorString(result);
+
     tensor_D_computed.sync_host();
+
+    //
+    // Reference check - support caching results
+    //
+
+    CachedTestKey cached_test_key = CreateCachedConv2dTestKey<
+        ElementA, LayoutA,
+        ElementB, LayoutB,
+        ElementC, LayoutC,
+        ElementAccumulator,
+        ElementCompute
+      >(
+        kConvolutionalOperator,
+        problem_size, 
+        alpha, 
+        beta, 
+        tensor_A.host_view(),
+        tensor_B.host_view(),
+        tensor_C.host_view()
+      );
+
+    //
+    // Look for the cached key
+    //
+
+    bool cached_result_loaded = false;
+    CachedTestResult cached_test_result;
+
+    std::string conv2d_result_cache_name = 
+      std::string("cached_results_") + CUTLASS_TARGET_NAME + ".txt";
+
+    if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
+
+      CachedTestResultListing cached_results(conv2d_result_cache_name);
+
+      auto cached = cached_results.find(cached_test_key);
+
+      cached_result_loaded = cached.first;
+      if (cached_result_loaded) {
+        cached_test_result = cached.second;
+      }
+    }
+    
+    if (!cached_result_loaded) {
 
 #if CUTLASS_CONV_TEST_UNIT_REFERENCE_DEVICE_ENABLED
 
@@ -325,10 +397,6 @@ public:
       tensor_D_reference.device_ref(),
       alpha, 
       beta);
-
-    cudaError_t result = cudaDeviceSynchronize();
-    EXPECT_EQ(result, cudaSuccess) << " device reference error: " 
-                                   << cudaGetErrorString(result);
 
     // sync host (copy device data to host) for dumping error output in case of mismatches
     tensor_D_reference.sync_host();
@@ -355,9 +423,32 @@ public:
       beta);
 
 #endif
-    passed = cutlass::reference::host::TensorEquals(
-      tensor_D_computed.host_view(), 
-      tensor_D_reference.host_view());
+
+      if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
+
+        cached_test_result.D = TensorHash(tensor_D_reference.host_view());
+
+        CachedTestResultListing cached_results(conv2d_result_cache_name);
+
+        cached_results.append(cached_test_key, cached_test_result);
+        cached_results.write(conv2d_result_cache_name);
+      }
+    } // if (!cached_result_loaded)
+
+    uint32_t tensor_D_hash = TensorHash(tensor_D_computed.host_view());
+
+    if (CUTLASS_TEST_ENABLE_CACHED_RESULTS) {
+      passed = (tensor_D_hash == cached_test_result.D);
+
+      EXPECT_EQ(tensor_D_hash, cached_test_result.D) 
+        << "Hash-based comparison failed for key:" << "\n" << cached_test_key << "\n";
+    }
+    else {
+
+      passed = cutlass::reference::host::TensorEquals(
+        tensor_D_computed.host_view(), 
+        tensor_D_reference.host_view());
+    }
 
     EXPECT_TRUE(passed);
 
@@ -404,9 +495,18 @@ public:
       results
         << "\nA:\n" << tensor_A.host_view() << "\n"
         << "\nB:\n" << tensor_B.host_view() << "\n"
-        << "\nC:\n" << tensor_C.host_view() << "\n"
-        << "\nD reference:\n" << tensor_D_reference.host_view() << "\n"
-        << "\nD computed:\n" << tensor_D_computed.host_view() << "\n";
+        << "\nC:\n" << tensor_C.host_view() << "\n";
+
+      results << "\nD reference (hash: " << cached_test_result.D << ")\n";
+
+      if (!cached_result_loaded) {
+        results
+          << tensor_D_reference.host_view() << "\n";  
+      }
+
+      results
+        << "\nD computed (hash: " << tensor_D_hash << ")\n" 
+        << tensor_D_computed.host_view() << "\n";
 
     }
 
@@ -442,65 +542,119 @@ bool TestAllConv2d(
   // Vector of conv2d problem sizes to avoid duplicate runs
   Conv2dProblemVector conv_tested_sizes;
 
-  Conv2dProblemVector const *problem_vectors[] = {
-    &conv_test_sizes,                               // run user specified sizes
-    &conv_problems.conv2d_default_sizes,            // run default and cudnn bug sizes
-    &conv_problems.conv2d_resnet50_sizes,           // run resnet50 sizes
+  // Vectors of Conv2dProblemVector (lenient/easiest to rigorous problem sizes)
+  std::vector<Conv2dProblemVector> problem_vectors = {
+    conv_test_sizes,                               // run user specified sizes
+    conv_problems.conv2d_default_sizes,            // run default and cudnn bug sizes
+    //conv_problems.conv2d_resnet50_sizes,         // run resnet50 sizes
 #if CUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED 
-    &conv_problems.conv2d_rigorous_sizes,           // run large and rigorous sizes if enabled
+    conv_problems.conv2d_rigorous_sizes,           // run large and rigorous sizes if enabled
 #endif
   };
 
+  // Flatten 2D problem_vectors into a 1D problem_sizes
+  std::vector<cutlass::conv::Conv2dProblemSize> problem_sizes;
+  for (auto problem_vector : problem_vectors) {
+    for(auto conv_problem : problem_vector) {
+      problem_sizes.push_back(conv_problem);
+    }
+  }  
+
+  // If CUTLASS_UNIT_TEST_PROBLEM_COUNT is set reverse the order (rigorous to lenient) 
+  // run the most rigorous problem size first
+  if (CutlassUnitTestProblemCount()) {
+    std::reverse(problem_sizes.begin(), problem_sizes.end());
+  }
+
   // Sweep conv2d problem sizes (split-k-mode=kSerial, split-k-slice=1, alpha=1.0, beta=0.0)
-  for (Conv2dProblemVector const * problem_vector : problem_vectors) {
+  for(auto conv_problem : problem_sizes) {
 
-    //  Run conv testbed on default convolution sizes
-    for(auto conv_problem : *problem_vector) {
+    // Skip blacklist and avoid duplicate problem sizes
+    if (std::find(conv_blacklist_sizes.begin(), conv_blacklist_sizes.end(), conv_problem) != conv_blacklist_sizes.end() ||
+        std::find(conv_tested_sizes.begin(), conv_tested_sizes.end(), conv_problem) != conv_tested_sizes.end()) {
+      continue;
+    }
 
-      // Skip blacklist and avoid duplicate problem sizes
-      if (std::find(conv_blacklist_sizes.begin(), conv_blacklist_sizes.end(), conv_problem) != conv_blacklist_sizes.end() ||
-          std::find(conv_tested_sizes.begin(), conv_tested_sizes.end(), conv_problem) != conv_tested_sizes.end()) {
+    //
+    // Procedurally disable certain cases
+    //
+  
+    // CUTLASS DGRAD's *unity* stride specialization only support stride {1, 1} 
+    if ((ImplicitGemm::kConvolutionalOperator == 
+          cutlass::conv::Operator::kDgrad) && 
+        (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+          cutlass::conv::StrideSupport::kUnity)) {
+      if (!((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
         continue;
       }
-
-      //
-      // Procedurally disable certain cases
-      //
-  
-      // CUTLASS DGRAD's unity stride specialization only support stride {1, 1} 
-      if ((ImplicitGemm::kConvolutionalOperator == 
-            cutlass::conv::Operator::kDgrad) && 
-          (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
-            cutlass::conv::StrideSupport::kUnity)) {
-        if (!((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
-          continue;
-        }
-      }
-
-      //
-      // Test
-      //
-      // push back tested problem size to avoid re-running duplicates
-      conv_tested_sizes.push_back(conv_problem);
-
-      // test mode = xcross
-      passed = testbed.run(
-        conv_problem,
-        cutlass::conv::SplitKMode::kSerial);
-    
-      if (!passed) {
-        return false;
-      }
-
-      // test mode = convolution
-      passed = testbed.run(
-        conv_problem.reset_mode(cutlass::conv::Mode::kConvolution),
-        cutlass::conv::SplitKMode::kSerial);
-    
-      if (!passed) {
-        return false;
-      }
     }
+
+    // CUTLASS DGRAD's *strided* stride specialization supports all stride {stride_h, stride_w} 
+    // Although strided dgrad works for all stride combinations, we are only going 
+    // to run strided dgrad for non-unity strides 
+    if ((ImplicitGemm::kConvolutionalOperator == 
+          cutlass::conv::Operator::kDgrad) && 
+        (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+          cutlass::conv::StrideSupport::kStrided)) {
+       if (((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
+         continue;
+       }
+    }
+    
+    //
+    // Test
+    //
+    // push back tested problem size to avoid re-running duplicates
+    conv_tested_sizes.push_back(conv_problem);
+
+    // test mode = xcross
+    passed = testbed.run(
+      conv_problem,
+      cutlass::conv::SplitKMode::kSerial);
+  
+    if (!passed) {
+      return false;
+    }
+    
+    // test mode = convolution
+    passed = testbed.run(
+      conv_problem.reset_mode(cutlass::conv::Mode::kConvolution),
+      cutlass::conv::SplitKMode::kSerial);
+  
+    if (!passed) {
+      return false;
+    }
+
+    // If CUTLASS_UNIT_TEST_PROBLEM_COUNT is set reduce the the number of tested problem counts
+    if (CutlassUnitTestProblemCount() && 
+        testbed.tested_problem_count > CutlassUnitTestProblemCount()) {
+      return true;
+    }
+  }
+  
+
+  // CUTLASS DGRAD's *strided* specialization does not support split-k mode 
+  if ((ImplicitGemm::kConvolutionalOperator == 
+          cutlass::conv::Operator::kDgrad) && 
+      (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+        cutlass::conv::StrideSupport::kStrided)) {
+
+    passed = testbed.run(
+      cutlass::conv::Conv2dProblemSize(
+      {1, 56, 56, 8},   // input size (NHWC)
+      {8, 1, 1, 8},     // filter size (KRSC)
+      {0, 0, 0, 0},     // padding (pad_h, _, pad_w, _)
+      {2, 2},           // stride (stride_h, stride_w)
+      {1, 1}),          // dilation (dilation_h, dilation_w)
+      cutlass::conv::SplitKMode::kSerial,
+      cutlass::from_real<typename ImplicitGemm::ElementCompute>(2.0), 
+      cutlass::from_real<typename ImplicitGemm::ElementCompute>(2.0));
+
+    if (!passed) {
+      return false;
+    }
+
+    return passed;
   }
 
   // Sweep split-k-slice using serial and prallel reduction with non-unity alpha and non-zero beta for 
@@ -545,6 +699,12 @@ bool TestAllConv2d(
 
           if (!passed) {
             return false;
+          }
+
+          // If CUTLASS_UNIT_TEST_PROBLEM_COUNT is set reduce the the number of tested problem counts
+          if (CutlassUnitTestProblemCount() && 
+              testbed.tested_problem_count > CutlassUnitTestProblemCount()) {
+            return true;
           }
         }
       }

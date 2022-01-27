@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -60,7 +60,8 @@ template <
   typename Shape_,
   typename Element_,
   typename Layout_,
-  typename ThreadMap_
+  typename ThreadMap_,
+  typename AccessType_ = cutlass::AlignedArray<Element_, ThreadMap_::kElementsPerAccess>
 >
 class Conv2dFpropActivationTileAccessIteratorAnalytic {
 public:
@@ -74,7 +75,7 @@ public:
   using Layout = Layout_;
   using TensorCoord = typename Layout::TensorCoord;
   using ThreadMap = ThreadMap_;
-  using AccessType = AlignedArray<Element, ThreadMap::kElementsPerAccess>;
+  using AccessType = AccessType_;
   using TensorRef = cutlass::TensorRef<Element, Layout>;
   using Index = typename Layout::Index;
   using LongIndex = typename Layout::LongIndex;
@@ -82,7 +83,12 @@ public:
   static StrideSupport const kStrideSupport = conv::StrideSupport::kStrided;
   static int const kConvDim = 2;
   using ConvProblemSize = typename conv::Conv2dProblemSize;
+ 
+  static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
   
+  static_assert(!(ThreadMap::kElementsPerAccess % AccessType::kElements), 
+    "Vectors implied by the thread map must be divisible by the access type.");
+ 
   //
   // Simplifying assertions
   //
@@ -101,6 +107,7 @@ private:
   Conv2dProblemSize const &problem_size_;
   LongIndex iteration_contiguous_;
   LongIndex iteration_strided_;
+  LongIndex iteration_vector_;
   char const *pointer_;
 
   int filter_c_;
@@ -154,8 +161,10 @@ public:
   /// Overrides the internal iteration index
   CUTLASS_HOST_DEVICE
   void set_iteration_index(Index index) {
-    iteration_contiguous_ = index % ThreadMap::Iterations::kContiguous;
-    iteration_strided_ = index / ThreadMap::Iterations::kContiguous;
+    iteration_vector_ = index % kAccessesPerVector;
+    int residual_access = index / kAccessesPerVector;
+    iteration_contiguous_ = residual_access % ThreadMap::Iterations::kContiguous;
+    iteration_strided_ = residual_access / ThreadMap::Iterations::kContiguous;
   }
 
   /// Adds a pointer offset in units of Element
@@ -200,7 +209,9 @@ public:
     int h = p * problem_size_.stride_h - problem_size_.pad_h + r * problem_size_.dilation_h;
     int w = q * problem_size_.stride_w - problem_size_.pad_w + s * problem_size_.dilation_w;
 
-    return TensorCoord(n, h, w, filter_c_);
+    int c = filter_c_ + iteration_vector_ * AccessType::kElements; 
+
+    return TensorCoord(n, h, w, c);
   }
 
   /// Returns true if the current coordinate is within the activations tensor X
@@ -230,6 +241,12 @@ public:
   /// Increments to the next memory access
   CUTLASS_HOST_DEVICE
   Conv2dFpropActivationTileAccessIteratorAnalytic &operator++() {
+    ++iteration_vector_;
+    if (iteration_vector_ < kAccessesPerVector) {
+      return *this;
+    }
+    iteration_vector_ = 0;
+
     ++iteration_contiguous_;
     if (iteration_contiguous_ < ThreadMap::Iterations::kContiguous) {
       return *this;
@@ -250,7 +267,7 @@ public:
   static Status can_implement(Conv2dProblemSize const &problem_size) {
 
     // check alignment constraint on iterator's contiguous dimension
-    if (problem_size.C % (128/sizeof_bits<Element>::value)) {
+    if (problem_size.C % AccessType::kElements) {
       return Status::kErrorInvalidProblem;
     }
 

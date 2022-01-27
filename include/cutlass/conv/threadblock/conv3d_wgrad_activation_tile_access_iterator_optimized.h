@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -45,6 +45,7 @@
 #include "cutlass/layout/matrix.h"
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv3d_problem_size.h"
+#include "cutlass/conv/threadblock/conv3d_params.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -78,7 +79,7 @@ public:
   static StrideSupport const kStrideSupport = conv::StrideSupport::kStrided;
   static int const kConvDim = 3;
   using ConvProblemSize = typename conv::Conv3dProblemSize;
-  
+  static int const kAccessesPerVector = 1;
   static_assert(sizeof_bits<Element>::value >= 8,
     "WGRAD requires elements of size 8b or greater.");
 
@@ -86,62 +87,28 @@ public:
   // Parameters structure
   //
 
-  struct Params {
-
-    Layout layout;
-
-    int RSC;                  // product of R*S*C
-    unsigned rsc_mul;         // precomputed quantities for fast computation of div/% by RSC
-    unsigned rsc_shr;         //    in device code.
-
-    int SC;                   // product of S*C
-    unsigned sc_mul;          // precomputed quantities for fast computation of div/% by SC
-    unsigned sc_shr;          //    in device code.
-
-    unsigned c_mul;          // precomputed quantities for fast computation of div/% by C
-    unsigned c_shr;          //    in device code.
-
-    int ZPQ;                 // product of Z*P*Q
-    unsigned zpq_mul;        // precomputed quantities for fast computation of div/% by ZPQ
-    unsigned zpq_shr;        //    in device code.
-
-    int PQ;                  // product of P*Q
-    unsigned pq_mul;         // precomputed quantities for fast computation of div/% by PQ
-    unsigned pq_shr;         //    in device code.
-
-    unsigned q_mul;          // precomputed quantities for fast computation of div/% by Q
-    unsigned q_shr;          //    in device code.
-
+  struct Params : Conv3dWgradActivationIteratorOptimizedParams {
     //
     // Methods
     //
     CUTLASS_HOST_DEVICE
-    Params() { }
+    Params() {}
 
     CUTLASS_HOST_DEVICE
-    Params(
-      Conv3dProblemSize const &problem_size, 
-      Layout const &layout
-    ): layout(layout) {
+    Params(Conv3dWgradActivationIteratorOptimizedParams const &base)
+          : Conv3dWgradActivationIteratorOptimizedParams(base) {}
 
-      // Precompute several quantities for fast modulo arithmetic.
-      RSC = problem_size.R * problem_size.S * problem_size.C;
-      find_divisor(rsc_mul, rsc_shr, RSC);
-
-      SC = problem_size.S * problem_size.C;
-      find_divisor(sc_mul, sc_shr, SC);
-      
-      find_divisor(c_mul, c_shr, problem_size.C);
-
-      ZPQ = problem_size.Z * problem_size.P * problem_size.Q;
-      find_divisor(zpq_mul, zpq_shr, ZPQ);
-
-      PQ = problem_size.P * problem_size.Q;
-      find_divisor(pq_mul, pq_shr, PQ);
-
-      find_divisor(q_mul, q_shr, problem_size.Q);
-
-    }
+    CUTLASS_HOST_DEVICE
+    Params(Conv3dProblemSize const &problem_size, Layout const &layout)
+          : Conv3dWgradActivationIteratorOptimizedParams(
+          problem_size,
+          layout,
+          sizeof_bits<Element>::value,
+          {Shape::kRow, Shape::kColumn},
+          ThreadMap::kThreads,
+          ThreadMap::kElementsPerAccess,
+          {ThreadMap::Iterations::kContiguous, ThreadMap::Iterations::kStrided},
+          {ThreadMap::Delta::kContiguous, ThreadMap::Delta::kStrided}) {}
   };
 
 private:

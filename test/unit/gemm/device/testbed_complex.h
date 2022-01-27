@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -102,33 +102,33 @@ struct TestbedComplex : public Testbed<Gemm> {
   }
 
   /// Returns true if the CUDA device is sufficient to execute the kernel.
-	bool sufficient() const {
-		//
-		// Determine SMEM requirements and waive if not satisfied
-		//
-
-		int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
-
-		cudaDeviceProp properties;
-		int device_idx;
-		cudaError_t result = cudaGetDevice(&device_idx);
-	
-		if (result != cudaSuccess) {
-			throw std::runtime_error("cudaGetDevice() API call failed.");
-		}
-		
-		result = cudaGetDeviceProperties(&properties, device_idx);
-
-		if (result != cudaSuccess) {
-			throw std::runtime_error("cudaGetDeviceProperties() failed");
-		}
-
-		if (properties.sharedMemPerMultiprocessor < smem_size) {
-			return false;
-		}
-
-		return true;
-	}
+  bool sufficient() const {
+    //
+    // Determine SMEM requirements and waive if not satisfied
+    //
+    
+    int smem_size = int(sizeof(typename Gemm::GemmKernel::SharedStorage));
+    
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+    
+    if (result != cudaSuccess) {
+    	throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+    
+    result = cudaGetDeviceProperties(&properties, device_idx);
+    
+    if (result != cudaSuccess) {
+    	throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+    
+    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    	return false;
+    }
+    
+    return true;
+  }
 
   /// Executes one test
   bool run(
@@ -145,9 +145,9 @@ struct TestbedComplex : public Testbed<Gemm> {
       return true;
     }
 
-		//
-		// Initialize workspace
-		//
+    //
+    // Initialize workspace
+    //
 
     this->initialize(problem_size);
 		

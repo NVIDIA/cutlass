@@ -48,7 +48,7 @@ where functions _f_ and _g_ are defined as follows.
 
 ```
 f(p, r) = p * stride_h + R - r - 1 + pad_h
-g(q, s) = h * stride_w + S - s - 1 + pad_w
+g(q, s) = q * stride_w + S - s - 1 + pad_w
 ```
 
 A [host](/tools/util/include/cutlass/util/reference/host/convolution.h) and [device](/tools/util/include/cutlass/util/reference/device/convolution.h) 
@@ -152,13 +152,13 @@ a hierarchical GEMM kernel targeting Tensor Cores.
 
 # CUTLASS Convolution Implementation
 
-The CUTLASS Implicit GEMM implementation makes several assumptions.
+To get the best performance, the following parameters are recommended.
 
 - All tensors are 128-bit aligned NHWC tensors
 - Channel count (C) is a multiple of 32 elements
 - Filter count (K) is a multiple of 32 elements
 
-This enables 128-bit vector memory acceses which lead to efficient CUDA kernels. 
+This enables 128-bit vector memory acceses which lead to efficient CUDA kernels. Smaller alignment is supported even on tensor cores by setting AlignmentA and AlignmentB in conv::kernel::DefaultConv2dFprop, but the performance is lower than 128-bit aligned tesnors.
 
 # CUTLASS Device-level Convolution Operator
 
@@ -187,7 +187,7 @@ using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
   SwizzleThreadBlock,                                     // optional function to reorder threadblocks for locality
   NumStages,                                              // number of pipeline stages in threadblock-scoped GEMM
   cutlass::arch::OpMultiplyAddSaturate,                   // math operation on data of element a and b
-  cutlass::conv::IteratorAlgorithm::kAnalytic             // globabl memory iterator algorithm  
+  cutlass::conv::IteratorAlgorithm::kOptimized            // globabl memory iterator algorithm  
 >::Kernel
 ```
 
@@ -219,7 +219,7 @@ using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
   SwizzleThreadBlock,                                  // optional function to reorder threadblocks for locality
   2,                                                   // number of pipeline stages in threadblock-scoped GEMM
   cutlass::arch::OpMultiplyAddSaturate,                // math operation on data of element a and b
-  cutlass::conv::IteratorAlgorithm::kAnalytic          // globabl memory iterator algorithm  
+  cutlass::conv::IteratorAlgorithm::kOptimized         // globabl memory iterator algorithm  
 >::Kernel
 ```
 
@@ -774,6 +774,6 @@ Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
   FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
   BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
   OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-  STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```

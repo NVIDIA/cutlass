@@ -17,7 +17,7 @@
 # FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
 # BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
 # OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-# STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 if(CUDA_COMPILER MATCHES "[Cc]lang")
@@ -74,7 +74,7 @@ find_library(
   lib64
   lib
   NO_DEFAULT_PATH
-  # We aren't going to search any system paths. We want to find the runtime 
+  # We aren't going to search any system paths. We want to find the runtime
   # in the CUDA toolkit we're building against.
   )
 
@@ -89,10 +89,10 @@ if(NOT TARGET cudart AND CUDART_LIBRARY)
     # from the PATH search.
   else()
     add_library(cudart SHARED IMPORTED GLOBAL)
-  endif()  
+  endif()
 
   add_library(nvidia::cudart ALIAS cudart)
-  
+
   set_property(
     TARGET cudart
     PROPERTY IMPORTED_LOCATION
@@ -120,7 +120,7 @@ find_library(
   lib64/stubs
   lib/stubs
   NO_DEFAULT_PATH
-  # We aren't going to search any system paths. We want to find the runtime 
+  # We aren't going to search any system paths. We want to find the runtime
   # in the CUDA toolkit we're building against.
   )
 
@@ -135,10 +135,10 @@ if(NOT TARGET cuda_driver AND CUDA_DRIVER_LIBRARY)
     # from the PATH search.
   else()
     add_library(cuda_driver SHARED IMPORTED GLOBAL)
-  endif()  
+  endif()
 
   add_library(nvidia::cuda_driver ALIAS cuda_driver)
-  
+
   set_property(
     TARGET cuda_driver
     PROPERTY IMPORTED_LOCATION
@@ -164,7 +164,7 @@ find_library(
   lib64
   lib
   NO_DEFAULT_PATH
-  # We aren't going to search any system paths. We want to find the runtime 
+  # We aren't going to search any system paths. We want to find the runtime
   # in the CUDA toolkit we're building against.
   )
 
@@ -179,10 +179,10 @@ if(NOT TARGET nvrtc AND NVRTC_LIBRARY)
     # from the PATH search.
   else()
     add_library(nvrtc SHARED IMPORTED GLOBAL)
-  endif()  
-  
+  endif()
+
   add_library(nvidia::nvrtc ALIAS nvrtc)
-  
+
   set_property(
     TARGET nvrtc
     PROPERTY IMPORTED_LOCATION
@@ -242,7 +242,7 @@ function(cutlass_unify_source_files TARGET_ARGS_VAR)
 
     set(CUDA_FILE_ARGS)
     set(TARGET_SOURCE_ARGS)
-    
+
     foreach(ARG ${__UNPARSED_ARGUMENTS})
       if(${ARG} MATCHES ".*\.cu$")
         list(APPEND CUDA_FILE_ARGS ${ARG})
@@ -250,7 +250,7 @@ function(cutlass_unify_source_files TARGET_ARGS_VAR)
         list(APPEND TARGET_SOURCE_ARGS ${ARG})
       endif()
     endforeach()
-    
+
     list(LENGTH CUDA_FILE_ARGS NUM_CUDA_FILE_ARGS)
     while(NUM_CUDA_FILE_ARGS GREATER 0)
       list(SUBLIST CUDA_FILE_ARGS 0 ${__BATCH_SIZE} CUDA_FILE_BATCH)
@@ -280,7 +280,6 @@ function(cutlass_unify_source_files TARGET_ARGS_VAR)
   set(${TARGET_ARGS_VAR} ${TARGET_SOURCE_ARGS} PARENT_SCOPE)
 
 endfunction()
-
 function(cutlass_add_library NAME)
 
   set(options)

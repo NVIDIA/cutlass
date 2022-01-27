@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -77,6 +77,8 @@ template <
     typename Policy_,
     /// Number of stages,
     int Stages,
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear = SharedMemoryClearOption::kNone,
     /// Used for partial specialization
     typename Enable = bool>
 class MmaMultistage : 
@@ -228,8 +230,13 @@ public:
         for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_A.get();
 
-          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
-              dst_ptr + v, gmem_ptr, iterator_A.valid());
+          if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
+            cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
+                dst_ptr + v, gmem_ptr, iterator_A.valid());
+          } else {
+            cutlass::arch::cp_async<kSrcBytes, kCacheOpA>(
+                dst_ptr + v, gmem_ptr, iterator_A.valid());
+          }
 
           ++iterator_A;
         }
@@ -258,8 +265,13 @@ public:
         for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_B.get();
 
-          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
-              dst_ptr + v, gmem_ptr, iterator_B.valid());
+          if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
+            cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
+                dst_ptr + v, gmem_ptr, iterator_B.valid());
+          } else {
+            cutlass::arch::cp_async<kSrcBytes, kCacheOpB>(
+                dst_ptr + v, gmem_ptr, iterator_B.valid());
+          }
 
           ++iterator_B;
         }
@@ -291,10 +303,8 @@ public:
     for (int stage = 0; stage < Base::kStages - 1;
          ++stage, --gemm_k_iterations) {
 
-      if (gemm_k_iterations == 0) {
-        iterator_A.clear_mask();
-        iterator_B.clear_mask();
-      }
+      iterator_A.clear_mask(gemm_k_iterations == 0);
+      iterator_B.clear_mask(gemm_k_iterations == 0);
 
       iterator_A.set_iteration_index(0);
       this->smem_iterator_A_.set_iteration_index(0);
@@ -364,6 +374,55 @@ public:
     // Perform accumulation in the 'd' output operand
     accum = src_accum;
 
+    //
+    // Clear the remaining tiles of SMEM. This is a functional requirement for some kernels
+    // so that all accumulator elements outside the GEMM footprint are zero.
+    //
+
+    if (SharedMemoryClear == SharedMemoryClearOption::kClearLastStage) {
+
+      /// Iterator to write threadblock-scoped tile of A operand to shared memory
+      SmemIteratorA last_smem_iterator_A(this->smem_iterator_A_);
+
+      typename IteratorA::AccessType zero_A;
+      zero_A.clear();
+
+      last_smem_iterator_A.set_iteration_index(0);
+
+      // Async Copy for operand A
+      CUTLASS_PRAGMA_UNROLL
+      for (int j = 0; j < Detail::AsyncCopyIterationsPerStageA; ++j) {
+
+        typename IteratorA::AccessType *dst_ptr =
+            reinterpret_cast<typename IteratorA::AccessType *>(
+                last_smem_iterator_A.get());
+
+        *dst_ptr = zero_A;
+
+        ++last_smem_iterator_A;
+      }
+
+      /// Iterator to write threadblock-scoped tile of B operand to shared memory
+      SmemIteratorB last_smem_iterator_B(this->smem_iterator_B_);
+      typename IteratorB::AccessType zero_B;
+
+      zero_B.clear();
+      last_smem_iterator_B.set_iteration_index(0);
+
+      // Async Copy for operand B
+      CUTLASS_PRAGMA_UNROLL
+      for (int j = 0; j < Detail::AsyncCopyIterationsPerStageB; ++j) {
+
+        typename IteratorB::AccessType *dst_ptr =
+            reinterpret_cast<typename IteratorB::AccessType *>(
+                last_smem_iterator_B.get());
+
+        *dst_ptr = zero_B;
+
+        ++last_smem_iterator_B;
+      }
+    }
+
     // Waits until kStages-2 stages have committed.
     cutlass::arch::cp_async_wait<Base::kStages - 2>();
     __syncthreads();
@@ -386,16 +445,29 @@ public:
     ++this->warp_tile_iterator_A_;
     ++this->warp_tile_iterator_B_;
 
-    if (gemm_k_iterations == 0) {
-      iterator_A.clear_mask();
-      iterator_B.clear_mask();
-    }
+    iterator_A.clear_mask(gemm_k_iterations == 0);
+    iterator_B.clear_mask(gemm_k_iterations == 0);
 
     int smem_write_stage_idx = Base::kStages - 1;
     int smem_read_stage_idx = 0;
 
     warp_mma.transform(warp_transformed_frag_A[0], warp_transformed_frag_B[0],
                        warp_loaded_frag_A[0], warp_loaded_frag_B[0]);
+
+    // tf32x3 kernels use staging accumulation. warp_mma uses a temporary
+    // accumulator and this temporary accumulator is added to the final
+    // accumulator once in every mainloop iteration.
+    plus<FragmentC> plus_accum;
+
+    FragmentC tmp_accum;
+
+    if (platform::is_same<typename Operator::MathOperator,
+                          arch::OpMultiplyAddFastF32>::value
+      || platform::is_same<typename Operator::MathOperator,
+                           arch::OpMultiplyAddComplexFastF32>::value) {
+
+      tmp_accum.clear();
+    }
 
     //
     // Mainloop
@@ -431,12 +503,30 @@ public:
                              warp_loaded_frag_A[warp_mma_k % 2],
                              warp_loaded_frag_B[warp_mma_k % 2]);
 
-        warp_mma(
-          accum, 
-          warp_transformed_frag_A[warp_mma_k % 2],
-          warp_transformed_frag_B[warp_mma_k % 2], 
-          accum
-        );
+        if (platform::is_same<typename Operator::MathOperator,
+                              arch::OpMultiplyAddFastF32>::value
+          || platform::is_same<typename Operator::MathOperator,
+                               arch::OpMultiplyAddComplexFastF32>::value) {
+
+          warp_mma(
+            tmp_accum, 
+            warp_transformed_frag_A[warp_mma_k % 2],
+            warp_transformed_frag_B[warp_mma_k % 2], 
+            tmp_accum
+          );
+
+          if (warp_mma_k == 0) {
+            accum = plus_accum(accum, tmp_accum);
+            tmp_accum.clear();
+          }
+        } else {
+          warp_mma(
+            accum, 
+            warp_transformed_frag_A[warp_mma_k % 2],
+            warp_transformed_frag_B[warp_mma_k % 2], 
+            accum
+          );
+        }
 
         // Issue global->shared copies for the this stage
         if (warp_mma_k < Base::kWarpGemmIterations - 1) {
@@ -497,10 +587,8 @@ public:
           }
 
           --gemm_k_iterations;
-          if (gemm_k_iterations == 0) {
-            iterator_A.clear_mask();
-            iterator_B.clear_mask();
-          }
+          iterator_A.clear_mask(gemm_k_iterations == 0);
+          iterator_B.clear_mask(gemm_k_iterations == 0);
         }
 
         // Do any conversions feeding the first stage at the end of the loop so
@@ -513,11 +601,20 @@ public:
       }
 
     }
-    
-    // commit and drain all pending and predicated LDGSTS pnz from the GEMM mainloop
-    cutlass::arch::cp_async_fence();
-    cutlass::arch::cp_async_wait<0>();
-    __syncthreads();
+
+    if (platform::is_same<typename Operator::MathOperator,
+                          arch::OpMultiplyAddFastF32>::value
+      || platform::is_same<typename Operator::MathOperator,
+                           arch::OpMultiplyAddComplexFastF32>::value) {
+      accum = plus_accum(accum, tmp_accum); 
+    }
+ 
+    if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
+      // commit and drain all pending and predicated LDGSTS pnz from the GEMM mainloop
+      cutlass::arch::cp_async_fence();
+      cutlass::arch::cp_async_wait<0>();
+      __syncthreads();
+    }
 
   }
 };

@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -186,12 +186,6 @@ public:
     GemmUniversalConfiguration const &config = *static_cast<GemmUniversalConfiguration const *>(host_workspace);
     GemmUniversalArguments const &args = *static_cast<GemmUniversalArguments const *>(arguments);
 
-    ElementCompute alpha;
-    ElementCompute beta;
-
-    alpha = *static_cast<ElementCompute const *>(args.alpha);
-    beta = *static_cast<ElementCompute const *>(args.beta);
-
     TensorRefA ref_A{static_cast<ElementA *>(const_cast<void *>(args.A)), LayoutA(int(config.lda))};
     TensorRefB ref_B{static_cast<ElementB *>(const_cast<void *>(args.B)), LayoutB(int(config.ldb))};
     TensorRefC ref_C{static_cast<ElementC *>(const_cast<void *>(args.C)), LayoutC(int(config.ldc))};
@@ -212,16 +206,16 @@ public:
         InnerProductOp
       >(
         config.problem_size,
-        alpha,
+        *static_cast<ElementCompute const *>(args.alpha),
         ref_A,
         kTransformA,
         ref_B,
         kTransformB,
-        beta,
+        *static_cast<ElementCompute const *>(args.beta),
         ref_C,
         ref_D,
         ElementAccumulator(),
-        config.batch_count,
+        ((config.mode == library::GemmUniversalMode::kBatched) ? config.batch_count : 1),
         args.batch_stride_A,
         args.batch_stride_B,
         args.batch_stride_C,
@@ -245,16 +239,16 @@ public:
         InnerProductOp
       >(
         config.problem_size,
-        alpha,
+        *static_cast<ElementCompute const *>(args.alpha),
         ref_A,
         kTransformA,
         ref_B,
         kTransformB,
-        beta,
+        *static_cast<ElementCompute const *>(args.beta),
         ref_C,
         ref_D,
         ElementAccumulator(),
-        config.batch_count,
+        ((config.mode == library::GemmUniversalMode::kBatched) ? config.batch_count : 1),
         args.batch_stride_A,
         args.batch_stride_B,
         args.batch_stride_C,
@@ -263,7 +257,7 @@ public:
 
       return Status::kSuccess;
     }
-
+    
     return Status::kErrorNotSupported;
   }
 };

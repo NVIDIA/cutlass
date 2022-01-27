@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -204,9 +204,15 @@ class TensorRef {
 
   /// Constructs a TensorRef with a pointer and layout object.
   CUTLASS_HOST_DEVICE
+  TensorRef(): ptr_(nullptr) {
+  
+  }
+
+  /// Constructs a TensorRef with a pointer and layout object.
+  CUTLASS_HOST_DEVICE
   TensorRef(
-    Element *ptr = nullptr,                   ///< pointer to start of tensor
-    Layout const &layout = Layout()           ///< layout object containing stride and mapping function
+    Element *ptr,                   ///< pointer to start of tensor
+    Layout const &layout            ///< layout object containing stride and mapping function
   ):
     ptr_(ptr), layout_(layout) {
   
@@ -286,13 +292,13 @@ class TensorRef {
 
   /// Returns the layout object's stride in a given physical dimension
   CUTLASS_HOST_DEVICE
-  Index stride(int dim) const {
+  typename Layout::Stride::Index stride(int dim) const {
     return layout_.stride().at(dim);
   }
 
   /// Returns the layout object's stride in a given physical dimension
   CUTLASS_HOST_DEVICE
-  Index & stride(int dim) {
+  typename Layout::Stride::Index & stride(int dim) {
     return layout_.stride().at(dim);
   }
 

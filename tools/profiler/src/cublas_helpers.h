@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -34,7 +34,6 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
 #include "cutlass/library/util.h"
-
 #include "options.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -188,7 +187,7 @@ struct cublasGemmExDispatcher {
   cudaDataType_t data_type_C;
   cudaDataType_t compute_data_type;
 
-#if (__CUDA_VER_MAJOR__ >= 11)
+#if (__CUDACC_VER_MAJOR__ >= 11)
   cublasComputeType_t compute_type;
 #endif
 

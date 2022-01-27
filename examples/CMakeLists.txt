@@ -17,7 +17,7 @@
 # FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
 # BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
 # OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-# STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set(CUTLASS_EXAMPLES_COMMON_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/common)
@@ -28,9 +28,13 @@ add_custom_target(test_examples)
 function(cutlass_example_add_executable NAME)
 
   set(options)
-  set(oneValueArgs)
+  set(oneValueArgs DISABLE_TESTS)
   set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  if (NOT DEFINED __DISABLE_TESTS)
+    set(__DISABLE_TESTS OFF)
+  endif()
 
   cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS})
 
@@ -41,6 +45,7 @@ function(cutlass_example_add_executable NAME)
     PRIVATE
     CUTLASS
     cutlass_tools_util_includes
+    $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
     )
 
   target_include_directories(
@@ -60,6 +65,7 @@ function(cutlass_example_add_executable NAME)
     DEPENDEES test_examples ${__DEPENDEES}
     TEST_COMMAND_OPTIONS ${__TEST_COMMAND_OPTIONS}
     DISABLE_EXECUTABLE_INSTALL_RULE
+    DISABLE_TESTS ${__DISABLE_TESTS}
     )
 
 endfunction()
@@ -83,6 +89,18 @@ foreach(EXAMPLE
   15_ampere_sparse_tensorop_gemm
   16_ampere_tensorop_conv2dfprop
   17_fprop_per_channel_bias
+  18_ampere_fp64_tensorop_affine2_gemm
+  19_tensorop_canonical
+  20_simt_canonical
+  21_quaternion_gemm
+  22_quaternion_conv
+  23_ampere_gemm_operand_reduction_fusion
+  24_gemm_grouped
+  25_ampere_fprop_mainloop_fusion
+  26_ampere_wgrad_mainloop_fusion
+  27_ampere_3xtf32_fast_accurate_tensorop_gemm
+  28_ampere_3xtf32_fast_accurate_tensorop_fprop
+  29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm
   )
 
   add_subdirectory(${EXAMPLE})

@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -195,7 +195,8 @@ public:
     IteratorA &iterator_A, IteratorB &iterator_B,
     int group_start_A = 0, int group_start_B = 0) {
 
-    iterator_A.set_iteration_index(group_start_A);
+    iterator_A.set_iteration_index(group_start_A *
+                                   IteratorA::kAccessesPerVector);
     this->smem_iterator_A_.set_iteration_index(group_start_A);
       
     // Async Copy for operand A
@@ -208,18 +209,23 @@ public:
                 this->smem_iterator_A_.get());
 
         int const kSrcBytes = sizeof_bits<typename IteratorA::Element>::value *
-                              IteratorA::ThreadMap::kElementsPerAccess / 8;
+                              IteratorA::ThreadMap::kElementsPerAccess /
+                              IteratorA::kAccessesPerVector / 8;
 
-        cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
-                dst_ptr, iterator_A.get(), iterator_A.valid());
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
+          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
+                  dst_ptr + v, iterator_A.get(), iterator_A.valid());
 
-        ++iterator_A;
+          ++iterator_A;
+        }
 
         ++this->smem_iterator_A_;
       }
     }
 
-    iterator_B.set_iteration_index(group_start_B);
+    iterator_B.set_iteration_index(group_start_B *
+                                   IteratorB::kAccessesPerVector);
 
     this->smem_iterator_B_.set_iteration_index(group_start_B);
     
@@ -232,12 +238,16 @@ public:
                 this->smem_iterator_B_.get());
         
         int const kSrcBytes = sizeof_bits<typename IteratorB::Element>::value *
-                              IteratorB::ThreadMap::kElementsPerAccess / 8;
+                              IteratorB::ThreadMap::kElementsPerAccess /
+                              IteratorB::kAccessesPerVector / 8;
 
-        cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
-                dst_ptr, iterator_B.get(), iterator_B.valid());
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
+          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
+                  dst_ptr + v, iterator_B.get(), iterator_B.valid());
 
-        ++iterator_B;
+          ++iterator_B;
+        }
         ++this->smem_iterator_B_;
       }
     }
@@ -279,14 +289,19 @@ public:
           reinterpret_cast<typename IteratorA::AccessType *>(
             this->smem_iterator_A_.get());
 
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
         int const kSrcBytes =
             sizeof_bits<typename IteratorA::Element>::value *
-            IteratorA::ThreadMap::kElementsPerAccess / 8;
+            IteratorA::ThreadMap::kElementsPerAccess /
+            IteratorA::kAccessesPerVector / 8;
 
-        cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
-          dst_ptr, iterator_A.get(), iterator_A.valid());
+          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpA>(
+            dst_ptr + v, iterator_A.get(), iterator_A.valid());
 
-        ++iterator_A;
+          ++iterator_A;
+        }
+
         ++this->smem_iterator_A_;
       }
 
@@ -300,14 +315,19 @@ public:
           reinterpret_cast<typename IteratorB::AccessType *>(
               this->smem_iterator_B_.get());
 
-        int const kSrcBytes =
-            sizeof_bits<typename IteratorB::Element>::value *
-            IteratorB::ThreadMap::kElementsPerAccess / 8;
+        CUTLASS_PRAGMA_UNROLL
+        for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
+          int const kSrcBytes =
+              sizeof_bits<typename IteratorB::Element>::value *
+              IteratorB::ThreadMap::kElementsPerAccess /
+              IteratorB::kAccessesPerVector / 8;
+  
+          cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
+              dst_ptr + v, iterator_B.get(), iterator_B.valid());
+  
+          ++iterator_B;
+        }
 
-        cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
-            dst_ptr, iterator_B.get(), iterator_B.valid());
-
-        ++iterator_B;
         ++this->smem_iterator_B_;
       }
 
@@ -356,6 +376,20 @@ public:
     warp_mma.transform(warp_transformed_frag_A[0], warp_transformed_frag_B[0],
                        warp_loaded_frag_A[0], warp_loaded_frag_B[0]);
 
+    // tf32x3 kernels use staging accumulation. warp_mma uses a temporary
+    // accumulator and this temporary accumulator is added to the final
+    // accumulator once in every mainloop iteration.
+    plus<FragmentC> plus_accum;
+
+    FragmentC tmp_accum;
+
+    if (platform::is_same<typename Operator::MathOperator,
+                          arch::OpMultiplyAddFastF32>::value
+      || platform::is_same<typename Operator::MathOperator,
+                           arch::OpMultiplyAddComplexFastF32>::value) {
+      tmp_accum.clear();
+    }
+
     //
     // Mainloop
     //
@@ -377,7 +411,7 @@ public:
 
         this->warp_tile_iterator_A_.set_kgroup_index((warp_mma_k + 1) % Base::kWarpGemmIterations);
         this->warp_tile_iterator_B_.set_kgroup_index((warp_mma_k + 1) % Base::kWarpGemmIterations);
-        
+
         this->warp_tile_iterator_A_.load(warp_loaded_frag_A[(warp_mma_k + 1) % 2]);
         this->warp_tile_iterator_B_.load(warp_loaded_frag_B[(warp_mma_k + 1) % 2]);
 
@@ -406,12 +440,29 @@ public:
         copy_tiles_and_advance(iterator_A, iterator_B, group_start_iteration_A,
                                group_start_iteration_B);
 
-        warp_mma(
-                accum, 
-                warp_transformed_frag_A[warp_mma_k % 2],
-                 warp_transformed_frag_B[warp_mma_k % 2], 
-                 accum
-                );
+        if (platform::is_same<typename Operator::MathOperator,
+                              arch::OpMultiplyAddFastF32>::value
+          || platform::is_same<typename Operator::MathOperator,
+                               arch::OpMultiplyAddComplexFastF32>::value) {
+          warp_mma(
+            tmp_accum, 
+            warp_transformed_frag_A[warp_mma_k % 2],
+            warp_transformed_frag_B[warp_mma_k % 2], 
+            tmp_accum
+          );
+
+          if (warp_mma_k == 0) {
+            accum = plus_accum(accum, tmp_accum);
+            tmp_accum.clear();
+          }
+        } else {
+          warp_mma(
+            accum, 
+            warp_transformed_frag_A[warp_mma_k % 2],
+            warp_transformed_frag_B[warp_mma_k % 2], 
+            accum
+          );
+        }
 
         if (warp_mma_k + 1 == Base::kWarpGemmIterations)
           warp_mma.transform(warp_transformed_frag_A[(warp_mma_k + 1) % 2],
@@ -463,6 +514,13 @@ public:
 
     }
 
+    if (platform::is_same<typename Operator::MathOperator,
+                          arch::OpMultiplyAddFastF32>::value
+      || platform::is_same<typename Operator::MathOperator,
+                           arch::OpMultiplyAddComplexFastF32>::value) {
+      accum = plus_accum(accum, tmp_accum); 
+    }
+  
     // Insert fence and wait for all outstanding cp.async operations to commit.
     cutlass::arch::cp_async_fence();
     cutlass::arch::cp_async_wait<0>();

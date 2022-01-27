@@ -32,6 +32,8 @@
 
 #include <cuda_runtime.h>
 
+#include "cutlass/cutlass.h"
+
 namespace cutlass {
 
 /******************************************************************************
@@ -90,9 +92,17 @@ struct CommandLine {
   /**
    * Returns number of naked (non-flag and non-key-value) commandline parameters
    */
-  template <typename value_t>
-  int num_naked_args() const {
+  size_t num_naked_args() const {
     return args.size();
+  }
+
+  /**
+   * Print naked (non-flag and non-key-value) commandline parameters
+   */
+  void print_naked_args(std::ostream &out) const {
+    for (auto arg : args) {
+      out << "   " << arg <<"\n";
+    }
   }
 
   /**
@@ -110,7 +120,7 @@ struct CommandLine {
   /**
    * Obtains the boolean value specified for a given commandline parameter --<flag>=<bool>
    */
-  void get_cmd_line_argument(const char* arg_name, bool& val, bool _default = true) const {
+  void get_cmd_line_argument(const char* arg_name, bool& val, bool _default) const {
     val = _default;
     if (check_cmd_line_flag(arg_name)) {
       std::string value;

@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -635,7 +635,7 @@ TEST(SM80_warp_gemm_tensor_op_congruous_tf32, 128x128x32_32x32x32_16x8x8) {
 }
 ////////////////////////////////////////////////////////////////////////////////
 
-TEST(SM80_warp_gemm_tensor_op_tn, tf32_round_128x128x32_16x16x32_16x8x8) {
+TEST(SM80_warp_gemm_tensor_op_tn, tf32_round_128x128x32_64x64x32_16x8x8) {
 
   using Shape = cutlass::gemm::GemmShape<64, 64, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
@@ -657,7 +657,7 @@ TEST(SM80_warp_gemm_tensor_op_tn, tf32_round_128x128x32_16x16x32_16x8x8) {
       .run();
 }
 
-TEST(SM80_warp_gemm_tensor_op_nt, tf32_round_128x128x32_16x16x32_16x8x8) {
+TEST(SM80_warp_gemm_tensor_op_nt, tf32_round_128x128x32_64x64x32_16x8x8) {
 
   using Shape = cutlass::gemm::GemmShape<64, 64, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
@@ -1855,4 +1855,5 @@ TEST(SM80_warp_gemm_tensor_op_canonical_tf32_col_row, 32x32x8_64x32x8_8x8x4) {
 ////////////////////////////////////////////////////////////////////////////////
 
 #endif // if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
+
 

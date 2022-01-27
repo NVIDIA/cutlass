@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -279,6 +279,53 @@ inline __device__ void ldsm<layout::ColumnMajor, 4>(
 
   #endif
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename AccessType, int Bytes>
+struct shared_load_op {
+  CUTLASS_DEVICE
+  shared_load_op(AccessType &D, void const *ptr) {
+    D = *reinterpret_cast<AccessType const *>(ptr);  
+  }
+};
+
+template <typename AccessType>
+CUTLASS_DEVICE void shared_load(AccessType &D, void const *ptr) {
+  shared_load_op<AccessType, int(sizeof(AccessType))>(D, ptr);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename AccessType>
+struct shared_load_op<AccessType, 16> {
+  CUTLASS_DEVICE
+  shared_load_op(AccessType &D, void const *ptr) {
+    unsigned addr = cutlass_get_smem_pointer(ptr);
+
+    uint4 v;
+    asm volatile ("ld.shared.v4.b32 {%0, %1, %2, %3}, [%4];" : 
+      "=r"(v.x), "=r"(v.y), "=r"(v.z), "=r"(v.w) : "r"(addr));
+
+    D = reinterpret_cast<AccessType const &>(v);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename AccessType>
+struct shared_load_op<AccessType, 8> {
+  CUTLASS_DEVICE
+  shared_load_op(AccessType &D, void const *ptr) {
+    unsigned addr = cutlass_get_smem_pointer(ptr);
+
+    uint2 v;
+    asm volatile ("ld.shared.v2.b32 {%0, %1}, [%2];" : 
+      "=r"(v.x), "=r"(v.y) : "r"(addr));
+
+    D = reinterpret_cast<AccessType const &>(v);
+  }
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -207,9 +207,9 @@ public:
     int lane_idx                                        ///< ID of each thread within a warp
   ):
     Base(shared_storage, thread_idx, warp_idx, lane_idx),
-    smem_iterator_A_(shared_storage.sharedStorage0.operand_A_ref(), thread_idx), 
-    smem_iterator_B0_(shared_storage.sharedStorage0.operand_B_ref(), thread_idx),
-    smem_iterator_B1_(shared_storage.sharedStorage1.operand_B_ref(), thread_idx) {
+    smem_iterator_A_(shared_storage.shared_storage0.operand_A_ref(), thread_idx), 
+    smem_iterator_B0_(shared_storage.shared_storage0.operand_B_ref(), thread_idx),
+    smem_iterator_B1_(shared_storage.shared_storage1.operand_B_ref(), thread_idx) {
 
 
     // Compute warp location within threadblock tile by mapping the warp_id to three coordinates:

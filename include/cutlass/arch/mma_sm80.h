@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -34,6 +34,7 @@
 #include <assert.h>
 #endif
 
+#include "cutlass/cutlass.h"
 #include "mma.h"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/numeric_types.h"
@@ -2109,7 +2110,6 @@ struct Mma<
 
     int const *C = reinterpret_cast<int const *>(&c);
     int *D = reinterpret_cast<int *>(&d);
-
     asm volatile(
         "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.xor.popc {%0,%1,%2,%3}, "
         "{%4,%5,%6,%7}, "
@@ -2119,8 +2119,10 @@ struct Mma<
           "r"(C[0]), "r"(C[1]), "r"(C[2]), "r"(C[3]));
 
 #else
+    
     assert(0);
-#endif
+    
+#endif // defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
   }
 };
 

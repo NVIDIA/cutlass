@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -29,8 +29,10 @@
 
 #pragma once
 
+#if !defined(__CUDACC_RTC__)
 #include <iosfwd>
 #include <cmath>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
@@ -222,6 +224,7 @@ struct Matrix<Element_, 1, 2> {
     return slice_1x2(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 2> const &v, int i = 0) {
     return set_slice_1x2(v, i, 0);
   }
@@ -803,6 +806,7 @@ struct Matrix<Element_, 1, 3> {
     return slice_1x3(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 3> const &v, int i = 0) {
     return set_slice_1x3(v, i, 0);
   }
@@ -1456,6 +1460,7 @@ struct Matrix<Element_, 1, 4> {
     return slice_1x4(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 4> const &v, int i = 0) {
     return set_slice_1x4(v, i, 0);
   }
@@ -2084,6 +2089,7 @@ struct Matrix<Element_, 2, 1> {
     return slice_2x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 2, 1> const &v, int j =0) {
     return set_slice_2x1(v, 0, j);
   }
@@ -2726,6 +2732,7 @@ struct Matrix<Element_, 2, 2> {
     return slice_1x2(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 2> const &v, int i = 0) {
     return set_slice_1x2(v, i, 0);
   }
@@ -2756,6 +2763,7 @@ struct Matrix<Element_, 2, 2> {
     return slice_2x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 2, 1> const &v, int j =0) {
     return set_slice_2x1(v, 0, j);
   }
@@ -3532,6 +3540,7 @@ struct Matrix<Element_, 2, 3> {
     return slice_1x3(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 3> const &v, int i = 0) {
     return set_slice_1x3(v, i, 0);
   }
@@ -3562,6 +3571,7 @@ struct Matrix<Element_, 2, 3> {
     return slice_2x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 2, 1> const &v, int j =0) {
     return set_slice_2x1(v, 0, j);
   }
@@ -4434,6 +4444,7 @@ struct Matrix<Element_, 2, 4> {
     return slice_1x4(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 4> const &v, int i = 0) {
     return set_slice_1x4(v, i, 0);
   }
@@ -4464,6 +4475,7 @@ struct Matrix<Element_, 2, 4> {
     return slice_2x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 2, 1> const &v, int j =0) {
     return set_slice_2x1(v, 0, j);
   }
@@ -5335,6 +5347,7 @@ struct Matrix<Element_, 3, 1> {
     return slice_3x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 3, 1> const &v, int j =0) {
     return set_slice_3x1(v, 0, j);
   }
@@ -6033,6 +6046,7 @@ struct Matrix<Element_, 3, 2> {
     return slice_1x2(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 2> const &v, int i = 0) {
     return set_slice_1x2(v, i, 0);
   }
@@ -6111,6 +6125,7 @@ struct Matrix<Element_, 3, 2> {
     return slice_3x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 3, 1> const &v, int j =0) {
     return set_slice_3x1(v, 0, j);
   }
@@ -6964,6 +6979,7 @@ struct Matrix<Element_, 3, 3> {
     return slice_1x3(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 3> const &v, int i = 0) {
     return set_slice_1x3(v, i, 0);
   }
@@ -7071,6 +7087,7 @@ struct Matrix<Element_, 3, 3> {
     return slice_3x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 3, 1> const &v, int j =0) {
     return set_slice_3x1(v, 0, j);
   }
@@ -8219,6 +8236,7 @@ struct Matrix<Element_, 3, 4> {
     return slice_1x4(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 4> const &v, int i = 0) {
     return set_slice_1x4(v, i, 0);
   }
@@ -8359,6 +8377,7 @@ struct Matrix<Element_, 3, 4> {
     return slice_3x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 3, 1> const &v, int j =0) {
     return set_slice_3x1(v, 0, j);
   }
@@ -9433,6 +9452,7 @@ struct Matrix<Element_, 4, 1> {
     return slice_4x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 4, 1> const &v, int j =0) {
     return set_slice_4x1(v, 0, j);
   }
@@ -10180,6 +10200,7 @@ struct Matrix<Element_, 4, 2> {
     return slice_1x2(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 2> const &v, int i = 0) {
     return set_slice_1x2(v, i, 0);
   }
@@ -10312,6 +10333,7 @@ struct Matrix<Element_, 4, 2> {
     return slice_4x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 4, 1> const &v, int j =0) {
     return set_slice_4x1(v, 0, j);
   }
@@ -11258,6 +11280,7 @@ struct Matrix<Element_, 4, 3> {
     return slice_1x3(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 3> const &v, int i = 0) {
     return set_slice_1x3(v, i, 0);
   }
@@ -11454,6 +11477,7 @@ struct Matrix<Element_, 4, 3> {
     return slice_4x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 4, 1> const &v, int j =0) {
     return set_slice_4x1(v, 0, j);
   }
@@ -12644,6 +12668,7 @@ struct Matrix<Element_, 4, 4> {
     return slice_1x4(i, 0);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_row(Matrix<Element, 1, 4> const &v, int i = 0) {
     return set_slice_1x4(v, i, 0);
   }
@@ -12914,6 +12939,7 @@ struct Matrix<Element_, 4, 4> {
     return slice_4x1(0, j);
   }
 
+  CUTLASS_HOST_DEVICE
   Matrix &set_column(Matrix<Element, 4, 1> const &v, int j =0) {
     return set_slice_4x1(v, 0, j);
   }
@@ -14004,15 +14030,15 @@ struct Matrix<Element_, 4, 4> {
 
   /// Returns a perspective projection matrix typical of OpenGL applications
   CUTLASS_HOST_DEVICE
-  static Matrix perspective(Element near, Element far, Element fovH, Element fovV) {
+  static Matrix perspective(Element near_plane, Element far_plane, Element fovH, Element fovV) {
     Element aspect = fovH / fovV;
     Element f = Element(cos(fovV)) / Element(fovH);
-    Element Q = near - far;
+    Element Q = near_plane - far_plane;
 
     return Matrix(
       f / aspect, 0,                0,                           0,
       0,          f,                0,                           0,
-      0,          0, (near + far) / Q, Element(2) * far * near / Q,
+      0,          0, (near_plane + far_plane) / Q, Element(2) * far_plane * near_plane / Q,
       0,          0,                -1,                          0
     );
   }
@@ -14088,20 +14114,6 @@ template <typename Element, int Rows, int Columns>
 CUTLASS_HOST_DEVICE
 Matrix<Element, Rows, Columns> operator*(Element s, Matrix<Element, Rows, Columns> const &rhs) {
   return rhs.multiply(s);
-}
-
-/// Prints matrix to ostream
-template <typename Element, int Rows, int Columns>
-std::ostream & operator<<(std::ostream &out, Matrix<Element, Rows, Columns> const &rhs) {
-
-  for (int i = 0; i < Rows; ++i) {
-    for (int j = 0; j < Columns; ++j) {
-      out << (j ? ", " : "") << rhs.at(i, j);
-    }
-    out << "\n";
-  }
-
-  return out;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

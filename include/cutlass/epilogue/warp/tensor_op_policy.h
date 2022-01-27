@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -83,8 +83,11 @@ struct TensorOpPolicy<WarpShape, OperatorShape, layout::RowMajor> {
   // Number of externally visible iterations
   static int const kIterations = OperatorCount::kRow * kIterationsPerInstruction;
 
+  using TileIterations = MatrixShape<kIterations, 1>;
+
   static int const kAccumulatorRowStride = kElementsPerAccess;
   static int const kAccumulatorColumnStride = kElementsPerAccess * OperatorCount::kRow * kIterationsPerInstruction;
+
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -120,6 +123,14 @@ struct TensorOpPolicy<WarpShape, OperatorShape,
   static int const kIterations = WarpShape::kN / InterleavedK *
                                  OperatorCount::kRow *
                                  kIterationsPerInstruction;
+
+  static int const kElementsPerIteration = InterleavedK / OperatorShape::kN * kElementsPerAccess;
+
+  static int const kAccessPerIteration = kElementsPerIteration / kElementsPerAccess;
+
+  // Number of externally visible iterations
+  //static int const kTileIterations = OperatorCount::kRow * kIterationsPerInstruction;
+  using TileIterations = MatrixShape<1, WarpShape::kN / InterleavedK>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

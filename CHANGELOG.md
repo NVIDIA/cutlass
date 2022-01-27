@@ -1,6 +1,74 @@
 # NVIDIA CUTLASS Changelog
 
-# CUTLASS 2.x
+## [2.8.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.8.0) (2021-11-19)
+
+* **TF32x3:** emulated single-precision using Tensor Cores
+  * 45+ TFLOPs on NVIDIA A100
+  * [GEMM SDK example](/examples/27_ampere_3xtf32_fast_accurate_tensorop_gemm/27_ampere_3xtf32_fast_accurate_tensorop_gemm.cu) (real)
+  * [COMPLEX GEMM SDK example](/examples/29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm/29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm.cu) (complex)
+  * [Implicit GEMM Convolution SDK example](/examples/28_ampere_3xtf32_fast_accurate_tensorop_fprop/ampere_3xtf32_fast_accurate_tensorop_fprop.cu)
+* **Mainloop fusion for Convolution:** convolution with fused per-channel scale-bias-relu
+  * [Conv Fprop SDK example](/examples/25_ampere_fprop_mainloop_fusion/ampere_fprop_mainloop_fusion.cu)
+  * [Conv WGrad SDK example](/examples/26_ampere_wgrad_mainloop_fusion/ampere_wgrad_mainloop_fusion.cu) 
+  * [cutlass::conv::device::ImplicitGemmConvolutionFusion](/include/cutlass/conv/device/implicit_gemm_convolution_fusion.h)
+* **Grouped GEMM:** similar to batched GEMM with distinct problem size per group
+  * [SDK example](/examples/24_gemm_grouped) with performance comparison with Batched Strided GEMM
+  * [cutlass::gemm::device::GemmGrouped](/include/cutlass/gemm/device/gemm_grouped.h)
+* [Implicit GEMM Convolution fusion](/examples/13_two_tensor_op_fusion/) supports staging 1st convolution's output accumulator in the shared memory on Turing. This allows more flexible warp tile sizes and less regsiter pressue.
+* Optimal performance using [**CUDA 11.5**](https://developer.nvidia.com/cuda-downloads)
+* Updates from the community (thanks!)
+
+* **Deprecation announcement:** CUTLASS plans to deprecate the following:
+  * Maxwell and Pascal GPU architectures
+  * Ubuntu 16.04
+  * CUDA 10.2
+
+
+## [2.7.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.7.0) (2021-09-24)
+  * Mainloop fusion for GEMM: [summation over A or B](/examples/23_ampere_gemm_operand_reduction_fusion/ampere_gemm_operand_reduction_fusion.cu)
+  * [Strided DGRAD (optimized iterators)](/include/cutlass/conv/kernel/default_conv2d_dgrad.h)
+  * [Half-precision GELU_taylor activation functions](/include/cutlass/epilogue/thread/activation.h#L196)
+    * Use these when accumulation and epilogue compute types are all `cutlass::half_t`
+  * Tuning and bug fixes to [fused GEMM + GEMM example](/examples/13_two_tensor_op_fusion/)
+  * Support for smaller than 128b aligned Convolutions: [see examples](test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f16_sm80.cu#L272)
+  * Caching of results to accelerate Convolution [unit tests](test/unit/conv/device/cache_testbed_output.h)
+    * Can be enabled or disabled by running `cmake .. -DCUTLASS_TEST_ENABLE_CACHED_RESULTS=OFF`
+  * Corrections and bug fixes reported by the CUTLASS community
+    * Thank you for filing these issues!
+
+## [2.6.1](https://github.com/NVIDIA/cutlass/releases/tag/v2.6.1) (2021-09-03)
+  * Arbitrary padding and striding for CUTLASS Strided DGRAD Convolution operator (Analytic Iterators)
+  * Tuning for GEMMs fused with partial reductions
+  * Corrections and bug fixes reported by the CUTLASS community
+    * Thank you for filing these issues!
+
+## [2.6.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.6.0) (2021-07-22)
+  * Optimal performance when compiled with the [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit)
+    * Adopt the new L2 prefetch feature in [cp.async](/include/cutlass/arch/memory.h) and [global load](/include/cutlass/arch/memory_sm80.h)
+  * Fused operators with GEMM and Convolution
+    * [Fused broadcast in epilogue](test/unit/gemm/device/gemm_with_broadcast_f16n_f16n_f16n_tensorop_f32_sm75.cu)
+    * [Fused partial reduction in epilogue](/test/unit/gemm/device/gemm_with_reduction_f16n_f16n_f16n_tensorop_f32_sm75.cu)
+  * 64b tensor strides and leading dimensions support for GEMMs
+  * Affine rank=2 matrix layouts 
+    * Row stride and column stride for matrices using [cutlass::layout::AffineRank2](/include/cutlass/layout/matrix.h)
+    * Support [FP64 tensor core](/examples/18_ampere_fp64_tensorop_affine2_gemm/ampere_fp64_tensorop_affine2_gemm.cu) and SIMT GEMM.
+  * [Batched GEMV](/test/unit/gemm/device/gemv.cu) preview implementation
+  * [New strided Dgrad](test/unit/conv/device/conv2d_strided_dgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu) implementation
+    * Accelerates over previous implementation by cutting down redundant math by 4x
+    * Support using new `Dy` and `w` analytic iterators and existing `cutlass::conv::device::ImplicitGemmConvolution` interface
+  * Quaternion-valued GEMM and Convolution in single- and double-precision (targeting CUDA Cores)
+    * Updates to [quaternion.h](/include/cutlass/quaternion.h) and [functional.h](/include/cutlass/functional.h)
+    * SDK Example for [GEMM](/examples/21_quaternion_gemm/quaternion_gemm.cu) and [Convolution](/examples/22_quaternion_gemm/quaternion_conv.cu)
+    * [Unit tests for GEMM](/test/unit/gemm/device/simt_qgemm_nn_sm50.cu) and [Convolution](/test/unit/conv/device/conv2d_fprop_implicit_gemm_qf32nhwc_qf32nhwc_qf32nhwc_simt_f32_sm50.cu)
+  * Many improvements to the epilogue.
+    * Provide an [option](/include/cutlass/epilogue/threadblock/epilogue.h) to not fully unroll the epilogue to reduce the code size and improve the performance when using complicated elementwise operations
+    * Performance improvement for FP16 tensor core kernels
+    * Bug fixes
+  * Enhanced Clang support and the combination of Clang 13 and CUDA 11.4 can build and run kernels from Pascal and Ampere.   
+  * Updated minimum CUDA Toolkit requirement to 10.2
+    * [CUDA 11.4 Toolkit](https://developer.nvidia.com/cuda-toolkit) recommended
+  * Corrections and bug fixes reported by the CUTLASS community
+    * Thank you for filing these issues!
 
 ## [2.5.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.5.0) (2021-02-26)
   * Tensor reductions
@@ -162,7 +230,7 @@ Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
   FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
   BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
   OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-  STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 

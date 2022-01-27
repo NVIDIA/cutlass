@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -94,6 +94,8 @@ public:
 
   /// Number of times this iterator can be incremented
   static int const kIterations = Policy::kIterations;
+  using TileIterations = typename Policy::TileIterations;
+  static int const kIterationsPerTile = kIterations / TileIterations::kCount;
 
 private:
 
@@ -193,6 +195,8 @@ class FragmentIteratorTensorOp<WarpShape_, OperatorShape_, OperatorElementC_, Op
 
   /// Number of times this iterator can be incremented
   static int const kIterations = Policy::kIterations;
+  using TileIterations = typename Policy::TileIterations;
+  static int const kIterationsPerTile = kIterations / TileIterations::kCount;
 
  private:
   /// Internal access type

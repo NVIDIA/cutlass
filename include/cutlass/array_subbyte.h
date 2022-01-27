@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -62,7 +62,7 @@ public:
   using Element = T;
 
   /// Number of logical elements per stored object
-  static int const kElementsPerStoredItem = (sizeof(Storage) * 8) / sizeof_bits<T>::value;
+  static int const kElementsPerStoredItem = int(sizeof(Storage) * 8) / sizeof_bits<T>::value;
 
   /// Number of storage elements
   static size_t const kStorageElements = N / kElementsPerStoredItem;
@@ -395,6 +395,7 @@ private:
 
 public:
 
+  #if 0
   CUTLASS_HOST_DEVICE
   Array() { }
 
@@ -405,6 +406,7 @@ public:
       storage[i] = x.storage[i];
     }
   }
+  #endif
 
   /// Efficient clear method
   CUTLASS_HOST_DEVICE

@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -46,6 +46,9 @@ public:
   /// Base type is a Coord of rank=2
   using Base = Coord<2, Index>;
 
+  /// LongIndex type
+  using LongIndex = typename Base::LongIndex;
+
 private:
 
   /// Rows dimension
@@ -71,6 +74,10 @@ public:
   /// Helper to construct from a row and column
   CUTLASS_HOST_DEVICE
   MatrixCoord(Index row, Index column): Base(make_Coord(row, column)) { }
+
+  /// Helper to construct from a row and column, which are LongIndex based
+  CUTLASS_HOST_DEVICE
+  MatrixCoord(LongIndex row, LongIndex column): Base(make_Coord(Index(row), Index(column))) { }
 
   /// Returns the row of the coordinate
   CUTLASS_HOST_DEVICE

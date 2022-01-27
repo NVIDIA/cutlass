@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -35,8 +35,6 @@
 
 #include "device/b2b_implicit_gemm_convolution.h"
 #include "b2b_interleaved_conv2d_run.h"
-
-#if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -57,7 +55,7 @@ cutlass::conv::Conv2dProblemSize conv2d_s8_sm80_problem_size_1 (
     {128, 56, 56, 64}     // output size (NPQK)
   );
 
-void run_nonfused_conv2d_fprop_s8_sm80() {
+bool run_nonfused_conv2d_fprop_optimized_s8_sm80() {
 
   using ElementA           = int8_t;
   using ElementB           = int8_t;
@@ -90,159 +88,8 @@ void run_nonfused_conv2d_fprop_s8_sm80() {
       ElementC,
       64 / cutlass::sizeof_bits<ElementC>::value,
       ElementAccumulator,
-      ElementCompute
-    >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
-    3,
-    cutlass::arch::OpMultiplyAddSaturate,
-    cutlass::conv::IteratorAlgorithm::kAnalytic
-  >::Kernel;
-
-  using Conv2dFprop0 = cutlass::conv::device::ImplicitGemmConvolution<Conv2dFpropKernel0>;
-
-  using Conv2dFpropKernel1 = typename cutlass::conv::kernel::DefaultConv2dFprop<
-    ElementA, cutlass::layout::TensorNCxHWx<32>,
-    ElementB, cutlass::layout::TensorCxRSKx<32>,
-    ElementC, cutlass::layout::TensorNCxHWx<32>,
-    ElementAccumulator,
-    cutlass::arch::OpClassTensorOp,
-    cutlass::arch::Sm80,
-    ThreadblockShape1,
-    WarpShape1,
-    InstructionShape,
-    cutlass::epilogue::thread::LinearCombinationRelu<
-      ElementC,
-      64 / cutlass::sizeof_bits<ElementC>::value,
-      ElementAccumulator,
-      ElementCompute
-    >,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
-    3,
-    cutlass::arch::OpMultiplyAddSaturate,
-    cutlass::conv::IteratorAlgorithm::kAnalytic
-  >::Kernel;
-
-  using Conv2dFprop1 = cutlass::conv::device::ImplicitGemmConvolution<Conv2dFpropKernel1>;
-
-  B2bInterleavedNonFusedConv2dRun<Conv2dFprop0, Conv2dFprop1, 32> nonFusedConv2d;
-
-  std::cout << "Running Non-fused back-to-back INT8 interleaved Analytic Convolution Fprops...\n";
-  bool pass = nonFusedConv2d.run(conv2d_s8_sm80_problem_size_0, conv2d_s8_sm80_problem_size_1, cutlass::conv::SplitKMode::kSerial,
-      alpha0, beta0, alpha1, beta1);
-
-  if(pass)
-    std::cout << "Pass\n";
-  else
-    std::cout << "Fail\n";
-
-}
-
-void run_fused_conv2d_fprop_s8_sm80() {
-
-  using ElementA           = int8_t;
-  using ElementB           = int8_t;
-  using ElementC           = int8_t;
-  using ElementAccumulator = int32_t;
-  using ElementCompute = float;
-
-  ElementCompute alpha0 = ElementCompute(1);
-  ElementCompute beta0 = ElementCompute(0);
-  ElementCompute alpha1 = ElementCompute(1);
-  ElementCompute beta1 = ElementCompute(0);
-
-  using ThreadblockShape0 = cutlass::gemm::GemmShape<64, 64, 64>;
-  using WarpShape0 = cutlass::gemm::GemmShape<32, 64, 64>;
-  using ThreadblockShape1 = cutlass::gemm::GemmShape<64, 64, 64>;
-  using WarpShape1 = cutlass::gemm::GemmShape<32, 64, 64>;
-  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;
-
-  using EpilogueOutputOp0 = 
-    cutlass::epilogue::thread::LinearCombinationRelu<
-      ElementC,
-      8 * InstructionShape::kN / 32,
-      ElementAccumulator,
-      ElementCompute
-    >;
-
-  using EpilogueOutputOp1 = 
-    cutlass::epilogue::thread::LinearCombinationRelu<
-      ElementC,
-      64 / cutlass::sizeof_bits<ElementC>::value,
-      ElementAccumulator,
-      ElementCompute
-    >;
-
-
-
-  using B2bConv2dFpropKernel = typename cutlass::conv::kernel::DefaultB2bConv2dFprop<
-    ElementA, cutlass::layout::TensorNCxHWx<32>,
-    ElementB, cutlass::layout::TensorCxRSKx<32>,
-    ElementC, cutlass::layout::TensorNCxHWx<32>,
-    ElementAccumulator,
-    cutlass::arch::OpClassTensorOp,
-    cutlass::arch::Sm80,
-    ThreadblockShape0,
-    ThreadblockShape1,
-    WarpShape0,
-    WarpShape1,
-    InstructionShape,
-    EpilogueOutputOp0,
-    EpilogueOutputOp1,
-    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
-    3,
-    cutlass::arch::OpMultiplyAddSaturate,
-    cutlass::conv::IteratorAlgorithm::kAnalytic
-  >::Kernel;
-  
-  using B2bConv2dFprop = cutlass::conv::device::B2bImplicitGemmConvolution<B2bConv2dFpropKernel>;
-
-  B2bInterleavedFusedConv2dRun<B2bConv2dFprop, 32> fusedConv2d;
-
-  std::cout << "Running Fused back-to-back INT8 interleaved Analytic Convolution Fprops...\n";
-  bool pass = fusedConv2d.run(conv2d_s8_sm80_problem_size_0, conv2d_s8_sm80_problem_size_1, cutlass::conv::SplitKMode::kSerial,
-      alpha0, beta0, alpha1, beta1);
-
-  if(pass)
-    std::cout << "Pass\n";
-  else
-    std::cout << "Fail\n";
-
-}
-
-void run_nonfused_conv2d_fprop_optimized_s8_sm80() {
-
-  using ElementA           = int8_t;
-  using ElementB           = int8_t;
-  using ElementC           = int8_t;
-  using ElementAccumulator = int32_t;
-  using ElementCompute = float;
-
-  ElementCompute alpha0 = ElementCompute(1);
-  ElementCompute beta0 = ElementCompute(0);
-  ElementCompute alpha1 = ElementCompute(1);
-  ElementCompute beta1 = ElementCompute(0);
-
-  using ThreadblockShape0 = cutlass::gemm::GemmShape<64, 64, 64>;
-  using WarpShape0 = cutlass::gemm::GemmShape<32, 64, 64>;
-  using ThreadblockShape1 = cutlass::gemm::GemmShape<64, 64, 64>;
-  using WarpShape1 = cutlass::gemm::GemmShape<32, 64, 64>;
-  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;
-
-  using Conv2dFpropKernel0 = typename cutlass::conv::kernel::DefaultConv2dFprop<
-    ElementA, cutlass::layout::TensorNCxHWx<32>,
-    ElementB, cutlass::layout::TensorCxRSKx<32>,
-    ElementC, cutlass::layout::TensorNCxHWx<32>,
-    ElementAccumulator,
-    cutlass::arch::OpClassTensorOp,
-    cutlass::arch::Sm80,
-    ThreadblockShape0,
-    WarpShape0,
-    InstructionShape,
-    cutlass::epilogue::thread::LinearCombinationRelu<
-      ElementC,
-      64 / cutlass::sizeof_bits<ElementC>::value,
-      ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     3,
@@ -287,9 +134,10 @@ void run_nonfused_conv2d_fprop_optimized_s8_sm80() {
   else
     std::cout << "Fail\n";
 
+  return pass;
 }
 
-void run_fused_conv2d_fprop_optimized_s8_sm80() {
+bool run_fused_conv2d_fprop_optimized_s8_sm80() {
 
   using ElementA           = int8_t;
   using ElementB           = int8_t;
@@ -313,7 +161,8 @@ void run_fused_conv2d_fprop_optimized_s8_sm80() {
       ElementC,
       8 * InstructionShape::kN / 32,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >;
 
   using EpilogueOutputOp1 = 
@@ -359,10 +208,9 @@ void run_fused_conv2d_fprop_optimized_s8_sm80() {
   else
     std::cout << "Fail\n";
 
+  return pass;
 }
 
 
 ////////////////////////////////////////////////////////////////////////////////
-
-#endif  // if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 

@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -379,11 +379,9 @@ public:
     for (int stage = 0; stage < Base::kStages - 1;
          ++stage, --gemm_k_iterations) {
 
-      if (gemm_k_iterations == 0) {
-        iterator_A.clear_mask();
-        iterator_B.clear_mask();
-        iterator_E.clear_mask();
-      }
+      iterator_A.clear_mask(gemm_k_iterations == 0);
+      iterator_B.clear_mask(gemm_k_iterations == 0);
+      iterator_E.clear_mask(gemm_k_iterations == 0);
 
       iterator_A.set_iteration_index(0);
       this->smem_iterator_A_.set_iteration_index(0);
@@ -500,11 +498,9 @@ public:
     ++this->warp_tile_iterator_B_;
     ++this->warp_tile_iterator_E_;
 
-    if (gemm_k_iterations == 0) {
-      iterator_A.clear_mask();
-      iterator_B.clear_mask();
-      iterator_E.clear_mask();
-    }
+    iterator_A.clear_mask(gemm_k_iterations == 0);
+    iterator_B.clear_mask(gemm_k_iterations == 0);
+    iterator_E.clear_mask(gemm_k_iterations == 0);
 
     int smem_write_stage_idx = Base::kStages - 1;
     int smem_read_stage_idx = 0;
@@ -637,11 +633,9 @@ public:
           }
 
           --gemm_k_iterations;
-          if (gemm_k_iterations == 0) {
-            iterator_A.clear_mask();
-            iterator_B.clear_mask();
-            iterator_E.clear_mask();
-          }
+          iterator_A.clear_mask(gemm_k_iterations == 0);
+          iterator_B.clear_mask(gemm_k_iterations == 0);
+          iterator_E.clear_mask(gemm_k_iterations == 0);
         }
 
         // Do any conversions feeding the first stage at the end of the loop so

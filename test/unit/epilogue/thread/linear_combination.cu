@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -122,13 +122,14 @@ TEST(Epilogue_thread_linear_combination, device_side_f16_f32_ptr) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+
 TEST(Epilogue_thread_linear_combination_gelu, device_side_f16_f16_ptr) {
 
   using Element = cutlass::half_t;
   using ElementOutput = cutlass::half_t;
   int const kCount = 8;
 
-  using LinearCombination = cutlass::epilogue::thread::LinearCombinationGELU<
+  using LinearCombinationGELU = cutlass::epilogue::thread::LinearCombinationGELU<
     ElementOutput,
     kCount,
     Element,
@@ -137,9 +138,9 @@ TEST(Epilogue_thread_linear_combination_gelu, device_side_f16_f16_ptr) {
   Element alpha = Element(1);
   Element beta = Element(0);
 
-  typename LinearCombination::Params params(&alpha, &beta);
+  typename LinearCombinationGELU::Params params(&alpha, &beta);
 
-  LinearCombination linear_combination_op(params);
+  LinearCombinationGELU linear_combination_op(params);
 
   cutlass::Array<Element, kCount> accum;
 
@@ -158,3 +159,41 @@ TEST(Epilogue_thread_linear_combination_gelu, device_side_f16_f16_ptr) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(Epilogue_thread_linear_combination_gelu_taylor, device_side_f16_f16_ptr) {
+
+  using Element = cutlass::half_t;
+  using ElementOutput = cutlass::half_t;
+  int const kCount = 8;
+
+  using LinearCombinationGELU = cutlass::epilogue::thread::LinearCombinationGELU<
+    ElementOutput,
+    kCount,
+    Element,
+    Element>;
+
+  Element alpha = Element(1);
+  Element beta = Element(0);
+
+  typename LinearCombinationGELU::Params params(&alpha, &beta);
+
+  LinearCombinationGELU linear_combination_op(params);
+
+  cutlass::Array<Element, kCount> accum;
+
+  for (int i = 0; i < kCount; ++i) {
+    accum[i] = Element((float)i * 0.3f);
+  }
+
+  cutlass::Array<ElementOutput, kCount> destination = linear_combination_op(accum, accum);
+  cutlass::epilogue::thread::GELU<ElementOutput> gelu_func;
+
+  for (int i = 0; i < kCount; ++i) {
+    ElementOutput expected = gelu_func(accum[i]);
+    ElementOutput got = destination[i];
+    EXPECT_TRUE(expected == got);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+

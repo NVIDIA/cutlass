@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -61,6 +61,7 @@ struct GemmBatched {
   struct Params {
     cutlass::gemm::GemmCoord problem_size;
     cutlass::gemm::GemmCoord grid_tiled_shape;
+    int swizzle_log_tile;
     typename Mma::IteratorA::Params params_A;
     typename Mma::IteratorA::TensorRef ref_A;
     int64_t stride_A;
@@ -82,7 +83,7 @@ struct GemmBatched {
     //
 
     CUTLASS_HOST_DEVICE
-    Params() { }
+    Params() : swizzle_log_tile(0) { }
 
     CUTLASS_HOST_DEVICE
     Params(
@@ -101,6 +102,7 @@ struct GemmBatched {
     ):
       problem_size(problem_size_),
       grid_tiled_shape(grid_tiled_shape_),
+      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
       params_A(ref_A_.layout()),
       ref_A(ref_A_),
       stride_A(stride_A_),
@@ -141,7 +143,7 @@ struct GemmBatched {
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord threadblock_tile_offset =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_offset.m() ||
@@ -221,7 +223,7 @@ struct GemmBatched {
       //
 
       threadblock_tile_offset =
-          threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+          threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
       //assume identity swizzle
       MatrixCoord threadblock_offset(

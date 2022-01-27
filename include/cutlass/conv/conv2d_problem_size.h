@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -47,6 +47,7 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/matrix_coord.h"
 #include "cutlass/conv/convolution.h"
+#include "cutlass/functional.h"
 
 namespace cutlass {
 namespace conv {
@@ -284,6 +285,27 @@ public:
 
     return cutlass::MatrixCoord ({dilation_h, dilation_w});
   }
+
+  /////////////////////////////////////////////////////////////////
+  //        Methods used for strided dgrad implementation
+  /////////////////////////////////////////////////////////////////
+  /// Number of filter r positions to accumulate in gemm-k dim
+  CUTLASS_HOST_DEVICE
+  int num_gemm_k_filter_r(int r) const {
+    return ((R - r + stride_h - 1) / stride_h);
+  }
+
+  /// Number of filter s positions to accumulate in gemm-k dim
+  CUTLASS_HOST_DEVICE
+  int num_gemm_k_filter_s(int s) const {
+    return ((S - s + stride_w - 1) / stride_w);
+  }
+
+  /// Number of filter positions to accumulate in gemm-k dim
+  CUTLASS_HOST_DEVICE
+  int num_gemm_k_filter_positions(int r, int s) const {
+    return num_gemm_k_filter_r(r) * num_gemm_k_filter_s(s);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -443,6 +465,48 @@ int64_t implicit_gemm_tensor_c_size(
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//                                  Strided dgrad helper functions                                 //
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Returns number of CTAs tile M to cover valid MMAs per starting filter postion
+CUTLASS_HOST_DEVICE
+int strided_dgrad_tile_m_per_filter(
+  Conv2dProblemSize const &problem_size,
+  int tile_size_m) {
+
+  // Compute NHW rows in Dx output that needs MMA per starting filter position
+  int rows_h_per_filter = (problem_size.H + problem_size.stride_h - 1) / problem_size.stride_h;
+  int rows_w_per_filter = (problem_size.W + problem_size.stride_w - 1) / problem_size.stride_w;
+  int rows_nhw_per_filter = problem_size.N * rows_h_per_filter * rows_w_per_filter;
+
+  // Number of CTAs tile M to cover valid MMAs per starting filter postion
+  int tile_m_per_filter = (rows_nhw_per_filter + tile_size_m - 1) / tile_size_m;
+
+  return tile_m_per_filter;
+}
+
+// Computes starting Dx coord (h, w) for given starting filter postion
+CUTLASS_HOST_DEVICE
+void strided_dgrad_starting_coords(
+  Conv2dProblemSize const &problem_size,
+  FastDivmod const &stride_h_divmod, FastDivmod const &stride_w_divmod,
+  int r, int s,
+  int &start_h, int &start_w) {
+
+  // function locals for remainder by fast divmod
+  int pad_h_rem_, pad_w_rem_;
+
+  // start_h  = std::abs(problem_size.stride_h - ((problem_size.pad_h % problem_size.stride_h) - r)) % problem_size.stride_h;
+  stride_h_divmod.divmod(pad_h_rem_, problem_size.pad_h);
+  int r_ = std::abs(problem_size.stride_h - (pad_h_rem_ - r));
+  stride_h_divmod.divmod(start_h, r_);
+
+  //start_w  = std::abs(problem_size.stride_w - ((problem_size.pad_w % problem_size.stride_w) - s)) % problem_size.stride_w;
+  stride_w_divmod.divmod(pad_w_rem_, problem_size.pad_w);
+  int s_ = std::abs(problem_size.stride_w - (pad_w_rem_ - s));
+  stride_w_divmod.divmod(start_w, s_);
+}
 
 } // namespace conv
 } // namespace cutlass

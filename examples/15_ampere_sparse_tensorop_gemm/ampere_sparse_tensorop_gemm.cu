@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -152,7 +152,7 @@ int run() {
   cutlass::HostTensor<ElementInputE, LayoutInputE> tensor_e(
       cutlass::make_Coord(problem_size.m(), problem_size.k() / kSparse / kElementsPerElementE));
   // Same size as the above.  The above one needs to be reordered and stored in this one.
-  cutlass::HostTensor<ElementInputE, ReorderedLayoutInputE> tensor_e_reordered(  
+  cutlass::HostTensor<ElementInputE, ReorderedLayoutInputE> tensor_e_reordered(
       cutlass::make_Coord(problem_size.m(), problem_size.k() / kSparse / kElementsPerElementE));
 
   // Fill input and output matrices on host using CUTLASS helper functions
@@ -296,7 +296,7 @@ int main() {
     return -1;
   }
 
-  if (!((props.major * 10 + props.minor) >= 80)) {
+  if (props.major * 10 + props.minor < 80) {
     std::cerr << "Ampere Tensor Core operations must be run on a machine with compute capability at least 80."
               << std::endl;
     notSupported = true;

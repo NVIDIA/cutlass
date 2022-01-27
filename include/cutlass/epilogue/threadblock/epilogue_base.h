@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -31,6 +31,11 @@
 */
 
 #pragma once
+
+#if !defined(__CUDACC_RTC__)
+#include <type_traits>
+#include <utility>
+#endif
 
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/cassert>
@@ -56,6 +61,32 @@
 namespace cutlass {
 namespace epilogue {
 namespace threadblock {
+
+////////////////////////////////////////////////////////////////////////////////
+
+//
+// This is used for metaprogramming epilogue functors. If they define 
+// `static bool const kIsHeavy = true;`, then the epilogue functor itself is
+// not inlined. This results in smaller code and is advantageous if the epilogue
+// functor consists of many instructions.
+//
+// If the epilogue functor does not define `kIsHeavy` or if it is `false`, then
+// the behavior from CUTLASS 2.5 and before is retained. The epilogue is fully
+// unrolled and inlined.
+//
+
+template<class> 
+struct TypeSink {  typedef void type; };
+
+template<class T> using TypeSinkT = typename TypeSink<T>::type;
+
+template<class T, class=void> struct IsEpilogueFunctorHeavy {
+  static bool const value = false;
+};
+
+template<class T> struct IsEpilogueFunctorHeavy<T, TypeSinkT< decltype( T::kIsHeavy ) > > {
+  static bool const value = T::kIsHeavy;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 

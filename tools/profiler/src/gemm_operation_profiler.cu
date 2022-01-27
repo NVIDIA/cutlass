@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -265,6 +265,10 @@ int64_t GemmOperationProfiler::GemmProblem::flops(library::GemmDescription const
   // complex-valued support
   switch (operation_desc.tile_description.math_instruction.math_operation) {
   case library::MathOperationID::kMultiplyAddComplex:
+    flops_ *= 4;
+    break;
+
+  case library::MathOperationID::kMultiplyAddComplexFastF32:
     flops_ *= 4;
     break;
 
@@ -926,7 +930,7 @@ bool GemmOperationProfiler::verify_with_reference_(
     handle.set_provider(provider);
 
     Status status = handle.gemm_universal(
-      library::GemmUniversalMode::kGemm,
+      problem_.mode,
       gemm_workspace_.configuration.problem_size.m(),
       gemm_workspace_.configuration.problem_size.n(),
       gemm_workspace_.configuration.problem_size.k(),

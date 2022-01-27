@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -427,12 +427,7 @@ void Options::Profiling::print_usage(std::ostream &out) const {
     << "  --profiling-enabled=<bool>                   "
     << "    If true, profiling is actually conducted.\n\n"
 
-    << "  --providers=<providers>                      "
-    << "    List of providers to be profiled for performance. (default: '*')" << end_of_line
-    << "      Gemm providers {cutlass*, cublas*}" << end_of_line
-    << "      Conv2d providers {cutlass*, cudnn*}"
-    << "\n\n";
-
+  ;
 }
 
 void Options::Profiling::print_options(std::ostream &out, int indent) const {
@@ -582,6 +577,8 @@ Options::Report::Report(cutlass::CommandLine const &cmdline) {
   cmdline.get_cmd_line_argument("report-not-run", report_not_run, false);
 
   cmdline.get_cmd_line_argument("verbose", verbose, true);
+
+  cmdline.get_cmd_line_argument("sort-results", sort_results, false);
 }
 
 void Options::Report::print_usage(std::ostream &out) const {
@@ -607,7 +604,10 @@ void Options::Report::print_usage(std::ostream &out) const {
     << "      column. Useful for generating pivot tables.\n\n"
 
     << "  --verbose=<bool>                             "
-    << "    Prints human-readable text to stdout. If false, nothing is written to stdout.\n\n";
+    << "    Prints human-readable text to stdout. If false, nothing is written to stdout.\n\n"
+
+    << "  --sort-results=<bool>                        "
+    << "    Sorts results (by flops-per-byte).\n\n";
 }
 
 void Options::Report::print_options(std::ostream &out, int indent) const {

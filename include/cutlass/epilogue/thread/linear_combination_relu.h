@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -45,6 +45,17 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace detail {
+
+/// Single source of truth for whether to unroll for `LinearCombinationClamp()`
+constexpr bool LinearCombinationReluIsHeavy() {
+  return false;
+}
+
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Applies a linear combination operator to an array of elements.
 ///
 /// D = alpha * accumulator + beta * source + uniform
@@ -52,6 +63,8 @@ namespace thread {
 template <
   typename ElementOutput_,                             ///< Data type used to load and store tensors
   int Count,                                           ///< Number of elements computed per operation
+                                                       ///< Usually it is 128/sizeof_bits<ElementOutput_>,
+                                                       ///< but we use 64 or 32 sometimes when there are not enough data to store
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
   ScaleType::Kind Scale = ScaleType::Default,          ///< Control Alpha and Beta scaling
@@ -65,12 +78,16 @@ public:
   using ElementCompute = ElementCompute_;
 
   static int const kCount = Count;
+  static const ScaleType::Kind kScale = Scale;
 
   using FragmentOutput = Array<ElementOutput, kCount>;
   using FragmentAccumulator = Array<ElementAccumulator, kCount>;
-  using ComputeFragment = Array<ElementCompute, kCount>;
+  using FragmentCompute = Array<ElementCompute, kCount>;
+  using FragmentScaleBias = Array<ElementCompute, kCount>;
 
   static FloatRoundStyle const kRound = Round;
+
+  static bool const kIsHeavy = detail::LinearCombinationReluIsHeavy();
 
   /// Host-constructable parameters structure
   struct Params {
@@ -166,15 +183,15 @@ public:
     NumericArrayConverter<ElementCompute, ElementOutput, kCount, Round> source_converter;
     NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
 
-    ComputeFragment converted_source = source_converter(source);
-    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+    FragmentCompute converted_source = source_converter(source);
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
 
     // Perform binary operations
-    ComputeFragment intermediate;
+    FragmentCompute intermediate;
 
-    multiplies<ComputeFragment> mul_add_source;
-    multiply_add<ComputeFragment> mul_add_accumulator;
-    ReLu<ComputeFragment> relu;
+    multiplies<FragmentCompute> mul_add_source;
+    multiply_add<FragmentCompute> mul_add_accumulator;
+    ReLu<FragmentCompute> relu;
 
     if (Scale == ScaleType::NoBetaScaling)
       intermediate = converted_source;
@@ -200,13 +217,13 @@ public:
     // Convert source to interal compute numeric type
     NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
 
-    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
 
     // Perform binary operations
-    ComputeFragment intermediate;
+    FragmentCompute intermediate;
 
-    multiplies<ComputeFragment> mul_accumulator;
-    ReLu<ComputeFragment> relu;
+    multiplies<FragmentCompute> mul_accumulator;
+    ReLu<FragmentCompute> relu;
 
     intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
 
@@ -218,6 +235,42 @@ public:
 
     return destination_converter(intermediate);
   }
+
+  /// Computes per-channel linear scaling and bias : D = scale * accumulator + bias
+  /// Scale and Bias are from input Fragment
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(
+    FragmentAccumulator const &accumulator,
+    FragmentScaleBias const &scale,
+    FragmentScaleBias const &bias) const {
+    
+    // Convert source to interal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
+
+    // Perform per-channel scale and bias
+    FragmentCompute intermediate;
+
+    multiply_add<FragmentCompute> mul_add_accumulator;
+
+    if(Scale == ScaleType::OnlyAlphaPerChannelScaling)
+      intermediate = mul_add_accumulator(scale, converted_accumulator, bias);    // D = scale * Accum + bias
+    else
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, bias);   // D = alpha * Accum + bias
+
+    ReLu<FragmentCompute> relu;
+
+    // Compute threshold optionally
+    intermediate = relu(threshold_, intermediate);
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
+
+    return destination_converter(intermediate);
+  }
+
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -244,11 +297,15 @@ public:
   using ElementAccumulator = int;
   using ElementCompute = float;
 
+  static bool const kIsHeavy = detail::LinearCombinationReluIsHeavy();
+
   static int const kCount = Count;
+  static const ScaleType::Kind kScale = Scale;
 
   using FragmentOutput = Array<ElementOutput, kCount>;
   using FragmentAccumulator = Array<ElementAccumulator, kCount>;
-  using ComputeFragment = Array<ElementCompute, kCount>;
+  using FragmentCompute = Array<ElementCompute, kCount>;
+  using FragmentScaleBias = Array<ElementCompute, kCount>;
 
   static FloatRoundStyle const kRound = Round;
 
@@ -346,42 +403,33 @@ public:
     NumericArrayConverter<ElementCompute, ElementOutput, kCount, Round> source_converter;
     NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
 
-    ComputeFragment converted_source = source_converter(source);
-    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+    FragmentCompute converted_source = source_converter(source);
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
 
     // Perform binary operations
-    ComputeFragment intermediate;
+    FragmentCompute intermediate;
 
-    multiplies<ComputeFragment> mul_add_source;
-    multiply_add<ComputeFragment> mul_add_accumulator;
-    ReLu<ComputeFragment> relu;
+    multiplies<FragmentCompute> mul_add_source;
+    multiply_add<FragmentCompute> mul_add_accumulator;
+    ReLu<FragmentCompute> relu;
 
     if (Scale == ScaleType::NoBetaScaling)
-        intermediate = converted_source;
+      intermediate = converted_source;
     else
-        intermediate = mul_add_source(beta_, converted_source);                         // X =  beta * C + uniform
-
+      intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
+        
     intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
 
     // Compute threshold optionally
     intermediate = relu(threshold_, intermediate);
 
-    if (platform::is_same<ElementOutput, int32_t>::value ||
-        platform::is_same<ElementOutput, uint32_t>::value ||
-        platform::is_same<ElementOutput, int16_t>::value ||
-        platform::is_same<ElementOutput, uint16_t>::value ||
-        platform::is_same<ElementOutput, int8_t>::value ||
-        platform::is_same<ElementOutput, uint8_t>::value ||
-        platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
-        platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
-        platform::is_same<ElementOutput, cutlass::uint1b_t>::value) {
+    if (platform::numeric_limits<ElementOutput>::is_integer) {
       // Convert floats back to INT
       FragmentAccumulator scaled_accumulator;
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < kCount; ++i) {
-        scaled_accumulator[i] = __float2int_rn(intermediate[i]);
-      }
+      NumericArrayConverter<int, ElementCompute, kCount, Round> compute_converter;
+
+      scaled_accumulator = compute_converter(intermediate);
 
       // Convert to destination numeric type
       NumericArrayConverter<ElementOutput, int, kCount, Round>
@@ -403,26 +451,66 @@ public:
     // Convert source to interal compute numeric type
     NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
 
-    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
 
     // Perform binary operations
-    ComputeFragment intermediate;
+    FragmentCompute intermediate;
 
-    multiplies<ComputeFragment> mul_accumulator;
-    ReLu<ComputeFragment> relu;
+    multiplies<FragmentCompute> mul_accumulator;
+    ReLu<FragmentCompute> relu;
 
     intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
 
     // Compute threshold optionally
     intermediate = relu(threshold_, intermediate);
 
-    // Convert floats back to INT
-    FragmentAccumulator scaled_accumulator;
+    if (platform::numeric_limits<ElementOutput>::is_integer) {
+      // Convert floats back to INT
+      FragmentAccumulator scaled_accumulator;
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kCount; ++i) {
-      scaled_accumulator[i] = __float2int_rn(intermediate[i]);
+      NumericArrayConverter<int, ElementCompute, kCount, Round> compute_converter;
+
+      scaled_accumulator = compute_converter(intermediate);
+
+      // Convert to destination numeric type
+      NumericArrayConverter<ElementOutput, int, kCount, Round>
+          destination_converter;
+
+      return destination_converter(scaled_accumulator);
+    } else {
+      NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round>
+          destination_converter;
+      return destination_converter(intermediate);
     }
+  }
+
+  /// Computes per-channel linear scaling and bias : D = scale * accumulator + bias
+  /// Scale and Bias are from input Fragment
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(
+    FragmentAccumulator const &accumulator,
+    FragmentScaleBias const &scale,
+    FragmentScaleBias const &bias) const {
+    
+    // Convert source to interal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
+
+    // Perform per-channel scale and bias
+    FragmentCompute intermediate;
+
+    multiply_add<FragmentCompute> mul_add_accumulator;
+
+    if(Scale == ScaleType::OnlyAlphaPerChannelScaling)
+      intermediate = mul_add_accumulator(scale, converted_accumulator, bias);    // D = scale * Accum + bias
+    else
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, bias);   // D = alpha * Accum + bias
+
+    ReLu<FragmentCompute> relu;
+
+    // Compute threshold optionally
+    intermediate = relu(threshold_, intermediate);
 
     if (platform::is_same<ElementOutput, int32_t>::value ||
         platform::is_same<ElementOutput, uint32_t>::value ||
@@ -452,6 +540,7 @@ public:
       return destination_converter(intermediate);
     }
   }
+
 };
 
 #endif // Conditional guards to enable partial specialization for packed integers

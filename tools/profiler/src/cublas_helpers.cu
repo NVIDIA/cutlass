@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -102,6 +102,12 @@ bool get_cublas_datatype(cublasDataType_t &data_type, library::NumericTypeID ele
     data_type = CUDA_R_16F;
     return true;
     
+  case library::NumericTypeID::kBF16:
+    break;
+  
+  case library::NumericTypeID::kTF32: 
+    break;
+  
   case library::NumericTypeID::kF32:
     data_type = CUDA_R_32F;
     return true;
@@ -220,7 +226,7 @@ cublasGemmExDispatcher::cublasGemmExDispatcher(
 
   // cuBLAS introduces a separate cublasComputeType enumerant to more precisely describe
   // internal numerical data types used in the computation.
-#if (__CUDA_VER_MAJOR__ >= 11)
+#if (__CUDACC_VER_MAJOR__ >= 11)
   library::OpcodeClassID const & opcode_class =
     op_desc.tile_description.math_instruction.opcode_class;
 
@@ -253,7 +259,7 @@ cublasGemmExDispatcher::cublasGemmExDispatcher(
         break;
     }
   }
-#endif // __CUDA_VER_MAJOR__ >= 11
+#endif // __CUDACC_VER_MAJOR__ >= 11
 
   if (!good) {
     status = Status::kErrorNotSupported;
@@ -286,7 +292,7 @@ cublasStatus_t cublasGemmExDispatcher::operator()(cublasHandle_t handle) {
       int(configuration.ldc),
       arguments.batch_stride_C,
       configuration.batch_count,
-  #if (__CUDA_VER_MAJOR__ >= 11)
+  #if (__CUDACC_VER_MAJOR__ >= 11)
       compute_type,
   #else
       compute_data_type,
@@ -313,7 +319,7 @@ cublasStatus_t cublasGemmExDispatcher::operator()(cublasHandle_t handle) {
       arguments.D,
       data_type_C,
       int(configuration.ldc),
-  #if (__CUDA_VER_MAJOR__ >= 11)
+  #if (__CUDACC_VER_MAJOR__ >= 11)
       compute_type,
   #else
       compute_data_type,

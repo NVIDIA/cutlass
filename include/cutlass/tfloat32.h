@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -98,7 +98,11 @@ struct alignas(4) tfloat32_t {
   CUTLASS_HOST_DEVICE
   explicit tfloat32_t(int x) {
     float flt = static_cast<float>(x);
+    #if defined(__CUDA_ARCH__)
     storage = reinterpret_cast<uint32_t const &>(flt);
+    #else
+    std::memcpy(&storage, &flt, sizeof(storage));
+    #endif
   }
 
   /// Converts to float
@@ -108,13 +112,19 @@ struct alignas(4) tfloat32_t {
     // Conversions to IEEE single-precision requires clearing dont-care bits
     // of the mantissa.
     unsigned bits = (storage & ~0x1fffu);
-    
+
+    #if defined(__CUDA_ARCH__)    
     return reinterpret_cast<float const &>(bits);
+    #else
+    float flt;
+    std::memcpy(&flt, &bits, sizeof(flt));
+    return flt;
+    #endif
   }
 
   /// Converts to float
   CUTLASS_HOST_DEVICE
-  operator double() const {
+  explicit operator double() const {
     return double(float(*this));
   }
 
@@ -126,7 +136,7 @@ struct alignas(4) tfloat32_t {
 
   /// Casts to bool
   CUTLASS_HOST_DEVICE
-  operator bool() const {
+  explicit operator bool() const {
     return (float(*this) != 0.0f);
   }
 
@@ -353,8 +363,13 @@ tfloat32_t operator+(tfloat32_t const& lhs, tfloat32_t const& rhs) {
 
 CUTLASS_HOST_DEVICE
 tfloat32_t operator-(tfloat32_t const& lhs) {
-  float x = -reinterpret_cast<float const &>(lhs);
-  return reinterpret_cast<tfloat32_t const &>(x);
+  union u_tff32 {
+    float val_f32;
+    tfloat32_t val_tf;
+    CUTLASS_HOST_DEVICE u_tff32() : val_f32(0) { }
+  };
+  union u_tff32 x; x.val_f32 = -reinterpret_cast<float const &>(lhs);
+  return x.val_tf;
 }
 
 CUTLASS_HOST_DEVICE

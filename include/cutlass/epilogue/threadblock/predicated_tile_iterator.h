@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -56,13 +56,14 @@ namespace threadblock {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Tile iterator used to load and store output tile from shared memory in epilogue.
+/// Tile iterator used to load and store output tile from global memory in epilogue.
 ///
 /// Satisfies: ReadableTileIterator | PredicatedTileIterator | ForwardTileIterator
 ///
 template <
   typename ThreadMap_,       ///< Thread map (conept: OutputTileThreadMap)
-  typename Element_          ///< Element data type
+  typename Element_,         ///< Element data type
+  bool UseCUDAStore = false
 >
 class PredicatedTileIterator {
 public:
@@ -105,6 +106,7 @@ public:
 
   /// Uses a non-template class
   struct Params : PredicatedTileIteratorParams {
+    using Base = PredicatedTileIteratorParams;
 
     CUTLASS_HOST_DEVICE
     Params() { }
@@ -115,9 +117,11 @@ public:
         layout.stride(0) * int(sizeof(AccessType)) / kElementsPerAccess,
         make_OutputTileThreadMapDesc<ThreadMap>()
       ) 
-    {
-        
-    }
+    { }
+
+    CUTLASS_HOST_DEVICE
+    Params(Base const &base) : 
+      Base(base) { }
   };
 
   /// Mask object
@@ -177,6 +181,14 @@ private:
   /// Internal state counter
   int state_[3];
  
+  //
+  // Static asserts about internal strides
+  //
+
+  static_assert(sizeof(extent_row_) == 4, "Expected 32b extents");
+  static_assert(sizeof(thread_start_row_) == 4, "Expected 32b extents");
+  static_assert(sizeof(PredicatedTileIteratorParams::stride) == 8, "Expected 64b strides");
+
 private:
 
   //
@@ -236,7 +248,7 @@ public:
 
   /// Loads a fragment from memory
   CUTLASS_DEVICE
-  void load_with_byte_offset(Fragment &frag, int64_t byte_offset) {
+  void load_with_byte_offset(Fragment &frag, int64_t byte_offset) const {
 
     uint8_t *byte_pointer = byte_pointer_;
     AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
@@ -292,18 +304,16 @@ public:
       }
     }
   }
-
-
   /// Loads a fragment from memory
   CUTLASS_DEVICE
-  void load(Fragment &frag) {
+  void load(Fragment &frag) const {
 
     load_with_byte_offset(frag, 0);
   }
 
   /// Stores a fragment to memory
   CUTLASS_DEVICE
-  void store_with_byte_offset(Fragment const &frag, int64_t byte_offset) {
+  void store_with_byte_offset(Fragment const &frag, int64_t byte_offset) const {
     uint8_t *byte_pointer = byte_pointer_;
     AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
 
@@ -332,10 +342,17 @@ public:
 
             bool guard = row_guard && mask_.predicates[column];
 
-            cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
-                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column],
-                (void *)&memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess],
-                guard);
+            if (UseCUDAStore) {
+              if (guard) {
+                memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess] =
+                    frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column];
+              }
+            } else {
+              cutlass::arch::global_store<AccessType, sizeof(AccessType)>(
+                  frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn + column],
+                  (void *)&memory_pointer[column * ThreadMap::Delta::kColumn / kElementsPerAccess],
+                  guard);
+            }
           }
 
           if (row + 1 < ThreadMap::Iterations::kRow) {
@@ -357,9 +374,21 @@ public:
 
   /// Stores a fragment to memory
   CUTLASS_DEVICE
-  void store(Fragment const &frag) {
+  void store(Fragment const &frag) const {
 
     store_with_byte_offset(frag, 0);
+  }
+
+  /// Need to get the thread start row from the tile iterator
+  CUTLASS_DEVICE
+  int32_t thread_start_row() const {
+    return thread_start_row_;
+  }
+
+  /// Extent of the matrix in rows
+  CUTLASS_DEVICE
+  Index extent_row() const {
+    return extent_row_;
   }
 
   /// Advances to the next position to load or store
@@ -409,7 +438,7 @@ public:
   }
 
   ///< Sets the mask
-  CUTLASS_DEVICE void get_mask(Mask &mask) {
+  CUTLASS_DEVICE void get_mask(Mask &mask) const {
     mask = mask_;
   }
 
@@ -421,7 +450,7 @@ public:
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Tile iterator used to load output tile from shared memory in epilogue.
+/// Tile iterator used to load output tile from global memory in epilogue.
 ///
 /// Satisfies: ReadableTileIterator | InterleavedPredicatedTileIterator | ForwardTileIterator
 ///
@@ -454,51 +483,23 @@ public:
   /// Memory access size
   using AccessType = AlignedArray<Element, ThreadMap::kElementsPerAccess>;
 
-  //
-  // Parameters struct
-  //
-
-  struct Params {
-
-    //
-    // Data members
-    //
-
-    LongIndex stride;               ///< stride in bytes between columns
-
-    LongIndex advance_row;          ///< amount to add to move to the next 'row' position
-    LongIndex advance_column;       ///< amount to add to move to the next 'column' position
-
-    //
-    // Methods
-    //
+  /// Uses a non-template class
+  struct Params : InterleavedPredicatedTileIteratorParams {
+    using Base = InterleavedPredicatedTileIteratorParams;
 
     CUTLASS_HOST_DEVICE
-    Status initialize(Index stride_) {
-
-      stride = LongIndex(stride_);
-
-      advance_row =
-          ThreadMap::Delta::kContiguous * sizeof_bits<Element>::value / 8;
-
-      advance_column = LongIndex(stride_) - ThreadMap::Iterations::kContiguous *
-                                                kElementsPerAccess *
-                                                sizeof_bits<Element>::value *
-                                                ThreadMap::kWarpSize / 8;
-
-      return Status::kSuccess;
-    }
+    Params() { }
 
     CUTLASS_HOST_DEVICE
-    Params() {
-      initialize(0);
-    }
+    Params(Layout const &layout): 
+      Base(
+        layout.stride(0) * int(sizeof(AccessType)) / kElementsPerAccess,
+        make_InterleavedPredicatedTileIteratorDesc<Element, ThreadMap>()
+      ) { }
 
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout) {
-
-      initialize(layout.stride(0) * int(sizeof(AccessType)) / kElementsPerAccess);
-    }
+    Params(Base const &base) : 
+      Base(base) { }
   };
 
   /// Mask object
@@ -705,7 +706,7 @@ public:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-/// Tile iterator used to load output tile from shared memory in epilogue.
+/// Tile iterator used to load output tile from global memory in epilogue.
 ///
 /// Satisfies: ReadableTileIterator | InterleavedMaskedTileIterator | ForwardTileIterator
 ///

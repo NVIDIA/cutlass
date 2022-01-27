@@ -19,7 +19,7 @@
  *INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
  *DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- *OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TOR (INCLUDING
+ *OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
  *NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  *EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
@@ -67,7 +67,8 @@ __global__ void kernel_mma(cutlass::gemm::GemmCoord problem_size,
                            typename Mma::IteratorA::TensorRef ref_A,
                            typename Mma::IteratorB::Params params_B,
                            typename Mma::IteratorB::TensorRef ref_B,
-                           typename Mma::ElementC *ptr_C, int ldc) {
+                           typename Mma::ElementC *ptr_C,
+                           typename Mma::LayoutC::Stride::Index ldc) {
   // Shared storage needed by threadblock-scoped matrix multiply-accumulate
   __shared__ typename Mma::SharedStorage shared_storage;
 

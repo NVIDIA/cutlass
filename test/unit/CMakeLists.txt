@@ -17,7 +17,7 @@
 # FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
 # BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
 # OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-# STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 include(CTest)
@@ -35,6 +35,7 @@ target_link_libraries(
   cutlass_tools_util_includes
   $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
   gtest
+  cudart
   )
 
 cutlass_add_library(
@@ -49,6 +50,8 @@ target_link_libraries(
   cutlass_test_unit_infra
   )
 
+set(CUTLASS_TEST_UNIT_RESULTS_CACHE_DIR ${CMAKE_CURRENT_LIST_DIR}/data/hashes)
+
 function(cutlass_test_unit_add_executable NAME)
 
   set(options)
@@ -57,6 +60,8 @@ function(cutlass_test_unit_add_executable NAME)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS})
+
+  target_compile_definitions(${NAME} PUBLIC CUTLASS_TARGET_NAME="${NAME}")
 
   target_link_libraries(
     ${NAME}
@@ -67,11 +72,18 @@ function(cutlass_test_unit_add_executable NAME)
 
   string(REGEX REPLACE cutlass_ "" NAME_STEM ${NAME})
 
+  set(RESULT_CACHE_FILE "${CUTLASS_TEST_UNIT_RESULTS_CACHE_DIR}/cached_results_${NAME}.txt")
+
+  if (EXISTS ${RESULT_CACHE_FILE})
+    set(RESULT_CACHE_FILE_ARGS RESULT_CACHE_FILE ${RESULT_CACHE_FILE})
+  endif()
+
   set(CUTLASS_TEST_UNIT_TEST_COMMAND_OPTIONS --gtest_output=xml:${NAME_STEM}.gtest.xml)
 
   cutlass_add_executable_tests(
-    ${NAME_STEM} ${NAME} 
+    ${NAME_STEM} ${NAME}
     TEST_COMMAND_OPTIONS CUTLASS_TEST_UNIT_TEST_COMMAND_OPTIONS
+    ${RESULT_CACHE_FILE_ARGS}
     )
 
 endfunction()

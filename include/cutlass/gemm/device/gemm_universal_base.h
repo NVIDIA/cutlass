@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -171,9 +171,11 @@ public:
       // GEMM K dimension is greater than one.
       workspace_bytes = sizeof(int) * size_t(grid_tiled_shape.m()) * size_t(grid_tiled_shape.n());
     }
-    
+
     CUTLASS_TRACE_HOST("  workspace_bytes: " << workspace_bytes);
-    
+
+    workspace_bytes += GemmKernel::get_extra_workspace_size(args, grid_tiled_shape);
+ 
     return workspace_bytes;
   }
 
@@ -319,14 +321,6 @@ public:
       cudaError_t result = cudaFuncSetAttribute(Kernel<GemmKernel>,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     smem_size);
-
-      if (result != cudaSuccess) {
-        return Status::kErrorInternal;
-      }
-
-      result = cudaFuncSetAttribute(
-          Kernel<GemmKernel>,
-          cudaFuncAttributePreferredSharedMemoryCarveout, 100);
 
       if (result != cudaSuccess) {
         return Status::kErrorInternal;

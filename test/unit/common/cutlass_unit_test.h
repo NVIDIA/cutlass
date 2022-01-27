@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -26,17 +26,26 @@
 #pragma once
 #pragma warning (disable : 4068 ) /* disable unknown pragma warnings for vistual studio */
 
-#pragma diag_suppress boolean_controlling_expr_is_constant
+#pragma nv_diag_suppress boolean_controlling_expr_is_constant
 #include <gtest/gtest.h>
-#pragma diag_warning boolean_controlling_expr_is_constant
+#pragma nv_diag_warning boolean_controlling_expr_is_constant
 #pragma warning( disable : 4503)
 
+#include <cstdlib>
+#include <string>
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Sets flags for Unit test
 void FilterArchitecture();
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Reads environment variable `CUTLASS_UNIT_TEST_PROBLEM_COUNT` to control the number and order
+//  of problem sizes run by CUTLASS unit tests
+int CutlassUnitTestProblemCount();
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 
 // active test macro
 #define CUTLASS_TEST_LEVEL_ACTIVE(LEVEL,NAME_STATIC,NAME_DYNAMIC,...) \

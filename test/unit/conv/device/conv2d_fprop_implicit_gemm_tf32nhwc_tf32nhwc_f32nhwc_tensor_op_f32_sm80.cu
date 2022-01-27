@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -60,7 +60,7 @@ TEST(SM80_Device_Conv2d_Fprop_Analytic_ImplicitGemm_tf32nhwc_tf32nhwc_f32nhwc_te
     cutlass::gemm::GemmShape<16, 8, 8>,
     cutlass::epilogue::thread::LinearCombination<
       ElementC,
-      128 / cutlass::sizeof_bits<ElementC>::value,
+      8,
       ElementAccumulator,
       ElementCompute
     >,
@@ -75,6 +75,61 @@ TEST(SM80_Device_Conv2d_Fprop_Analytic_ImplicitGemm_tf32nhwc_tf32nhwc_f32nhwc_te
 
   /// Run all unit test sizes with device-level Conv2d instance
   EXPECT_TRUE(test::conv::device::TestAllConv2d<Conv2dFprop>());
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+TEST(SM80_Device_Conv2d_Fprop_Optimized_ImplicitGemm_tf32nhwc_tf32nhwc_f32nhwc_tensor_op_f32_align2,
+  128x128_32x3_64x64x32) {
+
+  /// Conv operation element types for the Gemm equivalent (ImplicitGemm)
+  using ElementA           = cutlass::tfloat32_t;
+  using ElementB           = cutlass::tfloat32_t;
+  using ElementC           = float;
+  using ElementAccumulator = float;
+  using ElementCompute     = float;
+
+  /// Device-level Conv2d instance
+  using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
+    ElementA, cutlass::layout::TensorNHWC,
+    ElementB, cutlass::layout::TensorNHWC,
+    ElementC, cutlass::layout::TensorNHWC,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<128, 128, 16>,
+    cutlass::gemm::GemmShape<64, 64, 16>,
+    cutlass::gemm::GemmShape<16, 8, 8>,
+    cutlass::epilogue::thread::LinearCombination<
+      ElementC,
+      8,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3,
+    cutlass::arch::OpMultiplyAdd,
+    cutlass::conv::IteratorAlgorithm::kOptimized,
+    cutlass::conv::StrideSupport::kStrided,
+    2,
+    2
+  >::Kernel;
+
+  using Conv2dFprop = cutlass::conv::device::ImplicitGemmConvolution<Conv2dFpropKernel>;
+
+  test::conv::device::Conv2dProblemVector problem_size_list;
+
+  // run specific problem size in the unit test first
+  problem_size_list.push_back(cutlass::conv::Conv2dProblemSize(
+    {1, 4, 4, 12},     // input size (NHWC)
+    {8, 3, 3, 12},     // filter size (KRSC)
+    {0, 0, 0, 0},      // padding (pad_h, _, pad_w, _)
+    {3, 3},            // stride (stride_h, stride_w)
+    {1, 1}             // dilation (dilation_h, dilation_w)
+  ));
+
+  /// Run all unit test sizes with device-level Conv2d instance
+  EXPECT_TRUE(test::conv::device::TestAllConv2d<Conv2dFprop>(problem_size_list));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

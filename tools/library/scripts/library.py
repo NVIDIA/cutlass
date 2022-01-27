@@ -155,7 +155,7 @@ DataTypeTag = {
 DataTypeSize = {
   DataType.b1: 1,
   DataType.u4: 4,
-  DataType.u8: 4,
+  DataType.u8: 8,
   DataType.u16: 16,
   DataType.u32: 32,
   DataType.u64: 64,
@@ -240,6 +240,8 @@ class MathOperation(enum.Enum):
   xor_popc = enum_auto()
   multiply_add_fast_bf16 = enum_auto()
   multiply_add_fast_f16 = enum_auto()
+  multiply_add_fast_f32 = enum_auto()
+  multiply_add_complex_fast_f32 = enum_auto()
   multiply_add_complex = enum_auto()
   multiply_add_complex_gaussian = enum_auto()
 
@@ -250,6 +252,8 @@ MathOperationTag = {
   MathOperation.xor_popc: 'cutlass::arch::OpXorPopc',
   MathOperation.multiply_add_fast_bf16: 'cutlass::arch::OpMultiplyAddFastBF16',
   MathOperation.multiply_add_fast_f16: 'cutlass::arch::OpMultiplyAddFastF16',
+  MathOperation.multiply_add_fast_f32: 'cutlass::arch::OpMultiplyAddFastF32',
+  MathOperation.multiply_add_complex_fast_f32: 'cutlass::arch::OpMultiplyAddComplexFastF32',
   MathOperation.multiply_add_complex: 'cutlass::arch::OpMultiplyAddComplex',
   MathOperation.multiply_add_complex_gaussian: 'cutlass::arch::OpMultiplyAddGaussianComplex',
 }
@@ -437,6 +441,10 @@ class SwizzlingFunctor(enum.Enum):
   Identity2 = enum_auto()
   Identity4 = enum_auto()
   Identity8 = enum_auto()
+  Horizontal = enum_auto()
+  StridedDgradIdentity1 = enum_auto()
+  StridedDgradIdentity4 = enum_auto()
+  StridedDgradHorizontal = enum_auto()
 
 #
 SwizzlingFunctorTag = {
@@ -444,6 +452,10 @@ SwizzlingFunctorTag = {
   SwizzlingFunctor.Identity2: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<2>',
   SwizzlingFunctor.Identity4: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<4>',
   SwizzlingFunctor.Identity8: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<8>',
+  SwizzlingFunctor.Horizontal: 'cutlass::gemm::threadblock::GemmHorizontalThreadblockSwizzle',
+  SwizzlingFunctor.StridedDgradIdentity1: 'cutlass::conv::threadblock::StridedDgradIdentityThreadblockSwizzle<1>',
+  SwizzlingFunctor.StridedDgradIdentity4: 'cutlass::conv::threadblock::StridedDgradIdentityThreadblockSwizzle<4>',
+  SwizzlingFunctor.StridedDgradHorizontal: 'cutlass::conv::threadblock::StridedDgradHorizontalThreadblockSwizzle',
 }
 
 ###################################################################################################

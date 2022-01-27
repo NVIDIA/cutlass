@@ -18,7 +18,7 @@
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -79,6 +79,10 @@ struct B2bImplicitGemmConvolution {
   using ElementAccumulator = typename EpilogueOutputOp0::ElementAccumulator;
   using ElementCompute = typename EpilogueOutputOp0::ElementCompute;
 
+  /// Scale and Bias
+  using ElementScaleBias = typename B2bMma::IteratorAccumulatorScaleBias::Element;
+  using LayoutScaleBias = typename B2bMma::IteratorAccumulatorScaleBias::Layout;
+
   using WarpMmaOperator0 = typename B2bMma::Policy0::Operator;
   using WarpMmaOperator1 = typename B2bMma::Policy1::Operator;
 
@@ -103,13 +107,14 @@ struct B2bImplicitGemmConvolution {
 
   using TensorRefA0 = typename B2bMma::IteratorA0::TensorRef;
   using TensorRefB0 = typename B2bMma::IteratorB0::TensorRef;
+  using TensorRefScaleBias0 = typename B2bMma::IteratorAccumulatorScaleBias::TensorRef;
   using TensorRefB1 = typename B2bMma::IteratorB1::TensorRef;
   using TensorRefC = cutlass::TensorRef<ElementC, LayoutC>;
 
   /// Check iterator A and B convolution dimension are the same and 
   // set device::B2bImplicitGemmConvolution::kConvDim
   static_assert(B2bMma::IteratorA0::kConvDim == B2bMma::IteratorB0::kConvDim, 
-    "Convolution on different different dimensions is not supported");
+    "Convolution on different dimensions is not supported");
   static int const kConvDim = B2bMma::IteratorA0::kConvDim;
 
   /// Conv dimension and problem size structure (Conv2d or Conv3d)
@@ -148,6 +153,8 @@ struct B2bImplicitGemmConvolution {
     TensorRefA0 ref_A0;
     TensorRefB0 ref_B0;
     TensorRefC ref_C0;
+    TensorRefScaleBias0 ref_Scale0;
+    TensorRefScaleBias0 ref_Bias0;
     TensorRefB1 ref_B1;
     TensorRefC ref_C1;
     TensorRefC ref_D1;
@@ -178,6 +185,8 @@ struct B2bImplicitGemmConvolution {
       TensorRefA0 const & ref_A0,
       TensorRefB0 const & ref_B0,
       TensorRefC const & ref_C0,
+      TensorRefScaleBias0 const & ref_Scale0,
+      TensorRefScaleBias0 const & ref_Bias0,
       TensorRefB1 const & ref_B1,
       TensorRefC const & ref_C1,
       TensorRefC const & ref_D1,
@@ -190,6 +199,8 @@ struct B2bImplicitGemmConvolution {
       ref_A0(ref_A0),
       ref_B0(ref_B0),
       ref_C0(ref_C0),
+      ref_Scale0(ref_Scale0),
+      ref_Bias0(ref_Bias0),
       ref_B1(ref_B1),
       ref_C1(ref_C1),
       ref_D1(ref_D1),
@@ -209,6 +220,7 @@ struct B2bImplicitGemmConvolution {
     cutlass::gemm::GemmCoord grid_tiled_shape;
     gemm::GemmCoord implicit_gemm_problem_size_0;
     gemm::GemmCoord implicit_gemm_problem_size_1;
+    int swizzle_log_tile;
     int gemm_k_iterations_0;
     int gemm_k_iterations_1;
     typename B2bMma::IteratorA0::Params iterator_A0;
@@ -217,6 +229,8 @@ struct B2bImplicitGemmConvolution {
     typename B2bMma::IteratorB0::Element const *ptr_B0;
     typename Epilogue::OutputTileIterator::Params iterator_C0;
     typename Epilogue::OutputTileIterator::Element *ptr_C0;
+    typename B2bMma::IteratorAccumulatorScaleBias::Element *ptr_Scale0;
+    typename B2bMma::IteratorAccumulatorScaleBias::Element *ptr_Bias0;
     typename B2bMma::IteratorB1::Params iterator_B1;
     typename B2bMma::IteratorB1::Element const *ptr_B1;
     typename Epilogue::OutputTileIterator::Params iterator_C1;
@@ -233,7 +247,7 @@ struct B2bImplicitGemmConvolution {
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): gemm_k_iterations_0(0), gemm_k_iterations_1(0) { }
+    Params(): swizzle_log_tile(0), gemm_k_iterations_0(0), gemm_k_iterations_1(0) { }
 
     /// 
     CUTLASS_HOST_DEVICE
@@ -245,13 +259,14 @@ struct B2bImplicitGemmConvolution {
       problem_size_1(args.problem_size_1),
       implicit_gemm_problem_size_0(cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size_0)),
       implicit_gemm_problem_size_1(cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, args.problem_size_1)),
-      grid_tiled_shape(grid_tiled_shape),
       iterator_A0(B2bMma::IteratorA0::getParams(args.problem_size_0, args.ref_A0.layout())),
       ptr_A0(args.ref_A0.data()),
       iterator_B0(args.problem_size_0, args.ref_B0.layout()),
       ptr_B0(args.ref_B0.data()),
       iterator_C0(ConvOutputIteratorParameter::layout(args.ref_C0)),
       ptr_C0(args.ref_C0.data()),
+      ptr_Scale0(args.ref_Scale0.data()),
+      ptr_Bias0(args.ref_Bias0.data()),
       iterator_B1(args.problem_size_1, args.ref_B1.layout()),
       ptr_B1(args.ref_B1.data()),
       iterator_C1(ConvOutputIteratorParameter::layout(args.ref_C1)),
@@ -272,6 +287,8 @@ struct B2bImplicitGemmConvolution {
         implicit_gemm_problem_size_0,
         {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
         args.problem_size_0.split_k_slices);
+
+      swizzle_log_tile = ThreadblockSwizzle().get_log_tile(grid_tiled_shape);
     }
   };
 
@@ -296,7 +313,7 @@ struct B2bImplicitGemmConvolution {
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord threadblock_tile_idx =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_idx.m() ||
@@ -348,6 +365,28 @@ struct B2bImplicitGemmConvolution {
     int warp_idx = __shfl_sync(0xffffffff, threadIdx.x / 32, 0);
     int lane_idx = threadIdx.x % 32;
 
+    // Construct iterators to accumulator scale/bias vector
+    typename B2bMma::IteratorAccumulatorScaleBias iterator_Scale0(
+      params.ptr_Scale0,
+      {1, params.problem_size_0.K},
+      thread_idx,
+      warp_idx,
+      MatrixCoord(
+        0, threadblock_tile_idx.n() * B2bMma::Shape0::kN
+      )
+    );
+
+    typename B2bMma::IteratorAccumulatorScaleBias iterator_Bias0(
+      params.ptr_Bias0,
+      {1, params.problem_size_0.K},
+      thread_idx,
+      warp_idx,
+      MatrixCoord(
+        0, threadblock_tile_idx.n() * B2bMma::Shape0::kN
+      )
+    );
+
+
     //
     // Main loop
     //
@@ -364,7 +403,8 @@ struct B2bImplicitGemmConvolution {
     accumulators.clear();
 
     // Compute threadblock-scoped matrix multiply-add
-    b2bMma(params.gemm_k_iterations_0, accumulators, iterator_A0, iterator_B0, iterator_B1, src_accum, output_op_0);
+    b2bMma(params.gemm_k_iterations_0, accumulators, iterator_A0, iterator_B0, 
+        iterator_Scale0, iterator_Bias0, iterator_B1, src_accum, output_op_0);
 
     //
     // Epilogue
@@ -379,7 +419,7 @@ struct B2bImplicitGemmConvolution {
     
     // Compute logical position within grid
     threadblock_tile_idx =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // If performing a reduction via split-K, fetch the initial synchronization
     if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {
