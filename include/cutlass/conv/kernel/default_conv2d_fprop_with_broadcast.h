@@ -94,7 +94,7 @@ struct DefaultConv2dFpropWithBroadcast {
   >::Kernel;
 
   // Replace epilogue
-  using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueWithBroadcastTensorOp<
+  using Epilogue = typename cutlass::epilogue::threadblock::DefaultConvEpilogueWithBroadcastTensorOp<
     typename ImplicitGemmBase::Epilogue::Shape,
     typename ImplicitGemmBase::Epilogue::WarpMmaOperator,
     ImplicitGemmBase::Epilogue::kPartitionsK,

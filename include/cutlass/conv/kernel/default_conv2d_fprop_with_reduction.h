@@ -95,7 +95,7 @@ struct DefaultConv2dFpropWithReduction {
   >::Kernel;
 
   // Replace epilogue
-  using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueWithReductionTensorOp<
+  using Epilogue = typename cutlass::epilogue::threadblock::DefaultConvEpilogueWithReductionTensorOp<
     typename ImplicitGemmBase::Epilogue::Shape,
     typename ImplicitGemmBase::Epilogue::WarpMmaOperator,
     ImplicitGemmBase::Epilogue::kPartitionsK,
