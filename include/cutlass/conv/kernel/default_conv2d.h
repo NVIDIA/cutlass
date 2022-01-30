@@ -37,6 +37,10 @@
 #include "cutlass/epilogue/threadblock/default_epilogue_simt.h"
 #include "cutlass/epilogue/threadblock/default_epilogue_tensor_op.h"
 #include "cutlass/epilogue/threadblock/default_epilogue_volta_tensor_op.h"
+
+#include "cutlass/epilogue/threadblock/default_epilogue_with_broadcast.h"
+#include "cutlass/epilogue/threadblock/default_epilogue_with_reduction.h"
+
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/threadblock/conv2d_tile_iterator.h"
 #include "cutlass/conv/threadblock/implicit_gemm_pipelined.h"
