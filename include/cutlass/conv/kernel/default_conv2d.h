@@ -37,6 +37,10 @@
 #include "cutlass/epilogue/threadblock/default_epilogue_simt.h"
 #include "cutlass/epilogue/threadblock/default_epilogue_tensor_op.h"
 #include "cutlass/epilogue/threadblock/default_epilogue_volta_tensor_op.h"
+
+#include "cutlass/epilogue/threadblock/default_epilogue_with_broadcast.h"
+#include "cutlass/epilogue/threadblock/default_epilogue_with_reduction.h"
+
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/threadblock/conv2d_tile_iterator.h"
 #include "cutlass/conv/threadblock/implicit_gemm_pipelined.h"
@@ -96,6 +100,122 @@ struct DefaultConvEpilogue<
     OutputOp::kCount
   >::Epilogue;
 };
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  typename ArchTag,
+  typename Shape,
+  typename WarpMmaTensorOp,
+  int PartitionsK,
+  typename ElementOutput,
+  typename ElementTensor,
+  typename ElementVector,
+  typename OutputOp,
+  int ElementsPerAccess
+>
+struct DefaultConvEpilogueWithBroadcastTensorOp {
+  using Epilogue = typename epilogue::threadblock::DefaultEpilogueWithBroadcastTensorOp<
+    Shape,
+    WarpMmaTensorOp,
+    PartitionsK,
+    ElementOutput,
+    ElementTensor,
+    ElementVector,
+    OutputOp,
+    ElementsPerAccess
+  >::Epilogue;
+};
+
+template <
+  typename Shape,
+  typename WarpMmaTensorOp,
+  int PartitionsK,
+  typename ElementOutput,
+  typename ElementTensor,
+  typename ElementVector,
+  typename OutputOp,
+  int ElementsPerAccess
+>
+struct DefaultConvEpilogueWithBroadcastTensorOp<
+  arch::Sm70,
+  Shape,
+  WarpMmaTensorOp,
+  PartitionsK,
+  ElementOutput,
+  ElementTensor,
+  ElementVector,
+  OutputOp,
+  ElementsPerAccess
+  > {
+  using Epilogue = typename epilogue::threadblock::DefaultEpilogueWithBroadcastVoltaTensorOp<
+    Shape,
+    WarpMmaTensorOp,
+    PartitionsK,
+    ElementOutput,
+    ElementTensor,
+    ElementVector,
+    OutputOp,
+    ElementsPerAccess
+  >::Epilogue;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  typename ArchTag,
+  typename Shape,
+  typename WarpMmaTensorOp,
+  int PartitionsK,
+  typename ElementOutput,
+  typename OutputOp,
+  typename ReductionOp,
+  int ElementsPerAccess
+>
+struct DefaultConvEpilogueWithReductionTensorOp {
+  using Epilogue = typename epilogue::threadblock::DefaultEpilogueWithReductionTensorOp<
+    Shape,
+    WarpMmaTensorOp,
+    PartitionsK,
+    ElementOutput,
+    OutputOp,
+    ReductionOp,
+    ElementsPerAccess
+  >::Epilogue;
+};
+
+template <
+  typename Shape,
+  typename WarpMmaTensorOp,
+  int PartitionsK,
+  typename ElementOutput,
+  typename OutputOp,
+  typename ReductionOp,
+  int ElementsPerAccess
+>
+struct DefaultConvEpilogueWithReductionTensorOp<
+  arch::Sm70,
+  Shape,
+  WarpMmaTensorOp,
+  PartitionsK,
+  ElementOutput,
+  OutputOp,
+  ReductionOp,
+  ElementsPerAccess
+  > {
+  using Epilogue = typename epilogue::threadblock::DefaultEpilogueWithReductionVoltaTensorOp<
+    Shape,
+    WarpMmaTensorOp,
+    PartitionsK,
+    ElementOutput,
+    OutputOp,
+    ReductionOp,
+    ElementsPerAccess
+  >::Epilogue;
+};
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Defaults for strided Dgrad

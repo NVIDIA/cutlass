@@ -129,6 +129,7 @@ endif()
 cutlass_test_unit_add_executable(
   cutlass_test_unit_conv_device_tensorop_f32_sm70
   
+  conv2d_fprop_with_broadcast_sm70.cu
   conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm70.cu
   conv2d_dgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm70.cu
   conv2d_wgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm70.cu
