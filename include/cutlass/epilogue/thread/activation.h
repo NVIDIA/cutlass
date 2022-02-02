@@ -190,10 +190,7 @@ template <typename T>
 struct HardSwish {
   CUTLASS_HOST_DEVICE
   T operator()(T const &x) const {
-    minimum<T> mn;
-    maximum<T> mx;
-    T relu6 = mn(mx(x + T(3), T(0)), T(6));
-    return x * (relu6 / T(6));
+    return ((x + 3.0f) > 0) * ((x + 3.0f) > 6.0f ? 6.0f: (x + 3.0f)) * x * 0.16666667f;
   }
 };
 
