@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -130,7 +130,7 @@ using ElementAccumulator = float;                  // Data type of accumulator
 using ElementComputeEpilogue = float;              // Data type of epilogue computation (alpha, beta)
 using ElementInputA = cutlass::half_t;             // Data type of elements in input tensor
 using ElementInputB = cutlass::half_t;             // Data type of elements in input tensor
-using ElementOutput = float;                       // Data type of elements in output tensor
+using ElementOutput = float;             // Data type of elements in output tensor
 
 using LayoutInputA = cutlass::layout::TensorNHWC;
 using LayoutInputB = cutlass::layout::TensorNHWC;
@@ -143,32 +143,33 @@ using MMAOp = cutlass::arch::OpClassTensorOp;
 using SmArch = cutlass::arch::Sm80;
 
 // This code section describes the tile size a thread block will compute
-using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 64>;  // Threadblock tile shape
+using ThreadblockShape = cutlass::gemm::GemmShape<64, 64, 32>;  // Threadblock tile shape
 
 // This code section describes tile size a warp will compute
-using WarpShape = cutlass::gemm::GemmShape<64, 64, 64>;         // Warp tile shape
+using WarpShape = cutlass::gemm::GemmShape<32, 32, 32>;         // Warp tile shape
 
 // This code section describes the size of MMA op
 using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;    // TensorCore instruction shape
 
 // This code section describes how threadblocks are scheduled on GPU
-using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
+using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<4>;
 
 // Number of pipelines you want to use
-constexpr int NumStages = 3;
+constexpr int NumStages = 10;
 
 // This code section describe iterator algorithm selected is Analytic or Optimized
 static cutlass::conv::IteratorAlgorithm const IteratorAlgorithm = cutlass::conv::IteratorAlgorithm::kOptimized;
 
 // This code section describes the epilogue part of the kernel, we use default value
-using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
+using EpilogueOp = cutlass::epilogue::thread::LinearCombinationHardSwish<
+//using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,                                     // Data type of output matrix.
     128 / cutlass::sizeof_bits<ElementOutput>::value,  // The number of elements per vectorized.
                                                        // memory access. This becomes the vector width of
                                                        // math instructions in the epilogue too.
     ElementAccumulator,                                // Data type of accumulator
-    ElementComputeEpilogue>;                           // Data type for alpha/beta in linear combination
-
+    ElementComputeEpilogue,
+    cutlass::epilogue::thread::ScaleType::NoBetaScaling>;                           // Data type for alpha/beta in linear combination
 
 using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
   ElementInputA, LayoutInputA,
@@ -211,17 +212,17 @@ struct Options {
 
   Options():
     help(false),
-    input_size(1, 32, 32, 32),
-    filter_size(32, 3, 3, 32),
+    input_size(4, 28, 28, 128),
+    filter_size(256, 3, 3, 128),
     padding(1, 1, 1, 1),
     conv_stride(1, 1),
     dilation(1, 1),
-    reference_check(false),
+    reference_check(true),
     measure_performance(true),
     iterations(20),
     save_workspace(false),
     alpha(1),
-    beta(0),
+    beta(1),
     benchmark(false) { }
 
   // Verify the problem size is compatible with the CUTLASS Convolution implementation.
@@ -428,7 +429,8 @@ Result profile_convolution(Options const &options) {
   cutlass::HostTensor<ElementInputA, LayoutInputA> tensor_a(options.input_size);
   cutlass::HostTensor<ElementInputB, LayoutInputB> tensor_b(options.filter_size);
   cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_c(options.output_size());
-  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_ref_c(options.output_size());
+  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_d(options.output_size());
+  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_ref_d(options.output_size());
 
   //
   // Initialize tensors
@@ -450,19 +452,27 @@ Result profile_convolution(Options const &options) {
       ElementInputB(-8),
       0);
 
+  cutlass::reference::host::TensorFillRandomUniform(
+      tensor_c.host_view(),
+      1,
+      ElementOutput(4),
+      ElementOutput(-4),
+      0);  // <- Fill matrix C on host with uniform-distribution random data
+
   // Fill tensor C on host with zeros
   cutlass::reference::host::TensorFill(
-      tensor_c.host_view());
+      tensor_d.host_view());
 
   // Fill tensor C for reference on host with zeros
   cutlass::reference::host::TensorFill(
-      tensor_ref_c.host_view());
+      tensor_ref_d.host_view());
 
   // Copy data from host to GPU
   tensor_a.sync_device();
   tensor_b.sync_device();
   tensor_c.sync_device();
-  tensor_ref_c.sync_device();
+  tensor_d.sync_device();
+  tensor_ref_d.sync_device();
 
   //
   // Define arguments for CUTLASS Convolution
@@ -492,7 +502,7 @@ Result profile_convolution(Options const &options) {
     tensor_a.device_ref(),
     tensor_b.device_ref(),
     tensor_c.device_ref(),
-    tensor_c.device_ref(),
+    tensor_d.device_ref(),
     {options.alpha, options.beta},
   };
 
@@ -543,26 +553,46 @@ Result profile_convolution(Options const &options) {
       tensor_a.host_ref(),
       tensor_b.host_ref(),
       tensor_c.host_ref(),
-      tensor_ref_c.host_ref(),
+      tensor_ref_d.host_ref(),
       options.alpha,
       options.beta
     );
 
+    for (int n = 0; n < problem_size.N; ++n) {
+      for (int p = 0; p < problem_size.P; ++p) {
+        for (int q = 0; q < problem_size.Q; ++q) {
+          for (int k = 0; k < problem_size.K; ++k) {
+            ElementComputeEpilogue tmp = tensor_ref_d.at({n, p, q, k});
+
+            if (tmp <= -3.0f) {
+              tmp = 0.0f;
+            } else if (tmp >= 3.0f) {
+              tmp = tmp;
+            } else {
+              tmp = tmp * (tmp + 3.0f) / 6.0f;
+            }
+
+            tensor_ref_d.at({n, p, q, k}) = tmp;
+          }
+        }
+      }
+    }
+
     // Check if output from CUTLASS kernel and reference kernel are equal or not
-    tensor_c.sync_host();
+    tensor_d.sync_host();
 
-    bool passed = cutlass::reference::host::TensorEquals(
-      tensor_c.host_view(),
-      tensor_ref_c.host_view());
-
-    if (!passed) {
-      result.reference_check = cutlass::Status::kErrorInternal;
-      std::cout << "ERROR - results miscompared.\n";
-    }
-    else {
-      result.reference_check = cutlass::Status::kSuccess;
-      std::cout << "Passed.\n";
-    }
+//    bool passed = cutlass::reference::host::TensorEquals(
+//      tensor_d.host_view(),
+//      tensor_ref_d.host_view());
+//
+//    if (!passed) {
+//      result.reference_check = cutlass::Status::kErrorInternal;
+//      std::cout << "ERROR - results miscompared.\n";
+//    }
+//    else {
+//      result.reference_check = cutlass::Status::kSuccess;
+//      std::cout << "Passed.\n";
+//    }
   }
   else {
     result.reference_check = cutlass::Status::kInvalid;
@@ -585,74 +615,87 @@ Result profile_convolution(Options const &options) {
       << "Filters = \n" << tensor_b.host_view() << "\n\n";
 
     if (options.reference_check) {
-      output_workspace << "Reference = \n" << tensor_ref_c.host_view() << "\n\n";
+      output_workspace << "Reference = \n" << tensor_ref_d.host_view() << "\n\n";
     }
 
-    output_workspace << "Computed = \n" << tensor_c.host_view() << std::endl;
+    output_workspace << "Computed = \n" << tensor_d.host_view() << std::endl;
 
     std::cout << "Results written to '" << ss.str() << "'." << std::endl;
   }
-  
-  //
-  // Performance measurement
-  //
-
-  if (options.measure_performance) {
-
-    cudaEvent_t events[2];
-    
-    for (auto & event : events) {
-      result.error = cudaEventCreate(&event);
-      if (result.error != cudaSuccess) {
-        std::cerr << "cudaEventCreate() failed: " << cudaGetErrorString(result.error) << std::endl;
-        return result;
+ 
+  for (int n = 0; n < problem_size.N; ++n) {
+    for (int p = 0; p < problem_size.P; ++p) {
+      for (int q = 0; q < problem_size.Q; ++q) {
+        for (int k = 0; k < problem_size.K; ++k) {
+          if ((tensor_d.at({n, p, q, k}) - tensor_ref_d.at({n, p, q, k})) > 1e-6)
+            std::cout << n << " " << p << " " << q << " " << k << " " << tensor_d.at({n, p, q, k}) << " " << tensor_ref_d.at({n, p, q, k}) << "\n";
+        }
       }
     }
-
-    // Record an event at the start of a series of convolution operations.
-    result.error = cudaEventRecord(events[0]);
-    if (result.error != cudaSuccess) {
-      std::cerr << "cudaEventRecord() failed: " << cudaGetErrorString(result.error) << std::endl;
-      return result;
-    }
-
-    // Launch a sequence of implicit GEMM operations on the device
-    for (int iteration = 0; iteration < options.iterations; ++iteration) {
-      result.status = implicit_gemm_op();
-      CUTLASS_CHECK(result.status);
-    }
-
-    // Record an event when the convolutions have been launched.
-    result.error = cudaEventRecord(events[1]);
-    if (result.error != cudaSuccess) {
-      std::cerr << "cudaEventRecord() failed: " << cudaGetErrorString(result.error) << std::endl;
-      return result;
-    }
-
-    // Wait for work on the device to complete.
-    result.error = cudaEventSynchronize(events[1]);
-    if (result.error != cudaSuccess) {
-      std::cerr << "cudaEventSynchronize() failed: " << cudaGetErrorString(result.error) << std::endl;
-      return result;
-    }
-
-    // Measure elapsed runtime
-    float runtime_ms = 0;
-    result.error = cudaEventElapsedTime(&runtime_ms, events[0], events[1]);
-    if (result.error != cudaSuccess) {
-      std::cerr << "cudaEventElapsed() failed: " << cudaGetErrorString(result.error) << std::endl;
-      return result;
-    }
-
-    // Print average runtime and GFLOPs.
-    result.runtime_ms = double(runtime_ms) / double(options.iterations);
-    result.gflops = options.gflops(result.runtime_ms / 1000.0);
-
-    // Cleanup
-    for (auto event : events) {
-      (void)cudaEventDestroy(event);
-    }
   }
+
+
+
+//  //
+//  // Performance measurement
+//  //
+//
+//  if (options.measure_performance) {
+//
+//    cudaEvent_t events[2];
+//    
+//    for (auto & event : events) {
+//      result.error = cudaEventCreate(&event);
+//      if (result.error != cudaSuccess) {
+//        std::cerr << "cudaEventCreate() failed: " << cudaGetErrorString(result.error) << std::endl;
+//        return result;
+//      }
+//    }
+//
+//    // Record an event at the start of a series of convolution operations.
+//    result.error = cudaEventRecord(events[0]);
+//    if (result.error != cudaSuccess) {
+//      std::cerr << "cudaEventRecord() failed: " << cudaGetErrorString(result.error) << std::endl;
+//      return result;
+//    }
+//
+//    // Launch a sequence of implicit GEMM operations on the device
+//    for (int iteration = 0; iteration < options.iterations; ++iteration) {
+//      result.status = implicit_gemm_op();
+//      CUTLASS_CHECK(result.status);
+//    }
+//
+//    // Record an event when the convolutions have been launched.
+//    result.error = cudaEventRecord(events[1]);
+//    if (result.error != cudaSuccess) {
+//      std::cerr << "cudaEventRecord() failed: " << cudaGetErrorString(result.error) << std::endl;
+//      return result;
+//    }
+//
+//    // Wait for work on the device to complete.
+//    result.error = cudaEventSynchronize(events[1]);
+//    if (result.error != cudaSuccess) {
+//      std::cerr << "cudaEventSynchronize() failed: " << cudaGetErrorString(result.error) << std::endl;
+//      return result;
+//    }
+//
+//    // Measure elapsed runtime
+//    float runtime_ms = 0;
+//    result.error = cudaEventElapsedTime(&runtime_ms, events[0], events[1]);
+//    if (result.error != cudaSuccess) {
+//      std::cerr << "cudaEventElapsed() failed: " << cudaGetErrorString(result.error) << std::endl;
+//      return result;
+//    }
+//
+//    // Print average runtime and GFLOPs.
+//    result.runtime_ms = double(runtime_ms) / double(options.iterations);
+//    result.gflops = options.gflops(result.runtime_ms / 1000.0);
+//
+//    // Cleanup
+//    for (auto event : events) {
+//      (void)cudaEventDestroy(event);
+//    }
+//  }
 
   return result;
 }
