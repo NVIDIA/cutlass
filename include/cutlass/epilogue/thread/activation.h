@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -105,7 +105,6 @@ struct ReLu<Array<T, N>> {
     }
     return result;
   }
-
 };
 
 // Sigmoid operator
@@ -125,7 +124,7 @@ struct Sigmoid<Array<T, N> > {
     Sigmoid<T> sigmoid_op;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < int(rhs.size()); ++i) {
+    for (int i = 0; i < N; ++i) {
       y[i] = sigmoid_op(rhs[i]);
     }
 
@@ -190,7 +189,23 @@ template <typename T>
 struct HardSwish {
   CUTLASS_HOST_DEVICE
   T operator()(T const &x) const {
-    return ((x + 3.0f) > 0) * ((x + 3.0f) > 6.0f ? 6.0f: (x + 3.0f)) * x * 0.16666667f;
+    minimum<T> mn;
+    maximum<T> mx;
+    T relu6 = mn(mx(x + T(3), T(0)), T(6));
+    return x * relu6 / T(6);
+  }
+};
+
+template <>
+struct HardSwish<float> {
+  using T = float;
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &x) const {
+    minimum<T> mn;
+    maximum<T> mx;
+    T relu6 = mn(mx(x + T(3), T(0)), T(6));
+    return x * relu6 * 0.16666667f;
   }
 };
 
@@ -207,6 +222,21 @@ struct HardSwish<Array<T, N> > {
     }
 
     return y;
+  }
+};
+
+template <int N>
+struct HardSwish<Array<half_t, N> > {
+  using T = half_t;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    minimum<Array<T, N> > mn;
+    maximum<Array<T, N> > mx;
+    multiplies<Array<T, N> > mul;
+    plus<Array<T, N> > add;
+ 
+    return mul(mul(mn(mx(add(rhs, T(3)), T(0)), T(6)), rhs), T(0.16666667f));
   }
 };
 

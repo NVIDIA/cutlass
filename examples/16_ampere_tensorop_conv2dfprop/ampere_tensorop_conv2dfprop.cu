@@ -126,11 +126,11 @@ compare if the output from CUTLASS kernel is same as the reference implicit GEMM
 
 // The code section below describes datatype for input, output tensors and computation between
 // elements 
-using ElementAccumulator = float;                  // Data type of accumulator
-using ElementComputeEpilogue = float;              // Data type of epilogue computation (alpha, beta)
+using ElementAccumulator = cutlass::half_t;                  // Data type of accumulator
+using ElementComputeEpilogue = cutlass::half_t;              // Data type of epilogue computation (alpha, beta)
 using ElementInputA = cutlass::half_t;             // Data type of elements in input tensor
 using ElementInputB = cutlass::half_t;             // Data type of elements in input tensor
-using ElementOutput = float;             // Data type of elements in output tensor
+using ElementOutput = cutlass::half_t;             // Data type of elements in output tensor
 
 using LayoutInputA = cutlass::layout::TensorNHWC;
 using LayoutInputB = cutlass::layout::TensorNHWC;
@@ -440,16 +440,16 @@ Result profile_convolution(Options const &options) {
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_a.host_view(),
       1,
-      ElementInputA(7),
-      ElementInputA(-8),
+      ElementInputA(4),
+      ElementInputA(-4),
       0);
 
   // Fill tensor B on host with uniform-distribution random data
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_b.host_view(),
       1,
-      ElementInputB(7),
-      ElementInputB(-8),
+      ElementInputB(4),
+      ElementInputB(-4),
       0);
 
   cutlass::reference::host::TensorFillRandomUniform(
