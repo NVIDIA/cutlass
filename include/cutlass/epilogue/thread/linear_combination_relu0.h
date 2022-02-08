@@ -23,7 +23,10 @@
  *
  **************************************************************************************************/
 /*! \file
-  \brief Functor performing linear combination with a maximum operation used by epilogues.
+  \brief Functor performing linear combination with a relu operation used by epilogues.
+  This one only supports relu0 and tries to folding relu into other instructions.  Thus,
+  serial splitk is not supported by this one.  For example, relu can be folded into 
+  hfma2/hmul2 for sm80+
 */
 
 #pragma once
@@ -48,7 +51,7 @@ namespace thread {
 namespace detail {
 
 /// Single source of truth for whether to unroll for `LinearCombinationClamp()`
-constexpr bool LinearCombinationReluIsHeavy() {
+constexpr bool LinearCombinationRelu0IsHeavy() {
   return false;
 }
 
@@ -70,7 +73,7 @@ template <
   ScaleType::Kind Scale = ScaleType::Default,          ///< Control Alpha and Beta scaling
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
 >
-class LinearCombinationRelu {
+class LinearCombinationRelu0 {
 public:
 
   using ElementOutput = ElementOutput_;
@@ -87,14 +90,13 @@ public:
 
   static FloatRoundStyle const kRound = Round;
 
-  static bool const kIsHeavy = detail::LinearCombinationReluIsHeavy();
+  static bool const kIsHeavy = detail::LinearCombinationRelu0IsHeavy();
 
   /// Host-constructable parameters structure
   struct Params {
 
     ElementCompute alpha;                  ///< scales accumulators
     ElementCompute beta;                   ///< scales source tensor
-    ElementCompute threshold;              ///< minimum value that is output 
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
     //
@@ -105,25 +107,22 @@ public:
     Params(): 
       alpha(ElementCompute(1)), 
       beta(ElementCompute(0)),
-      threshold(ElementCompute(0)), 
       alpha_ptr(nullptr), 
       beta_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
-      ElementCompute beta = ElementCompute(0),
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute beta = ElementCompute(0)
+    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr = nullptr,
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *beta_ptr = nullptr
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
 
     }
   };
@@ -136,17 +135,15 @@ private:
 
   ElementCompute alpha_;
   ElementCompute beta_;
-  ElementCompute threshold_;
 
 public:
 
   /// Constructs the function object, possibly loading from pointers in host memory
   CUTLASS_HOST_DEVICE
-  LinearCombinationRelu(Params const &params) {
+  LinearCombinationRelu0(Params const &params) {
 
     alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
     beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
-    threshold_ = params.threshold;
   }
 
   /// Returns true if source is needed
@@ -161,18 +158,10 @@ public:
     return beta_ != ElementCompute(0);
   }
 
-  /// Functionally required for serial reduction in the epilogue
+  /// This is used for serial reduction which is not supported by Relu0
   CUTLASS_HOST_DEVICE
   void set_k_partition(int k_partition, int k_partition_count) {
-    if (k_partition) {
-      beta_ = ElementCompute(1);
-    }
-
-    if (k_partition != k_partition_count - 1) {
-      // set to NaN to make ReLU no-op for all except last k partitions
-      int64_t allones = -1;
-      threshold_ = reinterpret_cast<ElementCompute const &>(allones);
-    }
+    assert(k_partition == 0);
   }
   
   /// Computes linear scaling: D = alpha * accumulator + beta * source
@@ -192,21 +181,21 @@ public:
     FragmentCompute intermediate;
 
     multiplies<FragmentCompute> mul_add_source;
-    multiply_add<FragmentCompute> mul_add_accumulator;
+    multiply_add_relu0<FragmentCompute> mul_add_relu0_accumulator;
     ReLu<FragmentCompute> relu;
 
     if (Scale == ScaleType::NoBetaScaling) {
       intermediate = converted_source;
-      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+      intermediate = mul_add_relu0_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
     } else if (Scale == ScaleType::Nothing) {
       intermediate = converted_accumulator;
+
+      // Compute threshold optionally
+      intermediate = relu(intermediate);
     } else {
       intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
-      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+      intermediate = mul_add_relu0_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
     }
-
-    // Compute threshold optionally
-    intermediate = relu(threshold_, intermediate);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
@@ -237,7 +226,7 @@ public:
     }
 
     // Compute threshold optionally
-    intermediate = relu(threshold_, intermediate);
+    intermediate = relu(intermediate);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
@@ -271,7 +260,7 @@ public:
     ReLu<FragmentCompute> relu;
 
     // Compute threshold optionally
-    intermediate = relu(threshold_, intermediate);
+    intermediate = relu(intermediate);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
@@ -297,14 +286,14 @@ template <
   ScaleType::Kind Scale,                               ///< Control Alpha and Beta scaling
   FloatRoundStyle Round
 >
-class LinearCombinationRelu <ElementOutput_, Count, int, float, Scale, Round> {
+class LinearCombinationRelu0 <ElementOutput_, Count, int, float, Scale, Round> {
 public:
 
   using ElementOutput = ElementOutput_;
   using ElementAccumulator = int;
   using ElementCompute = float;
 
-  static bool const kIsHeavy = detail::LinearCombinationReluIsHeavy();
+  static bool const kIsHeavy = detail::LinearCombinationRelu0IsHeavy();
 
   static int const kCount = Count;
   static const ScaleType::Kind kScale = Scale;
@@ -321,7 +310,6 @@ public:
 
     ElementCompute alpha;                  ///< scales accumulators
     ElementCompute beta;                   ///< scales source tensor
-    ElementCompute threshold;              ///< minimum value that is output 
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
     //
@@ -332,25 +320,22 @@ public:
     Params(): 
       alpha(ElementCompute(1)), 
       beta(ElementCompute(0)),
-      threshold(ElementCompute(0)), 
       alpha_ptr(nullptr), 
       beta_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
-      ElementCompute beta = ElementCompute(0),
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(alpha), beta(beta), threshold(threshold), alpha_ptr(nullptr), beta_ptr(nullptr) {
+      ElementCompute beta = ElementCompute(0)
+    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr = nullptr,
-      ElementCompute threshold = ElementCompute(0)
-    ): alpha(0), beta(0), threshold(threshold), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
+      ElementCompute const *beta_ptr = nullptr
+    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
 
     }
   };
@@ -363,17 +348,15 @@ private:
 
   ElementCompute alpha_;
   ElementCompute beta_;
-  ElementCompute threshold_;
 
 public:
 
   /// Constructs the function object, possibly loading from pointers in host memory
   CUTLASS_HOST_DEVICE
-  LinearCombinationRelu(Params const &params) {
+  LinearCombinationRelu0(Params const &params) {
 
     alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
     beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
-    threshold_ = params.threshold;
   }
 
   /// Returns true if source is needed
@@ -388,18 +371,10 @@ public:
     return beta_ != ElementCompute(0);
   }
 
-  /// Functionally required for serial reduction in the epilogue
+  /// This is used for serial reduction which is not supported by Relu0
   CUTLASS_HOST_DEVICE
   void set_k_partition(int k_partition, int k_partition_count) {
-    if (k_partition) {
-      beta_ = ElementCompute(1);
-    }
-
-    if (k_partition != k_partition_count - 1) {
-      // set to NaN to make ReLU no-op for all except last k partitions
-      int64_t allones = -1;
-      threshold_ = reinterpret_cast<ElementCompute const &>(allones);
-    }
+    assert(k_partition == 0);
   }
   
   /// Computes linear scaling: D = alpha * accumulator + beta * source
@@ -433,7 +408,7 @@ public:
     }
 
     // Compute threshold optionally
-    intermediate = relu(threshold_, intermediate);
+    intermediate = relu(intermediate);
 
     if (platform::numeric_limits<ElementOutput>::is_integer) {
       // Convert floats back to INT
@@ -478,7 +453,7 @@ public:
     }
 
     // Compute threshold optionally
-    intermediate = relu(threshold_, intermediate);
+    intermediate = relu(intermediate);
 
     if (platform::numeric_limits<ElementOutput>::is_integer) {
       // Convert floats back to INT
@@ -526,7 +501,7 @@ public:
     ReLu<FragmentCompute> relu;
 
     // Compute threshold optionally
-    intermediate = relu(threshold_, intermediate);
+    intermediate = relu(intermediate);
 
     if (platform::numeric_limits<ElementOutput>::is_integer) {
       // Convert floats back to INT

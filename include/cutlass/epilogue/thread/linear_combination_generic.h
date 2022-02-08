@@ -137,6 +137,8 @@ public:
 
     if (Scale == ScaleType::OnlyAlphaScaling) return false;
 
+    if (Scale == ScaleType::Nothing) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -169,12 +171,15 @@ public:
     multiply_add<FragmentCompute> mul_add_accumulator;
     ActivationFunctor<FragmentCompute> activation;
 
-    if (Scale == ScaleType::NoBetaScaling)
+    if (Scale == ScaleType::NoBetaScaling) {
       intermediate = converted_source;
-    else
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    }  else if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
       intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
-
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    }
 
     intermediate = activation(intermediate);
 
@@ -201,7 +206,11 @@ public:
     multiplies<FragmentCompute> mul_add_accumulator;
     ActivationFunctor<FragmentCompute> activation;
 
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    }
 
     intermediate = activation(intermediate);
 

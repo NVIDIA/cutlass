@@ -59,35 +59,35 @@ struct Identity {
 template <typename T>
 struct ReLu {
   static const bool kIsHeavy=false;
-
   CUTLASS_HOST_DEVICE
   T operator()(T const & threshold, T value) const {
     maximum<T> mx;
+
     return mx(value, threshold);
   }
 
   CUTLASS_HOST_DEVICE
-  T operator()(T const &x) const {
+  T operator()(T value) const {
     maximum<T> mx;
-    return mx(x, T(0));
+
+    return mx(value, T(0));
   }
 };
 
 template <typename T, int N>
-struct ReLu<Array<T, N> > {
+struct ReLu<Array<T, N>> {
   static const bool kIsHeavy=false;
-
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(T const & threshold, Array<T, N> const &frag) const {
-    Array<T, N> result;
     maximum<Array<T, N> > mx;
-    return mx(frag, threshold);
+
+    return mx(threshold, frag);
   }
 
   CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &rhs) const {
+  Array<T, N> operator()(Array<T, N> const &frag) const {
     maximum<Array<T, N> > mx;
-    return mx(rhs, T(0));
+    return mx(frag, T(0));
   }
 };
 
@@ -176,7 +176,7 @@ struct HardSwish {
     minimum<T> mn;
     maximum<T> mx;
     T relu6 = mn(mx(x + T(3), T(0)), T(6));
-    return x * relu6 * T(0.166666667);
+    return x * relu6 / T(6);
   }
 };
 

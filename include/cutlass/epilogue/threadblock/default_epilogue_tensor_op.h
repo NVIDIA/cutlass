@@ -43,6 +43,7 @@
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/epilogue/thread/linear_combination_clamp.h"
 #include "cutlass/epilogue/thread/linear_combination_relu.h"
+#include "cutlass/epilogue/thread/linear_combination_relu0.h"
 #include "cutlass/epilogue/thread/linear_combination_gelu.h"
 #include "cutlass/epilogue/thread/linear_combination_sigmoid.h"
 #include "cutlass/epilogue/thread/linear_combination_hardswish.h"
