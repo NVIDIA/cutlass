@@ -128,30 +128,6 @@ struct DefaultIteratorsTensorOp<float, float, 4, ThreadblockShape, WarpShape, In
   static int const kFragmentsPerIteration = 2;
 };
 
-/// Partial specialization for int32_t <= int32_t x 4
-template <
-  typename ThreadblockShape,
-  typename WarpShape,
-  typename InstructionShape,
-  typename ThreadMap
->
-struct DefaultIteratorsTensorOp<int32_t, int32_t, 4, ThreadblockShape, WarpShape, InstructionShape, ThreadMap> {
-  
-  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOp<
-    WarpShape,
-    InstructionShape,
-    int32_t,
-    layout::RowMajor
-  >;
-
-  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIterator<
-    ThreadMap,
-    int32_t
-  >;
-
-  static int const kFragmentsPerIteration = 1;
-};
-
 /// Partial specialization for half <= float x 8 epilogues avoids shared memory bank conflicts.
 template <
   typename ThreadblockShape,
@@ -190,77 +166,117 @@ struct DefaultIteratorsTensorOp<
   static int const kFragmentsPerIteration = 2;
 };
 
-/// Partial specialization for int8/int4b_t <= int32 x 16/8 epilogues avoids shared memory bank conflicts.
-/// Threadblock::kN = 256 still has bank conflicts.
+/// Partial specialization for int8_t x 16 <= int32_t x 16 epilogues avoids shared memory bank conflicts.
 template <
-  typename ElementOutput,
-  int ElementsPerAccess,
-  typename ThreadblockShape,
-  typename WarpShape,
+  int K,
   typename InstructionShape,
   typename ThreadMap
 >
 struct DefaultIteratorsTensorOp<
-  ElementOutput, 
+  int8_t, 
   int32_t, 
-  ElementsPerAccess,
-  ThreadblockShape, 
-  WarpShape, 
+  16, 
+  gemm::GemmShape<128, 128, K>, 
+  gemm::GemmShape<64, 64, K>, 
   InstructionShape, 
   ThreadMap> {
-
-  static_assert(cutlass::platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
-                cutlass::platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
-                cutlass::platform::is_same<ElementOutput, int8_t>::value ||
-                cutlass::platform::is_same<ElementOutput, uint8_t>::value,
-                "ElementOutput needs to be 4 or 8 bit (unsigned) int.");
-
-   static_assert((ElementsPerAccess == 16 || ElementsPerAccess == 8),
-                "ElementsPerAccess needs to be 16 or 8.");
   
-  using WarpTileIteratorMixed = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
-    WarpShape,
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
+    gemm::GemmShape<64, 64, K>,
     InstructionShape,
     int32_t,
     32,
-    cutlass::sizeof_bits<ElementOutput>::value,
-    ElementsPerAccess,
+    8,
+    16,
     8
   >;
 
-  using WarpTileIteratorNotMixed =  cutlass::epilogue::warp::TileIteratorTensorOp<
-    WarpShape,
-    InstructionShape,
-    int32_t,
-    layout::RowMajor
-  >;
-
-  using WarpTileIterator = typename cutlass::platform::conditional<
-                             (ThreadblockShape::kN == 256),
-                             WarpTileIteratorNotMixed,
-                             WarpTileIteratorMixed>::type;
-
-  using SharedLoadIteratorMixed = cutlass::epilogue::threadblock::SharedLoadIteratorMixed<
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIteratorMixed<
     ThreadMap,
     int32_t,
     32,
-    cutlass::sizeof_bits<ElementOutput>::value,
-    ElementsPerAccess,
+    8,
+    16,
     8
   >;
-
-  using SharedLoadIteratorNotMixed = cutlass::epilogue::threadblock::SharedLoadIterator<
-    ThreadMap,
-    int32_t
-  >;
-
-  using SharedLoadIterator = typename cutlass::platform::conditional<
-                             (ThreadblockShape::kN == 256),
-                             SharedLoadIteratorNotMixed,
-                             SharedLoadIteratorMixed>::type;
 
   static int const kFragmentsPerIteration = 1;
 };
+
+/// Partial specialization for int8_t x 8 <= int32_t x 8 epilogues avoids shared memory bank conflicts.
+template <
+  int K,
+  typename InstructionShape,
+  typename ThreadMap
+>
+struct DefaultIteratorsTensorOp<
+  int8_t, 
+  int32_t, 
+  8, 
+  gemm::GemmShape<128, 64, K>, 
+  gemm::GemmShape<64, 32, K>, 
+  InstructionShape, 
+  ThreadMap> {
+  
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
+    gemm::GemmShape<64, 32, K>,
+    InstructionShape,
+    int32_t,
+    32,
+    8,
+    8,
+    8
+  >;
+
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIteratorMixed<
+    ThreadMap,
+    int32_t,
+    32,
+    8,
+    8,
+    8
+  >;
+
+  static int const kFragmentsPerIteration = 1;
+};
+
+/// Partial specialization for int8_t x 8 <= int32_t x 8 epilogues avoids shared memory bank conflicts.
+template <
+  int K,
+  typename InstructionShape,
+  typename ThreadMap
+>
+struct DefaultIteratorsTensorOp<
+  int8_t, 
+  int32_t, 
+  8, 
+  gemm::GemmShape<64, 64, K>, 
+  gemm::GemmShape<32, 32, K>, 
+  InstructionShape, 
+  ThreadMap> {
+  
+  using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
+    gemm::GemmShape<32, 32, K>,
+    InstructionShape,
+    int32_t,
+    32,
+    8,
+    8,
+    8
+  >;
+
+  using SharedLoadIterator = cutlass::epilogue::threadblock::SharedLoadIteratorMixed<
+    ThreadMap,
+    int32_t,
+    32,
+    8,
+    8,
+    8
+  >;
+
+  static int const kFragmentsPerIteration = 1;
+};
+
 } // namespace detail
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -305,7 +321,7 @@ struct DefaultEpilogueTensorOp {
     UseCUDAStore
   >;
 
-  using AccumulatorFragmentIterator = typename platform::conditional<is_complex<ElementOutput>::value,
+  using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,
                                     cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
                                         typename WarpMmaTensorOp::Shape,
                                         typename WarpMmaTensorOp::Policy::Operator::Shape,
@@ -394,7 +410,7 @@ struct DefaultEpilogueTensorOpStridedDgrad {
     ElementOutput
   >;
 
-  using AccumulatorFragmentIterator = typename platform::conditional<is_complex<ElementOutput>::value,
+  using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,
                                     cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
                                         typename WarpMmaTensorOp::Shape,
                                         typename WarpMmaTensorOp::Policy::Operator::Shape,
@@ -487,7 +503,7 @@ struct DefaultEpilogueTensorOpAffineRankN {
   >;
 
   // Map to the row major iterator since the iterator selection for affineN is the same.
-  using AccumulatorFragmentIterator = typename platform::conditional<is_complex<ElementOutput>::value,
+  using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,
                                     cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
                                         typename WarpMmaTensorOp::Shape,
                                         typename WarpMmaTensorOp::Policy::Operator::Shape,
