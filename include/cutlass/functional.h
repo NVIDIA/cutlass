@@ -1657,17 +1657,26 @@ struct maximum<Array<half_t, N>> {
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N / 2; ++i) {
+      #if __CUDA_ARCH__ >= 800
       result_ptr[i] = __hmax2(lhs_ptr[i], rhs_ptr[i]);
+      #else
+      result_ptr[i].x = lhs_ptr[i].x > rhs_ptr[i].x ? lhs_ptr[i].x :  rhs_ptr[i].x;
+      result_ptr[i].y = lhs_ptr[i].y > rhs_ptr[i].y ? lhs_ptr[i].y :  rhs_ptr[i].y;
+      #endif
     }
 
     if (N % 2) {
       __half const *a_residual_ptr = reinterpret_cast<__half const *>(&lhs);
       __half const *b_residual_ptr = reinterpret_cast<__half const *>(&rhs);
-
+      #if __CUDA_ARCH__ >= 800
       __half d_residual = __hmax(
         a_residual_ptr[N - 1], 
         b_residual_ptr[N - 1]);
-
+      #else
+      __half d_residual = \
+        a_residual_ptr[N - 1] > b_residual_ptr[N - 1] ? \
+         a_residual_ptr[N - 1] : b_residual_ptr[N - 1];
+      #endif
       result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
     }
 

@@ -59,51 +59,35 @@ struct Identity {
 template <typename T>
 struct ReLu {
   static const bool kIsHeavy=false;
+
   CUTLASS_HOST_DEVICE
   T operator()(T const & threshold, T value) const {
-    if (value < threshold) {
-      value = threshold;
-    }
-    return value;
+    maximum<T> mx;
+    return mx(value, threshold);
   }
+
   CUTLASS_HOST_DEVICE
-  T operator()(T value) const {
-    if (value < T(0)) {
-      value = T(0);
-    }
-    return value;
+  T operator()(T const &x) const {
+    maximum<T> mx;
+    return mx(x, T(0));
   }
 };
 
 template <typename T, int N>
-struct ReLu<Array<T, N>> {
+struct ReLu<Array<T, N> > {
   static const bool kIsHeavy=false;
+
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(T const & threshold, Array<T, N> const &frag) const {
     Array<T, N> result;
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
-      T value = frag[i];
-      if (value < threshold) {
-        value = threshold;
-      }
-      result[i] = value;
-    }
-    return result;
+    maximum<Array<T, N> > mx;
+    return mx(frag, threshold);
   }
 
   CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &frag) const {
-    Array<T, N> result;
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
-      T value = frag[i];
-      if (value < T(0)) {
-        value = T(0);
-      }
-      result[i] = value;
-    }
-    return result;
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    maximum<Array<T, N> > mx;
+    return mx(rhs, T(0));
   }
 };
 
@@ -192,7 +176,7 @@ struct HardSwish {
     minimum<T> mn;
     maximum<T> mx;
     T relu6 = mn(mx(x + T(3), T(0)), T(6));
-    return x * relu6 / T(6);
+    return x * relu6 * T(0.166666667);
   }
 };
 
