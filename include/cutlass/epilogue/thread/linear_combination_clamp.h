@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -162,6 +162,8 @@ public:
 
     if (Scale == ScaleType::OnlyAlphaScaling) return false;
 
+    if (Scale == ScaleType::Nothing) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -197,8 +199,15 @@ public:
     minimum<ComputeFragment> min_accumulator;
     maximum<ComputeFragment> max_accumulator;
 
-    intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    if (Scale == ScaleType::NoBetaScaling) {
+      intermediate = converted_source;
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    } else if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    }
 
     /// Clamping constant value
     ElementCompute const kClampMax =
@@ -235,7 +244,11 @@ public:
     minimum<ComputeFragment> min_accumulator;
     maximum<ComputeFragment> max_accumulator;
 
-    intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    }
 
     /// Clamping constant value
     ElementCompute const kClampMax =
@@ -367,6 +380,8 @@ public:
 
     if (Scale == ScaleType::OnlyAlphaScaling) return false;
 
+    if (Scale == ScaleType::Nothing) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -399,8 +414,15 @@ public:
     multiply_add<ComputeFragment> mul_add_accumulator;
     
     // Float min-max
-    intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    if (Scale == ScaleType::NoBetaScaling) {
+      intermediate = converted_source;
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    } else if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    }
 
     // Convert floats back to INT
     FragmentAccumulator scaled_accumulator;
@@ -430,7 +452,11 @@ public:
     multiplies<ComputeFragment> mul_add_accumulator;
     
     // Float min-max
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    }
 
     // Convert floats back to INT
     FragmentAccumulator scaled_accumulator;
@@ -551,6 +577,8 @@ class FastLinearCombinationClamp {
 
     if (Scale == ScaleType::OnlyAlphaScaling) return false;
 
+    if (Scale == ScaleType::Nothing) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -586,10 +614,17 @@ class FastLinearCombinationClamp {
     maximum<ComputeFragment> max_accumulator;
 
     // Float min-max
-    intermediate =
-        mul_add_source(beta_, converted_source);  // X =  beta * C + uniform
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator,
-                                       intermediate);  // D = alpha * Accum + X
+    if (Scale == ScaleType::NoBetaScaling) {
+      intermediate = converted_source;
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    } else if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate =
+          mul_add_source(beta_, converted_source);  // X =  beta * C + uniform
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator,
+                                         intermediate);  // D = alpha * Accum + X
+    }
 
     /// Clamping constant value
     ElementCompute const kClamp =
@@ -624,7 +659,11 @@ class FastLinearCombinationClamp {
     maximum<ComputeFragment> max_accumulator;
 
     // Float min-max
-    intermediate = mul_accumulator(alpha_, converted_accumulator);
+    if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate = mul_accumulator(alpha_, converted_accumulator);
+    }
 
     /// Clamping constant value
     ElementCompute const kClamp =

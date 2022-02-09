@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -36,13 +36,17 @@
 #include "cutlass/numeric_types.h"
 #include "cutlass/array.h"
 
+#include "cutlass/platform/platform.h"
+
 #include "cutlass/gemm/gemm.h"
 
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/epilogue/thread/linear_combination_clamp.h"
 #include "cutlass/epilogue/thread/linear_combination_relu.h"
+#include "cutlass/epilogue/thread/linear_combination_relu0.h"
 #include "cutlass/epilogue/thread/linear_combination_gelu.h"
 #include "cutlass/epilogue/thread/linear_combination_sigmoid.h"
+#include "cutlass/epilogue/thread/linear_combination_hardswish.h"
 #include "cutlass/epilogue/thread/linear_combination_planar_complex.h"
 
 #include "cutlass/epilogue/thread/conversion_op.h"

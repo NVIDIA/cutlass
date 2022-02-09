@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -54,6 +54,7 @@ template <
                                                        ///< but we use 64 or 32 sometimes when there are not enough data to store
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
+  ScaleType::Kind Scale = ScaleType::Default,          ///< Control Alpha and Beta scaling
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest,
   bool IsHeavy = false
 >
@@ -66,10 +67,11 @@ public:
 
   static bool const kIsHeavy = IsHeavy;
   static int const kCount = Count;
+  static const ScaleType::Kind kScale = Scale;
 
   using FragmentOutput = Array<ElementOutput, kCount>;
   using FragmentAccumulator = Array<ElementAccumulator, kCount>;
-  using ComputeFragment = Array<ElementCompute, kCount>;
+  using FragmentCompute = Array<ElementCompute, kCount>;
 
   static FloatRoundStyle const kRound = Round;
 
@@ -131,6 +133,12 @@ public:
   /// Returns true if source is needed
   CUTLASS_HOST_DEVICE
   bool is_source_needed() const {
+    if (Scale == ScaleType::NoBetaScaling) return true;
+
+    if (Scale == ScaleType::OnlyAlphaScaling) return false;
+
+    if (Scale == ScaleType::Nothing) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -152,19 +160,26 @@ public:
     NumericArrayConverter<ElementCompute, ElementOutput, kCount, Round> source_converter;
     NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
 
-    ComputeFragment converted_source = source_converter(source);
-    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+    FragmentCompute converted_source = source_converter(source);
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
 
     // Perform binary operations
 
-    ComputeFragment intermediate;
+    FragmentCompute intermediate;
 
-    multiplies<ComputeFragment> mul_add_source;
-    multiply_add<ComputeFragment> mul_add_accumulator;
-    ActivationFunctor<ComputeFragment> activation;
+    multiplies<FragmentCompute> mul_add_source;
+    multiply_add<FragmentCompute> mul_add_accumulator;
+    ActivationFunctor<FragmentCompute> activation;
 
-    intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    if (Scale == ScaleType::NoBetaScaling) {
+      intermediate = converted_source;
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    }  else if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    }
 
     intermediate = activation(intermediate);
 
@@ -182,16 +197,20 @@ public:
     // Convert source to interal compute numeric type
     NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
 
-    ComputeFragment converted_accumulator = accumulator_converter(accumulator);
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
 
     // Perform binary operations
 
-    ComputeFragment intermediate;
+    FragmentCompute intermediate;
 
-    multiplies<ComputeFragment> mul_add_accumulator;
-    ActivationFunctor<ComputeFragment> activation;
+    multiplies<FragmentCompute> mul_add_accumulator;
+    ActivationFunctor<FragmentCompute> activation;
 
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    }
 
     intermediate = activation(intermediate);
 

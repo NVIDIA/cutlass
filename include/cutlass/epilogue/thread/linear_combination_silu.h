@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -51,10 +51,11 @@ template <
                                                        ///< but we use 64 or 32 sometimes when there are not enough data to store
   typename ElementAccumulator_ = ElementOutput_,       ///< Accumulator data type
   typename ElementCompute_ = ElementOutput_,           ///< Data type used to compute linear combination
+  ScaleType::Kind Scale = ScaleType::Default,          ///< Control Alpha and Beta scaling
   FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
 >
 using LinearCombinationSilu = LinearCombinationGeneric<SiLu, ElementOutput_, Count, ElementAccumulator_,
-                                                       ElementCompute_, Round, true>;
+                                                       ElementCompute_, Scale, Round, true>;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace thread
