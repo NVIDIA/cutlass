@@ -77,7 +77,6 @@ struct Gemm {
     typename Epilogue::OutputTileIterator::TensorRef ref_D;
     typename OutputOp::Params output_op;
     int *semaphore;
-    int gemm_k_iterations;
     int gemm_k_size;
 
     //
@@ -85,7 +84,7 @@ struct Gemm {
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): swizzle_log_tile(0), semaphore(0), gemm_k_iterations(0), gemm_k_size(0) { }
+    Params(): swizzle_log_tile(0), semaphore(0), gemm_k_size(0) { }
 
     CUTLASS_HOST_DEVICE
     Params(
