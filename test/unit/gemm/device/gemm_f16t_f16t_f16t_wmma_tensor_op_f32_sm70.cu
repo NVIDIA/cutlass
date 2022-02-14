@@ -50,7 +50,7 @@
 TEST(SM70_Device_Gemm_f16t_f16t_f16t_wmma_tensor_op_f32, 64x64x32_64x64x32_16x16x16) {
 
   using ElementOutput = cutlass::half_t;
-  using ElementAccumulator = cutlass::half_t;
+  using ElementAccumulator = float;
 
   using Gemm = cutlass::gemm::device::Gemm<
     cutlass::half_t,
