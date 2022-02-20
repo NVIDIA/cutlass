@@ -218,6 +218,16 @@ class TensorRef {
   
   }
 
+  /// Converting constructor from TensorRef to non-constant data.
+  template<typename _Magic = int>
+  CUTLASS_HOST_DEVICE
+  TensorRef(
+    NonConstTensorRef const &ref,             ///< TensorRef to non-const data
+    ///SFINAE trick to avoid creating a copy-constructor when Element_ is already non-const
+    _Magic magic = (typename std::enable_if< ! std::is_same<NonConstTensorRef, TensorRef<Element_, Layout_> >::value, _Magic>::type)0
+  ):
+    ptr_(ref.data()), layout_(ref.layout()) { }
+
   /// Returns a reference to constant-valued tensor.
   CUTLASS_HOST_DEVICE
   ConstTensorRef const_ref() const {
