@@ -224,7 +224,7 @@ class TensorRef {
   TensorRef(
     NonConstTensorRef const &ref,             ///< TensorRef to non-const data
     ///SFINAE trick to avoid creating a copy-constructor when Element_ is already non-const
-    _Magic magic = (typename std::enable_if< ! std::is_same<NonConstTensorRef, TensorRef<Element_, Layout_> >::value, _Magic>::type)0
+    _Magic magic = (typename platform::enable_if< ! platform::is_same<NonConstTensorRef, TensorRef<Element_, Layout_> >::value, _Magic>::type)0
   ):
     ptr_(ref.data()), layout_(ref.layout()) { }
 
