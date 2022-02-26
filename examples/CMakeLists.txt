@@ -102,6 +102,7 @@ foreach(EXAMPLE
   28_ampere_3xtf32_fast_accurate_tensorop_fprop
   29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm
   30_wgrad_split_k
+  31_transposed_conv2d
   )
 
   add_subdirectory(${EXAMPLE})
