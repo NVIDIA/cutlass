@@ -2,8 +2,9 @@
 #include <sstream>
 
 #include "cutlass/cutlass.h"
+#include "cutlass/tensor_ref.h"
 #include "cutlass/gemm/device/gemm.h"
-#include "cutlass/conv/kernel/default_conv2d_wgrad.h"
+#include "cutlass/conv/kernel/default_conv2d_dgrad.h"
 #include "cutlass/conv/device/implicit_gemm_convolution.h"
 
 #include "cutlass/util/command_line.h"
@@ -15,24 +16,25 @@
 #include "cutlass/util/reference/host/tensor_fill.h"
 #include "cutlass/util/reference/device/convolution.h"
 #include "cutlass/util/tensor_view_io.h"
-#include "cutlass/reduction/device/reduce_split_k.h"
-#include "cutlass/reduction/thread/reduction_operators.h"
 
 #include "helper.h"
 
 // The code section below describes datatype for input, output tensors and computation between
 // elements
-using ElementAccumulator = float;                  // Data type of accumulator
-using ElementComputeEpilogue = float;              // Data type of epilogue computation (alpha, beta)
+using cutlass::layout::TensorNHWC;
+using cutlass::TensorRef;
+
+using ElementAccumulator = cutlass::half_t;                  // Data type of accumulator
+using ElementComputeEpilogue = cutlass::half_t;              // Data type of epilogue computation (alpha, beta)
 using ElementInputA = cutlass::half_t;             // Data type of elements in input tensor
 using ElementInputB = cutlass::half_t;             // Data type of elements in input tensor
 using ElementOutput = cutlass::half_t;                       // Data type of elements in output tensor
 using ElementC = ElementOutput;
 using ElementCompute = ElementComputeEpilogue;
-using LayoutInputA = cutlass::layout::TensorNHWC;
-using LayoutInputB = cutlass::layout::TensorNHWC;
+using LayoutInputA = TensorNHWC;
+using LayoutInputB = TensorNHWC;
 using LayoutInputScaleBias = cutlass::layout::RowMajor;
-using LayoutOutput = cutlass::layout::TensorNHWC;
+using LayoutOutput = TensorNHWC;
 
 // This code section describes whether you want to use tensor cores or regular SIMT cores on GPU SM
 using MMAOp = cutlass::arch::OpClassTensorOp;
@@ -50,16 +52,16 @@ using WarpShape = cutlass::gemm::GemmShape<64, 64, 32>;          // Warp tile sh
 using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;    // TensorCore instruction shape
 
 // This code section describes how threadblocks are scheduled on GPU
-using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
+using SwizzleThreadBlock = cutlass::conv::threadblock::StridedDgradIdentityThreadblockSwizzle<1>;
 
 // Number of pipelines you want to use
-constexpr int NumStages = 5;
+constexpr int NumStages = 3;
 
 // This code section describe iterator algorithm selected is Analytic or Optimized
 static cutlass::conv::IteratorAlgorithm const IteratorAlgorithm = cutlass::conv::IteratorAlgorithm::kOptimized;
 
 // This code section describes the epilogue part of the kernel, we use default value
-using EpilogueOpGEMM = cutlass::epilogue::thread::LinearCombination<
+using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
     ElementCompute,                                     // Data type of output matrix.
       128 / cutlass::sizeof_bits<ElementCompute>::value,  // The number of elements per vectorized.
     // memory access. This becomes the vector width of
@@ -67,15 +69,7 @@ using EpilogueOpGEMM = cutlass::epilogue::thread::LinearCombination<
       ElementAccumulator,                                // Data type of accumulator
       ElementComputeEpilogue>;                           // Data type for alpha/beta in linear combination
 
-using EpilogueOpReduction = cutlass::epilogue::thread::LinearCombination<
-    ElementOutput,                                     // Data type of output matrix.
-      128 / cutlass::sizeof_bits<ElementOutput>::value,  // The number of elements per vectorized.
-    // memory access. This becomes the vector width of
-    // math instructions in the epilogue too.
-      ElementAccumulator,                                // Data type of accumulator
-      ElementComputeEpilogue>;                           // Data type for alpha/beta in lin
-
-using Conv2dWgradKernel = typename cutlass::conv::kernel::DefaultConv2dWgrad<
+using Conv2dDgradKernel = typename cutlass::conv::kernel::DefaultConv2dDgrad<
   ElementInputA, LayoutInputA,
     ElementInputB, LayoutInputB,
     ElementAccumulator, LayoutOutput,
@@ -85,32 +79,17 @@ using Conv2dWgradKernel = typename cutlass::conv::kernel::DefaultConv2dWgrad<
     ThreadblockShape,
     WarpShape,
     InstructionShape,
-    EpilogueOpGEMM,
+    EpilogueOp,
     SwizzleThreadBlock,
     NumStages,
     cutlass::arch::OpMultiplyAdd,
-    IteratorAlgorithm
+    IteratorAlgorithm,
+    cutlass::conv::StrideSupport::kStrided
     >::Kernel;
 
-using ImplicitGemm = cutlass::conv::device::ImplicitGemmConvolution<Conv2dWgradKernel>;
+using ImplicitGemm = cutlass::conv::device::ImplicitGemmConvolution<Conv2dDgradKernel>;
 
-using EpilogueOutputOp = EpilogueOpReduction;
-
-/// Reduction kernel
-using ReductionOp = cutlass::reduction::thread::ReduceAdd<
-    ElementAccumulator,
-      typename EpilogueOutputOp::ElementAccumulator,
-      EpilogueOutputOp::kCount
-      >;
-
-using ReductionKernel = cutlass::reduction::kernel::ReduceSplitK<
-    cutlass::MatrixShape<4, 32 * EpilogueOutputOp::kCount>,
-      EpilogueOutputOp,
-      ReductionOp
-      >;
-
-using ReductionDevice = cutlass::reduction::device::ReduceSplitK<ReductionKernel>;
-using ReductionStrideIndex = typename ReductionDevice::StrideIndex;
+using EpilogueOutputOp = EpilogueOp;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -126,28 +105,22 @@ struct Options {
   bool reference_check;
   bool measure_performance;
   int iterations;
-  bool save_workspace;
   ElementComputeEpilogue alpha;
   ElementComputeEpilogue beta;
-  int split_k_slices;
-  bool benchmark;
   std::string tag;
 
   Options():
     help(false),
     input_size(1, 32, 32, 32),
-    filter_size(32, 3, 3, 32),
+    filter_size(32, 3, 3, 16),
     padding(1, 1, 1, 1),
-    conv_stride(1, 1),
+    conv_stride(2, 2),
     dilation(1, 1),
     reference_check(true),
     measure_performance(false),
     iterations(20),
-    save_workspace(false),
     alpha(1),
-    beta(0),
-    split_k_slices(8),
-    benchmark(false) { }
+    beta(0) {}
 
   // Verify the problem size is compatible with the CUTLASS Convolution implementation.
   bool valid() {
@@ -175,22 +148,6 @@ struct Options {
     return true;
   }
 
-  /// Updates input and filter sizes
-  void update(
-	      cutlass::Tensor4DCoord input_size,
-	      cutlass::Tensor4DCoord filter_size,
-	      cutlass::MatrixCoord stride) {
-
-    this->input_size = input_size;
-    this->filter_size = filter_size;
-    conv_stride = stride;
-
-    padding.n() = filter_size.h() / 2;
-    padding.h() = filter_size.h() / 2;
-    padding.w() = filter_size.w() / 2;
-    padding.c() = filter_size.w() / 2;
-  }
-
   // Parses the command line
   void parse(int argc, char const **args) {
     cutlass::CommandLine cmd(argc, args);
@@ -199,20 +156,12 @@ struct Options {
       help = true;
     }
 
-    if (cmd.check_cmd_line_flag("ref-check")) {
-      reference_check = true;
+    if (cmd.check_cmd_line_flag("skip-ref-check")) {
+      reference_check = false;
     }
 
     if (cmd.check_cmd_line_flag("perf-check")) {
       measure_performance = true;
-    }
-
-    if (cmd.check_cmd_line_flag("save-workspace")) {
-      save_workspace = true;
-    }
-
-    if (cmd.check_cmd_line_flag("benchmark")) {
-      benchmark = true;
     }
 
     cmd.get_cmd_line_argument("n", input_size.n());
@@ -220,14 +169,14 @@ struct Options {
     cmd.get_cmd_line_argument("w", input_size.w());
     cmd.get_cmd_line_argument("c", input_size.c());
 
-    cmd.get_cmd_line_argument("k", filter_size.n());
+    // Filter layout is CRSK
+    cmd.get_cmd_line_argument("k", filter_size.c());
     cmd.get_cmd_line_argument("r", filter_size.h());
     cmd.get_cmd_line_argument("s", filter_size.w());
-    filter_size.c() = input_size.c();
+    filter_size.n() = input_size.c();
 
     cmd.get_cmd_line_argument("alpha", alpha);
     cmd.get_cmd_line_argument("beta", beta);
-    cmd.get_cmd_line_argument("split-k-slices", split_k_slices);
 
     cmd.get_cmd_line_argument("iterations", iterations);
     cmd.get_cmd_line_argument("tag", tag);
@@ -260,34 +209,33 @@ struct Options {
 	<< "  --s <int>            Filter extent S\n\n"
 	<< "  --alpha <float>      Epilogue scalar alpha\n"
 	<< "  --beta <float>       Epilogue scalar beta\n\n"
-	<< "  --split-k-slices <int>   Split-k factor \n\n"
-	<< "  --ref-check          If set (true), reference check on the host is computed\n"
+	<< "  --skip-ref-check     If set (true), skip reference check on the host\n"
 	<< "  --perf-check         If set (true), performance is measured.\n"
-	<< "  --benchmark          If set (true), performance benchmarking on several layers and batch-size.\n"
 	<< "  --iterations <int>   Number of profiling iterations to perform.\n"
-	<< "  --save-workspace     If set, workspace is written to a text file.\n"
 	<< "  --tag <string>       String to replicate across the first column in the results table\n";
 
     out << "\n\nExamples:\n\n"
-	<< "$ ./examples/30_wgrad_split_k/30_wgrad_split_k --n=32 --h=224 --w=224 --c=128 --k=256 --r=3 --s=3 --split-k-slices=8\n\n";
+	<< "$ ./examples/31_transposed_conv2d/31_transposed_conv2d --n=8 --h=32 --w=32 --c=16 --k=32 --r=3 --s=3\n\n";
 
     return out;
   }
 
   /// Computes the output tensor size (NPQK)
   cutlass::Tensor4DCoord output_size() const {
-    return cutlass::Tensor4DCoord(
-				  input_size.n(),
-				  (input_size.h() + padding.n() + padding.h() - filter_size.h()) / conv_stride.row() + 1,
-				  (input_size.w() + padding.w() + padding.c() - filter_size.w()) / conv_stride.column() + 1,
-				  filter_size.n());
+    int out_pad_h = conv_stride.row() > 1 ? 1 : 0;
+    int out_pad_w = conv_stride.column() > 1 ? 1 : 0;
+    int out_h = (input_size.h() - 1) * conv_stride.row() - 2 * padding.n() + (((filter_size.h() - 1) * dilation.row() + 1)) + out_pad_h;
+    int out_w = (input_size.w() - 1) * conv_stride.column() - 2 * padding.w() + (((filter_size.w() - 1) * dilation.column() + 1)) + out_pad_w;
+    return cutlass::Tensor4DCoord(input_size.n(), out_h, out_w, filter_size.c());
   }
 
   /// Compute performance in GFLOP/s
   double gflops(double runtime_s) const {
 
-    // Number of multiply-adds = NPQK * CRS
-    int64_t fmas = output_size().product() * int64_t(filter_size.h() * filter_size.w() * filter_size.c());
+    // Number of multiply-adds = NHWC * KRS
+    // Note that the input with the layout NHWC corresponds to the output from the perspective of dgrad,
+    // and that the filter layout is CRSK.
+    int64_t fmas = input_size.product() * int64_t(filter_size.h() * filter_size.w() * filter_size.n());
 
     // Two flops per multiply-add
     return 2.0 * double(fmas) / double(1.0e9) / runtime_s;
@@ -333,7 +281,7 @@ struct Result {
       << options.input_size.h() << ","
       << options.input_size.w() << ","
       << options.input_size.c() << ","
-      << options.filter_size.n() << ","
+      << options.filter_size.c() << ","
       << options.filter_size.h() << ","
       << options.filter_size.w() << ","
       << options.conv_stride.row() << ","
@@ -345,10 +293,79 @@ struct Result {
   }
 };
 
+void Conv2dTransposeReference(
+			      cutlass::conv::Conv2dProblemSize problem_size,
+			      TensorRef<ElementInputA, LayoutInputA> tensor_a,
+			      TensorRef<ElementInputB, LayoutInputB> tensor_b,
+			      TensorRef<ElementC, LayoutOutput> tensor_c,
+			      TensorRef<ElementC, LayoutOutput> tensor_d,
+			      ElementCompute alpha,
+			      ElementCompute beta) {
+
+  int H = problem_size.P;
+  int W = problem_size.Q;
+  int P = problem_size.H;
+  int Q = problem_size.W;
+  int K = problem_size.C;
+  int C = problem_size.K;
+
+  for (int n = 0; n < problem_size.N; ++n) {
+    for (int p = 0; p < P; ++p) {
+      for (int q = 0; q < Q; ++q) {
+        for (int k = 0; k < K; ++k) {
+
+          ElementAccumulator acc = ElementAccumulator();
+
+          for (int r = 0; r < problem_size.R; ++r) {
+            for (int s = 0; s < problem_size.S; ++s) {
+              for (int c = 0; c < C; ++c) {
+
+                int filter_r = r;
+                int filter_s = s;
+
+                int h = p + problem_size.pad_h - filter_r * problem_size.dilation_h;
+                int w = q + problem_size.pad_w - filter_s * problem_size.dilation_w;
+
+                if (h >= 0 && (h % problem_size.stride_h) == 0 &&
+                    w >= 0 && (w % problem_size.stride_w) == 0) {
+
+                  h = h / problem_size.stride_h;
+                  w = w / problem_size.stride_w;
+
+                  if (h < H && w < W) {
+
+                    ElementInputA a = tensor_a.at(cutlass::make_Coord(n, h, w, c));
+                    ElementInputB b = tensor_b.at(cutlass::make_Coord(c, r, s, k));
+
+                    acc += ElementAccumulator(a) * ElementAccumulator(b);
+                  }
+                }
+
+              } // for (C)
+            } // for (S)
+          } // for (R)
+
+          // Apply Epilogue, compute ElementCompute, convert and store ElementC
+          ElementC c_ref = ElementC();
+
+          if (beta != ElementCompute()) {
+            c_ref = tensor_c.at(cutlass::make_Coord(n, p, q, k));
+          }
+
+          tensor_d.at(cutlass::make_Coord(n, p, q, k)) = alpha * ElementCompute(acc) + beta * ElementCompute(c_ref);
+
+        } // for (K)
+      } // for (W)
+    } // for (H)
+  } // for (N)
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Runs one benchmark
 Result profile_convolution(Options const &options) {
+
+  std::cout << "Output shape: " << options.output_size() << std::endl;
 
   Result result;
 
@@ -356,11 +373,11 @@ Result profile_convolution(Options const &options) {
   // Allocate host-device tensors using the CUTLASS Utilities.
   //
 
-  cutlass::HostTensor<ElementInputA, LayoutInputA> tensor_a(options.output_size());
-  cutlass::HostTensor<ElementInputB, LayoutInputB> tensor_b(options.input_size);
-  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_c(options.filter_size);
-  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_d(options.filter_size);
-  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_ref_c(options.filter_size);
+  cutlass::HostTensor<ElementInputB, LayoutInputB> tensor_a(options.input_size);
+  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_b(options.filter_size);
+  cutlass::HostTensor<ElementInputA, LayoutInputA> tensor_c(options.output_size());
+  cutlass::HostTensor<ElementInputA, LayoutInputA> tensor_d(options.output_size());
+  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_ref_d(options.output_size());
 
   //
   // Initialize tensors
@@ -368,69 +385,65 @@ Result profile_convolution(Options const &options) {
 
   // Fill tensor A on host with uniform-distribution random data
   cutlass::reference::host::TensorFillRandomUniform(
-						    tensor_a.host_view(),
-						    1,
-						    ElementInputA(3),
-						    ElementInputA(-4),
-						    0);
+  						    tensor_a.host_view(),
+  						    1,
+  						    ElementInputA(3),
+  						    ElementInputA(-4),
+  						    0);
 
   // Fill tensor B on host with uniform-distribution random data
   cutlass::reference::host::TensorFillRandomUniform(
-						    tensor_b.host_view(),
-						    1,
-						    ElementInputB(7),
-						    ElementInputB(-8),
-						    0);
+  						    tensor_b.host_view(),
+  						    1,
+  						    ElementInputB(7),
+  						    ElementInputB(-8),
+  						    0);
 
   // Fill tensor C on host with zeros
   cutlass::reference::host::TensorFill(
-				       tensor_c.host_view());
+  				       tensor_c.host_view());
 
   cutlass::reference::host::TensorFill(
-				       tensor_d.host_view());
+  				       tensor_d.host_view());
 
   // Fill tensor C for reference on host with zeros
   cutlass::reference::host::TensorFill(
-				       tensor_ref_c.host_view());
+  				       tensor_ref_d.host_view());
 
   // Copy data from host to GPU
   tensor_a.sync_device();
   tensor_b.sync_device();
   tensor_c.sync_device();
   tensor_d.sync_device();
-  tensor_ref_c.sync_device();
 
   //
   // Define arguments for CUTLASS Convolution
   //
 
   cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation;
-  cutlass::conv::SplitKMode const split_k_mode = cutlass::conv::SplitKMode::kParallel;
-
-  int split_k_slices = options.split_k_slices;
 
   // Construct Conv2dProblemSize with user defined output size
-  cutlass::conv::Conv2dProblemSize problem_size(
-						options.input_size,
-						options.filter_size,
-						options.padding,
-						options.conv_stride,
-						options.dilation,
-						options.output_size(),
-						mode,
-						split_k_slices
-						);
+  // The input in transposed conv2d corresponds to the output in the equivalent dgrad.
+  // Similarly for the output.
 
-  using cutlass::layout::TensorNHWC;
+  cutlass::conv::Conv2dProblemSize problem_size(
+  						options.output_size(),
+  						options.filter_size,
+  						options.padding,
+  						options.conv_stride,
+  						options.dilation,
+  						options.input_size,
+  						mode
+  						);
+
   typename ImplicitGemm::Arguments arguments{
     problem_size,
       tensor_a.device_ref(),
       tensor_b.device_ref(),
-      {nullptr, TensorNHWC()},
-	{nullptr, TensorNHWC()},
-	  {options.alpha, options.beta},
-	    split_k_mode
-	      };
+      tensor_c.device_ref(),
+      tensor_d.device_ref(),
+      {options.alpha, options.beta}
+      };
 
   //
   // Initialize CUTLASS Convolution
@@ -440,94 +453,31 @@ Result profile_convolution(Options const &options) {
 
   size_t workspace_size = implicit_gemm.get_workspace_size(arguments);
 
-  std::cout << "split-k-slices: " << split_k_slices << std::endl;
-  std::cout << "workspace size: " << workspace_size << std::endl;
-
   // Allocate workspace memory
   cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
 
   result.status = implicit_gemm.can_implement(arguments);
   CUTLASS_CHECK(result.status);
 
-  cutlass::layout::TensorNHWC layout_D{TensorNHWC::packed(options.filter_size)};
-  arguments.ref_D.reset(reinterpret_cast<ElementCompute*>(workspace.get()), layout_D);
-
   result.status = implicit_gemm.initialize(arguments, workspace.get());
   CUTLASS_CHECK(result.status);
 
-  arguments.output_op = {ElementCompute(1), ElementCompute(0)};
-  result.status = implicit_gemm.update(arguments, workspace.get());
-
-  //
-  // Launch initialized CUTLASS kernel
-  //
   result.status = implicit_gemm();
-
   CUTLASS_CHECK(result.status);
 
-  if (split_k_mode == cutlass::conv::SplitKMode::kParallel) {
-    ReductionDevice reduction_op;
-    auto& status = result.status;
-    static cutlass::conv::Operator const kConvolutionalOperator = ImplicitGemm::kConvolutionalOperator;
-    typename ReductionDevice::Arguments reduction_args(
-						       cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, problem_size).mn(),
-						       problem_size.split_k_slices,
-						       cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
-						       {
-							 reinterpret_cast<ElementAccumulator*> (workspace.get()),
-							   ReductionStrideIndex(tensor_c.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
-							   },
-						       {
-							 tensor_d.device_data(),
-							   ReductionStrideIndex(tensor_d.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
-							   },
-						       {
-							 tensor_c.device_data(),
-							   ReductionStrideIndex(tensor_c.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
-							   },
-						       {options.alpha, options.beta}
-						       );
-
-    status = reduction_op.initialize(reduction_args, nullptr);
-    status = reduction_op();
-  }
-
-  //
-  // Optional reference check
-  //
-
+  // // Skip reference check since there is no reference code for conv2d transpose in cutlass.
   if (options.reference_check) {
-    std::cout << "Verification on device...\n";
-
-    // Compute with reference implementation
-    cutlass::reference::device::Conv2dWgrad<
-      ElementInputA,
-	LayoutInputA,
-	ElementInputB,
-	LayoutInputB,
-	ElementOutput,
-	LayoutOutput,
-	ElementComputeEpilogue,
-	ElementAccumulator,
-	cutlass::NumericConverter<ElementOutput, ElementComputeEpilogue>
-	>(
-	  problem_size,
-	  tensor_a.device_ref(),
-	  tensor_b.device_ref(),
-	  tensor_c.device_ref(),
-	  tensor_ref_c.device_ref(),
-	  options.alpha,
-	  options.beta
-	  );
-
-    // Check if output from CUTLASS kernel and reference kernel are equal or not
-    tensor_c.sync_host();
     tensor_d.sync_host();
-    tensor_ref_c.sync_host();
+    std::cout << "Verification on host...\n";
+    Conv2dTransposeReference(problem_size,
+    			     tensor_a.host_ref(),
+    			     tensor_b.host_ref(),
+    			     tensor_c.host_ref(),
+    			     tensor_ref_d.host_ref(),
+    			     options.alpha, options.beta);
 
-    bool passed = cutlass::reference::host::TensorEquals(
-							 tensor_d.host_view(),
-							 tensor_ref_c.host_view());
+    bool passed = cutlass::reference::host::TensorEquals(tensor_d.host_view(),
+    							 tensor_ref_d.host_view());
 
     if (!passed) {
       result.reference_check = cutlass::Status::kErrorInternal;
@@ -538,41 +488,8 @@ Result profile_convolution(Options const &options) {
       std::cout << "Passed.\n";
     }
   }
-  else {
-    result.reference_check = cutlass::Status::kInvalid;
-  }
-
-  if (options.save_workspace) {
-
-    std::stringstream ss;
-
-    ss << "26_ampere_fused_wgrad_batch_normalization_"
-       << options.input_size.n() << "x" << options.input_size.h() << "x" << options.input_size.w() << "x" << options.input_size.c()
-       << "_"
-       << options.filter_size.n() << "x" << options.filter_size.h() << "x" << options.filter_size.w() << "x" << options.filter_size.c()
-       << ".dat";
-
-    std::ofstream output_workspace(ss.str());
-
-    output_workspace
-      << "Input = \n" << tensor_a.host_view() << "\n\n"
-      << "Filters = \n" << tensor_b.host_view() << "\n\n";
-
-    if (options.reference_check) {
-      output_workspace << "Reference = \n" << tensor_ref_c.host_view() << "\n\n";
-    }
-
-    output_workspace << "Computed = \n" << tensor_c.host_view() << std::endl;
-
-    std::cout << "Results written to '" << ss.str() << "'." << std::endl;
-  }
-
-  //
-  // Performance measurement
-  //
 
   if (options.measure_performance) {
-
     cudaEvent_t events[2];
 
     for (auto & event : events) {
@@ -643,68 +560,16 @@ int main(int argc, char const **args) {
     return 0;
   }
 
-  if (options.benchmark) {
-    // Benchmark several layers
-
-    int batch_sizes[] = {34, 408};
-
-    struct Benchmark {
-      int h, w, c, k, r, s, stride_h, stride_w;
-    } layers[] = {
-		  {56, 56,   64,  256, 1, 1, 1, 1},
-		  {56, 56,   64,   64, 1, 1, 1, 1},
-		  {56, 56,   64,   64, 3, 3, 1, 1},
-		  {56, 56,  256,   64, 1, 1, 1, 1},
-		  {56, 56,  256,  512, 1, 1, 2, 2},
-		  {56, 56,  256,  128, 1, 1, 1, 1},
-		  {56, 56,  128,  128, 3, 3, 2, 2},
-		  {28, 28,  128,  512, 1, 1, 1, 1},
-		  {28, 28,  512,  128, 1, 1, 1, 1},
-		  {28, 28,  128,  128, 3, 3, 1, 1},
-		  {28, 28,  512, 1024, 1, 1, 2, 2},
-		  {28, 28,  512,  256, 1, 1, 1, 1},
-		  {28, 28,  256,  256, 3, 3, 2, 2},
-		  {14, 14,  256, 1024, 1, 1, 1, 1},
-		  {14, 14, 1024,  256, 1, 1, 1, 1},
-		  {14, 14,  256,  256, 3, 3, 1, 1},
-		  {14, 14, 1024, 2048, 1, 1, 2, 2},
-		  {14, 14, 1024,  512, 1, 1, 1, 1},
-		  {14, 14,  512,  512, 3, 3, 2, 2},
-		  { 7,  7,  512, 2048, 1, 1, 1, 1},
-		  { 7,  7, 2048,  512, 1, 1, 1, 1},
-		  { 7,  7,  512,  512, 3, 3, 1, 1},
-    };
-
-    Result::print_header(std::cout, options) << std::endl;
-
-    int idx = 1;
-
-    for (auto const &layer : layers) {
-      for (auto N : batch_sizes) {
-        options.update({N, layer.h, layer.w, layer.c},
-                       {layer.k, layer.r, layer.s, layer.c},
-                       {layer.stride_h, layer.stride_w});
-
-        Result result = profile_convolution(options);
-        result.print(std::cout, idx, options) << std::endl;
-      }
-
-      ++idx;
-    }
+  // Execute one problem size
+  if (!options.valid()) {
+    std::cerr << "Invalid problem." << std::endl;
+    return -1;
   }
-  else {
 
-    // Execute one problem size
-    if (!options.valid()) {
-      std::cerr << "Invalid problem." << std::endl;
-      return -1;
-    }
+  Result result = profile_convolution(options);
 
-    Result result = profile_convolution(options);
-
-    Result::print_header(std::cout, options) << std::endl;
-    result.print(std::cout, 1, options) << std::endl;
-  }
+  Result::print_header(std::cout, options) << std::endl;
+  result.print(std::cout, 1, options) << std::endl;
 
   return 0;
 }
