@@ -59,7 +59,7 @@ constexpr int NumStages = 5;
 static cutlass::conv::IteratorAlgorithm const IteratorAlgorithm = cutlass::conv::IteratorAlgorithm::kOptimized;
 
 // This code section describes the epilogue part of the kernel, we use default value
-using EpilogueOp_tmp = cutlass::epilogue::thread::LinearCombination<
+using EpilogueOpGEMM = cutlass::epilogue::thread::LinearCombination<
     ElementCompute,                                     // Data type of output matrix.
       128 / cutlass::sizeof_bits<ElementCompute>::value,  // The number of elements per vectorized.
     // memory access. This becomes the vector width of
@@ -67,7 +67,7 @@ using EpilogueOp_tmp = cutlass::epilogue::thread::LinearCombination<
       ElementAccumulator,                                // Data type of accumulator
       ElementComputeEpilogue>;                           // Data type for alpha/beta in linear combination
 
-using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
+using EpilogueOpReduction = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,                                     // Data type of output matrix.
       128 / cutlass::sizeof_bits<ElementOutput>::value,  // The number of elements per vectorized.
     // memory access. This becomes the vector width of
@@ -85,7 +85,7 @@ using Conv2dWgradKernel = typename cutlass::conv::kernel::DefaultConv2dWgrad<
     ThreadblockShape,
     WarpShape,
     InstructionShape,
-    EpilogueOp_tmp,
+    EpilogueOpGEMM,
     SwizzleThreadBlock,
     NumStages,
     cutlass::arch::OpMultiplyAdd,
@@ -94,7 +94,7 @@ using Conv2dWgradKernel = typename cutlass::conv::kernel::DefaultConv2dWgrad<
 
 using ImplicitGemm = cutlass::conv::device::ImplicitGemmConvolution<Conv2dWgradKernel>;
 
-using EpilogueOutputOp = EpilogueOp;
+using EpilogueOutputOp = EpilogueOpReduction;
 
 /// Reduction kernel
 using ReductionOp = cutlass::reduction::thread::ReduceAdd<
@@ -129,6 +129,7 @@ struct Options {
   bool save_workspace;
   ElementComputeEpilogue alpha;
   ElementComputeEpilogue beta;
+  int split_k_slices;
   bool benchmark;
   std::string tag;
 
@@ -145,6 +146,7 @@ struct Options {
     save_workspace(false),
     alpha(1),
     beta(0),
+    split_k_slices(8),
     benchmark(false) { }
 
   // Verify the problem size is compatible with the CUTLASS Convolution implementation.
@@ -225,6 +227,7 @@ struct Options {
 
     cmd.get_cmd_line_argument("alpha", alpha);
     cmd.get_cmd_line_argument("beta", beta);
+    cmd.get_cmd_line_argument("split-k-slices", split_k_slices);
 
     cmd.get_cmd_line_argument("iterations", iterations);
     cmd.get_cmd_line_argument("tag", tag);
@@ -257,6 +260,7 @@ struct Options {
 	<< "  --s <int>            Filter extent S\n\n"
 	<< "  --alpha <float>      Epilogue scalar alpha\n"
 	<< "  --beta <float>       Epilogue scalar beta\n\n"
+	<< "  --split-k-slices <int>   Split-k factor \n\n"
 	<< "  --ref-check          If set (true), reference check on the host is computed\n"
 	<< "  --perf-check         If set (true), performance is measured.\n"
 	<< "  --benchmark          If set (true), performance benchmarking on several layers and batch-size.\n"
@@ -265,8 +269,7 @@ struct Options {
 	<< "  --tag <string>       String to replicate across the first column in the results table\n";
 
     out << "\n\nExamples:\n\n"
-	<< "$ ./examples/26_ampere_fused_fprop_batch_normalization/26_ampere_fused_wgrad_batch_normalization  --n=32 --h=224 --w=224 --c=128 --k=256 --r=1 --s=1\n\n"
-	<< "$ ./examples/26_ampere_fused_fprop_batch_normalization/26_ampere_fused_wgrad_batch_normalization  --n=1 --h=224 --w=224 --c=32 --k=32 --r=3 --s=3 --ref-check\n\n";
+	<< "$ ./examples/30_wgrad_split_k/30_wgrad_split_k --n=32 --h=224 --w=224 --c=128 --k=256 --r=3 --s=3 --split-k-slices=8\n\n";
 
     return out;
   }
@@ -404,7 +407,7 @@ Result profile_convolution(Options const &options) {
   cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation;
   cutlass::conv::SplitKMode const split_k_mode = cutlass::conv::SplitKMode::kParallel;
 
-  int split_k_slices = 8;
+  int split_k_slices = options.split_k_slices;
 
   // Construct Conv2dProblemSize with user defined output size
   cutlass::conv::Conv2dProblemSize problem_size(
@@ -424,10 +427,10 @@ Result profile_convolution(Options const &options) {
       tensor_a.device_ref(),
       tensor_b.device_ref(),
       {nullptr, TensorNHWC()},
-      {nullptr, TensorNHWC()},
-      {options.alpha, options.beta},
-      split_k_mode
-      };
+	{nullptr, TensorNHWC()},
+	  {options.alpha, options.beta},
+	    split_k_mode
+	      };
 
   //
   // Initialize CUTLASS Convolution
@@ -437,6 +440,7 @@ Result profile_convolution(Options const &options) {
 
   size_t workspace_size = implicit_gemm.get_workspace_size(arguments);
 
+  std::cout << "split-k-slices: " << split_k_slices << std::endl;
   std::cout << "workspace size: " << workspace_size << std::endl;
 
   // Allocate workspace memory
@@ -466,23 +470,23 @@ Result profile_convolution(Options const &options) {
     auto& status = result.status;
     static cutlass::conv::Operator const kConvolutionalOperator = ImplicitGemm::kConvolutionalOperator;
     typename ReductionDevice::Arguments reduction_args(
-      cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, problem_size).mn(),
-      problem_size.split_k_slices,
-      cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
-      {
-        reinterpret_cast<ElementAccumulator*> (workspace.get()),
-        ReductionStrideIndex(tensor_c.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
-      },
-      {
-        tensor_d.device_data(),
-        ReductionStrideIndex(tensor_d.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
-      },
-      {
-        tensor_c.device_data(),
-        ReductionStrideIndex(tensor_c.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
-      },
-      {options.alpha, options.beta}
-    );
+						       cutlass::conv::implicit_gemm_problem_size(kConvolutionalOperator, problem_size).mn(),
+						       problem_size.split_k_slices,
+						       cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
+						       {
+							 reinterpret_cast<ElementAccumulator*> (workspace.get()),
+							   ReductionStrideIndex(tensor_c.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
+							   },
+						       {
+							 tensor_d.device_data(),
+							   ReductionStrideIndex(tensor_d.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
+							   },
+						       {
+							 tensor_c.device_data(),
+							   ReductionStrideIndex(tensor_c.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
+							   },
+						       {options.alpha, options.beta}
+						       );
 
     status = reduction_op.initialize(reduction_args, nullptr);
     status = reduction_op();
@@ -520,18 +524,6 @@ Result profile_convolution(Options const &options) {
     tensor_c.sync_host();
     tensor_d.sync_host();
     tensor_ref_c.sync_host();
-
-    for (int n = 0; n < options.filter_size.n(); ++n) {
-      for (int h = 0; h < options.filter_size.h(); ++h) {
-        for (int w = 0; w < options.filter_size.w(); ++w) {
-          for (int c = 0; c < options.filter_size.c(); ++c) {
-	    // if (tensor_d.at({n, h, w, c}) != tensor_ref_c.at({n, h, w, c})) {
-	    //   std::cout << tensor_d.at({n, h, w, c}) << ", " << tensor_ref_c.at({n, h, w, c}) << std::endl;
-	    // }
-          }
-        }
-      }
-    }
 
     bool passed = cutlass::reference::host::TensorEquals(
 							 tensor_d.host_view(),
