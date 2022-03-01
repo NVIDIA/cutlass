@@ -94,7 +94,7 @@ using SmArch = cutlass::arch::Sm80;
 using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 16>;  // Threadblock tile shape
 
 // This code section describes tile size a warp will compute
-using WarpShape = cutlass::gemm::GemmShape<64, 32, 16>;         // Warp tile shape
+using WarpShape = cutlass::gemm::GemmShape<32, 64, 16>;         // Warp tile shape
 
 // This code section describes the size of MMA op
 using InstructionShape = cutlass::gemm::GemmShape<8, 8, 4>;    // TensorCore instruction shape
@@ -110,7 +110,8 @@ using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,                                        // Data type of output matrix.
     1,                                                    // The number of elements per memory
                                                           // access has.  It has to be 1 for
-                                                          // affine2. 
+                                                          // affine2.
+    ElementAccumulator,
     ElementComputeEpilogue>;
 
 using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmUniversal<
@@ -226,7 +227,7 @@ int run() {
     tensor_b.device_ref().data(),              // <- reference to matrix B on device
     tensor_c.device_ref().data(),              // <- reference to matrix C on device
     tensor_d.device_ref().data(),              // <- reference to matrix D on device
-    tensor_a.layout().capacity(problem_size.mn()),
+    tensor_a.layout().capacity(problem_size.mk()),
     tensor_b.layout().capacity(problem_size.kn()),
     tensor_c.layout().capacity(problem_size.mn()),
     tensor_d.layout().capacity(problem_size.mn()),
@@ -302,7 +303,7 @@ int run() {
 
   CUTLASS_CHECK(status);
 
-  return 0;
+  return (pass ? 0 : -1);
 }
 
 int main(int argc, char const **args) {
