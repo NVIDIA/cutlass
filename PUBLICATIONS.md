@@ -8,6 +8,8 @@
 
 - ["Arithmetic-intensity-guided fault tolerance for neural network inference on GPUs"](https://dl.acm.org/doi/abs/10.1145/3458817.3476184). Jack Kosaian, K. V. Rashmi. _Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis_, November 2021.
 
+- ["Real-time Neural Radiance Caching for Path Tracing"](https://d1qx31qr3h6wln.cloudfront.net/publications/paper_4.pdf). Thomas Muller, Fabrice Rousselle, Jan Novak, Alex Keller. _ACM Trans. Graph._, August 2021.
+
 ## 2020
 
 - ["Scalable Knowledge Graph Analytics at 136 Petaflop/s"](https://www.computer.org/csdl/proceedings-article/sc/2020/999800a061/1oeORDgCM0g). Ramakrishnan Kannan, Piyush Sao, Hao Lu, Drahomira Herrmannova, Vijay Thakkar,  Robert Patton, Richard Vuduc, Thomas Potok. _Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis_, November 2020.
