@@ -97,8 +97,9 @@ static cutlass::conv::IteratorAlgorithm const IteratorAlgorithm = cutlass::conv:
 
 // We need two epilogue functors - one for GEMM and another for the final reduction.
 // The epilogue for GEMM is not used, but needed to instantiate the CUTLASS kernel template.
-// Note that the output of GEMM becomes the input of the the final rediction. Therefore, the output type
-// of the GEMM epilogue is ElementCompute, not ElementOutput.
+// Note that, when the input is fp16 and accumulation is fp32, the output of GEMM needs to be fp32,
+// the final reduction is done in fp32, and the reduction epilogue converts fp32 outputs to fp16.
+// Therefore, the output type of the GEMM epilogue is ElementCompute, not ElementOutput.
 
 // This code section describes the epilogue part of the kernel, we use default value
 using EpilogueOpGEMM = cutlass::epilogue::thread::LinearCombination<
