@@ -24,7 +24,7 @@
  **************************************************************************************************/
 
 /*
-This example shows how to compute 2d transposed convolution, as known as deconvolution, using CUTLASS
+This example shows how to compute 2d transposed convolution, also known as deconvolution, using CUTLASS
 conv2d Dgrad kernels. Although two operations are computationaly equivalent, some care is needed to correctly
 set up a problem size for CUTLASS.
 
@@ -228,7 +228,7 @@ struct Options {
   std::ostream & print_usage(std::ostream &out) const {
 
     out << "31_transposed_conv2d example\n\n"
-	<< "  This example shows how to compute 2d transposed convolution, as known as\n"
+	<< "  This example shows how to compute 2d transposed convolution, also known as\n"
 	<< "  deconvolution, using CUTLASS conv2d Dgrad kernels. Although two operations are\n"
 	<< "  computationaly equivalent, some care is needed to correctly set up a problem size.\n\n"
 	<< "Options:\n\n"
@@ -331,13 +331,14 @@ struct Result {
 
 // This is the same as Conv2dDgrad in tools/util/include/cutlass/util/reference/host/convolution.h,
 // only variable names have been adapted for transposed conv2d.
-void Conv2dTransposeReference(cutlass::conv::Conv2dProblemSize problem_size,
-			      TensorRef<ElementInputA, LayoutInputA> tensor_a,
-			      TensorRef<ElementInputB, LayoutInputB> tensor_b,
-			      TensorRef<ElementC, LayoutOutput> tensor_c,
-			      TensorRef<ElementC, LayoutOutput> tensor_d,
-			      ElementCompute alpha,
-			      ElementCompute beta) {
+void Conv2dTransposeReference(
+  cutlass::conv::Conv2dProblemSize problem_size,
+  TensorRef<ElementInputA, LayoutInputA> tensor_a,
+  TensorRef<ElementInputB, LayoutInputB> tensor_b,
+  TensorRef<ElementC, LayoutOutput> tensor_c,
+  TensorRef<ElementC, LayoutOutput> tensor_d,
+  ElementCompute alpha,
+  ElementCompute beta) {
 
   int H = problem_size.P;
   int W = problem_size.Q;
