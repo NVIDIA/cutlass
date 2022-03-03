@@ -508,14 +508,13 @@ Result profile_convolution(Options const &options) {
     tensor_d.sync_host();
     std::cout << "Verification on host...\n";
     Conv2dTransposeReference(problem_size,
-    			     tensor_a.host_ref(),
-    			     tensor_b.host_ref(),
-    			     tensor_c.host_ref(),
-    			     tensor_ref_d.host_ref(),
-    			     options.alpha, options.beta);
+                             tensor_a.host_ref(),
+                             tensor_b.host_ref(),
+                             tensor_c.host_ref(),
+                             tensor_ref_d.host_ref(),
+                             options.alpha, options.beta);
 
-    bool passed = cutlass::reference::host::TensorEquals(tensor_d.host_view(),
-    							 tensor_ref_d.host_view());
+    bool passed = cutlass::reference::host::TensorEquals(tensor_d.host_view(), tensor_ref_d.host_view());
 
     if (!passed) {
       result.reference_check = cutlass::Status::kErrorInternal;
