@@ -63,14 +63,14 @@ static cutlass::conv::IteratorAlgorithm const IteratorAlgorithm = cutlass::conv:
 // This code section describes the epilogue part of the kernel, we use default value
 using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
     ElementCompute,                                     // Data type of output matrix.
-      128 / cutlass::sizeof_bits<ElementCompute>::value,  // The number of elements per vectorized.
+    128 / cutlass::sizeof_bits<ElementCompute>::value,  // The number of elements per vectorized.
     // memory access. This becomes the vector width of
     // math instructions in the epilogue too.
-      ElementAccumulator,                                // Data type of accumulator
-      ElementComputeEpilogue>;                           // Data type for alpha/beta in linear combination
+    ElementAccumulator,                                // Data type of accumulator
+    ElementComputeEpilogue>;                           // Data type for alpha/beta in linear combination
 
 using Conv2dDgradKernel = typename cutlass::conv::kernel::DefaultConv2dDgrad<
-  ElementInputA, LayoutInputA,
+    ElementInputA, LayoutInputA,
     ElementInputB, LayoutInputB,
     ElementAccumulator, LayoutOutput,
     ElementAccumulator,
@@ -84,12 +84,10 @@ using Conv2dDgradKernel = typename cutlass::conv::kernel::DefaultConv2dDgrad<
     NumStages,
     cutlass::arch::OpMultiplyAdd,
     IteratorAlgorithm,
-    cutlass::conv::StrideSupport::kStrided
+    cutlass::conv::StrideSupport::kStrided  // Use the strided Dgrad specialization
     >::Kernel;
 
 using ImplicitGemm = cutlass::conv::device::ImplicitGemmConvolution<Conv2dDgradKernel>;
-
-using EpilogueOutputOp = EpilogueOp;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -194,10 +192,10 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "26_ampere_fused_wgrad_batch_normalization example\n\n"
-	<< "  This example fuses scale+bias+relu from batch norm into Ampere's\n"
-	<< "  Tensor Core operators on F16 data types to compute\n"
-	<< "  backward convolution on tensors of layout NHWC.\n\n"
+    out << "31_transposed_conv2d example\n\n"
+	<< "  This example shows how to compute 2d transposed convolution, as known as\n"
+	<< "  deconvolution, using CUTLASS conv2d Dgrad kernels. Although two operations are\n"
+	<< "  computationaly equivalent, some care is needed to correctly set up a problem size.\n\n"
 	<< "Options:\n\n"
 	<< "  --help               If specified, displays this usage statement.\n\n"
 	<< "  --n <int>            Input tensor extent N\n"
@@ -222,6 +220,8 @@ struct Options {
 
   /// Computes the output tensor size (NPQK)
   cutlass::Tensor4DCoord output_size() const {
+    // Here, out_pad corresponds to "output_padding" of conv2d_transpose op in deep learning frameworks.
+    // See for example https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose2d.html
     int out_pad_h = conv_stride.row() > 1 ? 1 : 0;
     int out_pad_w = conv_stride.column() > 1 ? 1 : 0;
     int out_h = (input_size.h() - 1) * conv_stride.row() - 2 * padding.n() + (((filter_size.h() - 1) * dilation.row() + 1)) + out_pad_h;
@@ -293,8 +293,10 @@ struct Result {
   }
 };
 
-void Conv2dTransposeReference(
-			      cutlass::conv::Conv2dProblemSize problem_size,
+
+// This is the same as Conv2dDgrad in tools/util/include/cutlass/util/reference/host/convolution.h,
+// only variable names have been adapted for transposed conv2d.
+void Conv2dTransposeReference(cutlass::conv::Conv2dProblemSize problem_size,
 			      TensorRef<ElementInputA, LayoutInputA> tensor_a,
 			      TensorRef<ElementInputB, LayoutInputB> tensor_b,
 			      TensorRef<ElementC, LayoutOutput> tensor_c,
@@ -385,30 +387,27 @@ Result profile_convolution(Options const &options) {
 
   // Fill tensor A on host with uniform-distribution random data
   cutlass::reference::host::TensorFillRandomUniform(
-  						    tensor_a.host_view(),
-  						    1,
-  						    ElementInputA(3),
-  						    ElementInputA(-4),
-  						    0);
+      tensor_a.host_view(),
+      1,
+      ElementInputA(7),
+      ElementInputA(-8),
+      0);
 
   // Fill tensor B on host with uniform-distribution random data
   cutlass::reference::host::TensorFillRandomUniform(
-  						    tensor_b.host_view(),
-  						    1,
-  						    ElementInputB(7),
-  						    ElementInputB(-8),
-  						    0);
+      tensor_b.host_view(),
+      1,
+      ElementInputB(7),
+      ElementInputB(-8),
+      0);
 
-  // Fill tensor C on host with zeros
-  cutlass::reference::host::TensorFill(
-  				       tensor_c.host_view());
+  // Fill tensor C and D on host with zeros
+  cutlass::reference::host::TensorFill(tensor_c.host_view());
 
-  cutlass::reference::host::TensorFill(
-  				       tensor_d.host_view());
+  cutlass::reference::host::TensorFill(tensor_d.host_view());
 
-  // Fill tensor C for reference on host with zeros
-  cutlass::reference::host::TensorFill(
-  				       tensor_ref_d.host_view());
+  // Fill tensor D for reference on host with zeros
+  cutlass::reference::host::TensorFill(tensor_ref_d.host_view());
 
   // Copy data from host to GPU
   tensor_a.sync_device();
@@ -425,25 +424,28 @@ Result profile_convolution(Options const &options) {
   // Construct Conv2dProblemSize with user defined output size
   // The input in transposed conv2d corresponds to the output in the equivalent dgrad.
   // Similarly for the output.
+  // Although the filter layout is CRSK from the perspective of conv2d transpose,
+  // the filter size does not need to change for setting up the problem size.
+  // There is no need to transpose the filter tensor either.
 
   cutlass::conv::Conv2dProblemSize problem_size(
-  						options.output_size(),
-  						options.filter_size,
-  						options.padding,
-  						options.conv_stride,
-  						options.dilation,
-  						options.input_size,
-  						mode
-  						);
+      options.output_size(),
+      options.filter_size,
+      options.padding,
+      options.conv_stride,
+      options.dilation,
+      options.input_size,
+      mode
+  );
 
   typename ImplicitGemm::Arguments arguments{
     problem_size,
-      tensor_a.device_ref(),
-      tensor_b.device_ref(),
-      tensor_c.device_ref(),
-      tensor_d.device_ref(),
-      {options.alpha, options.beta}
-      };
+    tensor_a.device_ref(),
+    tensor_b.device_ref(),
+    tensor_c.device_ref(),
+    tensor_d.device_ref(),
+    {options.alpha, options.beta}
+   };
 
   //
   // Initialize CUTLASS Convolution
