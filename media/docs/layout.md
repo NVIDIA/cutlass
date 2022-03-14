@@ -126,8 +126,8 @@ This method is needed when an algorithm must define a buffer of arbitrary layout
 Example:
 ```c++
 
-typename ArbitraryLayout::TensorCord extent = make_Coord(...);
-typename ArbitraryLayout::TensorCord coord;
+typename ArbitraryLayout::TensorCoord extent = make_Coord(...);
+typename ArbitraryLayout::TensorCoord coord;
 
 ArbitraryLayout layout = ArbitraryLayout::packed(extent);
 
