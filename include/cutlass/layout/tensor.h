@@ -80,7 +80,7 @@ private:
   // Data members
   //
 
-  /// Stride data member - [stride_w, stride_h, stride_n]
+  /// Stride data member - [c, wc, hwc]
   Stride stride_;
 
 public:
@@ -227,7 +227,7 @@ private:
   // Data members
   //
 
-  /// Stride data member - [c, wc, hwc]
+  /// Stride data member - [w, hw, chw]
   Stride stride_;
 
 public:
@@ -312,7 +312,7 @@ private:
   // Data members
   //
 
-  /// Stride data member - [c, wc, hwc]
+  /// Stride data member - [Interleave x w, Interleave x wh, hwc]
   Stride stride_;
 
 public:
@@ -421,7 +421,7 @@ private:
   // Data members
   //
 
-  /// Stride data member - [c, wc, hwc]
+  /// Stride data member - [Interleave x n, Interleave x nw, Interleave x nwh]
   Stride stride_;
 
 public:
