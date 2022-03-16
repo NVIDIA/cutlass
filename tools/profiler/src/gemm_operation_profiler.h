@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -45,6 +45,7 @@
 #include "operation_profiler.h"
 #include "performance_result.h"
 #include "problem_space.h"
+#include "reduction_operation_profiler.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -61,6 +62,7 @@ public:
   struct GemmProblem {
 
     cutlass::library::GemmUniversalMode mode; 
+    cutlass::library::SplitKMode split_k_mode;
     int64_t m;
     int64_t n;
     int64_t k;
@@ -71,6 +73,12 @@ public:
     std::vector<uint8_t> beta;
     int split_k_slices;
     int batch_count;
+
+    // gemm with parallel interleaved reduction
+    // gemm epilogue (alpha, beta) = (1.0, 0.0)
+    // reduction epilogue (alpha, beta) = (GemmProblem::alpha, GemmProblem::beta)
+    std::vector<uint8_t> alpha_one;
+    std::vector<uint8_t> beta_zero;
 
     //
     // Methods
@@ -121,6 +129,13 @@ public:
     /// Buffer used for the operations' device workspace
     DeviceAllocation device_workspace;
 
+    /// Library configuration and arguments for reduction operator
+    library::ReductionConfiguration reduction_configuration;
+    library::ReductionArguments reduction_arguments;
+
+    /// Buffer used for the cutlass reduction operations' host workspace
+    std::vector<uint8_t> reduction_host_workspace;
+
     //
     // Methods
     //
@@ -141,6 +156,8 @@ protected:
   /// Device memory allocations 
   GemmWorkspace gemm_workspace_;
 
+  /// CUTLASS parallel reduction operation to follow this* gemm operation
+  library::Operation const *reduction_op_;
 
 public:
   //
@@ -231,6 +248,10 @@ protected:
     void *host_workspace,
     void *device_workspace);
 
+  /// Initialize reduction problem dimensions and library::Operation
+  bool initialize_reduction_configuration_(
+    library::Operation const *operation,
+    ProblemSpace::Problem const &problem);
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -22,36 +22,50 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/* \file
-   \brief Initialize operations for reduction operation in CUTLASS Library.
+#include <complex>
 
-*/
+#include "../common/cutlass_unit_test.h"
 
-#include "cutlass/cutlass.h"
-#include "cutlass/library/library.h"
-#include "cutlass/library/manifest.h"
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-namespace cutlass {
-namespace library {
-///////////////////////////////////////////////////////////////////////////////////////////////
-//                             CUTLASS Reduction Instances                                   //
-///////////////////////////////////////////////////////////////////////////////////////////////
-void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest);
-void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest);
-void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest);
+TEST(SM75_CUTLASS_TEST, level_not_specified) {
 
-//
-// Entry point to construct operations
-//
-void initialize_all_reduction_op(Manifest &manifest) {
-
-  initialize_reduce_add_linear_combination_f32_f32_f16(manifest);
-  initialize_reduce_add_linear_combination_f32_f32_f32(manifest);
-  initialize_reduce_add_linear_combination_cf32_cf32_cf32(manifest);
-
+  EXPECT_TRUE(true);
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
+TEST(SM80_CUTLASS_TEST, level_not_specified) {
 
-} // namespace library
-} // namespace cutlass
+  EXPECT_TRUE(true);
+}
+
+CUTLASS_TEST_L0(SM75_CUTLASS_TEST, level0, {
+
+  EXPECT_TRUE(true);
+})
+
+CUTLASS_TEST_L1(SM75_CUTLASS_TEST, level1, {
+
+  EXPECT_TRUE(true);
+})
+
+CUTLASS_TEST_L2(SM75_CUTLASS_TEST, level2, {
+
+  EXPECT_TRUE(true);
+})
+
+CUTLASS_TEST_L0(SM80_CUTLASS_TEST, level0, {
+
+  EXPECT_TRUE(true);
+})
+
+CUTLASS_TEST_L1(SM80_CUTLASS_TEST, level1, {
+
+  EXPECT_TRUE(true);
+})
+
+CUTLASS_TEST_L2(SM80_CUTLASS_TEST, level2, {
+
+  EXPECT_TRUE(true);
+})
+////////////////////////////////////////////////////////////////////////////////////////////////////
+

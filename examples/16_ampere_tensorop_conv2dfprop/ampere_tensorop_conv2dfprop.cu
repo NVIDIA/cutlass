@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -168,7 +168,6 @@ using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
                                                        // math instructions in the epilogue too.
     ElementAccumulator,                                // Data type of accumulator
     ElementComputeEpilogue>;                           // Data type for alpha/beta in linear combination
-
 
 using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
   ElementInputA, LayoutInputA,
@@ -592,7 +591,7 @@ Result profile_convolution(Options const &options) {
 
     std::cout << "Results written to '" << ss.str() << "'." << std::endl;
   }
-  
+
   //
   // Performance measurement
   //

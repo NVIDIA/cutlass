@@ -99,6 +99,8 @@ public:
   cutlass::HostTensor<ElementC, LayoutC> tensor_D_computed;
   cutlass::HostTensor<ElementC, LayoutC> tensor_D_reference;
 
+  int tested_problem_count;
+
 public:
 
   TestbedConv2d(
@@ -107,7 +109,7 @@ public:
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = 2080
   ):
-    init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_) {
+    init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_), tested_problem_count(0) {
 
   }
 
@@ -220,7 +222,10 @@ public:
       return true;
     }
 
-#if 0 //display conv2d problem size for debugging
+    // increment tested problem count run by the testbed
+    tested_problem_count++;
+
+#if 0 // display conv2d problem size for debugging
     std::cout << problem_size << std::endl
               << "alpha, beta: (" << alpha << ", " << beta << ")" << std::endl
               << "split_k_mode: " << ((split_k_mode == cutlass::conv::SplitKMode::kSerial) ? "(serial)" : "(parallel)") << std::endl
@@ -537,78 +542,96 @@ bool TestAllConv2d(
   // Vector of conv2d problem sizes to avoid duplicate runs
   Conv2dProblemVector conv_tested_sizes;
 
-  Conv2dProblemVector const *problem_vectors[] = {
-    &conv_test_sizes,                               // run user specified sizes
-    &conv_problems.conv2d_default_sizes,            // run default and cudnn bug sizes
-    //&conv_problems.conv2d_resnet50_sizes,           // run resnet50 sizes
+  // Vectors of Conv2dProblemVector (lenient/easiest to rigorous problem sizes)
+  std::vector<Conv2dProblemVector> problem_vectors = {
+    conv_test_sizes,                               // run user specified sizes
+    conv_problems.conv2d_default_sizes,            // run default and cudnn bug sizes
+    //conv_problems.conv2d_resnet50_sizes,         // run resnet50 sizes
 #if CUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED 
-    &conv_problems.conv2d_rigorous_sizes,           // run large and rigorous sizes if enabled
+    conv_problems.conv2d_rigorous_sizes,           // run large and rigorous sizes if enabled
 #endif
   };
 
+  // Flatten 2D problem_vectors into a 1D problem_sizes
+  std::vector<cutlass::conv::Conv2dProblemSize> problem_sizes;
+  for (auto problem_vector : problem_vectors) {
+    for(auto conv_problem : problem_vector) {
+      problem_sizes.push_back(conv_problem);
+    }
+  }  
+
+  // If CUTLASS_UNIT_TEST_PROBLEM_COUNT is set reverse the order (rigorous to lenient) 
+  // run the most rigorous problem size first
+  if (CutlassUnitTestProblemCount()) {
+    std::reverse(problem_sizes.begin(), problem_sizes.end());
+  }
+
   // Sweep conv2d problem sizes (split-k-mode=kSerial, split-k-slice=1, alpha=1.0, beta=0.0)
-  for (Conv2dProblemVector const * problem_vector : problem_vectors) {
+  for(auto conv_problem : problem_sizes) {
 
-    //  Run conv testbed on default convolution sizes
-    for(auto conv_problem : *problem_vector) {
+    // Skip blacklist and avoid duplicate problem sizes
+    if (std::find(conv_blacklist_sizes.begin(), conv_blacklist_sizes.end(), conv_problem) != conv_blacklist_sizes.end() ||
+        std::find(conv_tested_sizes.begin(), conv_tested_sizes.end(), conv_problem) != conv_tested_sizes.end()) {
+      continue;
+    }
 
-      // Skip blacklist and avoid duplicate problem sizes
-      if (std::find(conv_blacklist_sizes.begin(), conv_blacklist_sizes.end(), conv_problem) != conv_blacklist_sizes.end() ||
-          std::find(conv_tested_sizes.begin(), conv_tested_sizes.end(), conv_problem) != conv_tested_sizes.end()) {
+    //
+    // Procedurally disable certain cases
+    //
+  
+    // CUTLASS DGRAD's *unity* stride specialization only support stride {1, 1} 
+    if ((ImplicitGemm::kConvolutionalOperator == 
+          cutlass::conv::Operator::kDgrad) && 
+        (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+          cutlass::conv::StrideSupport::kUnity)) {
+      if (!((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
         continue;
       }
+    }
 
-      //
-      // Procedurally disable certain cases
-      //
+    // CUTLASS DGRAD's *strided* stride specialization supports all stride {stride_h, stride_w} 
+    // Although strided dgrad works for all stride combinations, we are only going 
+    // to run strided dgrad for non-unity strides 
+    if ((ImplicitGemm::kConvolutionalOperator == 
+          cutlass::conv::Operator::kDgrad) && 
+        (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+          cutlass::conv::StrideSupport::kStrided)) {
+       if (((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
+         continue;
+       }
+    }
+    
+    //
+    // Test
+    //
+    // push back tested problem size to avoid re-running duplicates
+    conv_tested_sizes.push_back(conv_problem);
+
+    // test mode = xcross
+    passed = testbed.run(
+      conv_problem,
+      cutlass::conv::SplitKMode::kSerial);
   
-      // CUTLASS DGRAD's *unity* stride specialization only support stride {1, 1} 
-      if ((ImplicitGemm::kConvolutionalOperator == 
-            cutlass::conv::Operator::kDgrad) && 
-          (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
-            cutlass::conv::StrideSupport::kUnity)) {
-        if (!((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
-          continue;
-        }
-      }
-
-      // CUTLASS DGRAD's *strided* stride specialization supports all stride {stride_h, stride_w} 
-      // Although strided dgrad works for all stride combinations, we are only going 
-      // to run strided dgrad for non-unity strides 
-      if ((ImplicitGemm::kConvolutionalOperator == 
-            cutlass::conv::Operator::kDgrad) && 
-          (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
-            cutlass::conv::StrideSupport::kStrided)) {
-         if (((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
-           continue;
-         }
-      }
-      
-      //
-      // Test
-      //
-      // push back tested problem size to avoid re-running duplicates
-      conv_tested_sizes.push_back(conv_problem);
-
-      // test mode = xcross
-      passed = testbed.run(
-        conv_problem,
-        cutlass::conv::SplitKMode::kSerial);
+    if (!passed) {
+      return false;
+    }
     
-      if (!passed) {
-        return false;
-      }
-      
-      // test mode = convolution
-      passed = testbed.run(
-        conv_problem.reset_mode(cutlass::conv::Mode::kConvolution),
-        cutlass::conv::SplitKMode::kSerial);
-    
-      if (!passed) {
-        return false;
-      }
+    // test mode = convolution
+    passed = testbed.run(
+      conv_problem.reset_mode(cutlass::conv::Mode::kConvolution),
+      cutlass::conv::SplitKMode::kSerial);
+  
+    if (!passed) {
+      return false;
+    }
+
+    // If CUTLASS_UNIT_TEST_PROBLEM_COUNT is set reduce the the number of tested problem counts
+    if (CutlassUnitTestProblemCount() && 
+        testbed.tested_problem_count > CutlassUnitTestProblemCount()) {
+      return true;
     }
   }
+  
 
   // CUTLASS DGRAD's *strided* specialization does not support split-k mode 
   if ((ImplicitGemm::kConvolutionalOperator == 
@@ -676,6 +699,12 @@ bool TestAllConv2d(
 
           if (!passed) {
             return false;
+          }
+
+          // If CUTLASS_UNIT_TEST_PROBLEM_COUNT is set reduce the the number of tested problem counts
+          if (CutlassUnitTestProblemCount() && 
+              testbed.tested_problem_count > CutlassUnitTestProblemCount()) {
+            return true;
           }
         }
       }

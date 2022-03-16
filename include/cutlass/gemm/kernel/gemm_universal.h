@@ -162,6 +162,10 @@ public:
       ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D), 
       batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C), batch_stride_D(batch_stride_D), 
       stride_a(stride_a), stride_b(stride_b), stride_c(stride_c), stride_d(stride_d) {
+      lda = 0;
+      ldb = 0;
+      ldc = 0;
+      ldd = 0;
 
       CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size);
       }

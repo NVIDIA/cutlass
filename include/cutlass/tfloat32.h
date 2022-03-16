@@ -363,8 +363,13 @@ tfloat32_t operator+(tfloat32_t const& lhs, tfloat32_t const& rhs) {
 
 CUTLASS_HOST_DEVICE
 tfloat32_t operator-(tfloat32_t const& lhs) {
-  float x = -reinterpret_cast<float const &>(lhs);
-  return *reinterpret_cast<tfloat32_t *>(&x);
+  union u_tff32 {
+    float val_f32;
+    tfloat32_t val_tf;
+    CUTLASS_HOST_DEVICE u_tff32() : val_f32(0) { }
+  };
+  union u_tff32 x; x.val_f32 = -reinterpret_cast<float const &>(lhs);
+  return x.val_tf;
 }
 
 CUTLASS_HOST_DEVICE

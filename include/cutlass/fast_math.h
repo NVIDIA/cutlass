@@ -705,9 +705,18 @@ float fast_exp(float x) {
 CUTLASS_HOST_DEVICE
 double fast_exp(double x) {
   #if defined(__CUDA_ARCH__)
-  return ::exp(x);
+  return ::expf(x);
   #else
   return std::exp(x);
+  #endif
+}
+
+CUTLASS_HOST_DEVICE
+float fast_exp(half_t x) {
+  #if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 10) && (__CUDA_ARCH__ >= 750)
+      return ::hexp(x.to_half());
+  #else
+      return fast_exp(float(x));
   #endif
 }
 
@@ -764,6 +773,61 @@ half_t fast_tanh(half_t x) {
   return half_t(fast_tanh(float(x)));
   #endif
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename T>
+struct fast_exp_op {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &rhs) const {
+    return fast_exp(rhs);
+  }
+};
+
+#if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 10) && (__CUDA_ARCH__ >= 750)
+template <int N>
+struct fast_exp_op<Array<half_t, N>> {
+  CUTLASS_DEVICE
+  Array<half_t, N> operator()(Array<half_t, N> const &rhs) const {
+
+    Array<half_t, N> result;
+
+    // use x2 specialization
+    __half2 const *in  = reinterpret_cast<__half2 const *>(&rhs);
+    __half2 *out = reinterpret_cast<__half2 *>(&result);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      out[i] = ::h2exp(in[i]);
+    }
+
+    // residual
+    if (N % 2) {
+      half_t last = rhs[N - 1];
+      result[N - 1] = half_t(::hexp(last.to_half()));
+    }
+
+    return result;
+  }
+};
+#endif // #if defined(__CUDA_ARCH__)
+
+template <typename T, int N>
+struct fast_exp_op<Array<T, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+
+    fast_exp_op<T> fast_op;
+    Array<T, N> y;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      y[i] = fast_op(rhs[i]);
+    }
+
+    return y;
+  }
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

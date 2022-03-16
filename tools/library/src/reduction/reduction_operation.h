@@ -30,6 +30,7 @@
 #include <iostream>
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/thread/linear_combination.h"
+#include "cutlass/epilogue/thread/linear_combination_clamp.h"
 #include "cutlass/reduction/thread/reduction_operators.h"
 #include "cutlass/reduction/device/reduce_split_k.h"
 
@@ -180,7 +181,8 @@ public:
   
   /// Gets the device-side workspace
   virtual uint64_t get_device_workspace_size(
-    void const *configuration_ptr) const {
+    void const *configuration_ptr,
+    void const *arguments_ptr = nullptr) const {
 
     OperatorArguments args;
 

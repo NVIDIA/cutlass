@@ -212,6 +212,7 @@ public:
     /// Debug printing
     CUTLASS_DEVICE
     static void print() {
+#if 0
       printf("ReductionDetail {\n");
       printf(
         "  kElementsPerAccess:%d\nkColumnsPerThread: %d\nkRowsPerThread: %d\n,kThreadCount: %d\nkThreadsPerRow: %d\n"
@@ -228,6 +229,7 @@ public:
         StorageShape::kCount
       );
       printf("};\n");
+#endif
     }
   };
 

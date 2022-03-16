@@ -45,6 +45,7 @@ function(cutlass_example_add_executable NAME)
     PRIVATE
     CUTLASS
     cutlass_tools_util_includes
+    $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
     )
 
   target_include_directories(
