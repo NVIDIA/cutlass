@@ -92,11 +92,11 @@ struct cp_async<SizeInBytes, CacheOperation::Always> {
   CUTLASS_DEVICE
   cp_async(void *smem_ptr, void const *global_ptr, bool pred_guard = true) {
     #if CUDA_CP_ASYNC_ACTIVATED
- 
+
       // Make sure the size is supported.
       static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
                 "Size is not supported");
-   
+
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
 
       asm volatile(
@@ -135,7 +135,7 @@ struct cp_async_zfill<SizeInBytes, CacheOperation::Always> {
       // Make sure the size is supported.
       static_assert((SizeInBytes == 4 || SizeInBytes == 8 || SizeInBytes == 16),
                 "Size is not supported");
-   
+
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
       int src_in_bytes = (pred_guard ? SizeInBytes : 0);
 
@@ -162,19 +162,17 @@ struct cp_async_zfill<SizeInBytes, CacheOperation::Always> {
   }
 };
 
-__device__ __constant__ uint4 OOB_NAN_F16x8 = {0x7eff7eff, 0x7eff7eff,
-                                               0x7eff7eff, 0x7eff7eff};
-
 /// Partial specialization
 template <>
 struct cp_async_nan<16, CacheOperation::Always> {
   static int const kSizeInBytes = 16;
+  static uint const OOB_NAN_F16x2 = 0x7eff7eff;
 
   /// Copy with nan fill
   CUTLASS_DEVICE
   cp_async_nan(void *smem_ptr, void const *global_ptr, bool pred_guard) {
     #if CUDA_CP_ASYNC_ACTIVATED
-    
+
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
 
       asm volatile(
@@ -190,8 +188,8 @@ struct cp_async_nan<16, CacheOperation::Always> {
           "}\n"
           :
           : "r"((int)pred_guard), "r"(smem_int_ptr), "l"(global_ptr),
-            "n"(kSizeInBytes), "r"(OOB_NAN_F16x8.x), "r"(OOB_NAN_F16x8.y), "r"(OOB_NAN_F16x8.z),
-            "r"(OOB_NAN_F16x8.w));
+            "n"(kSizeInBytes), "n"(OOB_NAN_F16x2), "n"(OOB_NAN_F16x2), "n"(OOB_NAN_F16x2),
+            "n"(OOB_NAN_F16x2));
 
     #else
 
@@ -216,7 +214,7 @@ struct cp_async<SizeInBytes, CacheOperation::Global> {
   CUTLASS_DEVICE
   cp_async(void *smem_ptr, void const *global_ptr, bool pred_guard = true) {
     #if CUDA_CP_ASYNC_ACTIVATED
-    
+
       static_assert(SizeInBytes == 16,
         "cp.async only supports CacheOperation::Global when access size is 16B.");
 
