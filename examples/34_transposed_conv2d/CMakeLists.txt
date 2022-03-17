@@ -22,6 +22,6 @@
 
 
 cutlass_example_add_executable(
-  31_transposed_conv2d
-  31_transposed_conv2d.cu
+  34_transposed_conv2d
+  34_transposed_conv2d.cu
   )

@@ -226,7 +226,7 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "31_transposed_conv2d example\n\n"
+    out << "34_transposed_conv2d example\n\n"
 	<< "  This example shows how to compute 2d transposed convolution, also known as\n"
 	<< "  deconvolution, using CUTLASS conv2d Dgrad kernels. Although two operations are\n"
 	<< "  computationaly equivalent, some care is needed to correctly set up a problem size.\n\n"
@@ -247,7 +247,7 @@ struct Options {
 	<< "  --tag <string>       String to replicate across the first column in the results table\n";
 
     out << "\n\nExamples:\n\n"
-	<< "$ ./examples/31_transposed_conv2d/31_transposed_conv2d --n=8 --h=32 --w=32 --c=16 --k=32 --r=3 --s=3\n\n";
+	<< "$ ./examples/34_transposed_conv2d/34_transposed_conv2d --n=8 --h=32 --w=32 --c=16 --k=32 --r=3 --s=3\n\n";
 
     return out;
   }
