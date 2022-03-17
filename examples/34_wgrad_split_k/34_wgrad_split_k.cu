@@ -499,7 +499,7 @@ Result profile_convolution(Options const &options) {
   result.status = implicit_gemm.can_implement(arguments);
   CUTLASS_CHECK(result.status);
 
-  // After the workspace is allocated, we point the GEMM destination pointer to the workspace.
+  // After the workspace is allocated, we point the Implicit GEMM destination pointer to the workspace.
   TensorNHWC layout_D{TensorNHWC::packed(options.filter_size)};
   arguments.ref_D.reset(reinterpret_cast<ElementCompute*>(workspace.get()), layout_D);
 
