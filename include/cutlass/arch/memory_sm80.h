@@ -166,12 +166,14 @@ struct cp_async_zfill<SizeInBytes, CacheOperation::Always> {
 template <>
 struct cp_async_nan<16, CacheOperation::Always> {
   static int const kSizeInBytes = 16;
-  static uint const OOB_NAN_F16x2 = 0x7eff7eff;
 
   /// Copy with nan fill
   CUTLASS_DEVICE
   cp_async_nan(void *smem_ptr, void const *global_ptr, bool pred_guard) {
     #if CUDA_CP_ASYNC_ACTIVATED
+
+      static __constant__ uint4 OOB_NAN_F16x8 = {0x7eff7eff, 0x7eff7eff,
+                                                 0x7eff7eff, 0x7eff7eff};
 
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
 
@@ -188,8 +190,8 @@ struct cp_async_nan<16, CacheOperation::Always> {
           "}\n"
           :
           : "r"((int)pred_guard), "r"(smem_int_ptr), "l"(global_ptr),
-            "n"(kSizeInBytes), "n"(OOB_NAN_F16x2), "n"(OOB_NAN_F16x2), "n"(OOB_NAN_F16x2),
-            "n"(OOB_NAN_F16x2));
+            "n"(kSizeInBytes), "r"(OOB_NAN_F16x8.x), "r"(OOB_NAN_F16x8.y), "r"(OOB_NAN_F16x8.z),
+            "r"(OOB_NAN_F16x8.w));
 
     #else
 
