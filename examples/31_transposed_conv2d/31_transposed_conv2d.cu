@@ -68,7 +68,6 @@ using ElementC = ElementOutput;
 using ElementCompute = ElementComputeEpilogue;
 using LayoutInputA = TensorNHWC;
 using LayoutInputB = TensorNHWC;
-using LayoutInputScaleBias = cutlass::layout::RowMajor;
 using LayoutOutput = TensorNHWC;
 
 // This code section describes whether you want to use tensor cores or regular SIMT cores on GPU SM

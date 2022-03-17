@@ -68,7 +68,6 @@ using ElementC = ElementOutput;
 using ElementCompute = ElementComputeEpilogue;
 using LayoutInputA = cutlass::layout::TensorNHWC;
 using LayoutInputB = cutlass::layout::TensorNHWC;
-using LayoutInputScaleBias = cutlass::layout::RowMajor;
 using LayoutOutput = cutlass::layout::TensorNHWC;
 
 // This code section describes whether you want to use tensor cores or regular SIMT cores on GPU SM
@@ -113,7 +112,7 @@ using EpilogueOpGEMM = cutlass::epilogue::thread::LinearCombination<
 // The epilogue functor for reduction. This is the one that is actually used.
 using EpilogueOpReduction = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,                                     // Data type of output matrix.
-    128 / cutlass::sizeof_bits<ElementOutput>::value,  // The number of elements per vectorized.
+    128 / cutlass::sizeof_bits<ElementAccumulator>::value,  // The number of elements per vectorized.
     // memory access. This becomes the vector width of
     // math instructions in the epilogue too.
     ElementAccumulator,                                // Data type of accumulator
