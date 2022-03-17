@@ -1,4 +1,3 @@
-
 # NVIDIA CUTLASS Changelog
 
 ## [2.8.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.8.0) (2021-11-19)
