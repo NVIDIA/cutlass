@@ -84,7 +84,7 @@ foreach(EXAMPLE
   10_planar_complex
   11_planar_complex_array
   12_gemm_bias_relu
-  13_two_tensor_op_fusion  
+  13_two_tensor_op_fusion
   14_ampere_tf32_tensorop_gemm
   15_ampere_sparse_tensorop_gemm
   16_ampere_tensorop_conv2dfprop
@@ -101,6 +101,8 @@ foreach(EXAMPLE
   27_ampere_3xtf32_fast_accurate_tensorop_gemm
   28_ampere_3xtf32_fast_accurate_tensorop_fprop
   29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm
+  30_wgrad_split_k
+  34_transposed_conv2d
   )
 
   add_subdirectory(${EXAMPLE})
