@@ -684,6 +684,29 @@ Result profile_convolution(Options const &options) {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char const **args) {
+  bool notSupported = false;
+
+  // Ampere Tensor Core operations exposed with mma.sync are first available in CUDA 11.0.
+  //
+  // CUTLASS must be compiled with CUDA 11 Toolkit to run Conv2dFprop examples.
+  if (!(__CUDACC_VER_MAJOR__ > 11 || (__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ >= 0))) {
+    std::cerr << "Ampere Tensor Core operations must be compiled with CUDA 11.0 Toolkit or later." << std::endl;
+    notSupported = true;
+  }
+
+  cudaDeviceProp props;
+  CUDA_CHECK(cudaGetDeviceProperties(&props, 0));
+
+  if (!(props.major > 8 || (props.major == 8 && props.minor >= 0))) {
+    std::cerr << "Ampere Tensor Ops must be run on a machine with compute capability at least 80."
+              << std::endl;
+    notSupported = true;
+  }
+
+  if (notSupported) {
+    return 0;
+  }
+
   Options options;
 
   options.parse(argc, args);
