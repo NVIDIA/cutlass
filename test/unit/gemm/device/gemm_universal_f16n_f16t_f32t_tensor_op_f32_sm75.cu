@@ -103,6 +103,30 @@ TEST(SM75_Device_GemmUniversal_f16n_f16t_f32n_tensor_op_f32, 64x64x32_32x32x32_u
     15));
 }
 
+TEST(SM75_Device_GemmUniversal_f16n_f16t_f32t_tensor_op_f32, 64x64x32_32x32x32) {
+
+  using ElementOutput = float;
+  using ElementAccumulator = float;
+
+  using Gemm = cutlass::gemm::device::GemmUniversal<
+      cutlass::half_t, 
+      cutlass::layout::ColumnMajor, 
+      cutlass::half_t,
+      cutlass::layout::RowMajor, 
+      ElementOutput, cutlass::layout::RowMajor,
+      ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm75,
+      cutlass::gemm::GemmShape<64, 64, 32>,
+      cutlass::gemm::GemmShape<32, 32, 32>, 
+      cutlass::gemm::GemmShape<16, 8, 8>,
+      cutlass::epilogue::thread::LinearCombination<
+          ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
+          ElementAccumulator, ElementAccumulator>,
+      cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
+      2>;
+
+  EXPECT_TRUE(test::gemm::device::TestAllGemmUniversal<Gemm>());
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 #endif // #if defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
