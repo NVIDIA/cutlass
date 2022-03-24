@@ -114,7 +114,7 @@ template <
     ComplexTransform TransformB = ComplexTransform::kNone
 >
 class GemmUniversal : 
-  GemmUniversalBase<
+  public GemmUniversalBase<
     typename kernel::DefaultGemmUniversal<
       ElementA_,
       LayoutA_,
