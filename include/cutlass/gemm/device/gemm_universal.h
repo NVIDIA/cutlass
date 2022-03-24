@@ -140,7 +140,16 @@ class GemmUniversal :
   > {
 
  public:
-
+  using ElementA = ElementA_;
+  using LayoutA = LayoutA_;
+  using TensorRefA = TensorRef<ElementA const, LayoutA>;
+  using ElementB = ElementB_;
+  using LayoutB = LayoutB_;
+  using TensorRefB = TensorRef<ElementB const, LayoutB>;
+  using ElementC = ElementC_;
+  using LayoutC = layout::ColumnMajor;
+  using TensorRefC = TensorRef<ElementC const, LayoutC>;
+  using TensorRefD = TensorRef<ElementC, LayoutC>;
   using ElementAccumulator = ElementAccumulator_;
   using OperatorClass = OperatorClass_;
   using ArchTag = ArchTag_;
