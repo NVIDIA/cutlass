@@ -416,8 +416,10 @@ struct ${operation_name} :
       LayoutType.ColumnMajor: LayoutType.RowMajor,
       LayoutType.RowMajor: LayoutType.ColumnMajor
     }
-
-    if operation.A.layout in transpose_layouts.keys() and \
+    if operation.C.layout == LayoutType.RowMajor:
+      instance_layout_A, instance_layout_B, instance_layout_C = \
+        (operation.A.layout, operation.B.layout, operation.C.layout)
+    elif operation.A.layout in transpose_layouts.keys() and \
       operation.B.layout in transpose_layouts.keys() and \
       operation.C.layout in transpose_layouts.keys():
 
