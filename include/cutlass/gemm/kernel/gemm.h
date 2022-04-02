@@ -133,12 +133,12 @@ struct Gemm {
   Gemm() { } 
 
   /// Determines whether kernel satisfies alignment
-    static Status can_implement(
-      cutlass::gemm::GemmCoord const & problem_size,
-      typename Mma::IteratorA::TensorRef ref_A,
-      typename Mma::IteratorB::TensorRef ref_B,
-      typename Epilogue::OutputTileIterator::TensorRef ref_C,
-      typename Epilogue::OutputTileIterator::TensorRef ref_D) {
+  static Status can_implement(
+    cutlass::gemm::GemmCoord const & problem_size,
+    typename Mma::IteratorA::TensorRef ref_A,
+    typename Mma::IteratorB::TensorRef ref_B,
+    typename Epilogue::OutputTileIterator::TensorRef ref_C,
+    typename Epilogue::OutputTileIterator::TensorRef ref_D) {
 
     static int const kAlignmentA = (platform::is_same<typename Mma::IteratorA::Layout,
                                                       layout::ColumnMajorInterleaved<32>>::value)
