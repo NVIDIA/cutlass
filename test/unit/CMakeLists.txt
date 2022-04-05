@@ -35,6 +35,7 @@ target_link_libraries(
   cutlass_tools_util_includes
   $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
   gtest
+  cudart
   )
 
 cutlass_add_library(

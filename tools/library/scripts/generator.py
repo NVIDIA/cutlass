@@ -1056,7 +1056,6 @@ def GenerateSM75_TensorOp_8832_TN(manifest, args):
 
   min_cc = 75
   max_cc = 1024
-
   alignment_constraints = [32,]
 
   for math_inst in math_instructions:
@@ -1136,7 +1135,6 @@ def GenerateSM75_TensorOp_8832_Interleaved(manifest, args):
 
   min_cc = 75
   max_cc = 1024
-
   alignment_constraints = [32,]
 
   for math_inst in math_instructions:
@@ -1907,7 +1905,6 @@ def GenerateSM80_TensorOp_16864_Interleaved(manifest, args):
 
   min_cc = 80
   max_cc = 1024
-
   alignment_constraints = [32,]
 
   for math_inst in math_instructions:
@@ -2644,6 +2641,9 @@ def GenerateSM80(manifest, args):
   GenerateSM80_TensorOp_1688_fast_math(manifest, args)
   GenerateSM80_SparseTensorOp_16816_fast_math(manifest, args)
   GenerateSM80_TensorOp_1688_complex(manifest, args)
+  # 3xTF32 
+  GenerateSM80_TensorOp_1688_fast_fp32_math(manifest, args)
+  GenerateSM80_TensorOp_1688_fast_fp32_math_complex(manifest, args)
   GenerateSM80_TensorOp_884(manifest, args)
   GenerateSM80_TensorOp_884_complex(manifest, args)
   GenerateSM80_TensorOp_884_complex_gaussian(manifest, args)

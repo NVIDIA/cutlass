@@ -69,11 +69,11 @@ struct GemmWithBroadcastReferenceOp {
 
   void operator()(ElementZ &Z, ElementT &T, ElementCompute gemm, ElementCompute bias) {
 
-    ElementCompute z_full = binary_op(gemm, bias);
-    Z = ElementZ(z_full);
-
-    ElementCompute t_full = elementwise_op(z_full);
+    ElementCompute t_full = binary_op(gemm, bias);
     T = ElementT(t_full);
+
+    ElementCompute z_full = elementwise_op(t_full);
+    Z = ElementZ(z_full);
   }
 };
 
@@ -83,9 +83,9 @@ struct GemmWithBroadcastReferenceOp {
 //
 //  Y = GEMM(AB, C)
 //
-//  Z[i, j] = ReductionOp(Y[i, j], Broadcast[i])
+//  T[i, j] = ReductionOp(Y[i, j], Broadcast[i])
 //
-//  T[i, j] = Elementwise(Z[i, j])
+//  Z[i, j] = Elementwise(T[i, j])
 //
 
 template <
@@ -100,7 +100,6 @@ struct TestbedGemmWithBroadcast {
   using ElementCOmpute = typename OutputOp::ElementCompute;
   using ElementZ = typename OutputOp::ElementZ;
   using ElementT = typename OutputOp::ElementT;
-
 
   /// Initialization
   cutlass::Distribution::Kind init_A;
@@ -342,7 +341,6 @@ struct TestbedGemmWithBroadcast {
     using ElementC = typename Gemm::ElementC;
 
     ReferenceOp reference_op;
-
 
     // compute tensor Z and tensor T
     for (int m = 0; m < problem_size.m(); ++m) {

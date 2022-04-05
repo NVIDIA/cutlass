@@ -56,8 +56,11 @@ CUTLASS 2.8 is an update to CUTLASS adding:
 CUTLASS primitives are very efficient.  When used to construct device-wide GEMM kernels,
 they exhibit performance comparable to cuBLAS for scalar GEMM
 computations. The above figure shows CUTLASS performance relative to cuBLAS
-for large matrix dimensions on an NVIDIA GeForce 2080 Ti, an NVIDIA A100, and an NVIDIA TitanV
-using CUDA 11.0 Toolkit. Tensor Core operations are implemented using CUDA's 
+for large matrix dimensions on an [NVIDIA A100](https://www.nvidia.com/en-us/data-center/a100/), 
+an [NVIDIA A2](https://www.nvidia.com/en-us/data-center/products/a2/), 
+an [NVIDIA TitanV](https://www.nvidia.com/en-us/titan/titan-v/), 
+and an [NVIDIA GeForce 2080 Ti](https://www.nvidia.com/en-us/geforce/graphics-cards/rtx-2080-ti/)
+compiled with the [CUDA 11.5 Toolkit](https://developer.nvidia.com/cuda-downloads). Tensor Core operations are implemented using CUDA's 
 [mma instruction](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-mma).
 
 # Compatibility

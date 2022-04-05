@@ -107,8 +107,8 @@ void Conv2dOperationProfiler::print_examples(std::ostream &out) const {
             " --Activation=f16:nhwc --Filter=f16:nhwc --Output=f16 --accumulator-type=f32"
             " --n=32 --h=14 --w=14 --c=8 --k=64 --r=3 --s=3"
             " --pad_h=1 --pad_w=1"
-            " --stride::h=1 --stride::w=1"
-            " --dilation::h=1 --dilation::w=1\n\n";
+            " --stride_h=1 --stride_w=1"
+            " --dilation_h=1 --dilation_w=1\n\n";
 }
 
 #if 0

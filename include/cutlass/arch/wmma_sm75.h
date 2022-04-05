@@ -109,6 +109,7 @@ struct Wmma<
     FragmentB const &B, 
     FragmentC const &C) const {
       nvcuda::wmma::mma_sync(D, A, B, C);
+
   }
 
 #else
@@ -186,7 +187,6 @@ struct Wmma<
     FragmentA const &A, 
     FragmentB const &B, 
     FragmentC const &C) const {
-
       nvcuda::wmma::bmma_sync(D, A, B, C, nvcuda::wmma::experimental::bmmaBitOpXOR, 
                                           nvcuda::wmma::experimental::bmmaAccumulateOpPOPC);
   }

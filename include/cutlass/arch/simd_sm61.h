@@ -23,7 +23,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Templates exposing SIMD operators for SM60
+    \brief Templates exposing SIMD operators for SM61
 */
 
 #pragma once

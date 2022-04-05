@@ -77,7 +77,6 @@ struct Gemm {
     typename Epilogue::OutputTileIterator::TensorRef ref_D;
     typename OutputOp::Params output_op;
     int *semaphore;
-    int gemm_k_iterations;
     int gemm_k_size;
 
     //
@@ -85,7 +84,7 @@ struct Gemm {
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): swizzle_log_tile(0), semaphore(0), gemm_k_iterations(0), gemm_k_size(0) { }
+    Params(): swizzle_log_tile(0), semaphore(0), gemm_k_size(0) { }
 
     CUTLASS_HOST_DEVICE
     Params(
@@ -134,12 +133,12 @@ struct Gemm {
   Gemm() { } 
 
   /// Determines whether kernel satisfies alignment
-    static Status can_implement(
-      cutlass::gemm::GemmCoord const & problem_size,
-      typename Mma::IteratorA::TensorRef ref_A,
-      typename Mma::IteratorB::TensorRef ref_B,
-      typename Epilogue::OutputTileIterator::TensorRef ref_C,
-      typename Epilogue::OutputTileIterator::TensorRef ref_D) {
+  static Status can_implement(
+    cutlass::gemm::GemmCoord const & problem_size,
+    typename Mma::IteratorA::TensorRef ref_A,
+    typename Mma::IteratorB::TensorRef ref_B,
+    typename Epilogue::OutputTileIterator::TensorRef ref_C,
+    typename Epilogue::OutputTileIterator::TensorRef ref_D) {
 
     static int const kAlignmentA = (platform::is_same<typename Mma::IteratorA::Layout,
                                                       layout::ColumnMajorInterleaved<32>>::value)

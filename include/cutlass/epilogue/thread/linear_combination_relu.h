@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -156,6 +156,8 @@ public:
 
     if (Scale == ScaleType::OnlyAlphaScaling) return false;
 
+    if (Scale == ScaleType::Nothing) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -193,12 +195,15 @@ public:
     multiply_add<FragmentCompute> mul_add_accumulator;
     ReLu<FragmentCompute> relu;
 
-    if (Scale == ScaleType::NoBetaScaling)
+    if (Scale == ScaleType::NoBetaScaling) {
       intermediate = converted_source;
-    else
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    } else if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
       intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
-
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    }
 
     // Compute threshold optionally
     intermediate = relu(threshold_, intermediate);
@@ -225,7 +230,11 @@ public:
     multiplies<FragmentCompute> mul_accumulator;
     ReLu<FragmentCompute> relu;
 
-    intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    }
 
     // Compute threshold optionally
     intermediate = relu(threshold_, intermediate);
@@ -269,8 +278,6 @@ public:
 
     return destination_converter(intermediate);
   }
-
-
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -376,6 +383,8 @@ public:
 
     if (Scale == ScaleType::OnlyAlphaScaling) return false;
 
+    if (Scale == ScaleType::Nothing) return false;
+
     return beta_ != ElementCompute(0);
   }
 
@@ -413,12 +422,15 @@ public:
     multiply_add<FragmentCompute> mul_add_accumulator;
     ReLu<FragmentCompute> relu;
 
-    if (Scale == ScaleType::NoBetaScaling)
+    if (Scale == ScaleType::NoBetaScaling) {
       intermediate = converted_source;
-    else
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    }  else if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
       intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
-        
-    intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+    }
 
     // Compute threshold optionally
     intermediate = relu(threshold_, intermediate);
@@ -459,7 +471,11 @@ public:
     multiplies<FragmentCompute> mul_accumulator;
     ReLu<FragmentCompute> relu;
 
-    intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    if (Scale == ScaleType::Nothing) {
+      intermediate = converted_accumulator;
+    } else {
+      intermediate = mul_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+    }
 
     // Compute threshold optionally
     intermediate = relu(threshold_, intermediate);
@@ -512,22 +528,13 @@ public:
     // Compute threshold optionally
     intermediate = relu(threshold_, intermediate);
 
-    if (platform::is_same<ElementOutput, int32_t>::value ||
-        platform::is_same<ElementOutput, uint32_t>::value ||
-        platform::is_same<ElementOutput, int16_t>::value ||
-        platform::is_same<ElementOutput, uint16_t>::value ||
-        platform::is_same<ElementOutput, int8_t>::value ||
-        platform::is_same<ElementOutput, uint8_t>::value ||
-        platform::is_same<ElementOutput, cutlass::int4b_t>::value ||
-        platform::is_same<ElementOutput, cutlass::uint4b_t>::value ||
-        platform::is_same<ElementOutput, cutlass::uint1b_t>::value) {
+    if (platform::numeric_limits<ElementOutput>::is_integer) {
       // Convert floats back to INT
       FragmentAccumulator scaled_accumulator;
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < kCount; ++i) {
-        scaled_accumulator[i] = __float2int_rn(intermediate[i]);
-      }
+      NumericArrayConverter<int, ElementCompute, kCount, Round> compute_converter;
+
+      scaled_accumulator = compute_converter(intermediate);
 
       // Convert to destination numeric type
       NumericArrayConverter<ElementOutput, int, kCount, Round>
@@ -540,7 +547,6 @@ public:
       return destination_converter(intermediate);
     }
   }
-
 };
 
 #endif // Conditional guards to enable partial specialization for packed integers

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -337,6 +337,9 @@ using HandlePtr = std::unique_ptr<Handle>;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Finds conv2d operation instances with Conv2d::ElementC = Reduction::ElementWorkspace
 Operation const* find_conv_operation_for_parallel_reduction(Operation const *operation);
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Finds gemm operation instances with ElementC = Reduction::ElementWorkspace
+Operation const* find_gemm_operation_for_parallel_reduction(Operation const *operation);
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library

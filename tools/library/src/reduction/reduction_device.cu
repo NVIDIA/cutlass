@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -46,7 +46,7 @@ void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest) {
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
-    128 / cutlass::sizeof_bits<ElementOutput>::value,
+    128 / cutlass::sizeof_bits<ElementWorkspace>::value,
     ElementAccumulator,
     ElementCompute
   >;
@@ -81,7 +81,7 @@ void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest) {
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
-    128 / cutlass::sizeof_bits<ElementOutput>::value,
+    128 / cutlass::sizeof_bits<ElementWorkspace>::value,
     ElementAccumulator,
     ElementCompute
   >;
@@ -115,7 +115,7 @@ void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest)
 
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,
-    128 / cutlass::sizeof_bits<ElementOutput>::value,
+    128 / cutlass::sizeof_bits<ElementWorkspace>::value,
     ElementAccumulator,
     ElementCompute
   >;
@@ -139,7 +139,6 @@ void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest)
       "reduce_add_linear_combination_cf32_cf32_cf32"
   ));
 }
-
 
 } 
 }

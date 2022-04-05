@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -242,7 +242,8 @@ public:
   
   /// Gets the device-side workspace
   virtual uint64_t get_device_workspace_size(
-    void const *configuration_ptr) const {
+    void const *configuration_ptr,
+    void const *arguments_ptr = nullptr) const {
 
     OperatorArguments args;
 
@@ -443,7 +444,8 @@ public:
   
   /// Gets the device-side workspace
   virtual uint64_t get_device_workspace_size(
-    void const *configuration_ptr) const {
+    void const *configuration_ptr,
+    void const *arguments_ptr = nullptr) const {
 
     OperatorArguments args;
 
@@ -569,7 +571,7 @@ protected:
     operator_args.ldb = (configuration->ldb);
     operator_args.ldc = (configuration->ldc);
     operator_args.ldd = (configuration->ldd);
-    
+
     return Status::kSuccess;
   }
 
@@ -649,13 +651,22 @@ public:
   
   /// Gets the device-side workspace
   virtual uint64_t get_device_workspace_size(
-    void const *configuration_ptr) const {
+    void const *configuration_ptr,
+    void const *arguments_ptr) const {
 
     OperatorArguments args;
 
     Status status = construct_arguments_(
       args, 
       static_cast<GemmUniversalConfiguration const *>(configuration_ptr));
+
+    if (status != Status::kSuccess) {
+      return 0;
+    }
+
+    status = update_arguments_(
+      args,
+      static_cast<GemmUniversalArguments const *>(arguments_ptr));
 
     if (status != Status::kSuccess) {
       return 0;
@@ -855,7 +866,8 @@ public:
   
   /// Gets the device-side workspace
   virtual uint64_t get_device_workspace_size(
-    void const *configuration_ptr) const {
+    void const *configuration_ptr,
+    void const *arguments_ptr = nullptr) const {
 
     OperatorArguments args;
 
@@ -1055,7 +1067,8 @@ public:
   
   /// Gets the device-side workspace
   virtual uint64_t get_device_workspace_size(
-    void const *configuration_ptr) const {
+    void const *configuration_ptr,
+    void const *arguments_ptr = nullptr) const {
 
     OperatorArguments args;
 

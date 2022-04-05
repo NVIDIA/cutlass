@@ -31,12 +31,21 @@
 #pragma nv_diag_warning boolean_controlling_expr_is_constant
 #pragma warning( disable : 4503)
 
+#include <cstdlib>
+#include <string>
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Sets flags for Unit test
 void FilterArchitecture();
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Reads environment variable `CUTLASS_UNIT_TEST_PROBLEM_COUNT` to control the number and order
+//  of problem sizes run by CUTLASS unit tests
+int CutlassUnitTestProblemCount();
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 
 // active test macro
 #define CUTLASS_TEST_LEVEL_ACTIVE(LEVEL,NAME_STATIC,NAME_DYNAMIC,...) \

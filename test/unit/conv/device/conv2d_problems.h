@@ -36,8 +36,6 @@
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv2d_problem_size.h"
 
-#define CUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED 1
-
 namespace test {
 namespace conv {
 namespace device {

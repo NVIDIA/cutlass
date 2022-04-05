@@ -35,7 +35,6 @@
 
 #include "conv2d_testbed.h"
 
-
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM50_Device_Conv2d_Dgrad_Analytic_ImplicitGemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32,
   64x64_8x2_32x64x8) {

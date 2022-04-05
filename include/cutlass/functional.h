@@ -1,5 +1,5 @@
   /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -224,12 +224,56 @@ struct less {
   }
 };
 
+template <typename T>
+struct maximum {
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &lhs, T const &rhs) const {
+    return (lhs < rhs ? rhs : lhs);
+  }
+};
+
+template <>
+struct maximum<float> {
+  CUTLASS_HOST_DEVICE
+  float operator()(float const &lhs, float const &rhs) const {
+    return fmaxf(lhs, rhs);
+  }
+};
+
+template <typename T>
+struct minimum {
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &lhs, T const &rhs) const {
+    return (rhs < lhs ? rhs : lhs);
+  }
+};
+
+template <>
+struct minimum<float> {
+  CUTLASS_HOST_DEVICE
+  float operator()(float const &lhs, float const &rhs) const {
+    return fminf(lhs, rhs);
+  }
+};
+
 /// Fused multiply-add
 template <typename A, typename B = A, typename C = A>
 struct multiply_add {
   CUTLASS_HOST_DEVICE
   C operator()(A const &a, B const &b, C const &c) const {
     return C(a) * C(b) + c;
+  }
+};
+
+/// Fused multiply-add
+template <typename A, typename B = A, typename C = A>
+struct multiply_add_relu0 {
+  CUTLASS_HOST_DEVICE
+  C operator()(A const &a, B const &b, C const &c) const {
+    maximum<C> mx;
+    return mx(C(a) * C(b) + c, C(0));
   }
 };
 
@@ -365,7 +409,6 @@ struct bit_or<Array<uint1b_t, N>> {
     return result;
   }
 };
-
 
 // Partial specializations for Arrays
 template <int N>
@@ -560,139 +603,6 @@ struct plus<Array<T, N>> {
     return result;
   }
 };
-
-
-template <typename T>
-struct maximum {
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &lhs, T const &rhs) const {
-    return (lhs < rhs ? rhs : lhs);
-  }
-};
-
-template <>
-struct maximum<float> {
-  CUTLASS_HOST_DEVICE
-  float operator()(float const &lhs, float const &rhs) const {
-    return fmaxf(lhs, rhs);
-  }
-};
-
-template <typename T, int N>
-struct maximum<Array<T, N>> {
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
-    
-    Array<T, N> result;
-    maximum<T> scalar_op;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
-      result[i] = scalar_op(lhs[i], rhs[i]);
-    }
-
-    return result;
-  }
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &lhs, T const &scalar) const {
-    
-    Array<T, N> result;
-    maximum<T> scalar_op;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
-      result[i] = scalar_op(lhs[i], scalar);
-    }
-
-    return result;
-  }
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()( T const &scalar, Array<T, N> const &rhs) const {
-    
-    Array<T, N> result;
-    maximum<T> scalar_op;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
-      result[i] = scalar_op(scalar, rhs[i]);
-    }
-
-    return result;
-  }
-};
-
-template <typename T>
-struct minimum {
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &lhs, T const &rhs) const {
-    return (rhs < lhs ? rhs : lhs);
-  }
-};
-
-template <>
-struct minimum<float> {
-  CUTLASS_HOST_DEVICE
-  float operator()(float const &lhs, float const &rhs) const {
-    return fminf(lhs, rhs);
-  }
-};
-
-template <typename T, int N>
-struct minimum<Array<T, N>> {
-
-  CUTLASS_HOST_DEVICE
-  static T scalar_op(T const &lhs, T const &rhs) {
-    return (rhs < lhs ? rhs : lhs);
-  }
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
-    
-    Array<T, N> result;
-    minimum<T> scalar_op;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
-      result[i] = scalar_op(lhs[i], rhs[i]);
-    }
-
-    return result;
-  }
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &lhs, T const &scalar) const {
-    
-    Array<T, N> result;
-    minimum<T> scalar_op;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
-      result[i] = scalar_op(lhs[i], scalar);
-    }
-
-    return result;
-  }
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()( T const &scalar, Array<T, N> const &rhs) const {
-    
-    Array<T, N> result;
-    minimum<T> scalar_op;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
-      result[i] = scalar_op(scalar, rhs[i]);
-    }
-
-    return result;
-  }
-};
-
 template <typename T, int N>
 struct minus<Array<T, N>> {
 
@@ -831,6 +741,102 @@ struct divides<Array<T, N>> {
   }
 };
 
+template <typename T, int N>
+struct maximum<Array<T, N>> {
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
+    
+    Array<T, N> result;
+    maximum<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(lhs[i], rhs[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs, T const &scalar) const {
+    
+    Array<T, N> result;
+    maximum<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(lhs[i], scalar);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()( T const &scalar, Array<T, N> const &rhs) const {
+    
+    Array<T, N> result;
+    maximum<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(scalar, rhs[i]);
+    }
+
+    return result;
+  }
+};
+
+template <typename T, int N>
+struct minimum<Array<T, N>> {
+
+  CUTLASS_HOST_DEVICE
+  static T scalar_op(T const &lhs, T const &rhs) {
+    return (rhs < lhs ? rhs : lhs);
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs, Array<T, N> const &rhs) const {
+    
+    Array<T, N> result;
+    minimum<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(lhs[i], rhs[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs, T const &scalar) const {
+    
+    Array<T, N> result;
+    minimum<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(lhs[i], scalar);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()( T const &scalar, Array<T, N> const &rhs) const {
+    
+    Array<T, N> result;
+    minimum<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(scalar, rhs[i]);
+    }
+
+    return result;
+  }
+};
 
 template <typename T, int N>
 struct negate<Array<T, N>> {
@@ -891,6 +897,56 @@ struct multiply_add<Array<T, N>, Array<T, N>, Array<T, N>> {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N; ++i) {
       result[i] = scalar_op(scalar, b[i], c[i]);
+    }
+
+    return result;
+  }
+};
+
+/// Fused multiply-add-relu0
+template <typename T, int N>
+struct multiply_add_relu0<Array<T, N>, Array<T, N>, Array<T, N>> {
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &a, Array<T, N> const &b, Array<T, N> const &c) const {
+    
+    Array<T, N> result;
+    multiply_add<T> scalar_op;
+    maximum<T> mx;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = mx(scalar_op(a[i], b[i], c[i]), T(0));
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &a, T const &scalar, Array<T, N> const &c) const {
+    
+    Array<T, N> result;
+    multiply_add<T> scalar_op;
+    maximum<T> mx;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = mx(scalar_op(a[i], scalar, c[i]), T(0));
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(T const &scalar, Array<T, N> const &b, Array<T, N> const &c) const {
+    
+    Array<T, N> result;
+    multiply_add<T> scalar_op;
+    maximum<T> mx;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = mx(scalar_op(scalar, b[i], c[i]), T(0));
     }
 
     return result;
@@ -1529,6 +1585,413 @@ struct multiply_add<Array<half_t, N>, Array<half_t, N>, Array<half_t, N>> {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N; ++i) {
       result[i] = op(a[i], b[i], c);
+    }
+    #endif
+
+    return result;
+  }
+};
+
+/// Fused multiply-add-relu0
+template <int N>
+struct multiply_add_relu0<Array<half_t, N>, Array<half_t, N>, Array<half_t, N>> {
+
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(
+    Array<half_t, N> const &a, 
+    Array<half_t, N> const &b, 
+    Array<half_t, N> const &c) const {
+    
+    Array<half_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    __half2 *result_ptr = reinterpret_cast<__half2 *>(&result);
+    __half2 const *a_ptr = reinterpret_cast<__half2 const *>(&a);
+    __half2 const *b_ptr = reinterpret_cast<__half2 const *>(&b);
+    __half2 const *c_ptr = reinterpret_cast<__half2 const *>(&c);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      result_ptr[i] = __hfma2_relu(a_ptr[i], b_ptr[i], c_ptr[i]);
+    }
+
+    if (N % 2) {
+
+      __half const *a_residual_ptr = reinterpret_cast<__half const *>(&a);
+      __half const *b_residual_ptr = reinterpret_cast<__half const *>(&b);
+      __half const *c_residual_ptr = reinterpret_cast<__half const *>(&c);
+
+      __half d_residual = __hfma_relu(
+        a_residual_ptr[N - 1], 
+        b_residual_ptr[N - 1], 
+        c_residual_ptr[N - 1]);
+
+      result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
+    }
+
+    #else
+
+    multiply_add<half_t> op;
+    maximum<half_t> mx;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = mx(op(a[i], b[i], c[i]), (half_t)0);
+    }
+    #endif
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(
+    half_t const &a, 
+    Array<half_t, N> const &b, 
+    Array<half_t, N> const &c) const {
+    
+    Array<half_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    __half2 *result_ptr = reinterpret_cast<__half2 *>(&result);
+    __half2 a_pair = __half2half2(reinterpret_cast<__half const &>(a));
+    __half2 const *b_ptr = reinterpret_cast<__half2 const *>(&b);
+    __half2 const *c_ptr = reinterpret_cast<__half2 const *>(&c);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      result_ptr[i] = __hfma2_relu(a_pair, b_ptr[i], c_ptr[i]);
+    }
+
+    if (N % 2) {
+
+      __half const *b_residual_ptr = reinterpret_cast<__half const *>(&b);
+      __half const *c_residual_ptr = reinterpret_cast<__half const *>(&c);
+      __half d_residual = __hfma_relu(
+        reinterpret_cast<__half const &>(a), 
+        b_residual_ptr[N - 1], 
+        c_residual_ptr[N - 1]);
+
+      result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
+    }
+
+    #else
+
+    multiply_add<half_t> op;
+    maximum<half_t> mx;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = mx(op(a, b[i], c[i]), half_t(0));
+    }
+    #endif
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(
+    Array<half_t, N> const &a, 
+    half_t const &b, 
+    Array<half_t, N> const &c) const {
+    
+    Array<half_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    __half2 *result_ptr = reinterpret_cast<__half2 *>(&result);
+    __half2 const *a_ptr = reinterpret_cast<__half2 const *>(&a);
+    __half2 b_pair = __half2half2(reinterpret_cast<__half const &>(b));
+    __half2 const *c_ptr = reinterpret_cast<__half2 const *>(&c);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      result_ptr[i] = __hfma2_relu(a_ptr[i], b_pair, c_ptr[i]);
+    }
+
+    if (N % 2) {
+
+      __half const *a_residual_ptr = reinterpret_cast<__half const *>(&a);
+      __half const *c_residual_ptr = reinterpret_cast<__half const *>(&c);
+
+      __half d_residual = __hfma_relu(
+        a_residual_ptr[N - 1], 
+        reinterpret_cast<__half const &>(b), 
+        c_residual_ptr[N - 1]);
+
+      result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
+    }
+
+    #else
+
+    multiply_add<half_t> op;
+    maximum<half_t> mx;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = mx(op(a[i], b, c[i]), half_t(0));
+    }
+    #endif
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(
+    Array<half_t, N> const &a, 
+    Array<half_t, N> const &b, 
+    half_t const &c) const {
+    
+    Array<half_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    __half2 *result_ptr = reinterpret_cast<__half2 *>(&result);
+    __half2 const *a_ptr = reinterpret_cast<__half2 const *>(&a);
+    __half2 const *b_ptr = reinterpret_cast<__half2 const *>(&b);
+    __half2 c_pair = __half2half2(reinterpret_cast<__half const &>(c));
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      result_ptr[i] = __hfma2_relu(a_ptr[i], b_ptr[i], c_pair);
+    }
+
+    if (N % 2) {
+
+      __half const *a_residual_ptr = reinterpret_cast<__half const *>(&a);
+      __half const *b_residual_ptr = reinterpret_cast<__half const *>(&b);
+
+      __half d_residual = __hfma_relu(
+        a_residual_ptr[N - 1], 
+        b_residual_ptr[N - 1], 
+        reinterpret_cast<__half const &>(c));
+
+      result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
+    }
+
+    #else
+
+    multiply_add<half_t> op;
+    maximum<half_t> mx;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = mx(op(a[i], b[i], c));
+    }
+    #endif
+
+    return result;
+  }
+};
+
+template <int N>
+struct minimum<Array<half_t, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(Array<half_t, N> const & lhs, Array<half_t, N> const &rhs) const {
+    Array<half_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    __half2 *result_ptr = reinterpret_cast<__half2 *>(&result);
+    __half2 const *lhs_ptr = reinterpret_cast<__half2 const *>(&lhs);
+    __half2 const *rhs_ptr = reinterpret_cast<__half2 const *>(&rhs);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      result_ptr[i] = __hmin2(lhs_ptr[i], rhs_ptr[i]);
+    }
+
+    if (N % 2) {
+      __half const *a_residual_ptr = reinterpret_cast<__half const *>(&lhs);
+      __half const *b_residual_ptr = reinterpret_cast<__half const *>(&rhs);
+
+      __half d_residual = __hmin(
+        a_residual_ptr[N - 1], 
+        b_residual_ptr[N - 1]);
+
+      result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
+    }
+
+    #else
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = (rhs[i] < lhs[i] ? rhs[i] : lhs[i]);
+    }
+    #endif
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(half_t const & lhs, Array<half_t, N> const &rhs) const {
+    Array<half_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    __half2 *result_ptr = reinterpret_cast<__half2 *>(&result);
+    __half2 lhs_pair = __half2half2(reinterpret_cast<__half const &>(lhs));
+    __half2 const *rhs_ptr = reinterpret_cast<__half2 const *>(&rhs);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      result_ptr[i] = __hmin2(lhs_pair, rhs_ptr[i]);
+    }
+
+    if (N % 2) {
+      __half const *b_residual_ptr = reinterpret_cast<__half const *>(&rhs);
+
+      __half d_residual = __hmin(
+        reinterpret_cast<__half const &>(lhs), 
+        b_residual_ptr[N - 1]);
+
+      result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
+    }
+
+    #else
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = (rhs[i] < lhs ? rhs[i] : lhs);
+    }
+    #endif
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(Array<half_t, N> const & lhs, half_t const &rhs) const {
+    Array<half_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    __half2 *result_ptr = reinterpret_cast<__half2 *>(&result);
+    __half2 const *lhs_ptr = reinterpret_cast<__half2 const *>(&lhs);
+    __half2 rhs_pair = __half2half2(reinterpret_cast<__half const &>(rhs));
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      result_ptr[i] = __hmin2(lhs_ptr[i], rhs_pair);
+    }
+
+    if (N % 2) {
+      __half const *a_residual_ptr = reinterpret_cast<__half const *>(&lhs);
+
+      __half d_residual = __hmin(
+        a_residual_ptr[N - 1], 
+        reinterpret_cast<__half const &>(rhs));
+
+      result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
+    }
+
+    #else
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = (rhs < lhs[i] ? rhs : lhs[i]);
+    }
+    #endif
+
+    return result;
+  }
+};
+
+template <int N>
+struct maximum<Array<half_t, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(Array<half_t, N> const & lhs, Array<half_t, N> const &rhs) const {
+    Array<half_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    __half2 *result_ptr = reinterpret_cast<__half2 *>(&result);
+    __half2 const *lhs_ptr = reinterpret_cast<__half2 const *>(&lhs);
+    __half2 const *rhs_ptr = reinterpret_cast<__half2 const *>(&rhs);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      result_ptr[i] = __hmax2(lhs_ptr[i], rhs_ptr[i]);
+    }
+
+    if (N % 2) {
+      __half const *a_residual_ptr = reinterpret_cast<__half const *>(&lhs);
+      __half const *b_residual_ptr = reinterpret_cast<__half const *>(&rhs);
+
+      __half d_residual = __hmax(
+        a_residual_ptr[N - 1], 
+        b_residual_ptr[N - 1]);
+
+      result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
+    }
+
+    #else
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = (lhs[i] < rhs[i] ? rhs[i] : lhs[i]);
+    }
+    #endif
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(half_t const & lhs, Array<half_t, N> const &rhs) const {
+    Array<half_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    __half2 *result_ptr = reinterpret_cast<__half2 *>(&result);
+    __half2 lhs_pair = __half2half2(reinterpret_cast<__half const &>(lhs));
+    __half2 const *rhs_ptr = reinterpret_cast<__half2 const *>(&rhs);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      result_ptr[i] = __hmax2(lhs_pair, rhs_ptr[i]);
+    }
+
+    if (N % 2) {
+      __half const *b_residual_ptr = reinterpret_cast<__half const *>(&rhs);
+
+      __half d_residual = __hmax(
+        reinterpret_cast<__half const &>(lhs), 
+        b_residual_ptr[N - 1]);
+
+      result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
+    }
+
+    #else
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = (lhs < rhs[i] ? rhs[i] : lhs);
+    }
+    #endif
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<half_t, N> operator()(Array<half_t, N> const & lhs, half_t const &rhs) const {
+    Array<half_t, N> result;
+    #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
+    __half2 *result_ptr = reinterpret_cast<__half2 *>(&result);
+    __half2 const *lhs_ptr = reinterpret_cast<__half2 const *>(&lhs);
+    __half2 rhs_pair = __half2half2(reinterpret_cast<__half const &>(rhs));
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 2; ++i) {
+      result_ptr[i] = __hmax2(lhs_ptr[i], rhs_pair);
+    }
+
+    if (N % 2) {
+      __half const *a_residual_ptr = reinterpret_cast<__half const *>(&lhs);
+
+      __half d_residual = __hmax(
+        a_residual_ptr[N - 1], 
+        reinterpret_cast<__half const &>(rhs));
+
+      result[N - 1] = reinterpret_cast<half_t const &>(d_residual);
+    }
+
+    #else
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = (lhs[i] < rhs ? rhs : lhs[i]);
     }
     #endif
 

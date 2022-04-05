@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -58,36 +58,36 @@ struct Identity {
 /// ReLu operator - propagates NaNs
 template <typename T>
 struct ReLu {
+  static const bool kIsHeavy=false;
   CUTLASS_HOST_DEVICE
   T operator()(T const & threshold, T value) const {
-    if (value < threshold) {
-      value = threshold;
-    }
-    return value;
+    maximum<T> mx;
+
+    return mx(value, threshold);
   }
+
   CUTLASS_HOST_DEVICE
   T operator()(T value) const {
-    if (value < T()) {
-      value = T();
-    }
-    return value;
+    maximum<T> mx;
+
+    return mx(value, T(0));
   }
 };
 
 template <typename T, int N>
 struct ReLu<Array<T, N>> {
+  static const bool kIsHeavy=false;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(T const & threshold, Array<T, N> const &frag) const {
-    Array<T, N> result;
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N; ++i) {
-      T value = frag[i];
-      if (value < threshold) {
-        value = threshold;
-      }
-      result[i] = value;
-    }
-    return result;
+    maximum<Array<T, N> > mx;
+
+    return mx(threshold, frag);
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &frag) const {
+    maximum<Array<T, N> > mx;
+    return mx(frag, T(0));
   }
 };
 
@@ -96,15 +96,7 @@ template <typename T>
 struct Sigmoid {
   CUTLASS_HOST_DEVICE
   T operator()(T const &scalar) const {
-    return T(1) / (T(1) + exp(-scalar));
-  }
-};
-
-template <>
-struct Sigmoid<float> {
-  CUTLASS_HOST_DEVICE
-  float operator()(float const &scalar) const {
-    return 1.0f / (1.0f + expf(-scalar));
+    return T(1) / (T(1) + fast_exp(-scalar));
   }
 };
 
@@ -116,11 +108,119 @@ struct Sigmoid<Array<T, N> > {
     Sigmoid<T> sigmoid_op;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < int(rhs.size()); ++i) {
+    for (int i = 0; i < N; ++i) {
       y[i] = sigmoid_op(rhs[i]);
     }
 
     return y;
+  }
+};
+
+template <int N>
+struct Sigmoid<Array<half_t, N>> {
+  using T = half_t;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& z) const {
+    plus<Array<T, N>> add;
+
+#if defined(CUTLASS_USE_TANH_FOR_SIGMOID)
+    multiplies<Array<T, N>> mul;
+    fast_tanh_op<Array<T, N>> tanh;
+    return mul(add(tanh(mul(z, cutlass::constants::half<T>())), cutlass::constants::one<T>()),
+               cutlass::constants::half<T>());
+#else
+    divides<Array<T, N>> div;
+    negate<Array<T, N>> neg;
+    fast_exp_op<Array<T, N>> fast_exp;
+    return div(cutlass::constants::one<T>(),
+               add(cutlass::constants::one<T>(),
+                   fast_exp(neg(z))));
+#endif
+  }
+};
+
+// SiLu (swish) operator introduced by Elfwing et al. in the following paper
+// "Sigmoid-Weighted Linear Units for Neural Network Function Approximation in Reinforcement Learning" (2017)
+// https://arxiv.org/pdf/1702.03118.pdf
+// It is used in EfficientNet and YOLOv5, for example.
+// Reference: https://pytorch.org/docs/stable/generated/torch.nn.SiLU.html
+template <typename T>
+struct SiLu {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &scalar) const {
+    Sigmoid<T> sigmoid;
+    return scalar * sigmoid(scalar);
+  }
+};
+
+template <typename T, int N>
+struct SiLu<Array<T, N>> {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    Sigmoid<Array<T, N>> sigmoid_op;
+    multiplies<Array<T, N>>     mul;
+    return mul(rhs, sigmoid_op(rhs));
+  }
+};
+
+// Hardswish operator introduced by Howard et al. in the following paper
+// "Searching for MobileNetV3" (2019)
+// https://arxiv.org/pdf/1905.02244.pdf
+// It is used in models based on MobilenetNetV3.
+// Reference: https://pytorch.org/docs/stable/generated/torch.nn.Hardswish.html
+template <typename T>
+struct HardSwish {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &x) const {
+    minimum<T> mn;
+    maximum<T> mx;
+    T relu6 = mn(mx(x + T(3), T(0)), T(6));
+    return x * relu6 / T(6);
+  }
+};
+
+template <>
+struct HardSwish<float> {
+  using T = float;
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &x) const {
+    minimum<T> mn;
+    maximum<T> mx;
+    T relu6 = mn(mx(x + T(3), T(0)), T(6));
+    return x * relu6 * 0.16666667f;
+  }
+};
+
+template <typename T, int N>
+struct HardSwish<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    Array<T, N> y;
+    HardSwish<T> hardswish_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      y[i] = hardswish_op(rhs[i]);
+    }
+
+    return y;
+  }
+};
+
+template <int N>
+struct HardSwish<Array<half_t, N> > {
+  using T = half_t;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    minimum<Array<T, N> > mn;
+    maximum<Array<T, N> > mx;
+    multiplies<Array<T, N> > mul;
+    plus<Array<T, N> > add;
+ 
+    return mul(mul(mn(mx(add(rhs, T(3)), T(0)), T(6)), rhs), T(0.16666667f));
   }
 };
 
@@ -187,7 +287,7 @@ struct GELU_taylor {
     T k0 = T(0.7978845608028654);
     T k1 = T(0.044715);
 
-    return T(cutlass::constants::half<T>() * z * 
+    return T(cutlass::constants::half<T>() * z *
       (cutlass::constants::one<T>() + fast_tanh(k0 * z * (cutlass::constants::one<T>() + k1 * z * z))));
   }
 };
@@ -197,10 +297,10 @@ struct GELU_taylor<Array<half_t, N> > {
   static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<half_t, N> operator()(Array<half_t, N> const &z) const {
-    
+
     using T = half_t;
     Array<half_t, N> y;
-    
+
     half_t k0 = half_t(0.7978845608028654);
     half_t k1 = half_t(0.044715);
 
@@ -248,7 +348,7 @@ struct dGELU {
 
     T tanh_out = fast_tanh(k0 * z * (1 + k1 * z * z));
 
-    T ff = constants::half<T>() * z * ((1 - tanh_out * tanh_out) * (k0 + k2 * z * z)) + 
+    T ff = constants::half<T>() * z * ((1 - tanh_out * tanh_out) * (k0 + k2 * z * z)) +
       constants::half<T>() * (1 + tanh_out);
 
     return ff * d_t;
