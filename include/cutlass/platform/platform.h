@@ -49,6 +49,7 @@
  *   (2) Re-implementations of STL functions and types:
  *       - C++ features that need the \p __device__ annotation.  These are
  *         placed into the \p platform namespace.
+ *           - \p abs
  *           - \p plus
  *           - \p less
  *           - \p greater
@@ -177,6 +178,22 @@
  ******************************************************************************/
 namespace cutlass {
 namespace platform {
+
+//-----------------------------------------------------------------------------
+// Abs operations <algorithm>
+//-----------------------------------------------------------------------------
+
+#if defined(__CUDACC_RTC__)
+/// std::abs
+CUTLASS_HOST_DEVICE constexpr int abs(int a) {
+    return (a < 0) ? -a : a;
+}
+CUTLASS_HOST_DEVICE constexpr long long abs(long long a) {
+    return (a < 0) ? -a : a;
+}
+#else
+using std::abs;
+#endif
 
 //-----------------------------------------------------------------------------
 // Minimum/maximum operations <algorithm>
@@ -429,7 +446,6 @@ struct is_base_of
                                            typename remove_cv<DerivedT>::type>::value) ||
                             (is_same<typename remove_cv<BaseT>::type,
                                      typename remove_cv<DerivedT>::type>::value)> {};
-
 #else
 
 using std::is_same;

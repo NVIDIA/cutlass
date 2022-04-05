@@ -321,7 +321,7 @@ struct DefaultEpilogueTensorOp {
     UseCUDAStore
   >;
 
-  using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,
+  using AccumulatorFragmentIterator = typename cutlass::platform::conditional<is_complex<ElementOutput>::value,
                                     cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
                                         typename WarpMmaTensorOp::Shape,
                                         typename WarpMmaTensorOp::Policy::Operator::Shape,
@@ -410,7 +410,7 @@ struct DefaultEpilogueTensorOpStridedDgrad {
     ElementOutput
   >;
 
-  using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,
+  using AccumulatorFragmentIterator = typename cutlass::platform::conditional<is_complex<ElementOutput>::value,
                                     cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
                                         typename WarpMmaTensorOp::Shape,
                                         typename WarpMmaTensorOp::Policy::Operator::Shape,
@@ -503,7 +503,7 @@ struct DefaultEpilogueTensorOpAffineRankN {
   >;
 
   // Map to the row major iterator since the iterator selection for affineN is the same.
-  using AccumulatorFragmentIterator = typename std::conditional<is_complex<ElementOutput>::value,
+  using AccumulatorFragmentIterator = typename cutlass::platform::conditional<is_complex<ElementOutput>::value,
                                     cutlass::epilogue::warp::FragmentIteratorComplexTensorOp<
                                         typename WarpMmaTensorOp::Shape,
                                         typename WarpMmaTensorOp::Policy::Operator::Shape,
