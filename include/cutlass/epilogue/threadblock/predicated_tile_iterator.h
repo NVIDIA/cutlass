@@ -100,10 +100,10 @@ public:
 
   /// Fragment object
   using Fragment = Array<
-    Element, 
-    ThreadMap::Iterations::kColumn * 
-    ThreadMap::Iterations::kRow * 
-    ThreadMap::Iterations::kGroup * 
+    Element,
+    ThreadMap::Iterations::kColumn *
+    ThreadMap::Iterations::kRow *
+    ThreadMap::Iterations::kGroup *
     ThreadMap::Iterations::kCluster * ThreadMap::kElementsPerAccess>;
 
   /// Memory access size
@@ -121,15 +121,15 @@ public:
     Params() { }
 
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout): 
+    Params(Layout const &layout):
       PredicatedTileIteratorParams(
         layout.stride(0) * int(sizeof(AccessType)) / kElementsPerAccess,
         make_OutputTileThreadMapDesc<ThreadMap>()
-      ) 
+      )
     { }
 
     CUTLASS_HOST_DEVICE
-    Params(Base const &base) : 
+    Params(Base const &base) :
       Base(base) { }
   };
 
@@ -176,7 +176,7 @@ private:
   PredicatedTileIteratorParams params_;
 
   /// Byte-level pointer. This pointer is usually for both load() and store(), unless PermuteD is performed. When having PermuteD, byte_pointer_ is only for load().
-  uint8_t *byte_pointer_;
+  uint8_t *byte_pointer_{nullptr};
 
   /// Byte-level pointer for store(). Due to PermuteD Op, store_byte_pointer_ may be with different address computation compared to byte_pointer_.
   uint8_t *store_byte_pointer_;
@@ -200,13 +200,13 @@ private:
   int state_[3];
 
   /// Scatter indices
-  int const *indices_; 
+  int const *indices_;
 
   /// Whether to perform Permute Op
   bool PermuteD;
   /// PermuteDLayout
   mutable PermuteDLayout permute_layout_;
- 
+
   //
   // Static asserts about internal strides
   //
@@ -236,7 +236,7 @@ public:
     int thread_idx,
     TensorCoord threadblock_offset = TensorCoord(),
     int const *indices = nullptr
-  ): 
+  ):
     params_(params), indices_(indices)
   {
 
@@ -252,13 +252,18 @@ public:
     CUTLASS_PRAGMA_UNROLL
     for (int c = 0; c < ThreadMap::Iterations::kColumn; ++c) {
 
-      mask_.predicates[c] = ((thread_offset.column() 
+      mask_.predicates[c] = ((thread_offset.column()
         + ThreadMap::Delta::kColumn * c) < extent.column());
     }
 
     // Null pointer performs no accesses
     if (!pointer) {
       mask_.clear();
+    } else {
+      // Initialize pointer
+      byte_pointer_ = reinterpret_cast<uint8_t *>(pointer) +
+        LongIndex(thread_offset.row()) * LongIndex(params_.stride) +
+        LongIndex(thread_offset.column()) * sizeof(AccessType) / kElementsPerAccess;
     }
 
     if (ScatterD && !indices) {
@@ -266,8 +271,8 @@ public:
     }
 
     // Initialize byte_pointer_
-    byte_pointer_ = reinterpret_cast<uint8_t *>(pointer) + 
-      LongIndex(thread_offset.row()) * LongIndex(params_.stride) + 
+    byte_pointer_ = reinterpret_cast<uint8_t *>(pointer) +
+      LongIndex(thread_offset.row()) * LongIndex(params_.stride) +
       LongIndex(thread_offset.column()) * sizeof(AccessType) / kElementsPerAccess;
 
     if (ScatterD) {
@@ -284,7 +289,7 @@ public:
     }else{
       PermuteD = true;
       store_byte_pointer_ = reinterpret_cast<uint8_t *>(pointer);
-      permute_layout_ = PermuteDLayout(extent, 
+      permute_layout_ = PermuteDLayout(extent,
                           params_.stride * kElementsPerAccess / sizeof(AccessType));
     }
 
@@ -315,11 +320,11 @@ public:
         CUTLASS_PRAGMA_UNROLL
         for (int row = 0; row < ThreadMap::Iterations::kRow; ++row) {
 
-          int frag_row_idx = 
+          int frag_row_idx =
             (row + ThreadMap::Iterations::kRow * (group + ThreadMap::Iterations::kGroup * cluster));
 
-          int row_offset = row * ThreadMap::Delta::kRow 
-            + group * ThreadMap::Delta::kGroup 
+          int row_offset = row * ThreadMap::Delta::kRow
+            + group * ThreadMap::Delta::kGroup
             + cluster * ThreadMap::Delta::kCluster;
 
           bool row_guard = ((row_offset + thread_start_row_) < extent_row_);
@@ -339,7 +344,7 @@ public:
             bool guard = row_guard && mask_.predicates[column];
 
             cutlass::arch::global_load<
-              AccessType, 
+              AccessType,
               sizeof(AccessType)
             >(
                 frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn +
@@ -389,11 +394,11 @@ public:
         CUTLASS_PRAGMA_UNROLL
         for (int row = 0; row < ThreadMap::Iterations::kRow; ++row) {
 
-          int frag_row_idx = 
+          int frag_row_idx =
             (row + ThreadMap::Iterations::kRow * (group + ThreadMap::Iterations::kGroup * cluster));
 
-          int row_offset = row * ThreadMap::Delta::kRow 
-            + group * ThreadMap::Delta::kGroup 
+          int row_offset = row * ThreadMap::Delta::kRow
+            + group * ThreadMap::Delta::kGroup
             + cluster * ThreadMap::Delta::kCluster;
 
           bool row_guard = ((row_offset + thread_start_row_) < extent_row_);
@@ -413,7 +418,7 @@ public:
             bool guard = row_guard && mask_.predicates[column];
 
             int col_offset = column * ThreadMap::Delta::kColumn;
-            
+
             if (PermuteD) {
               int col = col_offset + thread_start_column_;
               int row = row_offset + thread_start_row_;
@@ -436,7 +441,7 @@ public:
                   (void *)&memory_pointer[0],
                   guard);
             }
-            
+
             if (!PermuteD) {
               memory_pointer += (ThreadMap::Delta::kColumn / kElementsPerAccess);
             }
@@ -483,11 +488,11 @@ public:
         CUTLASS_PRAGMA_UNROLL
         for (int row = 0; row < ThreadMap::Iterations::kRow; ++row) {
 
-          int frag_row_idx = 
+          int frag_row_idx =
             (row + ThreadMap::Iterations::kRow * (group + ThreadMap::Iterations::kGroup * cluster));
 
-          int row_offset = row * ThreadMap::Delta::kRow 
-            + group * ThreadMap::Delta::kGroup 
+          int row_offset = row * ThreadMap::Delta::kRow
+            + group * ThreadMap::Delta::kGroup
             + cluster * ThreadMap::Delta::kCluster;
 
           bool row_guard = ((row_offset + thread_start_row_) < extent_row_);
@@ -511,7 +516,7 @@ public:
             bool guard = row_guard && mask_.predicates[column];
 
             cutlass::arch::global_load<
-              AccessType, 
+              AccessType,
               sizeof(AccessType)
             >(
                 frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn +
@@ -553,11 +558,11 @@ public:
         CUTLASS_PRAGMA_UNROLL
         for (int row = 0; row < ThreadMap::Iterations::kRow; ++row) {
 
-          int frag_row_idx = 
+          int frag_row_idx =
             (row + ThreadMap::Iterations::kRow * (group + ThreadMap::Iterations::kGroup * cluster));
 
-          int row_offset = row * ThreadMap::Delta::kRow 
-            + group * ThreadMap::Delta::kGroup 
+          int row_offset = row * ThreadMap::Delta::kRow
+            + group * ThreadMap::Delta::kGroup
             + cluster * ThreadMap::Delta::kCluster;
 
           bool row_guard = ((row_offset + thread_start_row_) < extent_row_);
@@ -585,7 +590,7 @@ public:
             bool guard = row_guard && mask_.predicates[column];
 
             cutlass::arch::global_load<
-              AccessType, 
+              AccessType,
               sizeof(AccessType)
             >(
                 frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn +
@@ -655,7 +660,7 @@ public:
     }
 
     thread_start_row_ += ThreadMap::Shape::kRow;
-    
+
     if (state_[0] == ThreadMap::Count::kRow) {
 
       state_[0] = 0;
@@ -663,7 +668,7 @@ public:
       byte_pointer_ += params_.advance_group;
       store_byte_pointer_ += params_.advance_group;
 
-      thread_start_row_ += (ThreadMap::Shape::kGroup - 1) * 
+      thread_start_row_ += (ThreadMap::Shape::kGroup - 1) *
         ThreadMap::Shape::kRow * ThreadMap::Count::kRow;
 
       if (state_[1] == ThreadMap::Count::kGroup) {
@@ -673,7 +678,7 @@ public:
         byte_pointer_ += params_.advance_cluster;
         store_byte_pointer_ += params_.advance_cluster;
 
-        thread_start_row_ += ThreadMap::Count::kGroup * 
+        thread_start_row_ += ThreadMap::Count::kGroup *
           ThreadMap::Shape::kGroup * ThreadMap::Count::kRow * ThreadMap::Shape::kRow;
 
         if (state_[2] == ThreadMap::Count::kCluster) {
@@ -706,6 +711,10 @@ public:
   CUTLASS_DEVICE void set_mask(Mask const &mask) {
     mask_ = mask;
   }
+
+  CUTLASS_DEVICE bool enabled() {
+    return (byte_pointer_ != nullptr);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -717,7 +726,7 @@ public:
 template <
   typename ThreadMap_,       ///< Thread map (conept: OutputTileThreadMap)
   typename Element_,         ///< Element data type
-  int InterleavedN           ///< Number of Interleaved N 
+  int InterleavedN           ///< Number of Interleaved N
 >
 class InterleavedPredicatedTileIterator {
 public:
@@ -751,14 +760,14 @@ public:
     Params() { }
 
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout): 
+    Params(Layout const &layout):
       Base(
         layout.stride(0) * int(sizeof(AccessType)) / kElementsPerAccess,
         make_InterleavedPredicatedTileIteratorDesc<Element, ThreadMap>()
       ) { }
 
     CUTLASS_HOST_DEVICE
-    Params(Base const &base) : 
+    Params(Base const &base) :
       Base(base) { }
   };
 
@@ -862,8 +871,8 @@ public:
     }
 
     // Initialize pointer
-    byte_pointer_ = reinterpret_cast<uint8_t *>(pointer) + 
-      LongIndex(thread_offset.strided()) * LongIndex(params_.stride) + 
+    byte_pointer_ = reinterpret_cast<uint8_t *>(pointer) +
+      LongIndex(thread_offset.strided()) * LongIndex(params_.stride) +
       LongIndex(thread_offset.contiguous()) * sizeof(AccessType) / kElementsPerAccess;
 
     // Initialize internal state counter
@@ -891,7 +900,7 @@ public:
     bool guard = col_guard && mask_.predicates[iteration_contiguous_];
 
     cutlass::arch::global_load<
-      AccessType, 
+      AccessType,
       sizeof(AccessType)
     >(
         *frag_ptr,
@@ -1091,7 +1100,7 @@ private:
   /// Extent of the matrix tile in rows
   Index extent_row_;
 
-  /// Extent of the matrix tile in pq 
+  /// Extent of the matrix tile in pq
   Index extent_pq_;
 
   /// A thread's starting row position (assuming steady-state predicates have
@@ -1133,7 +1142,7 @@ public:
   ):
     params_(params) {
     MatrixCoord thread_offset = ThreadMap::initial_offset(thread_idx) + threadblock_offset;
-                                
+
     extent_col_ = extent.c();
     extent_pq_ = extent.h() * extent.w();
     extent_row_ = extent.n() * extent_pq_;
@@ -1188,7 +1197,7 @@ public:
         reinterpret_cast<AccessType const *>(byte_pointer);
 
     cutlass::arch::global_load<
-      AccessType, 
+      AccessType,
       sizeof(AccessType)
     >(
         *frag_ptr,

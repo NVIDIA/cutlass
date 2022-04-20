@@ -89,7 +89,7 @@ template <
   bool StoreT = true
 >
 struct EpilogueWithBroadcastOpBase {
-  
+
   using ElementOutput = ElementC_;
   using ElementAccumulator = ElementAccumulator_;
   using ElementCompute = ElementCompute_;
@@ -119,7 +119,7 @@ struct EpilogueWithBroadcastOpBase {
   /// Constructor from Params
   EpilogueWithBroadcastOpBase(Params const &params_) { }
 
-  /// Determine if the source is needed. May return false if 
+  /// Determine if the source is needed. May return false if
   bool is_source_needed() const {
     return true;
   }
@@ -130,19 +130,19 @@ struct EpilogueWithBroadcastOpBase {
   /// Applies the operation when is_source_needed() is true
   CUTLASS_HOST_DEVICE
   void operator()(
-    FragmentZ &frag_Z, 
-    FragmentT &frag_T, 
+    FragmentZ &frag_Z,
+    FragmentT &frag_T,
     FragmentAccumulator const &AB,
-    FragmentC const &frag_C,
+    FragmentC const &frag_C1,
+    FragmentC const &frag_C2,
     FragmentCompute const &V) const {
-
   }
 
   /// Applies the operation when is_source_needed() is false
   CUTLASS_HOST_DEVICE
   void operator()(
-    FragmentZ &frag_Z, 
-    FragmentT &frag_T, 
+    FragmentZ &frag_Z,
+    FragmentT &frag_T,
     FragmentAccumulator const &AB,
     FragmentCompute const &V) const {
 
@@ -160,11 +160,11 @@ struct EpilogueWithBroadcastOpBase {
 ///
 ///  if (ElementwiseOp::kStoreZ) {
 ///    store(converted_u);
-///  }  
+///  }
 ///
 ///  if (ElementwiseOp::kStoreT) {
 ///    store(v);
-///  }  
+///  }
 ///
 template <
   typename Shape_,                          ///< Shape of threadblock tile (concept: GemmShape)
@@ -182,24 +182,24 @@ template <
   int IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
     (!IsEpilogueFunctorHeavy<OutputOp_>::value)
 >
-class EpilogueWithBroadcast : 
+class EpilogueWithBroadcast :
   public EpilogueBase<
-    Shape_, 
-    typename WarpMmaOperator_::Shape, 
-    PartitionsK, 
-    AccumulatorFragmentIterator_, 
-    WarpTileIterator_, 
+    Shape_,
+    typename WarpMmaOperator_::Shape,
+    PartitionsK,
+    AccumulatorFragmentIterator_,
+    WarpTileIterator_,
     Padding_,
     FragmentsPerPartition> {
 
 public:
 
   using Base = EpilogueBase<
-    Shape_, 
-    typename WarpMmaOperator_::Shape, 
-    PartitionsK, 
-    AccumulatorFragmentIterator_, 
-    WarpTileIterator_, 
+    Shape_,
+    typename WarpMmaOperator_::Shape,
+    PartitionsK,
+    AccumulatorFragmentIterator_,
+    WarpTileIterator_,
     Padding_,
     FragmentsPerPartition>;
 
@@ -235,7 +235,7 @@ public:
 
   /// Fragment object used to store the broadcast values
   using BroadcastFragment = Array<
-    ElementCompute, 
+    ElementCompute,
     ThreadMap::Iterations::kColumn * ThreadMap::kElementsPerAccess>;
 
   /// Output element
@@ -261,14 +261,14 @@ public:
     typename OutputTileIterator::Element, OutputTileIterator::kElementsPerAccess>;
 
   /// Array type used by output functor
-  using AccumulatorAccessType = Array<typename WarpTileIterator::Element, OutputTileIterator::kElementsPerAccess>; 
+  using AccumulatorAccessType = Array<typename WarpTileIterator::Element, OutputTileIterator::kElementsPerAccess>;
 
   /// Array type used by output functor
   using ComputeAccessType = Array<ElementCompute, OutputTileIterator::kElementsPerAccess>;
 
   /// Tensor access type
   using TensorAccessType = Array<ElementTensor, OutputTileIterator::kElementsPerAccess>;
-  
+
   /// Number of warps
   using WarpCount = typename Base::WarpCount;
 
@@ -304,7 +304,7 @@ public:
     /// I'm not sure what I meant here.
     static int const kThreadAccessesPerRow = const_max(1, (Shape::kN + kThreadCount - 1) / kThreadCount);
 
-    /// Shape of the shared memory allocation for the epilogue    
+    /// Shape of the shared memory allocation for the epilogue
     using StorageShape = MatrixShape<
       kThreadRows,
       Shape::kN
@@ -351,7 +351,7 @@ public:
 
   static_assert(OutputTileIterator::kElementsPerAccess, "OutputTileIterator::kElementsPerAccess must not be zero.");
 
-  static_assert(!(OutputTileIterator::Fragment::kElements % OutputTileIterator::kElementsPerAccess), 
+  static_assert(!(OutputTileIterator::Fragment::kElements % OutputTileIterator::kElementsPerAccess),
     "Divisibility");
 
 private:
@@ -367,7 +367,7 @@ public:
   /// Constructor
   CUTLASS_DEVICE
   EpilogueWithBroadcast(
-    SharedStorage &shared_storage,                    ///< Shared storage object    
+    SharedStorage &shared_storage,                    ///< Shared storage object
     int thread_idx,                                   ///< ID of a thread within the threadblock
     int warp_idx,                                     ///< ID of warp within threadblock
     int lane_idx                                      ///< Id of thread within warp
@@ -386,32 +386,34 @@ public:
     ElementVector const * broadcast_ptr,           ///< Broadcast vector
     OutputTileIterator destination_iterator,          ///< Tile iterator for destination
     AccumulatorTile const &accumulators,              ///< Complete warp-level accumulator tile
-    OutputTileIterator source_iterator,               ///< Tile iterator for source accumulator matrix
+    OutputTileIterator source_iterator1,               ///< Tile iterator for source accumulator matrix
+    OutputTileIterator source_iterator2,               ///< Tile iterator for source accumulator matrix
     TensorTileIterator tensor_iterator,               ///< Threadblock tile iterator for additional tensor operand
     MatrixCoord const &problem_size =                 ///< Problem size needed to guard against out-of-bounds accesses
         MatrixCoord(Shape::kM, Shape::kN),
     MatrixCoord const &threadblock_offset =           ///< Threadblock's initial offset within the problem size space
         MatrixCoord()) {
-    
+
     BroadcastFragment broadcast_fragment;
 
     load_broadcast_fragment_(broadcast_fragment, broadcast_ptr, problem_size, threadblock_offset);
 
     if (!output_op.is_source_needed()) {
       compute_source_not_needed_(
-        output_op, 
-        broadcast_fragment, 
-        destination_iterator, 
+        output_op,
+        broadcast_fragment,
+        destination_iterator,
         accumulators,
         tensor_iterator);
     }
     else {
       compute_source_needed_(
-        output_op, 
-        broadcast_fragment, 
-        destination_iterator, 
-        accumulators, 
-        source_iterator,
+        output_op,
+        broadcast_fragment,
+        destination_iterator,
+        accumulators,
+        source_iterator1,
+        source_iterator2,
         tensor_iterator);
     }
   }
@@ -427,7 +429,7 @@ private:
     ) {
 
     broadcast_fragment.clear();
-    
+
     // If no pointer is supplied, set with all zeros and avoid memory accesses
     if (!broadcast_ptr) {
       return;
@@ -513,9 +515,9 @@ private:
     OutputOp const &output_op,                        ///< Output operator
     BroadcastFragment const &broadcast_fragment,      ///< Fragment containing the accumulated partial reduction over columns
     OutputTileIterator destination_iterator,          ///< Tile iterator for destination
-    AccumulatorTile const &accumulators,              ///< Complete warp-level accumulator tile 
+    AccumulatorTile const &accumulators,              ///< Complete warp-level accumulator tile
     TensorTileIterator tensor_iterator                ///< Threadblock tile iterator for additioanl tensor operand
-    ) { 
+    ) {
 
     //
     // Iterator over warp-level accumulator fragment
@@ -525,7 +527,7 @@ private:
 
     //
     // Iterate over accumulator tile
-    // 
+    //
 
     // CUTLASS_PRAGMA_UNROLL
     #pragma unroll(IterationsUnroll ? OutputTileIterator::kIterations / Base::kFragmentsPerIteration : 1)
@@ -534,7 +536,7 @@ private:
       //
       // Convert and store fragment
       //
-      
+
 
       __syncthreads();
 
@@ -638,7 +640,7 @@ private:
     }
   };
 
-  
+
   /// Streams the result to global memory
   CUTLASS_DEVICE
   void compute_source_needed_(
@@ -646,12 +648,15 @@ private:
     BroadcastFragment const &broadcast_fragment,  ///< Fragment containing the accumulated partial reduction over columns
     OutputTileIterator destination_iterator,      ///< Tile iterator for destination
     AccumulatorTile const &accumulators,          ///< Complete warp-level accumulator tile
-    OutputTileIterator source_iterator,           ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
+    OutputTileIterator source_iterator1,           ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
+    OutputTileIterator source_iterator2,           ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
     TensorTileIterator tensor_iterator            ///< Threadblock tile iterator for additioanl tensor operand
-    ) { 
-    
-    typename OutputTileIterator::Fragment source_fragment;
-    source_fragment.clear();
+    ) {
+
+    typename OutputTileIterator::Fragment source_fragment1;
+    source_fragment1.clear();
+    typename OutputTileIterator::Fragment source_fragment2;
+    source_fragment2.clear();
 
     //
     // Iterator over warp-level accumulator fragment
@@ -661,7 +666,7 @@ private:
 
     //
     // Iterate over accumulator tile
-    // 
+    //
 
     #pragma unroll(IterationsUnroll ? OutputTileIterator::kIterations : 1)
     for (int iter = 0; iter < OutputTileIterator::kIterations; ++iter) {
@@ -670,13 +675,18 @@ private:
       // Load the source
       //
 
-      source_iterator.load(source_fragment);
-      ++source_iterator;
+      source_iterator1.load(source_fragment1);
+      ++source_iterator1;
+
+      if (source_iterator2.enabled()) {
+        source_iterator2.load(source_fragment2);
+        ++source_iterator2;
+      }
 
       //
       // Convert and store fragment
       //
-      
+
       __syncthreads();
 
       acc2smem_source_needed<cutlass::make_index_sequence<OutputTileIterator::kIterations>>::push(
@@ -720,8 +730,10 @@ private:
         frag_T,
         output_op,
         aligned_accum_fragment[0],
-        source_fragment,
-        broadcast_fragment);
+        source_fragment1,
+        source_fragment2,
+        broadcast_fragment,
+        source_iterator2.enabled());
 
       //
       // Conditionally store fragments
@@ -746,8 +758,10 @@ private:
     typename TensorTileIterator::Fragment &frag_T,
     OutputOp const &output_op,
     typename SharedLoadIterator::Fragment const &frag_AB,
-    typename OutputTileIterator::Fragment const &frag_C,
-    BroadcastFragment const &frag_Broadcast) {
+    typename OutputTileIterator::Fragment const &frag_C1,
+    typename OutputTileIterator::Fragment const &frag_C2,
+    BroadcastFragment const &frag_Broadcast,
+    bool frag_C2_enabled) {
 
     using AccessTypeZ = Array<typename OutputTileIterator::Element, kElementsPerAccess>;
     using AccessTypeT = Array<typename TensorTileIterator::Element, kElementsPerAccess>;
@@ -755,28 +769,39 @@ private:
 
     AccessTypeZ *frag_Z_ptr = reinterpret_cast<AccessTypeZ *>(&frag_Z);
     AccessTypeT *frag_T_ptr = reinterpret_cast<AccessTypeT *>(&frag_T);
-    
-    AccumulatorAccessType const *frag_AB_ptr = 
+
+    AccumulatorAccessType const *frag_AB_ptr =
       reinterpret_cast<AccumulatorAccessType const *>(&frag_AB);
 
-    OutputAccessType const *frag_C_ptr = 
-      reinterpret_cast<OutputAccessType const *>(&frag_C);
+    OutputAccessType const *frag_C1_ptr =
+      reinterpret_cast<OutputAccessType const *>(&frag_C1);
+    OutputAccessType const *frag_C2_ptr =
+      reinterpret_cast<OutputAccessType const *>(&frag_C2);
 
     AccessTypeBroadcast const *frag_Broadcast_ptr =
       reinterpret_cast<AccessTypeBroadcast const *>(&frag_Broadcast);
 
-    int const kOutputOpIterations = 
+    int const kOutputOpIterations =
       OutputTileIterator::Fragment::kElements / OutputTileIterator::kElementsPerAccess;
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kOutputOpIterations; ++i) {
-
-      output_op(
-        frag_Z_ptr[i], 
-        frag_T_ptr[i], 
-        frag_AB_ptr[i], 
-        frag_C_ptr[i], 
-        frag_Broadcast_ptr[i % ThreadMap::Iterations::kColumn]);
+      if (frag_C2_enabled) {
+          output_op(
+            frag_Z_ptr[i],
+            frag_T_ptr[i],
+            frag_AB_ptr[i],
+            frag_C1_ptr[i],
+            frag_C2_ptr[i],
+            frag_Broadcast_ptr[i % ThreadMap::Iterations::kColumn]);
+      } else {
+          output_op(
+            frag_Z_ptr[i],
+            frag_T_ptr[i],
+            frag_AB_ptr[i],
+            frag_C1_ptr[i],
+            frag_Broadcast_ptr[i % ThreadMap::Iterations::kColumn]);
+      }
     }
   }
 
@@ -795,23 +820,23 @@ private:
 
     AccessTypeZ *frag_Z_ptr = reinterpret_cast<AccessTypeZ *>(&frag_Z);
     AccessTypeT *frag_T_ptr = reinterpret_cast<AccessTypeT *>(&frag_T);
-    
-    AccumulatorAccessType const *frag_AB_ptr = 
+
+    AccumulatorAccessType const *frag_AB_ptr =
       reinterpret_cast<AccumulatorAccessType const *>(&frag_AB);
 
     AccessTypeBroadcast const *frag_Broadcast_ptr =
       reinterpret_cast<AccessTypeBroadcast const *>(&frag_Broadcast);
 
-    int const kOutputOpIterations = 
+    int const kOutputOpIterations =
       OutputTileIterator::Fragment::kElements / OutputTileIterator::kElementsPerAccess;
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kOutputOpIterations; ++i) {
 
       output_op(
-        frag_Z_ptr[i], 
-        frag_T_ptr[i], 
-        frag_AB_ptr[i], 
+        frag_Z_ptr[i],
+        frag_T_ptr[i],
+        frag_AB_ptr[i],
         frag_Broadcast_ptr[i % ThreadMap::Iterations::kColumn]);
     }
   }
