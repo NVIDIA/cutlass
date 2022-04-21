@@ -225,7 +225,7 @@ struct numeric_limits<cutlass::uint1b_t> {
   CUTLASS_HOST_DEVICE
   static cutlass::uint1b_t const lowest() noexcept { return 0;}
   CUTLASS_HOST_DEVICE
-  static cutlass::uint4b_t const max() noexcept { return 1;}
+  static cutlass::uint1b_t const max() noexcept { return 1;}
   static constexpr bool is_integer = true;
 };
 
