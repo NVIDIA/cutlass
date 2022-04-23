@@ -10,6 +10,10 @@ import shutil
 
 from library import *
 from gemm_operation import *
+from rank_k_operation import *
+from rank_2k_operation import *
+from trmm_operation import *
+from symm_operation import *
 from conv2d_operation import *  
 from conv3d_operation import *  
 
@@ -24,6 +28,10 @@ class EmitOperationKindLibrary:
       OperationKind.Gemm: EmitGemmConfigurationLibrary
       , OperationKind.Conv2d: EmitConv2dConfigurationLibrary  
       , OperationKind.Conv3d: EmitConv3dConfigurationLibrary  
+      , OperationKind.RankK: EmitRankKConfigurationLibrary
+      , OperationKind.Rank2K: EmitRank2KConfigurationLibrary
+      , OperationKind.Trmm: EmitTrmmConfigurationLibrary
+      , OperationKind.Symm: EmitSymmConfigurationLibrary
     }
 
     self.configurations = [];
@@ -177,44 +185,57 @@ class Options:
 class Manifest:
 
   #
-  def __init__(self, args):
+  def __init__(self, args = None):
     self.operations = {}
     self.args = args
-
-    architectures = args.architectures.split(';') if len(args.architectures) else ['50',]
-    self.compute_capabilities = [int(x) for x in architectures]
-    
-    self.selected_kernels = []
-    
-    if args.operations == 'all':
-      self.operations_enabled = []
-    else:
-
-      operations_list = [
-        OperationKind.Gemm
-        , OperationKind.Conv2d    
-        , OperationKind.Conv3d    
-      ] 
-
-      self.operations_enabled = [x for x in operations_list if OperationKindNames[x] in args.operations.split(',')]
-
-    if args.kernels == 'all':
-      self.kernel_names = []
-    else:
-      self.kernel_names = [x for x in args.kernels.split(',') if x != '']
-
-    self.ignore_kernel_names = [x for x in args.ignore_kernels.split(',') if x != '']
-
-    if args.kernel_filter_file is None:
-        self.kernel_filter_list = []
-    else:
-        self.kernel_filter_list = self.get_kernel_filters(args.kernel_filter_file)
-
-
     self.operation_count = 0
     self.operations_by_name = {}
+    
+    self.kernel_filter = ''
+    self.kernel_filter_list = []
+    self.kernel_names = []
+    self.operations_enabled = []
+    self.selected_kernels = []
+    self.ignore_kernel_names = []
+    self.compute_capabilities = [50,]
+    self.curr_build_dir = '.'
+    self.filter_by_cc = True
 
+    if self.args:
+      self.kernel_filter = self.args.kernels
+      self.curr_build_dir = args.curr_build_dir
+      architectures = args.architectures.split(';') if len(args.architectures) else ['50',]
+      self.compute_capabilities = [int(x) for x in architectures]
+      
+      if args.filter_by_cc in ['false', 'False', '0']:
+        self.filter_by_cc = False
 
+      if args.operations == 'all':
+        self.operations_enabled = []
+      else:
+        operations_list = [
+          OperationKind.Gemm
+          , OperationKind.Conv2d    
+          , OperationKind.Conv3d    
+          , OperationKind.RankK
+          , OperationKind.Trmm
+          , OperationKind.Symm
+        ] 
+        self.operations_enabled = [x for x in operations_list if OperationKindNames[x] in args.operations.split(',')]
+
+      if args.kernels == 'all':
+        self.kernel_names = []
+      else:
+        self.kernel_names = [x for x in args.kernels.split(',') if x != '']
+
+      self.ignore_kernel_names = [x for x in args.ignore_kernels.split(',') if x != '']
+
+      if args.kernel_filter_file is None:
+          self.kernel_filter_list = []
+      else:
+          self.kernel_filter_list = self.get_kernel_filters(args.kernel_filter_file)
+
+  #
   def get_kernel_filters (self, kernelListFile):
     if os.path.isfile(kernelListFile):
         with open(kernelListFile, 'r') as fileReader:
@@ -225,8 +246,7 @@ class Manifest:
     else:
         return []
 
-
-
+  #
   def filter_out_kernels(self, kernel_name, kernel_filter_list):
 
     for kernel_filter_re in kernel_filter_list:
@@ -252,7 +272,8 @@ class Manifest:
     ''' Filtering operations based on various criteria'''
 
     # filter based on compute capability
-    enabled = False
+    enabled = not (self.filter_by_cc)
+
     for cc in self.compute_capabilities:
       if cc >= operation.tile_description.minimum_compute_capability and \
         cc <= operation.tile_description.maximum_compute_capability:
@@ -291,7 +312,6 @@ class Manifest:
         enabled = False
         if self.filter_out_kernels(operation.procedural_name(), self.kernel_filter_list):
             enabled = True
-
 
     # todo: filter based on compute data type
     return enabled
@@ -334,7 +354,7 @@ class Manifest:
       GeneratorTarget.Library: EmitInterfaceLibrary 
     }
 
-    generated_path = os.path.join(self.args.curr_build_dir, 'generated')
+    generated_path = os.path.join(self.curr_build_dir, 'generated')
 
     # create generated/
     if os.path.exists(generated_path):

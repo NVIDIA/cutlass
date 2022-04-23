@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -268,21 +274,21 @@ struct Options {
       << "  forward convolution on tensors of layout NHWC.\n\n"
       << "Options:\n\n"
       << "  --help               If specified, displays this usage statement.\n\n"
-      << "  --n <int>            Input tensor extent N\n"
-      << "  --h <int>            Input tensor extent H\n"
-      << "  --w <int>            Input tensor extent W\n"
-      << "  --c <int>            Input tensor extent C\n"
-      << "  --k <int>            Filter extent K\n"
-      << "  --r <int>            Filter extent R\n"
-      << "  --s <int>            Filter extent S\n\n"
-      << "  --alpha <float>      Epilogue scalar alpha\n"
-      << "  --beta <float>       Epilogue scalar beta\n\n"
+      << "  --n=<int>            Input tensor extent N\n"
+      << "  --h=<int>            Input tensor extent H\n"
+      << "  --w=<int>            Input tensor extent W\n"
+      << "  --c=<int>            Input tensor extent C\n"
+      << "  --k=<int>            Filter extent K\n"
+      << "  --r=<int>            Filter extent R\n"
+      << "  --s=<int>            Filter extent S\n\n"
+      << "  --alpha=<float>      Epilogue scalar alpha\n"
+      << "  --beta=<float>       Epilogue scalar beta\n\n"
       << "  --ref-check          If set (true), reference check on the host is computed\n"
       << "  --perf-check         If set (true), performance is measured.\n"
       << "  --benchmark          If set (true), performance benchmarking on several layers and batch-size.\n"
-      << "  --iterations <int>   Number of profiling iterations to perform.\n"
+      << "  --iterations=<int>   Number of profiling iterations to perform.\n"
       << "  --save-workspace     If set, workspace is written to a text file.\n"
-      << "  --tag <string>       String to replicate across the first column in the results table\n";
+      << "  --tag=<string>       String to replicate across the first column in the results table\n";
 
     out << "\n\nExamples:\n\n"
       << "$ ./examples/25_ampere_fprop_mainloop_fusion/25_ampere_fprop_mainloop_fusion  --n=32 --h=224 --w=224 --c=128 --k=256 --r=1 --s=1\n\n"
@@ -381,7 +387,8 @@ Result profile_convolution(Options const &options) {
   cutlass::HostTensor<ElementInputScaleBias, LayoutInputScaleBias>
       tensor_a_bias({1, options.input_size.c()});
   cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_c(options.output_size());
-  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_ref_c(options.output_size());
+  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_d(options.output_size());
+  cutlass::HostTensor<ElementOutput, LayoutOutput> tensor_ref_d(options.output_size());
 
   //
   // Initialize tensors
@@ -425,9 +432,13 @@ Result profile_convolution(Options const &options) {
   cutlass::reference::host::TensorFill(
       tensor_c.host_view());
 
-  // Fill tensor C for reference on host with zeros
+  // Fill tensor D on host with zeros
   cutlass::reference::host::TensorFill(
-      tensor_ref_c.host_view());
+      tensor_d.host_view());
+
+  // Fill tensor D for reference on host with zeros
+  cutlass::reference::host::TensorFill(
+      tensor_ref_d.host_view());
 
   // Copy data from host to GPU
   tensor_a.sync_device();
@@ -435,7 +446,8 @@ Result profile_convolution(Options const &options) {
   tensor_a_bias.sync_device();
   tensor_b.sync_device();
   tensor_c.sync_device();
-  tensor_ref_c.sync_device();
+  tensor_d.sync_device();
+  tensor_ref_d.sync_device();
 
   //
   // Define arguments for CUTLASS Convolution
@@ -465,7 +477,7 @@ Result profile_convolution(Options const &options) {
     tensor_a_scale.device_ref(),
     tensor_a_bias.device_ref(),
     tensor_c.device_ref(),
-    tensor_c.device_ref(),
+    tensor_d.device_ref(),
     {options.alpha, options.beta},
   };
 
@@ -532,18 +544,18 @@ Result profile_convolution(Options const &options) {
       tensor_transformed_a.device_ref(),
       tensor_b.device_ref(),
       tensor_c.device_ref(),
-      tensor_ref_c.device_ref(),
+      tensor_ref_d.device_ref(),
       options.alpha,
       options.beta
     );
 
     // Check if output from CUTLASS kernel and reference kernel are equal or not
-    tensor_c.sync_host();
-    tensor_ref_c.sync_host();
+    tensor_d.sync_host();
+    tensor_ref_d.sync_host();
 
     bool passed = cutlass::reference::host::TensorEquals(
-      tensor_c.host_view(),
-      tensor_ref_c.host_view());
+      tensor_d.host_view(),
+      tensor_ref_d.host_view());
 
     if (!passed) {
       result.reference_check = cutlass::Status::kErrorInternal;
@@ -562,7 +574,7 @@ Result profile_convolution(Options const &options) {
 
     std::stringstream ss;
 
-    ss << "18_ampere_fused_fprop_batch_normalization_"
+    ss << "25_ampere_fprop_mainloop_fusion_"
       << options.input_size.n() << "x" << options.input_size.h() << "x" << options.input_size.w() << "x" << options.input_size.c() 
       << "_"
       << options.filter_size.n() << "x" << options.filter_size.h() << "x" << options.filter_size.w() << "x" << options.filter_size.c() 
@@ -575,10 +587,10 @@ Result profile_convolution(Options const &options) {
       << "Filters = \n" << tensor_b.host_view() << "\n\n";
 
     if (options.reference_check) {
-      output_workspace << "Reference = \n" << tensor_ref_c.host_view() << "\n\n";
+      output_workspace << "Reference = \n" << tensor_ref_d.host_view() << "\n\n";
     }
 
-    output_workspace << "Computed = \n" << tensor_c.host_view() << std::endl;
+    output_workspace << "Computed = \n" << tensor_d.host_view() << std::endl;
 
     std::cout << "Results written to '" << ss.str() << "'." << std::endl;
   }

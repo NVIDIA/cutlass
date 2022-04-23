@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -63,6 +69,7 @@ namespace threadblock {
 template <
   typename ThreadMap_,       ///< Thread map (conept: OutputTileThreadMap)
   typename Element_,         ///< Element data type
+  bool ScatterD = false,     ///< Scatter D operand or not
   bool UseCUDAStore = false
 >
 class PredicatedTileIterator {
@@ -175,11 +182,20 @@ private:
   /// Extent of the matrix tile in rows
   Index extent_row_;
 
+  /// Extent of the matrix tile in rows
+  Index extent_column_;
+
   /// A thread's starting row position (assuming steady-state predicates have been computed)
   Index thread_start_row_;
 
+  /// A thread's starting column
+  Index thread_start_column_;
+
   /// Internal state counter
   int state_[3];
+
+  /// Scatter indices
+  int const *indices_; 
  
   //
   // Static asserts about internal strides
@@ -208,15 +224,19 @@ public:
     Element *pointer,
     TensorCoord extent,
     int thread_idx,
-    TensorCoord threadblock_offset = TensorCoord()
+    TensorCoord threadblock_offset = TensorCoord(),
+    int const *indices = nullptr
   ): 
-    params_(params)
+    params_(params), indices_(indices)
   {
 
     TensorCoord thread_offset = ThreadMap::initial_offset(thread_idx) + threadblock_offset;
 
     extent_row_ = extent.row();
+    extent_column_ = extent.column();
+
     thread_start_row_ = thread_offset.row();
+    thread_start_column_ = thread_offset.column();
 
     // Initialize predicates
     CUTLASS_PRAGMA_UNROLL
@@ -231,10 +251,19 @@ public:
       mask_.clear();
     }
 
+    if (ScatterD && !indices) {
+      mask_.clear();
+    }
+
     // Initialize pointer
     byte_pointer_ = reinterpret_cast<uint8_t *>(pointer) + 
       LongIndex(thread_offset.row()) * LongIndex(params_.stride) + 
       LongIndex(thread_offset.column()) * sizeof(AccessType) / kElementsPerAccess;
+
+    if (ScatterD) {
+      byte_pointer_ = reinterpret_cast<uint8_t *>(pointer) +
+        LongIndex(thread_offset.column()) * sizeof(AccessType) / kElementsPerAccess;
+    }
 
     // Initialize internal state counter
     state_[0] = state_[1] = state_[2] = 0;
@@ -273,6 +302,13 @@ public:
 
           AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset);
 
+          if (ScatterD && row_guard) {
+            assert(indices_);
+
+            memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset +
+              LongIndex(indices_[row_offset + thread_start_row_]) * LongIndex(params_.stride));
+          }
+
           CUTLASS_PRAGMA_UNROLL
           for (int column = 0; column < ThreadMap::Iterations::kColumn; ++column) {
 
@@ -290,7 +326,9 @@ public:
           }
 
           if (row + 1 < ThreadMap::Iterations::kRow) {
-            byte_pointer += params_.increment_row;
+            if (!ScatterD) {
+              byte_pointer += params_.increment_row;
+            }
           }
         }
 
@@ -304,6 +342,7 @@ public:
       }
     }
   }
+
   /// Loads a fragment from memory
   CUTLASS_DEVICE
   void load(Fragment &frag) const {
@@ -337,6 +376,13 @@ public:
 
           AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset);
 
+          if (ScatterD && row_guard) {
+            assert(indices_);
+
+            memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset +
+              LongIndex(indices_[row_offset + thread_start_row_]) * LongIndex(params_.stride));
+          }
+
           CUTLASS_PRAGMA_UNROLL
           for (int column = 0; column < ThreadMap::Iterations::kColumn; ++column) {
 
@@ -356,6 +402,85 @@ public:
           }
 
           if (row + 1 < ThreadMap::Iterations::kRow) {
+            if (!ScatterD) {
+              byte_pointer += params_.increment_row;
+            }
+          }
+        }
+
+        if (group + 1 < ThreadMap::Iterations::kGroup) {
+          byte_pointer += params_.increment_group;
+        }
+      }
+
+      if (cluster + 1 < ThreadMap::Iterations::kCluster) {
+        byte_pointer += params_.increment_cluster;
+      }
+    }
+  }
+
+  /// Stores a fragment to memory
+  CUTLASS_DEVICE
+  void store(Fragment const &frag) const {
+
+    store_with_byte_offset(frag, 0);
+  }
+
+  /// Loads a fragment from memory
+  CUTLASS_DEVICE
+  void downsample_load_with_byte_offset(Fragment &frag, int64_t byte_offset, int convolution_P, int convolution_Q, int add_P, int add_Q, int problem_N) const {
+
+    uint8_t *byte_pointer = byte_pointer_;
+    AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int cluster = 0; cluster < ThreadMap::Iterations::kCluster; ++cluster) {
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int group = 0; group < ThreadMap::Iterations::kGroup; ++group) {
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int row = 0; row < ThreadMap::Iterations::kRow; ++row) {
+
+          int frag_row_idx = 
+            (row + ThreadMap::Iterations::kRow * (group + ThreadMap::Iterations::kGroup * cluster));
+
+          int row_offset = row * ThreadMap::Delta::kRow 
+            + group * ThreadMap::Delta::kGroup 
+            + cluster * ThreadMap::Delta::kCluster;
+
+          bool row_guard = ((row_offset + thread_start_row_) < extent_row_);
+
+          int output_row = row_offset + thread_start_row_;
+          int output_N = output_row / (convolution_P * convolution_Q);
+          int output_PQ = output_row % (convolution_P * convolution_Q);
+          int output_P = output_PQ / convolution_Q;
+          int output_Q = output_PQ % convolution_Q;
+
+          int input_row = output_N * 2 * convolution_P * 2 * convolution_Q +
+            (2 * output_P + add_P) * 2 * convolution_Q + 2 * output_Q + add_Q;
+
+          int64_t byte_offset = (input_row-output_row)*problem_N*sizeof(float);
+
+          AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset);
+
+          CUTLASS_PRAGMA_UNROLL
+          for (int column = 0; column < ThreadMap::Iterations::kColumn; ++column) {
+
+            bool guard = row_guard && mask_.predicates[column];
+
+            cutlass::arch::global_load<
+              AccessType, 
+              sizeof(AccessType)
+            >(
+                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn +
+                         column],
+                (void *)&memory_pointer[column * ThreadMap::Delta::kColumn /
+                                        kElementsPerAccess],
+                guard);
+          }
+
+          if (row + 1 < ThreadMap::Iterations::kRow) {
             byte_pointer += params_.increment_row;
           }
         }
@@ -371,12 +496,83 @@ public:
     }
   }
 
-
-  /// Stores a fragment to memory
+  /// Loads a fragment from memory
   CUTLASS_DEVICE
-  void store(Fragment const &frag) const {
+  void upsample_load_with_byte_offset(Fragment &frag, int64_t byte_offset, int convolution_P, int convolution_Q, int add_P, int add_Q, int problem_N) const {
 
-    store_with_byte_offset(frag, 0);
+    uint8_t *byte_pointer = byte_pointer_;
+    AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int cluster = 0; cluster < ThreadMap::Iterations::kCluster; ++cluster) {
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int group = 0; group < ThreadMap::Iterations::kGroup; ++group) {
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int row = 0; row < ThreadMap::Iterations::kRow; ++row) {
+
+          int frag_row_idx = 
+            (row + ThreadMap::Iterations::kRow * (group + ThreadMap::Iterations::kGroup * cluster));
+
+          int row_offset = row * ThreadMap::Delta::kRow 
+            + group * ThreadMap::Delta::kGroup 
+            + cluster * ThreadMap::Delta::kCluster;
+
+          bool row_guard = ((row_offset + thread_start_row_) < extent_row_);
+
+          int output_row = row_offset + thread_start_row_;
+          int output_N = output_row / (convolution_P * convolution_Q);
+          int output_PQ = output_row % (convolution_P * convolution_Q);
+          int output_P = output_PQ / convolution_Q;
+          int output_Q = output_PQ % convolution_Q;
+          int row_add_P = add_P;
+          int row_add_Q = add_Q;
+	  if (output_P > convolution_P - 2) row_add_P = 0;
+	  if (output_Q > convolution_Q - 2) row_add_Q = 0;
+
+          int input_row = output_N * (convolution_P/2) * (convolution_Q/2) +
+            ((output_P + row_add_P)/2) * (convolution_Q/2) + (output_Q + row_add_Q)/2;
+
+          int64_t byte_offset = (input_row-output_row)*problem_N*sizeof(float);
+
+          AccessType *memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset);
+
+          CUTLASS_PRAGMA_UNROLL
+          for (int column = 0; column < ThreadMap::Iterations::kColumn; ++column) {
+
+            bool guard = row_guard && mask_.predicates[column];
+
+            cutlass::arch::global_load<
+              AccessType, 
+              sizeof(AccessType)
+            >(
+                frag_ptr[frag_row_idx * ThreadMap::Iterations::kColumn +
+                         column],
+                (void *)&memory_pointer[column * ThreadMap::Delta::kColumn /
+                                        kElementsPerAccess],
+                guard);
+          }
+
+          if (row + 1 < ThreadMap::Iterations::kRow) {
+            byte_pointer += params_.increment_row;
+          }
+        }
+
+        if (group + 1 < ThreadMap::Iterations::kGroup) {
+          byte_pointer += params_.increment_group;
+        }
+      }
+
+      if (cluster + 1 < ThreadMap::Iterations::kCluster) {
+        byte_pointer += params_.increment_cluster;
+      }
+    }
+  }
+
+  CUTLASS_DEVICE
+  MatrixCoord thread_start() const {
+    return MatrixCoord(thread_start_row_, thread_start_column_);
   }
 
   /// Need to get the thread start row from the tile iterator
@@ -385,10 +581,22 @@ public:
     return thread_start_row_;
   }
 
+  /// Need to get the thread start row from the tile iterator
+  CUTLASS_DEVICE
+  int32_t thread_start_column() const {
+    return thread_start_column_;
+  }
+
   /// Extent of the matrix in rows
   CUTLASS_DEVICE
   Index extent_row() const {
     return extent_row_;
+  }
+
+  /// Extent of the matrix in columns
+  CUTLASS_DEVICE
+  Index extent_column() const {
+    return extent_column_;
   }
 
   /// Advances to the next position to load or store
@@ -396,7 +604,11 @@ public:
   PredicatedTileIterator &operator++() {
 
     ++state_[0];
-    byte_pointer_ += params_.advance_row;
+
+    if (!ScatterD) {
+      byte_pointer_ += params_.advance_row;
+    }
+
     thread_start_row_ += ThreadMap::Shape::kRow;
     
     if (state_[0] == ThreadMap::Count::kRow) {
@@ -582,7 +794,8 @@ public:
     Element *pointer,
     TensorCoord extent,
     int thread_idx,
-    TensorCoord threadblock_offset
+    TensorCoord threadblock_offset,
+    int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
   ):
     params_(params) {
     TensorCoord thread_offset = ThreadMap::initial_offset(thread_idx) +
