@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -34,6 +40,8 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
 #include "cutlass/library/util.h"
+#include "cutlass/blas3.h"
+
 #include "options.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -67,6 +75,15 @@ cublasGemmAlgo_t get_cublas_gemm_algo(
 
 /// Returns a status if cuBLAS can satisfy a particular GEMM description
 Status cublas_satisfies(library::GemmDescription const &desc);
+
+/// Returns a status if cuBLAS can satisfy a particular RankK description
+Status cublas_satisfies(library::RankKDescription const &desc);
+
+/// Returns a status if cuBLAS can satisfy a particular TRMM description
+Status cublas_satisfies(library::TrmmDescription const &desc);
+
+/// Returns a status if cuBLAS can satisfy a particular SYMM/HEMM description
+Status cublas_satisfies(library::SymmDescription const &desc);
 
 /// This is a helper class to create cublasHandle_t automatically on CublasCreate object creation and 
 /// to destroy cublasHandle_t on CublasCreate object destruction. 
@@ -206,6 +223,127 @@ struct cublasGemmExDispatcher {
   );
 
   /// Executes GEMM using these arguments
+  cublasStatus_t operator()(cublasHandle_t handle);
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Dispatcher to cublas rank k update kernels 
+struct cublasRankKDispatcher {
+
+  //
+  // Data members
+  //
+  library::RankKConfiguration configuration;
+  library::RankKArguments arguments;
+
+  // cublass-specific data structures to fill cublas API call arguments
+  cublasOperation_t trans_A;
+  cublasFillMode_t uplo;
+  cudaDataType_t data_type_A;
+  cudaDataType_t data_type_C;
+  cudaDataType_t compute_data_type;
+
+#if (__CUDACC_VER_MAJOR__ >= 11)
+  cublasComputeType_t compute_type;
+#endif
+
+  int num_ranks;       //(rank-k or rank-2k)
+  BlasMode blas_mode; //(symmetric or hermitian)
+  Status status;
+  
+  //
+  // Methods
+  //
+
+  cublasRankKDispatcher( 
+    library::RankKDescription const &op_desc,
+    library::RankKConfiguration configuration_,
+    library::RankKArguments arguments_
+  );
+
+  /// Executes RankK using these arguments
+  cublasStatus_t operator()(cublasHandle_t handle);
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Dispatcher to cublasTrmm() 
+struct cublasTrmmDispatcher {
+
+  //
+  // Data members
+  //
+  library::TrmmConfiguration configuration;
+  library::TrmmArguments arguments;
+
+  // cublass-specific data structures to fill cublas API call arguments
+  cublasOperation_t trans_A;
+  cublasSideMode_t side;
+  cublasFillMode_t uplo;
+  cublasDiagType_t diag;
+  cudaDataType_t data_type_A;
+  cudaDataType_t data_type_B;
+  cudaDataType_t data_type_D;
+  cudaDataType_t compute_data_type;
+
+#if (__CUDACC_VER_MAJOR__ >= 11)
+  cublasComputeType_t compute_type;
+#endif
+
+  Status status;
+  
+  //
+  // Methods
+  //
+
+  cublasTrmmDispatcher( 
+    library::TrmmDescription const &op_desc,
+    library::TrmmConfiguration configuration_,
+    library::TrmmArguments arguments_
+  );
+
+  /// Executes TRMM using these arguments
+  cublasStatus_t operator()(cublasHandle_t handle);
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Dispatcher to cublas symm/hemm update kernels 
+struct cublasSymmDispatcher {
+
+  //
+  // Data members
+  //
+  library::SymmConfiguration configuration;
+  library::SymmArguments arguments;
+
+  // cublass-specific data structures to fill cublas API call arguments
+  cublasSideMode_t side;
+  cublasFillMode_t uplo;
+  cudaDataType_t data_type_A;
+  cudaDataType_t data_type_B;
+  cudaDataType_t data_type_C;
+  cudaDataType_t compute_data_type;
+
+#if (__CUDACC_VER_MAJOR__ >= 11)
+  cublasComputeType_t compute_type;
+#endif
+  
+  BlasMode blas_mode; //(symmetric or hermitian)
+  Status status;
+  
+  //
+  // Methods
+  //
+
+  cublasSymmDispatcher( 
+    library::SymmDescription const &op_desc,
+    library::SymmConfiguration configuration_,
+    library::SymmArguments arguments_
+  );
+
+  /// Executes Symm using these arguments
   cublasStatus_t operator()(cublasHandle_t handle);
 };
 

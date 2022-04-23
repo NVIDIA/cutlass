@@ -1,23 +1,29 @@
-# Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
 #
-# Redistribution and use in source and binary forms, with or without modification, are permitted
-# provided that the following conditions are met:
-#     * Redistributions of source code must retain the above copyright notice, this list of
-#       conditions and the following disclaimer.
-#     * Redistributions in binary form must reproduce the above copyright notice, this list of
-#       conditions and the following disclaimer in the documentation and/or other materials
-#       provided with the distribution.
-#     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
-#       to endorse or promote products derived from this software without specific prior written
-#       permission.
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
-# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
-# FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-# OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-# STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# 1. Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 cmake_minimum_required(VERSION 3.12.4 FATAL_ERROR)
@@ -32,7 +38,7 @@ endif()
 
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 
-project(CUTLASS VERSION 2.8.0 LANGUAGES CXX)
+project(CUTLASS VERSION 2.9.0 LANGUAGES CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
 if (CUDA_VERSION VERSION_LESS 10.2)
@@ -83,7 +89,7 @@ set(CUTLASS_ENABLE_LIBRARY ${CUTLASS_ENABLE_LIBRARY_INIT} CACHE BOOL "Enable CUT
 set(CUTLASS_ENABLE_PROFILER ${CUTLASS_ENABLE_LIBRARY} CACHE BOOL "Enable CUTLASS Profiler")
 
 if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
-  set(CUTLASS_ENABLE_TESTS_INIT ${CUTLASS_ENABLE_LIBRARY})
+  set(CUTLASS_ENABLE_TESTS_INIT ${CUTLASS_ENABLE_LIBRARY}})
 else()
   set(CUTLASS_ENABLE_TESTS_INIT OFF)
 endif()
@@ -187,10 +193,8 @@ set(CUTLASS_LIBRARY_OPERATIONS "all" CACHE STRING "Comma delimited list of opera
 set(CUTLASS_LIBRARY_KERNELS "" CACHE STRING "Comma delimited list of kernel name filters. If unspecified, only the largest tile size is enabled. If 'all' is specified, all kernels are enabled.")
 set(CUTLASS_LIBRARY_IGNORE_KERNELS "" CACHE STRING "Comma delimited list of kernel names to exclude from build.")
 
-
 # Test Levels L0, L1, L2
 set(CUTLASS_TEST_LEVEL "0" CACHE STRING "Level of tests to compile.")
-
 
 set(CUTLASS_TEST_ENABLE_CACHED_RESULTS ON CACHE BOOL "Enable caching and reuse of test results in unit tests")
 
@@ -203,14 +207,12 @@ if (CUTLASS_TEST_ENABLE_CACHED_RESULTS)
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_TEST_ENABLE_CACHED_RESULTS=1)
 endif()
 
-
 set(CUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED ON CACHE BOOL "Enable/Disable rigorous conv problem sizes in conv unit tests")
 
 if (CUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED)
   message(STATUS "Enable rigorous conv problem sizes in conv unit tests")
   list(APPEND CUTLASS_CUDA_NVCC_FLAGS -DCUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED=1)
 endif()
-
 
 #
 # CUDA 10.1 introduces "mma" in PTX performing collective matrix multiply operations.
@@ -748,7 +750,7 @@ if (CUTLASS_INSTALL_TESTS)
 
   install(
     FILES "${CMAKE_BINARY_DIR}/cmake/CTestTestfile.cmake"
-    DESTINATION ${CUTLASS_TEST_INSTALL_PREFIX}/
+    DESTINATION "${CUTLASS_TEST_INSTALL_PREFIX}/"
     )
 
 endif()

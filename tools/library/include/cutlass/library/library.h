@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -51,6 +57,8 @@
 #include "cutlass/matrix_coord.h"
 #include "cutlass/tensor_coord.h"
 #include "cutlass/layout/tensor.h"
+#include "cutlass/blas3.h"
+
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv2d_problem_size.h"
@@ -154,6 +162,10 @@ enum class Provider {
 /// Enumeration indicating the kind of operation
 enum class OperationKind {
   kGemm,
+  kRankK,
+  kRank2K,
+  kTrmm,
+  kSymm,
   kConv2d,              
   kConv3d,             
   kEqGemm,
@@ -210,11 +222,30 @@ enum class GemmKind {
   kUniversal,
   kPlanarComplex,
   kPlanarComplexArray,
+  kGrouped,
   kInvalid
 };
 
 /// Mode of Universal GEMM
 using GemmUniversalMode = cutlass::gemm::GemmUniversalMode;
+
+/// Enumeration indicating what kind of RankK update operation to perform
+enum class RankKKind {
+  kUniversal,
+  kInvalid
+};
+
+/// Enumeration indicating what kind of TRMM operation to perform
+enum class TrmmKind {
+  kUniversal,
+  kInvalid
+};
+
+/// Enumeration indicating what kind of SYMM/HEMM operation to perform
+enum class SymmKind {
+  kUniversal,
+  kInvalid
+};
 
 /// Enumeration indicating what kind of Conv2d operation to perform
 enum class ConvKind {
@@ -236,6 +267,8 @@ enum class IteratorAlgorithmID {
   kNone,
   kAnalytic,
   kOptimized,
+  kFixedChannels,
+  kFewChannels,
   kInvalid
 };
 
@@ -511,6 +544,204 @@ struct ReductionDescription : public OperationDescription {
   /// Describes the data type of the scalars passed to the epilogue
   NumericTypeID element_epilogue;
 };
+
+/// Description of all Rank K update computations (SYRK, HERK, SYR2K, HER2K)
+struct RankKDescription : public OperationDescription {
+
+  /// Indicates which device template is used (universal or regular)
+  RankKKind rank_k_kind;
+
+  /// Number of rank update (rank k or rank 2k)
+  int num_ranks;
+  
+  /// Describes the A operand
+  TensorDescription A;
+
+  /// Describes the B operand (used only for SYR2K and HER2K)
+  TensorDescription B;
+
+  /// Describes the source and destination matrices
+  TensorDescription C;
+
+  /// Describes the fill mode for matrix C
+  FillMode fill_mode;
+
+  /// Describes the blas mode (symmetric/hermitian)
+  BlasMode blas_mode;
+
+  /// Describes the data type of the scalars passed to the epilogue
+  NumericTypeID element_epilogue;
+
+  /// Describes the structure of parallel reductions
+  SplitKMode split_k_mode;
+
+  /// Transformation on A operand
+  ComplexTransform transform_A;
+
+  /// Transformation on B operand
+  ComplexTransform transform_B;
+
+  //
+  // Methods
+  //
+
+  RankKDescription(
+    RankKKind rank_k_kind = RankKKind::kUniversal,
+    int num_ranks = 1,
+    TensorDescription const &A = TensorDescription(),
+    TensorDescription const &B = TensorDescription(),
+    TensorDescription const &C = TensorDescription(),
+    FillMode fill_mode = FillMode::kInvalid,
+    BlasMode blas_mode = BlasMode::kInvalid,
+    NumericTypeID element_epilogue = NumericTypeID::kInvalid,
+    SplitKMode split_k_mode = SplitKMode::kNone,
+    ComplexTransform transform_A = ComplexTransform::kNone,
+    ComplexTransform transform_B = ComplexTransform::kNone
+  ):
+    rank_k_kind(rank_k_kind),
+    num_ranks(num_ranks),
+    A(A),
+    B(B),
+    C(C),
+    fill_mode(fill_mode),
+    blas_mode(blas_mode),
+    element_epilogue(element_epilogue),
+    split_k_mode(split_k_mode),
+    transform_A(transform_A),
+    transform_B(transform_B) {} 
+};
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Description of all TRMM computations
+struct TrmmDescription : public OperationDescription {
+
+  /// Indicates the kind of TRMM performed
+  TrmmKind trmm_kind;
+  
+  /// Describes the A operand
+  TensorDescription A;
+
+  /// Describes the side mode for matrix A
+  SideMode side_mode;
+
+  /// Describes the fill mode for matrix A
+  FillMode fill_mode;
+
+  /// Describes the diag type for matrix A
+  DiagType diag_type;
+
+  /// Describes the B operand
+  TensorDescription B;
+
+  /// Describes the source and destination matrices
+  TensorDescription D;
+
+  /// Describes the data type of the scalars passed to the epilogue
+  NumericTypeID element_epilogue;
+
+  /// Describes the structure of parallel reductions
+  SplitKMode split_k_mode;
+
+  /// Transformation on A operand
+  ComplexTransform transform_A;
+
+  //
+  // Methods
+  //
+
+  TrmmDescription(
+    TrmmKind trmm_kind = TrmmKind::kUniversal,
+    TensorDescription const &A = TensorDescription(),
+    SideMode side_mode = SideMode::kInvalid,
+    FillMode fill_mode = FillMode::kInvalid,
+    DiagType daig_type = DiagType::kInvalid,
+    TensorDescription const &B = TensorDescription(),
+    TensorDescription const &D = TensorDescription(),
+    NumericTypeID element_epilogue = NumericTypeID::kInvalid,
+    SplitKMode split_k_mode = SplitKMode::kNone,
+    ComplexTransform transform_A = ComplexTransform::kNone
+  ):
+    trmm_kind(trmm_kind),
+    A(A),
+    side_mode(side_mode),
+    fill_mode(fill_mode),
+    diag_type(diag_type),
+    B(B),
+    D(D),
+    element_epilogue(element_epilogue),
+    split_k_mode(split_k_mode),
+    transform_A(transform_A) {} 
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Description of all SYMM/HEMM update computations
+struct SymmDescription : public OperationDescription {
+
+  /// Indicates which device template is used (universal or regular)
+  SymmKind symm_kind;
+  
+  /// Describes the A operand
+  TensorDescription A;
+
+  /// Describes the B operand 
+  TensorDescription B;
+
+  /// Describes the source and destination matrices
+  TensorDescription C;
+
+  /// Describes the side mode for matrix A
+  SideMode side_mode;
+
+  /// Describes the fill mode for matrix A
+  FillMode fill_mode;
+
+  /// Describes the blas mode (symmetric/hermitian)
+  BlasMode blas_mode;
+
+  /// Describes the data type of the scalars passed to the epilogue
+  NumericTypeID element_epilogue;
+
+  /// Describes the structure of parallel reductions
+  SplitKMode split_k_mode;
+
+  /// Transformation on A operand
+  ComplexTransform transform_A;
+
+  /// Transformation on B operand
+  ComplexTransform transform_B;
+
+  //
+  // Methods
+  //
+
+  SymmDescription(
+    SymmKind symm_kind = SymmKind::kUniversal,
+    TensorDescription const &A = TensorDescription(),
+    TensorDescription const &B = TensorDescription(),
+    TensorDescription const &C = TensorDescription(),
+    SideMode side_mode = SideMode::kInvalid,
+    FillMode fill_mode = FillMode::kInvalid,
+    BlasMode blas_mode = BlasMode::kInvalid,
+    NumericTypeID element_epilogue = NumericTypeID::kInvalid,
+    SplitKMode split_k_mode = SplitKMode::kNone,
+    ComplexTransform transform_A = ComplexTransform::kNone,
+    ComplexTransform transform_B = ComplexTransform::kNone
+  ):
+    symm_kind(symm_kind),
+    A(A),
+    B(B),
+    C(C),
+    side_mode(side_mode),
+    fill_mode(fill_mode),
+    blas_mode(blas_mode),
+    element_epilogue(element_epilogue),
+    split_k_mode(split_k_mode),
+    transform_A(transform_A),
+    transform_B(transform_B) {} 
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -878,6 +1109,39 @@ struct GemmPlanarComplexArrayArguments {
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Grouped GEMM supporting
+//
+// OperationKind: Gemm
+// GemmKind:      Grouped
+
+struct GemmGroupedConfiguration {
+
+  int problem_count;
+  int threadblock_count;
+
+};
+
+struct GemmGroupedArguments {
+
+  gemm::GemmCoord *problem_sizes;
+
+  void * ptr_A;
+  void * ptr_B;
+  void * ptr_C;
+  void * ptr_D;
+
+  int64_t *lda;
+  int64_t *ldb;
+  int64_t *ldc;
+  int64_t *ldd;
+
+  void const *alpha;
+  void const *beta;
+  ScalarPointerMode pointer_mode;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // OperationKind: kSparseGemm
 //
@@ -919,6 +1183,172 @@ struct SparseGemmArguments {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Configuration for basic Rank K update operations
+//
+// OperationKind: (Syrk, Herk, Syr2k, Her2k)
+// RankKKind:      Universal
+//
+struct RankKConfiguration {
+
+  /// SYRK problem size
+  gemm::GemmCoord problem_size;
+
+  /// Leading dimension of A matrix
+  int64_t lda;
+
+  /// Leading dimension of B matrix
+  int64_t ldb;
+
+  /// Leading dimension of C matrix
+  int64_t ldc;
+
+  /// Leading dimension of D matrix
+  int64_t ldd;
+
+  /// Batch Count
+  int batch_count;
+};
+
+/// Arguments for (Syrk, Herk, Syr2k, Her2k)
+struct RankKArguments {
+
+  /// Pointer to A matrix
+  void const *A;
+
+  /// Pointer to B matrix (used only for Syr2k and Her2k)
+  void const *B;
+
+  /// Pointer to C matrix
+  void const *C;
+
+  /// Pointer to D matrix
+  void *D;
+
+  /// Host or device pointer to alpha scalar
+  void const *alpha;
+
+  /// Host or device pointer to beta scalar
+  void const *beta;
+
+  /// Enumerant indicating whether alpha/beta point to host or device memory
+  ScalarPointerMode pointer_mode;
+
+  int64_t batch_stride_A;
+  int64_t batch_stride_B;
+  int64_t batch_stride_C;
+  int64_t batch_stride_D;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Configuration for basic TRMM operations
+//
+// OperationKind: Trmm
+// TrmmKind:      Universal
+//
+struct TrmmConfiguration {
+
+  /// TRMM problem size
+  gemm::GemmCoord problem_size;
+
+  /// Leading dimension of A matrix
+  int64_t lda;
+
+  /// Leading dimension of B matrix
+  int64_t ldb;
+
+  /// Leading dimension of D matrix
+  int64_t ldd;
+
+  /// Batch Count
+  int batch_count;
+};
+
+/// Arguments for TRMM
+struct TrmmArguments {
+
+  /// Pointer to A matrix
+  void const *A;
+
+  /// Pointer to B matrix
+  void const *B;
+
+  /// Pointer to D matrix
+  void *D;
+
+  /// Host or device pointer to alpha scalar
+  void const *alpha;
+
+  /// Host or device pointer to beta scalar
+  void const *beta;
+
+  /// Enumerant indicating whether alpha/beta point to host or device memory
+  ScalarPointerMode pointer_mode;
+
+  int64_t batch_stride_A;
+  int64_t batch_stride_B;
+  int64_t batch_stride_D;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Configuration for basic SYMM/HEMM update operations
+//
+// OperationKind: (Symm, Hemm)
+// SymmKind:      Universal
+//
+struct SymmConfiguration {
+
+  /// SYMM/HEMM problem size
+  gemm::GemmCoord problem_size;
+
+  /// Leading dimension of A matrix
+  int64_t lda;
+
+  /// Leading dimension of B matrix
+  int64_t ldb;
+
+  /// Leading dimension of C matrix
+  int64_t ldc;
+
+  /// Leading dimension of D matrix
+  int64_t ldd;
+
+  /// Batch Count
+  int batch_count;
+};
+
+/// Arguments for (Symm, Hemm)
+struct SymmArguments {
+
+  /// Pointer to A matrix
+  void const *A;
+
+  /// Pointer to B matrix
+  void const *B;
+
+  /// Pointer to C matrix
+  void const *C;
+
+  /// Pointer to D matrix
+  void *D;
+
+  /// Host or device pointer to alpha scalar
+  void const *alpha;
+
+  /// Host or device pointer to beta scalar
+  void const *beta;
+
+  /// Enumerant indicating whether alpha/beta point to host or device memory
+  ScalarPointerMode pointer_mode;
+
+  int64_t batch_stride_A;
+  int64_t batch_stride_B;
+  int64_t batch_stride_C;
+  int64_t batch_stride_D;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Two dimensional convolution
