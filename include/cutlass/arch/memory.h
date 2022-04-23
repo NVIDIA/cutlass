@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -248,7 +254,7 @@ struct global_store<AccessType, 64> {
         "l"(((uint8_t *)ptr) + 32),
         "r"(data[2].x), "r"(data[2].y), "r"(data[2].z), "r"(data[2].w),
         "l"(((uint8_t *)ptr) + 48),
-        "r"(data[3].x), "r"(data[3].y), "r"(data[3].z), "r"(data[2].w));
+        "r"(data[3].x), "r"(data[3].y), "r"(data[3].z), "r"(data[3].w));
   }
 };
 
@@ -345,6 +351,114 @@ struct global_store<AccessType, 1> {
   }
 };
 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// ld.shared
+template <int Bytes>
+void shared_load(void *dst, uint32_t ptr);
+
+/// ld.shared - 16b
+template <>
+CUTLASS_DEVICE
+void shared_load<2>(void *dst, uint32_t ptr) {
+  asm volatile("ld.shared.u16 %0, [%1];\n"
+    : "=h"(*reinterpret_cast<uint16_t *>(dst))
+    : "r"(ptr));
+}
+
+/// ld.shared - 32b
+template <>
+CUTLASS_DEVICE
+void shared_load<4>(void *dst, uint32_t ptr) {
+  asm volatile("ld.shared.u32 %0, [%1];\n"
+    : "=r"(*reinterpret_cast<uint32_t *>(dst))
+    : "r"(ptr));
+}
+
+/// ld.shared - 64b
+template <>
+CUTLASS_DEVICE
+void shared_load<8>(void *dst, uint32_t ptr) {
+  uint2 *dst_u64 = reinterpret_cast<uint2 *>(dst);
+  asm volatile("ld.shared.v2.u32 {%0, %1}, [%2];\n"
+    :
+      "=r"(dst_u64->x),
+      "=r"(dst_u64->y)
+    : "r"(ptr));
+}
+
+/// ld.shared - 128b
+template <>
+CUTLASS_DEVICE
+void shared_load<16>(void *dst, uint32_t ptr) {
+  uint4 *dst_u128 = reinterpret_cast<uint4 *>(dst);
+  asm volatile("ld.shared.v4.u32 {%0, %1, %2, %3}, [%4];\n"
+    :
+      "=r"(dst_u128->x),
+      "=r"(dst_u128->y),
+      "=r"(dst_u128->z),
+      "=r"(dst_u128->w)
+    : "r"(ptr));
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// st.shared
+template <int Bytes>
+void shared_store(uint32_t ptr, void const *src);
+
+/// st.shared - 16b
+template <>
+CUTLASS_DEVICE
+void shared_store<2>(uint32_t ptr, void const *src) {
+  asm volatile("st.shared.u16 [%0], %1;\n"
+    : :
+    "r"(ptr)
+    "h"(*reinterpret_cast<uint16_t const *>(src))
+  );
+}
+
+/// st.shared - 32b
+template <>
+CUTLASS_DEVICE
+void shared_store<4>(uint32_t ptr, void const *src) {
+  asm volatile("st.shared.u32 [%0], %1;\n"
+    : :
+    "r"(ptr)
+    "r"(*reinterpret_cast<uint32_t const  *>(src))
+  );
+}
+
+/// st.shared - 64b
+template <>
+CUTLASS_DEVICE
+void shared_store<8>(uint32_t ptr, void const *src) {
+  uint2 const *dst_u64 = reinterpret_cast<uint2 const *>(src);
+  asm volatile("st.shared.v2.u32 [%0], {%1, %2};\n"
+    : :
+      "r"(ptr)
+      "r"(dst_u64->x),
+      "r"(dst_u64->y)
+    );
+}
+
+/// st.shared - 128b
+template <>
+CUTLASS_DEVICE
+void shared_store<16>(uint32_t ptr, void const *src) {
+  uint4 const *dst_u128 = reinterpret_cast<uint4 const *>(src);
+  asm volatile("ld.shared.v4.u32 [%0], {%1, %2, %3, %4};\n"
+    : :
+      "r"(ptr)
+      "r"(dst_u128->x),
+      "r"(dst_u128->y),
+      "r"(dst_u128->z),
+      "r"(dst_u128->w)
+    );
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace arch
@@ -352,7 +466,7 @@ struct global_store<AccessType, 1> {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "memory_sm75.h"  
+#include "memory_sm75.h"
 #include "memory_sm80.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

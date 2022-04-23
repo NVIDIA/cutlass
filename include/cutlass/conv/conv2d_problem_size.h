@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -40,6 +46,13 @@
 */
 
 #pragma once
+
+
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cmath>
+#else
+#include <cmath>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/tensor_coord.h"
@@ -348,29 +361,56 @@ CUTLASS_HOST_DEVICE
 int implicit_gemm_k_iterations(
   Operator conv_operator, 
   int threadblock_K, 
-  Conv2dProblemSize const &problem_size) {
+  Conv2dProblemSize const &problem_size,
+  IteratorAlgorithm algorithm = IteratorAlgorithm::kAnalytic) {
 
   int iterations = 0;
-  int elements_per_split_k_slice = 0;
 
-  switch (conv_operator) {
-  case Operator::kFprop:
-    elements_per_split_k_slice = (problem_size.C + problem_size.split_k_slices - 1) / problem_size.split_k_slices;
-    iterations = problem_size.R * problem_size.S * ((elements_per_split_k_slice + threadblock_K - 1) / threadblock_K);
-    break;
+  if (algorithm == IteratorAlgorithm::kFixedChannels) {
 
-  case Operator::kDgrad:
-    elements_per_split_k_slice = (problem_size.K + problem_size.split_k_slices - 1) / problem_size.split_k_slices;
-    iterations = problem_size.R * problem_size.S * ((elements_per_split_k_slice + threadblock_K - 1) / threadblock_K);
-    break;
+    int positions_per_iteration = threadblock_K / problem_size.C;
+    switch (conv_operator) {
+    case Operator::kFprop:
+      iterations = (problem_size.R * problem_size.S + positions_per_iteration - 1 ) / positions_per_iteration;
+      break;
 
-  case Operator::kWgrad:
-    elements_per_split_k_slice = (problem_size.N * problem_size.P * problem_size.Q + problem_size.split_k_slices - 1) / problem_size.split_k_slices;
-    iterations = (elements_per_split_k_slice + threadblock_K - 1) / threadblock_K;
-    break;
+    default:
+      break;
+    }
+  }
+  else if (algorithm == IteratorAlgorithm::kFewChannels) {
 
-  default:
-    break;
+    switch (conv_operator) {
+    case Operator::kFprop:
+      iterations = (problem_size.R * problem_size.S * problem_size.C + threadblock_K - 1 ) / threadblock_K;
+      break;
+
+    default:
+      break;
+    }
+  }
+  else {
+    int elements_per_split_k_slice = 0;
+
+    switch (conv_operator) {
+    case Operator::kFprop:
+      elements_per_split_k_slice = (problem_size.C + problem_size.split_k_slices - 1) / problem_size.split_k_slices;
+      iterations = problem_size.R * problem_size.S * ((elements_per_split_k_slice + threadblock_K - 1) / threadblock_K);
+      break;
+
+    case Operator::kDgrad:
+      elements_per_split_k_slice = (problem_size.K + problem_size.split_k_slices - 1) / problem_size.split_k_slices;
+      iterations = problem_size.R * problem_size.S * ((elements_per_split_k_slice + threadblock_K - 1) / threadblock_K);
+      break;
+
+    case Operator::kWgrad:
+      elements_per_split_k_slice = (problem_size.N * problem_size.P * problem_size.Q + problem_size.split_k_slices - 1) / problem_size.split_k_slices;
+      iterations = (elements_per_split_k_slice + threadblock_K - 1) / threadblock_K;
+      break;
+
+    default:
+      break;
+    }
   }
 
   return iterations;
@@ -499,12 +539,12 @@ void strided_dgrad_starting_coords(
 
   // start_h  = std::abs(problem_size.stride_h - ((problem_size.pad_h % problem_size.stride_h) - r)) % problem_size.stride_h;
   stride_h_divmod.divmod(pad_h_rem_, problem_size.pad_h);
-  int r_ = std::abs(problem_size.stride_h - (pad_h_rem_ - r));
+  int r_ = absolute_value(problem_size.stride_h - (pad_h_rem_ - r));
   stride_h_divmod.divmod(start_h, r_);
 
   //start_w  = std::abs(problem_size.stride_w - ((problem_size.pad_w % problem_size.stride_w) - s)) % problem_size.stride_w;
   stride_w_divmod.divmod(pad_w_rem_, problem_size.pad_w);
-  int s_ = std::abs(problem_size.stride_w - (pad_w_rem_ - s));
+  int s_ = absolute_value(problem_size.stride_w - (pad_w_rem_ - s));
   stride_w_divmod.divmod(start_w, s_);
 }
 

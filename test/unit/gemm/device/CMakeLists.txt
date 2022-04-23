@@ -1,23 +1,29 @@
-# Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
 #
-# Redistribution and use in source and binary forms, with or without modification, are permitted
-# provided that the following conditions are met:
-#     * Redistributions of source code must retain the above copyright notice, this list of
-#       conditions and the following disclaimer.
-#     * Redistributions in binary form must reproduce the above copyright notice, this list of
-#       conditions and the following disclaimer in the documentation and/or other materials
-#       provided with the distribution.
-#     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
-#       to endorse or promote products derived from this software without specific prior written
-#       permission.
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
-# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
-# FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-# BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-# OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-# STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# 1. Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 add_custom_target(
@@ -130,6 +136,7 @@ cutlass_test_unit_add_executable(
   BATCH_SOURCES ON
   BATCH_SIZE 4
 
+  gemm_universal_f16n_f16t_f32n_tensor_op_f32_sm75.cu
   gemm_universal_f16n_f16t_f32t_tensor_op_f32_sm75.cu
 
   gemm_f16t_f16n_f16t_tensor_op_f16_sm75.cu
@@ -156,7 +163,9 @@ cutlass_test_unit_add_executable(
   gemm_s4n_s4t_s4n_tensor_op_s32_sm75.cu
   gemm_s4t_s4n_s32t_tensor_op_s32_sm75.cu
   gemm_s4t_s4n_s32n_tensor_op_s32_sm75.cu
-  
+  gemm_s4t_s4n_s4n_tensor_op_s32_sm75.cu 
+  gemm_s4t_s4n_s4t_tensor_op_s32_sm75.cu
+
   gemm_b1t_b1n_s32t_tensor_op_s32_sm75.cu
   gemm_b1t_b1n_s32n_tensor_op_s32_sm75.cu
 
@@ -244,6 +253,8 @@ cutlass_test_unit_add_executable(
   gemm_s8t_s8n_s8t_tensor_op_s32_sm80.cu
   gemm_s4t_s4n_s32n_tensor_op_s32_sm80.cu
   gemm_s4t_s4n_s32t_tensor_op_s32_sm80.cu
+  gemm_s4t_s4n_s4n_tensor_op_s32_sm80.cu 
+  gemm_s4t_s4n_s4t_tensor_op_s32_sm80.cu
   gemm_b1t_b1n_s32n_tensor_op_s32_sm80.cu
   gemm_b1t_b1n_s32t_tensor_op_s32_sm80.cu
 
@@ -383,3 +394,150 @@ cutlass_test_unit_add_executable(
 
 endif()
 
+if (NOT CUDA_COMPILER MATCHES "[Cc]lang")
+
+add_dependencies(
+  cutlass_test_unit_gemm_device
+  cutlass_test_unit_gemm_device_blas3
+  )
+
+add_dependencies(
+  test_unit_gemm_device
+  test_unit_gemm_device_blas3
+  )
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_blas3
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  ## SYRK 
+  # Syrk SM80 f64 tests
+  syrk_f64n_f64t_tensor_op_f64_sm80.cu 
+  syrk_f64t_f64n_tensor_op_f64_sm80.cu 
+
+  # Syrk SM80 f32 tests
+  syrk_tf32n_f32t_tensor_op_f32_sm80.cu
+  syrk_tf32t_f32t_tensor_op_f32_sm80.cu
+  syrk_f32n_f32t_tensor_op_fast_f32_sm80.cu
+  syrk_f32t_f32t_tensor_op_fast_f32_sm80.cu
+
+  # Syrk SM80 complex f64 tests
+  syrk_cf64n_cf64t_tensor_op_f64_sm80.cu
+  syrk_cf64n_cf64n_tensor_op_f64_sm80.cu
+  syrk_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
+
+  # Syrk SM80 complex f32 tests
+  syrk_cf32n_cf32t_tensor_op_f32_sm80.cu
+  syrk_cf32n_cf32n_tensor_op_f32_sm80.cu
+  syrk_cf32n_cf32t_tensor_op_fast_f32_sm80.cu
+  syrk_cf32n_cf32n_tensor_op_fast_f32_sm80.cu
+
+  ## HERK 
+  # Herk SM80 complex f64 tests
+  herk_cf64h_cf64n_tensor_op_f64_sm80.cu
+
+  # Herk SM80 complex f32 tests
+  herk_cf32h_cf32n_tensor_op_f32_sm80.cu
+  herk_cf32h_cf32n_tensor_op_fast_f32_sm80.cu
+
+  ## TRMM
+  # Trmm SM80 f64 tests
+  trmm_f64n_f64n_f64t_tensor_op_f64_ls_sm80.cu
+  trmm_f64n_f64n_f64t_tensor_op_f64_rs_sm80.cu
+  trmm_f64t_f64t_f64n_tensor_op_f64_ls_sm80.cu
+  trmm_f64t_f64t_f64n_tensor_op_f64_rs_sm80.cu
+  trmm_f64n_f64t_f64t_tensor_op_f64_rs_sm80.cu
+
+  # Trmm SM80 f32 tests
+  trmm_tf32t_tf32n_f32t_tensor_op_f32_ls_sm80.cu
+  trmm_tf32n_tf32t_f32t_tensor_op_f32_ls_sm80.cu
+  trmm_tf32n_tf32t_f32t_tensor_op_f32_rs_sm80.cu
+  trmm_tf32t_tf32n_f32n_tensor_op_f32_ls_sm80.cu
+  trmm_f32t_f32n_f32t_tensor_op_fast_f32_ls_sm80.cu
+  trmm_f32n_f32t_f32t_tensor_op_fast_f32_ls_sm80.cu
+  trmm_f32n_f32t_f32t_tensor_op_fast_f32_rs_sm80.cu
+  trmm_f32t_f32n_f32n_tensor_op_fast_f32_ls_sm80.cu
+
+  # Trmm SM80 complex f64 tests
+  trmm_cf64n_cf64n_cf64t_tensor_op_f64_sm80.cu
+  trmm_cf64n_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
+
+  # Trmm SM80 complex f32 tests
+  trmm_cf32n_cf32n_cf32t_tensor_op_f32_sm80.cu
+  trmm_cf32n_cf32n_cf32t_tensor_op_fast_f32_sm80.cu
+
+  ## SYR2K
+  # Syr2k SM80 f64 tests
+  syr2k_f64n_f64t_tensor_op_f64_sm80.cu
+  syr2k_f64n_f64n_tensor_op_f64_sm80.cu
+  syr2k_f64t_f64n_tensor_op_f64_sm80.cu
+
+  # Syr2k SM80 f32 tests
+  syr2k_tf32n_f32n_tensor_op_f32_sm80.cu
+  syr2k_tf32t_f32n_tensor_op_f32_sm80.cu
+  syr2k_f32n_f32n_tensor_op_fast_f32_sm80.cu
+  syr2k_f32t_f32n_tensor_op_fast_f32_sm80.cu
+
+  # Syr2k SM80 complex f64 tests
+  syr2k_cf64n_cf64t_tensor_op_f64_sm80.cu
+  syr2k_cf64n_cf64n_tensor_op_f64_sm80.cu
+
+  # Syr2k SM80 complex f32 tests
+  syr2k_cf32n_cf32n_tensor_op_f32_sm80.cu
+  syr2k_cf32n_cf32t_tensor_op_f32_sm80.cu
+  syr2k_cf32n_cf32n_tensor_op_fast_f32_sm80.cu
+  syr2k_cf32n_cf32t_tensor_op_fast_f32_sm80.cu
+
+  ## HER2K
+  # Her2k SM80 complex f64 tests
+  her2k_cf64n_cf64n_tensor_op_f64_sm80.cu
+
+  # Her2k SM80 complex f32 tests
+  her2k_cf32h_cf32n_tensor_op_f32_sm80.cu
+  her2k_cf32h_cf32n_tensor_op_fast_f32_sm80.cu
+
+  ## SYMM
+  # Symm SM80 f64 tests
+  symm_f64n_f64n_tensor_op_f64_ls_sm80.cu
+  symm_f64n_f64n_tensor_op_f64_rs_sm80.cu
+  symm_f64n_f64t_tensor_op_f64_ls_sm80.cu
+  symm_f64n_f64t_tensor_op_f64_rs_sm80.cu
+  symm_f64t_f64n_tensor_op_f64_ls_sm80.cu
+  symm_f64t_f64n_tensor_op_f64_rs_sm80.cu
+  symm_f64t_f64t_tensor_op_f64_ls_sm80.cu
+  symm_f64t_f64t_tensor_op_f64_rs_sm80.cu
+
+  # Symm SM80 f32 tests
+  symm_tf32n_f32n_tensor_op_f32_ls_sm80.cu
+  symm_tf32n_f32n_tensor_op_f32_rs_sm80.cu
+  symm_tf32t_f32t_tensor_op_f32_ls_sm80.cu
+  symm_f32n_f32n_tensor_op_fast_f32_ls_sm80.cu
+  symm_f32n_f32n_tensor_op_fast_f32_rs_sm80.cu
+  symm_f32t_f32t_tensor_op_fast_f32_ls_sm80.cu
+
+  # Symm SM80 complex f64 tests
+  symm_cf64n_cf64n_cf64n_tensor_op_ls_f64_sm80.cu
+  symm_cf64n_cf64n_cf64n_tensor_op_rs_f64_sm80.cu
+  symm_cf64n_cf64n_cf64n_tensor_op_ls_f64_gaussian_sm80.cu
+
+  # Symm SM80 complex f32 tests
+  symm_cf32n_cf32n_tensor_op_f32_ls_sm80.cu
+  symm_cf32n_cf32n_tensor_op_f32_rs_sm80.cu
+  symm_cf32n_cf32n_tensor_op_fast_f32_ls_sm80.cu
+  symm_cf32n_cf32n_tensor_op_fast_f32_rs_sm80.cu
+
+  # Hemm SM80 complex f64 tests
+  hemm_cf64h_cf64n_cf64n_tensor_op_ls_f64_sm80.cu
+  hemm_cf64h_cf64n_cf64n_tensor_op_rs_f64_sm80.cu
+  hemm_cf64h_cf64n_cf64n_tensor_op_ls_f64_gaussian_sm80.cu
+  
+  # Hemm SM80 complex f32 tests
+  hemm_cf32h_cf32n_tensor_op_f32_ls_sm80.cu
+  hemm_cf32h_cf32n_tensor_op_f32_rs_sm80.cu
+  hemm_cf32h_cf32n_tensor_op_fast_f32_ls_sm80.cu
+  hemm_cf32h_cf32n_tensor_op_fast_f32_rs_sm80.cu
+  )
+
+endif()

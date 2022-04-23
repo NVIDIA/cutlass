@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -42,6 +48,8 @@
 #include "cutlass/subbyte_reference.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/tensor_view_planar_complex.h"
+#include "cutlass/blas3.h"
+
 #include "cutlass/util/distribution.h"
 #include "tensor_foreach.h"
 
@@ -303,6 +311,51 @@ struct TensorFillGaussianFunc {
   }
 };
 
+/// Computes a random Gaussian distribution
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorFillSymmetricGaussianFunc {
+
+  using TensorView = TensorView<Element, Layout>;
+
+  //
+  // Data members
+  //
+
+  TensorView view;
+  RandomGaussianFunc<Element> func;
+  cutlass::FillMode fill_mode;
+
+  //
+  // Methods
+  //
+
+  /// Construction of Gaussian RNG functor.
+  TensorFillSymmetricGaussianFunc(
+    TensorView view_ = TensorView(),
+    RandomGaussianFunc<Element> func_ = RandomGaussianFunc<Element>(),
+    cutlass::FillMode fill_mode_ = cutlass::FillMode::kInvalid
+  ):
+    view(view_), func(func_), fill_mode(fill_mode_) {
+
+  }
+
+  /// Compute random value and update RNG state
+  void operator()(Coord<Layout::kRank> const &coord) const {
+    // Fill half of matrix based on FillMode
+    if (Layout::kRank == 2 && 
+        fill_mode == cutlass::FillMode::kLower &&
+        coord[0] >= coord[1]) {
+      view.at(coord) = func();
+    } else if (Layout::kRank == 2 && 
+        fill_mode == cutlass::FillMode::kUpper &&
+        coord[0] <= coord[1]) {
+      view.at(coord) = func();
+    }
+  }
+};
+
 } // namespace detail
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -351,6 +404,36 @@ void TensorFillRandomGaussian(
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+/// Fills a tensor with random values with a Gaussian distribution.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillSymmetricRandomGaussian(
+  TensorView<Element, Layout> dst,        ///< destination tensor
+  uint64_t seed,                          ///< seed for RNG
+  cutlass::FillMode fill_mode,            ///< FillMode for symmetric matrices
+  double mean = 0,                        ///< Gaussian distribution's mean
+  double stddev = 1,                      ///< Gaussian distribution's standard deviation
+  int bits = -1) {                        ///< If non-negative, specifies number of fractional bits that 
+                                          ///  are not truncated to zero. Permits reducing precision of
+                                          ///  data.
+
+  detail::RandomGaussianFunc<Element> random_func(seed, mean, stddev, bits);
+
+  detail::TensorFillSymmetricGaussianFunc<Element, Layout> func(
+    dst,
+    random_func,
+    fill_mode
+  );
+
+  TensorForEach(
+    dst.extent(),
+    func
+  );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Fills a tensor with random values with a Gaussian distribution.
 template <
   typename Element                        ///< Element type
@@ -566,6 +649,104 @@ struct TensorFillRandomUniformFunc {
   }
 };
 
+/// Computes a random Gaussian distribution
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorFillSymmetricRandomUniformFunc {
+
+  using TensorView = TensorView<Element, Layout>;
+
+  //
+  // Data members
+  //
+
+  TensorView view;
+  RandomUniformFunc<Element> func;
+  cutlass::FillMode fill_mode;
+
+  //
+  // Methods
+  //
+
+  /// Construction of Gaussian RNG functor.
+  TensorFillSymmetricRandomUniformFunc(
+    TensorView view_ = TensorView(),
+    RandomUniformFunc<Element> func_ = RandomUniformFunc<Element>(),
+    cutlass::FillMode fill_mode_ = cutlass::FillMode::kInvalid
+  ):
+    view(view_), func(func_), fill_mode(fill_mode_) {
+
+  }
+
+  /// Compute random value and update RNG state
+  void operator()(Coord<Layout::kRank> const &coord) const {
+    // Fill half of matrix based on FillMode
+    if (Layout::kRank == 2 && 
+        fill_mode == cutlass::FillMode::kLower &&
+        coord[0] >= coord[1]) {
+      view.at(coord) = func();
+    } else if (Layout::kRank == 2 && 
+        fill_mode == cutlass::FillMode::kUpper &&
+        coord[0] <= coord[1]) {
+      view.at(coord) = func();
+    }
+  }
+};
+
+
+//
+// We expect to release this with CUTLASS 2.4. -akerr
+
+/// Computes a random Uniform distribution and pads diagonal with zeros
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorFillPadDiagonalRandomUniformFunc {
+
+  using TensorView = TensorView<Element, Layout>;
+
+  //
+  // Data members
+  //
+
+  TensorView view;
+  RandomUniformFunc<Element> func;
+  cutlass::FillMode fill_mode;
+  int alignment;
+
+  //
+  // Methods
+  //
+
+  /// Construction of Gaussian RNG functor.
+  TensorFillPadDiagonalRandomUniformFunc(
+    TensorView view_ = TensorView(),
+    RandomUniformFunc<Element> func_ = RandomUniformFunc<Element>(),
+    cutlass::FillMode fill_mode_ = cutlass::FillMode::kInvalid,
+    int alignment_ = 1
+  ):
+    view(view_), func(func_), fill_mode(fill_mode_), alignment(alignment_) {
+
+  }
+
+  /// Compute random value and update RNG state
+  void operator()(Coord<Layout::kRank> const &coord) const {
+    // Fill half of matrix based on FillMode
+    if (Layout::kRank == 2 && 
+        (fill_mode == cutlass::FillMode::kLower) &&
+        (coord[0] >= coord[1]) || 
+        ((coord[1] - coord[0]) >= alignment)) {
+      view.at(coord) = func();
+    } else if (Layout::kRank == 2 && 
+        fill_mode == cutlass::FillMode::kUpper &&
+        (coord[0] <= coord[1]) ||
+        ((coord[0] - coord[1]) >= alignment)) {
+      view.at(coord) = func();
+    }
+  }
+};
+
 } // namespace detail
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -639,6 +820,69 @@ void TensorFillRandomUniform(
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fills a tensor with random values with a uniform random distribution.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillSymmetricRandomUniform(
+  TensorView<Element, Layout> dst,        ///< destination tensor
+  uint64_t seed,                          ///< seed for RNG
+  cutlass::FillMode fill_mode,            ///< FillMode for symmetric matrices
+  double max = 1,                         ///< upper bound of distribution
+  double min = 0,                         ///< lower bound for distribution
+  int bits = -1) {                        ///< If non-negative, specifies number of fractional bits that 
+                                          ///  are not truncated to zero. Permits reducing precision of
+                                          ///  data.
+
+  detail::RandomUniformFunc<Element> random_func(seed, max, min, bits);
+
+  detail::TensorFillSymmetricRandomUniformFunc<Element, Layout> func(
+    dst,
+    random_func,
+    fill_mode
+  );
+
+  TensorForEach(
+    dst.extent(),
+    func
+  );
+}
+
+/// Fills a tensor with random values with a uniform random distribution pads zeros along diagonal
+template <
+  typename Element,                       ///< Element type
+  typename Layout>                        ///< Layout function
+void TensorFillPadDiagonalRandomUniform(
+  TensorView<Element, Layout> dst,        ///< destination tensor
+  uint64_t seed,                          ///< seed for RNG
+  cutlass::FillMode fill_mode,            ///< FillMode for symmetric matrices
+  double max = 1,                         ///< upper bound of distribution
+  double min = 0,                         ///< lower bound for distribution
+  int bits = -1,                          ///< If non-negative, specifies number of fractional bits that 
+                                          ///  are not truncated to zero. Permits reducing precision of
+                                          ///  data.
+  int alignment = 1 
+) {
+
+  detail::RandomUniformFunc<Element> random_func(seed, max, min, bits);
+
+  detail::TensorFillPadDiagonalRandomUniformFunc<Element, Layout> func(
+    dst,
+    random_func,
+    fill_mode,
+    alignment
+  );
+
+  TensorForEach(
+    dst.extent(),
+    func
+  );
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Fills a tensor with random values with a uniform random distribution.
 template <
   typename Element                        ///< Element type

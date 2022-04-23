@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -106,6 +112,8 @@ struct MmaGeneric {
     ElementC, LayoutC,
     Operator>;
 
+  static bool const kMultipleOf2 = ((Shape::kM % 2 == 0) && (Shape::kN % 2 == 0));
+
   //
   // Methods
   //
@@ -135,30 +143,106 @@ struct MmaGeneric {
     // Compute matrix product
     CUTLASS_PRAGMA_UNROLL
     for (int k = 0; k < Shape::kK; ++k) {
+      #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 860)
+      if (kMultipleOf2 && platform::is_same<ElementA, float>::value && platform::is_same<ElementB, float>::value && platform::is_same<ElementC, float>::value) {
 
-      CUTLASS_PRAGMA_UNROLL
-      for (int n = 0; n < Shape::kN; ++n) {
-
+        //2x2 zigzag - m and n loops to increment by 2. Inner loop to process 4 multiply-adds in a 2x2 tile.
         CUTLASS_PRAGMA_UNROLL
-        for (int m = 0; m < Shape::kM; ++m) {
-
-          int m_serpentine = (n % 2) ? (Shape::kM - 1 - m) : m;
-
-          MatrixCoord mn(m_serpentine, n);
-          MatrixCoord mk(m_serpentine, k);
-          MatrixCoord kn(k, n);
-
-          Array<ElementC, 1> d;
-          Array<ElementA, 1> a;
-          Array<ElementB, 1> b;
-
-          d[0] = d_ref.at(mn);
-          a[0] = a_ref.at(mk);
-          b[0] = b_ref.at(kn);
-
-          mma_op(d, a, b, d);
-
-          d_ref.at(mn) = d[0];
+        for (int n = 0; n < Shape::kN; n+=2) {
+  
+          CUTLASS_PRAGMA_UNROLL
+          for (int m = 0; m < Shape::kM; m+=2) {
+  
+            int m_serpentine = (n % 4) ? (Shape::kM - 2 - m) : m;
+  
+            //top-left element in 2x2 tile
+            {
+              MatrixCoord mn(m_serpentine, n);
+              MatrixCoord mk(m_serpentine, k);
+              MatrixCoord kn(k, n);
+              Array<ElementC, 1> d;
+              Array<ElementA, 1> a;
+              Array<ElementB, 1> b;
+              d[0] = d_ref.at(mn);
+              a[0] = a_ref.at(mk);
+              b[0] = b_ref.at(kn);
+              mma_op(d, a, b, d);
+              d_ref.at(mn) = d[0];
+            }
+  
+            //bottom-left element in 2x2 tile
+            {
+              MatrixCoord mn(m_serpentine+1, n);
+              MatrixCoord mk(m_serpentine+1, k);
+              MatrixCoord kn(k, n);
+              Array<ElementC, 1> d;
+              Array<ElementA, 1> a;
+              Array<ElementB, 1> b;
+              d[0] = d_ref.at(mn);
+              a[0] = a_ref.at(mk);
+              b[0] = b_ref.at(kn);
+              mma_op(d, a, b, d);
+              d_ref.at(mn) = d[0];
+            }
+  
+            //bottom-right element in 2x2 tile
+            {
+              MatrixCoord mn(m_serpentine+1, n+1);
+              MatrixCoord mk(m_serpentine+1, k);
+              MatrixCoord kn(k, n+1);
+              Array<ElementC, 1> d;
+              Array<ElementA, 1> a;
+              Array<ElementB, 1> b;
+              d[0] = d_ref.at(mn);
+              a[0] = a_ref.at(mk);
+              b[0] = b_ref.at(kn);
+              mma_op(d, a, b, d);
+              d_ref.at(mn) = d[0];
+            }
+  
+            //top-right element in 2x2 tile
+            {
+              MatrixCoord mn(m_serpentine, n+1);
+              MatrixCoord mk(m_serpentine, k);
+              MatrixCoord kn(k, n+1);
+              Array<ElementC, 1> d;
+              Array<ElementA, 1> a;
+              Array<ElementB, 1> b;
+              d[0] = d_ref.at(mn);
+              a[0] = a_ref.at(mk);
+              b[0] = b_ref.at(kn);
+              mma_op(d, a, b, d);
+              d_ref.at(mn) = d[0];
+            }
+          }
+        }
+      } else 
+      #endif
+      {
+        CUTLASS_PRAGMA_UNROLL
+        for (int n = 0; n < Shape::kN; ++n) {
+  
+          CUTLASS_PRAGMA_UNROLL
+          for (int m = 0; m < Shape::kM; ++m) {
+  
+            int m_serpentine = (n % 2) ? (Shape::kM - 1 - m) : m;
+  
+            MatrixCoord mn(m_serpentine, n);
+            MatrixCoord mk(m_serpentine, k);
+            MatrixCoord kn(k, n);
+  
+            Array<ElementC, 1> d;
+            Array<ElementA, 1> a;
+            Array<ElementB, 1> b;
+  
+            d[0] = d_ref.at(mn);
+            a[0] = a_ref.at(mk);
+            b[0] = b_ref.at(kn);
+  
+            mma_op(d, a, b, d);
+  
+            d_ref.at(mn) = d[0];
+          }
         }
       }
     }

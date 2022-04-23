@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.                                 
- *                                                                                                    
- * Redistribution and use in source and binary forms, with or without modification, are permitted     
- * provided that the following conditions are met:                                                    
- *     * Redistributions of source code must retain the above copyright notice, this list of          
- *       conditions and the following disclaimer.                                                     
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of       
- *       conditions and the following disclaimer in the documentation and/or other materials          
- *       provided with the distribution.                                                              
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used     
- *       to endorse or promote products derived from this software without specific prior written     
- *       permission.                                                                                  
- *                                                                                                    
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR     
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND   
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE    
- * FOR ANY DIRECT,INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,      
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;    
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,      
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE     
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
  *
  **************************************************************************************************/
@@ -283,7 +289,7 @@ class PredicatedTileAccessIteratorPredicates {
 
   /// Returns whether access is valid or not
   CUTLASS_HOST_DEVICE
-  bool valid() {
+  bool valid() const {
 
     
     int pred_idx = 
@@ -305,7 +311,7 @@ class PredicatedTileAccessIteratorPredicates {
 /// PredicatedTileAccessIterator
 ///
 template <typename Shape, typename Element, typename Layout, int AdvanceRank,
-          typename ThreadMap, typename AccessType>
+          typename ThreadMap, typename AccessType, bool Gather = false>
 class PredicatedTileAccessIterator;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -313,9 +319,9 @@ class PredicatedTileAccessIterator;
 /// Specialization of PredicatedTileAccessIterator for pitch-linear data.
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, typename AccessType_>
+          typename ThreadMap_, typename AccessType_, bool Gather>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, Gather> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -390,6 +396,17 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
   /// Used for out-of-order visitation
   bool is_residue_tile_;
 
+  /// Below is used when Gather is turned on.  We need to record strided_offset
+  /// and contiguous_offset seperated to compute the offset by using
+  ///
+  /// offset = contiguous_offset + indices[strided_offset]
+  ///
+
+  /// Gather indices
+  int const *indices_;
+
+  Index gather_offset_strided;
+
  private:
   /// Computes predicates based on internally tracked per-thread offset.
   CUTLASS_DEVICE
@@ -416,19 +433,27 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
       /// ID of each participating thread
       int thread_id,
       /// Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      /// Gather indices
+      int const *indices = nullptr)
       : params_(params),
 	pointer_(reinterpret_cast<BytePointer>(
             const_cast<NonConstPointer>(pointer))),
 	the_predicates(extent),
-        is_residue_tile_(true) {
+        is_residue_tile_(true),
+        indices_(indices) {
 
     the_predicates.set_predicates(thread_id, threadblock_offset);
           
     // update internal pointers
     Layout layout(params_.stride_);
-    add_pointer_offset(layout(the_predicates.thread_offset_));
 
+    if (!Gather) {
+      add_pointer_offset(layout(the_predicates.thread_offset_));
+    } else {
+      gather_offset_strided = the_predicates.thread_offset_.strided();
+      add_pointer_offset(layout(make_Coord(the_predicates.thread_offset_.contiguous(), 0)));
+    }
   }
 
   /// Construct a PredicatedTileAccessIterator with zero threadblock offset
@@ -465,33 +490,68 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
 
       the_predicates.thread_offset_ += the_predicates.residue_offset_;
 
-      Layout layout(params_.stride_);
-      add_pointer_offset(layout(the_predicates.residue_offset_));
-
       the_predicates.compute_predicates_(the_predicates.extent_, true);
 
-      if (kAdvanceRank) {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided() - 1);
-        pointer_ += Shape::kContiguous * tile_offset.contiguous();
+      Layout layout(params_.stride_);
+
+      if (!Gather) {
+        add_pointer_offset(layout(the_predicates.residue_offset_));
+
+        if (kAdvanceRank) {
+          pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided() - 1);
+          pointer_ += Shape::kContiguous * tile_offset.contiguous();
+        } else {
+          pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous() - 1);
+          pointer_ += Shape::kStrided * tile_offset.strided();
+        }
       } else {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous() - 1);
-        pointer_ += Shape::kStrided * tile_offset.strided();
+        gather_offset_strided = the_predicates.thread_offset_.strided();
+        add_pointer_offset(layout(make_Coord(the_predicates.residue_offset_.contiguous(), 0)));
+
+        if (kAdvanceRank) {
+          gather_offset_strided += Shape::kStrided * (tile_offset.strided() - 1);
+          add_pointer_offset(Shape::kContiguous * tile_offset.contiguous());
+        } else {
+          add_pointer_offset(Shape::kContiguous * (tile_offset.contiguous() - 1));
+          gather_offset_strided += Shape::kStrided * tile_offset.strided();
+        }
       }
     } else {
-      if (kAdvanceRank) {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided());
-        pointer_ += Shape::kContiguous * tile_offset.contiguous();
+      if (!Gather) {
+        if (kAdvanceRank) {
+          pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided());
+          pointer_ += Shape::kContiguous * tile_offset.contiguous();
+        } else {
+          pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous());
+          pointer_ += Shape::kStrided * tile_offset.strided();
+        }
       } else {
-        pointer_ += params_.inc_advance_ * LongIndex(tile_offset.contiguous());
-        pointer_ += Shape::kStrided * tile_offset.strided();
+        add_pointer_offset(Shape::kContiguous * tile_offset.contiguous());
+        gather_offset_strided += Shape::kStrided * tile_offset.strided();
       }
     }
+
     is_residue_tile_ = false;
   }
 
   /// Returns a pointer
   CUTLASS_HOST_DEVICE
   AccessType *get() const {
+    if (Gather) {
+      assert(indices_);
+
+      if (!valid()) {
+        return nullptr;
+      }
+
+      LongIndex contiguous_offset = the_predicates.iteration_contiguous_ * (ThreadMap::Delta::kContiguous * sizeof_bits<Element>::value / 8) + the_predicates.iteration_vector_;
+      int strided_index = gather_offset_strided + the_predicates.iteration_strided_ * ThreadMap::Delta::kStrided;
+
+      LongIndex strided_offset = indices_[strided_index] * LongIndex(params_.stride_) * sizeof_bits<Element>::value / 8;
+
+      return reinterpret_cast<AccessType *>(pointer_ + contiguous_offset + strided_offset);
+    }
+
     return reinterpret_cast<AccessType *>(
         pointer_ + 
         the_predicates.iteration_contiguous_ * (ThreadMap::Delta::kContiguous * sizeof_bits<Element>::value) / 8) + the_predicates.iteration_vector_;
@@ -521,7 +581,10 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
     ++the_predicates.iteration_strided_;
 
     if (the_predicates.iteration_strided_ < ThreadMap::Iterations::kStrided) {
-      pointer_ += params_.inc_strided_;
+      if (!Gather) {
+        pointer_ += params_.inc_strided_;
+      }
+
       return *this;
     }
 
@@ -529,13 +592,15 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
     // which means we enter the next tile.
     the_predicates.iteration_strided_ = 0;
 
-    // advance to next tile
-    pointer_ += params_.inc_next_;
-
-    // now return to start tile - if the iterator is subsequently advanced, this
-    // subtraction as well as the subsequent integer addition are both elided by
-    // the compiler.
-    pointer_ -= params_.inc_advance_;
+    if (!Gather) {
+      // advance to next tile
+      pointer_ += params_.inc_next_;
+  
+      // now return to start tile - if the iterator is subsequently advanced, this
+      // subtraction as well as the subsequent integer addition are both elided by
+      // the compiler.
+      pointer_ -= params_.inc_advance_;
+    }
 
     return *this;
   }
@@ -574,10 +639,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
 
   /// Returns whether access is valid or not
   CUTLASS_HOST_DEVICE
-  bool valid() {
+  bool valid() const {
     return the_predicates.valid();
   }
-
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -590,9 +654,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
 ///            MaskedTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, typename AccessType_>
+          typename ThreadMap_, typename AccessType_, bool Gather>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, Gather> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -618,7 +682,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
 
   using UnderlyingIterator = PredicatedTileAccessIterator<
       layout::PitchLinearShape<Shape::kRow, Shape::kColumn>, Element,
-      layout::PitchLinear, (kAdvanceRank == 0 ? 0 : 1), ThreadMap, AccessType>;
+      layout::PitchLinear, (kAdvanceRank == 0 ? 0 : 1), ThreadMap, AccessType, Gather>;
 
   /// Predicate vector stores mask to guard accesses
   using Mask = typename UnderlyingIterator::Mask;
@@ -672,12 +736,15 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
       ///< ID of each participating thread
       int thread_id,
       ///< Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.row(), extent.column()),
                   thread_id,
                   layout::PitchLinearCoord(threadblock_offset.row(),
-                                           threadblock_offset.column())) {}
+                                           threadblock_offset.column()),
+                  indices) {}
 
   /// Construct a PredicatedTileAccessIterator with zero threadblock offset
   CUTLASS_HOST_DEVICE
@@ -771,9 +838,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
 ///            MaskedTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, typename AccessType_>
+          typename ThreadMap_, typename AccessType_, bool Gather>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, Gather> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -799,7 +866,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
 
   using UnderlyingIterator = PredicatedTileAccessIterator<
       layout::PitchLinearShape<Shape::kColumn, Shape::kRow>, Element,
-      layout::PitchLinear, (kAdvanceRank == 0 ? 1 : 0), ThreadMap, AccessType>;
+      layout::PitchLinear, (kAdvanceRank == 0 ? 1 : 0), ThreadMap, AccessType, Gather>;
 
   static int const kAccessesPerVector = UnderlyingIterator::kAccessesPerVector;
 
@@ -853,12 +920,15 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
       ///< ID of each participating thread
       int thread_id,
       ///< Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      /// Gather indices
+      int const *indices = nullptr)
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.column(), extent.row()),
                   thread_id,
                   layout::PitchLinearCoord(threadblock_offset.column(),
-                                           threadblock_offset.row())) {}
+                                           threadblock_offset.row()),
+                  indices) {}
 
   /// Construct a PredicatedTileAccessIterator with zero threadblock offset
   CUTLASS_HOST_DEVICE
@@ -954,7 +1024,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
 template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1087,7 +1157,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
       ///< ID of each participating thread
       int thread_id,
       ///< Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : params_(params),
         pointer_(reinterpret_cast<BytePointer>(
             const_cast<NonConstPointer>(pointer))),
@@ -1099,7 +1171,6 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
     // update internal pointers
     Layout layout(params_.stride_);
     add_pointer_offset(layout(the_predicates.thread_offset_));
-
   }
 
   /// Construct a PredicatedTileAccessIterator with zero threadblock offset
@@ -1256,7 +1327,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
 template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1332,7 +1403,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMa
       ///< ID of each participating thread
       int thread_id,
       ///< Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.row(), extent.column()),
                   thread_id,
@@ -1433,7 +1506,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMa
 template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2RowMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1509,7 +1582,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2RowMajor
       ///< ID of each participating thread
       int thread_id,
       ///< Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.column(), extent.row()),
                   thread_id,
@@ -1613,7 +1688,7 @@ template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_, int InterleavedK>
 class PredicatedTileAccessIterator<Shape_, Element_,
                                    layout::ColumnMajorInterleaved<InterleavedK>,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1693,7 +1768,9 @@ class PredicatedTileAccessIterator<Shape_, Element_,
       /// ID of each participating thread
       int thread_id,
       /// Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.row() * kInterleavedK,
                                            extent.column() / kInterleavedK),
@@ -1796,7 +1873,7 @@ template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_, int InterleavedK>
 class PredicatedTileAccessIterator<Shape_, Element_,
                                    layout::RowMajorInterleaved<InterleavedK>,
-                                   AdvanceRank, ThreadMap_, AccessType_> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1877,7 +1954,9 @@ class PredicatedTileAccessIterator<Shape_, Element_,
       /// ID of each participating thread
       int thread_id,
       /// Initial offset of threadblock
-      TensorCoord const &threadblock_offset)
+      TensorCoord const &threadblock_offset,
+      int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
+      )
       : iterator_(params.params_, pointer,
                   layout::PitchLinearCoord(extent.column() * kInterleavedK,
                                            extent.row() / kInterleavedK),
