@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -34,6 +40,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
+#include "cutlass/transform/thread/unaryOp.h"
 
 #include "cutlass/array.h"
 #include "cutlass/half.h"
@@ -704,13 +711,18 @@ template <
   typename T,
   typename S,
   int N,
-  FloatRoundStyle Round = FloatRoundStyle::round_to_nearest
+  FloatRoundStyle Round = FloatRoundStyle::round_to_nearest,
+  typename Transform = cutlass::transform::thread::UnaryTransform::Identity
 >
 struct NumericArrayConverter {
 
   using result_type = Array<T, N>;
   using source_type = Array<S, N>;
   static FloatRoundStyle const round_style = Round;
+
+  static_assert(platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value ||
+                platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Conjugate>::value,
+                  "Unary Operator not supported.");
 
   CUTLASS_HOST_DEVICE
   static result_type convert(source_type const & s) {
@@ -720,7 +732,12 @@ struct NumericArrayConverter {
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N; ++i) {
-      result[i] = convert_(s[i]);
+      if( platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value )
+      {
+        result[i] = convert_(s[i]);
+      } else { // conjugate
+        result[i] = conj(convert_(s[i]));
+      }
     }
 
     return result;
@@ -735,17 +752,31 @@ struct NumericArrayConverter {
 template <
   typename T,
   int N,
-  FloatRoundStyle Round
+  FloatRoundStyle Round,
+  typename Transform
 >
-struct NumericArrayConverter<T, T, N, Round> {
+struct NumericArrayConverter<T, T, N, Round, Transform> {
 
   using result_type = Array<T, N>;
   using source_type = Array<T, N>;
   static FloatRoundStyle const round_style = Round;
 
+  static_assert(platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value ||
+                platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Conjugate>::value,
+                  "Unary Operator not supported.");
+
   CUTLASS_HOST_DEVICE
   result_type operator()(source_type const &s) {
-    return s;
+      if( platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value )
+      {
+          return s;
+      } else {
+          result_type result;
+          for (int i = 0; i < N; ++i) {
+              result[i] = conj(s[i]);
+          }
+          return result;
+      }
   }
 };
 

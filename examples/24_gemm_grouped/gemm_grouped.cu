@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -44,13 +50,13 @@
     Examples:
 
       # Runs a grouped GEMM with 100 random problem sizes
-      $ ./examples/24_gemm_grouped/24_gemm_grouped --groups 100
+      $ ./examples/24_gemm_grouped/24_gemm_grouped --groups=100
 
       # Runs a grouped GEMM with 100 random problem sizes (with GEMM-K dimension equal to 1024)
-      $ ./examples/24_gemm_grouped/24_gemm_grouped --groups 100 --k=1024 --verbose=true
+      $ ./examples/24_gemm_grouped/24_gemm_grouped --groups=100 --k=1024 --verbose=true
 
       # Runs a grouped GEMM that is equivalent to a batched GEMM
-      $ ./examples/24_gemm_grouped/24_gemm_grouped --groups 100 --m=2048 --n=1024 --k=1024 --verbose=true
+      $ ./examples/24_gemm_grouped/24_gemm_grouped --groups=100 --m=2048 --n=1024 --k=1024 --verbose=true
 
       # Execute Grouped GEMM and profile with NSight
       $ nv-nsight-cu-cli ./examples/24_gemm_grouped/24_gemm_grouped --m=256 --n=256 --k=256 --verbose=true \
@@ -64,6 +70,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <map>
 #include <unordered_map>
 
 #include "cutlass/cutlass.h"
@@ -125,17 +132,28 @@ struct HashGemmCoord {
 struct Options {
 
   bool help;
+  bool error;
   bool reference_check;
 
   std::vector<cutlass::gemm::GemmCoord> problem_sizes;
-  std::unordered_map<cutlass::gemm::GemmCoord, std::vector<int32_t>, HashGemmCoord> problem_bins;
 
+  // problem size bins
+  std::unordered_map<
+    cutlass::gemm::GemmCoord,
+    std::vector<int32_t>,
+    HashGemmCoord> problem_bins;
+
+  int alignment;
   int problem_count;
   int iterations;
   int cuda_streams;
   bool verbose;
   float alpha;
   float beta;
+  std::string benchmark_path;
+
+  std::string   output_tag;
+  std::ofstream output_file;
 
   //
   // Methods
@@ -143,6 +161,8 @@ struct Options {
 
   Options():
     help(false),
+    error(false),
+    alignment(8),
     reference_check(true),
     problem_count(15),
     iterations(20),
@@ -158,8 +178,10 @@ struct Options {
 
     if (cmd.check_cmd_line_flag("help")) {
       help = true;
+      return;
     }
 
+    cmd.get_cmd_line_argument("alignment", alignment, 8);
     cmd.get_cmd_line_argument("groups", problem_count, 15);
     cmd.get_cmd_line_argument("alpha", alpha, 1.0f);
     cmd.get_cmd_line_argument("beta", beta, 0.0f);    
@@ -167,6 +189,51 @@ struct Options {
     cmd.get_cmd_line_argument("streams", cuda_streams, 0);
     cmd.get_cmd_line_argument("verbose", verbose, false);
     cmd.get_cmd_line_argument("reference-check", reference_check, true);
+    cmd.get_cmd_line_argument("benchmark", benchmark_path);
+
+    std::string output_path;
+    cmd.get_cmd_line_argument("tag", output_tag);
+    cmd.get_cmd_line_argument("output_file", output_path);
+
+    if (!output_path.empty()) {
+
+      std::ios_base::openmode open_mode = std::ios_base::out;
+
+      std::ifstream input_file(output_path.c_str());
+
+      if (input_file.good()) {
+        open_mode = std::ios_base::app;
+        input_file.close();
+      }
+
+      output_file.open(output_path.c_str(), open_mode);
+
+      if (output_file.good() && open_mode != std::ios_base::app) {
+        output_file << "Tag,Provider,Kind,Groups,Runtime,GFLOPs\n";
+      }
+    }
+
+    // Decide how to initialize the problems
+    if (!benchmark_path.empty()) {
+      if (!benchmark_problems()) {
+        error = true;
+        problem_sizes.clear();
+        return;
+      }
+    }
+    else {
+      randomize_problems(cmd);
+    }
+
+    // Post-process the problem sizes
+    bin_problems();
+  }
+
+  void randomize_problems(cutlass::CommandLine &cmd) {
+
+    //
+    // For now, randomly choose the problem sizes.
+    //
 
     int cmd_line_m = -1;
     int cmd_line_n = -1;
@@ -175,10 +242,6 @@ struct Options {
     cmd.get_cmd_line_argument("m", cmd_line_m);
     cmd.get_cmd_line_argument("n", cmd_line_n);
     cmd.get_cmd_line_argument("k", cmd_line_k);
-
-    //
-    // For now, randomly choose the problem sizes.
-    //
 
     problem_sizes.reserve(problem_count);
 
@@ -189,27 +252,75 @@ struct Options {
       int k = cmd_line_k;
 
       if (m < 1) {
-        m = 8 * (rand() % 256) + 8;
+        m = alignment * ((rand() % 256) + 1);
       }
 
       if (n < 1) {
-        n = 8 * (rand() % 256) + 8;
+        n = alignment * ((rand() % 256) + 1);
       }
 
       if (k < 1) {
-        k = 8 * (rand() % 256) + 8;
+        k = alignment * ((rand() % 256) + 1);
       }
 
       cutlass::gemm::GemmCoord problem(m, n, k);
 
       problem_sizes.push_back(problem);
     }
+  }
+
+  /// Load a benchmark
+  bool benchmark_problems() {
+    std::ifstream file(benchmark_path);
+    if (!file.good()) {
+      return false;
+    }
+
+    while (file.good()) {
+
+      int idx = -1;
+      std::string extent_str;
+
+      file >> idx >> extent_str;
+
+      if (idx < 0 || extent_str.empty()) {
+        break;
+      }
+
+      cutlass::gemm::GemmCoord extent;
+      std::vector<std::string> tokens;
+
+      cutlass::CommandLine::tokenize(tokens, extent_str, 'x');
+
+      for (int i = 0; i < int(tokens.size()); ++i) {
+        int x = std::atoi(tokens.at(i).c_str());
+
+        // round up
+        if (x % alignment) {
+          x += (alignment - (x % alignment));
+        }
+
+        extent.at(i) = x;
+      }
+
+      if (extent.product()) {
+        problem_sizes.push_back(extent);
+      }
+    }
+
+    return true;
+  }
+
+  /// Post processes the problems
+  void bin_problems() {
+
+    problem_count = int(problem_sizes.size());
 
     //
     // Insert the problem sizes into a sorted container class. This is *NOT* necessary
     // to run the CUTLASS kernel, but it enables the execution of cublas's batched GEMM.
     //
-    for (int i = 0; i < problem_count; ++i) {
+    for (int i = 0; i < int(problem_sizes.size()); ++i) {
       auto it = problem_bins.find(problem_sizes.at(i));
       if (it == problem_bins.end()) {
         problem_bins.insert({problem_sizes.at(i), std::vector<int32_t>({i}) });
@@ -230,6 +341,9 @@ struct Options {
       << "  in device Global Memory and loaded by the kernel.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement.\n\n"
+      << "  --benchmark=<str>           Executes a benchmark problem size.\n"
+      << "  --output_file=<str>         Path to a CSV file to output results. If it exists already, results are appended.\n"
+      << "  --tag=<str>                 String tag to prepend to the CSV file.\n"
       << "  --groups=<int>              Number of individual GEMM problems (default: --groups=15)\n"
       << "  --m=<int>                   Sets the M dimension for all groups. Otherwise, it is selected randomly\n"
       << "  --n=<int>                   Sets the N dimension for all groups. Otherwise, it is selected randomly\n"
@@ -243,13 +357,24 @@ struct Options {
     out << "\n\nExamples:\n\n"
 
       << "# Runs a grouped GEMM with 100 random problem sizes\n"
-      << "$ ./examples/24_gemm_grouped/24_gemm_grouped --groups 100\n\n"
+      << "$ ./examples/24_gemm_grouped/24_gemm_grouped --groups=100\n\n"
 
       << "# Runs a grouped GEMM with 100 random problem sizes (with GEMM-K dimension equal to 1024)\n"
-      << "$ ./examples/24_gemm_grouped/24_gemm_grouped --groups 100 --k=1024 --verbose=true\n\n"
+      << "$ ./examples/24_gemm_grouped/24_gemm_grouped --groups=100 --k=1024 --verbose=true\n\n"
 
       << "# Runs a grouped GEMM that is equivalent to a batched GEMM\n"
-      << "$ ./examples/24_gemm_grouped/24_gemm_grouped --groups 100 --m=2048 --n=1024 --k=1024 --verbose=true\n\n"
+      << "$ ./examples/24_gemm_grouped/24_gemm_grouped --groups=100 --m=2048 --n=1024 --k=1024 --verbose=true\n\n"
+
+      << "# Runs a grouped GEMM problem given an externally supplied benchmark file. This is a text file in which\n"
+      << "# Each line contains a unique group index and an MxNxK triple indicating problemsize.\n"
+      << "#\n"
+      << "# For example, assume the following are the contents of 'problems.txt'\n"
+      << "#\n"
+      << "# 0 1024x256x520\n"
+      << "# 1 520x264x1024\n"
+      << "# 2 96x48x1024\n"
+      << "#\n"
+      << "$ ./examples/24_gemm_grouped/24_gemm_grouped --benchmark=problems.txt\n\n"
 
       << "# Execute Grouped GEMM and profile with NSight\n"
       << "$ nv-nsight-cu-cli ./examples/24_gemm_grouped/24_gemm_grouped --m=256 --n=256 --k=256 --verbose=true --iterations=1 --reference-check=false\n\n";
@@ -302,7 +427,7 @@ private:
   // Data members
   //
 
-  Options options;
+  Options & options;
 
   /// Initialization
   cutlass::Distribution::Kind init_A;
@@ -344,7 +469,7 @@ public:
   //
 
   TestbedGrouped(
-    Options const &options_,
+    Options &options_,
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
@@ -833,6 +958,11 @@ public:
     std::cout << "    " << "Grouped Runtime: " << result.runtime_ms << " ms" << std::endl;
     std::cout << "    " << "Grouped  GFLOPs: " << result.gflops << std::endl;
 
+    if (options.output_file.good()) {
+      options.output_file << options.output_tag << ",CUTLASS,grouped,"
+        << problem_count() << "," << result.runtime_ms << "," << result.gflops << std::endl;
+    }
+
     return result;
   }
 
@@ -923,6 +1053,7 @@ public:
     // Create CUDA streams to maximize concurrency of batched-array GEMM kernels
     //
     std::vector<cudaStream_t>   cuda_streams;
+    char const *provider = "CUTLASS";
 
     //
     // Warmup run
@@ -1189,6 +1320,11 @@ public:
     std::cout << "    " << "Batched Runtime: " << result.runtime_ms << " ms" << std::endl;
     std::cout << "    " << "Batched  GFLOPs: " << result.gflops << std::endl;
 
+    if (options.output_file.good()) {
+      options.output_file << options.output_tag << "," << provider << ",batched,"
+        << problem_count() << "," << result.runtime_ms << "," << result.gflops << std::endl;
+    }
+
     result.passed = true;
     return result;
   }
@@ -1236,6 +1372,11 @@ int main(int argc, char const **args) {
     return 0;
   }
 
+  if (options.error) {
+    std::cerr << "Aborting execution." << std::endl;
+    return -1;
+  }
+
   //
   // Define the Grouped GEMM type
   //
@@ -1243,21 +1384,25 @@ int main(int argc, char const **args) {
   using ElementOutput = cutlass::half_t;
   using ElementAccumulator = float;
 
+  using LayoutA = cutlass::layout::ColumnMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
   using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmGrouped<
     cutlass::half_t, 
-    cutlass::layout::ColumnMajor, 
+    LayoutA,
     cutlass::ComplexTransform::kNone,
     8,
     cutlass::half_t,
-    cutlass::layout::ColumnMajor, 
+    LayoutB,
     cutlass::ComplexTransform::kNone,
     8,
-    ElementOutput, cutlass::layout::ColumnMajor,
+    ElementOutput, LayoutC,
     ElementAccumulator, 
     cutlass::arch::OpClassTensorOp, 
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<128, 128, 32>,
-    cutlass::gemm::GemmShape<64, 64, 32>, 
+    cutlass::gemm::GemmShape<64, 64, 32>,
     cutlass::gemm::GemmShape<16, 8, 16>,
     cutlass::epilogue::thread::LinearCombination<
         ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
@@ -1273,9 +1418,9 @@ int main(int argc, char const **args) {
 
   // Gemm operator cutlass_tensorop_f16_s16816gemm_f16_128x128_32x4_nt_align8
   using GemmBatched = cutlass::gemm::device::GemmUniversal<
-    ElementOutput, cutlass::layout::ColumnMajor,
-    ElementOutput, cutlass::layout::ColumnMajor,
-    ElementOutput, cutlass::layout::ColumnMajor,
+    cutlass::half_t, LayoutA,
+    cutlass::half_t, LayoutB,
+    ElementOutput,   LayoutC,
     ElementAccumulator,
     cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,

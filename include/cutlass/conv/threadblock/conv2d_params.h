@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -71,6 +77,48 @@ struct Conv2dAnalyticParams {
     Conv2dProblemSize const &,  // unused; placeholder to match other Params interfaces.
     Layout const &layout
   ): layout(layout) {
+
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Params structure used for all Conv2d analytic tile iterators
+template< typename Layout_ = layout::TensorNHWC >
+struct Conv2dFewChannelsParams {
+
+  using Layout = Layout_;
+
+
+  int32_t stride_w;
+  int32_t stride_h;
+  int32_t stride_n;
+
+  FastDivmod divmod_P;
+  FastDivmod divmod_Q;
+  FastDivmod divmod_S;
+  FastDivmod divmod_C;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  Conv2dFewChannelsParams() { }
+
+  CUTLASS_HOST_DEVICE
+  Conv2dFewChannelsParams(
+    Conv2dProblemSize const &problem_size,  // unused; placeholder to match other Params interfaces.
+    Layout const &layout
+  ):
+    stride_w(int32_t(layout.stride()[0])),
+    stride_h(int32_t(layout.stride()[1])),
+    stride_n(int32_t(layout.stride()[2])),
+    divmod_P(problem_size.P),
+    divmod_Q(problem_size.Q),
+    divmod_S(problem_size.S),
+    divmod_C(problem_size.C)
+  {
 
   }
 };
@@ -773,6 +821,8 @@ struct Conv2dWgradActivationIteratorOptimizedParams {
   FastDivmod pq_divmod;
   FastDivmod q_divmod;
   FastDivmod c_divmod;
+  FastDivmod s_divmod;
+  int small_channel_conv_s_offset;
 
   //
   // Methods
@@ -789,8 +839,9 @@ struct Conv2dWgradActivationIteratorOptimizedParams {
     sc_divmod(problem_size.S * problem_size.C),
     pq_divmod(problem_size.P * problem_size.Q),
     q_divmod(problem_size.Q),
-    c_divmod(problem_size.C) {
-
+    c_divmod(problem_size.C),
+    s_divmod(problem_size.S * problem_size.dilation_w),
+    small_channel_conv_s_offset((problem_size.S - 1) * problem_size.dilation_w - problem_size.pad_w) {
   }
 
   CUTLASS_HOST_DEVICE

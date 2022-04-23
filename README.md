@@ -1,8 +1,8 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 2.8
+# CUTLASS 2.9
 
-_CUTLASS 2.8 - November 2021_
+_CUTLASS 2.9 - April 2022_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) and related computations at all levels 
@@ -34,18 +34,23 @@ See the [Quick Start Guide](/media/docs/quickstart.md) to get started quickly.
 See the [functionality listing](/media/docs/functionality.md) for the list of operations
 supported at each level of the execution model hierarchy.
 
-# What's New in CUTLASS 2.8
-CUTLASS 2.8 is an update to CUTLASS adding:
-- [TF32x3:](/examples/27_ampere_3xtf32_fast_accurate_tensorop_gemm) emulated single-precision using Tensor Cores; 45+ TFLOPs on NVIDIA A100
-- [Mainloop fusion for Convolution:](/examples/25_ampere_fprop_mainloop_fusion) convolution with fused per-channel bias-add
-- [Grouped GEMM:](/examples/24_gemm_grouped) similar to batched GEMM with distinct problem size per group
-- [Implicit GEMM Convolution fusion](/examples/13_two_tensor_op_fusion/) supports staging 1st convolution's output accumulator in the shared memory on Turing.
-- Optimal performance using [CUDA 11.5](https://developer.nvidia.com/cuda-downloads)
+# What's New in CUTLASS 2.9
+
+CUTLASS 2.9 is an update to CUTLASS adding:
+- [First layer Convolution kernels](/test/unit/conv/device/conv2d_fprop_fixed_channels_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu) specialized for small channel counts and reduced alignment
+- [BLAS3](https://docs.nvidia.com/cuda/cublas/index.html#cublas-level-3-function-reference) operators accelerated by Tensor Cores
+  - [SYRK](/test/unit/gemm/device/syrk_f32n_f32t_tensor_op_fast_f32_sm80.cu), [HERK](/test/unit/gemm/device/herk_cf32h_cf32n_tensor_op_fast_f32_sm80.cu),
+  - [SYR2K](/test/unit/gemm/device/syr2k_f32n_f32n_tensor_op_fast_f32_sm80.cu), [HER2K](/test/unit/gemm/device/her2k_cf32h_cf32n_tensor_op_fast_f32_sm80.cu),
+  - [Out-of-place TRMM](/test/unit/gemm/device/trmm_f32n_f32t_f32t_tensor_op_fast_f32_ls_sm80.cu), and 
+  - [SYMM](/test/unit/gemm/device/symm_f32n_f32n_tensor_op_fast_f32_ls_sm80.cu), [HEMM](/test/unit/gemm/device/hemm_cf32h_cf32n_tensor_op_fast_f32_ls_sm80.cu)
+- [CUTLASS Python](/example/40_cutlass_py) demonstrating JIT compilation of CUTLASS kernels and a Python-based runtime using [CUDA Python](https://developer.nvidia.com/cuda-python)
+- [GEMM + Softmax example](/examples/35_gemm_softmax)
+- Optimal performance using [CUDA 11.6u2](https://developer.nvidia.com/cuda-downloads)
+- Updates and bugfixes from the community (thanks!)
 - **Deprecation announcement:** CUTLASS plans to deprecate the following:
   - Maxwell and Pascal GPU architectures
   - Ubuntu 16.04
   - CUDA 10.2
-- Updates and bugfixes from the community (thanks!)
 
 **See the [CHANGELOG](CHANGELOG.md) for a detailed listing of releases and updates.**
 
@@ -66,8 +71,8 @@ compiled with the [CUDA 11.5 Toolkit](https://developer.nvidia.com/cuda-download
 # Compatibility
 
 CUTLASS requires a C++11 host compiler and 
-performs best when built with the [CUDA 11.5 Toolkit](https://developer.nvidia.com/cuda-toolkit).
-It is also compatible with CUDA 11.0, CUDA 11.1, CUDA 11.2, CUDA 11.3, and CUDA 11.4.
+performs best when built with the [**CUDA 11.6u2 Toolkit**](https://developer.nvidia.com/cuda-toolkit).
+It is also compatible with CUDA 11.0, CUDA 11.1, CUDA 11.2, CUDA 11.3, CUDA 11.4, and CUDA 11.5.
 
 We have tested the following environments.
 
@@ -75,8 +80,10 @@ We have tested the following environments.
 |-----------------|----------|
 | Windows 10      | Microsoft Visual Studio 2015|
 |                 | Microsoft Visual Studio 2017|
+|                 | Microsoft Visual Studio 2019|
 | Ubuntu 18.04 | GCC 7.5.0 |
 | Ubuntu 20.04 | GCC 10.3.0 |
+| Ubuntu 21.04 | GCC 11.2.0 |
 
 Additionally, CUTLASS may be built with clang. 
 See [these instructions](media/docs/quickstart.md#clang) for more details.
@@ -84,10 +91,7 @@ See [these instructions](media/docs/quickstart.md#clang) for more details.
 CUTLASS runs successfully on the following NVIDIA GPUs, and it is expected to be efficient on
 any Volta-, Turing-, or NVIDIA Ampere- architecture NVIDIA GPU. 
 
-For all GPUs, we recommend compiling with the [**CUDA 11.5 Toolkit**](https://developer.nvidia.com/cuda-toolkit)
-for best performance. 
-
-|**GPU**|**CUDA Compute Capability**|**Minimum CUDA Toolkit**|**CUDA Toolkit Enabling Native Tensor Cores**|
+|**GPU**|**CUDA Compute Capability**|**Minimum CUDA Toolkit**|**Minimum CUDA Toolkit Enabling Native Tensor Cores**|
 |---|---|---|---|
 |NVIDIA Tesla V100|7.0|9.2|10.1|
 |NVIDIA TitanV|7.0|9.2|10.1|
@@ -96,6 +100,9 @@ for best performance.
 |NVIDIA A100|8.0|11.0|11.0|
 |NVIDIA A10 |8.6|11.1|11.1|
 |NVIDIA GeForce 3090|8.6|11.1|11.1|
+
+For all GPUs, we recommend compiling with the [CUDA 11.6u2 Toolkit](https://developer.nvidia.com/cuda-toolkit)
+for best performance.
 
 # Documentation
 
@@ -230,6 +237,16 @@ examples/
   13_fused_two_gemms/              # example demonstrating two GEMms fused in one kernel
 
   22_ampere_tensorop_conv2dfprop/  # example demonstrating integer implicit GEMM convolution (forward propagation) using Ampere Tensor Cores
+
+  31_basic_syrk                    # example demonstrating Symetric rank-K update
+
+  32_basic_trmm                    #
+
+  33_ampere_3xtf32_tensorop_symm   #
+
+  35_gemm_softmax                  # example demonstrating GEMM fused with Softmax in mixed precision using Ampere Tensor Cores
+
+  40_cutlass_py                    # example demonstrating CUTLASS with CUDA Python
 ```
 
 ### Tools
@@ -485,27 +502,33 @@ The official list of CUTLASS developers and contributors is available here: [CON
 
 # Copyright
 
-Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: BSD-3-Clause
 
 ```
-  Redistribution and use in source and binary forms, with or without modification, are permitted
-  provided that the following conditions are met:
-      * Redistributions of source code must retain the above copyright notice, this list of
-        conditions and the following disclaimer.
-      * Redistributions in binary form must reproduce the above copyright notice, this list of
-        conditions and the following disclaimer in the documentation and/or other materials
-        provided with the distribution.
-      * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
-        to endorse or promote products derived from this software without specific prior written
-        permission.
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
 
-  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
-  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
-  FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
-  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
-  OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
-  STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  1. Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+  3. Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 

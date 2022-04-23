@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2020, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -28,6 +34,8 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/complex.h"
+#include "cutlass/blas3.h"
+
 #include "cutlass/layout/matrix.h"
 
 #include "cutlass/library/library.h"
@@ -97,6 +105,7 @@ GemmKind_enumerants[] = {
   {"universal", "<Universal>", GemmKind::kUniversal},
   {"planar_complex", "<PlanarComplex>", GemmKind::kPlanarComplex},
   {"planar_complex_array", "<PlanarComplexArray>", GemmKind::kPlanarComplexArray},
+  {"grouped", "<Grouped>", GemmKind::kGrouped},
 };
 
 /// Converts a GemmKind enumerant to a string
@@ -118,6 +127,203 @@ char const *to_string(GemmKind type, bool pretty) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+static struct {
+  char const *text;
+  char const *pretty;
+  RankKKind enumerant;
+}
+RankKKind_enumerants[] = {
+  {"universal", "<Universal>", RankKKind::kUniversal},
+};
+
+/// Converts a SyrkKind enumerant to a string
+char const *to_string(RankKKind type, bool pretty) {
+
+  for (auto const & possible :RankKKind_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  TrmmKind enumerant;
+}
+TrmmKind_enumerants[] = {
+  {"universal", "<Universal>", TrmmKind::kUniversal},
+};
+
+/// Converts a TrmmKind enumerant to a string
+char const *to_string(TrmmKind type, bool pretty) {
+
+  for (auto const & possible :TrmmKind_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  SymmKind enumerant;
+}
+SymmKind_enumerants[] = {
+  {"universal", "<Universal>", SymmKind::kUniversal},
+};
+
+/// Converts a SymmKind enumerant to a string
+char const *to_string(SymmKind type, bool pretty) {
+
+  for (auto const & possible :SymmKind_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  SideMode enumerant;
+}
+SideMode_enumerants[] = {
+  {"left", "Left", SideMode::kLeft},
+  {"right", "Right", SideMode::kRight}
+};
+
+/// Converts a SideMode enumerant to a string
+char const *to_string(SideMode type, bool pretty) {
+
+  for (auto const & possible :SideMode_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  FillMode enumerant;
+}
+FillMode_enumerants[] = {
+  {"lower", "Lower", FillMode::kLower},
+  {"upper", "Upper", FillMode::kUpper}
+};
+
+/// Converts a FillMode enumerant to a string
+char const *to_string(FillMode type, bool pretty) {
+
+  for (auto const & possible :FillMode_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  BlasMode enumerant;
+}
+BlasMode_enumerants[] = {
+  {"symmetric", "Symmetric", BlasMode::kSymmetric},
+  {"hermitian", "Hermitian", BlasMode::kHermitian}
+};
+
+/// Converts a BlasMode enumerant to a string
+char const *to_string(BlasMode type, bool pretty) {
+
+  for (auto const & possible :BlasMode_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static struct {
+  char const *text;
+  char const *pretty;
+  DiagType enumerant;
+}
+DiagType_enumerants[] = {
+  {"nonunit", "NonUnit", DiagType::kNonUnit},
+  {"unit", "Unit", DiagType::kUnit}
+};
+
+/// Converts a DiagType enumerant to a string
+char const *to_string(DiagType type, bool pretty) {
+
+  for (auto const & possible :DiagType_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 static struct {
@@ -128,6 +334,10 @@ static struct {
 OperationKind_enumerants[] = {
   {"eq_gemm", "EqGemm", OperationKind::kEqGemm}, 
   {"gemm", "Gemm", OperationKind::kGemm},               
+  {"rank_k", "RankK", OperationKind::kRankK},
+  {"rank_2k", "Rank2K", OperationKind::kRank2K},
+  {"trmm", "Trmm", OperationKind::kTrmm},
+  {"symm", "Symm", OperationKind::kSymm},
   {"conv2d", "Conv2d", OperationKind::kConv2d},           
   {"conv3d", "Conv3d", OperationKind::kConv3d},           
   {"spgemm", "SparseGemm", OperationKind::kSparseGemm},
@@ -706,6 +916,8 @@ IteratorAlgorithmID_enumerants[] = {
   {"none", "<none>", IteratorAlgorithmID::kNone},
   {"analytic", "<analytic>", IteratorAlgorithmID::kAnalytic},
   {"optimized", "<optimized>", IteratorAlgorithmID::kOptimized},
+  {"fixed_channels", "<fixed_channels>", IteratorAlgorithmID::kFixedChannels},
+  {"few_channels", "<few_channels>", IteratorAlgorithmID::kFewChannels},
 };
 
 /// Converts a ConvModeID enumerant to a string

@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -78,6 +84,10 @@ struct Gemm {
     typename OutputOp::Params output_op;
     int *semaphore;
     int gemm_k_size;
+    // For gather+scatter operations
+    int const *gather_A_indices;
+    int const *gather_B_indices;
+    int const *scatter_D_indices;
 
     //
     // Methods
@@ -95,7 +105,10 @@ struct Gemm {
       typename Epilogue::OutputTileIterator::TensorRef ref_C,
       typename Epilogue::OutputTileIterator::TensorRef ref_D,
       typename OutputOp::Params output_op = typename OutputOp::Params(),
-      int *workspace = nullptr
+      int *workspace = nullptr,
+      int const *gather_A_indices = nullptr,
+      int const *gather_B_indices = nullptr,
+      int const *scatter_D_indices = nullptr
     ):
       problem_size(problem_size),
       grid_tiled_shape(grid_tiled_shape),
@@ -108,7 +121,10 @@ struct Gemm {
       ref_C(ref_C),
       params_D(ref_D.layout()),
       ref_D(ref_D),
-      output_op(output_op) {
+      output_op(output_op),
+      gather_A_indices(gather_A_indices),
+      gather_B_indices(gather_B_indices),
+      scatter_D_indices(scatter_D_indices) {
 
       int total_gemm_k_iterations = (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
       int gemm_k_iterations = (total_gemm_k_iterations + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
@@ -133,6 +149,7 @@ struct Gemm {
   Gemm() { } 
 
   /// Determines whether kernel satisfies alignment
+  CUTLASS_HOST_DEVICE
   static Status can_implement(
     cutlass::gemm::GemmCoord const & problem_size,
     typename Mma::IteratorA::TensorRef ref_A,
@@ -154,7 +171,13 @@ struct Gemm {
                                                         layout::RowMajorInterleaved<64>>::value)
                                      ? 64
                                      : Mma::IteratorB::AccessType::kElements;
-    static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
+    static int const kAlignmentC = (platform::is_same<typename Epilogue::OutputTileIterator::Layout,
+                                                      layout::ColumnMajorInterleaved<32>>::value)
+                                   ? 32
+                                   : (platform::is_same<typename Epilogue::OutputTileIterator::Layout,
+                                                        layout::ColumnMajorInterleaved<64>>::value)
+                                     ? 64
+                                     : Epilogue::OutputTileIterator::kElementsPerAccess;
 
     if (!TensorRef_aligned(ref_A, kAlignmentA)) {
       return Status::kErrorMisalignedOperand;
@@ -169,13 +192,6 @@ struct Gemm {
     }
 
     if (!TensorRef_aligned(ref_D, kAlignmentC)) {
-      return Status::kErrorMisalignedOperand;
-    }
-
-    if ((problem_size.m() % kAlignmentA) || (problem_size.k() % kAlignmentA) ||
-      (problem_size.n() % kAlignmentB) || (problem_size.k() % kAlignmentB) ||
-      (problem_size.m() % kAlignmentC) || (problem_size.n() % kAlignmentC)) {
-
       return Status::kErrorMisalignedOperand;
     }
 
@@ -227,14 +243,16 @@ struct Gemm {
       params.ref_A.data(),
       {params.problem_size.m(), problem_size_k},
       thread_idx,
-      tb_offset_A);
+      tb_offset_A,
+      params.gather_A_indices);
 
     typename Mma::IteratorB iterator_B(
       params.params_B,
       params.ref_B.data(),
       {problem_size_k, params.problem_size.n()},
       thread_idx,
-      tb_offset_B);
+      tb_offset_B,
+      params.gather_B_indices);
 
     // Broadcast the warp_id computed by lane 0 to ensure dependent code
     // is compiled as warp-uniform.
@@ -297,7 +315,8 @@ struct Gemm {
       params.ref_C.data(),
       params.problem_size.mn(),
       thread_idx,
-      threadblock_offset
+      threadblock_offset,
+      params.scatter_D_indices
     );
 
     // Tile iterator writing to destination tensor.
@@ -306,7 +325,8 @@ struct Gemm {
       params.ref_D.data(),
       params.problem_size.mn(),
       thread_idx,
-      threadblock_offset
+      threadblock_offset,
+      params.scatter_D_indices
     );
 
     Epilogue epilogue(
