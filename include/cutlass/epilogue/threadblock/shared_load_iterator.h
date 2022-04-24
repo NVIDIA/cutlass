@@ -144,9 +144,6 @@ public:
     byte_pointer_ +=
       thread_offset.row() * stride_ + 
       thread_offset.column() * sizeof(AccessType) / kElementsPerAccess;
-
-    int byte_offset = thread_offset.row() * stride_ + 
-      thread_offset.column() * sizeof(AccessType) / kElementsPerAccess;
   }
 
   /// Adds a pointer offset in units of Element
