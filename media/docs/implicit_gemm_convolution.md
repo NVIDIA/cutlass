@@ -596,7 +596,7 @@ As described in the CUTLASS GTC 2019 presentation [slides](https://developer.dow
 [recording](https://developer.nvidia.com/gtc/2019/video/S9593), an access to Shared Memory will be conflict-free if
 the following conditions are satisfied across each warp:
 - {T0, T1, .., T7} do not access the same 128-bit bank
-- {T8, T9, .., T16} do not access the same 128-bit bank
+- {T8, T9, .., T15} do not access the same 128-bit bank
 - {T16, T17, .., T23} do not access the same 128-bit bank
 - {T24, T25, .., T31} do not access the same 128-bit bank
 
