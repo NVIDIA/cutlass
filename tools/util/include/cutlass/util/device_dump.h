@@ -101,7 +101,7 @@ CUTLASS_DEVICE void dump_fragment(Fragment const& frag, int N = 0, int M = 0,
   for (int tid = 0; tid < N; ++tid) {
     if (tid == thread_id) {
       printf("TB%d W%d T%d: ", block_id, tid / 32, tid & 31);
-      CUTLASS_PRAGMA_UNROLL
+      CUTLASS_PRAGMA_NO_UNROLL
       for (int i = 0; i < M; i += S) {
         printf("%.0f ", float(typename Fragment::value_type(frag[i])));
       }
