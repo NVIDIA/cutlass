@@ -56,8 +56,10 @@ using ElementOutput = float;                        // <- data type of elements 
 
 // The code section below describes matrix layout of input and output matrices.
 // Column Major for Matrix A, B and C.
-//
-// Note this example only works for ColumnMajor output because
+
+// Note that if the output is column major, the bias has to be per row. i.e. every row has different bias.
+// If the output is row major, the bias has to be per column, i.e. every column has different bias.
+// Below list some other notices:
 //   1) we only have row major epilogue.
 //   2) we swap A and B if the output is column major then we can still use the
 //      row major epilogue.
