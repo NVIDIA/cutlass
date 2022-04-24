@@ -44,7 +44,7 @@ template <
   int ElementCount, 
   typename TransposeShape, 
   typename Element
-> class Transpose;
+> struct Transpose;
 
 /// Specialization for int8_t 4x4 transpose
 template <int ElementCount_>
