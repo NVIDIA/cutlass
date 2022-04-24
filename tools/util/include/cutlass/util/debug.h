@@ -80,6 +80,7 @@
  * \return The CUDA error.
  */
 __host__ CUTLASS_DEVICE cudaError_t cuda_perror_impl(cudaError_t error,
+                                                     const char* expression,
                                                      const char* filename,
                                                      int line) {
   (void)filename;
@@ -87,10 +88,10 @@ __host__ CUTLASS_DEVICE cudaError_t cuda_perror_impl(cudaError_t error,
   if (error) {
 #if !defined(__CUDA_ARCH__)
     fprintf(
-        stderr, "CUDA error %d [%s, %d]: %s\n", error, filename, line, cudaGetErrorString(error));
+        stderr, "CUDA error %d [%s, %d] in expression '%s': %s\n", error, filename, line, expression, cudaGetErrorString(error));
     fflush(stderr);
 #else
-    printf("CUDA error %d [%s, %d]\n", error, filename, line);
+    printf("CUDA error %d [%s, %d] in expression '%s'\n", error, filename, line, expression);
 #endif
   }
   return error;
@@ -100,7 +101,7 @@ __host__ CUTLASS_DEVICE cudaError_t cuda_perror_impl(cudaError_t error,
  * \brief Perror macro
  */
 #ifndef CUDA_PERROR
-#define CUDA_PERROR(e) cuda_perror_impl((cudaError_t)(e), __FILE__, __LINE__)
+#define CUDA_PERROR(e) cuda_perror_impl((cudaError_t)(e), #e, __FILE__, __LINE__)
 #endif
 
 /**
@@ -108,9 +109,9 @@ __host__ CUTLASS_DEVICE cudaError_t cuda_perror_impl(cudaError_t error,
  */
 #ifndef CUDA_PERROR_EXIT
 #define CUDA_PERROR_EXIT(e)                                     \
-  if (cuda_perror_impl((cudaError_t)(e), __FILE__, __LINE__)) { \
+  do { if (cuda_perror_impl((cudaError_t)(e), #e, __FILE__, __LINE__)) { \
     exit(1);                                                    \
-  }
+  } } while (0)
 #endif
 
 /**
