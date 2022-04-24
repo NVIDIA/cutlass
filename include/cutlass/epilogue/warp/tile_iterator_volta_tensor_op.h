@@ -64,7 +64,7 @@ struct TileIteratorVoltaTensorOp;
 template <
   typename WarpShape_         ///< shape of warp-level GEMM (concept: MatrixShape)
 >
-class TileIteratorVoltaTensorOp<WarpShape_, gemm::GemmShape<32, 32, 4>, half_t, layout::RowMajor> {
+struct TileIteratorVoltaTensorOp<WarpShape_, gemm::GemmShape<32, 32, 4>, half_t, layout::RowMajor> {
 public:
 
   using WarpShape = WarpShape_;
@@ -250,7 +250,7 @@ public:
 template <
   typename WarpShape_         ///< shape of warp-level GEMM (concept: MatrixShape)
 >
-class TileIteratorVoltaTensorOp<WarpShape_, gemm::GemmShape<32, 32, 4>, float, layout::RowMajor> {
+struct TileIteratorVoltaTensorOp<WarpShape_, gemm::GemmShape<32, 32, 4>, float, layout::RowMajor> {
 public:
 
   using WarpShape = WarpShape_;
