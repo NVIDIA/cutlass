@@ -539,12 +539,12 @@ void strided_dgrad_starting_coords(
 
   // start_h  = platform::abs(problem_size.stride_h - ((problem_size.pad_h % problem_size.stride_h) - r)) % problem_size.stride_h;
   stride_h_divmod.divmod(pad_h_rem_, problem_size.pad_h);
-  int r_ = platform::abs(problem_size.stride_h - (pad_h_rem_ - r));
+  int r_ = absolute_value(problem_size.stride_h - (pad_h_rem_ - r));
   stride_h_divmod.divmod(start_h, r_);
 
   //start_w  = platform::abs(problem_size.stride_w - ((problem_size.pad_w % problem_size.stride_w) - s)) % problem_size.stride_w;
   stride_w_divmod.divmod(pad_w_rem_, problem_size.pad_w);
-  int s_ = platform::abs(problem_size.stride_w - (pad_w_rem_ - s));
+  int s_ = absolute_value(problem_size.stride_w - (pad_w_rem_ - s));
   stride_w_divmod.divmod(start_w, s_);
 }
 
