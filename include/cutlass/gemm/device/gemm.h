@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -213,7 +219,13 @@ template <
     /// Operation performed by GEMM
     typename Operator_ = typename DefaultGemmConfiguration<
         OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::Operator>
+        ElementAccumulator_>::Operator,
+    /// Gather operand A by using an index array
+    bool GatherA = false,
+    /// Gather operand B by using an index array
+    bool GatherB = false,
+    /// Scatter result D by using an index array
+    bool ScatterD = false>
 class Gemm {
  public:
 
@@ -264,7 +276,11 @@ class Gemm {
     ThreadblockSwizzle,
     kStages,
     kSplitKSerial,
-    Operator
+    Operator,
+    SharedMemoryClearOption::kNone,
+    GatherA,
+    GatherB,
+    ScatterD
   >::GemmKernel;
 
   /// Argument structure
@@ -281,6 +297,10 @@ class Gemm {
     TensorRef<ElementC, LayoutC> ref_D;
     typename EpilogueOutputOp::Params epilogue;
     int split_k_slices;
+    // For gather+scatter operations
+    int const *gather_A_indices;
+    int const *gather_B_indices;
+    int const *scatter_D_indices;
 
     //
     // Methods
@@ -302,7 +322,10 @@ class Gemm {
       TensorRef<ElementC, LayoutC> ref_D_,
       typename EpilogueOutputOp::Params epilogue_ = 
         typename EpilogueOutputOp::Params(),
-      int split_k_slices = 1
+      int split_k_slices = 1,
+      int const *gather_A_indices_ = nullptr,
+      int const *gather_B_indices_ = nullptr,
+      int const *scatter_D_indices_ = nullptr
     ):
       problem_size(problem_size_),
       ref_A(ref_A_),
@@ -310,7 +333,10 @@ class Gemm {
       ref_C(ref_C_),
       ref_D(ref_D_),
       epilogue(epilogue_),
-      split_k_slices(split_k_slices) {
+      split_k_slices(split_k_slices),
+      gather_A_indices(gather_A_indices_),
+      gather_B_indices(gather_B_indices_),
+      scatter_D_indices(scatter_D_indices_) {
 
     }
   };
@@ -410,7 +436,10 @@ public:
       args.ref_C.non_const_ref(),
       args.ref_D,
       args.epilogue,
-      static_cast<int *>(workspace)
+      static_cast<int *>(workspace),
+      args.gather_A_indices,
+      args.gather_B_indices,
+      args.scatter_D_indices
     };
 
     return Status::kSuccess;
@@ -524,13 +553,20 @@ template <
     /// If true, kernel supports split-K as a serial reduction
     bool SplitKSerial,
     /// Operation performed by GEMM
-    typename Operator_>
+    typename Operator_,
+    /// Gather operand A by using an index array
+    bool GatherA,
+    /// Gather operand B by using an index array
+    bool GatherB,
+    /// Scatter result D by using an index array
+    bool ScatterD
+>
 class Gemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
            layout::ColumnMajor,  // partially specialized on LayoutC
            ElementAccumulator_, OperatorClass_, ArchTag_, ThreadblockShape_,
            WarpShape_, InstructionShape_, EpilogueOutputOp_,
            ThreadblockSwizzle_, Stages, AlignmentA, AlignmentB, SplitKSerial,
-           Operator_> {
+           Operator_, GatherA, GatherB, ScatterD> {
  public:
 
   using ElementA = ElementA_;
@@ -578,7 +614,10 @@ class Gemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
     kAlignmentB,
     kAlignmentA,
     SplitKSerial,
-    Operator
+    Operator,
+    GatherB,
+    GatherA,
+    ScatterD
   >;
 
   using UnderlyingArguments = typename UnderlyingOperator::Arguments;
@@ -599,6 +638,10 @@ class Gemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
     TensorRef<ElementC, LayoutC> ref_D;
     typename EpilogueOutputOp::Params epilogue;
     int split_k_slices;
+    // For gather+scatter operations
+    int *gather_A_indices;
+    int *gather_B_indices;
+    int *scatter_D_indices;
 
     //
     // Methods
@@ -618,7 +661,10 @@ class Gemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
       TensorRef<ElementC, LayoutC> ref_D_,
       typename EpilogueOutputOp::Params epilogue_ = 
         typename EpilogueOutputOp::Params(),
-      int split_k_slices = 1
+      int split_k_slices = 1,
+      int *gather_A_indices_ = nullptr,
+      int *gather_B_indices_ = nullptr,
+      int *scatter_D_indices_ = nullptr
     ):
       problem_size(problem_size_),
       ref_A(ref_A_),
@@ -626,7 +672,10 @@ class Gemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
       ref_C(ref_C_),
       ref_D(ref_D_),
       epilogue(epilogue_),
-      split_k_slices(split_k_slices) { }
+      split_k_slices(split_k_slices),
+      gather_A_indices(gather_A_indices_),
+      gather_B_indices(gather_B_indices_),
+      scatter_D_indices(scatter_D_indices_) { }
   };
 
 private:
@@ -647,7 +696,10 @@ public:
       {args.ref_C.data(), args.ref_C.stride(0)},
       {args.ref_D.data(), args.ref_D.stride(0)},
       args.epilogue,
-      args.split_k_slices
+      args.split_k_slices,
+      args.gather_B_indices,
+      args.gather_A_indices,
+      args.scatter_D_indices
     );
   }
 

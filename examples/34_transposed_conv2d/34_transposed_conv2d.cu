@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -27,10 +33,8 @@
 This example shows how to compute 2d transposed convolution, also known as deconvolution, using CUTLASS
 conv2d Dgrad kernels. Although two operations are computationaly equivalent, some care is needed to correctly
 set up a problem size for CUTLASS.
-
 In deep learning, transposed convolution is sometimes used for upscaling feature maps. This example
 demonstrates the 2x upscaling case using the strided Dgrad kernel.
-
 */
 
 #include <iostream>
@@ -232,22 +236,22 @@ struct Options {
 	<< "  computationaly equivalent, some care is needed to correctly set up a problem size.\n\n"
 	<< "Options:\n\n"
 	<< "  --help               If specified, displays this usage statement.\n\n"
-	<< "  --n <int>            Input tensor extent N\n"
-	<< "  --h <int>            Input tensor extent H\n"
-	<< "  --w <int>            Input tensor extent W\n"
-	<< "  --c <int>            Input tensor extent C\n"
-	<< "  --k <int>            Filter extent K\n"
-	<< "  --r <int>            Filter extent R\n"
-	<< "  --s <int>            Filter extent S\n\n"
-	<< "  --alpha <float>      Epilogue scalar alpha\n"
-	<< "  --beta <float>       Epilogue scalar beta\n\n"
+	<< "  --n=<int>            Input tensor extent N\n"
+	<< "  --h=<int>            Input tensor extent H\n"
+	<< "  --w=<int>            Input tensor extent W\n"
+	<< "  --c=<int>            Input tensor extent C\n"
+	<< "  --k=<int>            Filter extent K\n"
+	<< "  --r=<int>            Filter extent R\n"
+	<< "  --s=<int>            Filter extent S\n\n"
+	<< "  --alpha=<float>      Epilogue scalar alpha\n"
+	<< "  --beta=<float>       Epilogue scalar beta\n\n"
 	<< "  --skip-ref-check     If set (true), skip reference check on the host\n"
 	<< "  --perf-check         If set (true), performance is measured.\n"
-	<< "  --iterations <int>   Number of profiling iterations to perform.\n"
-	<< "  --tag <string>       String to replicate across the first column in the results table\n";
+	<< "  --iterations=<int>   Number of profiling iterations to perform.\n"
+	<< "  --tag=<string>       String to replicate across the first column in the results table\n";
 
     out << "\n\nExamples:\n\n"
-	<< "$ ./examples/34_transposed_conv2d/34_transposed_conv2d --n=8 --h=32 --w=32 --c=16 --k=32 --r=3 --s=3\n\n";
+	<< "$ ./examples/31_transposed_conv2d/31_transposed_conv2d --n=8 --h=32 --w=32 --c=16 --k=32 --r=3 --s=3\n\n";
 
     return out;
   }
@@ -326,7 +330,6 @@ struct Result {
     return out;
   }
 };
-
 
 // This is the same as Conv2dDgrad in tools/util/include/cutlass/util/reference/host/convolution.h,
 // only variable names have been adapted for transposed conv2d.

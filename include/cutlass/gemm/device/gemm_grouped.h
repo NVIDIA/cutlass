@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -60,28 +66,41 @@ class GemmGrouped {
 public:
 
   using GemmKernel = GemmKernel_;
-  using ThreadblockShape = typename GemmKernel::Mma::Shape;
   
   using ElementA = typename GemmKernel::ElementA;
   using LayoutA = typename GemmKernel::LayoutA;
   using TensorRefA = TensorRef<ElementA const, LayoutA>;
   static ComplexTransform const kTransformA = GemmKernel::kTransformA;
+  static int const kAlignmentA = GemmKernel::kAlignmentA;
 
   using ElementB = typename GemmKernel::ElementB;
   using LayoutB = typename GemmKernel::LayoutB;
   using TensorRefB = TensorRef<ElementB const, LayoutB>;
   static ComplexTransform const kTransformB = GemmKernel::kTransformB;
+  static int const kAlignmentB = GemmKernel::kAlignmentB;
 
   using ElementC = typename GemmKernel::ElementC;
   using LayoutC = typename GemmKernel::LayoutC;
   using TensorRefC = TensorRef<ElementC const, LayoutC>;
   using TensorRefD = TensorRef<ElementC, LayoutC>;
+  static int const kAlignmentC = GemmKernel::kAlignmentC;
 
   using ElementAccumulator = typename GemmKernel::Mma::Policy::Operator::ElementC;
 
   using EpilogueOutputOp = typename GemmKernel::EpilogueOutputOp;
   using ThreadblockSwizzle = typename GemmKernel::ThreadblockSwizzle;
+
   using Operator = typename GemmKernel::Operator;
+  using WarpMmaOperator = typename GemmKernel::Mma::Policy::Operator;
+
+  using ArchMmaOperator = typename WarpMmaOperator::ArchMmaOperator;
+  using MathOperator = typename WarpMmaOperator::MathOperator;
+  using OperatorClass = typename WarpMmaOperator::OperatorClass;
+  using ArchTag = typename WarpMmaOperator::ArchTag;
+  using ThreadblockShape = typename GemmKernel::Mma::Shape;
+  using WarpShape = typename GemmKernel::WarpShape;
+  using InstructionShape = typename GemmKernel::InstructionShape;
+  static int const kStages = GemmKernel::Mma::kStages;
 
   /// Argument structure
   using Arguments = typename GemmKernel::Arguments;
@@ -99,21 +118,6 @@ public:
   /// Determines whether the GEMM can execute the given problem.
   static Status can_implement(Arguments const &args) {
     
-    // Determine grid shape
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int gemm_k_size = 0;
-    
-    get_grid_shape_(grid_tiled_shape, gemm_k_size, args);
-    
-    ThreadblockSwizzle threadblock_swizzle;
-    dim3 grid = threadblock_swizzle.get_grid_shape(grid_tiled_shape);
-  
-    if (!(grid.y <= std::numeric_limits<uint16_t>::max() && 
-          grid.z <= std::numeric_limits<uint16_t>::max())) {
-
-      return Status::kErrorInvalidProblem;
-    } 
-
     return GemmKernel::can_implement(args);
   }
 

@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -50,6 +56,8 @@
 #include "cutlass/array.h"
 #include "cutlass/complex.h"
 #include "cutlass/tensor_view.h"
+#include "cutlass/blas3.h"
+
 #include "cutlass/util/reference/device/tensor_foreach.h"
 #include "cutlass/util/distribution.h"
 
@@ -1006,6 +1014,224 @@ struct TensorFillDiagonalFunc {
   }
 };
 
+// Overwrites the elements of a tensor with a uniform value depending on fill mode
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorFillPartialFunc {
+
+  /// View type
+  using TensorView = TensorView<Element, Layout>;
+
+  /// Scalar type
+  typedef typename TensorView::Element T;
+
+  /// Coordinate in tensor's index space
+  typedef typename TensorView::TensorCoord TensorCoord;
+
+  /// Parameters structure
+  struct Params {
+
+    //
+    // Data members
+    //
+
+    TensorView view;
+    Element element;
+    FillMode fill_mode;
+
+    /// Default ctor
+    CUTLASS_HOST_DEVICE
+    Params(): fill_mode(FillMode::kNone) { }
+
+    //
+    // Methods
+    //
+
+    /// Construction of Gaussian RNG functor.
+    Params(
+      TensorView view_,
+      Element element_,
+      FillMode fill_mode_
+    ):
+      view(view_), element(element_), fill_mode(fill_mode_) {
+
+    }
+  };
+
+  //
+  // Data members
+  //
+
+  /// Parameters object
+  Params params;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_DEVICE
+  TensorFillPartialFunc(Params const &params): params(params) {
+
+  }
+
+  /// Overwrites the element if it is within the covered region.
+  CUTLASS_DEVICE
+  void operator()(TensorCoord const &coord) {
+
+    bool predicate = true;
+      
+    switch (params.fill_mode) {
+    case FillMode::kFull:
+      predicate = true;
+      break;
+
+    case FillMode::kLower:
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 1; i < Layout::kRank; ++i) {
+        if (coord[i - 1] < coord[i]) {
+          predicate = false;
+          break;
+        }
+      }
+      break;
+
+    case FillMode::kUpper:
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 1; i < Layout::kRank; ++i) {
+        if (coord[i - 1] > coord[i]) {
+          predicate = false;
+          break;
+        }
+      }
+      break;
+
+    case FillMode::kDiagonal:
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 1; i < Layout::kRank; ++i) {
+        if (coord[i - 1] != coord[i]) {
+          predicate = false;
+          break;
+        }
+      }
+      break;
+
+    case FillMode::kNone: // fall-through
+    
+    default:
+      predicate = false;
+      break;
+    }
+    
+    if (predicate) {
+      params.view.at(coord) = params.element;
+    }
+  }
+};
+
+
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorClearPartialFunc {
+
+  /// View type
+  using TensorView = TensorView<Element, Layout>;
+
+  /// Scalar type
+  typedef typename TensorView::Element T;
+
+  /// Coordinate in tensor's index space
+  typedef typename TensorView::TensorCoord TensorCoord;
+
+  /// 
+  static_assert((Layout::kRank == 2), "TensorClearPartial is only supported for matrices");
+
+  /// Parameters structure
+  struct Params {
+
+    //
+    // Data members
+    //
+
+    TensorView view;
+    Element element;
+    FillMode fill_mode;
+    int alignment;
+
+    /// Default ctor
+    CUTLASS_HOST_DEVICE
+    Params(): fill_mode(FillMode::kNone) { }
+
+    //
+    // Methods
+    //
+
+    /// Construction of Gaussian RNG functor.
+    Params(
+      TensorView view_,
+      Element element_,
+      FillMode fill_mode_,
+      int alignment_
+    ):
+      view(view_), element(element_), fill_mode(fill_mode_), alignment(alignment_) {
+
+    }
+  };
+
+  //
+  // Data members
+  //
+
+  /// Parameters object
+  Params params;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_DEVICE
+  TensorClearPartialFunc(Params const &params): params(params) {
+
+  }
+
+  /// Overwrites the element if it is within the covered region.
+  CUTLASS_DEVICE
+  void operator()(TensorCoord const &coord) {
+
+    bool predicate = true;
+      
+    switch (params.fill_mode) {
+
+    case FillMode::kLower:
+      if ((coord[0] >= coord[1]) || 
+          ((coord[1] - coord[0]) >= params.alignment))  {
+          predicate = false;
+        break;
+      }
+      break;
+
+    case FillMode::kUpper:
+      if ((coord[0] <= coord[1]) ||
+          ((coord[0] - coord[1]) >= params.alignment))  {
+          predicate = false;
+        break;
+      }
+      break;
+
+    case FillMode::kNone: // fall-through
+    
+    default:
+      predicate = false;
+      break;
+    }
+    
+    if (predicate) {
+      params.view.at(coord) = params.element;
+    }
+  }
+};
+
 } // namespace detail
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1025,6 +1251,45 @@ void TensorFillDiagonal(
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
     Params(view, diag, other)
+  );
+}
+
+/// Fills a tensor partially depending on fill mode. Elements not covered by the fillmode are
+/// not written.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillPartial(
+  TensorView<Element, Layout> view,       ///< destination tensor
+  Element element,
+  FillMode fill_mode) {
+  
+  typedef detail::TensorFillPartialFunc<Element, Layout> Func;
+  typedef typename Func::Params Params;
+
+  TensorForEach<Func, Layout::kRank, Params>(
+    view.extent(),
+    Params(view, element, fill_mode)
+  );
+}
+
+/// Clears a tensor partially depending on fill mode and alignment. Elements on the wrong-side 
+/// of fillmode (upto the alignment) are overwritten with the user supplied element (typically zeros)
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorClearPartial(
+  TensorView<Element, Layout> view,       ///< destination tensor
+  Element element,
+  FillMode fill_mode,
+  int alignment) {
+  
+  typedef detail::TensorClearPartialFunc<Element, Layout> Func;
+  typedef typename Func::Params Params;
+
+  TensorForEach<Func, Layout::kRank, Params>(
+    view.extent(),
+    Params(view, element, fill_mode, alignment)
   );
 }
 
