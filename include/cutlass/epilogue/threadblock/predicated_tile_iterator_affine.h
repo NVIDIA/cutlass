@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -252,7 +258,7 @@ private:
   /// Extent of the matrix tile in rows
   Index extent_row_;
 
-  /// Extent of the matrix tile in rows
+  /// Extent of the matrix tile in columns
   Index extent_col_;
 
   /// A thread's starting row position (assuming steady-state predicates have been computed)
@@ -263,6 +269,9 @@ private:
 
   /// Internal state counter
   int state_[3];
+
+  /// Offsets in columns, cached for performance
+  int64_t offset_modes_n_[ThreadMap::Iterations::kColumn];
  
   //
   // Static asserts about internal strides
@@ -290,7 +299,8 @@ public:
     Element *pointer,
     MatrixCoord extent,
     int thread_idx,
-    MatrixCoord threadblock_offset = MatrixCoord()
+    MatrixCoord threadblock_offset = MatrixCoord(),
+    int const *indices = nullptr     ///< gather/scatter indices, note no support for gather/scatter at this specialization
   ): 
     params_(params)
   {
@@ -307,10 +317,34 @@ public:
       // Initialize predicates
       CUTLASS_PRAGMA_UNROLL
       for (int c = 0; c < ThreadMap::Iterations::kColumn; ++c) {
-  
-        mask_.predicates[c] = ((thread_offset.column() 
-          + ThreadMap::Delta::kColumn * c) < extent.column());
+
+        // 
+        // Compute coordinate and decompose into N modes
+        //
+
+        int coord_n = thread_start_column_ + c * ThreadMap::Delta::kColumn;
+
+        mask_.predicates[c] = coord_n < extent.column();
+        
+        Coord<Layout::kRank / 2, Index> modes_n;
+
+        int64_t offset_modes_n = 0;
+
+        if (kBigEndian) {
+          modes_n = CoordinateDecomposition<Layout::kRank / 2>(coord_n, params_.divmod_n);
+
+          offset_modes_n = dot(modes_n, params_.stride_n);
+        }
+        else {
+          modes_n = CoordinateDecompositionLittleEndian<Layout::kRank / 2>(coord_n, params_.divmod_n);
+
+          offset_modes_n = dot(modes_n, params_.stride_n);
+        }
+
+        offset_modes_n_[c] = offset_modes_n;
+
       }
+
       if (!pointer) {
         mask_.clear();
       }
@@ -382,18 +416,8 @@ public:
             // Compute coordinate and decompose into N modes
             //
             
-            int coord_n = thread_start_column_ + column * ThreadMap::Delta::kColumn;
-            
-            Coord<Layout::kRank / 2, Index> modes_n;
-
             if (Layout::kRank > 2) {
-              if (kBigEndian) {
-                modes_n = CoordinateDecomposition<Layout::kRank / 2>(coord_n, params_.divmod_n);
-              } else {
-                modes_n = CoordinateDecompositionLittleEndian<Layout::kRank / 2>(coord_n, params_.divmod_n);
-              }
-
-              offset_modes_n = dot(modes_n, params_.stride_n);
+              offset_modes_n = offset_modes_n_[column];
             }
 
             //
@@ -490,19 +514,8 @@ public:
             // Compute coordinate and decompose into N modes
             //
             
-            int coord_n = thread_start_column_ + column * ThreadMap::Delta::kColumn;
-            
-            Coord<Layout::kRank / 2, Index> modes_n;
-
             if (Layout::kRank > 2) {
-              if (kBigEndian) {
-                modes_n = CoordinateDecomposition<Layout::kRank / 2>(coord_n, params_.divmod_n);
-              }
-              else {
-                modes_n = CoordinateDecompositionLittleEndian<Layout::kRank / 2>(coord_n, params_.divmod_n);
-              }
-
-              offset_modes_n = dot(modes_n, params_.stride_n);
+              offset_modes_n = offset_modes_n_[column];
             } 
 
             //

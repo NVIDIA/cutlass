@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -344,13 +350,57 @@ public:
                                                         layout::RowMajorInterleaved<64>>::value)
                                      ? 64
                                      : Mma::IteratorB::AccessType::kElements;
-    static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
+    static int const kAlignmentC =  (platform::is_same<LayoutC,
+                                                      layout::ColumnMajorInterleaved<32>>::value)
+                                   ? 32
+                                   : (platform::is_same<LayoutC,
+                                                        layout::ColumnMajorInterleaved<64>>::value)
+                                     ? 64
+                                     : Epilogue::OutputTileIterator::kElementsPerAccess;
 
-    if ((problem_size.m() % kAlignmentA) || (problem_size.k() % kAlignmentA) ||
-      (problem_size.n() % kAlignmentB) || (problem_size.k() % kAlignmentB) ||
-      (problem_size.m() % kAlignmentC) || (problem_size.n() % kAlignmentC)) {
+    bool isAMisaligned = false;
+    bool isBMisaligned = false;
+    bool isCMisaligned = false;
 
-      CUTLASS_TRACE_HOST("  returning kErrorMisalignedOperand");
+    if (platform::is_same<LayoutA, layout::RowMajor>::value) {
+      isAMisaligned = problem_size.k() % kAlignmentA;
+    } else if (platform::is_same<LayoutA, layout::ColumnMajor>::value) {
+      isAMisaligned = problem_size.m() % kAlignmentA;
+    } else if (platform::is_same<LayoutA, layout::ColumnMajorInterleaved<32>>::value
+            || platform::is_same<LayoutA, layout::ColumnMajorInterleaved<64>>::value) {
+      isAMisaligned = problem_size.k() % kAlignmentA;
+    }
+
+    if (platform::is_same<LayoutB, layout::RowMajor>::value) {
+      isBMisaligned = problem_size.n() % kAlignmentB;
+    } else if (platform::is_same<LayoutB, layout::ColumnMajor>::value) {
+      isBMisaligned = problem_size.k() % kAlignmentB;
+    } else if (platform::is_same<LayoutB, layout::RowMajorInterleaved<32>>::value
+            || platform::is_same<LayoutB, layout::RowMajorInterleaved<64>>::value) {
+      isBMisaligned = problem_size.k() % kAlignmentB;
+    }
+
+    if (platform::is_same<LayoutC, layout::RowMajor>::value) {
+      isCMisaligned = problem_size.n() % kAlignmentC;
+    } else if (platform::is_same<LayoutC, layout::ColumnMajor>::value) {
+      isCMisaligned = problem_size.m() % kAlignmentC;
+    } else if (platform::is_same<LayoutC, layout::ColumnMajorInterleaved<32>>::value
+            || platform::is_same<LayoutC, layout::ColumnMajorInterleaved<64>>::value) {
+      isCMisaligned = problem_size.n() % kAlignmentC;
+    }
+
+    if (isAMisaligned) {
+      CUTLASS_TRACE_HOST("  returning kErrorMisalignedOperand for operand A");
+      return Status::kErrorMisalignedOperand;
+    }
+
+    if (isBMisaligned) {
+      CUTLASS_TRACE_HOST("  returning kErrorMisalignedOperand for operand B");
+      return Status::kErrorMisalignedOperand;
+    }
+
+    if (isCMisaligned) {
+      CUTLASS_TRACE_HOST("  returning kErrorMisalignedOperand for operand C");
       return Status::kErrorMisalignedOperand;
     }
 

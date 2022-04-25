@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -66,6 +72,58 @@ struct OutputTileShape {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+template <typename Iterations, typename Delta>
+struct OutputTileThreadMapHelpers {
+
+  /// Determines the iteration index of a vector access according to the thread map
+  CUTLASS_HOST_DEVICE
+  static void iteration_index(
+    int &column_idx,
+    int &row_idx,
+    int &group_idx,
+    int &cluster_idx,
+    int &tile_idx,
+    int iter_idx) {
+
+    column_idx = iter_idx % Iterations::kColumn;
+    int residual   = iter_idx / Iterations::kColumn;
+
+    row_idx    = residual % Iterations::kRow;
+    residual       = residual / Iterations::kRow;
+
+    group_idx  = residual % Iterations::kGroup;
+    residual       = residual / Iterations::kGroup;
+
+    cluster_idx = residual % Iterations::kCluster;
+    tile_idx    = residual / Iterations::kCluster;
+  }
+
+  /// Computes the offset of a given vector access
+  CUTLASS_HOST_DEVICE
+  static MatrixCoord iteration_offset(int iter_idx) {
+
+    int column_idx;
+    int row_idx;
+    int group_idx;
+    int cluster_idx;
+    int tile_idx;
+
+    iteration_index(column_idx, row_idx, group_idx, cluster_idx, tile_idx, iter_idx);
+
+    return
+      MatrixCoord(
+        row_idx     * Delta::kRow     +
+        group_idx   * Delta::kGroup   +
+        cluster_idx * Delta::kCluster +
+        tile_idx    * Delta::kTile,
+
+        column_idx  * Delta::kColumn);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 template <
   typename ThreadMap_,
   typename Shape_,
@@ -73,7 +131,7 @@ template <
   typename Delta_,
   typename Count_
 >
-struct OutputTileThreadMap {
+struct OutputTileThreadMap : public OutputTileThreadMapHelpers<Iterations_, Delta_> {
 
   /// Conventional thread map (concept: ThreadMap)
   using ThreadMap = ThreadMap_;
@@ -363,6 +421,12 @@ struct OutputTileOptimalThreadMap {
       cluster_offset + group_offset + row_offset + lane_row_offset,
       (column_offset + lane_col_offset) * kElementsPerAccess
     );
+  }
+
+  /// Computes the offset of a given vector access
+  CUTLASS_HOST_DEVICE
+  static MatrixCoord iteration_offset(int iter_idx) {
+    return OutputTileThreadMapHelpers<Iterations, Delta>::iteration_offset(iter_idx);
   }
 
   /// Compacted thread map in which the 4D region is contiguous

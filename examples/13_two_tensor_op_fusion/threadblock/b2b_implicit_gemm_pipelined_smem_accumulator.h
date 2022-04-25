@@ -1,24 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -67,8 +73,7 @@ template <
   /// (concept: WriteableTileIterator | RandomAccessTileIterator)
   typename SmemIteratorB0_,
   /// Iterates over vectors of scale and bias vector in global memory
-  //  (concept: ReadableTileIterator | ForwardTileIterator |
-  //  MaskedTileIterator)
+  //  (concept: VectorIterator)
   typename IteratorAccumulatorScaleBias_,
   /// Iterates over accumulator tile
   typename FragmentIteratorAccumulator_,
@@ -94,19 +99,19 @@ template <
   typename Policy0_,
   /// Policy describing tuning details (concept: MmaPolicy)
   typename Policy1_,
-  /// Transformation applied to A operand
+  /// Transformation applied to A0 operand
   typename TransformA0_ = NumericArrayConverter<
     typename SmemIteratorA0_::Element, 
     typename IteratorA0_::Element, 
     IteratorA0_::Fragment::kElements>,
   ///
-  /// Transformation applied to B operand
+  /// Transformation applied to B0 operand
   typename TransformB0_ = NumericArrayConverter<
     typename SmemIteratorB0_::Element, 
     typename IteratorB0_::Element, 
     IteratorB0_::Fragment::kElements>,
   ///
-  /// Transformation applied to B operand
+  /// Transformation applied to B1 operand
   typename TransformB1_ = NumericArrayConverter<
     typename SmemIteratorB1_::Element, 
     typename IteratorB1_::Element, 
@@ -396,7 +401,6 @@ public:
 
           iterator_A.load(tb_frag_A);
           iterator_B0.load(tb_frag_B0);
-    
           ++iterator_A;
           ++iterator_B0;
         }
@@ -452,11 +456,8 @@ public:
 
     smem_write_stage_idx = 1;
     
-//    int gemm_k_iterations_1 = FragmentIteratorA1::Policy::kIterations / Base::kWarpGemmIterations1;
     int gemm_k_iterations_1 = Shape0::kN / Shape1::kK;
 
-    // Issue loads during the first warp-level matrix multiply-add *AFTER* issuing 
-    // shared memory loads (which have the tighest latency requirement).
 
     //
     // Mainloop
@@ -477,6 +478,7 @@ public:
 
         if (warp_mma_k == Base::kWarpGemmIterations1 - 1) {
 
+          // Write fragments to shared memory
           this->smem_iterator_B1_.store(transform_B1(tb_frag_B1));
 
           __syncthreads();
@@ -489,7 +491,8 @@ public:
           }
           else {
             this->warp_tile_iterator_B1_.add_tile_offset(
-                {-Base::kStages * Policy1::kPartitionsK * Base::kWarpGemmIterations1,
+                {-Base::kStages * Policy1::kPartitionsK *
+                     Base::kWarpGemmIterations1,
                  0});
           }
 
@@ -501,7 +504,7 @@ public:
         
         // skip warp tile loading for the last kgroup
         if(gemm_k_iterations_1 > 1 || warp_mma_k < Base::kWarpGemmIterations1 - 1)
-            warp_tile_iterator_A1_.load(warp_frag_A1[(warp_mma_k + 1) % 2]);
+          warp_tile_iterator_A1_.load(warp_frag_A1[(warp_mma_k + 1) % 2]);
         this->warp_tile_iterator_B1_.load(warp_frag_B1[(warp_mma_k + 1) % 2]);
 
         ++warp_tile_iterator_A1_;
