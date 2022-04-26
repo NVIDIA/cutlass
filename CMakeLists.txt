@@ -335,9 +335,7 @@ if(CUDA_COMPILER MATCHES "[Cc]lang")
 endif()
 
 # Support for 128-bit integers if using NVIDIA C++ compiler 
-  if (${CMAKE_CXX_COMPILER_ID} MATCHES "PGI" OR ${CMAKE_CXX_COMPILER_ID} MATCHES "NVHPC")
-    set(CMAKE_CXX_EXTENSIONS ON)
-    #Workaround for pybind11 templates
+if (${CMAKE_CXX_COMPILER_ID} MATCHES "PGI" OR ${CMAKE_CXX_COMPILER_ID} MATCHES "NVHPC")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Mint128 ")
 endif()
 
