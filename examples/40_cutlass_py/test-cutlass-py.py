@@ -59,9 +59,8 @@ if err != cuda.CUresult.CUDA_SUCCESS:
 
 architectures = [80,]
 include_paths = [
-  '/home/akerr/repositories/git/dlarch-fastkernels/cutlass-2.x/include',
-  '/home/akerr/repositories/git/dlarch-fastkernels/cutlass-2.x/tools/util/include',
-  '/home/akerr/sdk/cuda/11.5-tot-2021-10-28/include', 
+  '../../include',
+  '../../tools/util/include',
 ]
 
 compilation_options = rt.CompilationOptions(architectures, include_paths)
