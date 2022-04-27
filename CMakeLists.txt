@@ -334,6 +334,11 @@ if(CUDA_COMPILER MATCHES "[Cc]lang")
   link_libraries(nvidia::cudart)
 endif()
 
+# Support for 128-bit integers if using NVIDIA C++ compiler 
+if (${CMAKE_CXX_COMPILER_ID} MATCHES "PGI" OR ${CMAKE_CXX_COMPILER_ID} MATCHES "NVHPC")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Mint128 ")
+endif()
+
 if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
   # CMake 3.18 added support for CUDA_ARCHITECTURES target property. We will use this
   # property for CMake 3.18+, so we request the NEW behavior for correct compatibility.
