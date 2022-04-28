@@ -454,7 +454,7 @@ struct is_base_of
                                      typename remove_cv<DerivedT>::type>::value)> {};
 #else
 
-using platform::is_same;
+using std::is_same;
 using std::is_base_of;
 
 #endif
