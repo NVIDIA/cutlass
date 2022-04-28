@@ -416,11 +416,11 @@ using std::remove_cv;
 
 #if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
 
-/// std::is_same (false specialization)
+/// platform::is_same (false specialization)
 template <typename A, typename B>
 struct is_same : false_type {};
 
-/// std::is_same (true specialization)
+/// platform::is_same (true specialization)
 template <typename A>
 struct is_same<A, A> : true_type {};
 
@@ -454,7 +454,7 @@ struct is_base_of
                                      typename remove_cv<DerivedT>::type>::value)> {};
 #else
 
-using std::is_same;
+using platform::is_same;
 using std::is_base_of;
 
 #endif

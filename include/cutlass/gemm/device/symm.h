@@ -153,7 +153,7 @@ class Symm {
   static BlasMode const kBlasMode = BlasMode_;
 
   // static asserts for symm update kernel
-  static_assert(std::is_same<LayoutA, LayoutB>::value,
+  static_assert(platform::is_same<LayoutA, LayoutB>::value,
     "SYMM update operator support same layouts for operand A and B");
 
   /// Define the kernel
