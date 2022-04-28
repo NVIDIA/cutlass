@@ -103,7 +103,7 @@ public:
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha,
-      ElementCompute beta
+      ElementCompute beta = ElementCompute(0)
     ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
 
     }
@@ -111,7 +111,7 @@ public:
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr
+      ElementCompute const *beta_ptr = nullptr
     ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
 
     }
