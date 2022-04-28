@@ -30,11 +30,12 @@
  **************************************************************************************************/
 #pragma once
 
+#include <cuComplex.h>
+
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/cstdint>
 #else
 #include <cstdint>
-#include <cuComplex.h>
 #endif
 
 #include "cutlass/cutlass.h"
