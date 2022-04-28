@@ -8,7 +8,7 @@
   * [Unit tests](/test/unit/conv/device/conv2d_fprop_few_channels_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu)
   * [Python-based instance emitter](/tools/library/scripts/generator.py) in the CUTLASS Library and support in the Profiler
 * [BLAS3](https://docs.nvidia.com/cuda/cublas/index.html#cublas-level-3-function-reference) operators accelerated by Tensor Cores
-  * Supported types: f32, cf32, f64, cf64
+  * Supported types: f32, cf32, f64, cf64, tf32x3, complex tf32x3
   * [HERK](/test/unit/gemm/device/her2k_cf32h_cf32n_tensor_op_fast_f32_sm80.cu) with [emitter](/tools/library/scripts/rank_k_operation.py)
   * [SYRK](/test/unit/gemm/device/syrk_f32n_f32t_tensor_op_fast_f32_sm80.cu) with [emitter](/tools/library/scripts/rank_k_operation.py)
   * [SYMM](/test/unit/gemm/device/symm_f32n_f32n_tensor_op_fast_f32_ls_sm80.cu) with [emitter](/tools/library/scripts/symm_operation.py)
@@ -17,9 +17,24 @@
 * [CUTLASS Python](/example/40_cutlass_py) demonstrating JIT compilation of CUTLASS kernels and a Python-based runtime using [CUDA Python](https://developer.nvidia.com/cuda-python)
   * [Python-based runtime](/tools/library/scripts/rt.py) interoperable with existing emitters
 * [GEMM + Softmax example](/examples/35_gemm_softmax)
+* [Gather and Scatter Fusion with GEMM](/examples/36_gather_scatter_fusion) can gather inputs and scatters outputs based on indices vectors in the same GEMM kernel.
+  * It can select random rows in a row major matrix.
+  * It can select random columns in a column major matrix.
+* [Back-to-back GEMM/CONV](examples/13_two_tensor_op_fusion) fully supports buffering the previous GEMM/CONV results in the shared memory for the latter one to use.  It can eliminate register spill when the tile size is big.
+  * Supported kernels: GEMM and CONV.
+  * Supported types: fp16 and int8.
+  * Supported architectures: Turing and Ampere.
+* [Transposed Convolution](/examples/34_transposed_conv2d) (a.k.a Deconvolution) support which reuses Dgrad implementation.
+* [Utility functions](/tools/util/include/cutlass/util) that can pad NHWC and convert between NCHW and NHWC.
+* [Small alignment implicit gemm](https://github.com/NVIDIA/cutlass/issues/242) support for Fprop/Dgrad/Wgrad so that padding is no longer mandated to use tensor cores in these kernels.
+* Epilogue enhancement:
+  * Eliminate bank conflicts in int8 tensor core kernels.
+  * Half2 usage if epilogue compute type is fp16.
+  * More activation functions: Silu, Hardswish.
+  * New elementwise fusion pattern for [residual block](/include/cutlass/epilogue/thread/linear_combination_residual_block.h).
+* [Parallel GEMM splitk](https://github.com/NVIDIA/cutlass/pull/277) support in the CUTLASS profiler.
 * Optimal performance using [**CUDA 11.6u2**](https://developer.nvidia.com/cuda-downloads)
 * Updates and bugfixes from the community (thanks!)
-
 
 ## [2.8.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.8.0) (2021-11-19)
 
