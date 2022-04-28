@@ -356,6 +356,7 @@ struct global_store<AccessType, 1> {
 
 /// ld.shared
 template <int Bytes>
+CUTLASS_DEVICE
 void shared_load(void *dst, uint32_t ptr);
 
 /// ld.shared - 16b
@@ -407,6 +408,7 @@ void shared_load<16>(void *dst, uint32_t ptr) {
 
 /// st.shared
 template <int Bytes>
+CUTLASS_DEVICE
 void shared_store(uint32_t ptr, void const *src);
 
 /// st.shared - 16b
@@ -415,7 +417,7 @@ CUTLASS_DEVICE
 void shared_store<2>(uint32_t ptr, void const *src) {
   asm volatile("st.shared.u16 [%0], %1;\n"
     : :
-    "r"(ptr)
+    "r"(ptr),
     "h"(*reinterpret_cast<uint16_t const *>(src))
   );
 }
@@ -426,7 +428,7 @@ CUTLASS_DEVICE
 void shared_store<4>(uint32_t ptr, void const *src) {
   asm volatile("st.shared.u32 [%0], %1;\n"
     : :
-    "r"(ptr)
+    "r"(ptr),
     "r"(*reinterpret_cast<uint32_t const  *>(src))
   );
 }
@@ -438,7 +440,7 @@ void shared_store<8>(uint32_t ptr, void const *src) {
   uint2 const *dst_u64 = reinterpret_cast<uint2 const *>(src);
   asm volatile("st.shared.v2.u32 [%0], {%1, %2};\n"
     : :
-      "r"(ptr)
+      "r"(ptr),
       "r"(dst_u64->x),
       "r"(dst_u64->y)
     );
@@ -451,7 +453,7 @@ void shared_store<16>(uint32_t ptr, void const *src) {
   uint4 const *dst_u128 = reinterpret_cast<uint4 const *>(src);
   asm volatile("ld.shared.v4.u32 [%0], {%1, %2, %3, %4};\n"
     : :
-      "r"(ptr)
+      "r"(ptr),
       "r"(dst_u128->x),
       "r"(dst_u128->y),
       "r"(dst_u128->z),
