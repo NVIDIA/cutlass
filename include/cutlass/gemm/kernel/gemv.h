@@ -67,7 +67,7 @@ public:
   using LayoutA = layout::ColumnMajor;
   using TensorRefA = TensorRef<ElementA, LayoutA>;
 
-  static_assert(std::is_same<LayoutA, LayoutA_>::value, 
+  static_assert(platform::is_same<LayoutA, LayoutA_>::value, 
     "Only supported for column-major A matrix");
 
   using ElementB = ElementB_;

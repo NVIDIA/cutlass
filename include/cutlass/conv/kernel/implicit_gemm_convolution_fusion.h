@@ -123,7 +123,7 @@ struct ImplicitGemmConvolutionFusion {
   // Conv2d row-major matrix C (KxRSC) 
   // Conv3d row-major matrix C (KxTRSC)
   static int const kWgradCStrideIdx = 
-    cutlass::platform::is_same<LayoutC, cutlass::layout::TensorNHWC>::value ? 2 : 3;
+    platform::is_same<LayoutC, cutlass::layout::TensorNHWC>::value ? 2 : 3;
 
   /// This chooses the appropriate stride element of the C tensor.
   static int const kTensorCStrideIdx = 

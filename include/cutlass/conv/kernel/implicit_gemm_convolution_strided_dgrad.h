@@ -121,20 +121,20 @@ struct ImplicitGemmConvolutionStridedDgrad {
   // Conv2d row-major matrix C (KxRSC) 
   // Conv3d row-major matrix C (KxTRSC)
   static int const kWgradCStrideIdx = 
-    cutlass::platform::is_same<LayoutC, cutlass::layout::TensorNHWC>::value ? 2 : 3;
+    platform::is_same<LayoutC, cutlass::layout::TensorNHWC>::value ? 2 : 3;
 
   /// This chooses the appropriate stride element of the C tensor.
   static int const kTensorCStrideIdx = 
     (kConvolutionalOperator == conv::Operator::kWgrad ? kWgradCStrideIdx : 0);
 
   // Strided dgrad uses a specialized threadblock swizzle for functionality and performance
-  static_assert((std::is_same<ThreadblockSwizzle,
+  static_assert((platform::is_same<ThreadblockSwizzle,
                       threadblock::StridedDgradHorizontalThreadblockSwizzle>::value) ||
-                (std::is_same<ThreadblockSwizzle,
+                (platform::is_same<ThreadblockSwizzle,
                       threadblock::StridedDgradIdentityThreadblockSwizzle<1>>::value) ||
-                (std::is_same<ThreadblockSwizzle,
+                (platform::is_same<ThreadblockSwizzle,
                       threadblock::StridedDgradIdentityThreadblockSwizzle<4>>::value) ||
-                (std::is_same<ThreadblockSwizzle,
+                (platform::is_same<ThreadblockSwizzle,
                       threadblock::StridedDgradIdentityThreadblockSwizzle<8>>::value),
     "Needs ThreadblockSwizzle type specialized for strided dgrad");
 

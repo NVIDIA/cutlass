@@ -30,11 +30,12 @@
  **************************************************************************************************/
 #pragma once
 
+#include <cuComplex.h>
+
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/cstdint>
 #else
 #include <cstdint>
-#include <cuComplex.h>
 #endif
 
 #include "cutlass/cutlass.h"
@@ -435,10 +436,10 @@ CUTLASS_HOST_DEVICE complex<T> conj(complex<T> const &z) {
 /// Indentity transform for non-complex types
 template <typename T>
 CUTLASS_HOST_DEVICE T conj(T const &z) {
-    static_assert( !std::is_same<T, cuComplex>::value &&
-                   !std::is_same<T, cuDoubleComplex>::value &&
-                   !std::is_same<T, cutlass::complex<double>>::value &&
-                   !std::is_same<T, cutlass::complex<float>>::value, "May not be a complex data type");
+    static_assert( !platform::is_same<T, cuComplex>::value &&
+                   !platform::is_same<T, cuDoubleComplex>::value &&
+                   !platform::is_same<T, cutlass::complex<double>>::value &&
+                   !platform::is_same<T, cutlass::complex<float>>::value, "May not be a complex data type");
   return z;
 }
 

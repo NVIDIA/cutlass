@@ -149,7 +149,7 @@ class Rank2K {
   static int const kUpdateRank = 2;
 
   // static asserts for rank 2k update kernel
-  static_assert(std::is_same<LayoutA, LayoutB>::value,
+  static_assert(platform::is_same<LayoutA, LayoutB>::value,
     "Rank 2K update operator support same layouts for operandA and B");
 
   /// Define the kernel

@@ -54,19 +54,19 @@ class UnaryOp
         static FragmentOut execute(FragmentIn &in)
         {
             static_assert(FragmentIn::kElements == FragmentOut::kElements, "Number of elements must match.");
-            static_assert(std::is_same<Transform, UnaryTransform::Identity>::value ||
-                          std::is_same<Transform, UnaryTransform::Conjugate>::value,
+            static_assert(platform::is_same<Transform, UnaryTransform::Identity>::value ||
+                          platform::is_same<Transform, UnaryTransform::Conjugate>::value,
                           "Unary Operator not supported.");
 
             FragmentOut out;
-            if( std::is_same<Transform, UnaryTransform::Identity>::value )
+            if( platform::is_same<Transform, UnaryTransform::Identity>::value )
             {
                 CUTLASS_PRAGMA_UNROLL
                 for(int i=0; i < FragmentIn::kElements; ++i){
                    out[i] = static_cast<typename FragmentOut::Element>(in[i]);
                 }
             }
-            else if( std::is_same<Transform, UnaryTransform::Conjugate>::value )
+            else if( platform::is_same<Transform, UnaryTransform::Conjugate>::value )
             {
                 for(int i=0; i < FragmentIn::kElements; ++i){
                    out[i] = conj(static_cast<typename FragmentOut::Element>(in[i]));
@@ -83,15 +83,15 @@ class UnaryOp<FragmentIn, FragmentIn, Transform>
         CUTLASS_DEVICE
         static FragmentIn execute(FragmentIn &in)
         {
-            static_assert(std::is_same<Transform, UnaryTransform::Identity>::value ||
-                          std::is_same<Transform, UnaryTransform::Conjugate>::value,
+            static_assert(platform::is_same<Transform, UnaryTransform::Identity>::value ||
+                          platform::is_same<Transform, UnaryTransform::Conjugate>::value,
                           "Unary Operator not supported.");
 
-            if( std::is_same<Transform, UnaryTransform::Identity>::value )
+            if( platform::is_same<Transform, UnaryTransform::Identity>::value )
             {
                 return in;
             }
-            else if( std::is_same<Transform, UnaryTransform::Conjugate>::value )
+            else if( platform::is_same<Transform, UnaryTransform::Conjugate>::value )
             {
                 for(int i=0; i < FragmentIn::kElements; ++i){
                    in[i] = conj(in[i]);

@@ -183,7 +183,7 @@ struct DefaultGemmGrouped<
 > {
 
   // If true, we must construct a 'transposed-and-exchanged' Mma operator.
-  static bool const kInternalTranspose = std::is_same<LayoutC, layout::ColumnMajor>::value;
+  static bool const kInternalTranspose = platform::is_same<LayoutC, layout::ColumnMajor>::value;
 
   using MapArguments = kernel::detail::MapArguments<
     ElementA,
@@ -307,7 +307,7 @@ struct DefaultGemmGrouped<
 > {
 
   // If true, we must construct a 'transposed-and-exchanged' Mma operator.
-  static bool const kInternalTranspose = std::is_same<LayoutC, layout::ColumnMajor>::value;
+  static bool const kInternalTranspose = platform::is_same<LayoutC, layout::ColumnMajor>::value;
 
   using MapArguments = kernel::detail::MapArguments<
     ElementA,
