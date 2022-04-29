@@ -416,11 +416,11 @@ using std::remove_cv;
 
 #if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
 
-/// platform::is_same (false specialization)
+/// std::is_same (false specialization)
 template <typename A, typename B>
 struct is_same : false_type {};
 
-/// platform::is_same (true specialization)
+/// std::is_same (true specialization)
 template <typename A>
 struct is_same<A, A> : true_type {};
 
