@@ -209,7 +209,7 @@ struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignment
           2, ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
           EpilogueOutputOp::kCount>::Epilogue;
 
-  using Epilogue = typename cutlass::platform::conditional<cutlass::platform::is_same<LayoutC, layout::RowMajor>::value,
+  using Epilogue = typename cutlass::platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
                                                   RegularEpilogue,
                                                   Affine2Epilogue>::type;
 
@@ -672,7 +672,7 @@ struct DefaultGemm<
       kEpilogueElementsPerAccess
       >::Epilogue;
 
-  using Epilogue = typename cutlass::platform::conditional<cutlass::platform::is_same<LayoutC, layout::RowMajor>::value,
+  using Epilogue = typename cutlass::platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
                                                   RegularEpilogue,
                                                   Affine2Epilogue>::type;
 
@@ -780,7 +780,7 @@ struct DefaultGemm<ElementA,
       kEpilogueElementsPerAccess
       >::Epilogue;
 
-  using Epilogue = typename cutlass::platform::conditional<cutlass::platform::is_same<LayoutC, layout::RowMajor>::value,
+  using Epilogue = typename cutlass::platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
                                                   RegularEpilogue,
                                                   Affine2Epilogue>::type;
 

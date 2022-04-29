@@ -632,8 +632,8 @@ struct DefaultMma<int8_t, LayoutA, kAlignmentA, int8_t, LayoutB, kAlignmentB,
   using ElementB = int8_t;
   using OperatorClass =  arch::OpClassSimt;
 
-  static const bool transposeA =  cutlass::platform::is_same< LayoutA, layout::ColumnMajor >::value;
-  static const bool transposeB =  cutlass::platform::is_same< LayoutB, layout::RowMajor >::value;
+  static const bool transposeA =  platform::is_same< LayoutA, layout::ColumnMajor >::value;
+  static const bool transposeB =  platform::is_same< LayoutB, layout::RowMajor >::value;
 
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
