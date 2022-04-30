@@ -54,6 +54,7 @@
 #include "cutlass/core_io.h"
 #include "cutlass/util/tensor_view_io.h"
 
+#include "reference/device/tensor_scale_bias.h"
 #include "helper.h"
 
 #define CHECK_GT(val1, val2) \
@@ -153,6 +154,7 @@ public:
       cutlass::reference::host::TensorFill(view, Element(1));
     }
     else {
+      std::cerr << "Not implemented\n";
     }
   }
 
@@ -407,6 +409,7 @@ public:
   cutlass::HostTensor<typename B2bConv2d::ElementC, typename B2bConv2d::LayoutC> tensor_C0;
   cutlass::HostTensor<typename B2bConv2d::ElementScaleBias, typename B2bConv2d::LayoutScaleBias> tensor_Scale0;
   cutlass::HostTensor<typename B2bConv2d::ElementScaleBias, typename B2bConv2d::LayoutScaleBias> tensor_Bias0;
+  cutlass::HostTensor<ElementAccumulator, typename B2bConv2d::LayoutC> tensor_Z0_reference;
   cutlass::HostTensor<typename B2bConv2d::ElementC, typename B2bConv2d::LayoutC> tensor_D0_reference;
 
   cutlass::HostTensor<typename B2bConv2d::ElementB, typename B2bConv2d::LayoutB> tensor_B1;
@@ -487,6 +490,7 @@ public:
     if(alpha0 == ElementCompute(0)) //per-channel scale
         tensor_Scale0.resize({1, problem_size_0.K});
     tensor_Bias0.resize({1, problem_size_0.K});
+    tensor_Z0_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_0));
     tensor_D0_reference.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_0));
     tensor_B1.resize(implicit_gemm_tensor_b_extent(kConvolutionalOperator, problem_size_1));
     tensor_C1.resize(implicit_gemm_tensor_c_extent(kConvolutionalOperator, problem_size_1));
@@ -607,22 +611,35 @@ public:
       typename B2bConv2d::LayoutA,
       typename B2bConv2d::ElementB,
       typename B2bConv2d::LayoutB,
-      typename B2bConv2d::ElementC,
+      ElementAccumulator,
       typename B2bConv2d::LayoutC,
-      ElementCompute,
+      ElementAccumulator,
       ElementAccumulator
     >(
       kConvolutionalOperator,
       problem_size_0,
       tensor_A0.device_ref(),
       tensor_B0.device_ref(),
-      tensor_C0.device_ref(),
+      tensor_Z0_reference.device_ref(),
+      tensor_Z0_reference.device_ref(),
+      ElementAccumulator(1), // intermediate alpha = 1
+      ElementAccumulator(0)  // beta = 0
+    );
+
+    cutlass::reference::device::TensorScaleBiasConv2d<
+      ElementAccumulator,
+      typename B2bConv2d::ElementC,
+      typename B2bConv2d::LayoutC,
+      ElementCompute,
+      typename B2bConv2d::LayoutScaleBias
+    >(
+      problem_size_0,
+      tensor_Z0_reference.device_ref(),
       tensor_D0_reference.device_ref(),
-      alpha0, 
-      beta0,
-      nullptr, // stream
+      alpha0,
       tensor_Scale0.device_ref(),
-      tensor_Bias0.device_ref());
+      tensor_Bias0.device_ref()
+    );
 
     if(relu) {
        cutlass::reference::device::TensorReLu(tensor_D0_reference.device_view()); 

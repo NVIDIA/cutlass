@@ -61,6 +61,29 @@ When applying the above constraint to convolutions, it is required that the 2nd 
 kernel doesn't have halos such that data used by each threadblock doesn't depend on any other
 threadblock. Typically this requires the 2nd Convolution uses 1x1 filter without any paddings.
 
+# Build and run
+
+- Run cmake at top-level CUTLASS
+- `make 13_two_tensor_op_fusion`
+- Run individual benchmarks
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_convs_f16_sm75_rf`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_convs_f16_sm75_shmem`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_convs_f16_sm80_rf`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_convs_f16_sm80_shmem`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_convs_s8_sm75_rf`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_convs_s8_sm75_shmem`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_convs_s8_sm80_rf`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_convs_s8_sm80_shmem`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_f16_sm75_rf`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_f16_sm75_shmem`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_f16_sm80_rf`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_f16_sm80_shmem`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_s8_sm75_rf`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_s8_sm75_shmem`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_s8_sm80_rf`
+  - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_s8_sm80_shmem`
+ 
+
 # Copyright
 
 Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.

@@ -68,14 +68,14 @@ bool run_nonfused_conv2d_fprop_optimized_s8_sm80() {
   using ElementCompute = float;
 
   ElementCompute alpha0 = ElementCompute(1);
-  ElementCompute beta0 = ElementCompute(0);
+  ElementCompute beta0 = ElementCompute(1); //beta=1 for bias
   ElementCompute alpha1 = ElementCompute(1);
-  ElementCompute beta1 = ElementCompute(0);
+  ElementCompute beta1 = ElementCompute(1); //beta=1 for bias
 
-  using ThreadblockShape0 = cutlass::gemm::GemmShape<64, 64, 64>;
-  using WarpShape0 = cutlass::gemm::GemmShape<32, 32, 64>;
-  using ThreadblockShape1 = cutlass::gemm::GemmShape<64, 128, 64>;
-  using WarpShape1 = cutlass::gemm::GemmShape<32, 64, 64>;
+  using ThreadblockShape0 = cutlass::gemm::GemmShape<128, 64, 64>;
+  using WarpShape0 = cutlass::gemm::GemmShape<64, 64, 64>;
+  using ThreadblockShape1 = cutlass::gemm::GemmShape<128, 128, 64>;
+  using WarpShape1 = cutlass::gemm::GemmShape<64, 64, 64>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;
 
   using Conv2dFpropKernel0 = typename cutlass::conv::kernel::DefaultConv2dFprop<
@@ -93,7 +93,7 @@ bool run_nonfused_conv2d_fprop_optimized_s8_sm80() {
       64 / cutlass::sizeof_bits<ElementC>::value,
       ElementAccumulator,
       ElementCompute,
-      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
+      cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     3,
@@ -117,7 +117,8 @@ bool run_nonfused_conv2d_fprop_optimized_s8_sm80() {
       ElementC,
       64 / cutlass::sizeof_bits<ElementC>::value,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     3,
@@ -151,14 +152,15 @@ bool run_fused_conv2d_fprop_optimized_s8_sm80_rf_res() {
   using ElementCompute = float;
 
   ElementCompute alpha0 = ElementCompute(1);
+  //Fused kernel has built-in bias, setting beta=0
   ElementCompute beta0 = ElementCompute(0);
   ElementCompute alpha1 = ElementCompute(1);
-  ElementCompute beta1 = ElementCompute(0);
+  ElementCompute beta1 = ElementCompute(1); //beta=1 for bias
 
   using ThreadblockShape0 = cutlass::gemm::GemmShape<64, 64, 64>;
-  using WarpShape0 = cutlass::gemm::GemmShape<32, 64, 64>;
+  using WarpShape0 = cutlass::gemm::GemmShape<16, 64, 64>;
   using ThreadblockShape1 = cutlass::gemm::GemmShape<64, 128, 64>;
-  using WarpShape1 = cutlass::gemm::GemmShape<32, 128, 64>;
+  using WarpShape1 = cutlass::gemm::GemmShape<16, 128, 64>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;
 
   using EpilogueOutputOp0 = 
@@ -175,7 +177,8 @@ bool run_fused_conv2d_fprop_optimized_s8_sm80_rf_res() {
       ElementC,
       64 / cutlass::sizeof_bits<ElementC>::value,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >;
 
 
