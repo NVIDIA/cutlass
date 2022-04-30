@@ -158,6 +158,10 @@ class B2bGemm {
   static ComplexTransform const kTransformA = ComplexTransform::kNone;
   static ComplexTransform const kTransformB = ComplexTransform::kNone;
 
+  /// Derived types
+  using ElementScaleBias = typename EpilogueOutputOp0::ElementCompute;
+  using LayoutScaleBias = layout::RowMajor;
+
   /// Define the kernel
   using B2bGemmKernel = typename kernel::DefaultB2bGemm<
     ElementA,
@@ -197,6 +201,8 @@ class B2bGemm {
     TensorRef<ElementA const, LayoutA> ref_A0;
     TensorRef<ElementB const, LayoutB> ref_B0;
     TensorRef<ElementC const, LayoutC> ref_C0;
+    TensorRef<ElementScaleBias const, LayoutScaleBias> ref_Scale0;
+    TensorRef<ElementScaleBias const, LayoutScaleBias> ref_Bias0;
     TensorRef<ElementB const, LayoutB> ref_B1;
     TensorRef<ElementC const, LayoutC> ref_C1;
     TensorRef<ElementC, LayoutC> ref_D1;
@@ -222,6 +228,8 @@ class B2bGemm {
       TensorRef<ElementA const, LayoutA> ref_A0_,
       TensorRef<ElementB const, LayoutB> ref_B0_,
       TensorRef<ElementC const, LayoutC> ref_C0_,
+      TensorRef<ElementScaleBias const, LayoutScaleBias> ref_Scale0_,
+      TensorRef<ElementScaleBias const, LayoutScaleBias> ref_Bias0_,
       TensorRef<ElementB const, LayoutB> ref_B1_,
       TensorRef<ElementC const, LayoutC> ref_C1_,
       TensorRef<ElementC, LayoutC> ref_D1_,
@@ -236,6 +244,8 @@ class B2bGemm {
       ref_A0(ref_A0_),
       ref_B0(ref_B0_),
       ref_C0(ref_C0_),
+      ref_Scale0(ref_Scale0_),
+      ref_Bias0(ref_Bias0_),
       ref_B1(ref_B1_),
       ref_C1(ref_C1_),
       ref_D1(ref_D1_),
@@ -348,6 +358,8 @@ public:
       args.ref_A0.non_const_ref(),
       args.ref_B0.non_const_ref(),
       args.ref_C0.non_const_ref(),
+      args.ref_Scale0.non_const_ref(),
+      args.ref_Bias0.non_const_ref(),
       args.ref_B1.non_const_ref(),
       args.ref_C1.non_const_ref(),
       args.ref_D1,
@@ -368,12 +380,14 @@ public:
       }
     }
 
-    params_.ref_A0.reset(args.ref_A.non_const_ref().data());
-    params_.ref_B0.reset(args.ref_B.non_const_ref().data());
-    params_.ref_C0.reset(args.ref_C.non_const_ref().data());
-    params_.ref_B1.reset(args.ref_B.non_const_ref().data());
-    params_.ref_C1.reset(args.ref_C.non_const_ref().data());
-    params_.ref_D1.reset(args.ref_D.data());
+    params_.ref_A0.reset(args.ref_A0.non_const_ref().data());
+    params_.ref_B0.reset(args.ref_B0.non_const_ref().data());
+    params_.ref_C0.reset(args.ref_C0.non_const_ref().data());
+    params_.ref_Scale0.reset(args.ref_Scale0.non_const_ref().data());
+    params_.ref_Bias0.reset(args.ref_Bias0.non_const_ref().data());
+    params_.ref_B1.reset(args.ref_B1.non_const_ref().data());
+    params_.ref_C1.reset(args.ref_C1.non_const_ref().data());
+    params_.ref_D1.reset(args.ref_D1.data());
     params_.output_op_0 = args.epilogue0;
     params_.output_op_1 = args.epilogue1;
     params_.semaphore = static_cast<int *>(workspace);

@@ -165,6 +165,9 @@ public:
 
   /// Warp-level Mma
   using Operator0 = typename Policy0::Operator;
+  
+  /// Fragment of Scale and Bias loaded from global memory
+  using FragmentA1ScaleBias = typename IteratorAccumulatorScaleBias::Fragment;
 
   /// Fragment of accumulator tile
   using FragmentC1 = typename Policy1::Operator::FragmentC;
@@ -418,11 +421,15 @@ public:
       int gemm_k_iterations_0,
       ///< destination accumulator tile
       FragmentC1 &accum,
-      ///< iterator over A operand in global memory
+      ///< iterator over A0 operand in global memory
       IteratorA0 iterator_A0,
-      ///< iterator over B operand in global memory
+      ///< iterator over B0 operand in global memory
       IteratorB0 iterator_B0,
-      ///< iterator over B operand in global memory
+      ///< iterator over A1 operand scale vector in global memory
+      IteratorAccumulatorScaleBias iterator_accum0_scale,
+      ///< iterator over A1 operand bias vector in global memory
+      IteratorAccumulatorScaleBias iterator_accum0_bias,
+      ///< iterator over B1 operand in global memory
       IteratorB1 iterator_B1,
       ///< initial value of accumulator
       FragmentC0 const &src_accum,
@@ -658,7 +665,7 @@ public:
     /// Epilogue for the first Implicit Gemm
     Epilogue0 epilogue0;
 
-    epilogue0(output_op_0, smem_iterator_D0_, accum0);
+    epilogue0(output_op_0, smem_iterator_D0_, accum0, iterator_accum0_scale, iterator_accum0_bias);
 
     __syncthreads();
 

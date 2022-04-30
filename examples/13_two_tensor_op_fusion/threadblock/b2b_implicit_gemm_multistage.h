@@ -745,7 +745,6 @@ public:
         this->warp_tile_iterator_B1_.load(warp_loaded_frag_B1[(warp_mma_k + 1) % 2]);
         ++this->warp_tile_iterator_B1_;
 
-
         if (warp_mma_k > 0)
           warp_mma1.transform(warp_transformed_frag_A1[warp_mma_k % 2],
                              warp_transformed_frag_B1[warp_mma_k % 2],

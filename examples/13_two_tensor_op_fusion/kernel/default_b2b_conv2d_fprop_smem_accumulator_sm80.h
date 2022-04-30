@@ -338,7 +338,7 @@ struct DefaultB2bConv2dFprop <
     cutlass::transform::threadblock::VectorIterator<
       cutlass::transform::threadblock::PredicatedVectorAccessIterator<
           cutlass::MatrixShape<ThreadblockShape0::kM, ThreadblockShape0::kN>, 
-          cutlass::MatrixShape<WarpShape0::kM, WarpShape0::kK>, 
+          cutlass::MatrixShape<WarpShape0::kM, WarpShape0::kN>, 
           ElementScaleBias, LayoutScaleBias, kElementsPerAccess>
     >;
 

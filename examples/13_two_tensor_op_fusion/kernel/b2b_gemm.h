@@ -79,6 +79,8 @@ struct B2bGemm {
     typename B2bMma::IteratorB0::TensorRef ref_B0;
     typename Epilogue::OutputTileIterator::Params params_C0;
     typename Epilogue::OutputTileIterator::TensorRef ref_C0;
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Scale0;
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Bias0;
     typename B2bMma::IteratorB1::Params params_B1;
     typename B2bMma::IteratorB1::TensorRef ref_B1;
     typename Epilogue::OutputTileIterator::Params params_C1;
@@ -109,6 +111,8 @@ struct B2bGemm {
       typename B2bMma::IteratorA0::TensorRef ref_A0,
       typename B2bMma::IteratorB0::TensorRef ref_B0,
       typename Epilogue::OutputTileIterator::TensorRef ref_C0,
+      typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Scale0,
+      typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Bias0,
       typename B2bMma::IteratorB1::TensorRef ref_B1,
       typename Epilogue::OutputTileIterator::TensorRef ref_C1,
       typename Epilogue::OutputTileIterator::TensorRef ref_D1,
@@ -126,6 +130,8 @@ struct B2bGemm {
       ref_B0(ref_B0),
       params_C0(ref_C0.layout()),
       ref_C0(ref_C0),
+      ref_Scale0(ref_Scale0),
+      ref_Bias0(ref_Bias0),
       params_B1(ref_B1.layout()),
       ref_B1(ref_B1),
       params_C1(ref_C1.layout()),
@@ -305,6 +311,29 @@ struct B2bGemm {
     int warp_idx = __shfl_sync(0x1f, threadIdx.x / 32, 0);
     int lane_idx = threadIdx.x % 32;
 
+    // Construct iterators to accumulator scale/bias vector
+    typename B2bMma::IteratorAccumulatorScaleBias iterator_Scale0(
+      params.ref_Scale0.data(),
+      {1, params.problem_size_0.n()},
+      thread_idx,
+      warp_idx,
+      MatrixCoord(
+        0, threadblock_tile_offset.n() * B2bMma::Shape0::kN
+      )
+    );
+
+    typename B2bMma::IteratorAccumulatorScaleBias iterator_Bias0(
+      params.ref_Bias0.data(),
+      {1, params.problem_size_0.n()},
+      thread_idx,
+      warp_idx,
+      MatrixCoord(
+        0, threadblock_tile_offset.n() * B2bMma::Shape0::kN
+      )
+    );
+
+
+
     //
     // Main loop
     //
@@ -322,7 +351,8 @@ struct B2bGemm {
 
     if (!kSplitKSerial || gemm_k_iterations_0 > 0) {
       // Compute threadblock-scoped matrix multiply-add
-      b2bMma(gemm_k_iterations_0, accumulators, iterator_A0, iterator_B0, iterator_B1, src_accum, output_op_0);
+      b2bMma(gemm_k_iterations_0, accumulators, iterator_A0, iterator_B0,
+        iterator_Scale0, iterator_Bias0, iterator_B1, src_accum, output_op_0);
     }
 
     //

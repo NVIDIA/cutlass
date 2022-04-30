@@ -28,7 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-
 #pragma once
 
 #include <iostream>
@@ -46,6 +45,7 @@
 #include "cutlass/util/reference/device/gemm.h"
 #include "cutlass/util/reference/device/tensor_relu.h"
 
+#include "reference/device/tensor_scale_bias.h"
 #include "helper.h"
 
 #define CHECK_GT(val1, val2) \
@@ -68,6 +68,7 @@ struct B2bInterleavedNonFusedGemmRun
   cutlass::Distribution::Kind init_A;
   cutlass::Distribution::Kind init_B;
   cutlass::Distribution::Kind init_C;
+  cutlass::Distribution::Kind init_Bias;
   uint64_t seed;
 
   //
@@ -78,9 +79,10 @@ struct B2bInterleavedNonFusedGemmRun
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform, 
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform, 
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform, 
+    cutlass::Distribution::Kind init_Bias_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = 2080
   ):
-    init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_) { }
+    init_A(init_A_), init_B(init_B_), init_C(init_C_), init_Bias(init_Bias_), seed(seed_) { }
 
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
@@ -97,14 +99,23 @@ struct B2bInterleavedNonFusedGemmRun
     else if (dist_kind == cutlass::Distribution::Identity) {
 
       cutlass::reference::host::TensorFillIdentity(view);
-    } 
+    }
+    else if (dist_kind == cutlass::Distribution::Gaussian) {
+
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5);
+    }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
       cutlass::reference::host::BlockFillSequential(
         view.data(), view.capacity());
-    } 
+    }
+    else if (dist_kind == cutlass::Distribution::AllZeros) {
+      cutlass::reference::host::TensorFill(view, Element(0));
+    }
+    else if (dist_kind == cutlass::Distribution::AllOnes) {
+      cutlass::reference::host::TensorFill(view, Element(1));
+    }
     else {
-      // TODO: Implement the rest
       std::cerr << "Not implemented\n";
       return false;
     }
@@ -149,6 +160,10 @@ struct B2bInterleavedNonFusedGemmRun
 
     cutlass::HostTensor<
       typename Gemm0::ElementC, 
+      typename Gemm0::LayoutC> tensor_Bias0({1, problem_size_0.n()});
+
+    cutlass::HostTensor<
+      typename Gemm0::ElementC, 
       typename Gemm0::LayoutC> tensor_D0(problem_size_0.mn());
 
     cutlass::HostTensor<
@@ -168,6 +183,10 @@ struct B2bInterleavedNonFusedGemmRun
       typename Gemm1::LayoutC> tensor_C1(problem_size_1.mn());
 
     cutlass::HostTensor<
+      typename Gemm0::ElementC, 
+      typename Gemm1::LayoutC> tensor_Bias1({1, problem_size_1.n()});
+
+    cutlass::HostTensor<
       typename Gemm1::ElementC, 
       typename Gemm1::LayoutC> tensor_D1(problem_size_1.mn());
 
@@ -179,8 +198,10 @@ struct B2bInterleavedNonFusedGemmRun
     CHECK_TRUE(initialize_tensor(tensor_A0.host_view(), init_A, seed + 2019));
     CHECK_TRUE(initialize_tensor(tensor_B0.host_view(), init_B, seed + 2018));
     CHECK_TRUE(initialize_tensor(tensor_C0.host_view(), init_C, seed + 2017));
+    CHECK_TRUE(initialize_tensor(tensor_Bias0.host_view(), init_Bias, seed + 2014));
     CHECK_TRUE(initialize_tensor(tensor_B1.host_view(), init_B, seed + 2016));
     CHECK_TRUE(initialize_tensor(tensor_C1.host_view(), init_C, seed + 2015));
+    CHECK_TRUE(initialize_tensor(tensor_Bias1.host_view(), init_Bias, seed + 2013));
 
     //Reorder B0 and B1
     cutlass::reorder_column<InterleavedK_>(
@@ -201,10 +222,12 @@ struct B2bInterleavedNonFusedGemmRun
     tensor_B0.sync_device();
     tensor_B0_reordered.sync_device();
     tensor_C0.sync_device();
+    tensor_Bias0.sync_device();
     tensor_D0.sync_device();
     tensor_B1.sync_device();
     tensor_B1_reordered.sync_device();
     tensor_C1.sync_device();
+    tensor_Bias1.sync_device();
     tensor_D1.sync_device();
     reference_D0.sync_device();
     reference_D1.sync_device();
@@ -217,7 +240,7 @@ struct B2bInterleavedNonFusedGemmRun
       problem_size_0,
       tensor_A0.device_ref(),
       tensor_B0_reordered.device_ref(),
-      tensor_C0.device_ref(),
+      {tensor_Bias0.device_data(), typename Gemm0::LayoutC::Stride(0)},
       tensor_D0.device_ref(),
       {alpha0, beta0}
     };
@@ -226,7 +249,7 @@ struct B2bInterleavedNonFusedGemmRun
       problem_size_1,
       tensor_D0.device_ref(),
       tensor_B1_reordered.device_ref(),
-      tensor_C1.device_ref(),
+      {tensor_Bias1.device_data(), typename Gemm1::LayoutC::Stride(0)},
       tensor_D1.device_ref(),
       {alpha1, beta1}
     };
@@ -265,8 +288,7 @@ struct B2bInterleavedNonFusedGemmRun
     
         CUTLASS_CHECK(status);
     }
-    cudaEventRecord(stop1);    
-
+    cudaEventRecord(stop1);
     for(int i = 0; i < runs; i++) {
         status = gemm_op_1();
     
@@ -286,7 +308,6 @@ struct B2bInterleavedNonFusedGemmRun
     tensor_D0.sync_host();
     tensor_D1.sync_host();
 
-    bool passed = false;
     //
     // Verify
     //
@@ -310,7 +331,7 @@ struct B2bInterleavedNonFusedGemmRun
       tensor_A0.device_ref(), 
       tensor_B0.device_ref(), 
       beta0, 
-      tensor_C0.device_ref(), 
+      {tensor_Bias0.device_data(), typename Gemm0::LayoutC::Stride(0)},
       reference_D0.device_ref()
     );
 
@@ -323,8 +344,8 @@ struct B2bInterleavedNonFusedGemmRun
       alpha1, 
       reference_D0.device_ref(), 
       tensor_B1.device_ref(), 
-      beta1, 
-      tensor_C1.device_ref(), 
+      beta1,
+      {tensor_Bias1.device_data(), typename Gemm1::LayoutC::Stride(0)},
       reference_D1.device_ref()
     );
   
@@ -332,6 +353,7 @@ struct B2bInterleavedNonFusedGemmRun
        cutlass::reference::device::TensorReLu(reference_D1.device_view()); 
     }
 
+    // Wait for kernels to finish
     cudaDeviceSynchronize();
     reference_D0.sync_host(); 
     reference_D1.sync_host(); 
@@ -341,7 +363,7 @@ struct B2bInterleavedNonFusedGemmRun
     CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D1.host_view()), 0);
     CHECK_GT(cutlass::reference::host::TensorNorm(reference_D1.host_view()), 0);
 
-    passed = cutlass::reference::host::TensorEquals(
+    bool passed = cutlass::reference::host::TensorEquals(
       reference_D1.host_view(), 
       tensor_D1.host_view());
 
@@ -360,10 +382,12 @@ struct B2bInterleavedNonFusedGemmRun
         << "\nB0 =\n" << tensor_B0.host_view()
         << "\nB0_reordered =\n" << tensor_B0_reordered.host_view()
         << "\nC0 =\n" << tensor_C0.host_view()
+        << "\nBias0:\n" << tensor_Bias0.host_view() << "\n"
         << "\nD0 =\n" << tensor_D0.host_view()
         << "\nB1 =\n" << tensor_B1.host_view()
         << "\nB1_reordered =\n" << tensor_B1_reordered.host_view()
         << "\nC1 =\n" << tensor_C1.host_view()
+        << "\nBias1:\n" << tensor_Bias1.host_view() << "\n"
         << "\n\nReference =\n" << reference_D1.host_view()
         << "\nComputed =\n" << tensor_D1.host_view();
     }
@@ -383,6 +407,8 @@ struct B2bInterleavedFusedGemmRun
   cutlass::Distribution::Kind init_A;
   cutlass::Distribution::Kind init_B;
   cutlass::Distribution::Kind init_C;
+  cutlass::Distribution::Kind init_Scale;
+  cutlass::Distribution::Kind init_Bias;
   uint64_t seed;
 
   //
@@ -393,9 +419,12 @@ struct B2bInterleavedFusedGemmRun
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform, 
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform, 
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform, 
+    cutlass::Distribution::Kind init_Scale_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_Bias_ = cutlass::Distribution::Uniform,
     uint64_t seed_ = 2080
   ):
-    init_A(init_A_), init_B(init_B_), init_C(init_C_), seed(seed_) { }
+    init_A(init_A_), init_B(init_B_), init_C(init_C_),
+    init_Scale(init_Scale_), init_Bias(init_Bias_), seed(seed_) { }
 
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
@@ -413,13 +442,22 @@ struct B2bInterleavedFusedGemmRun
 
       cutlass::reference::host::TensorFillIdentity(view);
     } 
+    else if (dist_kind == cutlass::Distribution::Gaussian) {
+
+      cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5);
+    }
     else if (dist_kind == cutlass::Distribution::Sequential) {
 
       cutlass::reference::host::BlockFillSequential(
         view.data(), view.capacity());
-    } 
+    }
+    else if (dist_kind == cutlass::Distribution::AllZeros) {
+      cutlass::reference::host::TensorFill(view, Element(0));
+    }
+    else if (dist_kind == cutlass::Distribution::AllOnes) {
+      cutlass::reference::host::TensorFill(view, Element(1));
+    }
     else {
-      // TODO: Implement the rest
       std::cerr << "Not implemented\n";
       return false;
     }
@@ -437,7 +475,7 @@ struct B2bInterleavedFusedGemmRun
     ElementCompute alpha0 = ElementCompute(1), 
     ElementCompute beta0 = ElementCompute(0),
     ElementCompute alpha1 = ElementCompute(1), 
-    ElementCompute beta1 = ElementCompute(0), 
+    ElementCompute beta1 = ElementCompute(0),
     bool relu = true,
     int warm_ups = 1,
     int runs = 100) {
@@ -463,6 +501,21 @@ struct B2bInterleavedFusedGemmRun
       typename B2bGemm::LayoutC> tensor_C0(problem_size_0.mn());
 
     cutlass::HostTensor<
+      typename B2bGemm::ElementScaleBias, 
+      typename B2bGemm::LayoutScaleBias> tensor_Scale0;
+
+    if(alpha0 == ElementCompute(0)) //per-channel scale
+        tensor_Scale0.resize({1, problem_size_0.n()});
+
+    cutlass::HostTensor<
+      typename B2bGemm::ElementScaleBias, 
+      typename B2bGemm::LayoutScaleBias> tensor_Bias0({1, problem_size_0.n()});
+
+    cutlass::HostTensor<
+      ElementAccumulator, 
+      typename B2bGemm::LayoutC> reference_Z0(problem_size_0.mn());
+
+    cutlass::HostTensor<
       typename B2bGemm::ElementC, 
       typename B2bGemm::LayoutC> reference_D0(problem_size_0.mn());
 
@@ -480,6 +533,10 @@ struct B2bInterleavedFusedGemmRun
 
     cutlass::HostTensor<
       typename B2bGemm::ElementC, 
+      typename B2bGemm::LayoutScaleBias> tensor_Bias1({1, problem_size_1.n()});
+
+    cutlass::HostTensor<
+      typename B2bGemm::ElementC, 
       typename B2bGemm::LayoutC> tensor_D1(problem_size_1.mn());
 
     cutlass::HostTensor<
@@ -490,8 +547,12 @@ struct B2bInterleavedFusedGemmRun
     CHECK_TRUE(initialize_tensor(tensor_A0.host_view(), init_A, seed + 2019));
     CHECK_TRUE(initialize_tensor(tensor_B0.host_view(), init_B, seed + 2018));
     CHECK_TRUE(initialize_tensor(tensor_C0.host_view(), init_C, seed + 2017));
+    if(alpha0 == ElementCompute(0)) //per-channel scale
+      CHECK_TRUE(initialize_tensor(tensor_Scale0.host_view(), init_Scale, seed + 2014));
+    CHECK_TRUE(initialize_tensor(tensor_Bias0.host_view(), init_Bias, seed + 2013));
     CHECK_TRUE(initialize_tensor(tensor_B1.host_view(), init_B, seed + 2016));
     CHECK_TRUE(initialize_tensor(tensor_C1.host_view(), init_C, seed + 2015));
+    CHECK_TRUE(initialize_tensor(tensor_Bias1.host_view(), init_Bias, seed + 2012));
 
     //Reorder B0
     cutlass::reorder_column<16>(
@@ -510,9 +571,13 @@ struct B2bInterleavedFusedGemmRun
     tensor_B0.sync_device();
     tensor_B0_reordered.sync_device();
     tensor_C0.sync_device();
+    if(alpha0 == ElementCompute(0)) //per-channel scale
+        tensor_Scale0.sync_device();
+    tensor_Bias0.sync_device();
     tensor_B1.sync_device();
     tensor_B1_reordered.sync_device();
     tensor_C1.sync_device();
+    tensor_Bias1.sync_device();
     tensor_D1.sync_device();
     reference_D0.sync_device();
     reference_D1.sync_device();
@@ -527,12 +592,13 @@ struct B2bInterleavedFusedGemmRun
       tensor_A0.device_ref(),
       tensor_B0_reordered.device_ref(),
       tensor_C0.device_ref(),
+      tensor_Scale0.device_ref(),
+      tensor_Bias0.device_ref(),
       tensor_B1_reordered.device_ref(),
-      tensor_C1.device_ref(),
+      {tensor_Bias1.device_data(), typename B2bGemm::LayoutC::Stride(0)},
       tensor_D1.device_ref(),
       {alpha0, beta0},
       {alpha1, beta1},
-      1, /*threadblock_swizzle_k_tile*/
     };
 
     B2bGemm b2b_gemm_op;
@@ -581,25 +647,45 @@ struct B2bInterleavedFusedGemmRun
 
     tensor_D1.sync_host();
 
-    bool passed = false;
     //
     // Verify
     //
+
+    cutlass::reference::device::Gemm<
+        typename B2bGemm::ElementA, typename B2bGemm::LayoutA,
+        typename B2bGemm::ElementB, typename B2bGemm::LayoutB,
+        ElementAccumulator, typename B2bGemm::LayoutC, 
+        ElementAccumulator, ElementAccumulator>
+        reference_gemm_0;
+
     cutlass::reference::device::Gemm<
         typename B2bGemm::ElementA, typename B2bGemm::LayoutA,
         typename B2bGemm::ElementB, typename B2bGemm::LayoutB,
         typename B2bGemm::ElementC, typename B2bGemm::LayoutC, ElementCompute,
         ElementAccumulator, typename B2bGemm::Operator>
-        reference_gemm_0, reference_gemm_1;
+        reference_gemm_1;
 
     reference_gemm_0(
       problem_size_0,
-      alpha0, 
+      ElementAccumulator(1), //intermediate alpha=1
       tensor_A0.device_ref(), 
       tensor_B0.device_ref(), 
-      beta0, 
-      tensor_C0.device_ref(), 
-      reference_D0.device_ref()
+      ElementAccumulator(0), //beta = 0
+      reference_Z0.device_ref(),
+      reference_Z0.device_ref(),
+      ElementAccumulator(0)
+    );
+
+    cutlass::reference::device::TensorScaleBiasGemm<
+      ElementAccumulator, typename B2bGemm::ElementC, typename B2bGemm::LayoutC,
+      ElementCompute, typename B2bGemm::LayoutScaleBias
+    > (
+      problem_size_0,
+      reference_Z0.device_ref(),
+      reference_D0.device_ref(),
+      alpha0,
+      tensor_Scale0.device_ref(),
+      tensor_Bias0.device_ref()
     );
 
     if(relu) {
@@ -612,29 +698,27 @@ struct B2bInterleavedFusedGemmRun
       reference_D0.device_ref(), 
       tensor_B1.device_ref(), 
       beta1, 
-      tensor_C1.device_ref(), 
+      {tensor_Bias1.device_data(), typename B2bGemm::LayoutC::Stride(0)},
       reference_D1.device_ref()
     );
-
-
     if(relu) {
        cutlass::reference::device::TensorReLu(reference_D1.device_view()); 
     }
-  
     cudaDeviceSynchronize();
-    reference_D0.sync_host(); 
-    reference_D1.sync_host(); 
+    reference_D0.sync_host();
+    reference_D1.sync_host();
 
     CHECK_GT(cutlass::reference::host::TensorNorm(reference_D0.host_view()), 0);
     CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D1.host_view()), 0);
     CHECK_GT(cutlass::reference::host::TensorNorm(reference_D1.host_view()), 0);
 
-    passed = cutlass::reference::host::TensorEquals(
+    bool passed = cutlass::reference::host::TensorEquals(
       reference_D1.host_view(), 
       tensor_D1.host_view());
 
     CHECK_TRUE(passed);
-    if (!passed) {
+    if (!passed)
+    {
 
       std::stringstream fname;
 
@@ -648,9 +732,12 @@ struct B2bInterleavedFusedGemmRun
         << "\nB0 =\n" << tensor_B0.host_view()
         << "\nB0_reordered =\n" << tensor_B0_reordered.host_view()
         << "\nC0 =\n" << tensor_C0.host_view()
+        << "\nScale0:\n" << tensor_Scale0.host_view() << "\n"
+        << "\nBias0:\n" << tensor_Bias0.host_view() << "\n"
         << "\nB1 =\n" << tensor_B1.host_view()
         << "\nB1_reordered =\n" << tensor_B1_reordered.host_view()
         << "\nC1 =\n" << tensor_C1.host_view()
+        << "\nBias1:\n" << tensor_Bias1.host_view() << "\n"
         << "\n\nReference =\n" << reference_D1.host_view()
         << "\nComputed =\n" << tensor_D1.host_view();
     }
