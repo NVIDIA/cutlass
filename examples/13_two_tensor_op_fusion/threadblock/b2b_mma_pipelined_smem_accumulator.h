@@ -286,6 +286,8 @@ public:
     FragmentC1 &accum,                                   ///< destination accumulator tile
     IteratorA0 iterator_A,                               ///< iterator over A operand in global memory
     IteratorB0 iterator_B0,                              ///< iterator over B0 operand in global memory
+    IteratorAccumulatorScaleBias iterator_accum0_scale,  ///< iterator over D0 scale vector in global memory
+    IteratorAccumulatorScaleBias iterator_accum0_bias,   ///< iterator over D0 bias vector in global memory
     IteratorB1 iterator_B1,                              ///< iterator over B1 operand in global memory  
     FragmentC0 const &src_accum,                         ///< source accumualtor tile
     OutputOp output_op_0,                                ///< epilogue operation after 1st Gemm
@@ -419,7 +421,7 @@ public:
     /// Epilogue for the first Implicit Gemm
     Epilogue0 epilogue0;
 
-    epilogue0(output_op_0, smem_iterator_D0_, accum0);
+    epilogue0(output_op_0, smem_iterator_D0_, accum0, iterator_accum0_scale, iterator_accum0_bias);
 
     __syncthreads();
  

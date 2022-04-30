@@ -55,10 +55,10 @@ bool run_nonfused_gemm_f16() {
   using ElementAccumulator = cutlass::half_t;
   using ElementCompute = cutlass::half_t;
 
-  ElementCompute alpha0 = ElementCompute(2);
-  ElementCompute beta0 = ElementCompute(0);
-  ElementCompute alpha1 = ElementCompute(2);
-  ElementCompute beta1 = ElementCompute(1);
+  ElementCompute alpha0 = ElementCompute(1);
+  ElementCompute beta0 = ElementCompute(1); //beta = 1 for bias
+  ElementCompute alpha1 = ElementCompute(1);
+  ElementCompute beta1 = ElementCompute(1); //beta = 1 for bias
 
   using ThreadblockShape0 = cutlass::gemm::GemmShape<64, 64, 32>;
   using WarpShape0 = cutlass::gemm::GemmShape<32, 32, 32>;
@@ -84,7 +84,7 @@ bool run_nonfused_gemm_f16() {
       128 / cutlass::sizeof_bits<ElementOutput>::value,
       ElementAccumulator,
       ElementCompute,
-      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
+      cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     2
@@ -106,7 +106,8 @@ bool run_nonfused_gemm_f16() {
       ElementOutput,
       128 / cutlass::sizeof_bits<ElementOutput>::value,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     2
@@ -131,10 +132,11 @@ bool run_fused_gemm_f16_rf_res() {
   using ElementAccumulator = cutlass::half_t;
   using ElementCompute = cutlass::half_t;
 
-  ElementCompute alpha0 = ElementCompute(2);
+  ElementCompute alpha0 = ElementCompute(1);
+  //Fused kernel has built-in bias, setting beta=0
   ElementCompute beta0 = ElementCompute(0);
-  ElementCompute alpha1 = ElementCompute(2);
-  ElementCompute beta1 = ElementCompute(1);
+  ElementCompute alpha1 = ElementCompute(1);
+  ElementCompute beta1 = ElementCompute(1); //beta=1 for bias
 
   using ThreadblockShape0 = cutlass::gemm::GemmShape<64, 64, 32>;
   using WarpShape0 = cutlass::gemm::GemmShape<32, 64, 32>;
@@ -156,7 +158,8 @@ bool run_fused_gemm_f16_rf_res() {
       ElementOutput,
       128 / cutlass::sizeof_bits<ElementOutput>::value,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >;
 
   using B2bGemm = cutlass::gemm::device::B2bGemm<

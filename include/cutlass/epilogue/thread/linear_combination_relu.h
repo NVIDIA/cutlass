@@ -162,6 +162,8 @@ public:
 
     if (Scale == ScaleType::OnlyAlphaScaling) return false;
 
+    if (Scale == ScaleType::OnlyAlphaPerChannelScaling) return false;
+
     if (Scale == ScaleType::Nothing) return false;
 
     return beta_ != ElementCompute(0);
@@ -388,6 +390,8 @@ public:
     if (Scale == ScaleType::NoBetaScaling) return true;
 
     if (Scale == ScaleType::OnlyAlphaScaling) return false;
+
+    if (Scale == ScaleType::OnlyAlphaPerChannelScaling) return false;
 
     if (Scale == ScaleType::Nothing) return false;
 

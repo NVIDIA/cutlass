@@ -55,15 +55,15 @@ bool run_nonfused_gemm_s8() {
   using ElementAccumulator = int32_t;
   using ElementCompute = float;
 
-  ElementCompute alpha0 = ElementCompute(2);
-  ElementCompute beta0 = ElementCompute(0);
-  ElementCompute alpha1 = ElementCompute(2);
-  ElementCompute beta1 = ElementCompute(1);
+  ElementCompute alpha0 = ElementCompute(1);
+  ElementCompute beta0 = ElementCompute(1); //beta = 1 for bias
+  ElementCompute alpha1 = ElementCompute(1);
+  ElementCompute beta1 = ElementCompute(1); //beta = 1 for bias
 
-  using ThreadblockShape0 = cutlass::gemm::GemmShape<64, 64, 64>;
-  using WarpShape0 = cutlass::gemm::GemmShape<32, 32, 64>;
-  using ThreadblockShape1 = cutlass::gemm::GemmShape<64, 256, 64>;
-  using WarpShape1 = cutlass::gemm::GemmShape<64, 64, 64>;
+  using ThreadblockShape0 = cutlass::gemm::GemmShape<128, 64, 32>;
+  using WarpShape0 = cutlass::gemm::GemmShape<64, 64, 32>;
+  using ThreadblockShape1 = cutlass::gemm::GemmShape<128, 128, 32>;
+  using WarpShape1 = cutlass::gemm::GemmShape<64, 64, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<8, 8, 16>;
 
   using Gemm0 = cutlass::gemm::device::Gemm<
@@ -84,7 +84,7 @@ bool run_nonfused_gemm_s8() {
       64 / cutlass::sizeof_bits<ElementOutput>::value,
       ElementAccumulator,
       ElementCompute,
-      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
+      cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     2
@@ -106,7 +106,8 @@ bool run_nonfused_gemm_s8() {
       ElementOutput,
       64 / cutlass::sizeof_bits<ElementOutput>::value,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     2
@@ -130,10 +131,11 @@ bool run_fused_gemm_s8_shmem() {
   using ElementAccumulator = int32_t;
   using ElementCompute = float;
 
-  ElementCompute alpha0 = ElementCompute(2);
+  ElementCompute alpha0 = ElementCompute(1);
+  //Fused kernel has built-in bias, setting beta=0
   ElementCompute beta0 = ElementCompute(0);
-  ElementCompute alpha1 = ElementCompute(2);
-  ElementCompute beta1 = ElementCompute(1);
+  ElementCompute alpha1 = ElementCompute(1);
+  ElementCompute beta1 = ElementCompute(1); //beta=1 for bias
 
   using ThreadblockShape0 = cutlass::gemm::GemmShape<64, 64, 32>;
   using WarpShape0 = cutlass::gemm::GemmShape<32, 32, 32>;
@@ -155,7 +157,8 @@ bool run_fused_gemm_s8_shmem() {
       ElementOutput,
       64 / cutlass::sizeof_bits<ElementOutput>::value,
       ElementAccumulator,
-      ElementCompute
+      ElementCompute,
+      cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >;
   
   const bool SmemAccumulator = true;
@@ -202,7 +205,7 @@ int main() {
     &run_fused_gemm_s8_shmem
   };
 
-  return testRun(75, funcs, "gemm s8 shmem staing");
+  return testRun(75, funcs, "gemm int8 shmem staing");
 
 
 }
