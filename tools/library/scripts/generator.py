@@ -344,8 +344,9 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
   # one exceptional case
   
   # iterator algorithm (analytic and optimized)
-  iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
-
+  #iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
+  iterator_algorithms = [IteratorAlgorithm.Optimized]
+  
   # by default, only generate the largest tile size, largest alignment, and optimized iterator
   if manifest.kernel_filter == '':
     tile_descriptions = [tile_descriptions[0],]
@@ -526,7 +527,8 @@ def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignme
   alignment_c = min(8, alignment)
   
   # iterator algorithm (analytic and optimized)
-  iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
+  #iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
+  iterator_algorithms = [IteratorAlgorithm.Optimized]
 
   # by default, only generate the largest tile size and optimized iterators
   if manifest.kernel_filter == '':
