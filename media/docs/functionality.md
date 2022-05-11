@@ -2,13 +2,6 @@
 
 [README](/README.md#documentation) > **Functionality**
 
-# Functionality
-
-## Device-level GEMM
-
-The following table summarizes device-level GEMM kernels in CUTLASS, organized by opcode class, data type, and layout.
-Hyperlinks to relevant unit tests demonstrate how specific template instances may be defined.
-
 - N - Column Major Matrix
 - T - Row Major matrix
 - {N,T} x {N,T} - All combinations, i.e. NN, NT, TN, TT
@@ -25,6 +18,12 @@ Hyperlinks to relevant unit tests demonstrate how specific template instances ma
 - SpTensorOp - Use Sparse Tensor Core MMA
 - WmmaTensorOp - Use WMMA abstraction to use Tensor Core MMA
 
+# Functionality
+
+## Device-level GEMM
+
+The following table summarizes device-level GEMM kernels in CUTLASS, organized by opcode class, data type, and layout.
+Hyperlinks to relevant unit tests demonstrate how specific template instances may be defined.
 
 |**Opcode Class** | **Compute Capability** | **CUDA Toolkit** | **Data Type**                  | **Layouts**            | **Unit Test**    |
 |-----------------|------------------------|------------------|--------------------------------|------------------------|------------------|
