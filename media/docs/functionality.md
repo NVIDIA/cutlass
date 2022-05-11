@@ -9,6 +9,23 @@
 The following table summarizes device-level GEMM kernels in CUTLASS, organized by opcode class, data type, and layout.
 Hyperlinks to relevant unit tests demonstrate how specific template instances may be defined.
 
+- N - Column Major Matrix
+- T - Row Major matrix
+- {N,T} x {N,T} - All combinations, i.e. NN, NT, TN, TT
+- [NHWC](/include/cutlass/layout/tensor.h#L63-206) - 4 dimension tensor used for convolution
+- [NCxHWx](/include/cutlass/layout/tensor.h#L290-395) - Interleaved 4 dimension tensor used for convolution
+- f - float point
+- s - signed int
+- b - bit
+- cf - complex float
+- bf16 - bfloat16
+- tf32 - tfloat32
+- Simt - Use Simt CUDA Core MMA
+- TensorOp - Use Tensor Core MMA
+- SpTensorOp - Use Sparse Tensor Core MMA
+- WmmaTensorOp - Use WMMA abstraction to use Tensor Core MMA
+
+
 |**Opcode Class** | **Compute Capability** | **CUDA Toolkit** | **Data Type**                  | **Layouts**            | **Unit Test**    |
 |-----------------|------------------------|------------------|--------------------------------|------------------------|------------------|
 | **Simt**        | 50,60,61,70,75         |  9.2+            | `f32 * f32 + f32 => f32`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/simt_sgemm_nt_sm50.cu)                |
