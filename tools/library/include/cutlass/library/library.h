@@ -654,7 +654,7 @@ struct TrmmDescription : public OperationDescription {
     TensorDescription const &A = TensorDescription(),
     SideMode side_mode = SideMode::kInvalid,
     FillMode fill_mode = FillMode::kInvalid,
-    DiagType daig_type = DiagType::kInvalid,
+    DiagType diag_type = DiagType::kInvalid,
     TensorDescription const &B = TensorDescription(),
     TensorDescription const &D = TensorDescription(),
     NumericTypeID element_epilogue = NumericTypeID::kInvalid,

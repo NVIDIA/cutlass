@@ -145,9 +145,9 @@ public:
       mode(GemmUniversalMode::kGemm), 
       batch_count(1), 
       ptr_A(nullptr), ptr_B(nullptr), ptr_C(nullptr), ptr_D(nullptr),
-      ptr_gather_A_indices(ptr_gather_A_indices),
-      ptr_gather_B_indices(ptr_gather_B_indices),
-      ptr_scatter_D_indices(ptr_scatter_D_indices) {}
+      ptr_gather_A_indices(nullptr),
+      ptr_gather_B_indices(nullptr),
+      ptr_scatter_D_indices(nullptr) {}
 
     /// constructs an arguments structure
     Arguments(
