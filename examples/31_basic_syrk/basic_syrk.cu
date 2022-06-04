@@ -37,7 +37,7 @@
   the symmetric rank-k update (SYRK) using double-precision doubleing-point arithmetic and assumes
   all matrices have column-major layout.
 
-  The threadblock tile size is chosen as 128x128x8 which offers good performance for large matrices.
+  The threadblock tile size is chosen as 16x32x16 which offers good performance for large matrices.
   See the CUTLASS Parallel for All blog post for more exposition on the tunable parameters available
   in CUTLASS.
 
@@ -83,7 +83,7 @@ cudaError_t CutlassSsyrkNN(
   int ldc) {
 
   // Define type definition for double-precision CUTLASS SYRK with column-major
-  // input matrices and 128x128x8 threadblock tile size (chosen by default).
+  // input matrices and 16x32x16 threadblock tile size (chosen by default).
   //
   // To keep the interface manageable, several helpers are defined for plausible compositions
   // including the following example for double-precision SYRK. Typical values are used as
@@ -138,7 +138,7 @@ cudaError_t CutlassSsyrkNN(
                               {alpha, beta}, // Scalars used in the Epilogue
                               reinterpret_cast<void const *>(A),
                               const_cast<void *>(reinterpret_cast<void *>(C)),
-                              reinterpret_cast<void *>(C), // destination matrix D (may be different memory than so    urce C matrix)
+                              reinterpret_cast<void *>(C), // destination matrix D (may be different memory than source C matrix)
                               (int64_t)N*K, // Batch strides
                               (int64_t)N*N,
                               (int64_t)N*N,
