@@ -614,7 +614,7 @@ class RegularTileAccessIterator<Shape_, Element_,
     add_pointer_offset(coord.contiguous() * sections_per_stage_ * stride_ *
                            ThreadMap::kElementsPerAccess / sections_ +
                        coord.strided() * Shape::kStrided * stride_ *
-                           Layout::kElementsPerAccess);
+                           Layout::kElementsPerAccess / Layout::kFactor);
   }
 };
 
