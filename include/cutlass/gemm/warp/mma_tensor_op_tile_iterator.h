@@ -260,8 +260,8 @@ public:
       else if (Policy::LdsmShape::kContiguous == 2 &&
                  kOperand == Operand::kA) {
         // Matrix multiply 16816 A
-        // Q0 Q2
-        // Q1 Q3
+        // Q0 Q1
+        // Q2 Q3
         partition_contiguous_idx = ((lane_in_quad_pair >> 2) ^ (i >> 1));
         access_contiguous_idx =
             (((quad_pair & 1) + ((i & 1) << 1)) ^ lane_in_quad);
@@ -269,8 +269,8 @@ public:
       } else if (Policy::LdsmShape::kContiguous == 2 &&
                  kOperand == Operand::kB) {
         // Matrix multiply 16816 B
-        // Q0 Q1
-        // Q2 Q3
+        // Q0 Q2
+        // Q1 Q3
         partition_contiguous_idx = ((lane_in_quad_pair >> 2) ^ (i >> 1));
         access_contiguous_idx = ((quad_quad + ((i & 1) << 1)) ^ lane_in_quad);
         access_strided_idx = lane_in_quad_quad;
