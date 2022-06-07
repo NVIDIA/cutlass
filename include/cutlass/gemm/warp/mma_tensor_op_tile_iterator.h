@@ -403,7 +403,7 @@ public:
         AccessType const *source_ptr =
             pointer_[c % kPointerCount] +
             Layout::TileShape::kContiguous * (c / kPointerCount) +
-            Policy::LdsmShape::kStrided * s * stride_;
+            Policy::kLdsmOpInner * Policy::LdsmShape::kStrided * s * stride_;
 
         char const *source_byte_ptr = reinterpret_cast<char const *>(source_ptr) + byte_offset + byte_offset_;
 
