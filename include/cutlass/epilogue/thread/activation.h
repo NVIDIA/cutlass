@@ -98,6 +98,32 @@ struct ReLu<Array<T, N>> {
   }
 };
 
+// Leaky Relu operator
+template <typename T>
+struct LeakyReLU {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &value, T const & alpha_recip) const {
+    T res = value > T(0) ? value : value * alpha_recip;
+    return res;
+  }
+};
+
+template <typename T, int N>
+struct LeakyReLU<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs, T const & alpha_recip) const {
+    Array<T, N> y;
+    LeakyReLU<T> leaky_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < int(rhs.size()); ++i) {
+      y[i] = leaky_op(rhs[i], alpha_recip);
+    }
+
+    return y;
+  }
+};
+
 // Sigmoid operator
 template <typename T>
 struct Sigmoid {
