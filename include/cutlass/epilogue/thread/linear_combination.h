@@ -71,7 +71,7 @@ public:
   using ElementCompute = ElementCompute_;
 
   static int const kCount = Count;
-
+  static const ScaleType::Kind kScale = Scale;
   using FragmentOutput = Array<ElementOutput, kCount>;
   using FragmentAccumulator = Array<ElementAccumulator, kCount>;
   using ComputeFragment = Array<ElementCompute, kCount>;
