@@ -39,6 +39,7 @@
 #include "cutlass/array.h"
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
+#include "cutlass/epilogue/thread/scale_type.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -125,6 +126,7 @@ private:
 
   ElementCompute alpha_;
   ElementCompute beta_;
+  bool skip_elementwise_;
 
 public:
 
@@ -134,6 +136,7 @@ public:
 
     alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
     beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
+    skip_elementwise_ = false;
   }
 
   /// Returns true if source is needed
@@ -153,6 +156,10 @@ public:
   void set_k_partition(int k_partition, int k_partition_count) {
     if (k_partition) {
       beta_ = ElementCompute(1);
+    }
+    
+    if (k_partition != k_partition_count - 1) {
+      skip_elementwise_ = true;
     }
   }
 
@@ -187,7 +194,7 @@ public:
       intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
     }
 
-    intermediate = activation(intermediate);
+    intermediate = skip_elementwise_ ? intermediate : activation(intermediate);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
@@ -218,7 +225,7 @@ public:
       intermediate = mul_add_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
     }
 
-    intermediate = activation(intermediate);
+    intermediate = skip_elementwise_ ? intermediate : activation(intermediate);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
