@@ -20,7 +20,7 @@
 * [Gather and Scatter Fusion with GEMM](/examples/36_gather_scatter_fusion) can gather inputs and scatters outputs based on indices vectors in the same GEMM kernel.
   * It can select random rows in a row major matrix.
   * It can select random columns in a column major matrix.
-* [Back-to-back GEMM/CONV](examples/13_two_tensor_op_fusion) fully supports buffering the previous GEMM/CONV results in the shared memory for the latter one to use.  It can eliminate register spill when the tile size is big.
+* [Back-to-back GEMM/CONV](examples/13_two_tensor_op_fusion) fully supports buffering the first GEMM/CONV results in the shared memory for the latter one to use.  It can eliminate register spill when the tile size is big.  Additionally, bias vector add is supported in the first GEMM/CONV.
   * Supported kernels: GEMM and CONV.
   * Supported types: fp16 and int8.
   * Supported architectures: Turing and Ampere.
@@ -30,10 +30,11 @@
 * Epilogue enhancement:
   * Eliminate bank conflicts in int8 tensor core kernels.
   * Half2 usage if epilogue compute type is fp16.
-  * More activation functions: Silu, Hardswish.
+  * More activation functions: Silu, Hardswish, Leaky Relu.
   * New elementwise fusion pattern for [residual block](/include/cutlass/epilogue/thread/linear_combination_residual_block.h).
+* [Group GEMM](/examples/24_gemm_grouped) thread block number calculation fix which helps to launch the intended number of threadblocks to fully occupy the GPUs.
 * [Parallel GEMM splitk](https://github.com/NVIDIA/cutlass/pull/277) support in the CUTLASS profiler.
-* Optimal performance using [**CUDA 11.6u2**](https://developer.nvidia.com/cuda-downloads)
+* Optimal performance using [**CUDA 11.7**](https://developer.nvidia.com/cuda-downloads)
 * Updates and bugfixes from the community (thanks!)
 
 ## [2.8.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.8.0) (2021-11-19)
