@@ -686,11 +686,8 @@ public:
     using Exp   = cutlass::fast_exp_op<SoftmaxFragment>;
 
     Minus     minus;
-    Mul       mul;
     Exp       exponential;
 
-    multiplies<SoftmaxFragment> mul_add_source;
-    multiply_add<SoftmaxFragment> mul_add_accumulator;
     SoftmaxFragment result;
 
     using ConvertSumOutput = cutlass::NumericConverter<ElementSoftmaxCompute, ElementSum>;
