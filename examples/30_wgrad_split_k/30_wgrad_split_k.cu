@@ -39,8 +39,8 @@ In practice, wgrad requires fp32 accumulation to avoid overflow. When the input 
 to correctly instantiate the GEMM template.
 */
 
-#include <fstream>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 
 #include "cutlass/cutlass.h"

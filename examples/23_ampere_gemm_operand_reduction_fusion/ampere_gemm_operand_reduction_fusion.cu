@@ -40,8 +40,8 @@ A few bit of reduction is done in the epilouge before storing the vector, see
 epilogue/threadblock/epilogue_gemm_k_reduction.h 
 */
 
-#include <fstream>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 
 #include "cutlass/cutlass.h"

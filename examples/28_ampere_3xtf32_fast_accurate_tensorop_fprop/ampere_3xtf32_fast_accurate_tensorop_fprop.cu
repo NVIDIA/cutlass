@@ -35,8 +35,8 @@ This example adopts example 16 to use 3xTF32 to bring FP32 accuracy with 2x perf
 compared with CUDA Cores.  See example 27 for the trick of 3xTF32. 
 */
 
-#include <fstream>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 
 #include "cutlass/cutlass.h"
