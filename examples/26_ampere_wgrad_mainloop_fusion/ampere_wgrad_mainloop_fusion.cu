@@ -48,6 +48,7 @@ include/cutlass/conv/threadblock/implicit_gemm_wgrad_fusion_multistage.h for mor
 technical details.
 */
 
+#include <fstream>
 #include <iostream>
 #include <sstream>
 

@@ -110,6 +110,7 @@ In this example, we later on launch a reference convolution kernel (from CUTLASS
 compare if the output from CUTLASS kernel is same as the reference implicit GEMM kernel.
 */
 
+#include <fstream>
 #include <iostream>
 #include <sstream>
 

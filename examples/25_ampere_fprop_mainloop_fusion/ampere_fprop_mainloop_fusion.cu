@@ -51,6 +51,7 @@ This example is modified based on 16_ampere_tensorop_conv2dfprop.  The command
 line is the same.
 */
 
+#include <fstream>
 #include <iostream>
 #include <sstream>
 

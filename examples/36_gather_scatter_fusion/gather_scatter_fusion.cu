@@ -68,6 +68,7 @@
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <random>
 #include <numeric>
