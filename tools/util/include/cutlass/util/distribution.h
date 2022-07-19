@@ -34,7 +34,7 @@
     \brief This header contains a class to parametrize a statistical distribution function.
 */
 
-#include <fstream>
+#include <ostream>
 
 namespace cutlass {
 

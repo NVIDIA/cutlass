@@ -32,8 +32,6 @@
     \brief Unit tests for thread-level GEMM
 */
 
-#include <fstream>
-
 #include "../../common/cutlass_unit_test.h"
 
 #include "cutlass/aligned_buffer.h"
