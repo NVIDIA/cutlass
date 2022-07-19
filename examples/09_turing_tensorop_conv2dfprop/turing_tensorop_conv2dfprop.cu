@@ -124,6 +124,7 @@ compare if the output from CUTLASS kernel is same as the reference implicit GEMM
 */
 
 #include <iostream>
+#include <fstream>
 #include <sstream>
 
 #include "cutlass/cutlass.h"

@@ -69,6 +69,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <fstream>
 #include <random>
 #include <numeric>
 

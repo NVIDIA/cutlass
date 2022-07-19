@@ -36,6 +36,7 @@ compared with CUDA Cores.  See example 27 for the trick of 3xTF32.
 */
 
 #include <iostream>
+#include <fstream>
 #include <sstream>
 
 #include "cutlass/cutlass.h"

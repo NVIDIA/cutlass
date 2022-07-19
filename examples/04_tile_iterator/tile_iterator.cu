@@ -50,7 +50,6 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
-#include <fstream>
 
 // CUTLASS includes
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"

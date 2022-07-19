@@ -33,7 +33,6 @@
 */
 
 #include <iostream>
-#include <fstream>
 #include <sstream>
 
 #include "../../common/cutlass_unit_test.h"

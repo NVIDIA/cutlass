@@ -74,7 +74,6 @@
 */
 
 #include <iostream>
-#include <fstream>
 #include <sstream>
 
 #include "cutlass/cutlass.h"
