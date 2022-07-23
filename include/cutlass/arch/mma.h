@@ -143,16 +143,17 @@ template <
   /// Layout of B matrix (concept: MatrixLayout)
   typename LayoutB,
   /// Element type of C matrix
-  typename ElementC,
+  typename ElementC_,
   /// Layout of C matrix (concept: MatrixLayout)
   typename LayoutC,
   /// Inner product operator
   typename Operator_
 >
-struct Mma<gemm::GemmShape<1, 1, 1>, 1, ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, Operator_> {
+struct Mma<gemm::GemmShape<1, 1, 1>, 1, ElementA, LayoutA, ElementB, LayoutB, ElementC_, LayoutC, Operator_> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = Operator_;
+  using ElementC = ElementC_;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -218,8 +219,8 @@ struct SparseMma;
 #include "cutlass/arch/mma_sm50.h"
 #include "cutlass/arch/mma_sm60.h"
 #include "cutlass/arch/mma_sm61.h"
-#include "cutlass/arch/mma_sm70.h" 
-#include "cutlass/arch/mma_sm75.h" 
+#include "cutlass/arch/mma_sm70.h"
+#include "cutlass/arch/mma_sm75.h"
 #include "cutlass/arch/mma_sm80.h"
 #include "cutlass/arch/mma_sparse_sm80.h"
 /////////////////////////////////////////////////////////////////////////////////////////////////
