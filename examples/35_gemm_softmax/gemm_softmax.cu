@@ -96,7 +96,7 @@ struct Options {
     alpha(1),
     beta(),
     verification_enabled(true),
-    tolerance(0.01)
+    tolerance(1e-5)
   { }
 
   bool valid() {
@@ -198,9 +198,9 @@ struct Testbed {
   using ElementA = cutlass::half_t;
   using ElementB = cutlass::half_t;
   using ElementC = cutlass::half_t;
-  using ElementD = cutlass::half_t;
   using ElementCompute = float;
-  using ElementSoftmax = cutlass::half_t;
+  using ElementD = ElementC;
+  using ElementSoftmax = ElementC;
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
@@ -464,25 +464,9 @@ struct Testbed {
   /// Emits all tensor values
   void emit_results() {
     std::cout << "D = \n" << tensor_D.host_view() << "\n\n";
-    std::cout << "N = \n" << tensor_N.host_view() << "\n\n";
     std::cout << "Softmax = \n" << tensor_Softmax.host_view() << "\n\n";
-    std::cout << "Reference N = \n" << reference_N.host_view() << "\n\n";
     std::cout << "Reference D = \n" << reference_D.host_view() << "\n\n";
     std::cout << "Reference Softmax = \n" << reference_Softmax.host_view() << "\n\n";
-  }
-
-  bool verify_tensor_N(cutlass::HostTensor<ElementNorm, LayoutC> tensor_N, \
-                       cutlass::HostTensor<ElementNorm, LayoutC> reference_N) {
-
-    for (int m = 0; m < options.problem_size.m(); ++m) {
-      float diff = (float)(tensor_N.at({0, m}) - reference_N.at({m, 0}));
-      if (fabs(diff) > options.tolerance) {
-        return false;
-      }
-
-    }
-
-    return true;
   }
 
   /// Verifies the reference matches
@@ -496,7 +480,6 @@ struct Testbed {
 
     // Verification checks - set any of these to 'true' to override the verification checks.
     bool verified_D = false;
-    bool verified_N = false;
     bool verified_Softmax = false;
 
     // Verify softmax output
@@ -519,10 +502,6 @@ struct Testbed {
       }
     }
 
-    if (!verified_N) {
-      verified_N = verify_tensor_N(tensor_N, reference_N);
-    }
-
     if (!verified_Softmax) {
 
       double norm_diff = cutlass::reference::host::TensorNormDiff(
@@ -542,7 +521,7 @@ struct Testbed {
       }
     }
 
-    if (!verified_D || !verified_N || !verified_Softmax) {
+    if (!verified_D || !verified_Softmax) {
 
       std::cerr << "Verification check failed for tensor Softmax" << std::endl;
 
@@ -551,10 +530,6 @@ struct Testbed {
       // Summarize which checks failed
       if (!verified_D) {
         std::cerr << "Verification of D tensor failed\n";
-      }
-
-      if (!verified_N) {
-        std::cerr << "Verification of N tensor failed\n";
       }
 
       if (!verified_Softmax) {

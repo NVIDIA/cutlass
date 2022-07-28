@@ -49,10 +49,11 @@
 #include "cutlass/gemm/kernel/default_gemm.h"
 #include "cutlass/gemm/kernel/default_gemm_complex.h"
 #include "cutlass/gemm/device/default_gemm_configuration.h"
+#include "cutlass/epilogue/threadblock/epilogue_visitor_with_softmax.h"
+#include "cutlass/epilogue/threadblock/epilogue_with_visitor.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "epilogue_with_visitor.h"
 #include "gemm_with_epilogue_visitor.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -451,389 +452,6 @@ private:
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <
-  typename ThreadblockShape_,
-  int ThreadCount,
-  typename OutputTileIterator_,
-  typename ElementAccumulator_,
-  typename ElementNorm_,
-  typename ElementSum_,
-  typename ElementSoftmaxCompute_,
-  typename ElementwiseFunctor_
->
-class EpilogueVisitorBiasMax {
-public:
-
-  using ThreadblockShape   = ThreadblockShape_;
-  static int const kThreadCount = ThreadCount;
-
-  using OutputTileIterator = OutputTileIterator_;
-  using ElementwiseFunctor = ElementwiseFunctor_;
-
-  static int const kIterations = OutputTileIterator::kIterations;
-  static int const kElementsPerAccess = OutputTileIterator::kElementsPerAccess;
-
-  using ElementOutput = typename OutputTileIterator::Element;
-  using LayoutOutput = cutlass::layout::RowMajor;
-  using ElementAccumulator = ElementAccumulator_;
-
-  using ElementNorm = ElementNorm_;
-  using ElementSum = ElementSum_;
-  using ElementSoftmaxCompute = ElementSoftmaxCompute_;
-
-  using AccumulatorFragment = Array<ElementAccumulator, kElementsPerAccess>;
-  using SoftmaxFragment = Array<ElementSoftmaxCompute, kElementsPerAccess>;
-  using OutputVector = Array<ElementOutput, kElementsPerAccess>;
-  using TensorRefD = TensorRef<ElementOutput, LayoutOutput>;
-
-  /// Argument structure
-  struct Arguments {
-
-    typename ElementwiseFunctor::Params   elementwise;
-    TensorRefD                            ref_C;
-    TensorRefD                            ref_D;
-    ElementNorm                           *ptr_Max;
-    ElementSum                            *ptr_Sum;
-    int64_t                               batch_stride_C;
-    int64_t                               batch_stride_D;
-    int64_t                               batch_stride_Max;
-    int64_t                               batch_stride_Sum;
-
-    //
-    // Methods
-    //
-    Arguments():
-      ptr_Max(nullptr),
-      ptr_Sum(nullptr),
-      batch_stride_C(0),
-      batch_stride_D(0),
-      batch_stride_Max(0),
-      batch_stride_Sum(0)
-    {
-
-    }
-
-    Arguments(
-      typename ElementwiseFunctor::Params   elementwise_,
-      TensorRefD                            ref_C_,
-      TensorRefD                            ref_D_,
-      ElementNorm                           *ptr_Max_,
-      ElementSum                            *ptr_Sum_,
-      int64_t                               batch_stride_C_,
-      int64_t                               batch_stride_D_,
-      int64_t                               batch_stride_Max_,
-      int64_t                               batch_stride_Sum_
-    ):
-      elementwise(elementwise_),
-      ref_C(ref_C_),
-      ref_D(ref_D_),
-      ptr_Max(ptr_Max_),
-      ptr_Sum(ptr_Sum_),
-      batch_stride_C(batch_stride_C_),
-      batch_stride_D(batch_stride_D_),
-      batch_stride_Max(batch_stride_Max_),
-      batch_stride_Sum(batch_stride_Sum_)
-    {
-
-    }
-  };
-
-  struct Params {
-
-    typename ElementwiseFunctor::Params   elementwise;
-    typename OutputTileIterator::Params   params_C;
-    typename OutputTileIterator::Params   params_D;
-    typename OutputTileIterator::Element *ptr_C;
-    typename OutputTileIterator::Element *ptr_D;
-    ElementNorm                           *ptr_Max;
-    ElementSum                            *ptr_Sum;
-    int64_t                               batch_stride_C;
-    int64_t                               batch_stride_D;
-    int64_t                               batch_stride_Max;
-    int64_t                               batch_stride_Sum;
-
-    //
-    // Methods
-    //
-    CUTLASS_HOST_DEVICE
-    Params():
-      ptr_D(nullptr),
-      ptr_Max(nullptr),
-      ptr_Sum(nullptr)
-    {
-
-    }
-
-    CUTLASS_HOST_DEVICE
-    Params(Arguments const &args):
-      elementwise(args.elementwise),
-      params_C(args.ref_C.layout()),
-      params_D(args.ref_D.layout()),
-      ptr_C(args.ref_C.data()),
-      ptr_D(args.ref_D.data()),
-      ptr_Max(args.ptr_Max),
-      ptr_Sum(args.ptr_Sum),
-      batch_stride_C(args.batch_stride_C),
-      batch_stride_D(args.batch_stride_D),
-      batch_stride_Max(args.batch_stride_Max),
-      batch_stride_Sum(args.batch_stride_Sum)
-    {
-
-    }
-  };
-
-  /// Shared storage
-  struct SharedStorage {
-
-  };
-
-private:
-
-  Params const &                        params_;
-  SharedStorage &                       shared_storage_;
-  MatrixCoord                           extent_;
-  ElementwiseFunctor                    elementwise_;
-
-  OutputTileIterator                    iterator_C_;
-  OutputTileIterator                    iterator_D_;
-  typename OutputTileIterator::Fragment fragment_C_;
-  typename OutputTileIterator::Fragment fragment_D_;
-
-  ElementAccumulator                    alpha_;
-  ElementAccumulator                    beta_;
-
-  ElementSoftmaxCompute                 accum_max_;
-  int                                   threadblock_row_;
-
-public:
-
-  CUTLASS_DEVICE
-  EpilogueVisitorBiasMax(
-    Params const &params,                                         ///< Parameters routed to the epilogue
-    SharedStorage &shared_storage,                                ///< Shared storage needed by the functors here
-    MatrixCoord const &problem_size,                              ///< Problem size of the output
-    int thread_idx,                                               ///< Thread index within the threadblock
-    int warp_idx,                                                 ///< Warp index within the threadblock
-    int lane_idx,                                                 ///< Lane index within the warp
-    MatrixCoord const &threadblock_offset = MatrixCoord(0, 0)
-  ):
-    params_(params),
-    shared_storage_(shared_storage),
-    extent_(problem_size),
-    elementwise_(params.elementwise),
-    iterator_C_(params.params_C, params.ptr_C, problem_size, thread_idx, threadblock_offset),
-    iterator_D_(params.params_D, params.ptr_D, problem_size, thread_idx, threadblock_offset),
-    threadblock_row_(threadblock_offset.row())
-  {
-    alpha_ = (params.elementwise.alpha_ptr ? *params.elementwise.alpha_ptr : params.elementwise.alpha);
-    beta_ =  (params.elementwise.beta_ptr ? *params.elementwise.beta_ptr : params.elementwise.beta);
-
-    if (beta_ == ElementAccumulator()) {
-      iterator_C_.clear_mask();
-    }
-  }
-
-  /// Helper to indicate split-K behavior
-  CUTLASS_DEVICE
-  void set_k_partition(
-    int split_k_index,                                            ///< Index of this threadblock within split-K partitioned scheme
-    int split_k_slices) {                                         ///< Total number of split-K slices
-
-  }
-
-  /// Called to set the batch index
-  CUTLASS_DEVICE
-  void set_batch_index(int batch_idx) {
-    iterator_C_.add_pointer_offset(batch_idx * params_.batch_stride_C);
-    iterator_D_.add_pointer_offset(batch_idx * params_.batch_stride_D);
-  }
-
-  /// Called at the start of the epilogue just before iterating over accumulator slices
-  CUTLASS_DEVICE
-  void begin_epilogue() {
-
-  }
-
-  /// Called at the start of one step before starting accumulator exchange
-  CUTLASS_DEVICE
-  void begin_step(int step_idx) {
-    fragment_D_.clear();
-    fragment_C_.clear();
-
-    if (elementwise_.kScale != cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling) {
-      iterator_C_.load(fragment_C_);
-      ++iterator_C_;
-    }
-    
-  }
-
-  /// Called at the start of a row
-  CUTLASS_DEVICE
-  void begin_row(int row_idx) {
-
-  }
-
-  /// Called after accumulators have been exchanged for each accumulator vector
-  CUTLASS_DEVICE
-  void visit(
-    int row_idx,
-    int column_idx,
-    int frag_idx,
-    AccumulatorFragment const &accum) {
-
-    using Mul = cutlass::multiplies<SoftmaxFragment>;
-    using Minus = cutlass::minus<SoftmaxFragment>;
-    using Exp   = cutlass::fast_exp_op<SoftmaxFragment>;
-
-    Minus     minus;
-    Exp       exponential;
-
-    SoftmaxFragment result;
-
-    using ConvertSumOutput = cutlass::NumericConverter<ElementSoftmaxCompute, ElementSum>;
-    using ConvertNormOutput = cutlass::NumericConverter<ElementSoftmaxCompute, ElementNorm>;
-
-    ConvertSumOutput   convert_sum_output;
-    ConvertNormOutput  convert_norm_output;
-
-    NumericArrayConverter<ElementSoftmaxCompute, ElementOutput, kElementsPerAccess> source_converter;
-    OutputVector &source_vector = reinterpret_cast<OutputVector *>(&fragment_C_)[frag_idx];
-
-    if (elementwise_.kScale == cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling) {
-      result = source_converter(elementwise_(accum));
-    }else{
-      result = source_converter(elementwise_(accum, source_vector));
-    }
-
-    MatrixCoord thread_offset =
-      iterator_D_.thread_start() +
-      OutputTileIterator::ThreadMap::iteration_offset(frag_idx);
-
-    int thread_in_row = OutputTileIterator::ThreadMap::Detail::RowArrangement::Detail::kShapeWidth;
-    int half_thread_in_row = (thread_in_row >> 1);
-
-    bool column_guard = (thread_offset.column() < extent_.column());
-
-    // Compute the maximum within one row
-    if (!column_idx) {
-      // This is the first fragment in a new row
-      if (column_guard) {
-        accum_max_ = maximum_accumulator_(result);
-      }
-    }
-    else {
-      // This is an additional fragment in the same row
-      if (column_guard) {
-        accum_max_ = maximum_accumulator_(result, accum_max_);
-      }
-    }
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = half_thread_in_row; i > 0; i >>= 1) {
-      ElementSoftmaxCompute tmp = __shfl_xor_sync(0xFFFFFFFF, accum_max_, i);
-      accum_max_ = fast_max(accum_max_, tmp);
-    }
-
-    SoftmaxFragment sum_frag = exponential(minus(result, accum_max_));
-
-    ElementSoftmaxCompute reduction_sum = sum_accumulator_(sum_frag);
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = half_thread_in_row; i > 0; i >>= 1) {
-      ElementSoftmaxCompute tmp = __shfl_xor_sync(0xFFFFFFFF, reduction_sum, i);
-      reduction_sum += tmp;
-    }
-
-    bool is_write_thread = (thread_offset.row() < extent_.row() && (threadIdx.x % thread_in_row) == 0);
-    ElementNorm *curr_ptr_max = params_.ptr_Max + thread_offset.row() + blockIdx.y * extent_.row();
-    ElementSum *curr_ptr_sum = params_.ptr_Sum + thread_offset.row() + blockIdx.y * extent_.row();
-    
-    arch::global_store<ElementNorm, sizeof(ElementNorm)>(
-              convert_norm_output(accum_max_),
-              (void *)curr_ptr_max,
-              is_write_thread);
-
-    arch::global_store<ElementSum, sizeof(ElementSum)>(
-              convert_sum_output(reduction_sum),
-              (void *)curr_ptr_sum,
-              is_write_thread);
-
-     clear_accum_max_();
-
-    // Convert to the output
-    NumericArrayConverter<ElementOutput, ElementSoftmaxCompute, kElementsPerAccess> output_converter;
-    OutputVector &output = reinterpret_cast<OutputVector *>(&fragment_D_)[frag_idx];
-    output = output_converter(result);
-  }
-
-  /// Called at the start of a row
-  CUTLASS_DEVICE
-  void end_row(int row_idx) {
-
-  }
-
-  /// Called after all accumulator elements have been visited
-  CUTLASS_DEVICE
-  void end_step(int step_idx) {
-
-    iterator_D_.store(fragment_D_);
-    ++iterator_D_;
-  }
-
-  /// Called after all steps have been completed
-  CUTLASS_DEVICE
-  void end_epilogue() {
-
-  }
-
-private:
-
-  CUTLASS_DEVICE
-  void clear_accum_max_() {
-
-    uint32_t float_max_bits = 0xff7fffff;   // -FLT_MAX
-    float min_float = reinterpret_cast<float const &>(float_max_bits);
-    accum_max_ = ElementSoftmaxCompute(min_float);
-  }
-
-  CUTLASS_DEVICE
-  ElementSoftmaxCompute sum_accumulator_(SoftmaxFragment const &accum) {
-    ElementSoftmaxCompute sum_ = ElementSoftmaxCompute(0);
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < SoftmaxFragment::kElements; ++i) {
-      sum_ += ElementSoftmaxCompute(accum[i]);
-    }
-
-    return sum_;
-  }
-
-  CUTLASS_DEVICE
-  ElementSoftmaxCompute maximum_accumulator_(SoftmaxFragment const &accum) {
-    ElementSoftmaxCompute max_ = accum[0];
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 1; i < SoftmaxFragment::kElements; ++i) {
-      max_ = fast_max(max_, ElementSoftmaxCompute(accum[i]));
-    }
-
-    return max_;
-  }
-
-  CUTLASS_DEVICE
-  ElementSoftmaxCompute maximum_accumulator_(SoftmaxFragment const &accum, ElementSoftmaxCompute max_) {
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < SoftmaxFragment::kElements; ++i) {
-      max_ = fast_max(max_, ElementSoftmaxCompute(accum[i]));
-    }
-
-    return max_;
-  }
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
 } // namespace kernel
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -847,9 +465,11 @@ template <
   typename ElementC_,
   typename ElementCompute_,
   typename EpilogueFunctorOp_,
+  int AlignmentA_ = 128 / cutlass::sizeof_bits<ElementA_>::value,
+  int AlignmentB_ = 128 / cutlass::sizeof_bits<ElementB_>::value,
+  int AlignmentSoftmax_ = 128 / cutlass::sizeof_bits<ElementC_>::value,
   typename ElementNorm_ = float,
   typename ElementSum_ = float,
-  int Alignment = 128 / cutlass::sizeof_bits<ElementA_>::value,
   typename ElementSoftmax_ = ElementC_
 >
 class GemmSoftmax {
@@ -872,7 +492,7 @@ public:
   using LayoutA = LayoutA_;
   using LayoutB = LayoutB_;
 
-  static int const kAlignment = Alignment;
+  
 
   using EpilogueFunctorOp = EpilogueFunctorOp_;
   using ElementNorm = ElementNorm_;
@@ -894,9 +514,13 @@ public:
   using WarpShape        = cutlass::gemm::GemmShape<64, 64, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
 
-  using OperatorClass       = cutlass::arch::OpClassTensorOp;
-  using ArchTag             = cutlass::arch::Sm80;
+  using OperatorClass = cutlass::arch::OpClassTensorOp;
+  using ArchTag = cutlass::arch::Sm80;
+
   static int const kStages  = 3;
+  static int const AlignmentA = AlignmentA_;
+  static int const AlignmentB = AlignmentB_;
+  static int const AlignmentSoftmax = AlignmentSoftmax_;
 
   using ThreadblockSwizzle = cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle;
 
@@ -906,10 +530,10 @@ public:
   using DefaultGemmKernel = typename cutlass::gemm::kernel::DefaultGemm<
     ElementA,
     LayoutA,
-    kAlignment,
+    AlignmentA,
     ElementB,
     LayoutB,
-    kAlignment,
+    AlignmentB,
     ElementC,
     LayoutC,
     ElementCompute,
@@ -930,7 +554,7 @@ public:
   ///////////////////////////////////////////////////////////////////////////////////////////////
 
   // Epilogue visitor
-  using EpilogueVisitor = kernel::EpilogueVisitorBiasMax<
+  using EpilogueVisitor = typename cutlass::epilogue::threadblock::EpilogueVisitorSoftmax<
     ThreadblockShape,
     DefaultGemmKernel::kThreadCount,
     typename DefaultGemmKernel::Epilogue::OutputTileIterator,
@@ -961,7 +585,7 @@ public:
     ElementSum,
     ElementSoft,
     ElementSoftmaxCompute,
-    kAlignment,
+    AlignmentSoftmax,
     MatrixShape<
       1, 1024
     >
@@ -1013,18 +637,14 @@ public:
         batch_count_,
         ref_A_,
         ref_B_,
+        ref_C_,
+        ref_D_,
+        ref_N_.data(),
+        ref_S_.data(),
         batch_stride_A_,
         batch_stride_B_,
         typename EpilogueVisitor::Arguments(
-          linear_scaling,
-          ref_C_,
-          ref_D_,
-          ref_N_.data(),
-          ref_S_.data(),
-          batch_stride_C_,
-          batch_stride_D_,
-          batch_stride_Max_,
-          batch_stride_Sum_
+          linear_scaling
         )
       ),
       reduction(
@@ -1127,28 +747,24 @@ public:
     // Launch the ApplyFinalReductionKernel
     //
 
-    int threadblock_num_in_column = (params_.extend.column() + ThreadblockShape::kN - 1) / ThreadblockShape::kN;
+    int thread_per_block = 128;
+    int block_per_row = (params_.extend.row() + thread_per_block - 1) / thread_per_block;
+    if (block_per_row < 4) {
+      thread_per_block = 32;
+      block_per_row = (params_.extend.row() + thread_per_block - 1) / thread_per_block;
+    }
 
-    if (threadblock_num_in_column > 1) {
-      int thread_per_block = 128;
-      int block_per_row = (params_.extend.row() + thread_per_block - 1) / thread_per_block;
-      if (block_per_row < 4) {
-        thread_per_block = 32;
-        block_per_row = (params_.extend.row() + thread_per_block - 1) / thread_per_block;
-      }
+    dim3 final_reduction_grid(block_per_row);
+    dim3 final_reduction_block(thread_per_block);
 
-      dim3 final_reduction_grid(block_per_row);
-      dim3 final_reduction_block(thread_per_block);
+    Kernel<ApplyFinalReductionKernel><<<
+      final_reduction_grid, final_reduction_block, sizeof(typename ApplyFinalReductionKernel::SharedStorage), stream
+    >>>(params_.reduction);
 
-      Kernel<ApplyFinalReductionKernel><<<
-        final_reduction_grid, final_reduction_block, sizeof(typename ApplyFinalReductionKernel::SharedStorage), stream
-      >>>(params_.reduction);
+    result = cudaGetLastError();
 
-      result = cudaGetLastError();
-
-      if (result != cudaSuccess) {
-        return cutlass::Status::kErrorInternal;
-      }
+    if (result != cudaSuccess) {
+      return cutlass::Status::kErrorInternal;
     }
 
     //
