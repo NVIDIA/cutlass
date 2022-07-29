@@ -55,7 +55,7 @@ composed from lower level ones. Multiple thread-tiles (tile size each thread com
 to form warp-tiles (tile size each warp computes) and multiple warp tiles can be used to compute
 threadblock-tile (tile size computed by a threadblock).
 
-In thie example, we split variable initialization into
+In this example, we split variable initialization into
 1. Setting up data properties : describes how matrices are laid out in the memory and how the kernel
 can view them (logical to physical mapping)
 2. Setting up computation properties : describes how the above set matrices will be used to compute
@@ -74,10 +74,10 @@ ElementAccumulator (float), ElementComputeEpilogue (float), ElementInputA (cutla
 ElementInputB (cutlass::half_t), ElementOutput (float). Communicating just the data type is not
 enough. As the data is laid out linearly in memory, we have to convey the layout of matrices. We do
 that by initializing template variable LayoutInputA to column major cutlass variable, LayoutInputB
-to row major and LayoutOutput to row major. Next, we setup rules to comptue alpha * X + beta * C
+to row major and LayoutOutput to row major. Next, we setup rules to compute alpha * X + beta * C
 which is called epilogue of the kernel. We initialize template variable EpilogueOp, which takes the
-data type of output ElementOutput (int32_t), the number of elements per vector memory access (16),
-data type of accumulator (int32_t) and data type of computation of linear combination (alpha * X +
+data type of output ElementOutput (float), the number of elements per vector memory access (16),
+data type of accumulator (float) and data type of computation of linear combination (alpha * X +
 beta * C).
 
 Now that we setup the properties of data, we have to setup properties of computation.
@@ -85,7 +85,7 @@ Now that we setup the properties of data, we have to setup properties of computa
 Second, we create template variables of tile sizes for thread-block, warp and mma-op to 128x128x32,
 64x64x4, 8x8x4 (MxNxK) respectively. When passed to instantiate CUTLASS GEMM kernel, it internally
 deduce the amount of threads needed per thread-block, amount of shared memory, storing data in
-bank-conflict free manner, and ton of other variables required to compose, intialize and launch a
+bank-conflict free manner, and ton of other variables required to compose, initialize and launch a
 high performance GEMM kernel. This is the beauty of CUTLASS, it relieves developer from
 understanding and coding complicated hardware optimizations which can easily go wrong.
 
@@ -95,7 +95,7 @@ is done which threadblock launched on an SM, CUDA SM architecture of GPU you wan
 These are all put together to create a template variable which describes CUTLASS GEMM kernel using
 cutlass::gemm::device::GemmSplitKParallel template.
 
-The next step is to intialize physical data, instantiate and initialize CUTLASS kernel and run it.
+The next step is to initialize physical data, instantiate and initialize CUTLASS kernel and run it.
 We use CUTLASS utilities to initialize, fill, compare matrices as they are simple and doesn't come
 in the way of learning CUTLASS.
 
@@ -103,7 +103,7 @@ Once all the matrices are initialized and filled with data, create arguments tup
 kernel which takes problem size (M = 5120, N = 4096 and K = 4096), matrices, alpha, beta and the
 important one, split k-dimension factor. Along with that, we query CUTLASS if any scratch-space
 memory required by the kernel we instantiated. If yes, we create it and pass it along with other
-arguments created to intialize CUTLASS kernel then, the kernel is launched.
+arguments created to initialize CUTLASS kernel then, the kernel is launched.
 
 In this example, we later on launch a reference gemm kernel (from CUTLASS utilities) to compare if
 the output from CUTLASS kernel is same as reference GEMM kernel.
@@ -148,9 +148,6 @@ using ShapeMMAThreadBlock =
 using ShapeMMAWarp = cutlass::gemm::GemmShape<64, 64, 32>;  // <- warp tile M = 64, N = 64, K = 32
 // This code section describes the size of MMA op
 using ShapeMMAOp = cutlass::gemm::GemmShape<8, 8, 4>;  // <- MMA Op tile M = 8, N = 8, K = 4
-
-// This code section describes how threadblocks are scheduled on GPU
-using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;  // <- ??
 
 // This code section describes ?
 using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
