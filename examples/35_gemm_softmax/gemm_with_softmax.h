@@ -51,6 +51,7 @@
 #include "cutlass/gemm/device/default_gemm_configuration.h"
 #include "cutlass/epilogue/threadblock/epilogue_visitor_with_softmax.h"
 #include "cutlass/epilogue/threadblock/epilogue_with_visitor.h"
+#include "cutlass/reduction/kernel/reduce_softmax_final.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -282,173 +283,6 @@ private:
   }
 };
 
-template <
-  typename ElementNorm_,
-  typename ElementSum_,
-  typename ElementSoftmaxCompute_,
-  typename ThreadblockShape_
->
-class ApplyFinalReduction {
-public:
-
-  using ElementNorm = ElementNorm_;
-  using ElementSum = ElementSum_;
-  using ElementSoftmaxCompute = ElementSoftmaxCompute_;
-  using ThreadblockShape = ThreadblockShape_;
-
-  using Layout = cutlass::layout::RowMajor;
-
-  using TensorRefN = TensorRef<ElementNorm, Layout>;
-  using TensorRefSum = TensorRef<ElementSum, Layout>;  
-
-  //
-  // Arguments
-  //
-
-  struct Arguments {
-
-    MatrixCoord     extent;             ///< Extent of D and Softmax matrices
-    int             batch_count;        ///< Batch count
-    TensorRefN      ref_N;              ///< Norm tensor (input / output)
-    TensorRefSum    ref_Sum;            ///< Sum tensor (input / output)
-    int64_t         batch_stride_N;     ///< Batch stride for N tensor
-    int64_t         batch_stride_Sum;   ///< Batch stride for softmax tensor
-
-    //
-    // Methods
-    //
-    Arguments():
-      batch_count(1),
-      batch_stride_N(0),
-      batch_stride_Sum(0)
-    { }
-
-    Arguments(
-      MatrixCoord     extent_,             ///< Extent of D and Softmax matrices
-      int             batch_count_,        ///< Batch count
-      TensorRefN      ref_N_,              ///< Output parameter for N
-      TensorRefSum    ref_Sum_ ,           ///< Sum
-      int64_t         batch_stride_N_ = 0,
-      int64_t         batch_stride_Sum_ = 0
-    ):
-      extent(extent_),
-      batch_count(batch_count_),
-      ref_N(ref_N_),
-      ref_Sum(ref_Sum_),
-      batch_stride_N(batch_stride_N_),
-      batch_stride_Sum(batch_stride_Sum_)
-    {
-
-    }
-  };
-
-  struct SharedStorage {
-
-
-  };
-
-  //
-  // Params struct
-  //
-
-  struct Params {
-    Arguments args;
-
-    //
-    // Methods
-    //
-    Params() { }
-
-    Params(Arguments const &args_): args(args_) { }
-  };
-
-private:
-
-public:
-
-  CUTLASS_DEVICE
-  ApplyFinalReduction() { }
-
-  CUTLASS_DEVICE
-  void operator()(Params const &params, SharedStorage &shared_storage) {
-
-    apply(params, shared_storage);
-  }
-
-private:
-
-  /// Partial reduction
-  CUTLASS_DEVICE
-  void apply(Params const &params, SharedStorage &shared_storage) {
-
-    int threadblock_num = (params.args.extent.column() + ThreadblockShape::kN - 1) / ThreadblockShape::kN;
-
-    int block_batch = blockIdx.z;
-
-    int block_n = blockIdx.x * blockDim.x;
-
-    int thread_n = threadIdx.x;
-
-    int idx_n = block_n + thread_n;
-
-    if (idx_n >= params.args.extent.row()) {
-      return;
-    }
-
-
-    using ConvertSumOutput = cutlass::NumericConverter<ElementSum, ElementSoftmaxCompute>;
-    using ConvertNormOutput = cutlass::NumericConverter<ElementNorm, ElementSoftmaxCompute>;
-
-    using ConvertSum = cutlass::NumericConverter<ElementSoftmaxCompute, ElementSum>;
-    using ConvertNorm = cutlass::NumericConverter<ElementSoftmaxCompute, ElementNorm>;
-
-    ConvertSum   convert_sum;
-    ConvertNorm  convert_norm;
-
-    ConvertSumOutput   convert_sum_output;
-    ConvertNormOutput  convert_norm_output;
-
-    ElementNorm *access_n = params.args.ref_N.data() + params.args.batch_stride_N * block_batch + idx_n;
-    ElementSum *access_s = params.args.ref_Sum.data() + params.args.batch_stride_Sum * block_batch + idx_n;
-
-    ElementNorm *access_n_bak = access_n;
-    ElementSum *access_s_bak = access_s;
-
-    uint32_t float_max_bits = 0xff7fffff;
-    float min_float = reinterpret_cast<float const &>(float_max_bits);
-
-    ElementSoftmaxCompute max_val = ElementSoftmaxCompute(min_float);
-    ElementSoftmaxCompute sum_val = ElementSoftmaxCompute(0);
-    ElementNorm fetch_n;
-    ElementSum fetch_s;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int idx_m = 0; idx_m < threadblock_num; idx_m++) {
-      arch::global_load<ElementNorm, sizeof(ElementNorm)>(fetch_n, access_n, true);
-      max_val = fast_max(max_val, convert_norm(fetch_n));
-      access_n += params.args.extent.row();
-    }
-    
-    access_n = access_n_bak;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int idx_m = 0; idx_m < threadblock_num; idx_m++) {
-      arch::global_load<ElementNorm, sizeof(ElementNorm)>(fetch_n, access_n, true);
-      arch::global_load<ElementSum, sizeof(ElementSum)>(fetch_s, access_s, true);
-      sum_val += convert_sum(fetch_s) * fast_exp(convert_norm(fetch_n) - max_val);
-      access_n += params.args.extent.row();
-      access_s += params.args.extent.row();
-    }
-
-    ElementSoftmaxCompute inv_sum = cutlass::constants::one<ElementSoftmaxCompute>() / sum_val;
-
-    access_n = access_n_bak;
-    access_s = access_s_bak;
-
-    access_n[0] = convert_norm_output(max_val);
-    access_s[0] = convert_sum_output(inv_sum);
-  }
-};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -591,7 +425,7 @@ public:
     >
   >;
 
-  using ApplyFinalReductionKernel = kernel::ApplyFinalReduction<
+  using ApplyFinalReductionKernel = cutlass::reduction::kernel::ApplySoftmaxFinalReduction<
     ElementNorm,
     ElementSum,
     ElementSoftmaxCompute,
@@ -607,6 +441,7 @@ public:
     typename SoftmaxApplyKernel::Arguments softmax;
     typename ApplyFinalReductionKernel::Arguments reduction;
     cutlass::gemm::GemmCoord extend;
+
     //
     // Methods
     //
@@ -648,12 +483,9 @@ public:
         )
       ),
       reduction(
-        MatrixCoord(problem_size.m(), problem_size.n()),
-        batch_count_,
-        ref_N_,
-        ref_S_,
-        batch_stride_Max_,
-        batch_stride_Sum_
+        problem_size,
+        ref_N_.data(),
+        ref_S_.data()
       ), 
       softmax(
         MatrixCoord(problem_size.m(), problem_size.n()),

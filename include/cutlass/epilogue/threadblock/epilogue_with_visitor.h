@@ -128,7 +128,7 @@ public:
 
   }
 
-  /// Called at the start of a row
+  /// Called at the end of a row
   CUTLASS_DEVICE
   void end_row(int row_idx) {
 

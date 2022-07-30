@@ -158,7 +158,9 @@ private:
   int                                   column_offset_;
 
   ElementSoftmaxCompute                 accum_max_;
-  ElementSoftmaxCompute                 accum_sum_ = ElementSoftmaxCompute(0);
+  ElementSoftmaxCompute                 accum_sum_;
+
+  MatrixCoord                           thread_offset;
 
 public:
 
@@ -233,6 +235,8 @@ public:
   /// Called at the start of a row
   CUTLASS_DEVICE
   void begin_row(int row_idx) {
+    // Clear accumulators for max and sum when starting a whole row
+    clear_accum_();
 
   }
 
@@ -253,12 +257,6 @@ public:
 
     SoftmaxFragment result;
 
-    using ConvertSumOutput = cutlass::NumericConverter<ElementSoftmaxCompute, ElementSum>;
-    using ConvertNormOutput = cutlass::NumericConverter<ElementSoftmaxCompute, ElementNorm>;
-
-    ConvertSumOutput   convert_sum_output;
-    ConvertNormOutput  convert_norm_output;
-
     NumericArrayConverter<ElementSoftmaxCompute, ElementOutput, kElementsPerAccess> source_converter;
     OutputVector &source_vector = reinterpret_cast<OutputVector *>(&fragment_C_)[frag_idx];
 
@@ -268,13 +266,14 @@ public:
       result = source_converter(elementwise_(accum, source_vector));
     }
 
-    MatrixCoord thread_offset =
+    thread_offset =
       iterator_D_.thread_start() +
       OutputTileIterator::ThreadMap::iteration_offset(frag_idx);
 
-    int half_thread_in_row = (kThreadsPerRow >> 1);
-
     bool column_guard = (thread_offset.column() < extent_.column());
+    bool is_last_step_in_row = (column_idx == OutputTileIterator::ThreadMap::Iterations::kColumn - 1);
+
+    auto accum_max_prev = accum_max_;
 
     // Compute the maximum within one row
     if (!column_idx) {
@@ -290,34 +289,47 @@ public:
       }
     }
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = half_thread_in_row; i > 0; i >>= 1) {
-      ElementSoftmaxCompute tmp = __shfl_xor_sync(0xFFFFFFFF, accum_max_, i);
-      accum_max_ = fast_max(accum_max_, tmp);
-    }
+    // pro-actively compute max in warps
+    accum_max_ = warp_reduce_max_(accum_max_);
+
+    auto updater = fast_exp(accum_max_prev - accum_max_);
 
     if (hasMultiStepsInRow) {
-      accum_sum_ = (column_guard) ? \
-        sum_accumulator_(exponential(minus(result, accum_max_)), accum_sum_) : ElementSoftmaxCompute(0);
+      if (!column_idx) {
+        accum_sum_ = (column_guard) ? \
+          sum_accumulator_(exponential(minus(result, accum_max_))) : ElementSoftmaxCompute(0);
+      }else{
+        // Algorithm in $3.1, https://arxiv.org/pdf/2205.14135v1.pdf
+        // S* = S* x updater + sum_row(P'), where updater = exp(M* - M_row)
+        accum_sum_ = (column_guard) ? \
+          sum_accumulator_(exponential(minus(result, accum_max_)), accum_sum_ * updater) : accum_sum_ * updater;
+      }
     }else{
-      accum_sum_ = sum_accumulator_(exponential(minus(result, accum_max_)), accum_sum_);
+      accum_sum_ = (column_guard) ? sum_accumulator_(exponential(minus(result, accum_max_)), accum_sum_) : ElementSoftmaxCompute(0);
     }
 
+    // Convert to the output
+    NumericArrayConverter<ElementOutput, ElementSoftmaxCompute, kElementsPerAccess> output_converter;
+    OutputVector &output = reinterpret_cast<OutputVector *>(&fragment_D_)[frag_idx];
+    output = output_converter(result);
+  }
 
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = half_thread_in_row; i > 0; i >>= 1) {
-      ElementSoftmaxCompute tmp = __shfl_xor_sync(0xFFFFFFFF, accum_sum_, i);
-      accum_sum_ += tmp;
-    }
+  /// Called at the end of a row
+  CUTLASS_DEVICE
+  void end_row(int row_idx) {
+
+    using ConvertSumOutput = cutlass::NumericConverter<ElementSoftmaxCompute, ElementSum>;
+    using ConvertNormOutput = cutlass::NumericConverter<ElementSoftmaxCompute, ElementNorm>;
+
+    ConvertSumOutput   convert_sum_output;
+    ConvertNormOutput  convert_norm_output;
+
+    // Compute accumulate sum only in the last step
+    accum_sum_ = warp_reduce_sum_(accum_sum_);
 
     bool is_first_thread_in_tile = ((threadIdx.x % kThreadsPerRow) == 0);
-    bool is_write_thread = (column_guard && is_first_thread_in_tile);
-    
-    // Check against row guard at compile time if require multiple steps in a row
-    if (hasMultiStepsInRow) {
-      bool row_guard = thread_offset.row() < extent_.row();
-      is_write_thread = (is_write_thread && row_guard);
-    }
+    bool row_guard = thread_offset.row() < extent_.row();
+    bool is_write_thread = row_guard && is_first_thread_in_tile;
 
     ElementNorm *curr_ptr_max = ptr_Max_ + thread_offset.row() + column_offset_;
     ElementSum *curr_ptr_sum = ptr_Sum_ + thread_offset.row() + column_offset_;
@@ -333,19 +345,7 @@ public:
               is_write_thread);
 
     // Clear accumulators for max and sum when finishing a whole row
-    if (column_idx == OutputTileIterator::ThreadMap::Iterations::kColumn - 1) {
-      clear_accum_();
-    }
-
-    // Convert to the output
-    NumericArrayConverter<ElementOutput, ElementSoftmaxCompute, kElementsPerAccess> output_converter;
-    OutputVector &output = reinterpret_cast<OutputVector *>(&fragment_D_)[frag_idx];
-    output = output_converter(result);
-  }
-
-  /// Called at the start of a row
-  CUTLASS_DEVICE
-  void end_row(int row_idx) {
+    clear_accum_();
 
   }
 
@@ -364,6 +364,28 @@ public:
   }
 
 private:
+
+  CUTLASS_DEVICE
+  ElementSoftmaxCompute warp_reduce_sum_(ElementSoftmaxCompute sum_) {
+    int half_thread_in_row = (kThreadsPerRow >> 1);
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = half_thread_in_row; i > 0; i >>= 1) {
+      ElementSoftmaxCompute tmp = __shfl_xor_sync(0xFFFFFFFF, sum_, i);
+      sum_ += tmp;
+    }
+    return sum_;
+  }
+
+  CUTLASS_DEVICE
+  ElementSoftmaxCompute warp_reduce_max_(ElementSoftmaxCompute max_) {
+    int half_thread_in_row = (kThreadsPerRow >> 1);
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = half_thread_in_row; i > 0; i >>= 1) {
+      ElementSoftmaxCompute tmp = __shfl_xor_sync(0xFFFFFFFF, max_, i);
+      max_ = fast_max(max_, tmp);
+    }
+    return max_;
+  }
 
   CUTLASS_DEVICE
   void clear_accum_() {

@@ -90,8 +90,8 @@ struct Options {
   Options():
     help(false),
     problem_size({16, 24, 64}),
-    batch_count(1),             // As a temporary limitation to the test bench, batch count must be 1. The kernels support arbitrary batching.
-    iterations(20),
+    batch_count(1),             // As a temporary limitation to the test bench, batch count must be 1. The kernels do NOT support arbitrary batching.
+    iterations(0),
     seed(2022),
     alpha(1),
     beta(),
@@ -512,7 +512,7 @@ struct Testbed {
         reference_Softmax.host_view());
 
       double rel_error = norm_diff / norm_reference;
-      printf("%f, %f, %f.\n", norm_diff, norm_reference, rel_error);
+
       if ((rel_error > kThreshold) || isnan(norm_diff) || isinf(norm_diff)) {
         std::cerr << "\n\nSoftmax Relative error: " << rel_error << std::endl;
       }
@@ -525,7 +525,7 @@ struct Testbed {
 
       std::cerr << "Verification check failed for tensor Softmax" << std::endl;
 
-      emit_results();
+      // emit_results();
 
       // Summarize which checks failed
       if (!verified_D) {
