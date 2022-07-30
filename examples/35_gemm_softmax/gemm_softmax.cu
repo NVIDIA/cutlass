@@ -494,7 +494,7 @@ struct Testbed {
 
       double rel_error = norm_diff / norm_reference;
 
-      if (rel_error > kThreshold) {
+      if ((rel_error > kThreshold) || isnan(norm_diff) || isinf(norm_diff)) {
         std::cerr << "\n\nTensor D Relative error: " << rel_error << std::endl;
       }
       else {
@@ -512,8 +512,8 @@ struct Testbed {
         reference_Softmax.host_view());
 
       double rel_error = norm_diff / norm_reference;
-
-      if (rel_error > kThreshold) {
+      printf("%f, %f, %f.\n", norm_diff, norm_reference, rel_error);
+      if ((rel_error > kThreshold) || isnan(norm_diff) || isinf(norm_diff)) {
         std::cerr << "\n\nSoftmax Relative error: " << rel_error << std::endl;
       }
       else {

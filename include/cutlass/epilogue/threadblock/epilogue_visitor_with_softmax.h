@@ -310,8 +310,15 @@ public:
       accum_sum_ += tmp;
     }
 
-    bool row_guard = thread_offset.row() < extent_.row();
-    bool is_write_thread = (row_guard && ((threadIdx.x % kThreadsPerRow) == 0));
+    bool is_first_thread_in_tile = ((threadIdx.x % kThreadsPerRow) == 0);
+    bool is_write_thread = (column_guard && is_first_thread_in_tile);
+    
+    // Check against row guard at compile time if require multiple steps in a row
+    if (hasMultiStepsInRow) {
+      bool row_guard = thread_offset.row() < extent_.row();
+      is_write_thread = (is_write_thread && row_guard);
+    }
+
     ElementNorm *curr_ptr_max = ptr_Max_ + thread_offset.row() + column_offset_;
     ElementSum *curr_ptr_sum = ptr_Sum_ + thread_offset.row() + column_offset_;
 
