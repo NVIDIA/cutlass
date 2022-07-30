@@ -91,7 +91,7 @@ struct Options {
     help(false),
     problem_size({16, 24, 64}),
     batch_count(1),             // As a temporary limitation to the test bench, batch count must be 1. The kernels do NOT support arbitrary batching.
-    iterations(0),
+    iterations(20),
     seed(2022),
     alpha(1),
     beta(),
