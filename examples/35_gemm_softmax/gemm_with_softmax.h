@@ -489,7 +489,9 @@ public:
       reduction(
         problem_size,
         ref_N_.data(),
-        ref_S_.data()
+        ref_S_.data(),
+        batch_stride_Max_,
+        batch_stride_Sum_
       ), 
       softmax(
         MatrixCoord(problem_size.m(), problem_size.n()),
