@@ -479,7 +479,11 @@ public:
         batch_stride_A_,
         batch_stride_B_,
         typename EpilogueVisitor::Arguments(
-          linear_scaling
+          linear_scaling,
+          batch_stride_C_,
+          batch_stride_D_,
+          batch_stride_Max_,
+          batch_stride_Sum_
         )
       ),
       reduction(
@@ -586,7 +590,7 @@ public:
       block_per_row = (params_.extend.row() + thread_per_block - 1) / thread_per_block;
     }
 
-    dim3 final_reduction_grid(block_per_row);
+    dim3 final_reduction_grid(block_per_row, 1, params_.softmax.args.batch_count);
     dim3 final_reduction_block(thread_per_block);
 
     Kernel<ApplyFinalReductionKernel><<<

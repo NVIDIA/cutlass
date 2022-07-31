@@ -93,11 +93,19 @@ public:
   struct Arguments {
 
     typename ElementwiseFunctor::Params   elementwise;
+    int64_t                               batch_stride_C;
+    int64_t                               batch_stride_D;
+    int64_t                               batch_stride_Max;
+    int64_t                               batch_stride_Sum;
 
     //
     // Methods
     //
-    Arguments()
+    Arguments():
+      batch_stride_C(0),
+      batch_stride_D(0),
+      batch_stride_Max(0),
+      batch_stride_Sum(0)
     {
 
     }
@@ -105,16 +113,40 @@ public:
     Arguments(
       typename ElementwiseFunctor::Params   elementwise_
     ):
-      elementwise(elementwise_)
+      elementwise(elementwise_),
+      batch_stride_C(0),
+      batch_stride_D(0),
+      batch_stride_Max(0),
+      batch_stride_Sum(0)
     {
 
     }
+
+    Arguments(
+      typename ElementwiseFunctor::Params   elementwise_,
+      int64_t                               batch_stride_C_,
+      int64_t                               batch_stride_D_,
+      int64_t                               batch_stride_Max_,
+      int64_t                               batch_stride_Sum_
+    ):
+      elementwise(elementwise_),
+      batch_stride_C(batch_stride_C_),
+      batch_stride_D(batch_stride_D_),
+      batch_stride_Max(batch_stride_Max_),
+      batch_stride_Sum(batch_stride_Sum_)
+    {
+
+    }
+
   };
 
   struct Params {
 
     typename ElementwiseFunctor::Params   elementwise;
-
+    int64_t                               batch_stride_C;
+    int64_t                               batch_stride_D;
+    int64_t                               batch_stride_Max;
+    int64_t                               batch_stride_Sum;
     //
     // Methods
     //
@@ -126,7 +158,11 @@ public:
 
     CUTLASS_HOST_DEVICE
     Params(Arguments const &args):
-      elementwise(args.elementwise)
+      elementwise(args.elementwise),
+      batch_stride_C(args.batch_stride_C),
+      batch_stride_D(args.batch_stride_D),
+      batch_stride_Max(args.batch_stride_Max),
+      batch_stride_Sum(args.batch_stride_Sum)
     {
 
     }
@@ -210,7 +246,8 @@ public:
   /// Called to set the batch index
   CUTLASS_DEVICE
   void set_batch_index(int batch_idx) {
-
+    iterator_C_.add_pointer_offset(batch_idx * params_.batch_stride_C);
+    iterator_D_.add_pointer_offset(batch_idx * params_.batch_stride_D);
   }
 
   /// Called at the start of the epilogue just before iterating over accumulator slices
@@ -271,9 +308,8 @@ public:
       OutputTileIterator::ThreadMap::iteration_offset(frag_idx);
 
     bool column_guard = (thread_offset.column() < extent_.column());
-    bool is_last_step_in_row = (column_idx == OutputTileIterator::ThreadMap::Iterations::kColumn - 1);
 
-    auto accum_max_prev = accum_max_;
+    ElementSoftmaxCompute accum_max_prev = accum_max_;
 
     // Compute the maximum within one row
     if (!column_idx) {
@@ -289,10 +325,10 @@ public:
       }
     }
 
-    // pro-actively compute max in warps
+    // proactively compute max in warps
     accum_max_ = warp_reduce_max_(accum_max_);
 
-    auto updater = fast_exp(accum_max_prev - accum_max_);
+    ElementSoftmaxCompute updater = fast_exp(accum_max_prev - accum_max_);
 
     if (hasMultiStepsInRow) {
       if (!column_idx) {
@@ -331,8 +367,10 @@ public:
     bool row_guard = thread_offset.row() < extent_.row();
     bool is_write_thread = row_guard && is_first_thread_in_tile;
 
-    ElementNorm *curr_ptr_max = ptr_Max_ + thread_offset.row() + column_offset_;
-    ElementSum *curr_ptr_sum = ptr_Sum_ + thread_offset.row() + column_offset_;
+    int block_batch = blockIdx.z;
+
+    ElementNorm *curr_ptr_max = ptr_Max_ + thread_offset.row() + column_offset_ + block_batch * params_.batch_stride_Max;
+    ElementSum *curr_ptr_sum = ptr_Sum_ + thread_offset.row() + column_offset_ + block_batch * params_.batch_stride_Sum;
 
     arch::global_store<ElementNorm, sizeof(ElementNorm)>(
               convert_norm_output(accum_max_),
