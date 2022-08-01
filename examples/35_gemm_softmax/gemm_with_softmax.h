@@ -211,6 +211,9 @@ private:
     int idx_m = block_m + thread_m;
     int idx_n = block_n + thread_n;
 
+    int batch_offset_norm = block_batch * params.args.batch_stride_N;
+    int batch_offset_sum = block_batch * params.args.batch_stride_S;
+
     // Kill off thread if it is outside the row boundary
     if (params.args.extent.row() <= idx_m) {
       return;
@@ -253,8 +256,8 @@ private:
       params.args.batch_stride_Soft * block_batch +
       params.args.ref_Soft.layout()({idx_m, idx_n}));
 
-    ElementSum inv_sum = (params.args.ref_S.data())[block_m];
-    ElementNorm norm = (params.args.ref_N.data())[block_m];
+    ElementSum inv_sum = (params.args.ref_S.data())[block_m + batch_offset_sum];
+    ElementNorm norm = (params.args.ref_N.data())[block_m + batch_offset_norm];
 
     //
     // Loop
