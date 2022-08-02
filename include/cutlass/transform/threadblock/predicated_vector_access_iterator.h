@@ -56,8 +56,20 @@ namespace threadblock {
 
 /// PredicatedVectorAccessIterator
 ///
-template <typename Shape, typename WarpShape,
-    typename Element, typename Layout, int ElementsPerAccess>
+template <
+    /// Shape of the vector accessed by the entire threadblock
+    typename Shape,
+    /// Shape of the vector accessed by the warp
+    typename WarpShape,
+    /// Type of Element
+    typename Element,
+    /// Layout of the vector
+    typename Layout,
+    /// Number of elements for each access
+    int ElementsPerAccess,
+    /// Support residual tile
+    bool EnableResidualAccess = false
+>
 class PredicatedVectorAccessIterator;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,8 +77,21 @@ class PredicatedVectorAccessIterator;
 /// Vector access iterator specialized for vectors, e.g. scale and bias
 /// Thread arrangements are for TensorOps
 ///
-template <typename Shape_, typename WarpShape_, typename Element_, int ElementsPerAccess>
-class PredicatedVectorAccessIterator<Shape_, WarpShape_, Element_, layout::PitchLinear, ElementsPerAccess> {
+template <
+  typename Shape_, 
+  typename WarpShape_, 
+  typename Element_, 
+  int ElementsPerAccess, 
+  bool EnableResidualAccess
+>
+class PredicatedVectorAccessIterator <
+  Shape_,
+  WarpShape_,
+  Element_,
+  layout::PitchLinear,
+  ElementsPerAccess,
+  EnableResidualAccess
+> {
   public:
 
   using Shape = Shape_;
@@ -116,6 +141,12 @@ class PredicatedVectorAccessIterator<Shape_, WarpShape_, Element_, layout::Pitch
   /// iteration index
   LongIndex iteration_;
 
+  /// residual access
+  bool is_residual_;
+
+  /// residual offset of each thread
+  TensorCoord residual_offset_;
+
  public:
   /// Constructs a vector access iterator
   CUTLASS_HOST_DEVICE
@@ -132,7 +163,8 @@ class PredicatedVectorAccessIterator<Shape_, WarpShape_, Element_, layout::Pitch
     TensorCoord const &threadblock_offset)
     : pointer_(reinterpret_cast<BytePointer>(
                        const_cast<NonConstPointer>(pointer))),
-      extent_(extent) {
+      extent_(extent),
+      is_residual_(false) {
 
 
     int warp_offset = (warp_id / kWarpCountStrided) * WarpShape::kContiguous;
@@ -143,6 +175,15 @@ class PredicatedVectorAccessIterator<Shape_, WarpShape_, Element_, layout::Pitch
         TensorCoord((thread_id & kThreadsPerRowMask) * kElementsPerAccess, 0);
 
     set_iteration_index(0);
+
+    if(EnableResidualAccess) {
+      // compute residual offset
+      typename TensorCoord::Index residual_size = extent_.contiguous() % WarpShape::kContiguous;
+      if (residual_size) {
+        is_residual_ = true;
+        residual_offset_ = make_Coord(residual_size, 0);
+      }
+    }
   }
 
   /// Construct a PredicatedVectorAccessIterator with zero threadblock offset
@@ -170,6 +211,7 @@ class PredicatedVectorAccessIterator<Shape_, WarpShape_, Element_, layout::Pitch
   CUTLASS_DEVICE
   void add_tile_offset(
       TensorCoord const &tile_offset) {
+
     thread_offset_ =
         thread_offset_ +
         TensorCoord(WarpShape::kContiguous * tile_offset.contiguous(), 0);
@@ -198,7 +240,12 @@ class PredicatedVectorAccessIterator<Shape_, WarpShape_, Element_, layout::Pitch
   /// Increment and return an instance to self.
   CUTLASS_HOST_DEVICE
   void advance() {
-    add_tile_offset(TensorCoord(1, 0));
+    if(EnableResidualAccess && is_residual_) {
+      is_residual_ = false;
+      thread_offset_ += residual_offset_; 
+    }
+    else
+      add_tile_offset(TensorCoord(1, 0));
   }
 
   /// Increment and return an instance to self.
@@ -221,8 +268,21 @@ class PredicatedVectorAccessIterator<Shape_, WarpShape_, Element_, layout::Pitch
 
 /// Specialization of PredicatedVectorAccessIterator for row-major data.
 ///
-template <typename Shape_, typename WarpShape_, typename Element_, int ElementsPerAccess>
-class PredicatedVectorAccessIterator<Shape_, WarpShape_, Element_, layout::RowMajor, ElementsPerAccess> {
+template <
+  typename Shape_,
+  typename WarpShape_,
+  typename Element_,
+  int ElementsPerAccess,
+  bool EnableResidualAccess
+>
+class PredicatedVectorAccessIterator<
+  Shape_,
+  WarpShape_,
+  Element_,
+  layout::RowMajor,
+  ElementsPerAccess,
+  EnableResidualAccess
+> {
  public:
 
   using Shape = Shape_;
@@ -245,7 +305,8 @@ class PredicatedVectorAccessIterator<Shape_, WarpShape_, Element_, layout::RowMa
       layout::PitchLinearShape<WarpShape::kColumn, WarpShape::kRow>, 
       Element,
       layout::PitchLinear,
-      ElementsPerAccess>;
+      ElementsPerAccess,
+      EnableResidualAccess>;
 
   using AccessType = typename UnderlyingIterator::AccessType;
   static int const kElementsPerAccess = UnderlyingIterator::kElementsPerAccess;
