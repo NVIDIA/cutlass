@@ -193,6 +193,8 @@ private:
     int m_dim_in_loop = isGroupedProblem ? problem_size.m() : tid + bdim;
     int access_offset = isGroupedProblem ? 0 : bid * bdim;
 
+    if (!isGroupedProblem && access_offset + tid >= problem_size.m()) return;
+
     ElementNorm *curr_ptr_Max = isGroupedProblem ? \
               params.args.block_Norm + params.args.offset_Norm_Device[bid] : \
               params.args.block_Norm + block_batch * params.args.batch_stride_Max;
