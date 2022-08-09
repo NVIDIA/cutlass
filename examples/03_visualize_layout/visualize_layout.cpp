@@ -95,7 +95,7 @@ void print_usage(std::ostream &out) {
          "--extent=16,16 --vectorize=2 --output-shape=16,4\n"
       << "$ 03_visualize_layout \"VoltaTensorOpMultiplicandCrosswise<16,32>\" "
          "--extent=32,64 --vectorize=4 --output-shape=64,4\n"
-      << "$ 03_visualize_layout \"VotlaTensorOpMultiplicandCongruous<16>\" "
+      << "$ 03_visualize_layout \"VoltaTensorOpMultiplicandCongruous<16>\" "
          "--extent=64,32 --vectorize=8 --output-shape=64,4\n";
 
   out << std::endl;
