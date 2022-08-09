@@ -718,11 +718,11 @@ double fast_exp(double x) {
 }
 
 CUTLASS_HOST_DEVICE
-float fast_exp(half_t x) {
+half_t fast_exp(half_t x) {
   #if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 10) && (__CUDA_ARCH__ >= 750)
-      return ::hexp(x.to_half());
+      return (half_t)(::hexp(x.to_half()));
   #else
-      return fast_exp(float(x));
+      return (half_t)(fast_exp(float(x)));
   #endif
 }
 
@@ -908,4 +908,3 @@ T absolute_value(T x) {
 }  // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

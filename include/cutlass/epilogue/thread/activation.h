@@ -98,6 +98,69 @@ struct ReLu<Array<T, N>> {
   }
 };
 
+// Tanh operator
+template <typename T>
+struct Tanh {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &scalar) const {
+    return fast_tanh(scalar);
+  }
+};
+
+template <typename T, int N>
+struct Tanh<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    Array<T, N> y;
+    Tanh<T> tanh_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      y[i] = tanh_op(rhs[i]);
+    }
+
+    return y;
+  }
+};
+
+template <int N>
+struct Tanh<Array<half_t, N>> {
+  using T = half_t;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& z) const {
+    fast_tanh_op<Array<T, N>> tanh;
+    return tanh(z);
+
+  }
+};
+
+// Leaky Relu operator
+template <typename T>
+struct LeakyReLU {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &value, T const & alpha_recip) const {
+    T res = value > T(0) ? value : value * alpha_recip;
+    return res;
+  }
+};
+
+template <typename T, int N>
+struct LeakyReLU<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs, T const & alpha_recip) const {
+    Array<T, N> y;
+    LeakyReLU<T> leaky_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < int(rhs.size()); ++i) {
+      y[i] = leaky_op(rhs[i], alpha_recip);
+    }
+
+    return y;
+  }
+};
+
 // Sigmoid operator
 template <typename T>
 struct Sigmoid {

@@ -62,6 +62,7 @@ struct Mma<
 
   using Shape = gemm::GemmShape<2, 1, 1>;
   using Operator = OpMultiplyAdd;
+  using ElementC = half_t;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -107,6 +108,7 @@ struct Mma<
 
   using Shape = gemm::GemmShape<1, 2, 1>;
   using Operator = OpMultiplyAdd;
+  using ElementC = half_t;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -152,6 +154,7 @@ struct Mma <
 
   using Shape = gemm::GemmShape<2, 2, 1>;
   using Operator = OpMultiplyAdd;
+  using ElementC = half_t;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -206,7 +209,8 @@ struct Mma<
 
   using Shape = gemm::GemmShape<2, 2, 1>;
   using Operator = OpMultiplyAdd;
-  
+  using ElementC = half_t;
+
   CUTLASS_HOST_DEVICE
   void operator()(
     Array<half_t, 4> &d,
@@ -220,12 +224,12 @@ struct Mma<
     __half2 Alo = __low2half2(reinterpret_cast<__half2 const &>(a));
     __half2 Ahi = __high2half2(reinterpret_cast<__half2 const &>(a));
     __half2 const & B = reinterpret_cast<__half2 const &>(b);
-    
+
     __half2 const *C = reinterpret_cast<__half2 const *>(&c);
 
     __half2 Dlo = __hfma2(Alo, B, C[0]);
     __half2 Dhi = __hfma2(Ahi, B, C[0]);
-    
+
     Array<half_t, 2> * D = reinterpret_cast<Array<half_t, 2> *>(&d);
 
     D[0] = reinterpret_cast<Array<half_t, 2> &>(Dlo);
@@ -246,4 +250,3 @@ struct Mma<
 
 }
 }
-

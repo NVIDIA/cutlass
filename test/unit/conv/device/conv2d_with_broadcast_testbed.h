@@ -37,6 +37,8 @@
 */
 #pragma once
 
+#include <fstream>
+
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/cutlass.h"
 

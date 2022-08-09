@@ -89,7 +89,7 @@ struct GemmWithBroadcastReferenceOp {
 //
 //  Y = GEMM(AB, C)
 //
-//  T[i, j] = ReductionOp(Y[i, j], Broadcast[i])
+//  T[i, j] = BinaryOp(Y[i, j], Broadcast[i])
 //
 //  Z[i, j] = Elementwise(T[i, j])
 //

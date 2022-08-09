@@ -62,6 +62,7 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, float, LayoutA, float, LayoutB, float, L
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAdd;
+  using ElementC = float;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -89,6 +90,7 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, double, LayoutA, double, LayoutB, double
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAdd;
+  using ElementC = double;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -117,6 +119,7 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, int, LayoutA, int, LayoutB, int, LayoutC
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAdd;
+  using ElementC = int;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -144,16 +147,17 @@ template <
 struct Mma<
   gemm::GemmShape<1, 1, 1>,
   1,
-  complex<float>, 
-  LayoutA, 
-  complex<float>, 
-  LayoutB, 
-  complex<float>, 
-  LayoutC, 
+  complex<float>,
+  LayoutA,
+  complex<float>,
+  LayoutB,
+  complex<float>,
+  LayoutC,
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAddComplex;
+  using ElementC = complex<float>;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -184,16 +188,17 @@ template <
 struct Mma<
   gemm::GemmShape<1, 1, 1>,
   1,
-  complex<float>, 
-  LayoutA, 
-  float, 
-  LayoutB, 
-  complex<float>, 
-  LayoutC, 
+  complex<float>,
+  LayoutA,
+  float,
+  LayoutB,
+  complex<float>,
+  LayoutC,
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAddComplex;
+  using ElementC = complex<float>;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -222,16 +227,17 @@ template <
 struct Mma<
   gemm::GemmShape<1, 1, 1>,
   1,
-  float, 
-  LayoutA, 
-  complex<float>, 
-  LayoutB, 
-  complex<float>, 
-  LayoutC, 
+  float,
+  LayoutA,
+  complex<float>,
+  LayoutB,
+  complex<float>,
+  LayoutC,
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAddComplex;
+  using ElementC = complex<float>;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -260,16 +266,17 @@ template <
 struct Mma<
   gemm::GemmShape<1, 1, 1>,
   1,
-  complex<double>, 
-  LayoutA, 
-  complex<double>, 
-  LayoutB, 
-  complex<double>, 
-  LayoutC, 
+  complex<double>,
+  LayoutA,
+  complex<double>,
+  LayoutB,
+  complex<double>,
+  LayoutC,
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAddComplex;
+  using ElementC = complex<double>;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -298,16 +305,17 @@ template <
 struct Mma<
   gemm::GemmShape<1, 1, 1>,
   1,
-  complex<double>, 
-  LayoutA, 
-  double, 
-  LayoutB, 
-  complex<double>, 
-  LayoutC, 
+  complex<double>,
+  LayoutA,
+  double,
+  LayoutB,
+  complex<double>,
+  LayoutC,
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAddComplex;
+  using ElementC = complex<double>;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -334,16 +342,17 @@ template <
 struct Mma<
   gemm::GemmShape<1, 1, 1>,
   1,
-  double, 
-  LayoutA, 
-  complex<double>, 
-  LayoutB, 
-  complex<double>, 
-  LayoutC, 
+  double,
+  LayoutA,
+  complex<double>,
+  LayoutB,
+  complex<double>,
+  LayoutC,
   OpMultiplyAdd> {
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAddComplex;
+  using ElementC = complex<double>;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -373,7 +382,8 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, half_t, LayoutA, half_t, LayoutB, float,
 
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAdd;
-  
+  using ElementC = float;
+
   CUTLASS_HOST_DEVICE
   void operator()(
     Array<float, 1> &d,
@@ -401,6 +411,7 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, Quaternion<float>, LayoutA, Quaternion<f
   using Shape = gemm::GemmShape<1, 1, 1>;
   using Operator = OpMultiplyAdd;
   using Element = Quaternion<float>;
+  using ElementC = Element;
 
   CUTLASS_HOST_DEVICE
   void operator()(
@@ -412,7 +423,7 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, Quaternion<float>, LayoutA, Quaternion<f
     multiply_add<Element, Element, Element> op;
     d[0] = op(a[0], b[0], c[0]);
   }
-  
+
 };
 
 }

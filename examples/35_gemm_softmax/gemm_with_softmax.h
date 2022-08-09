@@ -72,9 +72,10 @@ namespace kernel {
 //
 template <
   typename ElementD_,
-  typename ElementN_,
+  typename ElementNorm_,
   typename ElementSum_,
   typename ElementSoft_,
+  typename ElementSoftmaxCompute_,
   int Alignment,
   typename Shape_ = MatrixShape<4, 16>
 >
@@ -82,9 +83,10 @@ class ApplySoftmax {
 public:
 
   using ElementD = ElementD_;
-  using ElementN = ElementN_;
+  using ElementNorm = ElementNorm_;
   using ElementSum = ElementSum_;
   using ElementSoft = ElementSoft_;
+  using ElementSoftmaxCompute = ElementSoftmaxCompute_;
 
   static int const kAlignment = Alignment;
   using Shape = Shape_;
@@ -92,11 +94,11 @@ public:
   using Layout = cutlass::layout::RowMajor;
 
   using TensorRefD = TensorRef<ElementD, Layout>;
-  using TensorRefN = TensorRef<ElementN, Layout>;
+  using TensorRefN = TensorRef<ElementNorm, Layout>;
   using TensorRefSum = TensorRef<ElementSum, Layout>;
   using TensorRefSoft = TensorRef<ElementSoft, Layout>;
 
-  using FragmentSum = Array<ElementSum, kAlignment>;
+  using FragmentSoftmax = Array<ElementSoftmaxCompute, kAlignment>;
 
   //
   // Arguments
@@ -108,9 +110,11 @@ public:
     int             batch_count;        ///< Batch count
     TensorRefD      ref_D;              ///< D matrix computed by GEMM+Max (input)
     TensorRefN      ref_N;              ///< Norm tensor (input)
+    TensorRefSum    ref_S;              ///< Sum  tensor (input)
     TensorRefSoft   ref_Soft;           ///< Softmax tensor (output)
     int64_t         batch_stride_D;     ///< Batch stride for D tensor
     int64_t         batch_stride_N;     ///< Batch stride for N tensor
+    int64_t         batch_stride_S;     ///< Batch stride for S tensor
     int64_t         batch_stride_Soft;  ///< Batch stride for softmax tensor
 
     //
@@ -120,6 +124,7 @@ public:
       batch_count(1),
       batch_stride_D(0),
       batch_stride_N(0),
+      batch_stride_S(0),
       batch_stride_Soft(0)
     { }
 
@@ -128,18 +133,22 @@ public:
       int             batch_count_,        ///< Batch count
       TensorRefD      ref_D_,              ///< D matrix computed by GEMM+PartialReduce
       TensorRefN      ref_N_,              ///< Output parameter for N
+      TensorRefSum    ref_S_,              ///< Output parameter for N
       TensorRefSoft   ref_Soft_,           ///< Softmax
       int64_t         batch_stride_D_ = 0,
       int64_t         batch_stride_N_ = 0,
+      int64_t         batch_stride_S_ = 0,
       int64_t         batch_stride_Soft_ = 0
     ):
       extent(extent_),
       batch_count(batch_count_),
       ref_D(ref_D_),
       ref_N(ref_N_),
+      ref_S(ref_S_),
       ref_Soft(ref_Soft_),
       batch_stride_D(batch_stride_D_),
       batch_stride_N(batch_stride_N_),
+      batch_stride_S(batch_stride_S_),
       batch_stride_Soft(batch_stride_Soft_)
     {
 
@@ -167,10 +176,6 @@ public:
 
   struct SharedStorage {
 
-    AlignedArray<ElementSum, Shape::kCount> exchange;
-    AlignedArray<ElementSum, Shape::kRow> inv_sum;
-    AlignedArray<ElementSum, Shape::kRow> norm;
-
   };
 
 private:
@@ -182,246 +187,11 @@ public:
 
   CUTLASS_DEVICE
   void operator()(Params const &params, SharedStorage &shared_storage) {
-
-    // Phase 1. Reduction over contiguous dimension
-    reduce_partial(params, shared_storage);
-
-    __syncthreads();
-
-    // Phase 2. Final reduction within SMEM - yields sum_n(exp(D - N))
-    reduce_final(params, shared_storage);
-
-    __syncthreads();
-
-    // Phase 3. Apply
     apply(params, shared_storage);
   }
 
 private:
 
-  /// Partial reduction
-  CUTLASS_DEVICE
-  void reduce_partial(Params const &params, SharedStorage &shared_storage) {
-
-    //
-    // Sum over the matrix
-    //
-    using AccessTypeD = AlignedArray<ElementD, kAlignment>;
-
-    int block_batch = blockIdx.z;
-    int block_m = blockIdx.x * Shape::kRow;
-    int block_n = 0;
-
-    int thread_m = threadIdx.y;
-    int thread_n = threadIdx.x * kAlignment;
-
-    int idx_m = block_m + thread_m;
-    int idx_n = block_n + thread_n;
-
-    AccessTypeD *access_d = reinterpret_cast<AccessTypeD *>(
-      params.args.ref_D.data() +
-      params.args.batch_stride_D * block_batch +
-      params.args.ref_D.layout()({idx_m, idx_n}));
-
-    using ConvertS = cutlass::NumericArrayConverter<ElementSum, ElementD, kAlignment>;
-
-    using Plus = cutlass::plus<FragmentSum>;
-    using Minus = cutlass::minus<FragmentSum>;
-    using Exp   = cutlass::fast_exp_op<FragmentSum>;
-
-    ConvertS  convert_s;
-    Minus     minus;
-    Plus      plus;
-    Exp       exponential;
-
-    FragmentSum frag_Sum;
-    frag_Sum.clear();
-
-    if (idx_m < params.args.extent.row()) {
-
-      // Fetch the norm from GlobalMemory
-      ElementN norm = params.args.ref_N.data()[params.args.batch_stride_N * block_batch + idx_m];
-      ElementSum norm_cvt = ElementSum(norm);
-
-      FragmentSum norm_vec;
-
-      norm_vec.fill(norm_cvt);
-      shared_storage.norm[thread_m] = ElementSum(norm_cvt);
-
-      CUTLASS_PRAGMA_UNROLL
-      for (
-        int idx = 0;
-        idx < params.args.extent.column();
-        idx += Shape::kColumn * kAlignment) {
-
-        if (idx_n < params.args.extent.column()) {
-
-          AccessTypeD fetch;
-          arch::global_load<AccessTypeD, sizeof(AccessTypeD)>(fetch, access_d, true);
-
-          auto tmp = exponential(minus(convert_s(fetch), norm_vec));
-
-          frag_Sum = plus(frag_Sum, tmp);
-        }
-
-        access_d += Shape::kColumn;
-        idx_n += Shape::kColumn * kAlignment;
-      }
-
-      // Sum the elements owned by one thread
-      ElementSum sum = frag_Sum[0];
-
-      CUTLASS_PRAGMA_UNROLL
-      for (int i = 1; i < kAlignment; ++i) {
-        sum += frag_Sum[i];
-      }
-
-      shared_storage.exchange.data()[threadIdx.x + threadIdx.y * Shape::kColumn] = sum;
-    }
-  }
-
-  /// Compute the final summation from data in SMEM
-  CUTLASS_DEVICE
-  void reduce_final(Params const &params, SharedStorage &shared_storage) {
-
-    //
-    // SMEM has shape `Shape::Row`-by-`Shape::Column`
-    //
-    // This computes a reduction across the `Column` dimension yielding a `Row-by-1` vector.
-    //
-
-    #if true
-    //
-    // Tuning parameters tradeoff ILP with latency
-    //
-    // During each step of the reduction, each thread performs `kAccesses` of vector size `kReduceVector`
-
-    // Tune the number of accesses per reduction
-    int const kAccesses = 2;
-
-    // Tune the memory access size
-    int const kReduceVector = 4;
-
-    //
-    // Static asserts to ensure integrity
-    //
-
-    static_assert(kAccesses * kReduceVector,
-      "Zero-size steps would infinitely loop.");
-
-    static_assert(
-      is_pow2<Shape::kColumn>::value &&
-      is_pow2<kAccesses>::value &&
-      is_pow2<kReduceVector>::value,
-      "Powers of two only.");
-
-    static_assert(!(Shape::kColumn % (kAccesses * kReduceVector)),
-      "Divisibility not satisfied");
-
-    //
-    // Reduction operators
-    //
-
-    using FragmentSum = Array<ElementSum, kReduceVector>;
-    using Plus = cutlass::plus<FragmentSum>;
-
-    Plus plus;
-
-    // Tree reduction
-    ElementSum *smem_ptr = shared_storage.exchange.data() + threadIdx.y * Shape::kColumn;
-
-    ElementSum final = ElementSum();
-
-    CUTLASS_PRAGMA_UNROLL
-    for (
-      int tidx_limit = Shape::kColumn / (kAccesses * kReduceVector);
-      tidx_limit > 0;
-      tidx_limit /= (kAccesses * kReduceVector)) {
-
-      if (threadIdx.x < tidx_limit) {
-        FragmentSum fetch;
-
-        arch::shared_load<sizeof(FragmentSum)>(
-          &fetch,
-          arch::cutlass_get_smem_pointer(smem_ptr + threadIdx.x * kReduceVector));
-
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 1; i < kAccesses; ++i) {
-          FragmentSum extra;
-
-          arch::shared_load<sizeof(FragmentSum)>(
-            &extra,
-            arch::cutlass_get_smem_pointer(
-              smem_ptr + threadIdx.x * kReduceVector + tidx_limit * kReduceVector * i));
-
-          fetch = plus(fetch, extra);
-        }
-
-        // Reduce to one element
-        final = fetch[0];
-
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 1; i < kReduceVector; ++i) {
-          final += fetch[i];
-        }
-      }
-      __syncthreads();
-
-      if (threadIdx.x < tidx_limit) {
-        smem_ptr[threadIdx.x] = final;
-      }
-      __syncthreads();
-    }
-
-    if (threadIdx.x == 0) {
-
-      int const kLgResidual =
-        (log2_down<Shape::kColumn>::value % log2_down<kAccesses * kReduceVector>::value);
-
-      // Certain shape combinations require an additional reduction step
-      if (kLgResidual) {
-        final = ElementSum();
-
-        int const kResidualVector = (1 << kLgResidual);
-        Array<ElementSum, kResidualVector> fetch;
-
-        arch::shared_load<sizeof(FragmentSum)>(
-          &fetch,
-          arch::cutlass_get_smem_pointer(smem_ptr));
-
-        CUTLASS_PRAGMA_UNROLL
-        for (int i = 0; i < kResidualVector; ++i) {
-          final += fetch[i];
-        }
-      }
-
-      // compute inverse
-      ElementSum inv_sum = cutlass::constants::one<ElementSum>() / final;
-
-      // Store to shared memory
-      shared_storage.inv_sum[threadIdx.y] = inv_sum;
-    }
-
-    #else
-
-    // Primitive serial reduction
-    if (threadIdx.x < Shape::kRow && threadIdx.y == 0) {
-      ElementSum *smem_ptr = shared_storage.exchange.data() + threadIdx.x * Shape::kColumn;
-
-      ElementSum sum = smem_ptr[0];
-      CUTLASS_PRAGMA_UNROLL
-      for (int n = 1; n < Shape::kColumn; ++n) {
-        sum += smem_ptr[n];
-      }
-
-      // compute inverse
-      ElementSum inv_sum = cutlass::constants::one<ElementSum>() / sum;
-
-      // Store to shared memory
-      shared_storage.inv_sum[threadIdx.x] = inv_sum;
-    }
-    #endif
-  }
 
   /// Compute Softmax
   CUTLASS_DEVICE
@@ -451,19 +221,25 @@ private:
     using AccessTypeD = AlignedArray<ElementD, kAlignment>;
     using AccessTypeSoft = AlignedArray<ElementSoft, kAlignment>;
     using FragmentSoft = Array<ElementSoft, kAlignment>;
-    using ConvertSum = cutlass::NumericArrayConverter<ElementSum, ElementD, kAlignment>;
-    using ConvertSoft = cutlass::NumericArrayConverter<ElementSoft, ElementSum, kAlignment>;
+    using ConvertSoftCompute = cutlass::NumericArrayConverter<ElementSoftmaxCompute, ElementD, kAlignment>;
+    using ConvertSoftOutput = cutlass::NumericArrayConverter<ElementSoft, ElementSoftmaxCompute, kAlignment>;
 
-    using Mul = cutlass::multiplies<FragmentSum>;
-    using Minus = cutlass::minus<FragmentSum>;
-    using Exp   = cutlass::fast_exp_op<FragmentSum>;
+    using Mul = cutlass::multiplies<FragmentSoftmax>;
+    using Minus = cutlass::minus<FragmentSoftmax>;
+    using Exp   = cutlass::fast_exp_op<FragmentSoftmax>;
 
-    ConvertSum   convert_sum;
-    ConvertSoft  convert_soft;
+    ConvertSoftCompute   convert_soft_compute;
+    ConvertSoftOutput  convert_soft_output;
 
     Minus     minus;
     Mul       mul;
     Exp       exponential;
+
+    using ConvertSum = cutlass::NumericConverter<ElementSoftmaxCompute, ElementSum>;
+    using ConvertNorm = cutlass::NumericConverter<ElementSoftmaxCompute, ElementNorm>;
+
+    ConvertSum   convert_sum;
+    ConvertNorm  convert_norm;
 
     AccessTypeD *access_d = reinterpret_cast<AccessTypeD *>(
       params.args.ref_D.data() +
@@ -475,11 +251,8 @@ private:
       params.args.batch_stride_Soft * block_batch +
       params.args.ref_Soft.layout()({idx_m, idx_n}));
 
-    // Fetch inv_sum from SharedMemory
-    ElementSum inv_sum = shared_storage.inv_sum[thread_m];
-
-    // Fetch the norm from SharedMemory
-    ElementSum norm = shared_storage.norm[thread_m];
+    ElementSum inv_sum = (params.args.ref_S.data())[block_m];
+    ElementNorm norm = (params.args.ref_N.data())[block_m];
 
     //
     // Loop
@@ -495,8 +268,8 @@ private:
         AccessTypeD fetch;
         arch::global_load<AccessTypeD, sizeof(AccessTypeD)>(fetch, access_d, true);
 
-        FragmentSum result = mul(exponential(minus(convert_sum(fetch), norm)), inv_sum);
-        FragmentSoft soft  = convert_soft(result);
+        FragmentSoftmax result = mul(exponential(minus(convert_soft_compute(fetch), convert_norm(norm))),  convert_sum(inv_sum));
+        FragmentSoft soft  = convert_soft_output(result);
 
         arch::global_store<FragmentSoft, sizeof(FragmentSoft)>(soft, access_soft, true);
       }
@@ -508,6 +281,173 @@ private:
   }
 };
 
+template <
+  typename ElementNorm_,
+  typename ElementSum_,
+  typename ElementSoftmaxCompute_,
+  typename ThreadblockShape_
+>
+class ApplyFinalReduction {
+public:
+
+  using ElementNorm = ElementNorm_;
+  using ElementSum = ElementSum_;
+  using ElementSoftmaxCompute = ElementSoftmaxCompute_;
+  using ThreadblockShape = ThreadblockShape_;
+
+  using Layout = cutlass::layout::RowMajor;
+
+  using TensorRefN = TensorRef<ElementNorm, Layout>;
+  using TensorRefSum = TensorRef<ElementSum, Layout>;  
+
+  //
+  // Arguments
+  //
+
+  struct Arguments {
+
+    MatrixCoord     extent;             ///< Extent of D and Softmax matrices
+    int             batch_count;        ///< Batch count
+    TensorRefN      ref_N;              ///< Norm tensor (input / output)
+    TensorRefSum    ref_Sum;            ///< Sum tensor (input / output)
+    int64_t         batch_stride_N;     ///< Batch stride for N tensor
+    int64_t         batch_stride_Sum;   ///< Batch stride for softmax tensor
+
+    //
+    // Methods
+    //
+    Arguments():
+      batch_count(1),
+      batch_stride_N(0),
+      batch_stride_Sum(0)
+    { }
+
+    Arguments(
+      MatrixCoord     extent_,             ///< Extent of D and Softmax matrices
+      int             batch_count_,        ///< Batch count
+      TensorRefN      ref_N_,              ///< Output parameter for N
+      TensorRefSum    ref_Sum_ ,           ///< Sum
+      int64_t         batch_stride_N_ = 0,
+      int64_t         batch_stride_Sum_ = 0
+    ):
+      extent(extent_),
+      batch_count(batch_count_),
+      ref_N(ref_N_),
+      ref_Sum(ref_Sum_),
+      batch_stride_N(batch_stride_N_),
+      batch_stride_Sum(batch_stride_Sum_)
+    {
+
+    }
+  };
+
+  struct SharedStorage {
+
+
+  };
+
+  //
+  // Params struct
+  //
+
+  struct Params {
+    Arguments args;
+
+    //
+    // Methods
+    //
+    Params() { }
+
+    Params(Arguments const &args_): args(args_) { }
+  };
+
+private:
+
+public:
+
+  CUTLASS_DEVICE
+  ApplyFinalReduction() { }
+
+  CUTLASS_DEVICE
+  void operator()(Params const &params, SharedStorage &shared_storage) {
+
+    apply(params, shared_storage);
+  }
+
+private:
+
+  /// Partial reduction
+  CUTLASS_DEVICE
+  void apply(Params const &params, SharedStorage &shared_storage) {
+
+    int threadblock_num = (params.args.extent.column() + ThreadblockShape::kN - 1) / ThreadblockShape::kN;
+
+    int block_batch = blockIdx.z;
+
+    int block_n = blockIdx.x * blockDim.x;
+
+    int thread_n = threadIdx.x;
+
+    int idx_n = block_n + thread_n;
+
+    if (idx_n >= params.args.extent.row()) {
+      return;
+    }
+
+
+    using ConvertSumOutput = cutlass::NumericConverter<ElementSum, ElementSoftmaxCompute>;
+    using ConvertNormOutput = cutlass::NumericConverter<ElementNorm, ElementSoftmaxCompute>;
+
+    using ConvertSum = cutlass::NumericConverter<ElementSoftmaxCompute, ElementSum>;
+    using ConvertNorm = cutlass::NumericConverter<ElementSoftmaxCompute, ElementNorm>;
+
+    ConvertSum   convert_sum;
+    ConvertNorm  convert_norm;
+
+    ConvertSumOutput   convert_sum_output;
+    ConvertNormOutput  convert_norm_output;
+
+    ElementNorm *access_n = params.args.ref_N.data() + params.args.batch_stride_N * block_batch + idx_n;
+    ElementSum *access_s = params.args.ref_Sum.data() + params.args.batch_stride_Sum * block_batch + idx_n;
+
+    ElementNorm *access_n_bak = access_n;
+    ElementSum *access_s_bak = access_s;
+
+    uint32_t float_max_bits = 0xff7fffff;
+    float min_float = reinterpret_cast<float const &>(float_max_bits);
+
+    ElementSoftmaxCompute max_val = ElementSoftmaxCompute(min_float);
+    ElementSoftmaxCompute sum_val = ElementSoftmaxCompute(0);
+    ElementNorm fetch_n;
+    ElementSum fetch_s;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int idx_m = 0; idx_m < threadblock_num; idx_m++) {
+      arch::global_load<ElementNorm, sizeof(ElementNorm)>(fetch_n, access_n, true);
+      max_val = fast_max(max_val, convert_norm(fetch_n));
+      access_n += params.args.extent.row();
+    }
+    
+    access_n = access_n_bak;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int idx_m = 0; idx_m < threadblock_num; idx_m++) {
+      arch::global_load<ElementNorm, sizeof(ElementNorm)>(fetch_n, access_n, true);
+      arch::global_load<ElementSum, sizeof(ElementSum)>(fetch_s, access_s, true);
+      sum_val += convert_sum(fetch_s) * fast_exp(convert_norm(fetch_n) - max_val);
+      access_n += params.args.extent.row();
+      access_s += params.args.extent.row();
+    }
+
+    ElementSoftmaxCompute inv_sum = cutlass::constants::one<ElementSoftmaxCompute>() / sum_val;
+
+    access_n = access_n_bak;
+    access_s = access_s_bak;
+
+    access_n[0] = convert_norm_output(max_val);
+    access_s[0] = convert_sum_output(inv_sum);
+  }
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -516,6 +456,9 @@ template <
   int ThreadCount,
   typename OutputTileIterator_,
   typename ElementAccumulator_,
+  typename ElementNorm_,
+  typename ElementSum_,
+  typename ElementSoftmaxCompute_,
   typename ElementwiseFunctor_
 >
 class EpilogueVisitorBiasMax {
@@ -532,10 +475,14 @@ public:
 
   using ElementOutput = typename OutputTileIterator::Element;
   using LayoutOutput = cutlass::layout::RowMajor;
-
   using ElementAccumulator = ElementAccumulator_;
 
+  using ElementNorm = ElementNorm_;
+  using ElementSum = ElementSum_;
+  using ElementSoftmaxCompute = ElementSoftmaxCompute_;
+
   using AccumulatorFragment = Array<ElementAccumulator, kElementsPerAccess>;
+  using SoftmaxFragment = Array<ElementSoftmaxCompute, kElementsPerAccess>;
   using OutputVector = Array<ElementOutput, kElementsPerAccess>;
   using TensorRefD = TensorRef<ElementOutput, LayoutOutput>;
 
@@ -545,19 +492,23 @@ public:
     typename ElementwiseFunctor::Params   elementwise;
     TensorRefD                            ref_C;
     TensorRefD                            ref_D;
-    float                                *ptr_Max;
+    ElementNorm                           *ptr_Max;
+    ElementSum                            *ptr_Sum;
     int64_t                               batch_stride_C;
     int64_t                               batch_stride_D;
     int64_t                               batch_stride_Max;
+    int64_t                               batch_stride_Sum;
 
     //
     // Methods
     //
     Arguments():
       ptr_Max(nullptr),
+      ptr_Sum(nullptr),
       batch_stride_C(0),
       batch_stride_D(0),
-      batch_stride_Max(0)
+      batch_stride_Max(0),
+      batch_stride_Sum(0)
     {
 
     }
@@ -566,18 +517,22 @@ public:
       typename ElementwiseFunctor::Params   elementwise_,
       TensorRefD                            ref_C_,
       TensorRefD                            ref_D_,
-      float                                *ptr_Max_,
+      ElementNorm                           *ptr_Max_,
+      ElementSum                            *ptr_Sum_,
       int64_t                               batch_stride_C_,
       int64_t                               batch_stride_D_,
-      int64_t                               batch_stride_Max_
+      int64_t                               batch_stride_Max_,
+      int64_t                               batch_stride_Sum_
     ):
       elementwise(elementwise_),
       ref_C(ref_C_),
       ref_D(ref_D_),
       ptr_Max(ptr_Max_),
+      ptr_Sum(ptr_Sum_),
       batch_stride_C(batch_stride_C_),
       batch_stride_D(batch_stride_D_),
-      batch_stride_Max(batch_stride_Max_)
+      batch_stride_Max(batch_stride_Max_),
+      batch_stride_Sum(batch_stride_Sum_)
     {
 
     }
@@ -590,10 +545,12 @@ public:
     typename OutputTileIterator::Params   params_D;
     typename OutputTileIterator::Element *ptr_C;
     typename OutputTileIterator::Element *ptr_D;
-    float                                *ptr_Max;
+    ElementNorm                           *ptr_Max;
+    ElementSum                            *ptr_Sum;
     int64_t                               batch_stride_C;
     int64_t                               batch_stride_D;
     int64_t                               batch_stride_Max;
+    int64_t                               batch_stride_Sum;
 
     //
     // Methods
@@ -601,7 +558,8 @@ public:
     CUTLASS_HOST_DEVICE
     Params():
       ptr_D(nullptr),
-      ptr_Max(nullptr)
+      ptr_Max(nullptr),
+      ptr_Sum(nullptr)
     {
 
     }
@@ -614,9 +572,11 @@ public:
       ptr_C(args.ref_C.data()),
       ptr_D(args.ref_D.data()),
       ptr_Max(args.ptr_Max),
+      ptr_Sum(args.ptr_Sum),
       batch_stride_C(args.batch_stride_C),
       batch_stride_D(args.batch_stride_D),
-      batch_stride_Max(args.batch_stride_Max)
+      batch_stride_Max(args.batch_stride_Max),
+      batch_stride_Sum(args.batch_stride_Sum)
     {
 
     }
@@ -624,7 +584,7 @@ public:
 
   /// Shared storage
   struct SharedStorage {
-    float reduction[ThreadblockShape::kM];
+
   };
 
 private:
@@ -642,7 +602,7 @@ private:
   ElementAccumulator                    alpha_;
   ElementAccumulator                    beta_;
 
-  ElementAccumulator                    accum_max_;
+  ElementSoftmaxCompute                 accum_max_;
   int                                   threadblock_row_;
 
 public:
@@ -692,14 +652,6 @@ public:
   CUTLASS_DEVICE
   void begin_epilogue() {
 
-    int const kStoreCount = (ThreadblockShape::kM + kThreadCount - 1) / kThreadCount;
-
-    clear_accum_max_();
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kStoreCount; ++i) {
-      shared_storage_.reduction[i * kThreadCount + threadIdx.x] = accum_max_;
-    }
   }
 
   /// Called at the start of one step before starting accumulator exchange
@@ -708,8 +660,11 @@ public:
     fragment_D_.clear();
     fragment_C_.clear();
 
-    iterator_C_.load(fragment_C_);
-    ++iterator_C_;
+    if (elementwise_.kScale != cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling) {
+      iterator_C_.load(fragment_C_);
+      ++iterator_C_;
+    }
+    
   }
 
   /// Called at the start of a row
@@ -726,52 +681,87 @@ public:
     int frag_idx,
     AccumulatorFragment const &accum) {
 
-    NumericArrayConverter<ElementAccumulator, ElementOutput, kElementsPerAccess> source_converter;
+    using Mul = cutlass::multiplies<SoftmaxFragment>;
+    using Minus = cutlass::minus<SoftmaxFragment>;
+    using Exp   = cutlass::fast_exp_op<SoftmaxFragment>;
+
+    Minus     minus;
+    Exp       exponential;
+
+    SoftmaxFragment result;
+
+    using ConvertSumOutput = cutlass::NumericConverter<ElementSoftmaxCompute, ElementSum>;
+    using ConvertNormOutput = cutlass::NumericConverter<ElementSoftmaxCompute, ElementNorm>;
+
+    ConvertSumOutput   convert_sum_output;
+    ConvertNormOutput  convert_norm_output;
+
+    NumericArrayConverter<ElementSoftmaxCompute, ElementOutput, kElementsPerAccess> source_converter;
     OutputVector &source_vector = reinterpret_cast<OutputVector *>(&fragment_C_)[frag_idx];
 
-    AccumulatorFragment source = source_converter(source_vector);
-    AccumulatorFragment result = alpha_ * accum + beta_ * source;
+    if (elementwise_.kScale == cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling) {
+      result = source_converter(elementwise_(accum));
+    }else{
+      result = source_converter(elementwise_(accum, source_vector));
+    }
 
     MatrixCoord thread_offset =
       iterator_D_.thread_start() +
       OutputTileIterator::ThreadMap::iteration_offset(frag_idx);
 
+    int thread_in_row = OutputTileIterator::ThreadMap::Detail::RowArrangement::Detail::kShapeWidth;
+    int half_thread_in_row = (thread_in_row >> 1);
+
     bool column_guard = (thread_offset.column() < extent_.column());
 
     // Compute the maximum within one row
     if (!column_idx) {
-
       // This is the first fragment in a new row
       if (column_guard) {
-        accum_max_ = maximum_accumulator_(accum);
+        accum_max_ = maximum_accumulator_(result);
       }
     }
     else {
-
       // This is an additional fragment in the same row
       if (column_guard) {
-        accum_max_ = maximum_accumulator_(accum, accum_max_);
+        accum_max_ = maximum_accumulator_(result, accum_max_);
       }
     }
 
-    // If this is the last vector in the row, compute the final max and store it out
-    if (column_idx + 1 == OutputTileIterator::ThreadMap::Iterations::kColumn) {
-
-      float float_max_element = float(accum_max_);
-
-      int thread_row = thread_offset.row() - threadblock_row_;
-
-      // Shared memory atomic operation to partially reduce the maximum element
-      atomicMax(
-        reinterpret_cast<int *>(shared_storage_.reduction + thread_row),
-        reinterpret_cast<int const &>(float_max_element)
-      );
-
-      clear_accum_max_();
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = half_thread_in_row; i > 0; i >>= 1) {
+      ElementSoftmaxCompute tmp = __shfl_xor_sync(0xFFFFFFFF, accum_max_, i);
+      accum_max_ = fast_max(accum_max_, tmp);
     }
 
+    SoftmaxFragment sum_frag = exponential(minus(result, accum_max_));
+
+    ElementSoftmaxCompute reduction_sum = sum_accumulator_(sum_frag);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = half_thread_in_row; i > 0; i >>= 1) {
+      ElementSoftmaxCompute tmp = __shfl_xor_sync(0xFFFFFFFF, reduction_sum, i);
+      reduction_sum += tmp;
+    }
+
+    bool is_write_thread = (thread_offset.row() < extent_.row() && (threadIdx.x % thread_in_row) == 0);
+    ElementNorm *curr_ptr_max = params_.ptr_Max + thread_offset.row() + blockIdx.y * extent_.row();
+    ElementSum *curr_ptr_sum = params_.ptr_Sum + thread_offset.row() + blockIdx.y * extent_.row();
+    
+    arch::global_store<ElementNorm, sizeof(ElementNorm)>(
+              convert_norm_output(accum_max_),
+              (void *)curr_ptr_max,
+              is_write_thread);
+
+    arch::global_store<ElementSum, sizeof(ElementSum)>(
+              convert_sum_output(reduction_sum),
+              (void *)curr_ptr_sum,
+              is_write_thread);
+
+     clear_accum_max_();
+
     // Convert to the output
-    NumericArrayConverter<ElementOutput, ElementAccumulator, kElementsPerAccess> output_converter;
+    NumericArrayConverter<ElementOutput, ElementSoftmaxCompute, kElementsPerAccess> output_converter;
     OutputVector &output = reinterpret_cast<OutputVector *>(&fragment_D_)[frag_idx];
     output = output_converter(result);
   }
@@ -794,23 +784,6 @@ public:
   CUTLASS_DEVICE
   void end_epilogue() {
 
-    __syncthreads();
-
-    int block_batch = blockIdx.z;
-    int tidx_m = threadblock_row_ + threadIdx.x;
-
-    float float_max_element = shared_storage_.reduction[threadIdx.x];
-
-    if (tidx_m < extent_.row()) {
-
-      atomicMax(
-        reinterpret_cast<int *>(
-          params_.ptr_Max +
-          params_.batch_stride_Max * block_batch +
-          tidx_m),
-        reinterpret_cast<int const &>(float_max_element)
-      );
-    }
   }
 
 private:
@@ -819,28 +792,40 @@ private:
   void clear_accum_max_() {
 
     uint32_t float_max_bits = 0xff7fffff;   // -FLT_MAX
-
-    accum_max_ = reinterpret_cast<float const &>(float_max_bits);
+    float min_float = reinterpret_cast<float const &>(float_max_bits);
+    accum_max_ = ElementSoftmaxCompute(min_float);
   }
 
   CUTLASS_DEVICE
-  float maximum_accumulator_(AccumulatorFragment const &accum) {
-    ElementAccumulator max_ = accum[0];
+  ElementSoftmaxCompute sum_accumulator_(SoftmaxFragment const &accum) {
+    ElementSoftmaxCompute sum_ = ElementSoftmaxCompute(0);
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 1; i < AccumulatorFragment::kElements; ++i) {
-      max_ = fast_max(max_, ElementAccumulator(accum[i]));
+    for (int i = 0; i < SoftmaxFragment::kElements; ++i) {
+      sum_ += ElementSoftmaxCompute(accum[i]);
+    }
+
+    return sum_;
+  }
+
+  CUTLASS_DEVICE
+  ElementSoftmaxCompute maximum_accumulator_(SoftmaxFragment const &accum) {
+    ElementSoftmaxCompute max_ = accum[0];
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 1; i < SoftmaxFragment::kElements; ++i) {
+      max_ = fast_max(max_, ElementSoftmaxCompute(accum[i]));
     }
 
     return max_;
   }
 
   CUTLASS_DEVICE
-  ElementAccumulator maximum_accumulator_(AccumulatorFragment const &accum, ElementAccumulator max_) {
+  ElementSoftmaxCompute maximum_accumulator_(SoftmaxFragment const &accum, ElementSoftmaxCompute max_) {
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < AccumulatorFragment::kElements; ++i) {
-      max_ = fast_max(max_, ElementAccumulator(accum[i]));
+    for (int i = 0; i < SoftmaxFragment::kElements; ++i) {
+      max_ = fast_max(max_, ElementSoftmaxCompute(accum[i]));
     }
 
     return max_;
@@ -861,8 +846,10 @@ template <
   typename LayoutB_,
   typename ElementC_,
   typename ElementCompute_,
+  typename EpilogueFunctorOp_,
+  typename ElementNorm_ = float,
+  typename ElementSum_ = float,
   int Alignment = 128 / cutlass::sizeof_bits<ElementA_>::value,
-  typename ElementSum_ = ElementCompute_,
   typename ElementSoftmax_ = ElementC_
 >
 class GemmSoftmax {
@@ -880,36 +867,27 @@ public:
   using ElementCompute = ElementCompute_;
   using ElementSum = ElementSum_;
   using ElementSoft = ElementSoftmax_;
+  using ElementSoftmaxCompute = float;
 
   using LayoutA = LayoutA_;
   using LayoutB = LayoutB_;
 
   static int const kAlignment = Alignment;
 
-  ///////////////////////////////////////////////////////////////////////////////////////////////
-
-  /// Linear scaling operator
-  using EpilogueFunctorOp = cutlass::epilogue::thread::LinearCombination<
-    ElementC,
-    128 / cutlass::sizeof_bits<ElementC>::value,
-    ElementCompute,
-    ElementCompute
-  >;
-
-  ///////////////////////////////////////////////////////////////////////////////////////////////
-
-  // This is a mandatory data type for the atomic reduction in the GEMM epilogue to function.
-  using ElementN = float;
+  using EpilogueFunctorOp = EpilogueFunctorOp_;
+  using ElementNorm = ElementNorm_;
 
   // These are mandatory layouts.
   using LayoutC = cutlass::layout::RowMajor;
   using LayoutN = cutlass::layout::RowMajor;
+  using LayoutS = cutlass::layout::RowMajor;
   using LayoutSoft = cutlass::layout::RowMajor;
 
   using TensorRefA = TensorRef<ElementA, LayoutA>;
   using TensorRefB = TensorRef<ElementB, LayoutB>;
   using TensorRefC = TensorRef<ElementC, LayoutC>;
-  using TensorRefN = TensorRef<ElementN, LayoutN>;
+  using TensorRefN = TensorRef<ElementNorm, LayoutN>;
+  using TensorRefSum = TensorRef<ElementSum, LayoutS>;
   using TensorRefSoft = TensorRef<ElementSoft, LayoutSoft>;
 
   using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 32>;
@@ -957,6 +935,9 @@ public:
     DefaultGemmKernel::kThreadCount,
     typename DefaultGemmKernel::Epilogue::OutputTileIterator,
     ElementCompute,
+    ElementNorm,
+    ElementSum,
+    ElementSoftmaxCompute,
     EpilogueFunctorOp
   >;
 
@@ -976,13 +957,21 @@ public:
   // Softmax kernel
   using SoftmaxApplyKernel = kernel::ApplySoftmax<
     ElementC,
-    ElementN,
+    ElementNorm,
     ElementSum,
     ElementSoft,
+    ElementSoftmaxCompute,
     kAlignment,
     MatrixShape<
       1, 1024
     >
+  >;
+
+  using ApplyFinalReductionKernel = kernel::ApplyFinalReduction<
+    ElementNorm,
+    ElementSum,
+    ElementSoftmaxCompute,
+    ThreadblockShape
   >;
 
 public:
@@ -992,7 +981,8 @@ public:
 
     typename GemmKernel::Arguments         gemm;
     typename SoftmaxApplyKernel::Arguments softmax;
-
+    typename ApplyFinalReductionKernel::Arguments reduction;
+    cutlass::gemm::GemmCoord extend;
     //
     // Methods
     //
@@ -1007,12 +997,14 @@ public:
       TensorRefC ref_D_,
       typename EpilogueFunctorOp::Params linear_scaling,
       TensorRefN ref_N_,
+      TensorRefSum ref_S_,
       TensorRefSoft ref_Softmax_,
       int64_t batch_stride_A_ = 0,
       int64_t batch_stride_B_ = 0,
       int64_t batch_stride_C_ = 0,
       int64_t batch_stride_D_ = 0,
       int64_t batch_stride_Max_ = 0,
+      int64_t batch_stride_Sum_ = 0,
       int64_t batch_stride_Softmax_ = 0
     ):
       gemm(
@@ -1028,21 +1020,34 @@ public:
           ref_C_,
           ref_D_,
           ref_N_.data(),
+          ref_S_.data(),
           batch_stride_C_,
           batch_stride_D_,
-          batch_stride_Max_
+          batch_stride_Max_,
+          batch_stride_Sum_
         )
       ),
+      reduction(
+        MatrixCoord(problem_size.m(), problem_size.n()),
+        batch_count_,
+        ref_N_,
+        ref_S_,
+        batch_stride_Max_,
+        batch_stride_Sum_
+      ), 
       softmax(
         MatrixCoord(problem_size.m(), problem_size.n()),
         batch_count_,
         ref_D_,
         ref_N_,
+        ref_S_,
         ref_Softmax_,
         batch_stride_D_,
         batch_stride_Max_,
+        batch_stride_Sum_,
         batch_stride_Softmax_
-      )
+      ),
+      extend(problem_size)
     {
 
     }
@@ -1052,7 +1057,8 @@ public:
 
     typename GemmKernel::Params         gemm;
     typename SoftmaxApplyKernel::Params softmax;
-
+    typename ApplyFinalReductionKernel::Params reduction;
+    MatrixCoord extend;
     //
     // Methods
     //
@@ -1060,7 +1066,9 @@ public:
 
     Params(Arguments const &args):
       gemm(args.gemm),
-      softmax(args.softmax)
+      reduction(args.reduction),
+      softmax(args.softmax),
+      extend(MatrixCoord(args.extend.m(), args.extend.n()))
     {
 
     }
@@ -1112,6 +1120,35 @@ public:
 
     if (result != cudaSuccess) {
       return cutlass::Status::kErrorInternal;
+    }
+
+
+    //
+    // Launch the ApplyFinalReductionKernel
+    //
+
+    int threadblock_num_in_column = (params_.extend.column() + ThreadblockShape::kN - 1) / ThreadblockShape::kN;
+
+    if (threadblock_num_in_column > 1) {
+      int thread_per_block = 128;
+      int block_per_row = (params_.extend.row() + thread_per_block - 1) / thread_per_block;
+      if (block_per_row < 4) {
+        thread_per_block = 32;
+        block_per_row = (params_.extend.row() + thread_per_block - 1) / thread_per_block;
+      }
+
+      dim3 final_reduction_grid(block_per_row);
+      dim3 final_reduction_block(thread_per_block);
+
+      Kernel<ApplyFinalReductionKernel><<<
+        final_reduction_grid, final_reduction_block, sizeof(typename ApplyFinalReductionKernel::SharedStorage), stream
+      >>>(params_.reduction);
+
+      result = cudaGetLastError();
+
+      if (result != cudaSuccess) {
+        return cutlass::Status::kErrorInternal;
+      }
     }
 
     //

@@ -35,8 +35,6 @@
 
 #ifdef CUTLASS_ARCH_WMMA_SM70_ENABLED
 
-#include <fstream>
-
 #include "../../common/cutlass_unit_test.h"
 
 #include "cutlass/aligned_buffer.h"

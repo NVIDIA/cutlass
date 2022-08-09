@@ -41,6 +41,7 @@ epilogue/threadblock/epilogue_gemm_k_reduction.h
 */
 
 #include <iostream>
+#include <fstream>
 #include <sstream>
 
 #include "cutlass/cutlass.h"
