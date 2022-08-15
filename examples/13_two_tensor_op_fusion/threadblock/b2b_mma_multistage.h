@@ -267,7 +267,9 @@ public:
       ///< ID of warp
       int warp_idx,
       ///< ID of each thread within a warp
-      int lane_idx
+      int lane_idx,
+      ///< GEMM0 N is used for accumulator extent
+      int problem_size_0_n
     ):
       Base(shared_storage, thread_idx, warp_idx, lane_idx),
       smem_iterator_A0_(shared_storage.shared_storage0.operand_A_ref(), thread_idx),
@@ -639,7 +641,6 @@ public:
 
     }
 
-
     // 2nd Gemm
 
     /// Iterator to load a warp-scoped tile of A1 operand from intermediate accumulator tile
@@ -657,12 +658,11 @@ public:
     tb_frag_A1_bias.clear();
     iterator_A1_bias.load(tb_frag_A1_bias);
     ++iterator_A1_bias;
-
-
+ 
     //
     // Prologue
     //
-    int gemm_k_iterations_1 = FragmentIteratorA1::Policy::kIterations / Base::kWarpGemmIterations1;
+    int gemm_k_iterations_1 = (FragmentIteratorA1::Policy::kIterations + Base::kWarpGemmIterations1 - 1) / Base::kWarpGemmIterations1;
 
     // Issue several complete stages
     CUTLASS_PRAGMA_UNROLL
@@ -750,9 +750,9 @@ public:
     // Mainloop
     //
 
+    gemm_k_iterations_1 = (FragmentIteratorA1::Policy::kIterations + Base::kWarpGemmIterations1 - 1) / Base::kWarpGemmIterations1 - (Base::kStages - 1);
     CUTLASS_PRAGMA_UNROLL
-    for (gemm_k_iterations_1 = FragmentIteratorA1::Policy::kIterations / Base::kWarpGemmIterations1 - (Base::kStages - 1); 
-            gemm_k_iterations_1 > (-Base::kStages + 1); gemm_k_iterations_1--) {
+    for (; gemm_k_iterations_1 > (-Base::kStages + 1); gemm_k_iterations_1--) {
       //
       // Loop over GEMM K dimension
       //

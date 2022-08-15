@@ -43,7 +43,7 @@
 #include "cutlass/gemm/threadblock/default_mma_core_sm70.h"
 #include "cutlass/gemm/threadblock/default_mma_core_sm75.h"
 #include "cutlass/gemm/threadblock/default_mma_core_sm80.h"
-#include "cutlass/gemm/warp/mma_tensor_op_fragment_iterator.h"
+#include "cutlass/gemm/warp/mma_tensor_op_tile_access_iterator.h"
 
 #include "threadblock/b2b_mma_pipelined_smem_accumulator.h"
 #include "threadblock/b2b_mma_multistage_smem_accumulator.h"
@@ -158,11 +158,11 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
 
   static int const kThreadCount = 32;
   // load warp tile from Shared Memory accumulator
-  using WarpIteratorA1 = cutlass::gemm::warp::MmaTensorOpMultiplicandTileIterator<
-    MatrixShape<WarpShape1::kM, InstructionShape::kK>, cutlass::gemm::Operand::kA, 
+  using WarpIteratorA1 = cutlass::gemm::warp::MmaTensorOpMultiplicandTileAccessIterator<
+    MatrixShape<WarpShape1::kM, WarpShape1::kK>, cutlass::gemm::Operand::kA, 
     ElementA, SmemAccumulatorLayout,
     MatrixShape<InstructionShape::kM, InstructionShape::kK>,
-    WarpMmaTensorOp1::Policy::OpDelta::kRow, kThreadCount>;
+    WarpMmaTensorOp1::Policy::OpDelta::kRow, kThreadCount, true>;
  
   // Define the threadblock-scoped pipelined matrix multiply
   using ThreadblockB2bMma = cutlass::gemm::threadblock::B2bMmaPipelinedSmemAccumulator<
@@ -303,11 +303,11 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
 
   static int const kThreadCount = 32;
   // load warp tile from Shared Memory accumulator
-  using WarpIteratorA1 = cutlass::gemm::warp::MmaTensorOpMultiplicandTileIterator<
-    MatrixShape<WarpShape1::kM, InstructionShape::kK>, cutlass::gemm::Operand::kA, 
+  using WarpIteratorA1 = cutlass::gemm::warp::MmaTensorOpMultiplicandTileAccessIterator<
+    MatrixShape<WarpShape1::kM, WarpShape1::kK>, cutlass::gemm::Operand::kA, 
     ElementA, SmemAccumulatorLayout,
     MatrixShape<InstructionShape::kM, InstructionShape::kK>,
-    WarpMmaTensorOp1::Policy::OpDelta::kRow, kThreadCount>;
+    WarpMmaTensorOp1::Policy::OpDelta::kRow, kThreadCount, true>;
  
   // Define the threadblock-scoped pipelined matrix multiply
   using ThreadblockB2bMma = cutlass::gemm::threadblock::B2bMmaMultistageSmemAccumulator<
@@ -436,11 +436,11 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
 
   static int const kThreadCount = 32;
   // load warp tile from Shared Memory accumulator
-  using WarpIteratorA1 = cutlass::gemm::warp::MmaTensorOpMultiplicandTileIteratorCanonical<
-    MatrixShape<WarpShape1::kM, InstructionShape::kK>, cutlass::gemm::Operand::kA, 
+  using WarpIteratorA1 = cutlass::gemm::warp::MmaTensorOpMultiplicandTileAccessIterator<
+    MatrixShape<WarpShape1::kM, WarpShape1::kK>, cutlass::gemm::Operand::kA, 
     ElementA, SmemAccumulatorLayout,
     MatrixShape<InstructionShape::kM, InstructionShape::kK>,
-    WarpMmaTensorOp1::Policy::OpDelta::kRow, kThreadCount>;
+    WarpMmaTensorOp1::Policy::OpDelta::kRow, kThreadCount, true>;
  
   // Define the threadblock-scoped pipelined matrix multiply
   using ThreadblockB2bMma = cutlass::gemm::threadblock::B2bMmaPipelinedSmemAccumulator<
@@ -574,11 +574,11 @@ struct DefaultB2bMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
 
   static int const kThreadCount = 32;
   // load warp tile from Shared Memory accumulator
-  using WarpIteratorA1 = cutlass::gemm::warp::MmaTensorOpMultiplicandTileIteratorCanonical<
-    MatrixShape<WarpShape1::kM, InstructionShape::kK>, cutlass::gemm::Operand::kA, 
+  using WarpIteratorA1 = cutlass::gemm::warp::MmaTensorOpMultiplicandTileAccessIterator<
+    MatrixShape<WarpShape1::kM, WarpShape1::kK>, cutlass::gemm::Operand::kA, 
     ElementA, SmemAccumulatorLayout,
     MatrixShape<InstructionShape::kM, InstructionShape::kK>,
-    WarpMmaTensorOp1::Policy::OpDelta::kRow, kThreadCount>;
+    WarpMmaTensorOp1::Policy::OpDelta::kRow, kThreadCount, true >;
  
 
   // Define the threadblock-scoped multistage matrix multiply
