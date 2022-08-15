@@ -341,7 +341,7 @@ struct B2bGemm {
     OutputOp0 output_op_0(params.output_op_0);
 
     // Construct thread-scoped matrix multiply
-    B2bMma b2bMma(shared_storage.main_loop, thread_idx, warp_idx, lane_idx);
+    B2bMma b2bMma(shared_storage.main_loop, thread_idx, warp_idx, lane_idx, params.problem_size_0.n());
 
     typename B2bMma::FragmentC0 src_accum;
     typename B2bMma::FragmentC1 accumulators;

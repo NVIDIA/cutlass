@@ -228,7 +228,8 @@ public:
     typename Base::B2bMmaSharedStorage &shared_storage, ///< Shared storage needed for internal use by threadblock-scoped GEMM
     int thread_idx,                                     ///< ID within the threadblock
     int warp_idx,                                       ///< ID of warp
-    int lane_idx                                        ///< ID of each thread within a warp
+    int lane_idx,                                       ///< ID of each thread within a warp
+    int problem_size_0_n                                ///< GEMM0 N is used for accumulator extent
   ):
     Base(shared_storage, thread_idx, warp_idx, lane_idx),
     smem_iterator_A_(shared_storage.shared_storage0.operand_A_ref(), thread_idx), 

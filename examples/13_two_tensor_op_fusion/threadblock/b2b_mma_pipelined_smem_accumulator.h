@@ -236,13 +236,14 @@ public:
     typename Base::B2bMmaSharedStorage &shared_storage, ///< Shared storage needed for internal use by threadblock-scoped GEMM
     int thread_idx,                                     ///< ID within the threadblock
     int warp_idx,                                       ///< ID of warp
-    int lane_idx                                        ///< ID of each thread within a warp
+    int lane_idx,                                        ///< ID of each thread within a warp
+    int problem_size_0_n                                ///< GEMM0 N is used for accumulator extent
   ):
     Base(shared_storage, thread_idx, warp_idx, lane_idx),
     smem_iterator_A_(shared_storage.b2b_mma_shared_storage.shared_storage0.operand_A_ref(), thread_idx),
     smem_iterator_B0_(shared_storage.b2b_mma_shared_storage.shared_storage0.operand_B_ref(), thread_idx),
     smem_iterator_D0_(shared_storage.accumulator_shared_storage0.accum_ref(), lane_idx),
-    warp_tile_iterator_A1_(shared_storage.accumulator_shared_storage0.accum_ref(), lane_idx),
+    warp_tile_iterator_A1_(shared_storage.accumulator_shared_storage0.accum_ref(), {Base::WarpGemm1::kM, problem_size_0_n}, lane_idx),
     smem_iterator_B1_(shared_storage.b2b_mma_shared_storage.shared_storage1.operand_B_ref(), thread_idx) {
 
     // Compute warp location within threadblock tile by mapping the warp_id to
