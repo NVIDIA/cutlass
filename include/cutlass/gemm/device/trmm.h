@@ -110,7 +110,7 @@ namespace device {
       cutlass::gemm::GemmUniversalMode,   // Trmm Problem Mode
       {m, n, m/n},                        // GemmCoord problem_size (k is based on left- or right-side mode)
       batch_count,
-      {alpha}                            // EpilogueOutputOp::Params epilogue_op_params
+      {alpha},                            // EpilogueOutputOp::Params epilogue_op_params
       void const * ptr_A,
       void const * ptr_B,
       void const * ptr_C,
