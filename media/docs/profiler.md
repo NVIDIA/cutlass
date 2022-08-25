@@ -347,7 +347,7 @@ $ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sgemm_128x128_nn     
 # Convolution
 
 The CUTLASS Profiler is capable of executing 2-D and 3-D convolution problems for forwards and backwards
-oeprator variants.
+operator variants.
 
 The CUTLASS Profiler can be built with cuDNN enabled to use as a reference implementation. If CMake detects
 the cuDNN library available in the system, it is included as a dependency. This may be explicitly overridden
