@@ -90,7 +90,7 @@ namespace device {
     // Instantiate the CUTLASS TRMM operator.
     //
 
-    cutlass::gemm::device::trmm<
+    cutlass::gemm::device::Trmm<
       float,
       cutlass::layout::ColumnMajor,
       cutlass::SideMode::kLeft,
