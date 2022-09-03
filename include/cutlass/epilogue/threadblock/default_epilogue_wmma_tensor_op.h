@@ -64,6 +64,8 @@
 
 #include "cutlass/epilogue/threadblock/epilogue.h"
 
+#include "cutlass/layout/permute.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -79,7 +81,8 @@ template <
   int PartitionsK,
   typename OutputOp_,
   int ElementsPerAccess,
-  bool ScatterD = false
+  bool ScatterD = false,
+  typename PermuteDLayout = layout::NoPermute
 >
 struct DefaultEpilogueWmmaTensorOp {
 
@@ -109,7 +112,8 @@ struct DefaultEpilogueWmmaTensorOp {
   using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
     OutputTileThreadMap,
     ElementOutput,
-    ScatterD
+    ScatterD,
+    PermuteDLayout
   >;
 
   using AccumulatorFragmentIterator = cutlass::epilogue::warp::FragmentIteratorWmmaTensorOp<

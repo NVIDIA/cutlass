@@ -156,10 +156,6 @@ public:
   /// Internal structure exposed for introspection.
   struct Detail {
 
-    static_assert(Base::kWarpGemmIterations > 1,
-                  "The pipelined structure requires at least two warp-level "
-                  "GEMM operations.");
-
     /// Number of async copies to load one stage of operand A
     static int const TBLDGSTSIterationsA =
         IteratorA::ThreadMap::Iterations::kCount;

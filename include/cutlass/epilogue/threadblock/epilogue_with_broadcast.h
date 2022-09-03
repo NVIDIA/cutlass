@@ -39,11 +39,12 @@
 
 #pragma once
 
-#include <utility>
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/cassert>
+#include <cuda/std/utility>
 #else
 #include <assert.h>
+#include <utility>
 #endif
 
 #include "cutlass/cutlass.h"

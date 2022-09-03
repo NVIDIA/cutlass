@@ -1,8 +1,8 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 2.9
+# CUTLASS 2.10
 
-_CUTLASS 2.9 - April 2022_
+_CUTLASS 2.10 - August 2022_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) and related computations at all levels 
@@ -18,7 +18,9 @@ To support a wide variety of applications, CUTLASS provides extensive support fo
 mixed-precision computations, providing specialized data-movement and
 multiply-accumulate abstractions for half-precision floating
 point (FP16), BFloat16 (BF16), Tensor Float 32 (TF32),
-single-precision floating point (FP32), double-precision floating
+single-precision floating point (FP32),
+[FP32 emulation via tensor core instruction](/examples/27_ampere_3xtf32_fast_accurate_tensorop_gemm),
+double-precision floating
 point (FP64) types, integer data types (4b and 8b), and binary data types (1b). 
 CUTLASS demonstrates warp-synchronous matrix multiply operations 
 targeting the  programmable, high-throughput _Tensor Cores_ implemented by 
@@ -34,26 +36,14 @@ See the [Quick Start Guide](/media/docs/quickstart.md) to get started quickly.
 See the [functionality listing](/media/docs/functionality.md) for the list of operations
 supported at each level of the execution model hierarchy.
 
-# What's New in CUTLASS 2.9
+# What's New in CUTLASS 2.10
 
-CUTLASS 2.9 is an update to CUTLASS adding:
-- [First layer Convolution kernels](/test/unit/conv/device/conv2d_fprop_fixed_channels_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu) specialized for small channel counts and reduced alignment
-- [BLAS3](https://docs.nvidia.com/cuda/cublas/index.html#cublas-level-3-function-reference) operators accelerated by Tensor Cores
-  - [SYRK](/test/unit/gemm/device/syrk_f32n_f32t_tensor_op_fast_f32_sm80.cu), [HERK](/test/unit/gemm/device/herk_cf32h_cf32n_tensor_op_fast_f32_sm80.cu),
-  - [SYR2K](/test/unit/gemm/device/syr2k_f32n_f32n_tensor_op_fast_f32_sm80.cu), [HER2K](/test/unit/gemm/device/her2k_cf32h_cf32n_tensor_op_fast_f32_sm80.cu),
-  - [Out-of-place TRMM](/test/unit/gemm/device/trmm_f32n_f32t_f32t_tensor_op_fast_f32_ls_sm80.cu), and 
-  - [SYMM](/test/unit/gemm/device/symm_f32n_f32n_tensor_op_fast_f32_ls_sm80.cu), [HEMM](/test/unit/gemm/device/hemm_cf32h_cf32n_tensor_op_fast_f32_ls_sm80.cu)
-- [CUTLASS Python](/examples/40_cutlass_py) demonstrating JIT compilation of CUTLASS kernels and a Python-based runtime using [CUDA Python](https://developer.nvidia.com/cuda-python)
-- [GEMM + Softmax example](/examples/35_gemm_softmax)
-- [Gather and Scatter Fusion with GEMM](/examples/36_gather_scatter_fusion) can gather inputs and scatters outputs based on indices vectors in the same GEMM kernel.
-- [Back-to-back GEMM/CONV](examples/13_two_tensor_op_fusion) fully supports buffering the first GEMM/CONV results in the shared memory for the latter one to use.  Bias Vector add is also supported in the first GEMM/CONV.
-- [Transposed Convolution](/examples/34_transposed_conv2d) (a.k.a Deconvolution) support which reuses Dgrad implementation.
-- [Utility functions](/tools/util/include/cutlass/util) that can pad NHWC and convert between NCHW and NHWC.
-- [Small alignment implicit gemm](https://github.com/NVIDIA/cutlass/issues/242) support for Fprop/Dgrad/Wgrad so that padding is no longer mandated to use tensor cores.
-- Epilogue enhancement with performance improvement, more activation functions, and more fusion patterns.
-- [Group GEMM](/examples/24_gemm_grouped) thread block number calculation fix.
-- Optimal performance using [CUDA 11.7](https://developer.nvidia.com/cuda-downloads)
-- [Parallel GEMM splitk](https://github.com/NVIDIA/cutlass/pull/277) support in the CUTLASS profiler.
+CUTLASS 2.10 is an update to CUTLASS adding:
+- [Grouped convolution targeting implicit GEMM](test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu)
+- [Depthwise separable convolution](test/unit/conv/device/depthwise_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_simt_f16_sm60.cu)
+- Optimizations for CUTLASS's [Grouped GEMM](examples/24_gemm_grouped/gemm_grouped.cu) kernel
+- [Grouped GEMM for Multihead Attention](examples/50_multi_head_attention)
+- [GEMM + Layer norm fusion for Ampere](examples/37_gemm_layernorm_gemm_fusion/)
 - Updates and bugfixes from the community (thanks!)
 - **Deprecation announcement:** CUTLASS plans to deprecate the following:
   - Maxwell and Pascal GPU architectures
@@ -249,15 +239,15 @@ examples/
 
   12_gemm_bias_relu/               # example demonstrating GEMM fused with bias and relu
 
-  13_fused_two_gemms/              # example demonstrating two GEMms fused in one kernel
+  13_fused_two_gemms/              # example demonstrating two GEMMs fused in one kernel
 
   22_ampere_tensorop_conv2dfprop/  # example demonstrating integer implicit GEMM convolution (forward propagation) using Ampere Tensor Cores
 
-  31_basic_syrk                    # example demonstrating Symetric rank-K update
+  31_basic_syrk                    # example demonstrating Symmetric Rank-K update
 
-  32_basic_trmm                    #
+  32_basic_trmm                    # example demonstrating Triangular Matrix-Matrix multiplication
 
-  33_ampere_3xtf32_tensorop_symm   #
+  33_ampere_3xtf32_tensorop_symm   # example demonstrating Symmetric Matrix-Matrix multiplication with FP32 emulation
 
   35_gemm_softmax                  # example demonstrating GEMM fused with Softmax in mixed precision using Ampere Tensor Cores
 

@@ -269,7 +269,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
       kWarpSize / kWarpThreadArrangementContiguousA;
 
   static int const kWarpThreadArrangementContiguousB =
-      Shape::kK / (kAccessSizeInBits / sizeof_bits<ElementA>::value);
+      Shape::kK / (kAccessSizeInBits / sizeof_bits<ElementB>::value);
 
   static int const kWarpThreadArrangementStridedB =
       kWarpSize / kWarpThreadArrangementContiguousB;

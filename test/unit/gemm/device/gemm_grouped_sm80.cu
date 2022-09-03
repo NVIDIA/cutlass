@@ -181,7 +181,7 @@ struct GemmGroupedProblemVisitor {
   }
 
   CUTLASS_HOST_DEVICE
-  int64_t threadblock_index() const {
+  int64_t threadblock_idx() const {
     return tile_idx - problem_tile_start;
   }
 
@@ -193,7 +193,7 @@ struct GemmGroupedProblemVisitor {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <int CtaShapeM, int CtaShapeN>
+template <int ThreadblockShapeM, int ThreadblockShapeN>
 __global__ void GroupedBatchedKernel(GemmGroupedProblemVisitor::Params params) {
 
   __shared__ GemmGroupedProblemVisitor::SharedStorage shared_storage;
@@ -201,18 +201,18 @@ __global__ void GroupedBatchedKernel(GemmGroupedProblemVisitor::Params params) {
   GemmGroupedProblemVisitor problem_visitor(
     shared_storage, 
     params, 
-    {CtaShapeM, CtaShapeN}, 
+    {ThreadblockShapeM, ThreadblockShapeN}, 
     blockIdx.x);
 
   while (problem_visitor.next_tile()) {
 
     cutlass::gemm::GemmCoord problem_size = problem_visitor.problem_size();
-    int64_t cta_idx                       = problem_visitor.threadblock_index();
+    int64_t threadblock_idx                       = problem_visitor.threadblock_idx();
 
     cutlass::gemm::GemmCoord grid_shape = problem_visitor.grid_shape(problem_size);
 
-    int cta_tile_m_idx = int(cta_idx / grid_shape.n());
-    int cta_tile_n_idx = int(cta_idx % grid_shape.n());
+    int threadblock_tile_m_idx = int(threadblock_idx / grid_shape.n());
+    int threadblock_tile_n_idx = int(threadblock_idx % grid_shape.n());
 
     //
     // Do the MMA
@@ -220,13 +220,13 @@ __global__ void GroupedBatchedKernel(GemmGroupedProblemVisitor::Params params) {
 
     if (threadIdx.x == 0) {
       #if 0
-      printf("Block %d - tile: %lld, problem %d, cta_idx: %lld, cta(m: %d, n: %d)\n", 
+      printf("Block %d - tile: %lld, problem %d, threadblock_idx: %lld, threadblock(m: %d, n: %d)\n", 
         blockIdx.x, 
         problem_visitor.tile_index(), 
         problem_visitor.problem_index(), 
-        cta_idx, 
-        cta_tile_m_idx, 
-        cta_tile_n_idx);
+        threadblock_idx, 
+        threadblock_tile_m_idx, 
+        threadblock_tile_n_idx);
       #endif
     }
 
@@ -241,8 +241,8 @@ TEST(SM80_Device_GemmGrouped_scheduler, 64x64x32_32x32x32) {
 
   int32_t problem_count = 16;
 
-  int const kCtaShapeM = 64;
-  int const kCtaShapeN = 64;
+  int const kThreadblockShapeM = 64;
+  int const kThreadblockShapeN = 64;
 
   std::vector<cutlass::gemm::GemmCoord> problem_sizes(problem_count);
   std::vector<int64_t> tile_counts(problem_count);
@@ -262,7 +262,7 @@ TEST(SM80_Device_GemmGrouped_scheduler, 64x64x32_32x32x32) {
   for (int32_t i = 0; i < problem_count; ++i) {
 
     cutlass::gemm::GemmCoord grid_shape = GemmGroupedProblemVisitor::grid_shape(
-      problem_sizes.at(i), {kCtaShapeM, kCtaShapeN});
+      problem_sizes.at(i), {kThreadblockShapeM, kThreadblockShapeN});
 
     int32_t problem_tile_count = (grid_shape.m() * grid_shape.n());
 
@@ -295,7 +295,7 @@ TEST(SM80_Device_GemmGrouped_scheduler, 64x64x32_32x32x32) {
   dim3 grid(108, 1, 1);
   dim3 block(128, 1, 1);
 
-  GroupedBatchedKernel<kCtaShapeM, kCtaShapeN><<< grid, block >>>(params);
+  GroupedBatchedKernel<kThreadblockShapeM, kThreadblockShapeN><<< grid, block >>>(params);
 
   // wait
   cudaDeviceSynchronize();
@@ -705,6 +705,7 @@ TEST(SM80_Device_GemmGrouped_cf32n_cf32n_cf32n_tensorop_f32, 64x64x16_32x32x16) 
         ElementAccumulator, ElementAccumulator>,
     cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
     3,
+    cutlass::gemm::kernel::GroupScheduleMode::kDeviceOnly,
     cutlass::arch::OpMultiplyAddComplex>::GemmKernel;
 
   using Gemm = cutlass::gemm::device::GemmGrouped<GemmKernel>;
@@ -748,6 +749,7 @@ TEST(SM80_Device_GemmGrouped_cf32c_cf32t_cf32n_tensorop_f32, 64x64x16_32x32x16) 
         ElementAccumulator, ElementAccumulator>,
     cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
     3,
+    cutlass::gemm::kernel::GroupScheduleMode::kDeviceOnly,
     cutlass::arch::OpMultiplyAddComplex>::GemmKernel;
 
   using Gemm = cutlass::gemm::device::GemmGrouped<GemmKernel>;
@@ -791,6 +793,7 @@ TEST(SM80_Device_GemmGrouped_cf32c_cf32t_cf32t_tensorop_f32, 64x64x16_32x32x16) 
         ElementAccumulator, ElementAccumulator>,
     cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle,
     3,
+    cutlass::gemm::kernel::GroupScheduleMode::kDeviceOnly,
     cutlass::arch::OpMultiplyAddComplex>::GemmKernel;
 
   using Gemm = cutlass::gemm::device::GemmGrouped<GemmKernel>;
@@ -834,6 +837,7 @@ TEST(SM80_Device_GemmGrouped_cf32t_cf32h_cf32n_tensorop_f32, 64x64x16_16x16x16) 
         ElementAccumulator, ElementAccumulator>,
     cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
     3,
+    cutlass::gemm::kernel::GroupScheduleMode::kDeviceOnly,
     cutlass::arch::OpMultiplyAddComplex>::GemmKernel;
 
   using Gemm = cutlass::gemm::device::GemmGrouped<GemmKernel>;

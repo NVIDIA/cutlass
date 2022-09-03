@@ -141,6 +141,10 @@ struct SparseMma<
     assert(0);
   }
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -224,6 +228,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -296,6 +304,10 @@ struct SparseMma<gemm::GemmShape<16, 8, 32>, 32, bfloat16_t, layout::RowMajor,
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -368,6 +380,10 @@ struct SparseMma<gemm::GemmShape<16, 8, 16>, 32, tfloat32_t, layout::RowMajor,
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -449,6 +465,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -524,6 +544,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -599,6 +623,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -674,6 +702,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -755,6 +787,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -830,6 +866,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -905,6 +945,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -980,6 +1024,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1061,6 +1109,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1136,6 +1188,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1211,6 +1267,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1286,6 +1346,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1367,6 +1431,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1442,6 +1510,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1517,6 +1589,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1592,6 +1668,10 @@ struct SparseMma<
 
 #else
 
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }

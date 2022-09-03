@@ -62,7 +62,8 @@ template <
   typename Epilogue_,                             ///! Epilogue
   typename ThreadblockSwizzle_,                   ///! Threadblock swizzling function
   conv::Operator ConvOperator,                    ///! Convolutional operator (Fprop, Dgrad, Wgrad)
-  typename ConvProblemSize_ = Conv2dProblemSize   ///! Convolutional operator on 2D or 3D problem
+  typename ConvProblemSize_ = Conv2dProblemSize,  ///! Convolutional operator on 2D or 3D problem
+  conv::GroupMode GroupMode_ = conv::GroupMode::kNone    ///! Group mode
 >
 struct ImplicitGemmConvolution {
 
@@ -116,6 +117,8 @@ struct ImplicitGemmConvolution {
 
   /// Conv dimension and problem size structure (Conv2d or Conv3d)
   using ConvProblemSize = ConvProblemSize_;
+
+  static conv::GroupMode const kGroupMode = GroupMode_;
 
   /// Wgrad C stride idx for implicit gemm algorithm 
   // Conv2d row-major matrix C (KxRSC) 
@@ -198,6 +201,7 @@ struct ImplicitGemmConvolution {
     int swizzle_log_tile;
 
     int gemm_k_iterations;
+    int gemm_k_iterations_per_channel;
     typename Mma::IteratorA::Params iterator_A;
     typename Mma::IteratorA::Element const *ptr_A;
     typename Mma::IteratorB::Params iterator_B;
@@ -241,7 +245,12 @@ struct ImplicitGemmConvolution {
         kConvolutionalOperator,
         ThreadblockShape::kK,
         args.problem_size,
-        kIteratorAlgorithm);
+        kIteratorAlgorithm,
+        kGroupMode,
+        ThreadblockShape::kN);
+
+      gemm_k_iterations_per_channel = implicit_gemm_k_iterations_per_channel(
+          kConvolutionalOperator, ThreadblockShape::kK, args.problem_size, kIteratorAlgorithm);
 
       ThreadblockSwizzle threadblock_swizzle;
 
@@ -286,6 +295,17 @@ struct ImplicitGemmConvolution {
 
     // Compute position within threadblock
     int thread_idx = threadIdx.x;
+    int iterator_A_column_offset = threadblock_tile_idx.k() * Mma::Shape::kK;
+    if (kGroupMode != GroupMode::kNone) {
+      if (kGroupMode != GroupMode::kDepthwise) {
+        int k_per_group = params.problem_size.K / params.problem_size.groups;
+        int group_idx = threadblock_tile_idx.n() * Mma::Shape::kN / k_per_group;
+        int channels_per_group = params.problem_size.C / params.problem_size.groups;
+        iterator_A_column_offset += group_idx * channels_per_group;
+      } else {
+        iterator_A_column_offset += threadblock_tile_idx.n() * Mma::Shape::kN;
+      }
+    } 
 
     // Construct iterators to A and B operands
     typename Mma::IteratorA iterator_A(
@@ -295,7 +315,7 @@ struct ImplicitGemmConvolution {
       thread_idx,
       MatrixCoord(
         threadblock_tile_idx.m() * Mma::Shape::kM,
-        threadblock_tile_idx.k() * Mma::Shape::kK
+        iterator_A_column_offset
       )
     );
     
@@ -327,7 +347,7 @@ struct ImplicitGemmConvolution {
     accumulators.clear();
 
     // Compute threadblock-scoped matrix multiply-add
-    mma(params.gemm_k_iterations, accumulators, iterator_A, iterator_B, accumulators);
+    mma(params.gemm_k_iterations, accumulators, iterator_A, iterator_B, accumulators, params.gemm_k_iterations_per_channel);
 
     //
     // Epilogue

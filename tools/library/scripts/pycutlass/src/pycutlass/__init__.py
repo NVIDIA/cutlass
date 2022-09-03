@@ -1,0 +1,31 @@
+from pycutlass.type import *
+from pycutlass.tensor_ref import *
+from pycutlass.operation import *
+from pycutlass.epilogue import *
+from pycutlass.compiler import ArtifactManager
+from pycutlass.memory_manager import *
+from pycutlass.arguments import *
+from pycutlass.library import *
+from pycutlass.c_types import *
+from pycutlass.gemm_operation import *
+from pycutlass.conv2d_operation import *
+from pycutlass.compiler import *
+from pycutlass.utils import *
+from pycutlass.frontend import *
+from pycutlass.reduction_operation import *
+from pycutlass.compiler import *
+
+# module-wide variables
+
+import sys
+this = sys.modules[__name__]
+
+# artifact manager
+this.compiler = ArtifactManager()
+
+def get_memory_pool(init_pool_size=0, max_pool_size=2**34):
+    this.memory_pool = PoolMemoryManager(
+        init_pool_size=init_pool_size,
+        max_pool_size=max_pool_size
+    )
+    return this.memory_pool

@@ -78,6 +78,7 @@ public:
   static cutlass::conv::Operator const kConvolutionalOperator = ImplicitGemmKernel::kConvolutionalOperator;
   static cutlass::conv::IteratorAlgorithm const kIteratorAlgorithm = ImplicitGemmKernel::kIteratorAlgorithm;
   static cutlass::conv::StrideSupport const kStrideSupport = ImplicitGemmKernel::kStrideSupport;
+  static cutlass::conv::GroupMode const kGroupMode = ImplicitGemmKernel::kGroupMode;
 
   static int const kWarpCount = 
     (ThreadblockShape::kM / WarpShape::kM) * 
@@ -109,6 +110,34 @@ public:
     status = ImplicitGemmKernel::Mma::IteratorB::can_implement(args.problem_size);
     if (Status::kSuccess != status) {
       return status;
+    }
+
+    // check group conv constraint
+    if (args.problem_size.groups != 1) {
+      if (kGroupMode == conv::GroupMode::kNone) {
+        return Status::kErrorInvalidProblem;
+      } 
+
+      // C and K should be multiple of groups
+      if (args.problem_size.K % args.problem_size.groups ||
+        args.problem_size.C % args.problem_size.groups) {
+        return Status::kErrorInvalidProblem;
+      }
+
+      // split-k is not supported
+      if (args.problem_size.split_k_slices != 1) {
+        return Status::kErrorInvalidProblem;
+      }
+
+      int k_per_group = args.problem_size.K / args.problem_size.groups;
+      // k_per_group should be multiple of ThreadblockShape N, one CTA calculate one group
+      if (kGroupMode == conv::GroupMode::kSingleGroup && k_per_group % ThreadblockShape::kN) {
+        return Status::kErrorInvalidProblem;
+      }
+      // ThreadblockShape::kN should be divisible by k_per_group, one CTA calculate multiple groups
+      if (kGroupMode == conv::GroupMode::kMultipleGroup && ThreadblockShape::kN % k_per_group) {
+        return Status::kErrorInvalidProblem;
+      }
     }
 
     static int const kAlignmentC = ImplicitGemmKernel::Epilogue::OutputTileIterator::kElementsPerAccess;

@@ -185,7 +185,8 @@ struct NumericConverter<int8_t, float, FloatRoundStyle::round_to_nearest> {
   CUTLASS_DEVICE
   static result_type convert(source_type const & s) {
 
-    int32_t intermediate = __float2int_rn(s);
+    int32_t intermediate;
+    asm volatile("cvt.rni.sat.s8.f32 %0, %1;" : "=r"(intermediate) : "f"(s));
 
     return static_cast<result_type>(intermediate);
   }
@@ -206,7 +207,8 @@ struct NumericConverter<int8_t, float, FloatRoundStyle::round_toward_zero> {
   CUTLASS_DEVICE
   static result_type convert(source_type const & s) {
 
-    int32_t intermediate = __float2int_rz(s);
+    int32_t intermediate;
+    asm volatile("cvt.rzi.sat.s8.f32 %0, %1;" : "=r"(intermediate) : "f"(s));
 
     return static_cast<result_type>(intermediate);
   }
@@ -228,7 +230,14 @@ struct NumericConverter<int8_t, float, FloatRoundStyle::round_to_nearest> {
 
   static result_type convert(source_type const & s) {
     std::fesetround(FE_TONEAREST);
-    int32_t intermediate =  (result_type)std::nearbyint(s);
+    int32_t intermediate = (int32_t)std::nearbyint(s);
+
+    // Low-end saturation
+    intermediate = std::max(intermediate, (int32_t)std::numeric_limits<int8_t>::lowest());
+
+    // High-end saturation
+    intermediate = std::min(intermediate, (int32_t)std::numeric_limits<int8_t>::max());
+
     return static_cast<result_type>(intermediate);
   }
 
@@ -246,7 +255,14 @@ struct NumericConverter<int8_t, float, FloatRoundStyle::round_toward_zero> {
 
   static result_type convert(source_type const & s) {
     std::fesetround(FE_TOWARDZERO);
-    int32_t intermediate =  (result_type)std::nearbyint(s);
+    int32_t intermediate = (int32_t)std::nearbyint(s);
+
+    // Low-end saturation
+    intermediate = std::max(intermediate, (int32_t)std::numeric_limits<int8_t>::lowest());
+
+    // High-end saturation
+    intermediate = std::min(intermediate, (int32_t)std::numeric_limits<int8_t>::max());
+
     return static_cast<result_type>(intermediate);
   }
 

@@ -391,10 +391,10 @@ struct OutputTileOptimalThreadMap {
     1>;
 
   /// Initial offset function
-  CUTLASS_HOST_DEVICE
+  CUTLASS_DEVICE
   static MatrixCoord initial_offset(int thread_idx) {
 
-    int warp_idx = thread_idx / kWarpSize;
+    int warp_idx = __shfl_sync(0xffffffff, thread_idx / kWarpSize, 0);
     int lane_idx = thread_idx % kWarpSize;
 
     // Compute warp location
@@ -419,7 +419,7 @@ struct OutputTileOptimalThreadMap {
 
     return MatrixCoord(
       cluster_offset + group_offset + row_offset + lane_row_offset,
-      (column_offset + lane_col_offset) * kElementsPerAccess
+      column_offset + lane_col_offset * kElementsPerAccess
     );
   }
 
@@ -461,10 +461,10 @@ struct OutputTileOptimalThreadMap {
     static int const kThreads = Threads;
 
     /// Function to compute each thread's initial offset
-    CUTLASS_HOST_DEVICE
+    CUTLASS_DEVICE
     static MatrixCoord initial_offset(int thread_idx) {
 
-      int warp_idx = thread_idx / kWarpSize;
+      int warp_idx = __shfl_sync(0xffffffff, thread_idx / kWarpSize, 0);
       int lane_idx = thread_idx % kWarpSize;
 
       // Compute warp location
@@ -489,7 +489,7 @@ struct OutputTileOptimalThreadMap {
 
       MatrixCoord coord(
         cluster_offset + group_offset + row_offset + lane_row_offset,
-        (column_offset + lane_col_offset) * kElementsPerAccess
+        column_offset + lane_col_offset * kElementsPerAccess
       );
 
       return coord;

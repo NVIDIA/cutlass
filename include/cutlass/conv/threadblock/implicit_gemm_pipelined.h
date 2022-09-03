@@ -188,6 +188,7 @@ public:
     IteratorA iterator_A,                             ///< iterator over A operand in global memory
     IteratorB iterator_B,                             ///< iterator over B operand in global memory
     FragmentC const &src_accum,                       ///< source accumulator tile
+    int gemm_k_iterations_per_channel = 0,             ///< number of iterations per channel
     TransformA transform_A = TransformA(),            ///< transformation applied to A fragment
     TransformB transform_B = TransformB()) {          ///< transformation applied to B fragment
 

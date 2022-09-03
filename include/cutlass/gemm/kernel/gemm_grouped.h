@@ -30,7 +30,7 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief 
+    \brief Problem visitor for grouped GEMMs
 */
 
 #pragma once
@@ -45,6 +45,7 @@
 #include "cutlass/layout/matrix.h"
 #include "cutlass/trace.h"
 #include "cutlass/gemm/kernel/gemm_transpose_operands.h"
+#include "cutlass/gemm/kernel/gemm_grouped_problem_visitor.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -54,168 +55,11 @@ namespace kernel {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Visitor class to abstract away the algorithm for iterating over tiles
-template <bool Transposed = false>
-struct GemmGroupedProblemVisitor {
-
-  static bool const kTransposed = Transposed;
-
-  struct Params {
-    cutlass::gemm::GemmCoord const *problem_sizes;
-    int32_t                         problem_count;
-
-    //
-    // Methods
-    // 
-
-    /// Ctor
-    CUTLASS_HOST_DEVICE
-    Params(): problem_sizes(nullptr), problem_count(0) { }
-
-    /// Ctor
-    CUTLASS_HOST_DEVICE
-    Params(
-      cutlass::gemm::GemmCoord const *problem_sizes,
-      int32_t                         problem_count
-    ):
-      problem_sizes(problem_sizes),
-      problem_count(problem_count)
-    {}
-
-  };
-
-  struct SharedStorage {
-    //
-    // Nothing for now. As an optimization step, we could consider parallel
-    // argmin or prefix sums across the block.
-    //
-  };
-
-  //
-  // Data members
-  //
-  
-  Params const &params;
-  SharedStorage &shared_storage;
-  cutlass::MatrixCoord threadblock_shape;
-
-  int64_t tile_idx;
-  int64_t tile_count_sum;
-  int64_t problem_tile_start;
-  int32_t problem_idx;
-
-  //
-  // Methods
-  //
-  CUTLASS_DEVICE
-  GemmGroupedProblemVisitor(
-    Params const &params_,
-    SharedStorage &shared_storage_, 
-    cutlass::MatrixCoord threadblock_shape_,
-    int32_t block_idx
-  ):
-    shared_storage(shared_storage_),
-    params(params_),
-    threadblock_shape(threadblock_shape_),
-    tile_idx(block_idx),
-    tile_count_sum(0),
-    problem_idx(0)
-  {
-
-    cutlass::gemm::GemmCoord problem = problem_size();
-    cutlass::gemm::GemmCoord  grid = grid_shape(problem);
-
-    problem_tile_start = 0;
-    tile_count_sum = grid.m() * grid.n();
-  }
-
-  /// Get the grid shape
-  CUTLASS_HOST_DEVICE
-  static cutlass::gemm::GemmCoord grid_shape(
-    cutlass::gemm::GemmCoord problem,
-    cutlass::MatrixCoord const & block_shape) {
-
-    return cutlass::gemm::GemmCoord(
-      ((problem.m() - 1 + block_shape.row()) / block_shape.row()),
-      ((problem.n() - 1 + block_shape.column()) / block_shape.column()),
-      1);
-  }
-
-  /// Get the grid shape
-  CUTLASS_DEVICE
-  cutlass::gemm::GemmCoord grid_shape(cutlass::gemm::GemmCoord const &problem) const {
-    return grid_shape(problem, threadblock_shape);
-  }
-
-  /// Returns true if there is a tile to compute
-  CUTLASS_DEVICE
-  bool next_tile() {
-
-    if (tile_idx < tile_count_sum) {
-      return true;
-    }
-
-    do {
-      ++problem_idx;
-
-      if (problem_idx >= params.problem_count) {
-        return false;
-      }
-
-      cutlass::gemm::GemmCoord problem = problem_size();
-      cutlass::gemm::GemmCoord  grid = grid_shape(problem);
-
-      int64_t tile_count = grid.m() * grid.n();
-
-      problem_tile_start = tile_count_sum;
-      tile_count_sum += tile_count;
-
-    } while (tile_count_sum <= tile_idx);
-
-    return true;
-  }
-
-  /// Gets the global tile index
-  CUTLASS_HOST_DEVICE
-  int64_t tile_index() const {
-    return tile_idx;
-  }
-
-  /// Gets the index of the problem
-  CUTLASS_HOST_DEVICE
-  int32_t problem_index() const {
-    return problem_idx;
-  }
-
-  /// Returns the problem size for the current problem
-  CUTLASS_HOST_DEVICE
-  cutlass::gemm::GemmCoord problem_size() const {
-    GemmCoord problem = params.problem_sizes[problem_idx];
-
-    if (kTransposed) {
-      swap(problem.m(), problem.n());
-    }
-
-    return problem;
-  }
-
-  CUTLASS_HOST_DEVICE
-  int64_t threadblock_index() const {
-    return tile_idx - problem_tile_start;
-  }
-
-  CUTLASS_DEVICE
-  void advance(int32_t grid_size) {
-    tile_idx += grid_size; 
-  }
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
 template <
-  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
-  typename Epilogue_,             ///! Epilogue
-  typename ThreadblockSwizzle_,   ///! Threadblock swizzling function
+  typename Mma_,                           ///! Threadblock-scoped matrix multiply-accumulate
+  typename Epilogue_,                      ///! Epilogue
+  typename ThreadblockSwizzle_,            ///! Threadblock swizzling function
+  GroupScheduleMode GroupScheduleMode_,    ///! Type of scheduling to perform
   bool Transposed = false
 >
 struct GemmGrouped {
@@ -225,6 +69,7 @@ public:
   using Epilogue = Epilogue_;
   using EpilogueOutputOp = typename Epilogue::OutputOp;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
+  static GroupScheduleMode const kGroupScheduleMode = GroupScheduleMode_;
   static bool const kTransposed = Transposed;
 
   // Optional transpose
@@ -270,6 +115,13 @@ public:
   using WarpCount = typename Mma::WarpCount;
   static int const kThreadCount = 32 * WarpCount::kCount;
 
+  using ProblemVisitor = GemmGroupedProblemVisitor<
+                            ThreadblockShape,
+                            kGroupScheduleMode,
+                            kThreadCount,
+                            kThreadCount,
+                            kTransposed>;
+
   //
   // Structures
   //
@@ -290,12 +142,15 @@ public:
     ElementA ** ptr_A;
     ElementB ** ptr_B;
     ElementC ** ptr_C;
-    ElementC       ** ptr_D;
+    ElementC ** ptr_D;
 
     typename LayoutA::Stride::LongIndex *lda;
     typename LayoutB::Stride::LongIndex *ldb;
     typename LayoutC::Stride::LongIndex *ldc;
     typename LayoutC::Stride::LongIndex *ldd;
+
+    // Only used by device-level operator
+    GemmCoord *host_problem_sizes;
 
     //
     // Methods
@@ -304,7 +159,7 @@ public:
     /// Default ctor
     CUTLASS_HOST_DEVICE
     Arguments(): 
-      problem_count(0), 
+      problem_count(0),
       threadblock_count(0), 
       ptr_A(nullptr), 
       ptr_B(nullptr), 
@@ -313,7 +168,8 @@ public:
       lda(nullptr),
       ldb(nullptr),
       ldc(nullptr),
-      ldd(nullptr)
+      ldd(nullptr),
+      host_problem_sizes(nullptr)
     {
 
     }
@@ -328,11 +184,12 @@ public:
       ElementA ** ptr_A,
       ElementB ** ptr_B,
       ElementC ** ptr_C,
-      ElementC       ** ptr_D,
+      ElementC ** ptr_D,
       typename LayoutA::Stride::LongIndex *lda,
       typename LayoutB::Stride::LongIndex *ldb,
       typename LayoutC::Stride::LongIndex *ldc,
-      typename LayoutC::Stride::LongIndex *ldd
+      typename LayoutC::Stride::LongIndex *ldd,
+      GemmCoord *host_problem_sizes=nullptr
     ): 
       problem_sizes(problem_sizes),
       problem_count(problem_count),
@@ -345,7 +202,8 @@ public:
       lda(lda),
       ldb(ldb),
       ldc(ldc),
-      ldd(ldd)
+      ldd(ldd),
+      host_problem_sizes(host_problem_sizes)
     {
 
     }
@@ -358,7 +216,7 @@ public:
   /// Parameters structure
   struct Params {
 
-    typename GemmGroupedProblemVisitor<kTransposed>::Params problem_visitor;
+    typename ProblemVisitor::Params problem_visitor;
     int threadblock_count;
 
     typename EpilogueOutputOp::Params output_op;
@@ -372,7 +230,6 @@ public:
     typename LayoutB::Stride::LongIndex *ldb;
     typename LayoutC::Stride::LongIndex *ldc;
     typename LayoutC::Stride::LongIndex *ldd;
-
 
     //
     // Methods
@@ -391,8 +248,10 @@ public:
     { }
 
     CUTLASS_HOST_DEVICE
-    Params(Arguments const &args, void *workspace = nullptr):
-      problem_visitor(args.problem_sizes, args.problem_count),
+    Params(Arguments const &args,
+          void *workspace = nullptr,
+          int tile_count = 0):
+      problem_visitor(args.problem_sizes, args.problem_count, workspace, tile_count),
       threadblock_count(args.threadblock_count),
       output_op(args.output_op),
       ptr_A(args.ptr_A),
@@ -410,9 +269,11 @@ public:
     CUTLASS_HOST_DEVICE
     void update(
       Arguments const &args,
-      void *workspace = nullptr) {
+      void *workspace = nullptr,
+      int tile_count = 0) {
 
-      problem_visitor = typename GemmGroupedProblemVisitor<kTransposed>::Params(args.problem_sizes, args.problem_count);
+      problem_visitor = typename ProblemVisitor::Params(args.problem_sizes, args.problem_count,
+                                                        workspace, tile_count);
       threadblock_count = args.threadblock_count;
       output_op = args.output_op;
       ptr_A = args.ptr_A;
@@ -427,10 +288,14 @@ public:
   };
 
   /// Shared memory storage structure
-  union SharedStorage {
-    typename GemmGroupedProblemVisitor<kTransposed>::SharedStorage problem_visitor;
-    typename Mma::SharedStorage main_loop;
-    typename Epilogue::SharedStorage epilogue;
+  struct SharedStorage {
+    union {
+      typename Mma::SharedStorage main_loop;
+      typename Epilogue::SharedStorage epilogue;
+    } kernel;
+
+    // ProblemVisitor shared storage can't be overlapped with others
+    typename ProblemVisitor::SharedStorage problem_visitor;
   };
 
 public:
@@ -476,24 +341,23 @@ public:
     //
     // Problem visitor.
     //
-    GemmGroupedProblemVisitor<kTransposed> problem_visitor(
-      params.problem_visitor, 
-      shared_storage.problem_visitor, 
-      {Mma::Shape::kM, Mma::Shape::kN}, 
+    ProblemVisitor problem_visitor(
+      params.problem_visitor,
+      shared_storage.problem_visitor,
       blockIdx.x);
 
     // Outer 'persistent' loop to iterate over tiles
     while (problem_visitor.next_tile()) {
 
-      GemmCoord problem_size = problem_visitor.problem_size();
-      int32_t problem_idx    = problem_visitor.problem_index();
-      int32_t cta_idx        = int32_t(problem_visitor.threadblock_index());
+      GemmCoord problem_size  = problem_visitor.problem_size();
+      int32_t problem_idx     = problem_visitor.problem_index();
+      int32_t threadblock_idx = int32_t(problem_visitor.threadblock_idx());
 
       GemmCoord grid_shape = problem_visitor.grid_shape(problem_size);
 
       cutlass::gemm::GemmCoord threadblock_offset(
-        int(cta_idx / grid_shape.n()) * Mma::Shape::kM,
-        int(cta_idx % grid_shape.n()) * Mma::Shape::kN,
+        int(threadblock_idx / grid_shape.n()) * Mma::Shape::kM,
+        int(threadblock_idx % grid_shape.n()) * Mma::Shape::kN,
         0);
 
       // Load element pointers. Exchange pointers and strides if working on the transpose
@@ -547,7 +411,7 @@ public:
       //
 
       // Construct thread-scoped matrix multiply
-      Mma mma(shared_storage.main_loop, thread_idx, warp_idx, lane_idx);
+      Mma mma(shared_storage.kernel.main_loop, thread_idx, warp_idx, lane_idx);
 
       // Compute threadblock-scoped matrix multiply-add
       int gemm_k_iterations = (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
@@ -597,7 +461,7 @@ public:
       );
 
       Epilogue epilogue(
-        shared_storage.epilogue, 
+        shared_storage.kernel.epilogue, 
         thread_idx, 
         warp_idx, 
         lane_idx);

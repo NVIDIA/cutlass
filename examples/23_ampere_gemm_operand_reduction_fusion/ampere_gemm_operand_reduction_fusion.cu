@@ -32,7 +32,7 @@
 /**
 The example demenstrates how to reduce one of the operands of the GEMM along the k-dimension when
 computing GEMM.  So the output also contains either a Mx1 or 1XN vector.  It only works with Ampere
-HMMA 16x8x16 FP16 tensor cores, though it is not difficult to apply to other Turing/Ampere tensor
+16x8x16 FP16/BF16 tensor cores, though it is not difficult to apply to other Turing/Ampere tensor
 core instructions.
 
 Most of the reduction is done in gemm/warp level, see gemm/warp/mma_with_reduction_tensor_op.h
@@ -67,9 +67,9 @@ epilogue/threadblock/epilogue_gemm_k_reduction.h
 // elements 
 using ElementAccumulator = float;                  // Data type of accumulator
 using ElementComputeEpilogue = ElementAccumulator; // Data type of epilogue computation
-using ElementInputA = cutlass::half_t;             // Data type of elements in input tensor
-using ElementInputB = cutlass::half_t;             // Data type of elements in input tensor
-using ElementOutput = cutlass::half_t;             // Data type of elements in output tensor
+using ElementInputA = cutlass::bfloat16_t;         // Data type of elements in input tensor
+using ElementInputB = cutlass::bfloat16_t;         // Data type of elements in input tensor
+using ElementOutput = cutlass::bfloat16_t;         // Data type of elements in output tensor
 
 using LayoutInputA = cutlass::layout::ColumnMajor;
 using LayoutInputB = cutlass::layout::RowMajor;
@@ -369,22 +369,22 @@ Result profile(Options const &options) {
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_a.host_view(),
       1,
-      ElementInputA(4),
-      ElementInputA(-4),
+      ElementInputA(2),
+      ElementInputA(-2),
       0);  // <- Fill tensor A on host with uniform-distribution random data
 
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_b.host_view(),
       1,
-      ElementInputB(4),
-      ElementInputB(-4),
+      ElementInputB(2),
+      ElementInputB(-2),
       0);  // <- Fill tensor B on host with uniform-distribution random data
 
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_c.host_view(),
       1,
-      ElementOutput(4),
-      ElementOutput(-4),
+      ElementOutput(2),
+      ElementOutput(-2),
       0);  // <- Fill matrix C on host with uniform-distribution random data
   cutlass::reference::host::TensorFill(
       tensor_d.host_view());  // <- fill matrix D on host with zeros
@@ -612,10 +612,10 @@ Result profile(Options const &options) {
 
     if (options.reference_check) {
       output_workspace << "Reference D = \n" << tensor_ref_d.host_view() << "\n\n";
-      output_workspace << "Reference reduction vector= \n" << tensor_ref_reduction.host_view() << "\n\n";
+      output_workspace << "Reference reduction vector = \n" << tensor_ref_reduction.host_view() << "\n\n";
     }
 
-    output_workspace << "Computed = \n" << tensor_d.host_view() << std::endl;
+    output_workspace << "Computed D = \n" << tensor_d.host_view() << std::endl;
     output_workspace << "Computed reduction vector = \n" << tensor_reduction.host_view() << std::endl;
 
     std::cout << "Results written to '" << ss.str() << "'." << std::endl;
@@ -699,7 +699,7 @@ int main(int argc, char const **args) {
   cudaDeviceProp props;
   CUDA_CHECK(cudaGetDeviceProperties(&props, 0));
 
-  if (!(props.major > 8 || (props.major == 8 && props.minor >= 0))) {
+  if (!(props.major >= 8)) {
     std::cerr << "Ampere Tensor Ops must be run on a machine with compute capability at least 80."
               << std::endl;
     notSupported = true;

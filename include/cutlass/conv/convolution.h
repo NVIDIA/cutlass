@@ -117,6 +117,14 @@ enum class SplitKMode {
   kParallel
 };
 
+/// Identifies group mode
+enum class GroupMode {
+  kNone,
+  kSingleGroup,   ///< One CTA calculates one group or less
+  kMultipleGroup, ///< One CTA calculates multiple groups
+  kDepthwise      ///< One CTA calculates cta_n groups (problem_size.C == problem_size.K == problem_size.groups)
+};
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace conv

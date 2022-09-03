@@ -169,6 +169,7 @@ struct uint128_t {
     y.hilo_.hi += _umul128(hilo_.hi, rhs, &overflow);
 #else
     // TODO - not implemented
+    CUTLASS_UNUSED(rhs);
     exception();
 #endif
     return y;
@@ -186,6 +187,7 @@ struct uint128_t {
     quotient = _udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
     // TODO - not implemented
+    CUTLASS_UNUSED(divisor);
     exception();
 #endif
     return quotient;
@@ -202,6 +204,7 @@ struct uint128_t {
     (void)_udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
     // TODO - not implemented
+    CUTLASS_UNUSED(divisor);
     exception();
 #endif
     return remainder;
@@ -219,6 +222,7 @@ struct uint128_t {
     quotient = _udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
     // TODO - not implemented
+    CUTLASS_UNUSED(divisor);
     exception();
 #endif
     return quotient;

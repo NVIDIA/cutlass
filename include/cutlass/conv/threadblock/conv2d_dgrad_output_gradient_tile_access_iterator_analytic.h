@@ -528,7 +528,6 @@ public:
     int k = filter_k_ + iteration_vector_ * AccessType::kElements;
 
     return TensorCoord(n, p, q, k);
-
   }
 
   /// Returns true if the current coordinate is within the output tensor Dy

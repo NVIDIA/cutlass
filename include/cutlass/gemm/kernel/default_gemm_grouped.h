@@ -54,6 +54,8 @@
 #include "cutlass/gemm/kernel/default_gemm_complex.h"
 #include "cutlass/gemm/device/default_gemm_configuration.h"
 
+#include "cutlass/layout/permute.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -101,12 +103,16 @@ template <
     typename ThreadblockSwizzle,
     /// Number of stages used in the pipelined mainloop
     int Stages,
+    /// Whether the schedule of problems to visit has been precomputed
+    GroupScheduleMode GroupScheduleMode_ = GroupScheduleMode::kDeviceOnly,
     /// Operation performed by GEMM
     typename Operator = typename device::DefaultGemmConfiguration<
         OperatorClass, ArchTag, ElementA_, ElementB_, ElementC_,
         ElementAccumulator>::Operator,
     /// Use zfill or predicate for out-of-bound cp.async
     SharedMemoryClearOption SharedMemoryClear = SharedMemoryClearOption::kNone,
+    /// Permute result D
+    typename PermuteDLayout = layout::NoPermute,
     ///
     typename Enable = void
     >
@@ -152,10 +158,14 @@ template <
     typename ThreadblockSwizzle,
     /// Number of stages used in the pipelined mainloop
     int Stages,
+    /// Whether the schedule of problems to visit has been precomputed
+    GroupScheduleMode GroupScheduleMode_,
     /// Operation performed by GEMM
     typename Operator,
     /// Use zfill or predicate for out-of-bound cp.async
-    SharedMemoryClearOption SharedMemoryClear
+    SharedMemoryClearOption SharedMemoryClear,
+    /// Permute result D
+    typename PermuteDLayout
 >
 struct DefaultGemmGrouped<
   ElementA,
@@ -177,9 +187,11 @@ struct DefaultGemmGrouped<
   EpilogueOutputOp,
   ThreadblockSwizzle,
   Stages,
+  GroupScheduleMode_,
   Operator,
   SharedMemoryClear,
-  typename std::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
+  PermuteDLayout,
+  typename platform::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
   // If true, we must construct a 'transposed-and-exchanged' Mma operator.
@@ -219,7 +231,11 @@ struct DefaultGemmGrouped<
     Stages,
     true,
     Operator,
-    SharedMemoryClear
+    SharedMemoryClear,
+    false, /*GatherA*/
+    false, /*GatherB*/
+    false, /*ScatterD*/
+    PermuteDLayout
   >::GemmKernel;
 
     /// Define the kernel in terms of the default kernel
@@ -227,6 +243,7 @@ struct DefaultGemmGrouped<
     typename DefaultGemmKernel::Mma,
     typename DefaultGemmKernel::Epilogue,
     ThreadblockSwizzle,
+    GroupScheduleMode_,
     kInternalTranspose
   >;
 };
@@ -276,6 +293,8 @@ template <
     typename ThreadblockSwizzle,
     /// Number of stages used in the pipelined mainloop
     int Stages,
+    /// Whether the schedule of problems to visit has been precomputed
+    GroupScheduleMode GroupScheduleMode_,
     /// Operation performed by GEMM
     typename Operator,
     /// Use zfill or predicate for out-of-bound cp.async
@@ -301,9 +320,11 @@ struct DefaultGemmGrouped<
   EpilogueOutputOp,
   ThreadblockSwizzle,
   Stages,
+  GroupScheduleMode_,
   Operator,
   SharedMemoryClear,
-  typename std::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
+  layout::NoPermute, /*PermuteDLayout*/
+  typename platform::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
   // If true, we must construct a 'transposed-and-exchanged' Mma operator.
@@ -349,6 +370,7 @@ struct DefaultGemmGrouped<
     typename DefaultGemmKernel::Mma,
     typename DefaultGemmKernel::Epilogue, 
     ThreadblockSwizzle,
+    GroupScheduleMode_,
     kInternalTranspose
   >;
 };

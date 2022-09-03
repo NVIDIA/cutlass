@@ -457,9 +457,13 @@ Result profile_convolution(Options const &options) {
       ElementInputB(-8),
       0);
 
-  // Fill tensor C on host with zeros
-  cutlass::reference::host::TensorFill(
-      tensor_c.host_view());
+  // Fill tensor C on host with uniform-distribution random data
+  cutlass::reference::host::TensorFillRandomUniform(
+      tensor_c.host_view(),
+      1,
+      ElementOutput(7),
+      ElementOutput(-8),
+      0);
 
   // Fill tensor D on host with zeros
   cutlass::reference::host::TensorFill(
@@ -686,7 +690,7 @@ int main(int argc, char const **args) {
   cudaDeviceProp props;
   CUDA_CHECK(cudaGetDeviceProperties(&props, 0));
 
-  if (!(props.major > 8 || (props.major == 8 && props.minor >= 0))) {
+  if (!(props.major >= 8)) {
     std::cerr << "Ampere Tensor Ops must be run on a machine with compute capability at least 80."
               << std::endl;
     notSupported = true;

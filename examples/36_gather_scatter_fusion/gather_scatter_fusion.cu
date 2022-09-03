@@ -40,18 +40,17 @@
 //      for (int j = 0; j < options.index_size; ++j) {
 //        int b_c_d_col = tensor_indices.at({j, 0});
 //
-//        for (int k = 0; k < problem_size.k(); ++k) {
+//        for (int k = 0; k < options.index_size; ++k) {
 //            tensor_d_ref.at({i, b_c_d_col}) +=
 //              alpha * tensor_a.at({i, k}) * tensor_b.at({k, b_c_d_col});
 //        }
 //      }
-//    }
 //
 // Note that the index vector contains unique random integers with max to be N - 1
 //
 // The gather/scatter operation works best when we can still keep the biggest
 // alignment. For example, when the matrix is row major, we select rows. When
-// the matrix is column major, we selct columns.
+// the matrix is column major, we select columns.
 //
 // Not all the combination of gather and scatter are legal. For example, if A is
 // row major and C/D is column major, we cannot gather A and scatter C/D at the
@@ -257,7 +256,7 @@ using Gemm = cutlass::gemm::device::GemmUniversal<ElementInputA,
                                                   cutlass::arch::OpMultiplyAdd,
                                                   cutlass::ComplexTransform::kNone,
                                                   cutlass::ComplexTransform::kNone,
-                                                  false,  /*GatherA*/
+                                                  false, /*GatherA*/
                                                   true,  /*GatherB*/
                                                   true   /*ScatterD*/
                                                  >;
@@ -353,7 +352,7 @@ int run(Options &options) {
       tensor_b.layout().stride(),
       tensor_c.layout().stride(),
       tensor_d_scattered.layout().stride(),
-      nullptr,                             // <- pointer to index vector to gather A on device
+      nullptr,                            // <- pointer to index vector to gather A on device
       tensor_indices.device_data(),       // <- pointer to index vector to gather B on device
       tensor_indices.device_data()};      // <- pointer to index vector to scatter D on device
 
@@ -392,7 +391,7 @@ int run(Options &options) {
             tensor_d_ref.at({i, b_c_d_col}) +=
               alpha * tensor_a.at({i, k}) * tensor_b.at({k, b_c_d_col});
         }
-       
+
         tensor_d_ref.at({i, b_c_d_col}) += (beta * tensor_c.at({i, b_c_d_col}));
       }
     }
@@ -515,7 +514,7 @@ int main(int argc, const char ** argv) {
   cudaDeviceProp props;
   CUDA_CHECK(cudaGetDeviceProperties(&props, 0));
 
-  if (!(props.major > 8 || (props.major == 8 && props.minor >= 0))) {
+  if (!(props.major >= 8)) {
     std::cerr << "Ampere Tensor Ops must be run on a machine with compute capability at least 80."
               << std::endl;
     notSupported = true;

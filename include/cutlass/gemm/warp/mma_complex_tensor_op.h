@@ -46,7 +46,6 @@
 #include "cutlass/arch/memory_sm75.h"
 #include "cutlass/arch/mma_sm75.h"
 #include "cutlass/arch/mma_sm80.h"
-
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/warp/mma.h"
 
@@ -251,6 +250,8 @@ template <
   ComplexTransform TransformA = ComplexTransform::kNone,
   /// Complex transform on B operand
   ComplexTransform TransformB = ComplexTransform::kNone,
+  /// Do source operands need more than one elements
+  bool GeneralizedOperatorElements = false,
   /// Used for partial specialization
   typename Enable = bool
 >
@@ -279,9 +280,7 @@ template <
   /// Complex transform on A operand
   ComplexTransform TransformA,
   /// Complex transform on B operand
-  ComplexTransform TransformB,
-  /// Used for partial specialization
-  typename Enable
+  ComplexTransform TransformB
 >
 class MmaComplexTensorOp<
   Shape_, 
@@ -293,8 +292,7 @@ class MmaComplexTensorOp<
   LayoutC_,
   Policy_,
   TransformA,
-  TransformB,
-  Enable>  {
+  TransformB>  {
 public:
   /// Shape of warp-level matrix operation (concept: GemmShape)
   using Shape = Shape_;
@@ -565,9 +563,7 @@ template <
   /// Complex transform on A operand
   ComplexTransform TransformA,
   /// Complex transform on B operand
-  ComplexTransform TransformB,
-  /// Used for partial specialization
-  typename Enable
+  ComplexTransform TransformB
 >
 class MmaComplexTensorOp<
   Shape_, 
@@ -579,8 +575,7 @@ class MmaComplexTensorOp<
   LayoutC_,
   Policy_,
   TransformA,
-  TransformB,
-  Enable>  {
+  TransformB>  {
 public:
   /// Shape of warp-level matrix operation (concept: GemmShape)
   using Shape = Shape_;

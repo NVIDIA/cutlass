@@ -101,7 +101,7 @@ struct FpropScaleBiasReluTransform {
         "}\n"
         : "=r"(ptr_activations[0])
         : "r"(ptr_scale_bias[0]), "r"(ptr_activations[0]),
-          "r"(ptr_scale_bias[1]), "n"(0x7eff7eff));
+          "r"(ptr_scale_bias[1]), "n"(cutlass::arch::OOB_NAN_F16x2));
 #else
     // TODO: write emulation code
     assert(0);
@@ -151,8 +151,8 @@ struct WgradScaleBiasReluTransform {
 #if 1 
     // CUDA + PTX version
 
-    bool h1_oob = (reinterpret_cast<uint16_t &>(ptr_activations[0].x) == 0x7eff);
-    bool h2_oob = (reinterpret_cast<uint16_t &>(ptr_activations[0].y) == 0x7eff);
+    bool h1_oob = (reinterpret_cast<uint16_t &>(ptr_activations[0].x) == cutlass::arch::OOB_NAN_F16);
+    bool h2_oob = (reinterpret_cast<uint16_t &>(ptr_activations[0].y) == cutlass::arch::OOB_NAN_F16);
 
     // Apply per channel scale+bias+relu if the data is not a special NaN
     // (0x7eff).  If it is a special NaN (0x7eff), hard code the output to 0.
@@ -161,7 +161,7 @@ struct WgradScaleBiasReluTransform {
     // out-of-bound because C x R x S can be an odd number.
     asm volatile(
         "{\n\t"
-        " fma.rn.f16x2.relu %0 , %1, %2, %3;\n"
+        " fma.rn.f16x2.relu %0, %1, %2, %3;\n"
         "}"
         : "=r"(reinterpret_cast<uint32_t &>(ptr_activations[0]))
         : "r"(ptr_scale_bias[0]), "r"(reinterpret_cast<uint32_t &>(ptr_activations[0])),
@@ -195,7 +195,7 @@ struct WgradScaleBiasReluTransform {
         "}\n"
         : "=r"(reinterpret_cast<uint32_t &>(ptr_activations[0]))
         : "r"(ptr_scale_bias[0]), "r"(reinterpret_cast<uint32_t &>(ptr_activations[0])),
-          "r"(ptr_scale_bias[1]), "n"(0x7eff), "n"(0xffff0000), "n"(0x0000ffff));
+          "r"(ptr_scale_bias[1]), "n"(cutlass::arch::OOB_NAN_F16), "n"(0xffff0000), "n"(0x0000ffff));
 #endif
 #else
     // TODO: write emulation code

@@ -133,10 +133,6 @@ public:
   /// Internal structure exposed for introspection.
   struct Detail {
 
-    static_assert(Base::kWarpGemmIterations > 1,
-                  "The pipelined structure requires at least two warp-level "
-                  "GEMM operations.");
-
     /// Number of cp.async instructions to load one stage of operand A
     static int const AsyncCopyIterationsPerStageA =
         IteratorA::ThreadMap::Iterations::kCount;
@@ -429,7 +425,7 @@ public:
       }
     }
 
-    // Waits until kStages-2 stages have committed.
+    // Waits until stages up to the previous (kStages-2)th stage have committed.
     cutlass::arch::cp_async_wait<Base::kStages - 2>();
     __syncthreads();
 
@@ -558,7 +554,7 @@ public:
           // Inserts a memory fence between stages of cp.async instructions.
           cutlass::arch::cp_async_fence();
 
-          // Waits until kStages-2 stages have committed.
+          // Waits until stages up to the previous (kStages-2)th stage have committed.
           arch::cp_async_wait<Base::kStages - 2>();
           __syncthreads();
 

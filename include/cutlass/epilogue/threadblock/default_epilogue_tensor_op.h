@@ -74,6 +74,8 @@
 #include "cutlass/epilogue/threadblock/epilogue.h"
 #include "cutlass/epilogue/threadblock/interleaved_epilogue.h"
 
+#include "cutlass/layout/permute.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -166,7 +168,7 @@ template <
   typename ThreadMap
 >
 struct DefaultIteratorsTensorOp<float, int32_t, 4, ThreadblockShape, WarpShape, InstructionShape, ThreadMap> {
-  
+
   using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOp<
     WarpShape,
     InstructionShape,
@@ -265,7 +267,7 @@ struct DefaultIteratorsTensorOp<
     layout::RowMajor
   >;
 
-  using WarpTileIterator = typename cutlass::platform::conditional<
+  using WarpTileIterator = typename platform::conditional<
                              (ThreadblockShape::kN == 256),
                              WarpTileIteratorNotMixed,
                              WarpTileIteratorMixed>::type;
@@ -284,7 +286,7 @@ struct DefaultIteratorsTensorOp<
     int32_t
   >;
 
-  using SharedLoadIterator = typename cutlass::platform::conditional<
+  using SharedLoadIterator = typename platform::conditional<
                              (ThreadblockShape::kN == 256),
                              SharedLoadIteratorNotMixed,
                              SharedLoadIteratorMixed>::type;
@@ -302,7 +304,8 @@ template <
   int PartitionsK,
   typename OutputOp_,
   int ElementsPerAccess,
-  bool ScatterD = false
+  bool ScatterD = false,
+  typename PermuteDLayout = layout::NoPermute
 >
 struct DefaultEpilogueTensorOp {
 
@@ -334,6 +337,7 @@ struct DefaultEpilogueTensorOp {
     OutputTileThreadMap,
     ElementOutput,
     ScatterD,
+    PermuteDLayout,
     UseCUDAStore
   >;
 
@@ -570,7 +574,6 @@ struct DefaultEpilogueTensorOpAffineRankN {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-
 /// Defines sensible defaults for epilogues for TensorOps which uses
 /// intereleaved output layout. For this case, shared memory is not needed.
 template <typename Shape_, typename WarpMmaTensorOp_, int PartitionsK,

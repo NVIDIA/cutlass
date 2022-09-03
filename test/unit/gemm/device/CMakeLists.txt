@@ -341,6 +341,24 @@ cutlass_test_unit_add_executable(
 )
 
 cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_grouped_scheduler
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_grouped_scheduler_sm80.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_grouped_rank_2k_scheduler
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  rank_2k_grouped_scheduler_sm80.cu
+)
+
+cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_sparse_tensorop_sm80
 
   BATCH_SOURCES ON
@@ -539,5 +557,28 @@ cutlass_test_unit_add_executable(
   hemm_cf32h_cf32n_tensor_op_fast_f32_ls_sm80.cu
   hemm_cf32h_cf32n_tensor_op_fast_f32_rs_sm80.cu
   )
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_grouped_blas3
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  # Grouped SYR2K SM80 f64 tests
+  syr2k_f64n_f64n_tensor_op_f64_grouped_sm80.cu
+  syr2k_f64n_f64t_tensor_op_f64_grouped_sm80.cu
+  syr2k_f64t_f64n_tensor_op_f64_grouped_sm80.cu
+  syr2k_f64t_f64t_tensor_op_f64_grouped_sm80.cu
+
+  # Grouped SYR2K SM80 cf64 tests
+  syr2k_cf64n_cf64n_tensor_op_f64_grouped_sm80.cu
+  syr2k_cf64n_cf64t_tensor_op_f64_grouped_sm80.cu
+  syr2k_cf64t_cf64n_tensor_op_f64_grouped_sm80.cu
+  syr2k_cf64t_cf64t_tensor_op_f64_grouped_sm80.cu
+
+  # Grouped HER2K SM80 f64 tests
+  her2k_cf64n_cf64n_tensor_op_f64_grouped_sm80.cu
+  her2k_cf64h_cf64n_tensor_op_f64_grouped_sm80.cu
+)
 
 endif()
