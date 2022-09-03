@@ -104,6 +104,11 @@ public:
     return TileAccessIterator::getParams(problem_size, layout);
   }
 
+  /// Overrides the internal iteration index
+  CUTLASS_HOST_DEVICE
+  void set_iteration_index(Index index) {
+    tile_access_iterator_.set_iteration_index(index);
+  }
 
   /// Adds a pointer offset in units of Element
   CUTLASS_HOST_DEVICE

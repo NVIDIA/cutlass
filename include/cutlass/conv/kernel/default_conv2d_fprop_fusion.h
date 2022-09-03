@@ -45,8 +45,8 @@
 #include "cutlass/conv/threadblock/conv2d_fprop_activation_tile_access_iterator_optimized.h"
 #include "cutlass/conv/threadblock/conv2d_fprop_filter_tile_access_iterator_optimized.h"
 #include "cutlass/conv/threadblock/predicated_scale_bias_vector_access_iterator.h"
-#include "cutlass/conv/threadblock/regular_scale_bias_vector_access_iterator.h"
-#include "cutlass/conv/warp/conv2d_fprop_scale_bias_iterator.h"
+#include "cutlass/transform/threadblock/regular_scale_bias_vector_access_iterator.h"
+#include "cutlass/gemm/warp/scale_bias_tile_iterator.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -161,7 +161,7 @@ struct DefaultConv2dFpropFusion <
           LayoutScaleBias>;
 
   using SmemIteratorScaleBias =
-      cutlass::conv::threadblock::RegularScaleBiasVectorAccessIterator<
+      cutlass::transform::threadblock::RegularScaleBiasVectorAccessIterator<
           cutlass::MatrixShape<1, ThreadblockShape::kK>, ElementScaleBias,
           LayoutScaleBias>;
 
@@ -172,7 +172,7 @@ struct DefaultConv2dFpropFusion <
   static int const kThreadCount = 32;
 
   // Warp-level iterators to load scale and bias vectors
-  using WarpIteratorScaleBias = cutlass::conv::warp::WarpIteratorScaleBias<
+  using WarpIteratorScaleBias = cutlass::gemm::warp::ScaleBiasTileIterator<
       MatrixShape<WarpShape::kM, WarpShape::kK>, ElementScaleBias,
       LayoutScaleBias, MatrixShape<InstructionShape::kM, InstructionShape::kK>,
       typename WarpMmaTensorOp::IteratorA::Base::Policy, kThreadCount,
@@ -296,7 +296,7 @@ struct DefaultConv2dFpropFusion <
           LayoutScaleBias>;
 
   using SmemIteratorScaleBias =
-      cutlass::conv::threadblock::RegularScaleBiasVectorAccessIterator<
+      cutlass::transform::threadblock::RegularScaleBiasVectorAccessIterator<
           cutlass::MatrixShape<1, ThreadblockShape::kK>, ElementScaleBias,
           LayoutScaleBias>;
 
@@ -307,7 +307,7 @@ struct DefaultConv2dFpropFusion <
   static int const kThreadCount = 32;
 
   // Warp-level iterators to load scale and bias vectors
-  using WarpIteratorScaleBias = cutlass::conv::warp::WarpIteratorScaleBias<
+  using WarpIteratorScaleBias = cutlass::gemm::warp::ScaleBiasTileIterator<
       MatrixShape<WarpShape::kM, WarpShape::kK>, ElementScaleBias,
       LayoutScaleBias, MatrixShape<InstructionShape::kM, InstructionShape::kK>,
       typename WarpMmaTensorOp::IteratorA::Base::Policy, kThreadCount,

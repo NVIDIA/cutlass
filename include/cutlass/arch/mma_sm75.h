@@ -126,6 +126,10 @@ struct Mma<
       : "r"(A[0]), "r"(A[1]), "r"(B[0]), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -188,6 +192,10 @@ struct Mma<
   );
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -251,6 +259,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -308,6 +320,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -366,6 +382,10 @@ struct Mma<
 
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -423,6 +443,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -486,6 +510,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -543,6 +571,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -600,6 +632,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -657,6 +693,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -711,7 +751,6 @@ struct Mma<
 
   unsigned const & A = reinterpret_cast<unsigned const &>(a);
   unsigned const & B = reinterpret_cast<unsigned const &>(b);
-
   int const *C = reinterpret_cast<int const *>(&c);
   int *D = reinterpret_cast<int *>(&d);
 
@@ -720,6 +759,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -777,6 +820,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -834,6 +881,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -891,6 +942,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -954,6 +1009,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1011,6 +1070,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1068,6 +1131,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1125,6 +1192,10 @@ struct Mma<
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
   }
@@ -1210,11 +1281,19 @@ struct Mma<
                                           nvcuda::wmma::experimental::bmmaAccumulateOpPOPC);
 #else
 
+  CUTLASS_UNUSED(a);
+  CUTLASS_UNUSED(b);
+  CUTLASS_UNUSED(c);
+  CUTLASS_UNUSED(d);
   assert(0); // WMMA must be supported to issue binary matrix multiply-accumulate instructions.
 
 #endif // defined(CUTLASS_ARCH_WMMA_ENABLED)
 
 #else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
     assert(0);
 #endif
 

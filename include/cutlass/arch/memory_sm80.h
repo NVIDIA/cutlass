@@ -98,6 +98,9 @@ template <
    bool IsHermitianData = false>
 struct cp_async_diag;
 
+static const uint32_t OOB_NAN_F16 = 0x7eff;
+static const uint32_t OOB_NAN_F16x2 = ((OOB_NAN_F16 << 16) | OOB_NAN_F16);
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization
@@ -190,8 +193,8 @@ struct cp_async_nan<16, CacheOperation::Always> {
   cp_async_nan(void *smem_ptr, void const *global_ptr, bool pred_guard) {
     #if CUDA_CP_ASYNC_ACTIVATED
 
-      static __constant__ uint4 OOB_NAN_F16x8 = {0x7eff7eff, 0x7eff7eff,
-                                                 0x7eff7eff, 0x7eff7eff};
+      static __constant__ uint4 OOB_NAN_F16x8 = {OOB_NAN_F16x2, OOB_NAN_F16x2,
+                                                 OOB_NAN_F16x2, OOB_NAN_F16x2};
 
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
 
@@ -305,7 +308,6 @@ struct cp_async_diag <Element_, true> {
   }
 };
 
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization
@@ -386,6 +388,47 @@ struct cp_async_zfill<SizeInBytes, CacheOperation::Global> {
   }
 };
 
+/// Partial specialization
+template <>
+struct cp_async_nan<16, CacheOperation::Global> {
+  static int const kSizeInBytes = 16;
+
+  /// Copy with nan fill
+  CUTLASS_DEVICE
+  cp_async_nan(void *smem_ptr, void const *global_ptr, bool pred_guard) {
+    #if CUDA_CP_ASYNC_ACTIVATED
+
+      static __constant__ uint4 OOB_NAN_F16x8 = {OOB_NAN_F16x2, OOB_NAN_F16x2,
+                                                 OOB_NAN_F16x2, OOB_NAN_F16x2};
+
+      unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
+
+      asm volatile(
+          "{\n"
+          "  .reg .pred p;\n"
+          "  setp.ne.b32 p, %0, 0;\n"
+#if CUTLASS_ENABLE_L2_PREFETCH
+          "  @p cp.async.cg.shared.global.L2::128B [%1], [%2], %3;\n"
+#else
+          "  @p cp.async.cg.shared.global [%1], [%2], %3;\n"
+#endif
+          "  @!p st.shared.v4.u32 [%1], {%4, %5, %6, %7};\n"
+          "}\n"
+          :
+          : "r"((int)pred_guard), "r"(smem_int_ptr), "l"(global_ptr),
+            "n"(kSizeInBytes), "r"(OOB_NAN_F16x8.x), "r"(OOB_NAN_F16x8.y), "r"(OOB_NAN_F16x8.z),
+            "r"(OOB_NAN_F16x8.w));
+
+    #else
+
+      CUTLASS_UNUSED(smem_ptr);
+      CUTLASS_UNUSED(global_ptr);
+      CUTLASS_UNUSED(pred_guard);
+      CUTLASS_NOT_IMPLEMENTED();
+
+    #endif
+  }
+};
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Establishes an ordering w.r.t previously issued cp.async instructions. Does not block.

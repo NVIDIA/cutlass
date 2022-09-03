@@ -34,3 +34,8 @@ cutlass_example_add_executable(
   ampere_fprop_mainloop_fusion.cu
   )
 
+cutlass_example_add_executable(
+  25_ampere_3d_fprop_mainloop_fusion
+  ampere_3d_fprop_mainloop_fusion.cu
+  )
+

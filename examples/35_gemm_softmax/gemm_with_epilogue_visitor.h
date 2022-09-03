@@ -29,7 +29,8 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief GEMM kernel to support the 'epilogue visitor' model for fusion.
+    \brief GEMM kernel to support the epilogue visitor model 
+    for customized softmax partial reduction epilogue fusion.
 
     This source file will likely be moved to `include/cutlass/gemm/kernel/` in the future once
     its usage has been stabilized. For now, it is included in this example to demonstrate
@@ -78,6 +79,7 @@ public:
 
   using ElementC = typename EpilogueVisitor::ElementOutput;
   using LayoutC = typename Epilogue::Layout;
+  using TensorRefC = TensorRef<ElementC, LayoutC>;
 
   static ComplexTransform const kTransformA = Mma::kTransformA;
   static ComplexTransform const kTransformB = Mma::kTransformB;
@@ -88,6 +90,9 @@ public:
   using WarpShape = typename Mma::Operator::Shape;
   using InstructionShape = typename Mma::Policy::Operator::InstructionShape;
   using ArchTag = typename Mma::ArchTag;
+
+  using ElementNorm = typename EpilogueVisitor::ElementNorm;
+  using ElementSum = typename EpilogueVisitor::ElementSum;
 
   static int const kStages = Mma::kStages;
   static int const kAlignmentA = Mma::IteratorA::AccessType::kElements;
@@ -121,6 +126,11 @@ public:
 
     TensorRefA ref_A;
     TensorRefB ref_B;
+    TensorRefC ref_C;
+    TensorRefC ref_D;
+
+    ElementNorm *ptr_Max; 
+    ElementSum  *ptr_Sum;
 
     int64_t    batch_stride_A;
     int64_t    batch_stride_B;
@@ -144,6 +154,10 @@ public:
       int batch_count_,
       TensorRefA ref_A_,
       TensorRefB ref_B_,
+      TensorRefC ref_C_,
+      TensorRefC ref_D_,
+      ElementNorm *ptr_Max_,
+      ElementSum *ptr_Sum_,
       int64_t batch_stride_A_,
       int64_t batch_stride_B_,
       typename EpilogueVisitor::Arguments epilogue_visitor_
@@ -153,6 +167,10 @@ public:
       batch_count(batch_count_),
       ref_A(ref_A_),
       ref_B(ref_B_),
+      ref_C(ref_C_),
+      ref_D(ref_D_),
+      ptr_Max(ptr_Max_),
+      ptr_Sum(ptr_Sum_),
       batch_stride_A(batch_stride_A_),
       batch_stride_B(batch_stride_B_),
       epilogue_visitor(epilogue_visitor_)
@@ -174,6 +192,8 @@ public:
 
     typename Mma::IteratorA::Params params_A;
     typename Mma::IteratorB::Params params_B;
+    typename EpilogueVisitor::OutputTileIterator::Params params_C;
+    typename EpilogueVisitor::OutputTileIterator::Params params_D;
 
     GemmUniversalMode mode;
     int batch_count;
@@ -181,6 +201,11 @@ public:
 
     void * ptr_A;
     void * ptr_B;
+    ElementC * ptr_C;
+    ElementC * ptr_D;
+
+    ElementNorm * ptr_Max;
+    ElementSum * ptr_Sum;
 
     int64_t batch_stride_A;
     int64_t batch_stride_B;
@@ -196,11 +221,17 @@ public:
       swizzle_log_tile(0),
       params_A(0),
       params_B(0),
+      params_C(0),
+      params_D(0),
       batch_count(0),
       gemm_k_size(0),
       mode(cutlass::gemm::GemmUniversalMode::kGemm),
       ptr_A(nullptr),
       ptr_B(nullptr),
+      ptr_C(nullptr),
+      ptr_D(nullptr),
+      ptr_Max(nullptr),
+      ptr_Sum(nullptr),
       batch_stride_A(0),
       batch_stride_B(0)
     { }
@@ -213,11 +244,17 @@ public:
       swizzle_log_tile(0),
       params_A(args.ref_A.layout()),
       params_B(args.ref_B.layout()),
+      params_C(args.ref_C.layout()),
+      params_D(args.ref_D.layout()),
       mode(args.mode),
       batch_count(args.batch_count),
       gemm_k_size(args.problem_size.k()),
       ptr_A(args.ref_A.data()),
       ptr_B(args.ref_B.data()),
+      ptr_C(args.ref_C.data()),
+      ptr_D(args.ref_D.data()),
+      ptr_Max(args.ptr_Max),
+      ptr_Sum(args.ptr_Sum),
       batch_stride_A(args.batch_stride_A),
       batch_stride_B(args.batch_stride_B),
       epilogue_visitor(args.epilogue_visitor)
@@ -467,7 +504,14 @@ public:
       thread_idx,
       warp_idx,
       lane_idx,
-      threadblock_offset);
+      params.params_C,
+      params.params_D,
+      params.ptr_C,
+      params.ptr_D,
+      params.ptr_Max,
+      params.ptr_Sum,
+      threadblock_offset,
+      blockIdx.y *params.problem_size.m() );
 
     if (params.mode == GemmUniversalMode::kGemm) {
       // Indicate which position in a serial reduction the output operator is currently updating

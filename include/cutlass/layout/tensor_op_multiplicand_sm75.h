@@ -48,6 +48,8 @@ namespace layout {
 
 /// Template based on element size (in bits) - defined in terms of pitch-linear
 /// memory and Crosswise size (in elements).
+/// This one is the base class of all Ampere/Turing fp16/bf16/int8/int4/int1
+/// tensor core kernels.  tf32 TN uses this too.
 template <int ElementSize, int Crosswise>
 struct TensorOpMultiplicand {
   /// Logical rank of tensor
@@ -321,6 +323,7 @@ struct TensorOpMultiplicandCongruous {
 
 /// Template based on element size (in bits) - defined in terms of pitch-linear
 /// memory and Crosswise size (in elements).
+/// This one is just for TF32 NT kernel.
 template <int Crosswise>
 struct TensorOpMultiplicandCongruous<32, Crosswise> {
   /// Logical rank of tensor

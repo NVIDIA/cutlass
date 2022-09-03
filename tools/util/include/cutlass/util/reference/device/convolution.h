@@ -123,10 +123,16 @@ __global__ void Conv2dFprop(
     }
   }
 
+  int c_per_group = problem_size.C / problem_size.groups;
+  int k_per_group = problem_size.K / problem_size.groups;
+
   // Compute convolution
   for (int R = 0; R < problem_size.R; ++R) {
     for (int S = 0; S < problem_size.S; ++S) {
       for (int C = 0; C < problem_size.C; ++C) {
+
+        // Get group id of currnet channel
+        int c_group_idx = C / c_per_group;
 
         // Load from activations tensor
         int filter_r = R;
@@ -154,9 +160,10 @@ __global__ void Conv2dFprop(
         CUTLASS_PRAGMA_UNROLL
         for (int n = 0; n < kThreadN; ++n) {
           int thread_k = k_start + n;
+          int k_group_idx = thread_k / k_per_group;
 
-          if (thread_k < problem_size.K) {
-            element_B[n] = ElementAccumulator(tensor_w.at({thread_k, R, S, C}));
+          if (thread_k < problem_size.K && k_group_idx == c_group_idx) {
+            element_B[n] = ElementAccumulator(tensor_w.at({thread_k, R, S, C % c_per_group}));
           }
           else {
             element_B[n] = ElementAccumulator();

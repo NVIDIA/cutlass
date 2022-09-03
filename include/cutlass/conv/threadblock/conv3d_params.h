@@ -304,8 +304,8 @@ struct Conv3dDgradOutputGradientIteratorOptimizedParams {
     // logical offset added to internal channel counter - units are elements, not bytes
     filter_k_delta = threadblock_shape.column() * problem_size.split_k_slices;
   }
-
 };
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Parameters object for Conv2d DGRAD Filter (w) iterator
@@ -343,18 +343,18 @@ struct Conv3dDgradFilterIteratorOptimizedParams {
     TRACE_CONV_INITIALIZERS("conv3d_dgrad", "filter", 
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
 
-    inc_next_strided = (layout.stride()[3] * threadmap_delta.strided() * element_size_bits) / 8;
+    inc_next_strided = ((int64_t)layout.stride()[3] * threadmap_delta.strided() * element_size_bits) / 8;
 
     inc_next_trs =
-      ( layout.stride()[0]
-        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[3]
+      ( (int64_t)layout.stride()[0]
+        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * (int64_t)layout.stride()[3]
       ) * element_size_bits / 8;
 
     inc_next_k =
       (
-        threadblock_shape.row() * problem_size.split_k_slices * layout.stride()[3]
-        - (problem_size.T * problem_size.R * problem_size.S - 1) * layout.stride()[0]
-        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[3]
+        threadblock_shape.row() * problem_size.split_k_slices * (int64_t)layout.stride()[3]
+        - (problem_size.T * problem_size.R * problem_size.S - 1) * (int64_t)layout.stride()[0]
+        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * (int64_t)layout.stride()[3]
       ) * element_size_bits / 8;
 
     filter_k_delta = threadblock_shape.row() * problem_size.split_k_slices;
@@ -408,13 +408,13 @@ struct Conv3dWgradOutputGradientIteratorOptimizedParams {
     element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
 
   // Incremental offsets in unites of bytes (number of elements) * element_size_bits / 8
-  offset_next_strided = (threadmap_delta.strided() * layout.stride()[0])
+  offset_next_strided = (threadmap_delta.strided() * (int64_t)layout.stride()[0])
                       * element_size_bits / 8;
 
   offset_next_contiguous = (threadmap_delta.contiguous()) 
                           * element_size_bits / 8;
 
-  inc_next_nzpq = (threadblock_shape.column() * problem_size.split_k_slices * layout.stride()[0])
+  inc_next_nzpq = (threadblock_shape.column() * problem_size.split_k_slices * (int64_t)layout.stride()[0])
                     * element_size_bits / 8;
 
   // Precompute several quantities for fast modulo arithmetic.

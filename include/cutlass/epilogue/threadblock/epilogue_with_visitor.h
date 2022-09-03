@@ -121,6 +121,7 @@ public:
   /// Called after accumulators have been exchanged for each accumulator vector
   CUTLASS_DEVICE
   void visit(
+    int iter_idx,
     int row_idx,
     int column_idx,
     int frag_idx,
@@ -128,7 +129,7 @@ public:
 
   }
 
-  /// Called at the start of a row
+  /// Called at the end of a row
   CUTLASS_DEVICE
   void end_row(int row_idx) {
 
@@ -325,6 +326,7 @@ public:
         }
 
         visitor.visit(
+          iter_idx,
           row_idx,
           col_idx,
           idx,

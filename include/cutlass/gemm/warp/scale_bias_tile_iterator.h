@@ -57,7 +57,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
-namespace conv {
+namespace gemm {
 namespace warp {
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,7 +77,7 @@ template <
     int Threads,
     /// Number of partitions along K dimension
     int PartitionsK_ = 1>
-class WarpIteratorScaleBias;
+class ScaleBiasTileIterator;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -99,7 +99,7 @@ template <
     typename Policy_,
     /// Number of partitions along K dimension
     int PartitionsK_>
-class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::PitchLinear,
+class ScaleBiasTileIterator<Shape_, Element_, cutlass::layout::PitchLinear,
                              InstructionShape_, Policy_, 32, PartitionsK_> {
  public:
   /// Shape of tile to load (concept: PitchLinearShape)
@@ -167,14 +167,14 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::PitchLinear,
  public:
   /// Default ctor constructs null iterator
   CUTLASS_HOST_DEVICE
-  WarpIteratorScaleBias()
+  ScaleBiasTileIterator()
       : pointer_(nullptr),
         byte_offset_(0),
         k_group_idx_(0) {}
 
   /// Constructor from TensorRef
   CUTLASS_DEVICE
-  WarpIteratorScaleBias(TensorRef const &ref_scale_bias,
+  ScaleBiasTileIterator(TensorRef const &ref_scale_bias,
                          int lane_id)
       : byte_offset_(0), k_group_idx_(0) {
     /// 16816 only
@@ -185,7 +185,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::PitchLinear,
 
   /// Adds a pointer offset to internal pointer(s) to advance through memory
   CUTLASS_DEVICE
-  WarpIteratorScaleBias &add_pointer_offset(LongIndex offset) {
+  ScaleBiasTileIterator &add_pointer_offset(LongIndex offset) {
     byte_offset_ += offset * sizeof_bits<Element>::value / 8;
 
     return *this;
@@ -194,7 +194,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::PitchLinear,
   /// Advances an iterator along logical dimensions of matrix in units of whole
   /// tiles
   CUTLASS_DEVICE
-  WarpIteratorScaleBias &add_tile_offset(
+  ScaleBiasTileIterator &add_tile_offset(
       TensorCoord const &tile_offset) {
     int whole_tiles = tile_offset.contiguous() / Policy::kGroupsPerTile;
     int k_groups_delta = tile_offset.contiguous() % Policy::kGroupsPerTile;
@@ -211,7 +211,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::PitchLinear,
 
   /// Advances the iterator along the advance dimension
   CUTLASS_DEVICE
-  WarpIteratorScaleBias &operator++() {
+  ScaleBiasTileIterator &operator++() {
     byte_offset_ += Policy::LdsmShape::kContiguous *
                     sizeof_bits<Element>::value * kElementsPerAccess / 8;
 
@@ -230,12 +230,12 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::PitchLinear,
 
   /// Advances the iterator along the advance dimension
   CUTLASS_HOST_DEVICE
-  WarpIteratorScaleBias &operator--() { assert(0); }
+  ScaleBiasTileIterator &operator--() { assert(0); }
 
   ///< advances in units of whole tiles along the logical coordinate space of
   ///< the tensor
   CUTLASS_DEVICE
-  WarpIteratorScaleBias &operator+=(
+  ScaleBiasTileIterator &operator+=(
       TensorCoord const &tile_offset) {
     add_tile_offset(tile_offset);
     return *this;
@@ -244,7 +244,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::PitchLinear,
   ///< advances in units of whole tiles along the logical coordinate space of
   ///< the tensor
   CUTLASS_DEVICE
-  WarpIteratorScaleBias &operator-=(
+  ScaleBiasTileIterator &operator-=(
       TensorCoord const &tile_offset) {
     add_tile_offset(-tile_offset);
     return *this;
@@ -366,7 +366,7 @@ template <
     typename Policy_,
     /// Number of partitions along K dimension
     int PartitionsK_>
-class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::RowMajor,
+class ScaleBiasTileIterator<Shape_, Element_, cutlass::layout::RowMajor,
                              InstructionShape_, Policy_, 32, PartitionsK_> {
  public:
   /// Shape of tile to load (concept: PitchLinearShape)
@@ -400,7 +400,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::RowMajor,
   using Policy = Policy_;
 
   /// Underlying tile iterator implementation
-  using Base = WarpIteratorScaleBias<
+  using Base = ScaleBiasTileIterator<
       layout::PitchLinearShape<Shape::kColumn, Shape::kRow>, Element,
       layout::PitchLinear,
       layout::PitchLinearShape<InstructionShape::kColumn,
@@ -422,16 +422,16 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::RowMajor,
  public:
   /// Default ctor constructs null iterator
   CUTLASS_HOST_DEVICE
-  WarpIteratorScaleBias() {}
+  ScaleBiasTileIterator() {}
 
   /// Constructor from TensorRef
   CUTLASS_HOST_DEVICE
-  WarpIteratorScaleBias(TensorRef const &ref_scale_bias, int lane_id)
+  ScaleBiasTileIterator(TensorRef const &ref_scale_bias, int lane_id)
       : iterator_({ref_scale_bias.data(), ref_scale_bias.stride()}, lane_id) {}
 
   /// Adds a pointer offset to internal pointer(s) to advance through memory
   CUTLASS_HOST_DEVICE
-  WarpIteratorScaleBias &add_pointer_offset(LongIndex offset) {
+  ScaleBiasTileIterator &add_pointer_offset(LongIndex offset) {
     iterator_.add_pointer_offset(offset);
 
     return *this;
@@ -440,7 +440,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::RowMajor,
   /// Advances an iterator along logical dimensions of matrix in units of whole
   /// tiles
   CUTLASS_HOST_DEVICE
-  WarpIteratorScaleBias &add_tile_offset(
+  ScaleBiasTileIterator &add_tile_offset(
       TensorCoord const &tile_offset) {
     iterator_.add_tile_offset({tile_offset.column(), tile_offset.row()});
 
@@ -450,7 +450,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::RowMajor,
   /// Advances an iterator along logical dimensions of matrix in units of whole
   /// tiles
   CUTLASS_DEVICE
-  WarpIteratorScaleBias &add_tile_offset_negative(
+  ScaleBiasTileIterator &add_tile_offset_negative(
       TensorCoord const &tile_offset) {
     iterator_.add_tile_offset_negative({tile_offset.column(), tile_offset.row()});
 
@@ -459,7 +459,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::RowMajor,
 
   /// Advances the iterator along the advance dimension
   CUTLASS_HOST_DEVICE
-  WarpIteratorScaleBias &operator++() {
+  ScaleBiasTileIterator &operator++() {
     ++iterator_;
 
     return *this;
@@ -467,7 +467,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::RowMajor,
 
   /// Advances the iterator along the advance dimension
   CUTLASS_HOST_DEVICE
-  WarpIteratorScaleBias &operator--() {
+  ScaleBiasTileIterator &operator--() {
     --iterator_;
 
     return *this;
@@ -476,7 +476,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::RowMajor,
   ///< advances in units of whole tiles along the logical coordinate space of
   ///< the tensor
   CUTLASS_DEVICE
-  WarpIteratorScaleBias &operator+=(
+  ScaleBiasTileIterator &operator+=(
       TensorCoord const &tile_offset) {
     add_tile_offset(PitchLinearCoord(tile_offset.column(), tile_offset.row()));
     return *this;
@@ -485,7 +485,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::RowMajor,
   ///< advances in units of whole tiles along the logical coordinate space of
   ///< the tensor
   CUTLASS_DEVICE
-  WarpIteratorScaleBias &operator-=(
+  ScaleBiasTileIterator &operator-=(
       TensorCoord const &tile_offset) {
     add_tile_offset(-PitchLinearCoord(tile_offset.column(), tile_offset.row()));
     return *this;
@@ -568,7 +568,7 @@ class WarpIteratorScaleBias<Shape_, Element_, cutlass::layout::RowMajor,
 ////////////////////////////////////////////////////////////////////////////////
 
 } // namespace warp
-} // namespace conv 
+} // namespace gemm 
 } // namespace cutlass
 
 ////////////////////////////////////////////////////////////////////////////////

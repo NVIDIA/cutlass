@@ -618,7 +618,7 @@ public:
   /// Fragment object holding a thread's part of a tile
   using Fragment = Array<Element, ThreadShape::kCount>;
 
-private:
+protected:
 
   /// Internal reference
   cutlass::TensorRef<Array<Element, Policy::LaneMmaShape::kN>, layout::RowMajor> ref_;

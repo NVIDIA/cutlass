@@ -157,7 +157,6 @@ struct StridedDgradIdentityThreadblockSwizzle :
       split_k_slices);
   }
 
-
   /// Returns the shape of the problem in units of logical tiles
   /// For GEMM problem size (MxNxK) (Do not use base class get_tiled_shape())
   private:

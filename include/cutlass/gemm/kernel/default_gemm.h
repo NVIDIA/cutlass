@@ -65,6 +65,8 @@
 #include "cutlass/epilogue/threadblock/default_epilogue_simt.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 
+#include "cutlass/layout/permute.h"
+
 #if defined(CUTLASS_ARCH_WMMA_ENABLED)
 #include "cutlass/epilogue/threadblock/default_epilogue_wmma_tensor_op.h"
 #endif //CUTLASS_ARCH_WMMA_ENABLED
@@ -125,6 +127,8 @@ template <
     bool GatherB = false,
     /// Scatter result D by using an index array
     bool ScatterD = false,
+    /// Permute result D
+    typename PermuteDLayout = layout::NoPermute,
     ///
     typename Enable = void
 >
@@ -177,13 +181,15 @@ template <
     /// Gather operand B by using an index array
     bool GatherB,
     /// Scatter result D by using an index array
-    bool ScatterD
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout
 >
 struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB, ElementC,
                    LayoutC, ElementAccumulator, arch::OpClassTensorOp,
                    arch::Sm80, ThreadblockShape, WarpShape, InstructionShape,
                    EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
-                   Operator, SharedMemoryClear, GatherA, GatherB, ScatterD> {
+                   Operator, SharedMemoryClear, GatherA, GatherB, ScatterD, PermuteDLayout> {
 
   static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
@@ -202,14 +208,14 @@ struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignment
   using RegularEpilogue =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
           ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
-          EpilogueOutputOp::kCount, ScatterD>::Epilogue;
+          EpilogueOutputOp::kCount, ScatterD, PermuteDLayout>::Epilogue;
 
   using Affine2Epilogue =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOpAffineRankN<
           2, ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
           EpilogueOutputOp::kCount>::Epilogue;
 
-  using Epilogue = typename cutlass::platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
+  using Epilogue = typename platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
                                                   RegularEpilogue,
                                                   Affine2Epilogue>::type;
 
@@ -258,7 +264,9 @@ template <
   /// Gather operand B by using an index array
   bool GatherB,
   /// Scatter result D by using an index array
-  bool ScatterD
+  bool ScatterD,
+  /// Permute result D
+  typename PermuteDLayout
 >
 struct DefaultGemm<
   ElementA, LayoutA, kAlignmentA,
@@ -278,7 +286,8 @@ struct DefaultGemm<
   SharedMemoryClear,
   GatherA,
   GatherB,
-  ScatterD
+  ScatterD,
+  PermuteDLayout
 > {
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -313,7 +322,8 @@ struct DefaultGemm<
     kPartitionsK,
     EpilogueOutputOp,
     EpilogueOutputOp::kCount,
-    ScatterD
+    ScatterD,
+    PermuteDLayout
   >::Epilogue;
 
   /// Define the kernel-level GEMM operator.
@@ -493,7 +503,9 @@ template <
   /// Gather operand B by using an index array
   bool GatherB,
   /// Scatter result D by using an index array
-  bool ScatterD
+  bool ScatterD,
+  /// Permute result D
+  typename PermuteDLayout
 >
 struct DefaultGemm<
   ElementA, LayoutA, kAlignmentA,
@@ -513,7 +525,8 @@ struct DefaultGemm<
   SharedMemoryClear,
   GatherA,
   GatherB,
-  ScatterD
+  ScatterD,
+  PermuteDLayout
 > {
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -548,7 +561,8 @@ struct DefaultGemm<
     kPartitionsK,
     EpilogueOutputOp,
     EpilogueOutputOp::kCount,
-    ScatterD
+    ScatterD,
+    PermuteDLayout
   >::Epilogue;
 
   /// Define the kernel-level GEMM operator.
@@ -598,7 +612,9 @@ template <
     /// Gather operand B by using an index array
     bool GatherB,
     /// Scatter result D by using an index array
-    bool ScatterD
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout
   >
 struct DefaultGemm<
     ElementA,
@@ -624,6 +640,7 @@ struct DefaultGemm<
     GatherA,
     GatherB,
     ScatterD,
+    PermuteDLayout,
     typename platform::enable_if< ! platform::is_same<ArchTag, arch::Sm80>::value >::type > {
 
   static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
@@ -661,7 +678,8 @@ struct DefaultGemm<
       typename Mma::Operator,
       EpilogueOutputOp,
       kEpilogueElementsPerAccess,
-      ScatterD
+      ScatterD,
+      PermuteDLayout
       >::Epilogue;
 
   using Affine2Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueSimtAffineRankN<
@@ -672,7 +690,7 @@ struct DefaultGemm<
       kEpilogueElementsPerAccess
       >::Epilogue;
 
-  using Epilogue = typename cutlass::platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
+  using Epilogue = typename platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
                                                   RegularEpilogue,
                                                   Affine2Epilogue>::type;
 
@@ -723,7 +741,9 @@ template <
     /// Gather operand B by using an index array
     bool GatherB,
     /// Scatter result D by using an index array
-    bool ScatterD
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout
 >
 struct DefaultGemm<ElementA,
                    LayoutA,
@@ -747,7 +767,8 @@ struct DefaultGemm<ElementA,
                    SharedMemoryClear,
                    GatherA,
                    GatherB,
-                   ScatterD> {
+                   ScatterD,
+                   PermuteDLayout> {
 
   static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
@@ -769,7 +790,8 @@ struct DefaultGemm<ElementA,
       typename Mma::Operator,
       EpilogueOutputOp,
       kEpilogueElementsPerAccess,
-      ScatterD
+      ScatterD,
+      PermuteDLayout
       >::Epilogue;
 
   using Affine2Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueSimtAffineRankN<
@@ -780,7 +802,7 @@ struct DefaultGemm<ElementA,
       kEpilogueElementsPerAccess
       >::Epilogue;
 
-  using Epilogue = typename cutlass::platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
+  using Epilogue = typename platform::conditional<platform::is_same<LayoutC, layout::RowMajor>::value,
                                                   RegularEpilogue,
                                                   Affine2Epilogue>::type;
 

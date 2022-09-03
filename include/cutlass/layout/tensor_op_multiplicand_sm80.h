@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief 
+    \brief layouts needed by Ampere fp64 tensor core kernels.
 */
 
 #pragma once

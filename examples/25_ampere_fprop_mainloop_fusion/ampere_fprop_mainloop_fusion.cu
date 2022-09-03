@@ -429,9 +429,13 @@ Result profile_convolution(Options const &options) {
       ElementInputB(-8),
       0);
 
-  // Fill tensor C on host with zeros
-  cutlass::reference::host::TensorFill(
-      tensor_c.host_view());
+  // Fill tensor C on host with uniform-distribution random data 
+  cutlass::reference::host::TensorFillRandomUniform(
+      tensor_c.host_view(),
+      1,
+      ElementOutput(7),
+      ElementOutput(-8),
+      0);
 
   // Fill tensor D on host with zeros
   cutlass::reference::host::TensorFill(
@@ -575,7 +579,7 @@ Result profile_convolution(Options const &options) {
 
     std::stringstream ss;
 
-    ss << "25_ampere_fprop_mainloop_fusion_"
+    ss << "25_ampere_fprop_mainloop_fusion"
       << options.input_size.n() << "x" << options.input_size.h() << "x" << options.input_size.w() << "x" << options.input_size.c() 
       << "_"
       << options.filter_size.n() << "x" << options.filter_size.h() << "x" << options.filter_size.w() << "x" << options.filter_size.c() 
@@ -677,8 +681,8 @@ int main(int argc, char const **args) {
   cudaDeviceProp props;
   CUDA_CHECK(cudaGetDeviceProperties(&props, 0));
 
-  if (!(props.major == 8 && props.minor == 0)) {
-    std::cerr << "This test must run on SM80 A100.\n";
+  if (!(props.major >= 8)) {
+    std::cerr << "This test must run on SM80 or above.\n";
     notSupported = true;
   }
 

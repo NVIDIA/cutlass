@@ -321,7 +321,7 @@ public:
     add_byte_offset_(pointer_offset * sizeof_bits<Element>::value / 8);
   }
 
-  CUTLASS_HOST_DEVICE
+  CUTLASS_DEVICE
   void advance() {
 
     int next_idx = 0;
@@ -336,8 +336,9 @@ public:
 
       // Move filter_r by stride_h
       filter_r_ += problem_size_.stride_h;
+#if 0
       if (filter_r_ < problem_size_.R) {
-        
+
         next_idx = 1;
 
         // Restore bytes in q coordinate (Mma in filter s dimenstion)
@@ -347,12 +348,25 @@ public:
 
         // Restore filter_r
         filter_r_ = start_r_;
-        
+
         next_idx = 2;
-        
+
         // Restore bytes in p and q coordinate (Mma in filter s and r dimenstion)
         reset_bytes = reset_bytes_r_;
       }
+#else
+      asm volatile(
+          "{\n\t"
+          " .reg .pred %%p;\n\t"
+          " setp.lt.s32 %%p, %3, %4;\n\t"
+          " selp.s32 %0, %3, %5, %%p;\n\t"
+          " selp.s32 %1, 1, 2, %%p;\n\t"
+          " selp.s64 %2, %6, %7, %%p;\n\t"
+          "}\n"
+          : "=r"(filter_r_), "=r"(next_idx), "=l"(reset_bytes)
+          : "r"(filter_r_), "r"(problem_size_.R), "r"(start_r_),
+            "l"(reset_bytes_s_), "l"(reset_bytes_r_));
+#endif
     }
 
     // offset pointers by offset_bytes

@@ -694,10 +694,6 @@ struct TensorFillSymmetricRandomUniformFunc {
   }
 };
 
-
-//
-// We expect to release this with CUTLASS 2.4. -akerr
-
 /// Computes a random Uniform distribution and pads diagonal with zeros
 template <
   typename Element,               ///< Element type

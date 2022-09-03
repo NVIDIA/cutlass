@@ -110,6 +110,7 @@ cutlass_test_unit_add_executable(
 
   # F16
   conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_simt_f16_sm60.cu
+  depthwise_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_simt_f16_sm60.cu
 )
 
 if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 80)
@@ -177,12 +178,16 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 80)
     # Conv2d (small channel count specializations)
     conv2d_fprop_fixed_channels_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu
     conv2d_fprop_few_channels_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu
-  
+
     # Conv2d (Strided Dgrad)
     conv2d_strided_dgrad_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu
+    conv2d_strided_dgrad_implicit_gemm_tf32nhwc_tf32nhwc_f32nhwc_tensor_op_f32_sm80.cu
 
     # Conv3d
     conv3d_wgrad_implicit_gemm_f16ndhwc_f16ndhwc_f32ndhwc_tensor_op_f32_sm80.cu
+
+    # Group Conv2d
+    group_conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu
   )
 
   # Conv - TF32 input, F32 output, F32 accumulation

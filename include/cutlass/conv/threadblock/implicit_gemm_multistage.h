@@ -116,10 +116,6 @@ public:
   /// Internal structure exposed for introspection.
   struct Detail {
 
-    static_assert(Base::kWarpGemmIterations > 1,
-                  "The pipelined structure requires at least two warp-level "
-                  "GEMM operations.");
-
     /// Number of cp.async instructions to load one stage of operand A
     static int const AsyncCopyIterationsPerStageA =
         IteratorA::ThreadMap::Iterations::kCount;
@@ -272,6 +268,8 @@ public:
       IteratorB iterator_B,
       ///< initial value of accumulator
       FragmentC const &src_accum,
+      ///< number of iterations per channel
+      int gemm_k_iterations_per_channel = 0,
       ///< Imaginary strides used for planar-complex only - ignored here
       int64_t imag_stride_A = 0,
       int64_t imag_stride_B = 0) {
@@ -297,7 +295,7 @@ public:
 
         CUTLASS_PRAGMA_UNROLL
         for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
-        int const kSrcBytes =
+          int const kSrcBytes =
             sizeof_bits<typename IteratorA::Element>::value *
             IteratorA::ThreadMap::kElementsPerAccess /
             IteratorA::kAccessesPerVector / 8;
@@ -322,7 +320,7 @@ public:
               this->smem_iterator_B_.get());
 
         CUTLASS_PRAGMA_UNROLL
-        for (int v = 0; v < IteratorA::kAccessesPerVector; ++v) {
+        for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
           int const kSrcBytes =
               sizeof_bits<typename IteratorB::Element>::value *
               IteratorB::ThreadMap::kElementsPerAccess /

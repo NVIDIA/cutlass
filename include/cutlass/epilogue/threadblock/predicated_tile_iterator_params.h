@@ -35,6 +35,8 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/layout/pitch_linear.h"
+#include "cutlass/layout/matrix.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

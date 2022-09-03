@@ -109,7 +109,7 @@ std::vector<cutlass::conv::Conv2dProblemSize> Conv2dFewChannelProblemSizes(int c
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-#if 0
+
 TEST(SM80_Device_Conv2d_Fprop_Few_Channels_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_channels_8,
   128x128_64x3_64x64x64) {
 
@@ -201,7 +201,7 @@ TEST(SM80_Device_Conv2d_Fprop_Few_Channels_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_
   EXPECT_TRUE(test::conv::device::TestSpecificConv2d<Conv2dFprop>(
     Conv2dFewChannelProblemSizes(kChannelCount)));
 }
-#endif
+
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM80_Device_Conv2d_Fprop_Few_Channels_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_channels_2,

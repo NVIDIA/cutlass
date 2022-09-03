@@ -248,7 +248,7 @@ public:
     pointer_ += pointer_offset * sizeof_bits<Element>::value / 8;
   }
 
-  CUTLASS_HOST_DEVICE
+  CUTLASS_DEVICE
   void advance() {
 
     int next_idx = 0;
@@ -263,18 +263,33 @@ public:
 
       // Move filter_r by stride_h
       filter_r_ += problem_size_.stride_h;
-
+#if 0
       bool check = (filter_r_ < problem_size_.R);
 
       filter_r_ = check ? filter_r_ : start_r_;
       next_idx = check ? 1 : 2;
       reset_bytes += (check ? reset_bytes_s_ : reset_bytes_r_);
+#else
+    asm volatile(
+        "{\n\t"
+        " .reg .pred %%p;\n\t"
+        " .reg .s64 t1;\n\t"
+        " setp.lt.s32 %%p, %3, %4;\n\t"
+        " selp.s32 %0, %3, %5, %%p;\n\t"
+        " selp.s32 %1, 1, 2, %%p;\n\t"
+        " selp.s64 t1, %6, %7, %%p;\n\t"
+        " add.s64 %2, %8, t1;\n\t"
+        "}\n"
+        : "=r"(filter_r_), "=r"(next_idx), "=l"(reset_bytes)
+        : "r"(filter_r_), "r"(problem_size_.R), "r"(start_r_),
+          "l"(reset_bytes_s_), "l"(reset_bytes_r_), "l"(reset_bytes));
+#endif
     }
 
     // offset pointers by offset_bytes
     pointer_ += (params_.inc_next[next_idx] - reset_bytes);
 
-    if (next_idx == 2) {  
+    if (next_idx == 2) {
       filter_k_ += params_.filter_k_delta;
     }
 

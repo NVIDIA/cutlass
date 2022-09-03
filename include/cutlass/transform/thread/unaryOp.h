@@ -59,16 +59,16 @@ class UnaryOp
                           "Unary Operator not supported.");
 
             FragmentOut out;
-            if( platform::is_same<Transform, UnaryTransform::Identity>::value )
+            if (platform::is_same<Transform, UnaryTransform::Identity>::value )
             {
                 CUTLASS_PRAGMA_UNROLL
-                for(int i=0; i < FragmentIn::kElements; ++i){
+                for (int i=0; i < FragmentIn::kElements; ++i){
                    out[i] = static_cast<typename FragmentOut::Element>(in[i]);
                 }
             }
-            else if( platform::is_same<Transform, UnaryTransform::Conjugate>::value )
+            else if (platform::is_same<Transform, UnaryTransform::Conjugate>::value )
             {
-                for(int i=0; i < FragmentIn::kElements; ++i){
+                for (int i=0; i < FragmentIn::kElements; ++i){
                    out[i] = conj(static_cast<typename FragmentOut::Element>(in[i]));
                 }
             }
@@ -87,11 +87,11 @@ class UnaryOp<FragmentIn, FragmentIn, Transform>
                           platform::is_same<Transform, UnaryTransform::Conjugate>::value,
                           "Unary Operator not supported.");
 
-            if( platform::is_same<Transform, UnaryTransform::Identity>::value )
+            if (platform::is_same<Transform, UnaryTransform::Identity>::value )
             {
                 return in;
             }
-            else if( platform::is_same<Transform, UnaryTransform::Conjugate>::value )
+            else if (platform::is_same<Transform, UnaryTransform::Conjugate>::value )
             {
                 for(int i=0; i < FragmentIn::kElements; ++i){
                    in[i] = conj(in[i]);
@@ -99,9 +99,7 @@ class UnaryOp<FragmentIn, FragmentIn, Transform>
             }
             return in;
         }
-};
+      };
+    }
+  }
 }
-}
-}
-
-

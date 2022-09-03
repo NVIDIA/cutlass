@@ -52,6 +52,8 @@
 #include "cutlass/gemm/kernel/default_gemm.h"
 #include "cutlass/gemm/kernel/default_gemm_complex.h"
 
+#include "cutlass/layout/permute.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -109,6 +111,8 @@ template <
     bool GatherB = false,
     /// Scatter result D by using an index array
     bool ScatterD = false,
+    /// Permute result D
+    typename PermuteDLayout = layout::NoPermute,
     ///
     typename Enable = void
     >
@@ -163,7 +167,9 @@ template <
     /// Gather operand B by using an index array
     bool GatherB,
     /// Scatter result D by using an index array
-    bool ScatterD
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout
 >
 struct DefaultGemmUniversal<
   ElementA,
@@ -190,6 +196,7 @@ struct DefaultGemmUniversal<
   GatherA,
   GatherB,
   ScatterD,
+  PermuteDLayout,
   typename platform::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
@@ -216,7 +223,8 @@ struct DefaultGemmUniversal<
     SharedMemoryClear,
     GatherA,
     GatherB,
-    ScatterD
+    ScatterD,
+    PermuteDLayout
   >::GemmKernel;
 
     /// Define the kernel in terms of the default kernel
@@ -302,6 +310,7 @@ struct DefaultGemmUniversal<
   false,
   false,
   false,
+  layout::NoPermute,
   typename platform::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 

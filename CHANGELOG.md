@@ -1,5 +1,18 @@
 # NVIDIA CUTLASS Changelog
 
+## [2.10.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.10.0) (2022-08-23)
+* [Grouped convolution targeting implicit GEMM](test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu)
+* [Depthwise separable convolution](test/unit/conv/device/depthwise_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_simt_f16_sm60.cu)
+* Optimizations for CUTLASS's [Grouped GEMM](examples/24_gemm_grouped/gemm_grouped.cu) kernel
+* [Grouped GEMM for Multihead Attention](examples/50_multi_head_attention)
+* [GEMM + Layer norm fusion for Ampere](examples/37_gemm_layernorm_gemm_fusion/)
+* Updates and bugfixes from the community (thanks!)
+
+* **Deprecation announcement:** CUTLASS plans to deprecate the following:
+  * Maxwell and Pascal GPU architectures
+  * Ubuntu 16.04
+  * CUDA 10.2
+
 ## [2.9.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.9.0) (2022-04-21)
 
 * [First layer Convolution kernels](/test/unit/conv/device/conv2d_fprop_fixed_channels_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu) specialized for small channel counts and reduced alignment
@@ -36,6 +49,7 @@
 * [Parallel GEMM splitk](https://github.com/NVIDIA/cutlass/pull/277) support in the CUTLASS profiler.
 * Optimal performance using [**CUDA 11.7**](https://developer.nvidia.com/cuda-downloads)
 * Updates and bugfixes from the community (thanks!)
+
 
 ## [2.8.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.8.0) (2021-11-19)
 

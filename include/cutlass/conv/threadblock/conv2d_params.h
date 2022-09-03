@@ -554,20 +554,20 @@ struct Conv2dDgradOutputGradientIteratorOptimizedParams {
 
     // next S
     inc_next[0] = conv_sign * (
-      layout.stride()[0] * problem_size.dilation_w
+      (int64_t)layout.stride()[0] * problem_size.dilation_w
     ) * element_size_bits / 8;
 
     // next R
     inc_next[1] = conv_sign * (
-        layout.stride()[1] * problem_size.dilation_h
-        - (problem_size.S - 1) * layout.stride()[0] * problem_size.dilation_w
+        (int64_t)layout.stride()[1] * problem_size.dilation_h
+        - (problem_size.S - 1) * (int64_t)layout.stride()[0] * problem_size.dilation_w
       ) * element_size_bits / 8;
 
     // next K
     inc_next[2] = (
         threadblock_shape.column() * problem_size.split_k_slices
-        - conv_sign * (problem_size.R - 1) * layout.stride()[1] * problem_size.dilation_h
-        - conv_sign * (problem_size.S - 1) * layout.stride()[0] * problem_size.dilation_w
+        - conv_sign * (problem_size.R - 1) * (int64_t)layout.stride()[1] * problem_size.dilation_h
+        - conv_sign * (problem_size.S - 1) * (int64_t)layout.stride()[0] * problem_size.dilation_w
       ) * element_size_bits / 8;
 
     // logical offset added to internal channel counter - units are elements, not bytes
@@ -614,12 +614,12 @@ struct Conv2dStridedDgradOutputGradientIteratorOptimizedParams {
 
     // next S
     inc_next[0] = conv_sign * (
-      layout.stride()[0] * problem_size.dilation_w
+      (int64_t)layout.stride()[0] * problem_size.dilation_w
     ) * element_size_bits / 8;
 
     // next R
     inc_next[1] = conv_sign * (
-        layout.stride()[1] * problem_size.dilation_h
+        (int64_t)layout.stride()[1] * problem_size.dilation_h
       ) * element_size_bits / 8;
 
     // next K
@@ -670,18 +670,18 @@ struct Conv2dDgradFilterIteratorOptimizedParams {
     TRACE_CONV_INITIALIZERS("conv2d_dgrad", "filter", 
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
 
-    inc_next_strided = (layout.stride()[2] * threadmap_delta.strided() * element_size_bits) / 8;
+    inc_next_strided = ((int64_t)layout.stride()[2] * threadmap_delta.strided() * element_size_bits) / 8;
 
     inc_next_rs =
-      ( layout.stride()[0]
-        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+      ( (int64_t)layout.stride()[0]
+        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * (int64_t)layout.stride()[2]
       ) * element_size_bits / 8;
 
     inc_next_k =
       (
-        threadblock_shape.row() * problem_size.split_k_slices * layout.stride()[2]
-        - (problem_size.R * problem_size.S - 1) * layout.stride()[0]
-        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+        threadblock_shape.row() * problem_size.split_k_slices * (int64_t)layout.stride()[2]
+        - (problem_size.R * problem_size.S - 1) * (int64_t)layout.stride()[0]
+        - (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * (int64_t)layout.stride()[2]
       ) * element_size_bits / 8;
 
     filter_k_delta = threadblock_shape.row() * problem_size.split_k_slices;
@@ -730,26 +730,26 @@ struct Conv2dStridedDgradFilterIteratorOptimizedParams {
 
     // next S
     inc_next[0] =
-      ( layout.stride()[0] * problem_size.stride_w
+      ( (int64_t)layout.stride()[0] * problem_size.stride_w
         //- (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
       ) * element_size_bits / 8;
 
     // next R
     inc_next[1] =
-      ( layout.stride()[1] * problem_size.stride_h
+      ( (int64_t)layout.stride()[1] * problem_size.stride_h
         //- (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
       ) * element_size_bits / 8;
 
     // next K
     inc_next[2] =
       (
-        threadblock_shape.row() * problem_size.split_k_slices * layout.stride()[2]
+        threadblock_shape.row() * problem_size.split_k_slices * (int64_t)layout.stride()[2]
         //- (problem_size.R * problem_size.S - 1) * layout.stride()[0]
         //- (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
       ) * element_size_bits / 8;
 
     // offset in units of bytes to move the pointer in backward direction
-    reset_bytes = (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * layout.stride()[2]
+    reset_bytes = (threadmap_iterations.strided() - 1) * threadmap_delta.strided() * (int64_t)layout.stride()[2]
             * element_size_bits / 8;
 
     filter_k_delta = threadblock_shape.row() * problem_size.split_k_slices;
@@ -800,13 +800,13 @@ struct Conv2dWgradOutputGradientIteratorOptimizedParams {
       element_size_bits, threadblock_shape, thread_count, access_size, threadmap_iterations, threadmap_delta);
 
     // Incremental offsets in unites of bytes (number of elements) * sizeof_bits<Element>::value / 8
-    offset_next_strided = (threadmap_delta.strided() * layout.stride()[0])
+    offset_next_strided = (threadmap_delta.strided() * (int64_t)layout.stride()[0])
                         * element_size_bits / 8;
 
     offset_next_contiguous = (threadmap_delta.contiguous())
                             * element_size_bits / 8;
 
-    inc_next_npq = (threadblock_shape.column() * problem_size.split_k_slices * layout.stride()[0])
+    inc_next_npq = (threadblock_shape.column() * problem_size.split_k_slices * (int64_t)layout.stride()[0])
                       * element_size_bits / 8;
   }
 };
@@ -891,4 +891,3 @@ struct PredicatedScaleBiasVectorAccessIteratorParams {
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

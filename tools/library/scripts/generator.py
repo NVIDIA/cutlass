@@ -180,7 +180,7 @@ def CreateGemmGroupedOperator(manifest, layouts, tile_descriptions, data_type, \
             B = TensorDescription(element_b, layout[1], alignment, complex_transform[1])
             C = TensorDescription(element_c, layout[2], alignment_c)
 
-            new_operation = GemmOperation(GemmKind.Grouped, tile_description.minimum_compute_capability, \
+            new_operation = GroupedGemmOperation(GemmKind.Grouped, tile_description.minimum_compute_capability, \
               tile_description, A, B, C, element_epilogue, epilogue_functor, swizzling_functor)
 
             manifest.append(new_operation)
@@ -346,7 +346,7 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
   # iterator algorithm (analytic and optimized)
   #iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
   iterator_algorithms = [IteratorAlgorithm.Optimized]
-  
+
   # by default, only generate the largest tile size, largest alignment, and optimized iterator
   if manifest.kernel_filter == '':
     tile_descriptions = [tile_descriptions[0],]
@@ -527,7 +527,7 @@ def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignme
   alignment_c = min(8, alignment)
   
   # iterator algorithm (analytic and optimized)
-  #iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
+#  iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
   iterator_algorithms = [IteratorAlgorithm.Optimized]
 
   # by default, only generate the largest tile size and optimized iterators
@@ -1677,7 +1677,6 @@ def GenerateSM80_TensorOp_16816(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
 
   alignment_constraints = [8, 4, 2]
 
@@ -1694,12 +1693,14 @@ def GenerateSM80_TensorOp_16816(manifest, cuda_version):
       TileDescription([128,  64, 32],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 32],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 32], 10, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([256, 128, 64],  3, [4, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128, 256, 64],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([256,  64, 64],  4, [4, 1, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([ 64, 256, 64],  4, [1, 4, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([256, 128, 64],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 64],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 64],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 64],  4, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([256,  64, 64],  3, [4, 1, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([256,  64, 64],  3, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 64],  3, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -1773,23 +1774,22 @@ def GenerateSM80_SparseTensorOp_16832(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
 
   alignment_constraints = [8]
 
   for math_inst in math_instructions:
     tile_descriptions = [
       TileDescription([ 64, 128,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([256, 128,  64],  3, [4, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128, 256,  64],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([256, 128,  64],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256,  64],  3, [2, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128,  64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([256,  64,  64],  3, [4, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 256,  64],  4, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64,  64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64,  64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 128, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([256,  64, 128],  3, [4, 1, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128,  64, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([128, 128, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 128],  3, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
     ]
@@ -1917,7 +1917,7 @@ def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
+  smem_usage = 164
 
   alignment_constraints = [16,]
 
@@ -1931,10 +1931,10 @@ def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
       TileDescription([128,  64,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128,  64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64,  64], 10, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([256, 128, 128],  3, [4, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128, 256, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([256,  64, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([ 64, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([256, 128, 128],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 128],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -1986,22 +1986,21 @@ def GenerateSM80_SparseTensorOp_16864_TN(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
 
   alignment_constraints = [16,]
 
   tile_descriptions = [
     TileDescription([128,  64, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
-    TileDescription([256, 128, 128],  3, [4, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([128, 256, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([128, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
+    TileDescription([256, 128, 128],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 256, 128],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
     TileDescription([256,  64, 128],  3, [4, 1, 1], math_inst, min_cc, max_cc),
-    TileDescription([ 64, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([ 64, 128, 128],  6, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([ 64,  64, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([128, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([128,  64, 256],  4, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([ 64, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
+    TileDescription([ 64, 256, 128],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([ 64, 128, 128],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([ 64,  64, 128],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([128,  64, 256],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([ 64, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
     TileDescription([ 64,  64, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
   ]
 
@@ -2102,8 +2101,6 @@ def GenerateSM80_TensorOp_16864_TN(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
-
   alignment_constraints = [32,]
 
   for math_inst in math_instructions:
@@ -2116,11 +2113,11 @@ def GenerateSM80_TensorOp_16864_TN(manifest, cuda_version):
       TileDescription([128,  64, 128],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 128],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 128], 10, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([256, 128, 256],  3, [4, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128, 256, 256],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([256,  64, 256],  4, [4, 1, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([ 64, 256, 256],  4, [1, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128, 128, 256],  4, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([256, 128, 256],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 256],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 256],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 256],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 256],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -2173,21 +2170,19 @@ def GenerateSM80_SparseTensorOp_168128_TN(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
-
   alignment_constraints = [32,]
 
   tile_descriptions = [
     TileDescription([ 64,  64, 256],  4, [2, 2, 1], math_inst, min_cc, max_cc),
     TileDescription([256,  64, 256],  3, [4, 1, 1], math_inst, min_cc, max_cc),
-    TileDescription([256, 128, 256],  3, [4, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([128, 256, 256],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([128, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([ 64, 256, 256],  4, [1, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([128,  64, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([ 64, 128, 256],  6, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([128, 128, 512],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-    TileDescription([128,  64, 512],  4, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
+    TileDescription([256, 128, 256],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 256, 256],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([ 64, 256, 256],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([128,  64, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([ 64, 128, 256],  6, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 128, 512],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([128,  64, 512],  4, [2, 2, 1], math_inst, min_cc, max_cc),
     TileDescription([ 64, 128, 512],  3, [2, 2, 1], math_inst, min_cc, max_cc),
     TileDescription([ 64,  64, 512],  3, [2, 2, 1], math_inst, min_cc, max_cc),
   ]
@@ -2338,7 +2333,6 @@ def GenerateSM80_TensorOp_1688(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
 
   alignment_constraints = [4, 2, 1]
 
@@ -2354,11 +2348,11 @@ def GenerateSM80_TensorOp_1688(manifest, cuda_version):
       TileDescription([128,  64, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 16], 10, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([256, 128, 32],  3, [4, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128, 256, 32],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([256,  64, 32],  4, [4, 1, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([ 64, 256, 32],  4, [1, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128, 128, 32],  4, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([256, 128, 32],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 32],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 32],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 32],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 32],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([64,  128, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -2424,7 +2418,6 @@ def GenerateSM80_TensorOp_1688_fast_math(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
 
   alignment_constraints = [4, 2, 1]
 
@@ -2440,11 +2433,11 @@ def GenerateSM80_TensorOp_1688_fast_math(manifest, cuda_version):
       TileDescription([128,  64, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 16], 10, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([256, 128, 32],  3, [4, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128, 256, 32],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([256,  64, 32],  4, [4, 1, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([ 64, 256, 32],  4, [1, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128, 128, 32],  4, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([256, 128, 32],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 32],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 32],  4, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 32],  4, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 32],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -2483,7 +2476,6 @@ def GenerateSM80_TensorOp_1688_fast_fp32_math(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
 
   alignment_constraints = [4, 2, 1]
 
@@ -2497,8 +2489,8 @@ def GenerateSM80_TensorOp_1688_fast_fp32_math(manifest, cuda_version):
       TileDescription([ 64, 128, 16],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 16],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 32],  3, [4, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([256,  64, 32],  3, [4, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([ 64, 256, 32],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([256,  64, 32],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 32],  3, [2, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -2583,23 +2575,22 @@ def GenerateSM80_SparseTensorOp_16816_fast_math(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
 
   alignment_constraints = [4]
 
   for math_inst in math_instructions:
     tile_descriptions = [
       TileDescription([128,  64, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 128, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([256, 128, 32],  3, [4, 2, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128, 256, 32],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([128, 128, 32],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([256, 128, 32],  3, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 32],  3, [2, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([256,  64, 32],  3, [4, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 256, 32],  4, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 32],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 32],  6, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 128, 64],  3, [2, 4, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([256,  64, 64],  3, [4, 1, 1], math_inst, min_cc, max_cc_smem_limited),
-      TileDescription([128,  64, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc_smem_limited),
+      TileDescription([128, 128, 64],  3, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 64],  3, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
     ]
@@ -3047,7 +3038,6 @@ def GenerateSM80_TensorOp_884(manifest, cuda_version):
 
   min_cc = 80
   max_cc = 1024
-  max_cc_smem_limited = 80
 
   alignment_constraints = [1,]
 
