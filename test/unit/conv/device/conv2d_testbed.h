@@ -602,7 +602,7 @@ bool TestAllConv2d(
     conv_test_sizes,                               // run user specified sizes
     conv_problems.conv2d_default_sizes,            // run default and cudnn bug sizes
     //conv_problems.conv2d_resnet50_sizes,         // run resnet50 sizes
-#if CUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED 
+#if CUTLASS_CONV_UNIT_TEST_RIGOROUS_SIZE_ENABLED
     conv_problems.conv2d_rigorous_sizes,           // run large and rigorous sizes if enabled
 #endif
   };
@@ -716,7 +716,7 @@ bool TestAllConv2d(
 
     return true;
   }
-  
+
   // CUTLASS DGRAD's *strided* specialization does not support split-k mode 
   if ((ImplicitGemm::kConvolutionalOperator == 
           cutlass::conv::Operator::kDgrad) && 

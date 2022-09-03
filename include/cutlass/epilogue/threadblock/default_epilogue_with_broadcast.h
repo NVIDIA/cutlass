@@ -49,6 +49,8 @@
 #include "cutlass/epilogue/threadblock/epilogue.h"
 #include "cutlass/epilogue/threadblock/epilogue_with_broadcast.h"
 
+#include "cutlass/layout/permute.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -67,7 +69,8 @@ template <
   typename ElementVector,
   typename OutputOp,
   int ElementsPerAccess,
-  bool ScatterD = false
+  bool ScatterD = false,
+  typename PermuteDLayout = layout::NoPermute
 >
 struct DefaultEpilogueWithBroadcastTensorOp {
 
@@ -86,7 +89,8 @@ struct DefaultEpilogueWithBroadcastTensorOp {
   using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
     typename Base::OutputTileThreadMap,
     ElementOutput,
-    ScatterD
+    ScatterD,
+    PermuteDLayout
   >;
 
   //

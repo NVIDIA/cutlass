@@ -1002,7 +1002,8 @@ struct DefaultMmaCore<
 
   static_assert(
     platform::is_same<Operator, arch::OpMultiplyAddComplex>::value ||
-    platform::is_same<Operator, arch::OpMultiplyAddGaussianComplex>::value,
+    platform::is_same<Operator, arch::OpMultiplyAddGaussianComplex>::value ||
+    platform::is_same<Operator, arch::OpMultiplyAddComplexFastF32>::value,
     "The operator tag must indicate complex multiplication.");
 
   //
@@ -1075,6 +1076,8 @@ template <
     typename Shape_,
     /// Shape of warp-level matrix multiply operator (concept: GemmShape)
     typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
     /// Layout for A operand
     typename LayoutA_,
     /// Layout for B operand
@@ -1095,7 +1098,7 @@ template <
     ComplexTransform TransformB_
     >
 struct DefaultMmaCore<
-  Shape_, WarpShape_, GemmShape<8, 8, 4>, 
+  Shape_, WarpShape_, InstructionShape_, 
   complex<double>, LayoutA_, 
   complex<double>, LayoutB_, 
   complex<double>, LayoutC_, 
@@ -1109,7 +1112,7 @@ struct DefaultMmaCore<
 
   using Shape = Shape_;
   using WarpShape = WarpShape_;
-  using InstructionShape = GemmShape<8, 8, 4>;
+  using InstructionShape = InstructionShape_;
   using ElementA = complex<double>;
   using LayoutA = LayoutA_;
   using ElementB = complex<double>;
@@ -1410,7 +1413,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, ElementA_,
       kWarpSize / kWarpThreadArrangementContiguousA;
 
   static int const kWarpThreadArrangementContiguousB =
-      Shape::kK / (kAccessSizeInBits / sizeof_bits<ElementA>::value);
+      Shape::kK / (kAccessSizeInBits / sizeof_bits<ElementB>::value);
 
   static int const kWarpThreadArrangementStridedB =
       kWarpSize / kWarpThreadArrangementContiguousB;

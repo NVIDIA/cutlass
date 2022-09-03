@@ -146,6 +146,21 @@ public:
 
   static bool const kReduceKForA = ReduceKForA_;
 
+  static_assert(platform::is_same<ElementA, cutlass::half_t>::value ||
+                platform::is_same<ElementA, cutlass::bfloat16_t>::value,
+                "ElementA needs to be fp16 or bf16.");
+
+  static_assert(platform::is_same<ElementB, cutlass::half_t>::value ||
+                platform::is_same<ElementB, cutlass::bfloat16_t>::value,
+                "ElementB needs to be fp16 or bf16.");
+
+  static_assert(platform::is_same<InstructionShape,
+                                  cutlass::gemm::GemmShape<16, 8, 16>>::value,
+                "Only supports 16x8x16 tensor core instruction.");
+
+  static_assert(!AccumulatorsInRowMajor,
+                "Only calls tensor core instructions in column major.");
+
 public:
 
   /// Iterates over the A operand in memory
@@ -226,30 +241,7 @@ public:
     MmaOperandC *ptr_D = reinterpret_cast<MmaOperandC *>(&D);
 
     #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 800)
-      // Serpentine visitation order maximizing reuse of Rb
-      CUTLASS_PRAGMA_UNROLL
-      for (int n = 0; n < MmaIterations::kColumn; ++n) {
-
-        CUTLASS_PRAGMA_UNROLL
-        for (int m = 0; m < MmaIterations::kRow; ++m) {
-
-          int m_serpentine = ((n % 2) ? (MmaIterations::kRow - 1 - m) : m);
-
-          if (AccumulatorsInRowMajor) {  // matrix B is reordered
-            mma(
-              ptr_D[n + m_serpentine * MmaIterations::kColumn],
-              ptr_A[m_serpentine],
-              ptr_B[n],
-              ptr_D[n + m_serpentine * MmaIterations::kColumn]);
-          } else {
-            mma(
-              ptr_D[m_serpentine + n * MmaIterations::kRow],
-              ptr_A[m_serpentine],
-              ptr_B[n],
-              ptr_D[m_serpentine + n * MmaIterations::kRow]);
-          }
-        }
-      }
+      assert(0);
     #elif defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
       // Serpentine visitation order maximizing reuse of Ra
       CUTLASS_PRAGMA_UNROLL
@@ -260,25 +252,21 @@ public:
 
           int n_serpentine = ((m % 2) ? (MmaIterations::kColumn - 1 - n) : n);
 
-          if (AccumulatorsInRowMajor) {  // matrix B is reordered
-            mma(
-              ptr_D[n_serpentine + m * MmaIterations::kColumn],
+          mma(ptr_D[m + n_serpentine * MmaIterations::kRow],
               ptr_A[m],
               ptr_B[n_serpentine],
-              ptr_D[n_serpentine + m * MmaIterations::kColumn]);
-          } else {
-            mma(ptr_D[m + n_serpentine * MmaIterations::kRow],
-                ptr_A[m],
-                ptr_B[n_serpentine],
-                ptr_D[m + n_serpentine * MmaIterations::kRow]);
+              ptr_D[m + n_serpentine * MmaIterations::kRow]);
 
-            if (!kReduceKForA && m == 0) {
-//              gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4]);
-//              gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4 + 1]);
-//              gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4 + 2]);
-//              gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4 + 3]);
+          if (!kReduceKForA && m == 0) {
+            #if 0 
+            gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4]);
+            gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4 + 1]);
+            gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4 + 2]);
+            gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4 + 3]);
+            #else
+            uint32_t const *tmp = reinterpret_cast<uint32_t const *>(&B);
 
-              uint32_t const *tmp = reinterpret_cast<uint32_t const *>(&B);
+            if (platform::is_same<ElementB, cutlass::half_t>::value) {
               asm volatile(
                 "{\n\t"
                 " .reg .f16 low, high;\n\t"
@@ -296,48 +284,99 @@ public:
                 "}\n\t"
                 : "+f"(gemm_k_reduction[n_serpentine])
                 : "r"(tmp[n_serpentine * 2]), "r"(tmp[n_serpentine * 2 + 1]));
+            } else if (platform::is_same<ElementB, cutlass::bfloat16_t>::value) {
+              asm volatile(
+                "{\n\t"
+                " .reg .f32 tmp;\n\t"
+                " shl.b32 tmp, %1, 16;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " and.b32 tmp, %1, 0xffff0000;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " shl.b32 tmp, %2, 16;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " and.b32 tmp, %2, 0xffff0000;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                "}\n\t"
+                : "+f"(gemm_k_reduction[n_serpentine])
+              : "r"(tmp[n_serpentine * 2]), "r"(tmp[n_serpentine * 2 + 1]));
+            } else {
+                assert(0);
             }
+            #endif
           }
 
           if (kReduceKForA && (n == 0)) {
-//            gemm_k_reduction[m * 2] += float(A[m * 8]);
-//            gemm_k_reduction[m * 2] += float(A[m * 8 + 1]);
-//            gemm_k_reduction[m * 2] += float(A[m * 8 + 4]);
-//            gemm_k_reduction[m * 2] += float(A[m * 8 + 5]);
-//  
-//            gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 2]);
-//            gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 3]);
-//            gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 6]);
-//            gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 7]);
-
+            #if 0 
+            gemm_k_reduction[m * 2] += float(A[m * 8]);
+            gemm_k_reduction[m * 2] += float(A[m * 8 + 1]);
+            gemm_k_reduction[m * 2] += float(A[m * 8 + 4]);
+            gemm_k_reduction[m * 2] += float(A[m * 8 + 5]);
+  
+            gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 2]);
+            gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 3]);
+            gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 6]);
+            gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 7]);
+            #else
             uint32_t const *tmp = reinterpret_cast<uint32_t const *>(&A);
-            asm volatile(
-              "{\n\t"
-              " .reg .f16 low, high;\n\t"
-              " .reg .f32 tmp;\n\t"
-              " mov.b32 {low, high}, %2;\n\t"
-              " cvt.f32.f16 tmp, low;\n\t"
-              " add.f32 %0, tmp, %0;\n\t"
-              " cvt.f32.f16 tmp, high;\n\t"
-              " add.f32 %0, tmp, %0;\n\t"
-              " mov.b32 {low, high}, %3;\n\t"
-              " cvt.f32.f16 tmp, low;\n\t"
-              " add.f32 %1, tmp, %1;\n\t"
-              " cvt.f32.f16 tmp, high;\n\t"
-              " add.f32 %1, tmp, %1;\n\t"
-              " mov.b32 {low, high}, %4;\n\t"
-              " cvt.f32.f16 tmp, low;\n\t"
-              " add.f32 %0, tmp, %0;\n\t"
-              " cvt.f32.f16 tmp, high;\n\t"
-              " add.f32 %0, tmp, %0;\n\t"
-              " mov.b32 {low, high}, %5;\n\t"
-              " cvt.f32.f16 tmp, low;\n\t"
-              " add.f32 %1, tmp, %1;\n\t"
-              " cvt.f32.f16 tmp, high;\n\t"
-              " add.f32 %1, tmp, %1;\n\t"
-              "}\n\t"
-              : "+f"(gemm_k_reduction[m * 2]), "+f"(gemm_k_reduction[m * 2 + 1])
-              : "r"(tmp[m * 4]), "r"(tmp[m * 4 + 1]),"r"(tmp[m * 4 + 2]), "r"(tmp[m * 4 + 3]));
+
+            if (platform::is_same<ElementA, cutlass::half_t>::value) {
+              asm volatile(
+                "{\n\t"
+                " .reg .f16 low, high;\n\t"
+                " .reg .f32 tmp;\n\t"
+                " mov.b32 {low, high}, %2;\n\t"
+                " cvt.f32.f16 tmp, low;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " cvt.f32.f16 tmp, high;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " mov.b32 {low, high}, %3;\n\t"
+                " cvt.f32.f16 tmp, low;\n\t"
+                " add.f32 %1, tmp, %1;\n\t"
+                " cvt.f32.f16 tmp, high;\n\t"
+                " add.f32 %1, tmp, %1;\n\t"
+                " mov.b32 {low, high}, %4;\n\t"
+                " cvt.f32.f16 tmp, low;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " cvt.f32.f16 tmp, high;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " mov.b32 {low, high}, %5;\n\t"
+                " cvt.f32.f16 tmp, low;\n\t"
+                " add.f32 %1, tmp, %1;\n\t"
+                " cvt.f32.f16 tmp, high;\n\t"
+                " add.f32 %1, tmp, %1;\n\t"
+                "}\n\t"
+                : "+f"(gemm_k_reduction[m * 2]), "+f"(gemm_k_reduction[m * 2 + 1])
+                : "r"(tmp[m * 4]), "r"(tmp[m * 4 + 1]),"r"(tmp[m * 4 + 2]), "r"(tmp[m * 4 + 3]));
+
+            } else if (platform::is_same<ElementA, cutlass::bfloat16_t>::value) {
+
+              asm volatile(
+                "{\n\t"
+                " .reg .f32 tmp;\n\t"
+                " shl.b32 tmp, %2, 16;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " and.b32 tmp, %2, 0xffff0000;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " shl.b32 tmp, %3, 16;\n\t"
+                " add.f32 %1, tmp, %1;\n\t"
+                " and.b32 tmp, %3, 0xffff0000;\n\t"
+                " add.f32 %1, tmp, %1;\n\t"
+                " shl.b32 tmp, %4, 16;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " and.b32 tmp, %4, 0xffff0000;\n\t"
+                " add.f32 %0, tmp, %0;\n\t"
+                " shl.b32 tmp, %5, 16;\n\t"
+                " add.f32 %1, tmp, %1;\n\t"
+                " and.b32 tmp, %5, 0xffff0000;\n\t"
+                " add.f32 %1, tmp, %1;\n\t"
+                "}\n\t"
+                : "+f"(gemm_k_reduction[m * 2]), "+f"(gemm_k_reduction[m * 2 + 1])
+                : "r"(tmp[m * 4]), "r"(tmp[m * 4 + 1]),"r"(tmp[m * 4 + 2]), "r"(tmp[m * 4 + 3]));
+
+            } else {
+              assert(0);
+            }
+            #endif
           }
         }
       }

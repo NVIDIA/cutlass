@@ -47,6 +47,8 @@
 #include "cutlass/gemm/device/default_gemm_configuration.h"
 #include "cutlass/gemm/device/gemm_universal_base.h"
 
+#include "cutlass/layout/permute.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -123,7 +125,9 @@ template <
     /// Gather operand B by using an index array
     bool GatherB = false,
     /// Scatter result D by using an index array
-    bool ScatterD = false
+    bool ScatterD = false,
+    /// Permute result D
+    typename PermuteDLayout = layout::NoPermute
 >
 class GemmUniversal : 
   public GemmUniversalBase<
@@ -151,7 +155,8 @@ class GemmUniversal :
       SharedMemoryClearOption::kNone,
       GatherA,
       GatherB,
-      ScatterD
+      ScatterD,
+      PermuteDLayout
     >::GemmKernel
   > {
 
@@ -198,7 +203,8 @@ class GemmUniversal :
       SharedMemoryClearOption::kNone,
       GatherA,
       GatherB,
-      ScatterD
+      ScatterD,
+      PermuteDLayout
     >::GemmKernel
   >;
 
@@ -255,14 +261,16 @@ template <
     /// Gather operand B by using an index array
     bool GatherB,
     /// Scatter result D by using an index array
-    bool ScatterD
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout
 >
 class GemmUniversal<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
            layout::ColumnMajor,  // partially specialized on LayoutC
            ElementAccumulator_, OperatorClass_, ArchTag_, ThreadblockShape_,
            WarpShape_, InstructionShape_, EpilogueOutputOp_,
            ThreadblockSwizzle_, Stages, AlignmentA, AlignmentB,
-           Operator_, TransformA, TransformB, GatherA, GatherB, ScatterD> {
+           Operator_, TransformA, TransformB, GatherA, GatherB, ScatterD, PermuteDLayout> {
  public:
 
   using ElementA = ElementA_;
@@ -313,7 +321,8 @@ class GemmUniversal<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
     kTransformA,
     GatherB,
     GatherA,
-    ScatterD
+    ScatterD,
+    PermuteDLayout
   >::Base;
 
   using GemmKernel = typename UnderlyingOperator::GemmKernel;

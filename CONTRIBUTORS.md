@@ -11,12 +11,19 @@ Andrew Kerr
 Haicheng Wu  
 Manish Gupta  
 Dustyn Blasig  
-Pradeep Ramani  
+Pradeep Ramani
+Cris Cecka
+Vijay Thakkar
+Aniket Shivam
+Honghao Lu
+Ethan Yan
+Zhaodong Chen
+Jack Kosaian
+Yujia Zhai
 Naila Farooqui  
 Piotr Majcher  
 Paul Springer  
 Jin Wang   
-Aniket Shivam  
 Chinmay Talegaonkar  
 Shang Zhang   
 Scott Yokim      
@@ -53,7 +60,6 @@ Nick Zhao
 ## ACKNOWLEDGEMENTS
 
 Girish Bharambe  
-Cris Cecka  
 Luke Durant  
 Olivier Giroux  
 Stephen Jones  

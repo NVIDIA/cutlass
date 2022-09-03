@@ -157,7 +157,7 @@ public:
     if (k_partition) {
       beta_ = ElementCompute(1);
     }
-    
+
     if (k_partition != k_partition_count - 1) {
       skip_elementwise_ = true;
     }

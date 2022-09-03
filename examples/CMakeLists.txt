@@ -116,6 +116,10 @@ foreach(EXAMPLE
   34_transposed_conv2d
   35_gemm_softmax
   36_gather_scatter_fusion
+  37_gemm_layernorm_gemm_fusion
+  38_syr2k_grouped
+  39_gemm_permute
+  41_multi_head_attention
   )
 
   add_subdirectory(${EXAMPLE})

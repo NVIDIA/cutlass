@@ -66,7 +66,8 @@ template <
   typename Element_,
   typename Layout_,
   typename ThreadMap_,
-  typename AccessType_ = cutlass::AlignedArray<Element_, ThreadMap_::kElementsPerAccess>
+  typename AccessType_ = cutlass::AlignedArray<Element_, ThreadMap_::kElementsPerAccess>,
+  conv::GroupMode GroupMode_ = conv::GroupMode::kNone
 >
 class Conv2dFpropFilterTileAccessIteratorAnalytic {
 public:
@@ -88,6 +89,7 @@ public:
   static StrideSupport const kStrideSupport = conv::StrideSupport::kStrided;
   static int const kConvDim = 2;
   using ConvProblemSize = typename conv::Conv2dProblemSize;
+  static conv::GroupMode const kGroupMode = GroupMode_;
  
   static int const kAccessesPerVector = ThreadMap::kElementsPerAccess / AccessType::kElements;
   
@@ -118,8 +120,14 @@ private:
   int filter_r_;
   int filter_s_;
   int filter_c_;
+  int filter_c_init_;
+  int crs_cnt_;
+  int crs_per_group_;  
+  int group_idx_offset_c_;
+  int channels_per_group_;
 
   int offset_k_[ThreadMap::Iterations::kStrided];
+  int group_idx_offset_k_[ThreadMap::Iterations::kStrided];
 
 public:
 
@@ -134,6 +142,8 @@ public:
     params_(params), 
     problem_size_(problem_size), 
     pointer_(reinterpret_cast<char const *>(ptr)), 
+    crs_cnt_(0),
+    group_idx_offset_c_(0),
     filter_r_(0),
     filter_s_(0),
     filter_c_(0) {
@@ -142,9 +152,23 @@ public:
 
     filter_c_ = threadblock_offset.row() + thread_coord.contiguous();
 
+    if (kGroupMode != conv::GroupMode::kNone) {
+      filter_c_init_ = filter_c_;
+      if (kGroupMode == conv::GroupMode::kDepthwise){
+        channels_per_group_ = 1;
+        crs_per_group_ = problem_size_.S * problem_size_.R;
+      } else {
+        channels_per_group_ = problem_size_.C / problem_size_.groups;
+        crs_per_group_ = problem_size_.S * problem_size_.R * ((channels_per_group_ + Shape::kRow - 1) / Shape::kRow);
+      }
+    }
+
     CUTLASS_PRAGMA_UNROLL
     for (int s = 0; s < ThreadMap::Iterations::kStrided; ++s) {
       offset_k_[s] = threadblock_offset.column() + thread_coord.strided() + s * ThreadMap::Delta::kStrided;
+      if (kGroupMode != conv::GroupMode::kNone && kGroupMode != conv::GroupMode::kDepthwise) {
+        group_idx_offset_k_[s] = (thread_coord.strided() + s * ThreadMap::Delta::kStrided) / (problem_size_.K / problem_size_.groups);
+      }
     }
 
     set_iteration_index(0);
@@ -168,6 +192,10 @@ public:
   CUTLASS_HOST_DEVICE
   void advance() {
     // moves to the next tile
+    if (kGroupMode != conv::GroupMode::kNone) {
+      ++crs_cnt_;
+    }
+
     ++filter_s_;
     if (filter_s_ < problem_size_.S) {
       return;
@@ -179,8 +207,21 @@ public:
       return;
     }
     filter_r_ = 0;
-    
-    filter_c_ += Shape::kRow * problem_size_.split_k_slices;
+
+    if (kGroupMode == conv::GroupMode::kNone) {
+      filter_c_ += Shape::kRow * problem_size_.split_k_slices;
+    } else {
+      if (crs_cnt_ == crs_per_group_) {
+        crs_cnt_ = 0;
+        filter_c_ = filter_c_init_;
+        if (kGroupMode != conv::GroupMode::kDepthwise) {
+          // moves to next group
+          ++group_idx_offset_c_;
+        }
+      } else {
+        filter_c_ += Shape::kRow * problem_size_.split_k_slices;
+      }
+    }
   }
 
   /// Returns the coordinate in the filter tensor W that is currently pointed to
@@ -200,8 +241,14 @@ public:
 
     TensorCoord coord = at();
 
-    return coord.n() < problem_size_.K &&
-      coord.c() < problem_size_.C;
+    if (kGroupMode == conv::GroupMode::kNone) {
+      return coord.n() < problem_size_.K && coord.c() < problem_size_.C;
+    } else if (kGroupMode == conv::GroupMode::kDepthwise) {
+      return coord.n() < problem_size_.K && coord.c() < 1; // channels_per_group_ is always equal to ONE.
+    } else {
+      return coord.n() < problem_size_.K && coord.c() < channels_per_group_ &&
+             group_idx_offset_c_ == group_idx_offset_k_[iteration_strided_];
+    }
   }
 
   /// Returns a pointer to the vector starting at the current coordinate

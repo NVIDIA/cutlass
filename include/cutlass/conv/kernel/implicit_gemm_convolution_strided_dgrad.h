@@ -117,6 +117,8 @@ struct ImplicitGemmConvolutionStridedDgrad {
   /// Conv dimension and problem size structure (Conv2d or Conv3d)
   using ConvProblemSize = ConvProblemSize_;
 
+  static conv::GroupMode const kGroupMode = conv::GroupMode::kNone;
+
   /// Wgrad C stride idx for implicit gemm algorithm 
   // Conv2d row-major matrix C (KxRSC) 
   // Conv3d row-major matrix C (KxTRSC)
@@ -488,4 +490,3 @@ struct ImplicitGemmConvolutionStridedDgrad {
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

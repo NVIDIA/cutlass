@@ -2,6 +2,8 @@
 
 [README](/README.md#documentation) > **Functionality**
 
+# Functionality
+
 - N - Column Major Matrix
 - T - Row Major matrix
 - {N,T} x {N,T} - All combinations, i.e. NN, NT, TN, TT
@@ -17,8 +19,6 @@
 - TensorOp - Use Tensor Core MMA
 - SpTensorOp - Use Sparse Tensor Core MMA
 - WmmaTensorOp - Use WMMA abstraction to use Tensor Core MMA
-
-# Functionality
 
 ## Device-level GEMM
 

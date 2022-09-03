@@ -70,7 +70,7 @@
 #include "cutlass/arch/cache_operation.h"
 #include "cutlass/gemm/gemm.h"
 
-#include "cutlass/conv/warp/conv2d_fprop_scale_bias_iterator.h"
+#include "cutlass/gemm/warp/scale_bias_tile_iterator.h"
 #include "cutlass/conv/warp/scale_bias_relu_transform.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -137,6 +137,13 @@ class MmaWgradFusionBase {
 
   /// Tensor reference to the B operand
   using TensorRefB = TensorRef<typename Operator::ElementB, typename Operator::LayoutB>;
+
+  static_assert(kWarpGemmIterations > 1,
+                "The pipelined structure requires at least two warp-level "
+                "GEMM operations.");
+
+  static_assert((kWarpGemmIterations % 2) == 0,
+                "Inner loop iteration must be an even number.");
 
   //
   // Nested structs
@@ -306,10 +313,6 @@ class ImplicitGemmWgradFusionMultistage
   /// Internal structure exposed for introspection.
   struct Detail {
 
-    static_assert(Base::kWarpGemmIterations > 1,
-                  "The pipelined structure requires at least two warp-level "
-                  "GEMM operations.");
-
     /// Number of cp.async instructions to load one stage of operand A
     static int const AsyncCopyIterationsPerStageA =
         IteratorA::ThreadMap::Iterations::kCount;
@@ -470,6 +473,8 @@ public:
       IteratorScaleBias iterator_B_scale_bias,
       ///< initial value of accumulator
       FragmentC const &src_accum,
+      ///< number of iterations per channel
+      int gemm_k_iterations_per_channel = 0, 
       ///< Imaginary strides used for planar-complex only - ignored here
       int64_t imag_stride_A = 0,
       int64_t imag_stride_B = 0) {

@@ -79,7 +79,6 @@ TEST(SM75_Device_GemmUniversal_f16n_f16t_f32t_tensor_op_f32, 64x64x32_32x32x32) 
   EXPECT_TRUE(test::gemm::device::TestAllGemmUniversal<Gemm>());
 }
 
-
 TEST(SM75_Device_GemmUniversal_f16n_f16t_f32t_tensor_op_f32, 64x64x32_32x32x32_updated_batch_count) {
 
   using ElementOutput = float;
@@ -114,4 +113,3 @@ TEST(SM75_Device_GemmUniversal_f16n_f16t_f32t_tensor_op_f32, 64x64x32_32x32x32_u
 #endif // #if defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
 
 ////////////////////////////////////////////////////////////////////////////////
-

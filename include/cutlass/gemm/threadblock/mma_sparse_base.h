@@ -120,6 +120,13 @@ class SparseMmaBase {
   static int const kWarpGemmIterations =
       (WarpGemm::kK / Operator::Policy::MmaShape::kK);
 
+  static_assert(kWarpGemmIterations > 1,
+                "The pipelined structure requires at least two warp-level "
+                "GEMM operations.");
+
+  static_assert((kWarpGemmIterations % 2) == 0,
+                "Inner loop iteration must be an even number.");
+
   /// Number of stages
   static int const kStages = Stages;
 

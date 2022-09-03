@@ -47,7 +47,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
-namespace conv {
+namespace transform {
 namespace threadblock {
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -151,7 +151,7 @@ class RegularScaleBiasVectorAccessIterator<Shape_, Element_, layout::PitchLinear
   /// Adds a tile offset in the unit of tile.
   CUTLASS_DEVICE
   void add_tile_offset(TensorCoord const &coord) {
-    // Multiply by 2 because we store sclae and bias belong to the same stage
+    // Multiply by 2 because we store scale and bias belong to the same stage
     // next to each other.
     add_pointer_offset(coord.contiguous() * Shape::kContiguous * 2);
   }
@@ -247,7 +247,7 @@ class RegularScaleBiasVectorAccessIterator<
 ////////////////////////////////////////////////////////////////////////////////
 
 }  // namespace threadblock
-}  // namespace conv 
+}  // namespace transform 
 }  // namespace cutlass
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -55,7 +55,7 @@
  *   (2) Re-implementations of STL functions and types:
  *       - C++ features that need the \p __device__ annotation.  These are
  *         placed into the \p platform namespace.
- *           - \p abs
+ *           - \p abs 
  *           - \p plus
  *           - \p less
  *           - \p greater
@@ -452,6 +452,7 @@ struct is_base_of
                                            typename remove_cv<DerivedT>::type>::value) ||
                             (is_same<typename remove_cv<BaseT>::type,
                                      typename remove_cv<DerivedT>::type>::value)> {};
+
 #else
 
 using std::is_same;
@@ -842,7 +843,7 @@ struct numeric_limits<uint32_t> {
   CUTLASS_HOST_DEVICE
   static constexpr uint32_t lowest() noexcept { return 0;}
   CUTLASS_HOST_DEVICE
-  static constexpr uint32_t max() noexcept { return 4294967295;}
+  static constexpr uint32_t max() noexcept { return 4294967295U;}
   static constexpr bool is_integer = true;
 };
 
@@ -851,7 +852,7 @@ struct numeric_limits<uint16_t> {
   CUTLASS_HOST_DEVICE
   static constexpr uint16_t lowest() noexcept { return 0;}
   CUTLASS_HOST_DEVICE
-  static constexpr uint16_t max() noexcept { return 65535;}
+  static constexpr uint16_t max() noexcept { return 65535U;}
   static constexpr bool is_integer = true;
 };
 
@@ -860,7 +861,7 @@ struct numeric_limits<uint8_t> {
   CUTLASS_HOST_DEVICE
   static constexpr uint8_t lowest() noexcept { return 0;}
   CUTLASS_HOST_DEVICE
-  static constexpr uint8_t max() noexcept { return 255;}
+  static constexpr uint8_t max() noexcept { return 255U;}
   static constexpr bool is_integer = true;
 };
 

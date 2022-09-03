@@ -266,8 +266,8 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "26_ampere_fused_wgrad_batch_normalization example\n\n"
-      << "  This example fuses scale+bias+relu from batch norm into Ampere's\n"
+    out << "26_ampere_wgrad_mainloop_fusion example\n\n"
+      << "  This example fuses scale+bias+relu of the activation into Ampere's\n"
       << "  Tensor Core operators on F16 data types to compute\n"
       << "  backward convolution on tensors of layout NHWC.\n\n"
       << "Options:\n\n"
@@ -289,8 +289,8 @@ struct Options {
       << "  --tag=<string>       String to replicate across the first column in the results table\n";
 
     out << "\n\nExamples:\n\n"
-      << "$ ./examples/26_ampere_fused_fprop_batch_normalization/26_ampere_fused_wgrad_batch_normalization  --n=32 --h=224 --w=224 --c=128 --k=256 --r=1 --s=1\n\n"
-      << "$ ./examples/26_ampere_fused_fprop_batch_normalization/26_ampere_fused_wgrad_batch_normalization  --n=1 --h=224 --w=224 --c=32 --k=32 --r=3 --s=3 --ref-check\n\n";
+      << "$ ./examples/26_ampere_wgrad_mainloop_fusion/26_ampere_wgrad_mainloop_fusion  --n=32 --h=224 --w=224 --c=128 --k=256 --r=1 --s=1\n\n"
+      << "$ ./examples/26_ampere_wgrad_mainloop_fusion/26_ampere_wgrad_mainloop_fusion  --n=1 --h=224 --w=224 --c=32 --k=32 --r=3 --s=3 --ref-check\n\n";
 
     return out;
   }
@@ -427,9 +427,13 @@ Result profile_convolution(Options const &options) {
       ElementInputA(-4),
       0);
 
-  // Fill tensor C on host with zeros
-  cutlass::reference::host::TensorFill(
-      tensor_c.host_view());
+  // Fill tensor C on host with uniform-distribution random data 
+  cutlass::reference::host::TensorFillRandomUniform(
+      tensor_c.host_view(),
+      1,
+      ElementOutput(7),
+      ElementOutput(-8),
+      0);
 
   // Fill tensor D on host with zeros
   cutlass::reference::host::TensorFill(

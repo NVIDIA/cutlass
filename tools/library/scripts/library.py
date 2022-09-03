@@ -456,7 +456,7 @@ OperationKindNames = {
 # 
 class Target(enum.Enum):
   library = enum_auto()
-
+#
 ArchitectureNames = {
   50: 'maxwell',
   60: 'pascal',
@@ -464,6 +464,16 @@ ArchitectureNames = {
   70: 'volta',
   75: 'turing',
   80: 'ampere',
+}
+
+#
+SharedMemPerCC = {
+  70: 96,  #  96KB of SMEM
+  72: 96,  #  96KB of SMEM
+  75: 64,  #  64KB of SMEM
+  80: 160, # 164KB of SMEM - 4KB reserved for the driver
+  86: 100, # 100KB of SMEM
+  87: 160, # 164KB of SMEM - 4KB reserved for the driver
 }
 
 ###################################################################################################
@@ -564,6 +574,23 @@ SwizzlingFunctorTag = {
   SwizzlingFunctor.StridedDgradHorizontal: 'cutlass::conv::threadblock::StridedDgradHorizontalThreadblockSwizzle',
 }
 
+#
+class GroupScheduleMode(enum.Enum):
+  Device = enum_auto(),
+  Host = enum_auto()
+
+#
+GroupScheduleModeTag = {
+  GroupScheduleMode.Device: 'cutlass::gemm::kernel::GroupScheduleMode::kDeviceOnly',
+  GroupScheduleMode.Host: 'cutlass::gemm::kernel::GroupScheduleMode::kHostPrecompute'
+}
+
+#
+ShortGroupScheduleModeNames = {
+  GroupScheduleMode.Device: 'Device',
+  GroupScheduleMode.Host: 'Host'
+}
+
 ###################################################################################################
 
 #
@@ -636,7 +663,6 @@ class MathInstruction:
     self.opcode_class = opcode_class
     self.math_operation = math_operation
 
-
 #
 class TileDescription:
 
@@ -680,4 +706,30 @@ class TriangularTensorDescription:
     self.alignment = alignment
     self.complex_transform = complex_transform
 
+###################################################################################################
+
+#
+def CalculateSmemUsage(operation):
+  cta_shape = operation.tile_description.threadblock_shape
+  stages = operation.tile_description.stages
+
+  if operation.operation_kind == OperationKind.Gemm and operation.gemm_kind == GemmKind.Sparse:
+    # Elements represented by 8 bits of metadata (based on 4:8, 2:4 or 1:2 sparsity)
+    if DataTypeSize[operation.A.element] == 32:
+      elements_per_8b_md = 2
+    elif DataTypeSize[operation.A.element] == 4:
+      elements_per_8b_md = 8
+    else:
+      elements_per_8b_md = 4
+
+    smem_per_stage = DataTypeSize[operation.A.element] * cta_shape[0] * (cta_shape[2] // 2) // 8 + \
+                     DataTypeSize[operation.B.element] * cta_shape[1] * cta_shape[2] // 8 + \
+                     cta_shape[0] * (cta_shape[2] // 2) // elements_per_8b_md
+  else:
+    # Few BLAS3 operations only have A tensor
+    smem_per_stage = DataTypeSize[operation.A.element] * cta_shape[0] * cta_shape[2] // 8 + \
+                     DataTypeSize[operation.A.element] * cta_shape[1] * cta_shape[2] // 8
+
+  smem_usage = smem_per_stage * stages
+  return (smem_usage >> 10)
 ###################################################################################################

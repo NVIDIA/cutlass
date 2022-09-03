@@ -50,6 +50,8 @@
 #include "cutlass/epilogue/threadblock/epilogue.h"
 #include "cutlass/epilogue/threadblock/epilogue_with_reduction.h"
 
+#include "cutlass/layout/permute.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -67,7 +69,8 @@ template <
   typename OutputOp,
   typename ReductionOp,
   int ElementsPerAccess,
-  bool ScatterD = false
+  bool ScatterD = false,
+  typename PermuteDLayout = layout::NoPermute
 >
 struct DefaultEpilogueWithReductionTensorOp {
 
@@ -89,7 +92,8 @@ struct DefaultEpilogueWithReductionTensorOp {
   using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
     typename Base::OutputTileThreadMap,
     ElementOutput,
-    ScatterD
+    ScatterD,
+    PermuteDLayout
   >;
 
   /// Define the epilogue
@@ -120,7 +124,8 @@ template <
   typename OutputOp,
   typename ReductionOp,
   int ElementsPerAccess,
-  bool ScatterD = false
+  bool ScatterD = false,
+  typename PermuteDLayout = layout::NoPermute
 >
 struct DefaultEpilogueWithReductionVoltaTensorOp {
 
@@ -142,7 +147,8 @@ struct DefaultEpilogueWithReductionVoltaTensorOp {
   using OutputTileIterator = cutlass::epilogue::threadblock::PredicatedTileIterator<
     typename Base::OutputTileThreadMap,
     ElementOutput,
-    ScatterD
+    ScatterD,
+    PermuteDLayout
   >;
 
   /// Define the epilogue

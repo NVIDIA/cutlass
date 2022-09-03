@@ -81,6 +81,8 @@ template <
     typename Shape_,
     /// Shape of warp-level matrix multiply operator (concept: GemmShape)
     typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
     /// Number of stages
@@ -96,7 +98,7 @@ template <
     /// Cache operation of operand B
     cutlass::arch::CacheOperation::Kind CacheOpB>
 struct DefaultMultistageMmaComplexCore<
-    Shape_, WarpShape_, GemmShape<8, 8, 4>, 
+    Shape_, WarpShape_, InstructionShape_, 
     complex<double>, layout::ColumnMajor,
     complex<double>, layout::RowMajor,
     complex<double>, LayoutC_, 
@@ -108,7 +110,7 @@ struct DefaultMultistageMmaComplexCore<
 
   using Shape = Shape_;
   using WarpShape = WarpShape_;
-  using InstructionShape = GemmShape<8, 8, 4>;
+  using InstructionShape = InstructionShape_;
   using ElementA = complex<double>;
   using LayoutA = layout::ColumnMajor;
   using ElementB = complex<double>;
@@ -210,6 +212,8 @@ template <
     typename Shape_,
     /// Shape of warp-level matrix multiply operator (concept: GemmShape)
     typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
     /// Number of stages
@@ -225,7 +229,7 @@ template <
     /// Cache operation of operand B
     cutlass::arch::CacheOperation::Kind CacheOpB>
 struct DefaultMultistageMmaComplexCore<
-    Shape_, WarpShape_, GemmShape<8, 8, 4>, 
+    Shape_, WarpShape_, InstructionShape_, 
     complex<double>, layout::ColumnMajor,
     complex<double>, layout::ColumnMajor,
     complex<double>, LayoutC_, 
@@ -237,7 +241,7 @@ struct DefaultMultistageMmaComplexCore<
 
   using Shape = Shape_;
   using WarpShape = WarpShape_;
-  using InstructionShape = GemmShape<8, 8, 4>;
+  using InstructionShape = InstructionShape_;
   using ElementA = complex<double>;
   using LayoutA = layout::ColumnMajor;
   using ElementB = complex<double>;
@@ -339,6 +343,8 @@ template <
     typename Shape_,
     /// Shape of warp-level matrix multiply operator (concept: GemmShape)
     typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
     /// Number of stages
@@ -354,7 +360,7 @@ template <
     /// Cache operation of operand B
     cutlass::arch::CacheOperation::Kind CacheOpB>
 struct DefaultMultistageMmaComplexCore<
-    Shape_, WarpShape_, GemmShape<8, 8, 4>, 
+    Shape_, WarpShape_, InstructionShape_, 
     complex<double>, layout::RowMajor,
     complex<double>, layout::ColumnMajor,
     complex<double>, LayoutC_, 
@@ -366,7 +372,7 @@ struct DefaultMultistageMmaComplexCore<
 
   using Shape = Shape_;
   using WarpShape = WarpShape_;
-  using InstructionShape = GemmShape<8, 8, 4>;
+  using InstructionShape = InstructionShape_;
   using ElementA = complex<double>;
   using LayoutA = layout::RowMajor;
   using ElementB = complex<double>;
@@ -469,6 +475,8 @@ template <
     typename Shape_,
     /// Shape of warp-level matrix multiply operator (concept: GemmShape)
     typename WarpShape_,
+    /// Shape of one matrix production operation (concept: GemmShape)
+    typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
     /// Number of stages
@@ -484,7 +492,7 @@ template <
     /// Cache operation of operand B
     cutlass::arch::CacheOperation::Kind CacheOpB>
 struct DefaultMultistageMmaComplexCore<
-    Shape_, WarpShape_, GemmShape<8, 8, 4>, 
+    Shape_, WarpShape_, InstructionShape_, 
     complex<double>, layout::RowMajor,
     complex<double>, layout::RowMajor,
     complex<double>, LayoutC_, 
@@ -496,7 +504,7 @@ struct DefaultMultistageMmaComplexCore<
 
   using Shape = Shape_;
   using WarpShape = WarpShape_;
-  using InstructionShape = GemmShape<8, 8, 4>;
+  using InstructionShape = InstructionShape_;
   using ElementA = complex<double>;
   using LayoutA = layout::RowMajor;
   using ElementB = complex<double>;

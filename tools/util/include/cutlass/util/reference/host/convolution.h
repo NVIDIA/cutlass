@@ -86,11 +86,14 @@ void Conv2dFprop(
       for (int q = 0; q < problem_size.Q; ++q) {
         for (int k = 0; k < problem_size.K; ++k) {
 
+          int group_idx = k / (problem_size.K / problem_size.groups);
+          int channels_per_group = problem_size.C / problem_size.groups;
+
           ElementAccumulator acc = ElementAccumulator();
 
           for (int r = 0; r < problem_size.R; ++r) {
             for (int s = 0; s < problem_size.S; ++s) {
-              for (int c = 0; c < problem_size.C; ++c) {
+              for (int c = 0; c < channels_per_group; ++c) {
 
                 int filter_r = r;
                 int filter_s = s;
@@ -105,7 +108,7 @@ void Conv2dFprop(
 
                 if (h >= 0 && h < problem_size.H && w >= 0 && w < problem_size.W) {
 
-                  ElementA a = tensor_x.at({n, h, w, c});
+                  ElementA a = tensor_x.at({n, h, w, c + group_idx * channels_per_group});
                   ElementB b = tensor_w.at({k, r, s, c});
 
                   acc = inner_product_op(ElementAccumulator(a), ElementAccumulator(b), acc);
@@ -137,21 +140,21 @@ template <typename ElementA,
           typename LayoutB,
           typename ElementC,
           typename LayoutC,
-          typename ElementAccumulator,
           typename ElementCompute,
+          typename ElementAccumulator = ElementCompute,
           typename ConvertOp = NumericConverter<ElementC, ElementCompute>,
           typename InnerProductOp = multiply_add<ElementAccumulator> >
-void Depsep_Fprop(
-                  cutlass::TensorView<ElementA, LayoutA> tensor_A,
+void Depsep_Fprop(cutlass::TensorView<ElementA, LayoutA> tensor_A,
                   cutlass::TensorView<ElementB, LayoutB> tensor_B,
                   cutlass::TensorView<ElementC, LayoutC> tensor_C,
+                  cutlass::TensorView<ElementC, LayoutC> tensor_D,
                   ElementCompute alpha,
                   ElementCompute beta,
-                  cutlass::Tensor4DCoord padding,
-                  cutlass::Coord<2> conv_stride,
-                  cutlass::Coord<2> dilation,
+                  cutlass::Tensor4DCoord padding = cutlass::Tensor4DCoord(),
+                  cutlass::Coord<2> conv_stride = cutlass::Coord<2>(),
+                  cutlass::Coord<2> dilation = cutlass::Coord<2>(),
                   cutlass::conv::Mode mode = cutlass::conv::Mode::kCrossCorrelation) {
-  
+
   ConvertOp convert_op;
   InnerProductOp inner_product_op;
 
@@ -163,15 +166,13 @@ void Depsep_Fprop(
           ElementAccumulator acc = ElementAccumulator();
           for (int r = 0; r < tensor_B.extent().h(); ++r) {
             for (int s = 0; s < tensor_B.extent().w(); ++s) {
-              if ((p * conv_stride[0] - padding[0] + r * dilation[0]) < tensor_A.extent().h() &&
-                  (p * conv_stride[0] - padding[0] + r * dilation[0]) >= 0 &&
-                  (q * conv_stride[1] - padding[2] + s * dilation[1]) < tensor_A.extent().w() &&
-                  (q * conv_stride[1] - padding[2] + s * dilation[1]) >= 0) {
-                ElementA a = tensor_A.at(
-                    cutlass::make_Coord(n,
-                                        p * conv_stride[0] - padding[0] + r * dilation[0],
-                                        q * conv_stride[1] - padding[2] + s * dilation[1],
-                                        g));
+              
+              // input activation H and W
+              int h = p * conv_stride[0] - padding[0] + r * dilation[0];
+              int w = q * conv_stride[1] - padding[2] + s * dilation[1];
+
+              if (h < tensor_A.extent().h() && h >= 0 && w < tensor_A.extent().w() && w >= 0) {
+                ElementA a = tensor_A.at(cutlass::make_Coord(n, h, w, g));
 
                 ElementB b = (mode == cutlass::conv::Mode::kCrossCorrelation)
                                    ? tensor_B.at(cutlass::make_Coord(g, r, s, 0))
@@ -185,7 +186,7 @@ void Depsep_Fprop(
 
           // Apply Epilogue, compute ElementCompute, convert and store ElementC
           ElementC c_ref = tensor_C.at(cutlass::make_Coord(n, p, q, g));
-          tensor_C.at(cutlass::make_Coord(n, p, q, g)) =
+          tensor_D.at(cutlass::make_Coord(n, p, q, g)) =
               convert_op(alpha * ElementCompute(acc) + beta * ElementCompute(c_ref));
         }
       }

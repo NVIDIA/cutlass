@@ -276,7 +276,8 @@ class Manifest:
 
     for cc in self.compute_capabilities:
       if cc >= operation.tile_description.minimum_compute_capability and \
-        cc <= operation.tile_description.maximum_compute_capability:
+         cc <= operation.tile_description.maximum_compute_capability and \
+         (cc not in SharedMemPerCC or SharedMemPerCC[cc] >= CalculateSmemUsage(operation)):
 
         enabled = True
         break
