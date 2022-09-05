@@ -218,6 +218,12 @@ struct Testbed {
   using OperatorClass = cutlass::arch::OpClassTensorOp;
   using ArchTag = cutlass::arch::Sm80;
 
+  // ApplyShape impacts the final Softmax performance a lot.
+  // Set ApplyShape::kColumn to be the next multiple of 32 number that is after
+  // (gemm_N / alignment).
+  // Set ApplyShape::kRow to max(1, 128 / ApplyShape::kColumn).
+  using ApplyShape = cutlass::MatrixShape<1, 1024>;
+
   static int const kStages = 3;
 
   /// Linear scaling operator
@@ -239,7 +245,8 @@ struct Testbed {
     WarpShape,
     InstructionShape,
     EpilogueFunctorOp,
-    kStages
+    kStages,
+    ApplyShape
   >;
 
   using ElementNorm = typename GemmSoftmax::ElementNorm;
@@ -710,6 +717,4 @@ int main(int argc, const char **argv) {
   return (disposition == Disposition::kPassed ? 0 : -1);
 }
 
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
