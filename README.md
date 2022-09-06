@@ -42,7 +42,7 @@ CUTLASS 2.10 is an update to CUTLASS adding:
 - [Grouped convolution targeting implicit GEMM](test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu)
 - [Depthwise separable convolution](test/unit/conv/device/depthwise_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_simt_f16_sm60.cu)
 - Optimizations for CUTLASS's [Grouped GEMM](examples/24_gemm_grouped/gemm_grouped.cu) kernel
-- [Grouped GEMM for Multihead Attention](examples/50_multi_head_attention)
+- [Grouped GEMM for Multihead Attention](examples/41_multi_head_attention)
 - [GEMM + Layer norm fusion for Ampere](examples/37_gemm_layernorm_gemm_fusion/)
 - Updates and bugfixes from the community (thanks!)
 - **Deprecation announcement:** CUTLASS plans to deprecate the following:
