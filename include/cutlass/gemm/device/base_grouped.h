@@ -37,6 +37,7 @@
 
 #include <limits>
 #include <numeric>
+#include <vector>
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
