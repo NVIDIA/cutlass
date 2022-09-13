@@ -58,6 +58,13 @@ class ReductionArguments:
                  destination: 'Union[cuda.CUdeviceptr, np.ndarray, torch.Tensor]',
                  source: 'Union[cuda.CUdeviceptr, np.ndarray, torch.Tensor]', **kwargs) -> None:
 
+        # tensor_C can be interpreted as the bias with bias=True in keyword args
+        if "bias" in kwargs.keys():
+            self.bias = kwargs["bias"]
+        else:
+            # by default, tensor_C is not bias
+            self.bias = False
+
         self.operation = operation
         #: pointer to the workspace
         self.ptr_workspace = workspace
@@ -89,11 +96,9 @@ class ReductionArguments:
             problem_size[1] * DataTypeSize[operation.C.element] // 8
 
         if "output_op" in kwargs.keys():
-            self.alpha = kwargs["output_op"].alpha
-            self.beta = kwargs["output_op"].beta
+            self.output_op = kwargs['output_op']
         else:
-            self.alpha = 1.0
-            self.beta = 0.0
+            self.output_op = self.operation.epilogue_type(1.0, 0.0)
 
         # get arguments
         self.get_arguments()
@@ -109,31 +114,25 @@ class ReductionArguments:
         ref_workspace = ReductionArguments.get_tensor_ref(
             extent=[self.problem_size.row, self.problem_size.column],
             device_ptr=self.ptr_workspace, layout=cutlass.RowMajor)
-
-        ref_source = ReductionArguments.get_tensor_ref(
-            extent=[self.problem_size.row, self.problem_size.column],
-            device_ptr=self.ptr_source, layout=cutlass.RowMajor)
+        if self.bias:
+            ref_source = ReductionArguments.get_tensor_ref(
+                extent=[0, 0],
+                device_ptr=self.ptr_source, layout=cutlass.RowMajor)
+        else:
+            ref_source = ReductionArguments.get_tensor_ref(
+                extent=[self.problem_size.row, self.problem_size.column],
+                device_ptr=self.ptr_source, layout=cutlass.RowMajor)
 
         ref_destination = ReductionArguments.get_tensor_ref(
             extent=[self.problem_size.row, self.problem_size.column],
             device_ptr=self.ptr_destination, layout=cutlass.RowMajor)
 
-        argument_type, epilogue_type = get_reduction_params(
-            self.operation.element_compute)
 
-        if self.operation.element_compute == cutlass.float16:
-            self.alpha = cutlass.float16(self.alpha).storage
-            self.beta = cutlass.float16(self.beta).storage
-        elif self.operation.element_compute == cutlass.int32:
-            self.alpha = int(self.alpha)
-            self.beta = int(self.beta)
-
-        output_op = epilogue_type(self.alpha, self.beta, 0, 0)
-        self.c_arguments = argument_type(
+        self.c_arguments = self.operation.argument_type(
             self.problem_size, self.partitions,
             self.partition_stride, ref_workspace,
             ref_destination, ref_source,
-            output_op
+            self.output_op
         )
 
         params_ = self.operation.rt_module.get_args(
@@ -210,8 +209,8 @@ extern "C" {
         self.emitter = EmitReductionInstance('_type')
 
         self.elements_per_access = self.operation.count
-        self.argtype = [ctypes.POINTER(
-            get_reduction_params(operation.element_compute)[0])]
+        self.argument_type, self.epilogue_type = get_reduction_params(operation.epilogue_functor)
+        self.argtype = [ctypes.POINTER(self.argument_type)]
 
     def emit(self):
         return self.emitter.emit(self.operation)
@@ -247,14 +246,14 @@ class ReductionOperation:
 
     def __init__(self, shape: cutlass.MatrixCoord, C: TensorDescription,
                  element_accumulator, element_workspace=None,
-                 element_compute=None, epilogue_functor: EpilogueFunctor = EpilogueFunctor.LinearCombination,
+                 element_compute=None, epilogue_functor=None,
                  count: int = 1, partitions_per_stage: int = 4) -> None:
         """ Constructor
         """
 
         self.shape = shape
         #: epilogue functor (default: LinearCombination)
-        self.epilogue_functor: EpilogueFunctor = epilogue_functor
+        self.epilogue_functor = epilogue_functor
         #: datatype of accumulator
         self.element_accumulator = element_accumulator
 
@@ -285,6 +284,8 @@ class ReductionOperation:
         self.partitions_per_stage: int = partitions_per_stage
 
         self.rt_module: ReductionRT = ReductionRT(self)
+        self.argument_type = self.rt_module.argument_type
+        self.epilogue_type = self.rt_module.epilogue_type
 
     #
     def extended_name(self):
@@ -363,12 +364,7 @@ class EmitReductionInstance:
 using ${operation_name}_base = 
 typename cutlass::reduction::kernel::ReduceSplitK<
   cutlass::MatrixShape<${shape_row}, ${shape_column}>,
-  ${epilogue_functor}<
-    ${element_output},
-    ${epilogue_vector_length},
-    ${element_accumulator},
-    ${element_compute}
-  >,
+  ${epilogue_functor},
   cutlass::reduction::thread::ReduceAdd<
     ${element_accumulator},
     ${element_output},
@@ -389,7 +385,7 @@ struct ${operation_name}${operation_suffix}:
             'operation_suffix': self.operation_suffix,
             'shape_row': str(operation.shape.row()),
             'shape_column': str(operation.shape.column()),
-            'epilogue_functor': EpilogueFunctorTag[operation.epilogue_functor],
+            'epilogue_functor': operation.epilogue_functor.emit(),
             'element_output': DataTypeTag[operation.element_output],
             'epilogue_vector_length': str(epilogue_vector_length),
             'element_accumulator': DataTypeTag[operation.element_accumulator],

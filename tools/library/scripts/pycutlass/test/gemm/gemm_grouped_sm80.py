@@ -18,7 +18,7 @@ class GemmGroupedSm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[128, 128, 32],
             stages=3, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -37,14 +37,15 @@ class GemmGroupedSm80(unittest.TestCase):
         )
 
         element_epilogue = cutlass.float32
-        epilogue_functor = EpilogueFunctor.LinearCombination
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, element_epilogue)
         swizzling_functor = cutlass.BatchedIdentitySwizzle
 
         for precompute_mode in [SchedulerMode.Device, SchedulerMode.Host]:
             operation = GemmOperationGrouped(
-                tile_description.minimum_compute_capability,
+                80,
                 tile_description, A, B, C,
-                element_epilogue,
                 epilogue_functor, swizzling_functor,
                 precompute_mode=precompute_mode
             )
@@ -64,7 +65,7 @@ class GemmGroupedSm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[64, 64, 16],
             stages=4, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -83,14 +84,15 @@ class GemmGroupedSm80(unittest.TestCase):
         )
 
         element_epilogue = cutlass.float64
-        epilogue_functor = EpilogueFunctor.LinearCombination
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, element_epilogue)
         swizzling_functor = cutlass.BatchedIdentitySwizzle
 
         for precompute_mode in [SchedulerMode.Device, SchedulerMode.Host]:
             operation = GemmOperationGrouped(
-                tile_description.minimum_compute_capability,
+                80,
                 tile_description, A, B, C,
-                element_epilogue,
                 epilogue_functor, swizzling_functor,
                 precompute_mode=precompute_mode
             )
@@ -110,7 +112,7 @@ class GemmGroupedSm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[128, 64, 8],
             stages=4, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -129,14 +131,15 @@ class GemmGroupedSm80(unittest.TestCase):
         )
 
         element_epilogue = cutlass.float32
-        epilogue_functor = EpilogueFunctor.LinearCombination
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, element_epilogue)
         swizzling_functor = cutlass.BatchedIdentitySwizzle
 
         for precompute_mode in [SchedulerMode.Device, SchedulerMode.Host]:
             operation = GemmOperationGrouped(
-                tile_description.minimum_compute_capability,
+                80,
                 tile_description, A, B, C,
-                element_epilogue,
                 epilogue_functor, swizzling_functor,
                 precompute_mode=precompute_mode
             )
@@ -156,7 +159,7 @@ class GemmGroupedSm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[128, 128, 32],
             stages=3, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -175,14 +178,15 @@ class GemmGroupedSm80(unittest.TestCase):
         )
 
         element_epilogue = cutlass.float32
-        epilogue_functor = EpilogueFunctor.LinearCombination
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, element_epilogue)
         swizzling_functor = cutlass.BatchedIdentitySwizzle
 
         for precompute_mode in [SchedulerMode.Device, SchedulerMode.Host]:
             operation = GemmOperationGrouped(
-                tile_description.minimum_compute_capability,
+                80,
                 tile_description, A, B, C,
-                element_epilogue,
                 epilogue_functor, swizzling_functor,
                 precompute_mode=precompute_mode
             )

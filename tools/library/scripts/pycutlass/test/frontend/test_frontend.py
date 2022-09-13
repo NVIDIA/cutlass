@@ -49,7 +49,7 @@ class Test_Frontend(unittest.TestCase):
 
         tile_description = TileDescription(
             [128, 128, 8], 4, [2, 4, 1],
-            math_inst, 80, 80
+            math_inst
         )
 
         A = TensorDescription(
@@ -64,10 +64,14 @@ class Test_Frontend(unittest.TestCase):
             cutlass.float32, cutlass.RowMajor, 1
         )
 
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, cutlass.float32)
+
         self.operation = GemmOperationUniversal(
             arch=80, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=cutlass.float32,
-            epilogue_functor=EpilogueFunctor.LinearCombination, 
+            A=A, B=B, C=C, 
+            epilogue_functor=epilogue_functor, 
             swizzling_functor=cutlass.IdentitySwizzle1
         )
 
@@ -89,7 +93,7 @@ class Test_Frontend(unittest.TestCase):
         arguments = GemmArguments(
             operation=self.operation, problem_size=problem_size,
             A=tensor_A, B=tensor_B, C=tensor_C, D=tensor_D,
-            output_op=LinearCombinationFunctorArguments(alpha, beta),
+            output_op=self.operation.epilogue_type(alpha, beta),
             gemm_mode=cutlass.gemm.Mode.Gemm, split_k_splices=1
         )
 
@@ -119,7 +123,7 @@ class Test_Frontend(unittest.TestCase):
         arguments = GemmArguments(
             operation=self.operation, problem_size=problem_size,
             A=tensor_A, B=tensor_B, C=tensor_C, D=tensor_D,
-            output_op=LinearCombinationFunctorArguments(alpha, beta),
+            output_op=self.operation.epilogue_type(alpha, beta),
             gemm_mode=cutlass.gemm.Mode.Gemm, split_k_splices=1
         )
 

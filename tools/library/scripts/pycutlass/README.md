@@ -16,7 +16,7 @@ math_inst = MathInstruction(
 
 tile_description = TileDescription(
     [128, 128, 8], 4, [2, 4, 1],
-    math_inst, 80, 80
+    math_inst
 )
 
 A = TensorDescription(
@@ -31,10 +31,12 @@ C = TensorDescription(
     cutlass.float32, cutlass.RowMajor, 1
 )
 
+epilogue_functor = LinearCombination(cutlass.float32, 1, cutlass.float32, cutlass.float32)
+
 operation = GemmOperationUniversal(
     arch=80, tile_description=tile_description,
-    A=A, B=B, C=C, element_epilogue=cutlass.float32,
-    epilogue_functor=EpilogueFunctor.LinearCombination, 
+    A=A, B=B, C=C, 
+    epilogue_functor=epilogue_functor, 
     swizzling_functor=cutlass.IdentitySwizzle1
 )
 
@@ -54,7 +56,7 @@ beta = 0.0
 arguments = GemmArguments(
     operation=operation, problem_size=problem_size,
     A=tensor_A, B=tensor_B, C=tensor_C, D=tensor_D,
-    output_op=LinearCombinationFunctorArguments(alpha, beta),
+    output_op=operation.epilogue_type(alpha, beta),
     gemm_mode=cutlass.gemm.Mode.Gemm, split_k_splices=1
 )
 
@@ -67,6 +69,14 @@ tensor_D_ref = alpha * tensor_A @ tensor_B + beta * tensor_C
 assert torch.equal(tensor_D, tensor_D_ref)
 ```
 PyCUTLASS also provides infrastructures for profiling, compiled artifact management, and pool memory manager 
+
+## Supported Features
+PyCUTLASS currently supports following operations:
+* GEMM with mode {Serial, Parallel Split K, Batched GEMM, Array GEMM}, op class {SIMT, TensorCore}, data type {int8, f16, bf16, f32, f64}, layout {RowMajor, ColumnMajor, Row/ColumnMajorInterleaved<32> for int8}, math operation {MultiplyAdd, MultiplyAddFastF16, MultiplyAddFastBF16, MultiplyAddFastF32}, swizzling functions {IdentitySwizzle<1,2,4,8>, HorizontalSwizzle, BatchedIdentitySwizzle}, and epilogue {LinearCombination, LinearCombinationClamp}
+* GEMM grouped with op class {SIMT, TensorCore}, data type {int8, f16, bf16, f32, f64}, layout {RowMajor, ColumnMajor}, math operation {MultiplyAdd, MultiplyAddFastF16, MultiplyAddFastBF16, MultiplyAddFastF32}, scheduling mode {Host, Device}, and epilogue {LinearCombination, LinearCombinationClamp}.
+* Conv2d with {Fprop, Dgrad, Wgrad}, op class {SIMT, TensorCore}, data type {int8, f16, bf16, f32, f64}, layout {Tensor NHWC, TensorNC32HW32 and TensorC32RSK for int8}, math operation {MultiplyAdd, MultiplyAddFastF16, MultiplyAddFastBF16, MultiplyAddFastF32}, split-k mode {Parallel, Serial}, and epilogue {LinearCombination, LinearCombinationClamp}
+
+The tiling size of above operations can also be customized.
 
 ## Installation
 
@@ -94,12 +104,19 @@ cd $CUTLASS_PATH/tools/library/scripts/pycutlass && bash build.sh
 ```
 
 ## Examples
-Examples can be found in `$CUTLASS_PATH/examples/40_cutlass_py`
+Examples can be found in [$CUTLASS_PATH/examples/40_cutlass_py](examples/40_cutlass_py)
 
 ## Test
 The test cases are listed in `$CUTLASS_PATH//tools/library/scripts/pycutlass/test`. The unit test can be run with
 ```shell
 cd $CUTLASS_PATH/tools/library/scripts/pycutlass/test/unit && python test_sm80.py
+cd $CUTLASS_PATH/tools/library/scripts/pycutlass/test/example && run_all_example.sh
+```
+
+## build documentation
+Run
+```shell
+bash build_doc.sh
 ```
 
 

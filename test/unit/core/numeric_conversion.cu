@@ -189,3 +189,35 @@ TEST(NumericConversion, f16x8_to_f32x8_rn) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(NumericConversion, f32x8_to_s8x8_rn) {
+
+  int const kN = 8;
+  using Source = float;
+  using Destination = int8_t;
+
+  dim3 grid(1, 1);
+  dim3 block(1, 1);
+
+  cutlass::HostTensor<Destination, cutlass::layout::RowMajor> destination({1, kN});
+  cutlass::HostTensor<Source, cutlass::layout::RowMajor> source({1, kN});
+
+  for (int i = 0; i < kN; ++i) {
+    source.host_data()[i] = float(i);
+  }
+
+  source.sync_device();
+
+  test::core::kernel::convert<Destination, Source, kN><<< grid, block >>>(
+    reinterpret_cast<cutlass::Array<Destination, kN> *>(destination.device_data()),
+    reinterpret_cast<cutlass::Array<Source, kN> const *>(source.device_data())
+  );
+
+  destination.sync_host();
+
+  for (int i = 0; i < kN; ++i) {
+    EXPECT_TRUE(float(destination.host_data()[i]) == source.host_data()[i]);
+  }
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////

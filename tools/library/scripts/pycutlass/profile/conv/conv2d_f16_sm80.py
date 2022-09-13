@@ -32,6 +32,7 @@
 
 from pycutlass import *
 import pycutlass
+from pycutlass.epilogue import LinearCombination
 from pycutlass.test.conv2d_testbed import Conv2dLauncher
 
 
@@ -62,15 +63,16 @@ if __name__ == "__main__":
     tile_description = TileDescription(
         threadblock_shape=[128, 128, 64], stages=4, 
         warp_count=[2, 2, 1],
-        math_instruction=math_inst,
-        min_compute=80, max_compute=80
+        math_instruction=math_inst
     )
+
+    epilogue_functor = LinearCombination(cutlass.float32, 4, cutlass.float32, cutlass.float32)
 
     operation = Conv2dOperation(
         conv_kind=cutlass.conv.Operator.fprop, iterator_algorithm=cutlass.conv.IteratorAlgorithm.optimized,
         arch=80, tile_description=tile_description, A=A, B=B, C=C, 
         element_epilogue=cutlass.float32, stride_support=StrideSupport.Strided,
-        epilogue_functor=EpilogueFunctor.LinearCombination,
+        epilogue_functor=epilogue_functor,
         swizzling_functor=cutlass.IdentitySwizzle1
     )
 

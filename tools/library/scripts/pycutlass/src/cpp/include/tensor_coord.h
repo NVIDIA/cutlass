@@ -50,7 +50,13 @@ void bind_tensor_coord(py::module &m) {
         R"pbdoc(Defines a canonical 4D coordinate used by tensor operations)pbdoc")
         .def(py::init<int, int, int, int>(),
             py::arg("n"), py::arg("h"), py::arg("w"), py::arg("c"),
-            R"pbdoc(Helper to construct from N, H, W, and C)pbdoc");
+            R"pbdoc(Helper to construct from N, H, W, and C)pbdoc")
+        .def("at", py::overload_cast<int>(&cutlass::Tensor4DCoord::at),
+            py::arg("dim"),
+            R"pbdoc(Gets the index of a given Coord element)pbdoc")
+        .def("size", [](const cutlass::Tensor4DCoord & coord) {
+            return coord.at(0) * coord.at(1) * coord.at(2) * coord.at(3);},
+            R"pbdoc(The size of the tensor coord)pbdoc");
     
     py::class_<cutlass::Coord<3>>(m, "Tensor3DCoord",
         R"pbdoc(Defines a canonical 3D coordinate used by tensor operations)pbdoc")

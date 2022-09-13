@@ -49,7 +49,7 @@ if __name__ == '__main__':
     tile_description = TileDescription(
         threadblock_shape=[256, 128, 32],
         stages=3, warp_count=[4, 2, 1],
-        math_instruction=math_inst, min_compute=80, max_compute=80
+        math_instruction=math_inst
     )
 
     A = TensorDescription(
@@ -67,7 +67,7 @@ if __name__ == '__main__':
 
     element_epilogue = cutlass.float32
 
-    epilogue_functor = EpilogueFunctor.LinearCombination
+    epilogue_functor = LinearCombination(cutlass.float32, 4, cutlass.float32, cutlass.float32)
     
     swizzling_functor = cutlass.IdentitySwizzle1
 

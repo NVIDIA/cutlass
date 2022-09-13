@@ -183,7 +183,7 @@ __global__ void GemmPlanarComplex(
         ComplexC d_ij;
 
         d_ij.real() = convert_op(result.real());
-        d_ij.imag() = convert_op(result.imag());;
+        d_ij.imag() = convert_op(result.imag());
 
         tensor_d.at(coord) = d_ij;
       }
