@@ -30,7 +30,6 @@
 #
 #################################################################################################
 from pycutlass import *
-from pycutlass.library import SubstituteTemplate
 import cutlass
 from cuda import cuda
 from cuda import nvrtc
@@ -132,13 +131,15 @@ class ArtifactManager:
         except:
             pass
 
+        self.nvcc()
+        self.compiled_cache_device = cutlass.CompileCache()
+        self.compiled_cache_host = cutlass.CompileCache()
+    
+    def nvrtc(self):
         self.backend = "nvrtc"
         self.default_compile_options = [
             '-std=c++11', '-default-device',
         ]
-        self.compiled_cache_device = cutlass.CompileCache()
-        self.compiled_cache_host = cutlass.CompileCache()
-
     def nvcc(self):
         self.backend = "nvcc"
         self.default_compile_options = [
@@ -335,13 +336,14 @@ class ArtifactManager:
             architectures = []
             for operation in operations:
                 if hasattr(operation, "tile_description"):
-                    cc = operation.tile_description.minimum_compute_capability
+                    cc = operation.arch
                     if cc not in architectures:
                         architectures.append(cc)
             include_paths = [
                 cuda_install_path + '/include',
                 cutlass_path + '/include',
                 cutlass_path + '/tools/util/include',
+                cutlass_path + '/tools/library/scripts/pycutlass/src/cpp/include'
             ]
             compile_options = CompilationOptions(
                 self.default_compile_options, architectures, include_paths)

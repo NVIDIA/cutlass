@@ -83,40 +83,7 @@ public:
   static FloatRoundStyle const kRound = Round;
 
   /// Host-constructable parameters structure
-  struct Params {
-
-    ElementCompute alpha;                  ///< scales accumulators
-    ElementCompute beta;                   ///< scales source tensor
-    ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
-    ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
-
-    //
-    // Methods
-    //
-
-    CUTLASS_HOST_DEVICE
-    Params():
-      alpha(ElementCompute(1)),
-      beta(ElementCompute(0)),
-      alpha_ptr(nullptr),
-      beta_ptr(nullptr) { }
-
-    CUTLASS_HOST_DEVICE
-    Params(
-      ElementCompute alpha,
-      ElementCompute beta = ElementCompute(0)
-    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
-
-    }
-
-    CUTLASS_HOST_DEVICE
-    Params(
-      ElementCompute const *alpha_ptr,
-      ElementCompute const *beta_ptr = nullptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
-
-    }
-  };
+  using Params = typename ActivationFunctor<FragmentCompute>::Params;
 
 private:
 
@@ -124,8 +91,7 @@ private:
   // Data members
   //
 
-  ElementCompute alpha_;
-  ElementCompute beta_;
+  Params params_;
   bool skip_elementwise_;
 
 public:
@@ -133,9 +99,9 @@ public:
   /// Constructs the function object, possibly loading from pointers in host memory
   CUTLASS_HOST_DEVICE
   LinearCombinationGeneric(Params const &params) {
-
-    alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
-    beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
+    params_ = params;
+    params_.alpha = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
+    params_.beta = (params.beta_ptr ? *params.beta_ptr : params.beta);
     skip_elementwise_ = false;
   }
 
@@ -148,14 +114,14 @@ public:
 
     if (Scale == ScaleType::Nothing) return false;
 
-    return beta_ != ElementCompute(0);
+    return params_.beta != ElementCompute(0);
   }
 
   /// Functionally required for serial reduction in the epilogue
   CUTLASS_HOST_DEVICE
   void set_k_partition(int k_partition, int k_partition_count) {
     if (k_partition) {
-      beta_ = ElementCompute(1);
+      params_.beta = ElementCompute(1);
     }
 
     if (k_partition != k_partition_count - 1) {
@@ -186,15 +152,15 @@ public:
 
     if (Scale == ScaleType::NoBetaScaling) {
       intermediate = converted_source;
-      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+      intermediate = mul_add_accumulator(params_.alpha, converted_accumulator, intermediate);    // D = alpha * Accum + X
     }  else if (Scale == ScaleType::Nothing) {
       intermediate = converted_accumulator;
     } else {
-      intermediate = mul_add_source(beta_, converted_source);                             // X =  beta * C + uniform
-      intermediate = mul_add_accumulator(alpha_, converted_accumulator, intermediate);    // D = alpha * Accum + X
+      intermediate = mul_add_source(params_.beta, converted_source);                             // X =  beta * C + uniform
+      intermediate = mul_add_accumulator(params_.alpha, converted_accumulator, intermediate);    // D = alpha * Accum + X
     }
 
-    intermediate = skip_elementwise_ ? intermediate : activation(intermediate);
+    intermediate = skip_elementwise_ ? intermediate : activation(intermediate, params_);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
@@ -222,10 +188,10 @@ public:
     if (Scale == ScaleType::Nothing) {
       intermediate = converted_accumulator;
     } else {
-      intermediate = mul_add_accumulator(alpha_, converted_accumulator);    // D = alpha * Accum
+      intermediate = mul_add_accumulator(params_.alpha, converted_accumulator);    // D = alpha * Accum
     }
 
-    intermediate = skip_elementwise_ ? intermediate : activation(intermediate);
+    intermediate = skip_elementwise_ ? intermediate : activation(intermediate, params_);
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;

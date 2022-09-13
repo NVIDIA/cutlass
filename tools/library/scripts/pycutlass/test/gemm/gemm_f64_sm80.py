@@ -17,7 +17,7 @@ class GemmF64TensorOpSm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[32, 32, 16],
             stages=4, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         # alignment 1 restricted for double
@@ -36,13 +36,15 @@ class GemmF64TensorOpSm80(unittest.TestCase):
 
         element_epilogue = cutlass.float64
 
-        epilogue_functor = EpilogueFunctor.LinearCombination
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, element_epilogue)
         
         swizzling_functor = cutlass.IdentitySwizzle1
 
         operation = GemmOperationUniversal(
             arch=80, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=element_epilogue,
+            A=A, B=B, C=C, 
             epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
         )
 
@@ -59,7 +61,7 @@ class GemmF64TensorOpSm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[64, 64, 16],
             stages=4, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         # alignment 1 restricted for double
@@ -78,13 +80,15 @@ class GemmF64TensorOpSm80(unittest.TestCase):
 
         element_epilogue = cutlass.float64
 
-        epilogue_functor = EpilogueFunctor.LinearCombination
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, element_epilogue)
         
         swizzling_functor = cutlass.IdentitySwizzle1
 
         operation = GemmOperationUniversal(
             arch=80, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=element_epilogue,
+            A=A, B=B, C=C, 
             epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
         )
 

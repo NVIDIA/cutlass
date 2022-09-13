@@ -124,7 +124,7 @@ class Conv2dLauncher:
         self.reduction_operation = ReductionOperation(
             shape=cutlass.MatrixCoord(4, 32 * operation.C.alignment),
             C=operation.C, element_accumulator=operation.tile_description.math_instruction.element_accumulator,
-            element_compute=operation.element_epilogue, 
+            element_compute=operation.epilogue_functor.element_epilogue, epilogue_functor=operation.epilogue_functor,
             count=operation.C.alignment
         )
 
@@ -183,7 +183,7 @@ class Conv2dLauncher:
         # Get the host reference function
         #
 
-        self.element_compute = operation.element_epilogue
+        self.element_compute = operation.epilogue_functor.element_epilogue
 
         self.host_conv2d = cutlass.test.conv.host.conv2d
 
@@ -441,7 +441,7 @@ class Conv2dLauncher:
         arguments = Conv2dArguments(
             operation=self.operation, problem_size=problem_size, A=tensor_A,
             B=tensor_B, C=tensor_C, D=tensor_D, 
-            output_op = LinearCombinationFunctorArguments(alpha, beta), 
+            output_op = self.operation.epilogue_type(alpha, beta), 
             split_k_slices=problem_size.split_k_slices,
             split_k_mode=split_k_mode
         )
@@ -454,7 +454,7 @@ class Conv2dLauncher:
                 workspace=arguments.ptr_D,
                 destination=tensor_D,
                 source=tensor_C,
-                output_op = LinearCombinationFunctorArguments(alpha, beta)
+                output_op = self.reduction_operation.epilogue_type(alpha, beta)
             )
 
         self.operation.run(arguments)

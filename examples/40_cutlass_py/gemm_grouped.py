@@ -99,7 +99,10 @@ parser.add_argument("-ep", "--epilogue_functor", default="LinearCombination",
 # swizzling
 parser.add_argument("-sw", "--swizzling_functor", default="IdentitySwizzle1", type=str, choices=[
                     "IdentitySwizzle1", "IdentitySwizzle2", "IdentitySwizzle4", "IdentitySwizzle8", "HorizontalSwizzle"],
-                    help="This option describes how thread blocks are scheduled on GPU")
+                    help="This option describes how thread blocks are scheduled on GPU. \
+                         NOTE: Threadblock swizzling is currently not supported by CUTLASS's grouped kernels. \
+                         This parameter is passed in at present to match the APIs of other kernels. The parameter \
+                         is unused within the kernel")
 # precompute mode
 parser.add_argument("-pm", "--precompute_mode",
                     default="Device", type=str, choices=["Host", "Device"],
@@ -109,7 +112,13 @@ parser.add_argument("-p", "--problem_size_dir", type=str,
                     help="path to the csv file contains the problem sizes")
 parser.add_argument("-alpha", "--alpha", default=1.0, type=float, help="alpha")
 parser.add_argument("-beta", "--beta", default=0.0, type=float, help="beta")
+parser.add_argument('-bias', '--bias', action='store_true', help="C is bias vector")
 
+# Activation function
+parser.add_argument("-activ", "--activation_function", default="identity",
+    choices=["identity", "relu", "leaky_relu", "tanh", "sigmoid", "silu", "hardswish", "gelu"], help="activation function")
+parser.add_argument("-activ_arg", "--activation_args", default=[], nargs="+", type=float,
+    help="addition arguments for activation")
 parser.add_argument('--print_cuda', action="store_true",
                     help="print the underlying CUDA kernel")
 
@@ -119,6 +128,8 @@ except:
     sys.exit(0)
 
 pycutlass.get_memory_pool(init_pool_size=2**30, max_pool_size=2**32)
+
+np.random.seed(0)
 
 element_a = getattr(cutlass, args.element_a)
 element_b = getattr(cutlass, args.element_b)
@@ -134,7 +145,7 @@ math_inst = MathInstruction(
 
 tile_description = TileDescription(
     args.threadblock_shape, args.stages, args.warp_count,
-    math_inst, args.compute_capability, args.compute_capability
+    math_inst
 )
 
 layout_a = getattr(cutlass, args.layout_a)
@@ -154,13 +165,19 @@ C = TensorDescription(
 )
 
 element_epilogue = getattr(cutlass, args.element_epilogue)
-epilogue_functor = getattr(EpilogueFunctor, args.epilogue_functor)
+if args.activation_function == "identity":
+    epilogue_functor = getattr(pycutlass, args.epilogue_functor)(
+        C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
+else:
+    epilogue_functor = getattr(pycutlass, "LinearCombinationGeneric")(
+        getattr(pycutlass, args.activation_function)(element_epilogue),
+        C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
 swizzling_functor = getattr(cutlass, args.swizzling_functor)
 precompute_mode = getattr(SchedulerMode, args.precompute_mode)
 
 operation = GemmOperationGrouped(
     arch=args.compute_capability, tile_description=tile_description,
-    A=A, B=B, C=C, element_epilogue=element_epilogue,
+    A=A, B=B, C=C,
     epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor,
     precompute_mode=precompute_mode
 )
@@ -214,28 +231,45 @@ for problem_size in problem_sizes:
                                                            * problem_size.n(),)).astype(getattr(np, args.element_b))
 
     if args.element_c != "int8":
-        if args.element_c == "bfloat16":
-            tensor_C = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.m()
-                                                                           * problem_size.n(),))).astype(bfloat16)
+        if args.bias:
+            if args.layout_c == "RowMajor":
+                c_size = problem_size.n()
+            elif args.layout_c == "ColumnMajor":
+                c_size = problem_size.m()
+            else:
+                raise ValueError(args.layout_c)
         else:
-            tensor_C = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.m()
-                                                                           * problem_size.n(),))).astype(getattr(np, args.element_c))
+            c_size = problem_size.m() * problem_size.n()
+        if args.element_c == "bfloat16":
+            tensor_C = np.ceil(
+                np.random.uniform(low=-8.5, high=7.5, size=(c_size,))
+            ).astype(bfloat16)
+        else:
+            tensor_C = np.ceil(
+                np.random.uniform(low=-8.5, high=7.5, size=(c_size,))
+            ).astype(getattr(np, args.element_c))
     else:
-        tensor_C = np.random.uniform(low=-2, high=2, size=(problem_size.m()
-                                                           * problem_size.n(),)).astype(getattr(np, args.element_c))
-    tensor_D = np.zeros_like(tensor_C)
+        tensor_C = np.random.uniform(
+            low=-2, high=2, size=(problem_size.m() * problem_size.n(),)
+        ).astype(getattr(np, args.element_c))
+    tensor_D = np.zeros(
+        shape=(problem_size.m() * problem_size.n(),)
+    ).astype(getattr(np, args.element_c))
 
     tensor_As.append(tensor_A)
     tensor_Bs.append(tensor_B)
     tensor_Cs.append(tensor_C)
     tensor_Ds.append(tensor_D)
-    tensor_D_refs.append(reference_module.run(
-        tensor_A, tensor_B, tensor_C, problem_size, args.alpha, args.beta))
+    tensor_D_ref = reference_module.run(
+        tensor_A, tensor_B, tensor_C, problem_size, 
+        args.alpha, args.beta, args.bias)
+    tensor_D_ref = getattr(pycutlass, args.activation_function).numpy(*([tensor_D_ref,] + args.activation_args))
+    tensor_D_refs.append(tensor_D_ref)
     problem_sizes_coord.append(problem_size)
 
 arguments = GemmGroupedArguments(
     operation, problem_sizes_coord, tensor_As, tensor_Bs, tensor_Cs, tensor_Ds,
-    output_op=LinearCombinationFunctorArguments(args.alpha, args.beta)
+    output_op=operation.epilogue_type(*([args.alpha, args.beta] + args.activation_args))
 )
 
 operation.run(arguments)
@@ -243,6 +277,9 @@ operation.run(arguments)
 arguments.sync()
 
 for tensor_d, tensor_d_ref in zip(tensor_Ds, tensor_D_refs):
-    assert np.array_equal(tensor_d, tensor_d_ref)
+    try:
+        assert np.array_equal(tensor_d, tensor_d_ref)
+    except:
+        assert np.allclose(tensor_d, tensor_d_ref, rtol=1e-5)
 
 print("Passed.")

@@ -69,7 +69,7 @@ struct global_load;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // The redundant mov PTX instruction is used to enforce the compiler to
-// initialize data to zero before ld.global
+// keep the initializing code before ld.global
 template <typename AccessType>
 struct global_load<AccessType,
                    32 

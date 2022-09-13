@@ -1195,13 +1195,13 @@ std::string lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type) {
     break;
   case NumericTypeID::kBF16:
   {
-    float tmp = *reinterpret_cast<bfloat16_t *>(bytes.data());;
+    float tmp = *reinterpret_cast<bfloat16_t *>(bytes.data());
     ss << tmp;
   }
     break;
   case NumericTypeID::kTF32:
   {
-    float tmp = *reinterpret_cast<tfloat32_t *>(bytes.data());;
+    float tmp = *reinterpret_cast<tfloat32_t *>(bytes.data());
     ss << tmp;
   }
     break;

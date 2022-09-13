@@ -1,7 +1,24 @@
-from pycutlass.type import *
+import re
+
+
+def SubstituteTemplate(template, values):
+    text = template
+    changed = True
+    while changed:
+        changed = False
+        for key, value in values.items():
+            regex = "\\$\\{%s\\}" % key
+            newtext = re.sub(regex, value, text)
+            if newtext != text:
+                changed = True
+            text = newtext
+    return text
+
+from pycutlass.type_hint import *
 from pycutlass.tensor_ref import *
 from pycutlass.operation import *
 from pycutlass.epilogue import *
+from pycutlass.parser import *
 from pycutlass.compiler import ArtifactManager
 from pycutlass.memory_manager import *
 from pycutlass.arguments import *

@@ -43,7 +43,7 @@ try:
         Pybind11Extension("cutlass",
                           ["src/cpp/cutlass.cpp"],
                           include_dirs=include_dirs,
-                          extra_compile_args=["-fpermissive"])
+                          extra_compile_args=["-fpermissive", "-w"])
     ]
 except ImportError:
     pass
@@ -69,7 +69,8 @@ setup(
         'typeguard',
         'bfloat16',
         'typing',
-        'scikit-build'
+        'scikit-build',
+        'treelib'
     ],
     cmdclass={
         'rmm': BuildRMM

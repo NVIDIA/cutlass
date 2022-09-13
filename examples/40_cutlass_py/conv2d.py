@@ -33,6 +33,7 @@ import pycutlass
 from pycutlass import *
 from pycutlass.conv2d_operation import *
 from pycutlass.utils import reference_model
+import torch.nn.functional as F
 
 import argparse
 
@@ -127,6 +128,13 @@ parser.add_argument("-stride", "--stride", nargs=2, type=int, help="stride (stri
 parser.add_argument("-dilation", "--dilation", nargs=2, type=int, help="dilation (dilation_h, dilation_w)")
 parser.add_argument("-alpha", "--alpha", default=1.0, type=float, help="alpha")
 parser.add_argument("-beta", "--beta", default=0.0, type=float, help="beta")
+parser.add_argument('-bias', '--bias', action='store_true', help="C is bias vector")
+# Activation function
+parser.add_argument("-activ", "--activation_function", default="identity",
+    choices=["identity", "relu", "leaky_relu", "tanh", "sigmoid", "silu", "hardswish", "gelu"], help="activation function")
+parser.add_argument("-activ_arg", "--activation_args", default=[], nargs="+", type=float,
+    help="addition arguments for activation")
+
 
 parser.add_argument('--print_cuda', action="store_true",
                     help="print the underlying CUDA kernel")
@@ -137,6 +145,8 @@ except:
     sys.exit(0)
 
 pycutlass.get_memory_pool(init_pool_size=2**30, max_pool_size=2**32)
+
+np.random.seed(0)
 
 element_a = getattr(cutlass, args.element_a)
 element_b = getattr(cutlass, args.element_b)
@@ -152,7 +162,7 @@ math_inst = MathInstruction(
 
 tile_description = TileDescription(
     args.threadblock_shape, args.stages, args.warp_count,
-    math_inst, args.compute_capability, args.compute_capability
+    math_inst
 )
 
 layout_a = getattr(cutlass, args.layout_a)
@@ -172,7 +182,16 @@ C = TensorDescription(
 )
 
 element_epilogue = getattr(cutlass, args.element_epilogue)
-epilogue_functor = getattr(EpilogueFunctor, args.epilogue_functor)
+if (args.activation_function == "identity" 
+    or (args.split_k_mode == "Parallel" and args.split_k_slices > 1)):
+    #
+    epilogue_functor = getattr(pycutlass, args.epilogue_functor)(
+        C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
+else:
+    epilogue_functor = getattr(pycutlass, "LinearCombinationGeneric")(
+        getattr(pycutlass, args.activation_function)(element_epilogue),
+        C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
+
 iterator_algorithm = getattr(cutlass.conv.IteratorAlgorithm, args.iterator_algorithm)
 swizzling_functor = getattr(cutlass, args.swizzling_functor)
 stride_support = getattr(StrideSupport, args.stride_support)
@@ -181,7 +200,7 @@ conv_kind = getattr(cutlass.conv.Operator, args.conv_kind)
 operation = Conv2dOperation(
     conv_kind=conv_kind, iterator_algorithm=iterator_algorithm,
     arch=args.compute_capability, tile_description=tile_description,
-    A=A, B=B, C=C, element_epilogue=element_epilogue, stride_support=stride_support,
+    A=A, B=B, C=C, stride_support=stride_support,
     epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
 )
 
@@ -191,10 +210,18 @@ if args.print_cuda:
 operations = [operation,]
 
 if args.split_k_mode == "Parallel" and args.split_k_slices > 1:
+    if (args.activation_function == "identity"):
+        epilogue_functor_reduction = getattr(pycutlass, args.epilogue_functor)(
+            C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
+    else:
+        epilogue_functor_reduction = getattr(pycutlass, "LinearCombinationGeneric")(
+            getattr(pycutlass, args.activation_function)(element_epilogue),
+            C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
     reduction_operation = ReductionOperation(
         shape=cutlass.MatrixCoord(4, 32 * C.alignment),
         C=C, element_accumulator=element_acc,
         element_compute=element_epilogue,
+        epilogue_functor=epilogue_functor_reduction,
         count=C.alignment
     )
     operations.append(reduction_operation)
@@ -219,9 +246,18 @@ tensor_A_size = cutlass.conv.implicit_gemm_tensor_a_size(
 tensor_B_size = cutlass.conv.implicit_gemm_tensor_b_size(
     conv_kind, problem_size
 )
-tensor_C_size = cutlass.conv.implicit_gemm_tensor_c_size(
-    conv_kind, problem_size
-)
+if args.bias:
+    tensor_C_size = cutlass.conv.implicit_gemm_tensor_c_extent(
+        conv_kind, problem_size
+    ).at(3)
+else:
+    tensor_C_size = cutlass.conv.implicit_gemm_tensor_c_size(
+        conv_kind, problem_size
+    )
+
+tensor_D_size = cutlass.conv.implicit_gemm_tensor_c_size(
+        conv_kind, problem_size
+    )
 
 if args.element_a != "int8":
     tensor_A = torch.ceil(torch.empty(size=(tensor_A_size,), dtype=getattr(torch, args.element_a), device="cuda").uniform_(-8.5, 7.5))
@@ -238,12 +274,12 @@ if args.element_c != "int8":
 else:
     tensor_C = torch.empty(size=(tensor_C_size,), dtype=getattr(torch, args.element_c), device="cuda").uniform_(-2, 2)
 
-tensor_D = torch.ones_like(tensor_C)
+tensor_D = torch.ones(size=(tensor_D_size,), dtype=getattr(torch, args.element_c), device="cuda")
 
 arguments = Conv2dArguments(
     operation=operation, problem_size=problem_size, A=tensor_A,
     B=tensor_B, C=tensor_C, D=tensor_D, 
-    output_op = LinearCombinationFunctorArguments(args.alpha, args.beta), 
+    output_op = operation.epilogue_type(*([args.alpha, args.beta] + args.activation_args)), 
     split_k_mode=getattr(cutlass.conv.SplitKMode, args.split_k_mode),
     split_k_slices=problem_size.split_k_slices
 )
@@ -257,7 +293,8 @@ if args.split_k_mode == "Parallel" and args.split_k_slices > 1:
         workspace=arguments.ptr_D,
         destination=tensor_D,
         source=tensor_C,
-        output_op = LinearCombinationFunctorArguments(args.alpha, args.beta)
+        output_op = reduction_operation.epilogue_type(*([args.alpha, args.beta] + args.activation_args)),
+        bias = arguments.bias
     )
 
 operation.run(arguments)
@@ -270,8 +307,12 @@ else:
 
 reference_model = Conv2dReferenceModule(A, B, C, conv_kind)
 
-tensor_D_ref = reference_model.run(tensor_A, tensor_B, tensor_C, arguments.problem_size, args.alpha, args.beta)
+tensor_D_ref = reference_model.run(tensor_A, tensor_B, tensor_C, arguments.problem_size, args.alpha, args.beta, args.bias)
+if (args.activation_function != "identity"):
+    tensor_D_ref = getattr(F, args.activation_function)(*([tensor_D_ref,] + args.activation_args))
 
-assert torch.equal(tensor_D, tensor_D_ref)
-
+try:
+    assert torch.equal(tensor_D, tensor_D_ref)
+except:
+    assert torch.allclose(tensor_D, tensor_D_ref, rtol=1e-2)
 print("Passed.")

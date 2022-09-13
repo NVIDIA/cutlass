@@ -561,6 +561,17 @@ CUTLASS_HOST_DEVICE int64_t OffsetBytes(int64_t index) {
   }
 }
 
+CUTLASS_HOST_DEVICE int64_t OffsetBytes(int64_t index, int64_t element_sizeof_bits) {
+  if (element_sizeof_bits >= 8) {
+    return index * (element_sizeof_bits / 8);
+  }
+  else {
+    int64_t const kElementsPerByte = ((8 / element_sizeof_bits) + ((element_sizeof_bits >= 8) ? 1 : 0));
+    return index / kElementsPerByte;
+  }
+}
+
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // Min/Max
 /////////////////////////////////////////////////////////////////////////////////////////////////

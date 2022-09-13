@@ -17,7 +17,7 @@ class GemmBF16TensorOpSm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[64, 128, 64],
             stages=4, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -33,15 +33,15 @@ class GemmBF16TensorOpSm80(unittest.TestCase):
             alignment=4
         )
 
-        element_epilogue = cutlass.float32
-
-        epilogue_functor = EpilogueFunctor.LinearCombination
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, cutlass.float32)
         
         swizzling_functor = cutlass.IdentitySwizzle1
 
         operation = GemmOperationUniversal(
             arch=80, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=element_epilogue,
+            A=A, B=B, C=C, 
             epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
         )
 
@@ -58,7 +58,7 @@ class GemmBF16TensorOpSm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[64, 128, 32],
             stages=6, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -74,15 +74,15 @@ class GemmBF16TensorOpSm80(unittest.TestCase):
             alignment=8
         )
 
-        element_epilogue = cutlass.float32
-
-        epilogue_functor = EpilogueFunctor.LinearCombination
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, cutlass.float32)
         
         swizzling_functor = cutlass.IdentitySwizzle1
 
         operation = GemmOperationUniversal(
             arch=80, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=element_epilogue,
+            A=A, B=B, C=C, 
             epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
         )
 

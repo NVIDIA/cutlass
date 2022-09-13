@@ -39,11 +39,16 @@ supported at each level of the execution model hierarchy.
 # What's New in CUTLASS 2.10
 
 CUTLASS 2.10 is an update to CUTLASS adding:
-- [Grouped convolution targeting implicit GEMM](test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu)
-- [Depthwise separable convolution](test/unit/conv/device/depthwise_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_simt_f16_sm60.cu)
-- Optimizations for CUTLASS's [Grouped GEMM](examples/24_gemm_grouped/gemm_grouped.cu) kernel
-- [Grouped GEMM for Multihead Attention](examples/41_multi_head_attention)
-- [GEMM + Layer norm fusion for Ampere](examples/37_gemm_layernorm_gemm_fusion/)
+- [CUTLASS Python](/examples/40_cutlass_py) now supports GEMM, CONV, Group GEMM for different data types as well as different epilogue flavours.  
+- Optimizations for CUTLASS's [Grouped GEMM](examples/24_gemm_grouped/gemm_grouped.cu) kernel.  It can move some scheduling into the host side if applicable.
+- Optimizations for [GEMM+Softmax](examples/35_gemm_softmax).
+- [Grouped GEMM for Multihead Attention](examples/41_multi_head_attention) is a general MHA that does not require equal sequence length in every GEMM.
+- [GEMM + Layer norm fusion for Ampere](examples/37_gemm_layernorm_gemm_fusion/) can fuse the layernorm into GEMMs before and after.
+- [GEMM Epilogue Permutation Fusion](examples/39_gemm_permute) can permute the GEMM output before storing.
+- [Grouped convolution targeting implicit GEMM](test/unit/conv/device/group_conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu) introduces the first group convolution implementation to CUTLASS.  It is an Analytical implementation, not an Optimized.
+- [Depthwise separable convolution](test/unit/conv/device/depthwise_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_simt_f16_sm60.cu) introduces the first depthwise convolution which is also Analytical for now.
+- Standalone [Layernorm](/tools/util/include/cutlass/util/device_layernorm.h) and [Pooling](/tools/util/include/cutlass/util/device_nhwc_pooling.h) kernels.
+- [Back-to-back GEMM](examples/13_two_tensor_op_fusion) enhancements.
 - Updates and bugfixes from the community (thanks!)
 - **Deprecation announcement:** CUTLASS plans to deprecate the following:
   - Maxwell and Pascal GPU architectures

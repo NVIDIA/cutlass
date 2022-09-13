@@ -63,22 +63,9 @@ dtype2ctype = {
 }
 
 
-def get_epilogue_output_op(element_compute_):
-    element_compute = dtype2ctype[element_compute_]
+def get_gemm_arguments(epilogue_functor):
 
-    class _EpilogueOutputOpParams(ctypes.Structure):
-        _fields_ = [
-            ("alpha", element_compute),
-            ("beta", element_compute),
-            ("alpha_ptr", ctypes.c_void_p),
-            ("beta_ptr", ctypes.c_void_p)
-        ]
-    return _EpilogueOutputOpParams
-
-
-def get_gemm_arguments(element_compute_):
-
-    _EpilogueOutputOpParams = get_epilogue_output_op(element_compute_)
+    _EpilogueOutputOpParams = epilogue_functor.epilogue_type
 
     class _GemmArguments(ctypes.Structure):
         _fields_ = [
@@ -116,8 +103,8 @@ def get_gemm_arguments(element_compute_):
 
 # include/cutlass/gemm/kernel/gemm_grouped.h
 
-def get_gemm_grouped_arguments(element_compute_):
-    _EpilogueOutputOpParams = get_epilogue_output_op(element_compute_)
+def get_gemm_grouped_arguments(epilogue_functor):
+    _EpilogueOutputOpParams = epilogue_functor.epilogue_type
 
     class _GEMMGroupedArguments(ctypes.Structure):
         _fields_ = [
@@ -214,8 +201,8 @@ class TensorRef2D_(ctypes.Structure):
 # include/cutlass/conv/kernel/implicit_gemm_convolution.h
 # split_k_mode: kNone: 0, kSerial: 1, kParallel: 2, kParallelSerial: 3, kInvalid: 4
 
-def get_conv2d_arguments(element_compute_):
-    _EpilogueOutputOpParams = get_epilogue_output_op(element_compute_)
+def get_conv2d_arguments(epilogue_functor):
+    _EpilogueOutputOpParams = epilogue_functor.epilogue_type
 
     class _Conv2dArguments(ctypes.Structure):
         _fields_ = [
@@ -236,8 +223,8 @@ def get_conv2d_arguments(element_compute_):
 ############################################################################################
 
 
-def get_reduction_params(element_compute_):
-    _EpilogueOutputParams = get_epilogue_output_op(element_compute_)
+def get_reduction_params(epilogue_functor):
+    _EpilogueOutputParams = epilogue_functor.epilogue_type
 
     class _ReductionParams(ctypes.Structure):
         _fields_ = [

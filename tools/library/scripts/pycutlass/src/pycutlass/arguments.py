@@ -60,6 +60,13 @@ class ArgumentBase:
                  C: 'Union[cuda.CUdeviceptr, np.ndarray, torch.Tensor, cp.ndarray]',
                  D: 'Union[cuda.CUdeviceptr, np.ndarray, torch.Tensor, cp.ndarray]',
                  **kwargs) -> None:
+        
+        # tensor_C can be interpreted as the bias with bias=True in keyword args
+        if "bias" in kwargs.keys():
+            self.bias = kwargs["bias"]
+        else:
+            # by default, tensor_C is not bias
+            self.bias = False
 
         # preprocessing input tensors
         if isinstance(A, np.ndarray):
@@ -72,21 +79,28 @@ class ArgumentBase:
             self.ptr_B = self.buffer_B.ptr
             self.ptr_C = self.buffer_C.ptr
             self.ptr_D = self.buffer_D.ptr
+            # number of elements in C
+            self.tensor_c_numel = C.size
         elif torch_available and isinstance(A, torch.Tensor):
             self.ptr_A = TorchFrontend.argument(A)
             self.ptr_B = TorchFrontend.argument(B)
             self.ptr_C = TorchFrontend.argument(C)
             self.ptr_D = TorchFrontend.argument(D)
+            # number of elements in C
+            self.tensor_c_numel = C.numel()
         elif isinstance(A, cuda.CUdeviceptr):
             self.ptr_A = A
             self.ptr_B = B
             self.ptr_C = C
             self.ptr_D = D
+            
         elif cupy_available and isinstance(A, cp.ndarray):
             self.ptr_A = CupyFrontend.argument(A)
             self.ptr_B = CupyFrontend.argument(B)
             self.ptr_C = CupyFrontend.argument(C)
             self.ptr_D = CupyFrontend.argument(D)
+            # number of elements in C
+            self.tensor_c_numel = C.size
         else:
             raise TypeError(
                 "Unsupported Frontend. Only support numpy and torch")

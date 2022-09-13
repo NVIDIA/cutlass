@@ -99,9 +99,11 @@ parser.add_argument("-te", "--element_epilogue", default="float32", type=str,
 parser.add_argument("-ep", "--epilogue_functor", default="LinearCombination",
                     type=str, choices=['LinearCombination', 'FastLinearCombinationClamp', 'LinearCombinationClamp'], 
                     help="This option describes the epilogue part of the kernel")
+parser.add_argument("-epv", "--epilogue_visitor", default=None,
+                    type=str, choices=['RowReduction', 'ColumnReduction', 'RowBroadcast', 'ColumnBroadcast'], help="epilogue visitor for more complex epilogues")
 # swizzling
 parser.add_argument("-sw", "--swizzling_functor", default="IdentitySwizzle1", type=str, choices=[
-                    "IdentitySwizzle1", "IdentitySwizzle2", "IdentitySwizzle4", "IdentitySwizzle8", "HorizontalSwizzle"],
+                    "IdentitySwizzle1", "IdentitySwizzle2", "IdentitySwizzle4", "IdentitySwizzle8", "HorizontalSwizzle", "BatchedIdentitySwizzle"],
                     help="This option describes how thread blocks are scheduled on GPU")
 
 # Argument
@@ -113,17 +115,22 @@ parser.add_argument("-alpha", "--alpha", default=1.0, type=float,
 parser.add_argument("-beta", "--beta", default=0.0, type=float, 
                     help="Scaling factor of C")
 parser.add_argument("-gm", "--gemm_mode", default="Gemm", type=str,
-                    choices=["Gemm", "GemmSplitKParallel"], 
+                    choices=["Gemm", "GemmSplitKParallel", "Batched", "Array"], 
                     help="GEMM mode. Gemm is used for non-splitK or serial-splitK. \
                         GemmSplitKParallel is used for parallel splitK")
 parser.add_argument('-k', '--split_k_slices', default=1,
                     type=int, help="Number of split-k partitions. (default 1)")
+parser.add_argument('-bias', '--bias', action='store_true', help="C is bias vector")
+parser.add_argument('-batch', '--batch', default=1, type=int, help="batch size for batched GEMM")
 
+# Activation function
+parser.add_argument("-activ", "--activation_function", default="identity",
+    choices=["identity", "relu", "leaky_relu", "tanh", "sigmoid", "silu", "hardswish", "gelu"], help="activation function")
+parser.add_argument("-activ_arg", "--activation_args", default=[], nargs="+", type=float,
+    help="addition arguments for activation")
 parser.add_argument('--print_cuda', action="store_true",
                     help="print the underlying CUDA kernel")
 
-# parser.add_argument('-h', '--help', action="store_true",
-#                     help="print help information")
 
 try:
     args = parser.parse_args()
@@ -131,6 +138,9 @@ except:
     sys.exit(0)
 
 pycutlass.get_memory_pool(init_pool_size=2**30, max_pool_size=2**32)
+pycutlass.compiler.nvcc()
+
+np.random.seed(0)
 
 element_a = getattr(cutlass, args.element_a)
 element_b = getattr(cutlass, args.element_b)
@@ -146,7 +156,7 @@ math_inst = MathInstruction(
 
 tile_description = TileDescription(
     args.threadblock_shape, args.stages, args.warp_count,
-    math_inst, args.compute_capability, args.compute_capability
+    math_inst
 )
 
 layout_a = getattr(cutlass, args.layout_a)
@@ -166,13 +176,83 @@ C = TensorDescription(
 )
 
 element_epilogue = getattr(cutlass, args.element_epilogue)
-epilogue_functor = getattr(EpilogueFunctor, args.epilogue_functor)
+if (args.activation_function == "identity" 
+    or (args.gemm_mode == "GemmSplitKParallel" and args.split_k_slices > 1)):
+    #
+    epilogue_functor = getattr(pycutlass, args.epilogue_functor)(
+        C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
+else:
+    epilogue_functor = getattr(pycutlass, "LinearCombinationGeneric")(
+        getattr(pycutlass, args.activation_function)(element_epilogue),
+        C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
+
 swizzling_functor = getattr(cutlass, args.swizzling_functor)
+
+visitor = args.epilogue_visitor is not None
+
+if args.epilogue_visitor == "ColumnReduction":
+    class ColumnReduction_(EpilogueVisitTree):
+        def __call__(
+            self, accum: 'tensor',  c: 'tensor', 
+            alpha: 'scalar', beta: 'scalar'):
+            #
+            D = alpha * accum + beta * c
+            reduction = reduction_op(D, "column", "Add", args.threadblock_shape[0])
+            return D, reduction
+    epilogue_functor = ColumnReduction_(
+        epilogue_functor, tile_description, math_inst.element_accumulator, 
+        C.alignment, element_epilogue, C.element)
+    epilogue_functor.initialize()
+elif args.epilogue_visitor == "RowReduction":
+    class RowReduction_(EpilogueVisitTree):
+        def __call__(
+            self, accum: 'tensor',  c: 'tensor', 
+            alpha: 'scalar', beta: 'scalar'):
+            #
+            D = alpha * accum + tanh.numpy(beta * c)
+            reduction = reduction_op(D, "row", "Add", args.threadblock_shape[1])
+            return D, reduction
+    epilogue_functor = RowReduction_(
+        epilogue_functor, tile_description, math_inst.element_accumulator, 
+        C.alignment, element_epilogue, C.element)
+    epilogue_functor.initialize()
+
+elif args.epilogue_visitor == "RowBroadcast":
+    class RowBroadcast_(EpilogueVisitTree):
+        def __call__(
+            self, accum: 'tensor',  c: 'tensor', 
+            vector: 'row', alpha: 'scalar', beta: 'scalar'):
+            #
+            T = accum + vector
+            scale_T = alpha * T
+            Z = relu.numpy(scale_T + beta * c)
+            return Z, T
+    epilogue_functor = RowBroadcast_(
+        epilogue_functor, tile_description, math_inst.element_accumulator, 
+        C.alignment, element_epilogue, C.element)
+    epilogue_functor.initialize()
+elif args.epilogue_visitor == "ColumnBroadcast":
+    class ColumnBroadcast_(EpilogueVisitTree):
+        def __call__(
+            self, accum: 'tensor',  c: 'tensor', 
+            vector: 'column', alpha: 'scalar', beta: 'scalar'):
+            #
+            T = accum + vector
+            scale_T = leaky_relu.numpy(alpha * T, 0.2)
+            Z = scale_T + beta * c
+            return Z, T
+    epilogue_functor = ColumnBroadcast_(
+        epilogue_functor, tile_description, math_inst.element_accumulator, 
+        C.alignment, element_epilogue, C.element)
+    epilogue_functor.initialize()
+else:
+    epilogue_functor = epilogue_functor
 
 operation = GemmOperationUniversal(
     arch=args.compute_capability, tile_description=tile_description,
-    A=A, B=B, C=C, element_epilogue=element_epilogue,
-    epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
+    A=A, B=B, C=C,
+    epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor,
+    visitor=visitor
 )
 
 if args.print_cuda:
@@ -181,10 +261,19 @@ if args.print_cuda:
 operations = [operation, ]
 
 if args.gemm_mode == "GemmSplitKParallel":
+    if (args.activation_function == "identity"):
+        epilogue_functor_reduction = getattr(pycutlass, args.epilogue_functor)(
+            C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
+    else:
+        epilogue_functor_reduction = getattr(pycutlass, "LinearCombinationGeneric")(
+            getattr(pycutlass, args.activation_function)(element_epilogue),
+            C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
+
     reduction_operation = ReductionOperation(
         shape=cutlass.MatrixCoord(4, 32 * C.alignment),
         C=C, element_accumulator=element_acc,
-        element_compute=element_epilogue,
+        element_compute=element_epilogue, 
+        epilogue_functor=epilogue_functor_reduction,
         count=C.alignment
     )
     operations.append(reduction_operation)
@@ -196,47 +285,102 @@ pycutlass.compiler.add_module(operations)
 problem_size = cutlass.gemm.GemmCoord(
     args.problem_size[0], args.problem_size[1], args.problem_size[2])
 
+tensor_a_size = args.batch * problem_size.m() * problem_size.k()
 if args.element_a != "int8":
     if args.element_a == "bfloat16":
-        tensor_A = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.m()
-                                                                       * problem_size.k(),))).astype(bfloat16)
+        tensor_A = np.ceil(
+            np.random.uniform(low=-8.5, high=7.5, size=(tensor_a_size,))
+            ).astype(bfloat16)
     else:
-        tensor_A = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.m()
-                                                                       * problem_size.k(),))).astype(getattr(np, args.element_a))
+        tensor_A = np.ceil(
+            np.random.uniform(low=-8.5, high=7.5, size=(tensor_a_size,))
+            ).astype(getattr(np, args.element_a))
 else:
-    tensor_A = np.random.uniform(low=-2, high=2, size=(problem_size.m()
-                                                       * problem_size.k(),)).astype(getattr(np, args.element_a))
+    tensor_A = np.random.uniform(
+        low=-2, high=2,size=(tensor_a_size,)
+        ).astype(getattr(np, args.element_a))
 
+tensor_b_size = args.batch * problem_size.k() * problem_size.n()
 if args.element_b != "int8":
     if args.element_b == "bfloat16":
-        tensor_B = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.k()
-                                                                       * problem_size.n(),))).astype(bfloat16)
+        tensor_B = np.ceil(
+            np.random.uniform(low=-8.5, high=7.5, size=(tensor_b_size,))
+            ).astype(bfloat16)
     else:
-        tensor_B = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.k()
-                                                                       * problem_size.n(),))).astype(getattr(np, args.element_b))
+        tensor_B = np.ceil(
+            np.random.uniform(low=-8.5, high=7.5, size=(tensor_b_size,))
+            ).astype(getattr(np, args.element_b))
 else:
-    tensor_B = np.random.uniform(low=-2, high=2, size=(problem_size.k()
-                                                       * problem_size.n(),)).astype(getattr(np, args.element_b))
+    tensor_B = np.random.uniform(
+        low=-2, high=2, size=(tensor_b_size,)
+        ).astype(getattr(np, args.element_b))
 
 if args.element_c != "int8":
-    if args.element_c == "bfloat16":
-        tensor_C = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.m()
-                                                                       * problem_size.n(),))).astype(bfloat16)
+    if args.bias:
+        if args.layout_c == "RowMajor":
+            tensor_c_size = args.batch * problem_size.n()
+        elif args.layout_c == "ColumnMajor":
+            tensor_c_size = args.batch * problem_size.m()
+        else:
+            raise ValueError(args.layout_c)
     else:
-        tensor_C = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.m()
-                                                                       * problem_size.n(),))).astype(getattr(np, args.element_c))
+        tensor_c_size = args.batch * problem_size.m() * problem_size.n()
+    if args.element_c == "bfloat16":
+        tensor_C = np.ceil(
+            np.random.uniform(low=-8.5, high=7.5, size=(tensor_c_size,))
+        ).astype(bfloat16)
+    else:
+        tensor_C = np.ceil(
+            np.random.uniform(low=-8.5, high=7.5, size=(tensor_c_size,))
+        ).astype(getattr(np, args.element_c))
 else:
-    tensor_C = np.random.uniform(low=-2, high=2, size=(problem_size.m()
-                                                       * problem_size.n(),)).astype(getattr(np, args.element_c))
+    tensor_C = np.random.uniform(
+        low=-2, high=2, size=(args.batch * problem_size.m() * problem_size.n(),)
+    ).astype(getattr(np, args.element_c))
 
-tensor_D = np.ones_like(tensor_C)
+tensor_D = np.zeros(
+    shape=(args.batch * problem_size.m() * problem_size.n(),)
+).astype(getattr(np, args.element_c))
+
+if args.epilogue_visitor == "RowReduction":
+    cta_n = args.threadblock_shape[1]
+    num_cta_n = (problem_size.n() + cta_n - 1) // cta_n
+    reduction = np.zeros(shape=(args.batch * problem_size.m() * num_cta_n,), dtype=getattr(np, args.element_c))
+    output_op = operation.epilogue_type(
+        D=tensor_D, alpha=args.alpha, beta=args.beta, c=tensor_C, reduction=reduction, problem_size=[problem_size.m(), problem_size.n()]
+    )
+elif args.epilogue_visitor == "ColumnReduction":
+    cta_m = args.threadblock_shape[0]
+    num_cta_m = (problem_size.m() + cta_m - 1) // cta_m
+    reduction = np.zeros(shape=(args.batch * problem_size.n() * num_cta_m,), dtype=getattr(np, args.element_c))
+    output_op = operation.epilogue_type(
+        D=tensor_D, alpha=args.alpha, beta=args.beta, c=tensor_C, reduction=reduction, problem_size=[problem_size.m(), problem_size.n()]
+    )
+elif args.epilogue_visitor == "RowBroadcast":
+    vector = np.ceil(
+            np.random.uniform(low=-8.5, high=7.5, size=(args.batch, 1, problem_size.n()))
+            ).astype(getattr(np, args.element_c))
+    tensor_t = np.empty_like(tensor_D)
+    output_op = operation.epilogue_type(
+        c=tensor_C, vector=vector, alpha=args.alpha, beta=args.beta, Z=tensor_D, T=tensor_t, problem_size=[problem_size.m(), problem_size.n()]
+    )
+elif args.epilogue_visitor == "ColumnBroadcast":
+    vector = np.ceil(
+            np.random.uniform(low=-8.5, high=7.5, size=(args.batch, problem_size.m(), 1))
+            ).astype(getattr(np, args.element_c))
+    tensor_t = np.empty_like(tensor_D)
+    output_op = operation.epilogue_type(
+        c=tensor_C, vector=vector, alpha=args.alpha, beta=args.beta, Z=tensor_D, T=tensor_t, problem_size=[problem_size.m(), problem_size.n()]
+    )
+else:
+    output_op = operation.epilogue_type(*([args.alpha, args.beta] + args.activation_args))
 
 arguments = GemmArguments(
     operation=operation, problem_size=problem_size,
     A=tensor_A, B=tensor_B, C=tensor_C, D=tensor_D,
-    output_op=LinearCombinationFunctorArguments(args.alpha, args.beta),
+    output_op=output_op,
     gemm_mode=getattr(cutlass.gemm.Mode, args.gemm_mode),
-    split_k_slices=args.split_k_slices
+    split_k_slices=args.split_k_slices, batch=args.batch
 )
 
 if args.gemm_mode == "GemmSplitKParallel":
@@ -245,7 +389,8 @@ if args.gemm_mode == "GemmSplitKParallel":
         problem_size=[problem_size.m(), problem_size.n()],
         partitions=args.split_k_slices, workspace=arguments.ptr_D,
         destination=tensor_D, source=tensor_C,
-        output_op=LinearCombinationFunctorArguments(args.alpha, args.beta)
+        output_op=reduction_operation.epilogue_type(*([args.alpha, args.beta] + args.activation_args)),
+        bias = arguments.bias
     )
 
 operation.run(arguments)
@@ -259,8 +404,42 @@ else:
 # run the host reference module
 reference = ReferenceModule(A, B, C)
 tensor_D_ref = reference.run(
-    tensor_A, tensor_B, tensor_C, problem_size, args.alpha, args.beta)
+    tensor_A, tensor_B, tensor_C, problem_size, args.alpha, args.beta, args.bias, args.batch)
 
-assert np.array_equal(tensor_D, tensor_D_ref)
+if args.epilogue_visitor in ["RowBroadcast", "ColumnBroadcast"]:
+    tensor_D_ref = (tensor_D_ref.reshape((args.batch, problem_size.m(), problem_size.n())) + vector).flatten()
+tensor_D_ref = getattr(pycutlass, args.activation_function).numpy(*([tensor_D_ref,] + args.activation_args))
 
+if args.epilogue_visitor in ["RowReduction", "ColumnReduction"]:
+    output_op.sync()
+    accum_ref = reference.run(
+        tensor_A, tensor_B, tensor_C, problem_size, 1.0, 0.0, args.bias, args.batch)
+    tensor_D_ref, reduction_ref = epilogue_functor(
+        accum_ref.reshape((args.batch, problem_size.m(), problem_size.n())),
+        tensor_C.reshape((args.batch, problem_size.m(), problem_size.n())),
+        args.alpha, args.beta
+    )
+    tensor_D_ref = tensor_D_ref.flatten()
+    reduction_ref = reduction_ref.flatten()
+    assert np.allclose(reduction_ref, reduction, atol=1e-2)
+
+elif args.epilogue_visitor in ["RowBroadcast", "ColumnBroadcast"]:
+    output_op.sync()
+    accum_ref = reference.run(
+        tensor_A, tensor_B, tensor_C, problem_size, 1.0, 0.0, args.bias, args.batch)
+    
+    tensor_D_ref, tensor_T_ref = epilogue_functor(
+        accum_ref.reshape((args.batch, problem_size.m(), problem_size.n())),
+        tensor_C.reshape((args.batch, problem_size.m(), problem_size.n())), 
+        vector, args.alpha, args.beta)
+
+    tensor_D_ref = tensor_D_ref.flatten()
+    tensor_T_ref = tensor_T_ref.flatten()
+
+    assert np.array_equal(tensor_t, tensor_T_ref)
+
+try:
+    assert np.array_equal(tensor_D, tensor_D_ref)
+except:
+    assert np.allclose(tensor_D, tensor_D_ref, atol=1e-5)
 print("Passed.")
