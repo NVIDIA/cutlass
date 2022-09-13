@@ -68,4 +68,3 @@ class TensorRef:
         # the dtype(0) is used to overload between different data types 
         # with the same layout
         self.tensor_ref = cutlass.get_tensor_ref(int(ptr), dtype(0), layout)
-

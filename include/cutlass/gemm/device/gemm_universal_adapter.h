@@ -88,12 +88,12 @@ public:
   using ElementA = typename MapArguments::ElementA;
   using LayoutA = typename MapArguments::LayoutA;
   static ComplexTransform const kTransformA = MapArguments::kTransformA;
-  static int const kAlignmentA = GemmKernel::kAlignmentA;
+  static int const kAlignmentA = MapArguments::kAlignmentA;
 
   using ElementB = typename MapArguments::ElementB;
   using LayoutB = typename MapArguments::LayoutB;
   static ComplexTransform const kTransformB = MapArguments::kTransformB;
-  static int const kAlignmentB = GemmKernel::kAlignmentB;
+  static int const kAlignmentB = MapArguments::kAlignmentB;
   
   using ElementC = typename GemmKernel::ElementC;
   using LayoutC = typename MapArguments::LayoutC;

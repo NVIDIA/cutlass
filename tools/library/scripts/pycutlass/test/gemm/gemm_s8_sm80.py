@@ -1,5 +1,6 @@
 import pycutlass
 from pycutlass import *
+from pycutlass.epilogue import LinearCombinationClamp
 from pycutlass.test import *
 import unittest
 
@@ -17,7 +18,7 @@ class GemmS8TensorOpF32Sm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[64, 64, 64],
             stages=6, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -33,15 +34,15 @@ class GemmS8TensorOpF32Sm80(unittest.TestCase):
             alignment=8
         )
 
-        element_epilogue = cutlass.float32
-
-        epilogue_functor = EpilogueFunctor.FastLinearCombinationClamp
+        epilogue_functor = FastLinearCombinationClamp(
+            C.element, C.alignment
+        )
         
         swizzling_functor = cutlass.IdentitySwizzle1
 
         operation = GemmOperationUniversal(
             arch=80, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=element_epilogue,
+            A=A, B=B, C=C,
             epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
         )
 
@@ -58,7 +59,7 @@ class GemmS8TensorOpF32Sm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[128, 128, 128],
             stages=3, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -74,15 +75,15 @@ class GemmS8TensorOpF32Sm80(unittest.TestCase):
             alignment=16
         )
 
-        element_epilogue = cutlass.float32
-
-        epilogue_functor = EpilogueFunctor.FastLinearCombinationClamp
+        epilogue_functor = FastLinearCombinationClamp(
+            C.element, C.alignment
+        )
         
         swizzling_functor = cutlass.IdentitySwizzle1
 
         operation = GemmOperationUniversal(
             arch=80, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=element_epilogue,
+            A=A, B=B, C=C,
             epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
         )
 
@@ -99,7 +100,7 @@ class GemmS8TensorOpF32Sm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[128, 128, 128],
             stages=3, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -115,15 +116,15 @@ class GemmS8TensorOpF32Sm80(unittest.TestCase):
             alignment=16
         )
 
-        element_epilogue = cutlass.float32
-
-        epilogue_functor = EpilogueFunctor.FastLinearCombinationClamp
+        epilogue_functor = FastLinearCombinationClamp(
+            C.element, C.alignment
+        )
         
         swizzling_functor = cutlass.IdentitySwizzle1
 
         operation = GemmOperationUniversal(
             arch=80, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=element_epilogue,
+            A=A, B=B, C=C,
             epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
         )
 
@@ -140,7 +141,7 @@ class GemmS8TensorOpF32Sm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[128, 128, 128],
             stages=3, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -158,13 +159,16 @@ class GemmS8TensorOpF32Sm80(unittest.TestCase):
 
         element_epilogue = cutlass.int32
 
-        epilogue_functor = EpilogueFunctor.LinearCombinationClamp
+        epilogue_functor = LinearCombinationClamp(
+            C.element, C.alignment, math_inst.element_accumulator, 
+            element_epilogue
+        )
         
         swizzling_functor = cutlass.IdentitySwizzle1
 
         operation = GemmOperationUniversal(
             arch=80, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=element_epilogue,
+            A=A, B=B, C=C, 
             epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
         )
 
@@ -181,7 +185,7 @@ class GemmS8TensorOpF32Sm80(unittest.TestCase):
         tile_description = TileDescription(
             threadblock_shape=[128, 128, 128],
             stages=3, warp_count=[2, 2, 1],
-            math_instruction=math_inst, min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
 
         A = TensorDescription(
@@ -199,13 +203,16 @@ class GemmS8TensorOpF32Sm80(unittest.TestCase):
 
         element_epilogue = cutlass.int32
 
-        epilogue_functor = EpilogueFunctor.LinearCombinationClamp
+        epilogue_functor = LinearCombinationClamp(
+            C.element, C.alignment, math_inst.element_accumulator, 
+            element_epilogue
+        )
         
         swizzling_functor = cutlass.IdentitySwizzle1
 
         operation = GemmOperationUniversal(
             arch=80, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=element_epilogue,
+            A=A, B=B, C=C,
             epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
         )
 

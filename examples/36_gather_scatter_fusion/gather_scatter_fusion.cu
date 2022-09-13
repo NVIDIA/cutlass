@@ -187,8 +187,8 @@ struct Options {
 // elements in input matrices.
 using ElementAccumulator = float;                   // <- data type of accumulator
 using ElementComputeEpilogue = ElementAccumulator;  // <- data type of epilogue operations
-using ElementInputA = cutlass::half_t;;             // <- data type of elements in input matrix A
-using ElementInputB = cutlass::half_t;;             // <- data type of elements in input matrix B
+using ElementInputA = cutlass::half_t;              // <- data type of elements in input matrix A
+using ElementInputB = cutlass::half_t;              // <- data type of elements in input matrix B
 using ElementOutput = float;                        // <- data type of elements in output matrix D
 
 // The code section below describes matrix layout of input and output matrices.
@@ -252,7 +252,7 @@ using Gemm = cutlass::gemm::device::GemmUniversal<ElementInputA,
                                                   SwizzleThreadBlock,
                                                   NumStages,
                                                   8,     /*alignmentA*/
-                                                  8,     /*alignmengB*/
+                                                  8,     /*alignmentB*/
                                                   cutlass::arch::OpMultiplyAdd,
                                                   cutlass::ComplexTransform::kNone,
                                                   cutlass::ComplexTransform::kNone,

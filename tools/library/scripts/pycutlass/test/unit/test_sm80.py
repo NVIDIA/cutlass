@@ -42,8 +42,7 @@ import unittest
 #
 
 def TestGemmOperator(gemm_kind, math_inst, layout, alignment, tiling, arch, mixed=False,
-    epilogue_functor = EpilogueFunctor.LinearCombination, 
-    swizzling_functor=cutlass.IdentitySwizzle1, **kwargs):
+    epilogue_functor=None, swizzling_functor=cutlass.IdentitySwizzle1, **kwargs):
     """
     Test GEMM Operation based on configuration
     """
@@ -68,7 +67,7 @@ def TestGemmOperator(gemm_kind, math_inst, layout, alignment, tiling, arch, mixe
     
     tile_description = TileDescription(
         tiling[0], tiling[1], tiling[2],
-        math_inst, arch, arch
+        math_inst
     )
 
     A = TensorDescription(
@@ -84,11 +83,15 @@ def TestGemmOperator(gemm_kind, math_inst, layout, alignment, tiling, arch, mixe
     )
 
     element_epilogue = data_type[3]
+    if epilogue_functor is None:
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, element_epilogue)
 
     if gemm_kind == GemmKind.Universal:
         operation = GemmOperationUniversal(
             arch=arch, tile_description=tile_description,
-            A=A, B=B, C=C, element_epilogue=element_epilogue, 
+            A=A, B=B, C=C,
             epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
         )
         if A.layout in [cutlass.ColumnMajorInterleaved32, cutlass.RowMajorInterleaved32]:
@@ -99,7 +102,7 @@ def TestGemmOperator(gemm_kind, math_inst, layout, alignment, tiling, arch, mixe
     elif gemm_kind == GemmKind.Grouped:
         operation = GemmOperationGrouped(
             arch, tile_description, A, B, C,
-            element_epilogue, epilogue_functor, swizzling_functor,
+            epilogue_functor, swizzling_functor,
             precompute_mode=kwargs["precompute_mode"]
         )
         testbed = TestbedGrouped(operation=operation)
@@ -110,7 +113,7 @@ def TestGemmOperator(gemm_kind, math_inst, layout, alignment, tiling, arch, mixe
 
 def TestConv2dOperator(math_inst, alignment, tiling, arch, 
     stride_supports=[StrideSupport.Strided, StrideSupport.Strided, StrideSupport.Strided],
-    epilogue_functor=EpilogueFunctor.LinearCombination, 
+    epilogue_functor=None, 
     swizzling_functor=cutlass.IdentitySwizzle1, interleaved=False, **kwargs):
     """
     Test Conv2d Operation based on configurations
@@ -167,20 +170,24 @@ def TestConv2dOperator(math_inst, alignment, tiling, arch,
         tile_description = TileDescription(
             threadblock_shape=tiling[0], stages=tiling[1], 
             warp_count=tiling[2],
-            math_instruction=math_inst,
-            min_compute=arch, max_compute=arch
+            math_instruction=math_inst
         )
 
         if conv_kind == cutlass.conv.Operator.dgrad and stride_support == StrideSupport.Strided:
             swizzling_functor = cutlass.StridedDgradIdentitySwizzle1
         else:
             swizzling_functor = default_swizzling_functor
+        
+        if epilogue_functor is None:
+            epilogue_functor_ = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, data_type[3])
 
         operation = Conv2dOperation(
             conv_kind=conv_kind, iterator_algorithm=cutlass.conv.IteratorAlgorithm.optimized,
             arch=arch, tile_description=tile_description, A=A, B=B, C=C, 
-            element_epilogue=data_type[3], stride_support=stride_support,
-            epilogue_functor=epilogue_functor,
+            stride_support=stride_support,
+            epilogue_functor=epilogue_functor_,
             swizzling_functor=swizzling_functor
         )
         
@@ -369,7 +376,11 @@ class Test_SM80(unittest.TestCase):
         tiling = ([256, 64, 64], 4, [4, 1, 1])
         data_type_mixed = [cutlass.int8, cutlass.int8, cutlass.int8, cutlass.float32]
 
-        self.assertTrue(TestGemmOperator(GemmKind.Universal, math_inst, layout, alignment_mixed, tiling, 80, False, data_type=data_type_mixed, epilogue_functor=EpilogueFunctor.FastLinearCombinationClamp))
+        epilogue_functor = FastLinearCombinationClamp(
+            data_type_mixed[2], alignment_mixed[2]
+        )
+
+        self.assertTrue(TestGemmOperator(GemmKind.Universal, math_inst, layout, alignment_mixed, tiling, 80, False, data_type=data_type_mixed, epilogue_functor=epilogue_functor))
         stride_supports = [StrideSupport.Strided, StrideSupport.Strided, StrideSupport.Strided]
         layout = [cutlass.TensorNC32HW32, cutlass.TensorC32RSK32, cutlass.TensorNC32HW32]
         results = TestConv2dOperator(math_inst, alignment_mixed, tiling, 80, stride_supports=stride_supports, data_type=data_type_mixed, layout=layout, interleaved=True)
@@ -378,59 +389,59 @@ class Test_SM80(unittest.TestCase):
 
     def SM80_SparseTensorOp_16832(self):
         pass
-    def test_SM80_PlanarComplexTensorOp_16816(self):
+    def SM80_PlanarComplexTensorOp_16816(self):
         pass
-    def test_SM80_SparseTensorOp_16816_fast_math(self):
+    def SM80_SparseTensorOp_16816_fast_math(self):
         pass
-    def test_SM80_TensorOp_1688_complex(self):
+    def SM80_TensorOp_1688_complex(self):
         pass
-    def test_SM80_TensorOp_1688_fast_fp32_math_complex(self):
+    def SM80_TensorOp_1688_fast_fp32_math_complex(self):
         pass
-    def test_SM80_TensorOp_1688_rank_k(self):
+    def SM80_TensorOp_1688_rank_k(self):
         pass
-    def test_SM80_TensorOp_1688_rank_k_complex(self):
+    def SM80_TensorOp_1688_rank_k_complex(self):
         pass
-    def test_SM80_TensorOp_1688_trmm(self):
+    def SM80_TensorOp_1688_trmm(self):
         pass
-    def test_SM80_TensorOp_1688_trmm_complex(self):
+    def SM80_TensorOp_1688_trmm_complex(self):
         pass
-    def test_SM80_TensorOp_1688_symm(self):
+    def SM80_TensorOp_1688_symm(self):
         pass
-    def test_SM80_TensorOp_1688_symm_complex(self):
+    def SM80_TensorOp_1688_symm_complex(self):
         pass
-    def test_SM80_TensorOp_884_complex(self):
+    def SM80_TensorOp_884_complex(self):
         pass
-    def test_SM80_TensorOp_884_complex_gaussian(self):
+    def SM80_TensorOp_884_complex_gaussian(self):
         pass
-    def test_SM80_TensorOp_884_rank_k(self):
+    def SM80_TensorOp_884_rank_k(self):
         pass
-    def test_SM80_TensorOp_884_rank_k_complex(self):
+    def SM80_TensorOp_884_rank_k_complex(self):
         pass
-    def test_SM80_TensorOp_884_rank_k_complex_gaussian(self):
+    def SM80_TensorOp_884_rank_k_complex_gaussian(self):
         pass
-    def test_SM80_TensorOp_884_trmm(self):
+    def SM80_TensorOp_884_trmm(self):
         pass
-    def test_SM80_TensorOp_884_trmm_complex(self):
+    def SM80_TensorOp_884_trmm_complex(self):
         pass
-    def test_SM80_TensorOp_884_trmm_complex_gaussian(self):
+    def SM80_TensorOp_884_trmm_complex_gaussian(self):
         pass
-    def test_SM80_TensorOp_884_symm(self):
+    def SM80_TensorOp_884_symm(self):
         pass
-    def test_SM80_TensorOp_884_symm_complex(self):
+    def SM80_TensorOp_884_symm_complex(self):
         pass
-    def test_SM80_TensorOp_884_symm_complex_gaussian(self):
+    def SM80_TensorOp_884_symm_complex_gaussian(self):
         pass
-    def test_SM80_SparseTensorOp_16864_TN(self):
+    def SM80_SparseTensorOp_16864_TN(self):
         pass
-    def test_SM80_TensorOp_16864_TN(self):
+    def SM80_TensorOp_16864_TN(self):
         pass
-    def test_SM80_SparseTensorOp_168128_TN(self):
+    def SM80_SparseTensorOp_168128_TN(self):
         pass
-    def test_SM80_TensorOp_16864_Interleaved(self):
+    def SM80_TensorOp_16864_Interleaved(self):
         pass
-    def test_SM80_TensorOp_168256(self):
+    def SM80_TensorOp_168256(self):
         pass
-    def test_SM80_Simt_complex(self):
+    def SM80_Simt_complex(self):
         pass
 
 

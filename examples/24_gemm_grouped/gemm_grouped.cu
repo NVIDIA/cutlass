@@ -1528,6 +1528,9 @@ int main(int argc, char const **args) {
     cutlass::epilogue::thread::LinearCombination<
         ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
         ElementAccumulator, ElementAccumulator>,
+    // NOTE: Threadblock swizzling is currently not supported by CUTLASS's grouped kernels.
+    // This parameter is passed in at present to match the APIs of other kernels. The parameter
+    // is unused within the kernel.
     cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
     4>::GemmKernel;
 

@@ -1366,7 +1366,12 @@ int main(int argc, char const **args) {
   using EpilogueOutputOp = cutlass::epilogue::thread::LinearCombination<
         ElementOutput, 1,
         ElementAccumulator, ElementAccumulator>;
+
+  // NOTE: Threadblock swizzling is currently not supported by CUTLASS's grouped kernels.
+  // This parameter is passed in at present to match the APIs of other kernels. The parameter
+  // is unused within the kernel.
   using ThreadblockSwizzle = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
+
   const int kStages = 4;
   const bool kSplitKSerial = false;
   using Operator = cutlass::arch::OpMultiplyAdd;

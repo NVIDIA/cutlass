@@ -34,6 +34,7 @@ import numpy as np
 import cutlass
 from pycutlass.library import TensorDescription
 from typing import Union
+from bfloat16 import bfloat16
 try:
     import torch
     torch_available = True
@@ -46,7 +47,7 @@ class ReferenceModule:
         self.layout_B = B.layout
         self.layout_C = C.layout
     
-    def run(self, A: np.ndarray, B: np.ndarray, C: np.ndarray, problem_size: cutlass.gemm.GemmCoord, alpha: float=1.0, beta: float=0.0):
+    def run(self, A: np.ndarray, B: np.ndarray, C: np.ndarray, problem_size: cutlass.gemm.GemmCoord, alpha: float=1.0, beta: float=0.0, bias=False, batch=1):
         """
         Compute the reference result on CPU
         Args:
@@ -57,27 +58,38 @@ class ReferenceModule:
         M, N, K = problem_size.m(), problem_size.n(), problem_size.k()
         if isinstance(A, np.ndarray):
             if self.layout_A == cutlass.RowMajor:
-                A_row = np.reshape(A, newshape=(M, K))
+                A_row = np.reshape(A, newshape=(batch, M, K))
             else:
-                A_col = np.reshape(A, newshape=(K, M))
-                A_row = np.transpose(A_col, axes=(1, 0))
+                A_col = np.reshape(A, newshape=(batch, K, M))
+                A_row = np.transpose(A_col, axes=(0, 2, 1))
             
             if self.layout_B == cutlass.RowMajor:
-                B_row = np.reshape(B, newshape=(K, N))
+                B_row = np.reshape(B, newshape=(batch, K, N))
             else:
-                B_col = np.reshape(B, newshape=(N, K))
-                B_row = np.transpose(B_col, axes=(1, 0))
+                B_col = np.reshape(B, newshape=(batch, N, K))
+                B_row = np.transpose(B_col, axes=(0, 2, 1))
 
             if self.layout_C == cutlass.RowMajor:
-                C_row = np.reshape(C, newshape=(M, N))
+                if bias:
+                    C_row = np.reshape(C, newshape=(batch, 1, N))
+                else:
+                    C_row = np.reshape(C, newshape=(batch, M, N))
             else:
-                C_col = np.reshape(C, newshape=(N, M))
-                C_row = np.transpose(C_col, axes=(1, 0))
+                if bias:
+                    C_row = np.reshape(C, newshape=(batch, M, 1))
+                else:
+                    C_col = np.reshape(C, newshape=(batch, N, M))
+                    C_row = np.transpose(C_col, axes=(0, 2, 1))
             
-            out_row = np.matmul(A_row, B_row) * alpha + C_row * beta
+            if A_row.dtype == bfloat16:
+                # numpy's einsum doesn't support bfloat16
+                out_row = np.einsum("bik,bkj->bij", A_row.astype(np.float32), B_row.astype(np.float32)) * alpha + C_row * beta
+                out_row = out_row.astype(C_row.dtype)
+            else:
+                out_row = np.einsum("bik,bkj->bij", A_row, B_row) * alpha + C_row * beta
 
             if self.layout_C == cutlass.ColumnMajor:
-                out = np.transpose(out_row, axes=(1, 0))
+                out = np.transpose(out_row, axes=(0, 2, 1))
             else:
                 out = out_row
             
@@ -128,7 +140,7 @@ if torch_available:
         def run(self, 
             A: Union[np.ndarray, torch.Tensor],
             B: Union[np.ndarray, torch.Tensor],
-            C: Union[np.ndarray, torch.Tensor], problem_size, alpha=1.0, beta=0.0) -> np.ndarray:
+            C: Union[np.ndarray, torch.Tensor], problem_size, alpha=1.0, beta=0.0, bias=False) -> np.ndarray:
             """
             Compute the reference result on CPU
             """
@@ -184,7 +196,10 @@ if torch_available:
                         B_torch_nchw = torch.permute(B_nhwc, (0, 3, 1, 2))
                     
                     if self.layout_C == cutlass.TensorNHWC:
-                        C_nhwc = C.view((k, r, s, c))
+                        if bias:
+                            C_nhwc = C.view((1, 1, 1, c))
+                        else:
+                            C_nhwc = C.view((k, r, s, c))
                         C_torch_nchw = torch.permute(C_nhwc, (0, 3, 1, 2))
                 elif self.kind == cutlass.conv.Operator.dgrad:
                     if self.layout_A == cutlass.TensorNHWC:
@@ -196,7 +211,10 @@ if torch_available:
                         B_torch_nchw = torch.permute(B_nhwc, (0, 3, 1, 2))
                     
                     if self.layout_C == cutlass.TensorNHWC:
-                        C_nhwc = C.view((n, h, w, c))
+                        if bias:
+                            C_nhwc = C.view((1, 1, 1, c))
+                        else:
+                            C_nhwc = C.view((n, h, w, c))
                         C_torch_nchw = torch.permute(C_nhwc, (0, 3, 1, 2))
                 else:
                     if self.layout_A == cutlass.TensorNHWC:
@@ -208,7 +226,10 @@ if torch_available:
                         B_torch_nchw = torch.permute(B_nhwc, (0, 3, 1, 2))
                     
                     if self.layout_C == cutlass.TensorNHWC:
-                        C_nhwc = C.view((n, p, q, k))
+                        if bias:
+                            C_nhwc = C.view((1, 1, 1, k))
+                        else:
+                            C_nhwc = C.view((n, p, q, k))
                         C_torch_nchw = torch.permute(C_nhwc, (0, 3, 1, 2))
 
             if self.kind == cutlass.conv.Operator.fprop:

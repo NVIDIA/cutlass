@@ -48,6 +48,9 @@ class Conv2dArguments(ArgumentBase):
     :param operation: the Conv2d operation to take the argument
     :type operation: :class:`pycutlass.Conv2dOperation`
 
+    :param problem_size: the Conv2d problem size
+    :type problem_size: :class:`cutlass.conv.Conv2dProblemSize`
+
     :param A: tensor A
     :type A: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
 
@@ -78,6 +81,7 @@ class Conv2dArguments(ArgumentBase):
                  split_k_mode: 'cutlass.conv.SplitKMode'
                     = cutlass.conv.SplitKMode.Serial, **kwargs) -> None:
 
+        self.operation = operation
         #: convolution kind
         self.conv_kind: cutlass.conv.Operator = operation.conv_kind
         self.layout_A: cutlass.layout = operation.A.layout
@@ -93,15 +97,12 @@ class Conv2dArguments(ArgumentBase):
 
         super().__init__(A, B, C, D, **kwargs)
         # preprocessing output ops
-        if "output_op" in kwargs.keys() and \
+        
+        if 'output_op' in kwargs.keys() and \
             split_k_mode != cutlass.conv.SplitKMode.Parallel:
-            self.alpha = kwargs["output_op"].alpha
-            self.beta = kwargs["output_op"].beta
+            self.output_op = kwargs['output_op']
         else:
-            self.alpha = 1.0
-            self.beta = 0.0
-
-        self.element_compute = operation.element_epilogue
+            self.output_op = self.operation.epilogue_type(1.0, 0.0)
 
         if "split_k_slices" in kwargs.keys():
             self.split_k_mode = split_k_mode
@@ -114,7 +115,12 @@ class Conv2dArguments(ArgumentBase):
         self.problem_size: cutlass.conv.Conv2dProblemSize = problem_size
         self.problem_size.split_k_slices = self.split_k_slices
 
-        self.operation = operation
+        if hasattr(self, "tensor_c_numel"):
+            c_coord = cutlass.conv.implicit_gemm_tensor_c_extent(
+                self.conv_kind, problem_size)
+            if (self.tensor_c_numel == c_coord.at(3) and 
+                self.tensor_c_numel < c_coord.size()):
+                self.bias = True
 
         #
         # initialize the argument
@@ -159,6 +165,9 @@ class Conv2dArguments(ArgumentBase):
                 self.conv_kind, problem_size)
         else:
             raise ValueError("unknown operand: " + operand)
+        # Zero stride trick
+        if operand == "c" and self.bias:
+            tensor_coord = cutlass.Tensor4DCoord(0, 0, 0, 0)
 
         layout = tensor_layout.packed(tensor_coord)
 
@@ -174,24 +183,9 @@ class Conv2dArguments(ArgumentBase):
         ref_D = TensorRef_(self.get_tensor_ref(
             self.ptr_D, self.element_C, self.layout_C, self.problem_size, "d"))
 
-        if self.element_compute == cutlass.float16:
-            alpha = cutlass.float16(self.alpha).storage
-            beta = cutlass.float16(self.beta).storage
-        elif self.element_compute == cutlass.int32:
-            alpha = int(self.alpha)
-            beta = int(self.beta)
-        else:
-            alpha = self.alpha
-            beta = self.beta
-
-        argument_type, epilogue_type = get_conv2d_arguments(
-            self.operation.element_epilogue)
-
-        output_op = epilogue_type(alpha, beta, 0, 0)
-
-        self.c_arguments = argument_type(
+        self.c_arguments = self.operation.argument_type(
             Conv2DProblemSize(self.problem_size),
-            ref_A, ref_B, ref_C, ref_D, output_op, self.split_k_mode
+            ref_A, ref_B, ref_C, ref_D, self.output_op, self.split_k_mode
         )
 
         self.semaphore = semaphore
@@ -296,9 +290,8 @@ extern "C" {
 
     def __init__(self, operation: 'Conv2dOperation'):
         super().__init__(operation)
-
-        self.argtype = [ctypes.POINTER(get_conv2d_arguments(
-            operation.element_epilogue)[0]), ctypes.c_void_p]
+        self.argument_type, self.epilogue_type = get_conv2d_arguments(operation.epilogue_functor)
+        self.argtype = [ctypes.POINTER(self.argument_type), ctypes.c_void_p]
         self.conv_kind = operation.conv_kind
 
         self.operation: Conv2dOperation = operation
@@ -410,9 +403,7 @@ class Conv2dOperation:
                  iterator_algorithm: cutlass.conv.IteratorAlgorithm,
                  arch: int, tile_description: TileDescription,
                  A: TensorDescription, B: TensorDescription, C: TensorDescription,
-                 element_epilogue: Union[cutlass.int8, cutlass.int32, cutlass.float16,
-                                         cutlass.bfloat16, cutlass.float32, cutlass.float64],
-                 stride_support, epilogue_functor=EpilogueFunctor.LinearCombination,
+                 stride_support, epilogue_functor,
                  swizzling_functor=cutlass.IdentitySwizzle1):
 
         self.operation_kind: OperationKind = OperationKind.Conv2d
@@ -422,13 +413,14 @@ class Conv2dOperation:
         self.A: TensorDescription = A
         self.B: TensorDescription = B
         self.C: TensorDescription = C
-        self.element_epilogue = element_epilogue
         self.epilogue_functor = epilogue_functor
         self.iterator_algorithm = iterator_algorithm
         self.stride_support = stride_support
         self.swizzling_functor = swizzling_functor()
 
         self.rt_module: Conv2dRT = Conv2dRT(self)
+        self.argument_type = self.rt_module.argument_type
+        self.epilogue_type = self.rt_module.epilogue_type
 
     def run(self, arguments: Conv2dArguments) -> cuda.CUresult:
         """
@@ -577,12 +569,7 @@ typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}<
   cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
   cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k} >,
   cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
-  ${epilogue_functor}<
-    ${element_c},
-    ${epilogue_vector_length},
-    ${element_accumulator},
-    ${element_epilogue}
-  >,
+  ${epilogue_functor},
   ${swizzling_functor}, // cutlass::gemm::threadblock::GemmSplitKIdentityThreadblockSwizzle<>,
   ${stages},
   ${math_operator},
@@ -629,8 +616,7 @@ struct ${operation_name}${operation_suffix}:
             'instruction_shape_n': str(operation.tile_description.math_instruction.instruction_shape[1]),
             'instruction_shape_k': str(operation.tile_description.math_instruction.instruction_shape[2]),
             'epilogue_vector_length': str(epilogue_vector_length),
-            'epilogue_functor': EpilogueFunctorTag[operation.epilogue_functor],
-            'element_epilogue': str(DataTypeTag[operation.element_epilogue]),
+            'epilogue_functor': operation.epilogue_functor.emit(),
             'swizzling_functor': operation.swizzling_functor.tag(),
             'stages': str(operation.tile_description.stages),
             'iterator_algorithm': IteratorAlgorithmTag[operation.iterator_algorithm],

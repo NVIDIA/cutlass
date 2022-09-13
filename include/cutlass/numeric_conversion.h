@@ -40,7 +40,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
-#include "cutlass/transform/thread/unaryOp.h"
+#include "cutlass/transform/thread/unary_op.h"
 
 #include "cutlass/array.h"
 #include "cutlass/half.h"
@@ -1270,6 +1270,40 @@ struct NumericArrayConverter<uint8_t, int, N, Round> {
 };
 
 #endif
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Array<int8_t> <= Array<float>
+/// Conversion is performed with saturation regardless of setting of
+/// the `Round` template parameter.
+template <
+  int N,
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<int8_t, float, N, Round> {
+
+  using result_type = Array<int8_t, N>;
+  using source_type = Array<float, N>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_HOST_DEVICE
+  static result_type convert(source_type const & source) {
+    // Convert float to int
+    Array<int32_t, N> temporary;
+
+    NumericArrayConverter<int, float, N, Round> compute_converter;
+    temporary = compute_converter(source);
+
+    // Convert to int to int8_t
+    NumericArrayConverter<int8_t, int32_t, N, Round> destination_converter;
+    return destination_converter(temporary);
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

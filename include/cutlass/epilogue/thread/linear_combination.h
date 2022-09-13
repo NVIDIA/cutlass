@@ -40,6 +40,7 @@
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/epilogue/thread/scale_type.h"
+#include "cutlass/epilogue/thread/linear_combination_params.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -76,22 +77,23 @@ public:
   using FragmentAccumulator = Array<ElementAccumulator, kCount>;
   using ComputeFragment = Array<ElementCompute, kCount>;
 
+  using ParamsBase = LinearCombinationParams;
+  
   static FloatRoundStyle const kRound = Round;
 
   /// Host-constructable parameters structure
-  struct Params {
-
+  struct Params : ParamsBase{
     ElementCompute alpha;                  ///< scales accumulators
     ElementCompute beta;                   ///< scales source tensor
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
 
-    //
-    // Methods
-    //
-
     CUTLASS_HOST_DEVICE
     Params(): 
+      ParamsBase(
+        ElementCompute(1), 
+        ElementCompute(0)
+      ),
       alpha(ElementCompute(1)), 
       beta(ElementCompute(0)), 
       alpha_ptr(nullptr), 
@@ -101,30 +103,43 @@ public:
     Params(
       ElementCompute alpha,
       ElementCompute beta
-    ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) {
-
-    }
+    ): 
+      ParamsBase(alpha, beta),
+      alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) { } 
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute alpha
-    ): alpha(alpha), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) {
-
-    }
+    ): 
+      ParamsBase(alpha, ElementCompute(0)),
+      alpha(alpha), beta(0), alpha_ptr(nullptr), beta_ptr(nullptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute const *alpha_ptr,
       ElementCompute const *beta_ptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) {
-
-    }
+    ): 
+      ParamsBase(*alpha_ptr, *beta_ptr),
+      alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) { }
 
     CUTLASS_HOST_DEVICE
     Params(
       ElementCompute const *alpha_ptr
-    ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(nullptr) {
+    ):
+      ParamsBase(*alpha_ptr, ElementCompute(0)),
+      alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(nullptr) { }
 
+    CUTLASS_HOST_DEVICE
+    Params(
+      ParamsBase const& base
+    ): ParamsBase(base), alpha_ptr(nullptr), beta_ptr(nullptr) { 
+      #if defined(__CUDA_ARCH__)
+      alpha = reinterpret_cast<ElementCompute const&>(base.alpha_data);
+      beta = reinterpret_cast<ElementCompute const&>(base.beta_data);
+      #else
+      memcpy( alpha, base.alpha_data, sizeof(ElementCompute) ); 
+      memcpy( beta, base.alpha_data, sizeof(ElementCompute) ); 
+      #endif
     }
   };
 
@@ -142,7 +157,6 @@ public:
   /// Constructs the function object, possibly loading from pointers in host memory
   CUTLASS_HOST_DEVICE
   LinearCombination(Params const &params) {
-
     alpha_ = (params.alpha_ptr ? *params.alpha_ptr : params.alpha);
     beta_ = (params.beta_ptr ? *params.beta_ptr : params.beta);
   }

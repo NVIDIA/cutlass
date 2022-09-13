@@ -68,7 +68,7 @@ class TestbedGrouped:
             self.scope_min = -8
 
         #: compute type
-        self.compute_type = operation.element_epilogue
+        self.compute_type = operation.epilogue_functor.element_epilogue
 
         self.accumulator_type = operation.tile_description.math_instruction.element_accumulator
 
@@ -176,7 +176,7 @@ class TestbedGrouped:
         arguments = GemmGroupedArguments(
             operation=self.operation, problem_sizes=problem_sizes,
             A=tensor_As, B=tensor_Bs, C=tensor_Cs, D=tensor_Ds,
-            output_op=LinearCombinationFunctorArguments(alpha, beta)
+            output_op=self.operation.epilogue_type(alpha, beta)
         )
 
         self.operation.run(arguments)

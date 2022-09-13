@@ -478,27 +478,6 @@ SharedMemPerCC = {
 
 ###################################################################################################
 
-#
-
-
-def SubstituteTemplate(template, values):
-    text = template
-    changed = True
-    while changed:
-        changed = False
-        for key, value in values.items():
-            regex = "\\$\\{%s\\}" % key
-            newtext = re.sub(regex, value, text)
-            if newtext != text:
-                changed = True
-            text = newtext
-    return text
-
-###################################################################################################
-
-#
-
-
 class GemmKind(enum.Enum):
     Gemm = enum_auto()
     Sparse = enum_auto()
@@ -552,22 +531,6 @@ class SymmKind(enum.Enum):
 #
 SymmKindNames = {
     SymmKind.Universal: "symm"
-}
-
-#
-
-
-class EpilogueFunctor(enum.Enum):
-    LinearCombination = enum_auto()
-    LinearCombinationClamp = enum_auto()
-    FastLinearCombinationClamp = enum_auto()
-
-
-#
-EpilogueFunctorTag = {
-    EpilogueFunctor.LinearCombination: 'cutlass::epilogue::thread::LinearCombination',
-    EpilogueFunctor.LinearCombinationClamp: 'cutlass::epilogue::thread::LinearCombinationClamp',
-    EpilogueFunctor.FastLinearCombinationClamp: 'cutlass::epilogue::thread::FastLinearCombinationClamp'
 }
 
 #
@@ -700,7 +663,7 @@ class MathInstruction:
 
 class TileDescription:
 
-    def __init__(self, threadblock_shape, stages, warp_count, math_instruction, min_compute, max_compute):
+    def __init__(self, threadblock_shape, stages, warp_count, math_instruction):
         self.threadblock_shape = threadblock_shape
 
         #: number of pipeline stages
@@ -709,11 +672,6 @@ class TileDescription:
         #: number of warps along x, y, z directions
         self.warp_count: list[int] = warp_count
         self.math_instruction = math_instruction
-
-        #: minimum compute capability
-        self.minimum_compute_capability: int = min_compute
-        #: maximum compute capability
-        self.maximum_compute_capability: int = max_compute
 
         #: number threads per threadblock
         self.num_threads: int = 32

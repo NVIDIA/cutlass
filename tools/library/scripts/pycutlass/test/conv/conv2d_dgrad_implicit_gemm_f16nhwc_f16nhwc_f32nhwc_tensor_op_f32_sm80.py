@@ -29,15 +29,18 @@ class Conv2dDgradImplicitGemmF16nhwcF16nhwcF32nhwcTensorOpF32SM80(unittest.TestC
         tile_description = TileDescription(
             threadblock_shape=[128, 128, 32], stages=3, 
             warp_count=[2, 2, 1],
-            math_instruction=math_inst,
-            min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
+
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, cutlass.float32)
 
         operation = Conv2dOperation(
             conv_kind=cutlass.conv.Operator.dgrad, iterator_algorithm=cutlass.conv.IteratorAlgorithm.optimized,
             arch=80, tile_description=tile_description, A=A, B=B, C=C, 
-            element_epilogue=cutlass.float32, stride_support=StrideSupport.Unity,
-            epilogue_functor=EpilogueFunctor.LinearCombination,
+            stride_support=StrideSupport.Unity,
+            epilogue_functor=epilogue_functor,
             swizzling_functor=cutlass.IdentitySwizzle1
         )
         
@@ -67,15 +70,18 @@ class Conv2dDgradImplicitGemmF16nhwcF16nhwcF32nhwcTensorOpF32SM80(unittest.TestC
         tile_description = TileDescription(
             threadblock_shape=[128, 128, 32], stages=4, 
             warp_count=[2, 2, 1],
-            math_instruction=math_inst,
-            min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
+
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, cutlass.float32)
 
         operation = Conv2dOperation(
             conv_kind=cutlass.conv.Operator.dgrad, iterator_algorithm=cutlass.conv.IteratorAlgorithm.optimized,
             arch=80, tile_description=tile_description, A=A, B=B, C=C, 
-            element_epilogue=cutlass.float32, stride_support=StrideSupport.Unity,
-            epilogue_functor=EpilogueFunctor.LinearCombination,
+            stride_support=StrideSupport.Unity,
+            epilogue_functor=epilogue_functor,
             swizzling_functor=cutlass.IdentitySwizzle1
         )
         
@@ -105,15 +111,18 @@ class Conv2dDgradImplicitGemmF16nhwcF16nhwcF32nhwcTensorOpF32SM80(unittest.TestC
         tile_description = TileDescription(
             threadblock_shape=[128, 128, 64], stages=3, 
             warp_count=[2, 2, 1],
-            math_instruction=math_inst,
-            min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
+
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, cutlass.float32)
 
         operation = Conv2dOperation(
             conv_kind=cutlass.conv.Operator.dgrad, iterator_algorithm=cutlass.conv.IteratorAlgorithm.optimized,
             arch=80, tile_description=tile_description, A=A, B=B, C=C, 
-            element_epilogue=cutlass.float32, stride_support=StrideSupport.Unity,
-            epilogue_functor=EpilogueFunctor.LinearCombination,
+            stride_support=StrideSupport.Unity,
+            epilogue_functor=epilogue_functor,
             swizzling_functor=cutlass.IdentitySwizzle1
         )
         
@@ -143,15 +152,18 @@ class Conv2dDgradImplicitGemmF16nhwcF16nhwcF32nhwcTensorOpF32SM80(unittest.TestC
         tile_description = TileDescription(
             threadblock_shape=[128, 128, 64], stages=4, 
             warp_count=[2, 2, 1],
-            math_instruction=math_inst,
-            min_compute=80, max_compute=80
+            math_instruction=math_inst
         )
+
+        epilogue_functor = LinearCombination(
+            C.element, C.alignment, 
+            math_inst.element_accumulator, cutlass.float32)
 
         operation = Conv2dOperation(
             conv_kind=cutlass.conv.Operator.dgrad, iterator_algorithm=cutlass.conv.IteratorAlgorithm.optimized,
             arch=80, tile_description=tile_description, A=A, B=B, C=C, 
-            element_epilogue=cutlass.float32, stride_support=StrideSupport.Unity,
-            epilogue_functor=EpilogueFunctor.LinearCombination,
+            stride_support=StrideSupport.Unity,
+            epilogue_functor=epilogue_functor,
             swizzling_functor=cutlass.IdentitySwizzle1
         )
         

@@ -50,7 +50,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'PyCutlass'
-copyright = '2022, Andrew Kerr; Zhaodong Chen; Haicheng Wu; Szymon Migacz; Graham Markall'
+copyright = '2022, Zhaodong Chen; Andrew Kerr; Haicheng Wu; Szymon Migacz; Graham Markall'
 author = 'Zhaodong Chen; Andrew Kerr; Haicheng Wu; Szymon Migacz; Graham Markall'
 
 
@@ -65,8 +65,11 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'enum_tools.autoenum',
-    'sphinx.ext.autosummary'
+    'sphinx.ext.autosummary',
+    'm2r2'
 ]
+
+source_suffix = [".rst", ".md"]
 
 autosummary_generate = True
 autosummary_imported_members = True
@@ -85,7 +88,7 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'classic'
+html_theme = 'bizstyle'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
