@@ -39,7 +39,7 @@ supported at each level of the execution model hierarchy.
 # What's New in CUTLASS 2.10
 
 CUTLASS 2.10 is an update to CUTLASS adding:
-- [CUTLASS Python](/examples/40_cutlass_py) now supports GEMM, CONV, Group GEMM for different data types as well as different epilogue flavours.  
+- [CUTLASS Python](/examples/40_cutlass_py) now supports GEMM, Convolution and Grouped GEMM for different data types as well as different epilogue flavors.  
 - Optimizations for CUTLASS's [Grouped GEMM](examples/24_gemm_grouped/gemm_grouped.cu) kernel.  It can move some scheduling into the host side if applicable.
 - Optimizations for [GEMM+Softmax](examples/35_gemm_softmax).
 - [Grouped GEMM for Multihead Attention](examples/41_multi_head_attention) is a general MHA that does not require equal sequence length in every GEMM.
