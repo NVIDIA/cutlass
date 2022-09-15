@@ -240,4 +240,59 @@ TEST(SM80_Device_Conv2d_Dgrad_Optimized_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_ten
 
 ////////////////////////////////////////////////////////////////////////////////
 
+TEST(SM80_Device_Conv2d_Dgrad_Optimized_ImplicitGemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f16_align2,
+  128x64_64x3_64x32x64) {
+ 
+  /// Conv operation element types for the Gemm equivalent (ImplicitGemm)
+  using ElementA           = cutlass::half_t;
+  using ElementB           = cutlass::half_t;
+  using ElementC           = cutlass::half_t;
+  using ElementAccumulator = cutlass::half_t;
+  using ElementCompute     = cutlass::half_t;
+
+  /// Device-level Conv2d instance
+  using Conv2dDgradKernel = typename cutlass::conv::kernel::DefaultConv2dDgrad<
+    ElementA, cutlass::layout::TensorNHWC,
+    ElementB, cutlass::layout::TensorNHWC,
+    ElementC, cutlass::layout::TensorNHWC,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    cutlass::gemm::GemmShape<128, 64, 32>,
+    cutlass::gemm::GemmShape<64, 32, 32>,
+    cutlass::gemm::GemmShape<16, 8, 16>,
+    cutlass::epilogue::thread::LinearCombination<
+      ElementC,
+      2,
+      ElementAccumulator,
+      ElementCompute
+    >,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>,
+    3,
+    cutlass::arch::OpMultiplyAdd,
+    cutlass::conv::IteratorAlgorithm::kOptimized,
+    cutlass::conv::StrideSupport::kUnity,
+    2,
+    2
+  >::Kernel;
+
+  using Conv2dDgrad = cutlass::conv::device::ImplicitGemmConvolution<Conv2dDgradKernel>;
+ 
+  test::conv::device::Conv2dProblemVector problem_size_list;
+
+  // run specific problem size in the unit test first
+  problem_size_list.push_back(cutlass::conv::Conv2dProblemSize(
+    {35, 100, 50, 64},     // input size (NHWC)
+    {22, 1, 1, 64},     // filter size (KRSC)
+    {0, 0, 0, 0},      // padding (pad_h, _, pad_w, _)
+    {1, 1},            // stride (stride_h, stride_w)
+    {1, 1}             // dilation (dilation_h, dilation_w)
+  ));
+ 
+  /// Run all unit test sizes with device-level Conv2d instance
+  EXPECT_TRUE(test::conv::device::TestAllConv2d<Conv2dDgrad>(problem_size_list));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 #endif  // CUTLASS_ARCH_MMA_SM80_SUPPORTED

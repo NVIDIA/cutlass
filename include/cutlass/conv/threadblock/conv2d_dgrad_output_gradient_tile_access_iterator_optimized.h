@@ -633,7 +633,7 @@ public:
 
     CUTLASS_PRAGMA_UNROLL
     for (int v_idx = 0; v_idx < kAccessesPerVector; ++v_idx) {
-      clear_mask(v_idx, filter_k_ >= problem_size.K);
+      clear_mask(v_idx, filter_k_ + v_idx * AccessType::kElements >= problem_size.K);
     }
 
     set_iteration_index(0);
