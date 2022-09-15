@@ -671,7 +671,7 @@ public:
         state_[1] = 0;
         ++state_[2];
         byte_pointer_ += params_.advance_cluster;
-        store_byte_pointer_ += params_.advance_group;
+        store_byte_pointer_ += params_.advance_cluster;
 
         thread_start_row_ += ThreadMap::Count::kGroup * 
           ThreadMap::Shape::kGroup * ThreadMap::Count::kRow * ThreadMap::Shape::kRow;
@@ -679,7 +679,7 @@ public:
         if (state_[2] == ThreadMap::Count::kCluster) {
           state_[2] = 0;
           byte_pointer_ += params_.advance_tile;
-          store_byte_pointer_ += params_.advance_group;
+          store_byte_pointer_ += params_.advance_tile;
         }
       }
     }
