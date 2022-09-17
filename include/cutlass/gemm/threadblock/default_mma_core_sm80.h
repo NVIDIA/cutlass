@@ -88,18 +88,12 @@ template <
     typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
-    /// Number of stages
-    int Stages,
     /// Operation performed by MMA
-    typename Operator_,
-    /// Cache operation of operand A
-    cutlass::arch::CacheOperation::Kind CacheOpA,
-    /// Cache operation of operand B
-    cutlass::arch::CacheOperation::Kind CacheOpB>
+    typename Operator_>
 struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
                       layout::ColumnMajor, double, layout::ColumnMajor, double,
-                      LayoutC_, arch::OpClassTensorOp, Stages, Operator_,
-                      false, CacheOpA, CacheOpB> {
+                      LayoutC_, arch::OpClassTensorOp, 2, Operator_,
+                      false> {
   using Shape = Shape_;
   using WarpShape = WarpShape_;
   using InstructionShape = InstructionShape_;
@@ -109,7 +103,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
   using LayoutB = layout::ColumnMajor;
   using ElementC = double;
   using LayoutC = LayoutC_;
-  static int const kStages = Stages;
+  static int const kStages = 2;
   static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
   static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
@@ -207,18 +201,12 @@ template <
     typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
-    /// Number of stages
-    int Stages,
     /// Operation performed by MMA
-    typename Operator_,
-    /// Cache operation of operand A
-    cutlass::arch::CacheOperation::Kind CacheOpA,
-    /// Cache operation of operand B
-    cutlass::arch::CacheOperation::Kind CacheOpB>
+    typename Operator_>
 struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
                       layout::ColumnMajor, double, layout::RowMajor, double,
-                      LayoutC_, arch::OpClassTensorOp, Stages, Operator_,
-                      false, CacheOpA, CacheOpB> {
+                      LayoutC_, arch::OpClassTensorOp, 2, Operator_,
+                      false> {
   using Shape = Shape_;
   using WarpShape = WarpShape_;
   using InstructionShape = InstructionShape_;
@@ -228,7 +216,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
   using LayoutB = layout::RowMajor;
   using ElementC = double;
   using LayoutC = LayoutC_;
-  static int const kStages = Stages;
+  static int const kStages = 2;
   static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
   static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
@@ -325,18 +313,13 @@ template <
     typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
-    /// Number of stages
-    int Stages,
+
     /// Operation performed by MMA
-    typename Operator_,
-    /// Cache operation of operand A
-    cutlass::arch::CacheOperation::Kind CacheOpA,
-    /// Cache operation of operand B
-    cutlass::arch::CacheOperation::Kind CacheOpB>
+    typename Operator_>
 struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
                       layout::RowMajor, double, layout::ColumnMajor, double,
-                      LayoutC_, arch::OpClassTensorOp, Stages, Operator_,
-                      false, CacheOpA, CacheOpB> {
+                      LayoutC_, arch::OpClassTensorOp, 2, Operator_,
+                      false> {
   using Shape = Shape_;
   using WarpShape = WarpShape_;
   using InstructionShape = InstructionShape_;
@@ -346,7 +329,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
   using LayoutB = layout::ColumnMajor;
   using ElementC = double;
   using LayoutC = LayoutC_;
-  static int const kStages = Stages;
+  static int const kStages = 2;
   static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
   static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
@@ -439,18 +422,12 @@ template <
     typename InstructionShape_,
     /// Layout of accumulator
     typename LayoutC_,
-    /// Number of stages
-    int Stages,
     /// Operation performed by MMA
-    typename Operator_,
-    /// Cache operation of operand A
-    cutlass::arch::CacheOperation::Kind CacheOpA,
-    /// Cache operation of operand B
-    cutlass::arch::CacheOperation::Kind CacheOpB>
+    typename Operator_>
 struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
                       layout::RowMajor, double, layout::RowMajor, double,
-                      LayoutC_, arch::OpClassTensorOp, Stages, Operator_,
-                      false, CacheOpA, CacheOpB> {
+                      LayoutC_, arch::OpClassTensorOp, 2, Operator_,
+                      false> {
   using Shape = Shape_;
   using WarpShape = WarpShape_;
   using InstructionShape = InstructionShape_;
@@ -460,7 +437,7 @@ struct DefaultMmaCore<Shape_, WarpShape_, InstructionShape_, double,
   using LayoutB = layout::RowMajor;
   using ElementC = double;
   using LayoutC = LayoutC_;
-  static int const kStages = Stages;
+  static int const kStages = 2;
   static cutlass::arch::CacheOperation::Kind const kCacheOpA = cutlass::arch::CacheOperation::Always;
   static cutlass::arch::CacheOperation::Kind const kCacheOpB = cutlass::arch::CacheOperation::Always;
 
