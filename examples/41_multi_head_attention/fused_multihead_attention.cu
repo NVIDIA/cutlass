@@ -43,6 +43,8 @@
       # Run an attention example with batch size = 64 and head number = 16 without checking the correctness
       $ ./examples/41_multi_head_attention/41_multi_head_attention --head_number=16 --batch_size=64 --reference-check=false
 
+      Acknowledgement: this example is inspired by the idea originally prototyped by ByteDance Inc.
+
 */
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
