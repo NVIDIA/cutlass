@@ -60,13 +60,6 @@ add_custom_target(
   test_unit_gemv_device
 )
 
-add_custom_target(
-  cutlass_test_unit_gemm_device_new
-  DEPENDS
-  cutlass_test_unit_gemm_device_exp
-  cutlass_test_unit_gemm_device_new
-)
-
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_simt
 
@@ -75,7 +68,7 @@ cutlass_test_unit_add_executable(
 
   simt_sgemm_nt_sm80.cu
   simt_sgemm_tn_sm80.cu
-
+  
   simt_cgemm_nn_sm50.cu
   simt_cgemm_nt_sm50.cu
   simt_cgemm_tn_sm50.cu
@@ -170,7 +163,7 @@ cutlass_test_unit_add_executable(
   gemm_s4n_s4t_s4n_tensor_op_s32_sm75.cu
   gemm_s4t_s4n_s32t_tensor_op_s32_sm75.cu
   gemm_s4t_s4n_s32n_tensor_op_s32_sm75.cu
-  gemm_s4t_s4n_s4n_tensor_op_s32_sm75.cu
+  gemm_s4t_s4n_s4n_tensor_op_s32_sm75.cu 
   gemm_s4t_s4n_s4t_tensor_op_s32_sm75.cu
 
   gemm_b1t_b1n_s32t_tensor_op_s32_sm75.cu
@@ -220,7 +213,7 @@ cutlass_test_unit_add_executable(
   gemm_tf32t_tf32n_f32t_tensor_op_f32_sm80.cu
   gemm_tf32n_tf32t_f32t_tensor_op_f32_sm80.cu
   gemm_tf32n_tf32n_f32t_tensor_op_f32_sm80.cu
-  gemm_tf32t_tf32t_f32t_tensor_op_f32_sm80.cu
+  gemm_tf32t_tf32t_f32t_tensor_op_f32_sm80.cu                 
   gemm_universal_cf32n_cf32n_cf32n_tensor_op_f32_sm80.cu
   gemm_cf32n_cf32t_cf32t_tensor_op_tf32_f32_sm80.cu
   gemm_cf32t_cf32n_cf32t_tensor_op_tf32_f32_sm80.cu
@@ -239,7 +232,7 @@ cutlass_test_unit_add_executable(
   gemm_f64n_f64t_f64t_tensor_op_f64_sm80.cu
   gemm_f64t_f64n_f64t_tensor_op_f64_sm80.cu
 
-  gemm_universal_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu
+  gemm_universal_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu                             
   gemm_universal_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu
   gemm_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu
   gemm_cf64t_cf64n_cf64t_tensor_op_f64_sm80.cu
@@ -260,7 +253,7 @@ cutlass_test_unit_add_executable(
   gemm_s8t_s8n_s8t_tensor_op_s32_sm80.cu
   gemm_s4t_s4n_s32n_tensor_op_s32_sm80.cu
   gemm_s4t_s4n_s32t_tensor_op_s32_sm80.cu
-  gemm_s4t_s4n_s4n_tensor_op_s32_sm80.cu
+  gemm_s4t_s4n_s4n_tensor_op_s32_sm80.cu 
   gemm_s4t_s4n_s4t_tensor_op_s32_sm80.cu
   gemm_b1t_b1n_s32n_tensor_op_s32_sm80.cu
   gemm_b1t_b1n_s32t_tensor_op_s32_sm80.cu
@@ -333,8 +326,8 @@ cutlass_test_unit_add_executable(
   BATCH_SOURCES ON
   BATCH_SIZE 4
 
-  gemm_planar_complex_f16_f16_f32_tensor_op_sm70.cu
-  gemm_planar_complex_f16_f16_f32_tensor_op_sm75.cu
+  gemm_planar_complex_f16_f16_f32_tensor_op_sm70.cu                              
+  gemm_planar_complex_f16_f16_f32_tensor_op_sm75.cu                                         
   gemm_planar_complex_f16_f16_f32_tensor_op_sm80.cu
 )
 
@@ -410,7 +403,7 @@ add_dependencies(
 
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_gemm_with_fused_epilogue_tensorop
-
+  
   gemm_with_reduction_f16n_f16n_f16n_tensorop_f32_sm75.cu
   gemm_with_broadcast_f16n_f16n_f16n_tensorop_f32_sm75.cu
 
@@ -437,10 +430,10 @@ cutlass_test_unit_add_executable(
   BATCH_SOURCES ON
   BATCH_SIZE 4
 
-  ## SYRK
+  ## SYRK 
   # Syrk SM80 f64 tests
-  syrk_f64n_f64t_tensor_op_f64_sm80.cu
-  syrk_f64t_f64n_tensor_op_f64_sm80.cu
+  syrk_f64n_f64t_tensor_op_f64_sm80.cu 
+  syrk_f64t_f64n_tensor_op_f64_sm80.cu 
 
   # Syrk SM80 f32 tests
   syrk_tf32n_f32t_tensor_op_f32_sm80.cu
@@ -459,7 +452,7 @@ cutlass_test_unit_add_executable(
   syrk_cf32n_cf32t_tensor_op_fast_f32_sm80.cu
   syrk_cf32n_cf32n_tensor_op_fast_f32_sm80.cu
 
-  ## HERK
+  ## HERK 
   # Herk SM80 complex f64 tests
   herk_cf64h_cf64n_tensor_op_f64_sm80.cu
 
@@ -557,7 +550,7 @@ cutlass_test_unit_add_executable(
   hemm_cf64h_cf64n_cf64n_tensor_op_ls_f64_sm80.cu
   hemm_cf64h_cf64n_cf64n_tensor_op_rs_f64_sm80.cu
   hemm_cf64h_cf64n_cf64n_tensor_op_ls_f64_gaussian_sm80.cu
-
+  
   # Hemm SM80 complex f32 tests
   hemm_cf32h_cf32n_tensor_op_f32_ls_sm80.cu
   hemm_cf32h_cf32n_tensor_op_f32_rs_sm80.cu
@@ -586,12 +579,6 @@ cutlass_test_unit_add_executable(
   # Grouped HER2K SM80 f64 tests
   her2k_cf64n_cf64n_tensor_op_f64_grouped_sm80.cu
   her2k_cf64h_cf64n_tensor_op_f64_grouped_sm80.cu
-)
-
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_gemm_device_exp
-
-  gemm_broadcast_test.cu
 )
 
 endif()

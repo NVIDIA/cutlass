@@ -46,13 +46,11 @@ namespace epilogue {
 namespace thread {
 
 // /// Models a residual block of the form: UnaryOp(BinaryOp(ActivationOp(TensorOp(X) + bias), residual))
-// or form UnaryOp(BinaryOp(BinaryOp(ActivationOp(TensorOp(X) + bias), residual1), residual2))
 template <typename ElementOutput_, typename ElementAccumulator_,
           typename ElementCompute_, typename ElementC_, int ElementsPerAccess,
           template <typename T> class ActivationOp_,
-          template <typename T> class BinaryOp1_,
-          template <typename T> class UnaryOp_,
-          template <typename T> class BinaryOp2_=BinaryOp1_>
+          template <typename T> class BinaryOp_,
+          template <typename T> class UnaryOp_>
 class LinearCombinationResidualBlock {
 public:
 
@@ -64,8 +62,7 @@ public:
   static int const kCount = kElementsPerAccess;
 
   using UnaryOp = UnaryOp_<Array<ElementCompute, kCount>>;
-  using BinaryOp1 = BinaryOp1_<Array<ElementCompute, kCount>>;
-  using BinaryOp2 = BinaryOp2_<Array<ElementCompute, kCount>>;
+  using BinaryOp = BinaryOp_<Array<ElementCompute, kCount>>;
   using ActivationOp = ActivationOp_<Array<ElementCompute, kCount>>;
 
   using FragmentAccumulator = Array<ElementAccumulator, kElementsPerAccess>;
@@ -141,7 +138,7 @@ public:
                   FragmentC const &residual,
                   FragmentCompute const &bias) const {
     UnaryOp unary_op;
-    BinaryOp1 binary_op;
+    BinaryOp binary_op;
     ActivationOp activation;
 
     FragmentCompute tmp_Accum =
@@ -151,31 +148,6 @@ public:
 
     FragmentCompute z =
         binary_op(activation(alpha_ * tmp_Accum + bias), beta_ * tmp_residual);
-    FragmentCompute result_Z = skip_elementwise_ ? z : unary_op(z);
-
-    NumericArrayConverter<ElementOutput, ElementCompute, kElementsPerAccess> convert_z;
-    frag_Z = convert_z(result_Z);
-  }
-
-  /// Applies the operation UnaryOp(BinaryOp(BinaryOp(ActivationOp(AB + bias), residual1), residual2))
-  CUTLASS_HOST_DEVICE
-  void operator()(FragmentOutput &frag_Z, FragmentOutput &, FragmentAccumulator const &AB,
-                  FragmentC const &residual1, FragmentC const &residual2,
-                  FragmentCompute const &bias) const {
-    UnaryOp unary_op;
-    BinaryOp1 binary_op1;
-    BinaryOp2 binary_op2;
-    ActivationOp activation;
-
-    FragmentCompute tmp_Accum =
-        NumericArrayConverter<ElementCompute, ElementAccumulator, kElementsPerAccess>()(AB);
-    FragmentCompute tmp_residual1 =
-        NumericArrayConverter<ElementCompute, ElementC, kElementsPerAccess>()(residual1);
-    FragmentCompute tmp_residual2 =
-        NumericArrayConverter<ElementCompute, ElementC, kElementsPerAccess>()(residual2);
-
-    FragmentCompute z =
-        binary_op2(binary_op1(activation(alpha_ * tmp_Accum + bias), beta_ * tmp_residual1), beta_ * tmp_residual2);
     FragmentCompute result_Z = skip_elementwise_ ? z : unary_op(z);
 
     NumericArrayConverter<ElementOutput, ElementCompute, kElementsPerAccess> convert_z;
