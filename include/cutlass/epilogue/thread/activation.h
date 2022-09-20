@@ -53,6 +53,8 @@ namespace thread {
 
 template <typename T>
 struct Identity {
+  static const bool kIsHeavy=false;
+
   CUTLASS_HOST_DEVICE
   T operator()(T value) const {
     return value;
@@ -160,7 +162,7 @@ struct LeakyReLU {
     Params():
       LinearCombinationGenericParams<T>(),
       leaky_alpha(T(1)) {}
-    
+
     CUTLASS_HOST_DEVICE
     Params(
       T alpha,
@@ -194,7 +196,7 @@ struct LeakyReLU<Array<T, N> > {
     Params():
       LinearCombinationGenericParams<T>(),
       leaky_alpha(T(1)) {}
-    
+
     CUTLASS_HOST_DEVICE
     Params(
       T alpha,
@@ -464,7 +466,7 @@ struct HardSwish<Array<half_t, N> > {
     maximum<Array<T, N> > mx;
     multiplies<Array<T, N> > mul;
     plus<Array<T, N> > add;
- 
+
     return mul(mul(mn(mx(add(rhs, T(3)), T(0)), T(6)), rhs), T(0.16666667f));
   }
 
@@ -493,7 +495,7 @@ struct GELU {
     return T(cutlass::constants::half<T>() * scalar *
       (cutlass::constants::one<T>() + (T)erff((float)(scalar / cutlass::constants::root_two<T>()))));
   }
-  
+
   using Params = LinearCombinationGenericParams<T>;
 
   CUTLASS_HOST_DEVICE
@@ -509,7 +511,7 @@ struct GELU<float> {
     return cutlass::constants::half<float>() * scalar *
       (cutlass::constants::one<float>() + erff( scalar / cutlass::constants::root_two<float>() ));
   }
-  
+
   using Params = LinearCombinationGenericParams<float>;
 
   CUTLASS_HOST_DEVICE
@@ -525,7 +527,7 @@ struct GELU<double> {
     return cutlass::constants::half<double>() * scalar *
       (cutlass::constants::one<double>() + erf( scalar / cutlass::constants::root_two<double>() ));
   }
-  
+
   using Params = LinearCombinationGenericParams<double>;
 
   CUTLASS_HOST_DEVICE
@@ -548,7 +550,7 @@ struct GELU<Array<T, N> > {
 
     return y;
   }
-  
+
   using Params = LinearCombinationGenericParams<T>;
 
   CUTLASS_HOST_DEVICE
@@ -572,7 +574,7 @@ struct GELU_taylor {
   }
 
   using Params = LinearCombinationGenericParams<T>;
-  
+
 };
 
 template <int N>
@@ -618,7 +620,7 @@ struct GELU_taylor<Array<T, N> > {
 
     return y;
   }
-  
+
   using Params = LinearCombinationGenericParams<T>;
 };
 
