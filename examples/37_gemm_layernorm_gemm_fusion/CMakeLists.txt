@@ -34,3 +34,7 @@ cutlass_example_add_executable(
   gemm_layernorm.cu
   )
 
+cutlass_example_add_executable(
+  37_gemm_layernorm_gemm_fusion_residual_bias
+  gemm_layernorm_bias_residual.cu
+)
