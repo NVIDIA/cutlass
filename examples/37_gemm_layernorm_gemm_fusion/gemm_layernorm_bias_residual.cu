@@ -82,7 +82,7 @@
 #include "cutlass/fast_math.h"
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "gemm_with_layernorm.h"
+#include "gemm_with_bias_add_and_layernorm.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -294,7 +294,7 @@ struct Testbed {
   static int const kStages0  = 3;
   static int const kStages1  = 4;
 
-  using GemmLayernorm = cutlass::GemmLayernorm<
+  using GemmLayernormWithBias = cutlass::GemmLayernormWithBias<
     ElementInputA0,
     LayoutInputA0,
     ElementInputB0,
@@ -311,18 +311,18 @@ struct Testbed {
     kIsShiftedVariance
   >;
   
-  using ElementInputA1 = typename GemmLayernorm::ElementInputA1;
-  using ElementOutputC1 = typename GemmLayernorm::ElementOutputC1;
-  using ElementInputScaleBias = typename GemmLayernorm::ElementInputScaleBias;
-  using ElementLayernormCompute = typename GemmLayernorm::ElementLayernormCompute;
+  using ElementInputA1 = typename GemmLayernormWithBias::ElementInputA1;
+  using ElementOutputC1 = typename GemmLayernormWithBias::ElementOutputC1;
+  using ElementInputScaleBias = typename GemmLayernormWithBias::ElementInputScaleBias;
+  using ElementLayernormCompute = typename GemmLayernormWithBias::ElementLayernormCompute;
   using ElementInputR0 = ElementOutput;
   using ElementInputBias0 = ElementOutput;
   using ElementInputBias1 = ElementOutput;
 
-  using LayoutInputA1 = typename GemmLayernorm::LayoutInputA1;
-  using LayoutOutputC0 = typename GemmLayernorm::LayoutOutputC0;
-  using LayoutOutputC1 = typename GemmLayernorm::LayoutOutputC1;
-  using LayoutInputScaleBias = typename GemmLayernorm::LayoutInputScaleBias;
+  using LayoutInputA1 = typename GemmLayernormWithBias::LayoutInputA1;
+  using LayoutOutputC0 = typename GemmLayernormWithBias::LayoutOutputC0;
+  using LayoutOutputC1 = typename GemmLayernormWithBias::LayoutOutputC1;
+  using LayoutInputScaleBias = typename GemmLayernormWithBias::LayoutInputScaleBias;
   using LayoutInputR0 = LayoutOutputC0;
   using LayoutInputBias0 = cutlass::layout::RowMajor;
   using LayoutInputBias1 = cutlass::layout::RowMajor;
@@ -387,7 +387,7 @@ struct Testbed {
     int leading_dim_0 = kIsColumnMajorOutput ? options.problem_size0.n() : options.problem_size0.m();
     int leading_dim_1 = kIsColumnMajorOutput ? options.problem_size0.m() : options.problem_size0.n();
 
-    int block_num = (leading_dim_1 + GemmLayernorm::ThreadblockShape::kM - 1) / GemmLayernorm::ThreadblockShape::kM;
+    int block_num = (leading_dim_1 + GemmLayernormWithBias::ThreadblockShape::kM - 1) / GemmLayernormWithBias::ThreadblockShape::kM;
 
     tensor_Variance.reset({block_num, leading_dim_0});
     tensor_Mean.reset({block_num, leading_dim_0});
@@ -558,7 +558,7 @@ struct Testbed {
     //
 
     /* TODO: add tensor_R0, tensor_Bias0 and tensor_Bias1 as args here
-    typename GemmLayernorm::Arguments args(
+    typename GemmLayernormWithBias::Arguments args(
       options.problem_size0,
       options.problem_size1,
       tensor_A0.device_ref().data(),
@@ -596,17 +596,17 @@ struct Testbed {
         Current behavior:
           C0 = layernorm(A0 * B0)
           C1 = A1 * C0
-    GemmLayernorm gemm_layernorm;
+    */
+    GemmLayernormWithBias gemm_layernorm_bias_residual;
 
     // Initialize
-    status = gemm_layernorm.initialize(args);
+    status = gemm_layernorm_bias_residual.initialize(args);
     if (status != cutlass::Status::kSuccess) {
       return status;
     }
 
     // Run
-    status = gemm_layernorm();
-    */
+    status = gemm_layernorm_bias_residual();
 
     return status;
   }
