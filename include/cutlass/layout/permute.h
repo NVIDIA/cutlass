@@ -254,7 +254,7 @@ public:
 };
 
 /// Permute layout function for 5-D permuted tensors with output matrix (dimension as [M, N]) reshaped
-/// as [M/T1, T1, T2, T3, N/T3]. Then perform permute([2, 0, 3, 1, 4]) on the corresponding output tensor.
+/// as [M/T1, T1, T2, T3, N/T2/T3]. Then perform permute([2, 0, 3, 1, 4]) on the corresponding output tensor.
 template <int T1, int T2, int T3>
 class Tensor5DPermute20314 {
 public:
