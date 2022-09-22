@@ -205,23 +205,29 @@ struct RandomGaussianFunc<complex<Element> > {
 
     Element reals[2];
 
-    for (int i = 0; i < 2; ++i) {
-      // Box-Muller transform to generate random numbers with Normal distribution
-      double u1 = double(std::rand()) / double(RAND_MAX);
-      double u2 = double(std::rand()) / double(RAND_MAX);
+    // Box-Muller transform to generate random numbers with Normal distribution
+    double u1 = double(std::rand()) / double(RAND_MAX);
+    double u2 = double(std::rand()) / double(RAND_MAX);
 
-      // Compute Gaussian random value
-      double rnd = std::sqrt(-2 * std::log(u1)) * std::cos(2 * pi * u2);
-      rnd = mean + stddev * rnd;
-
-      if (int_scale >= 0) {
-        rnd = double(int(rnd * double(1 << int_scale)));
-        reals[i] = from_real<Element>(rnd / double(1 << int_scale));
+    // Compute Gaussian random values
+    double rnd1 = std::sqrt(-2 * std::log(u1)) * std::cos(2 * pi * u2);
+    double rnd2 = std::sqrt(-2 * std::log(u1)) * std::sin(2 * pi * u2);
+    rnd1 = mean + stddev * rnd1;
+    rnd2 = mean + stddev * rnd2;
+    
+    if (int_scale >= 0) {
+        rnd1 = double(int(rnd1 * double(1 << int_scale)));
+        rnd2 = double(int(rnd2 * double(1 << int_scale)));
+        reals[0] = from_real<Element>(rnd1 / double(1 << int_scale));
+        reals[1] = from_real<Element>(rnd2 / double(1 << int_scale));
+        
       }
       else {
-        reals[i] = from_real<Element>(rnd);
+        reals[0] = from_real<Element>(rnd1);
+        reals[1] = from_real<Element>(rnd2);
+        
       }
-    }
+    
 
     return complex<Element>(reals[0], reals[1]);
   }
@@ -255,23 +261,42 @@ struct RandomGaussianFunc<Quaternion<Element> > {
 
     Element reals[4];
 
-    for (int i = 0; i < 4; ++i) {
-      // Box-Muller transform to generate random numbers with Normal distribution
-      double u1 = double(std::rand()) / double(RAND_MAX);
-      double u2 = double(std::rand()) / double(RAND_MAX);
+    // Box-Muller transform to generate random numbers with Normal distribution
+    double u1 = double(std::rand()) / double(RAND_MAX);
+    double u2 = double(std::rand()) / double(RAND_MAX);
+    double u3 = double(std::rand()) / double(RAND_MAX);
+    double u4 = double(std::rand()) / double(RAND_MAX);
 
-      // Compute Gaussian random value
-      double rnd = std::sqrt(-2 * std::log(u1)) * std::cos(2 * pi * u2);
-      rnd = mean + stddev * rnd;
+    // Compute Gaussian random value
+    double rnd1 = std::sqrt(-2 * std::log(u1)) * std::cos(2 * pi * u2);
+    double rnd2 = std::sqrt(-2 * std::log(u1)) * std::sin(2 * pi * u2);
+    double rnd3 = std::sqrt(-2 * std::log(u3)) * std::cos(2 * pi * u4);
+    double rnd4 = std::sqrt(-2 * std::log(u3)) * std::sin(2 * pi * u4);
+  
+    rnd1 = mean + stddev * rnd1;
+    rnd2 = mean + stddev * rnd2;
+    rnd3 = mean + stddev * rnd3;
+    rnd4 = mean + stddev * rnd4;
+    
 
-      if (int_scale >= 0) {
-        rnd = double(int(rnd * double(1 << int_scale)));
-        reals[i] = from_real<Element>(rnd / double(1 << int_scale));
-      }
-      else {
-        reals[i] = from_real<Element>(rnd);
-      }
+    if (int_scale >= 0) {
+      rnd1 = double(int(rnd1 * double(1 << int_scale)));
+      rnd2 = double(int(rnd2 * double(1 << int_scale)));
+      rnd3 = double(int(rnd3 * double(1 << int_scale)));
+      rnd4 = double(int(rnd4 * double(1 << int_scale)));
+      
+      reals[0] = from_real<Element>(rnd1 / double(1 << int_scale));
+      reals[1] = from_real<Element>(rnd2 / double(1 << int_scale));
+      reals[2] = from_real<Element>(rnd3 / double(1 << int_scale));
+      reals[3] = from_real<Element>(rnd4 / double(1 << int_scale));
     }
+    else {
+      reals[0] = from_real<Element>(rnd1);
+      reals[1] = from_real<Element>(rnd2);
+      reals[2] = from_real<Element>(rnd3);
+      reals[3] = from_real<Element>(rnd4);
+    }
+
 
     return Quaternion<Element>(reals[0], reals[1], reals[2], reals[3]);
   }
@@ -311,7 +336,7 @@ struct TensorFillGaussianFunc {
   }
 };
 
-/// Computes a random Gaussian distribution
+/// Computes a random Gaussian distribution for a rank-2 tensor
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
@@ -404,7 +429,7 @@ void TensorFillRandomGaussian(
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-/// Fills a tensor with random values with a Gaussian distribution.
+/// Fills a rank-2 tensor symmetrically with random values of a Gaussian distribution.
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
@@ -614,7 +639,7 @@ struct RandomUniformFunc<Quaternion<Element> > {
   }
 };
 
-/// Computes a random Gaussian distribution
+/// Computes a random uniform distribution
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
@@ -633,7 +658,7 @@ struct TensorFillRandomUniformFunc {
   // Methods
   //
 
-  /// Construction of Gaussian RNG functor.
+  /// Construction of uniform RNG functor.
   TensorFillRandomUniformFunc(
     TensorView view_ = TensorView(),
     RandomUniformFunc<Element> func_ = RandomUniformFunc<Element>()
@@ -649,7 +674,7 @@ struct TensorFillRandomUniformFunc {
   }
 };
 
-/// Computes a random Gaussian distribution
+/// Computes a random uniform distribution for a rank-2 tensor
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
@@ -669,7 +694,7 @@ struct TensorFillSymmetricRandomUniformFunc {
   // Methods
   //
 
-  /// Construction of Gaussian RNG functor.
+  /// Construction of uniform RNG functor.
   TensorFillSymmetricRandomUniformFunc(
     TensorView view_ = TensorView(),
     RandomUniformFunc<Element> func_ = RandomUniformFunc<Element>(),
@@ -715,7 +740,7 @@ struct TensorFillPadDiagonalRandomUniformFunc {
   // Methods
   //
 
-  /// Construction of Gaussian RNG functor.
+  /// Construction of uniform RNG functor.
   TensorFillPadDiagonalRandomUniformFunc(
     TensorView view_ = TensorView(),
     RandomUniformFunc<Element> func_ = RandomUniformFunc<Element>(),
@@ -747,7 +772,7 @@ struct TensorFillPadDiagonalRandomUniformFunc {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Fills a tensor with random values with a uniform random distribution.
+/// Fills a tensor with random values of a uniform random distribution.
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
@@ -772,7 +797,7 @@ void TensorFillRandomUniform(
   );
 }
 
-/// Fills a tensor with random values with a uniform random distribution.
+/// Fills a tensor with random values of a uniform random distribution.
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
