@@ -47,15 +47,15 @@ for (int cta_n = 0; cta_n < GemmN; cta_n += CtaTileN) {                     // f
 ```
 
 This tiled loop nest targets concurrency among
-- threadblocks
-- warps
-- CUDA and Tensor Cores
+- threadblocks,
+- warps, and
+- CUDA and Tensor Cores.
 
-and takes advantage of memory locality within
-- shared memory
-- registers
+It takes advantage of memory locality within
+- shared memory and
+- registers.
 
-The flow of data within this structure is illustrated below. 
+The figure below illustrates the flow of data within this structure. 
 This is the hierarchical GEMM computation embodied by CUTLASS. Each stage depicts a 
 nested level of tiling which corresponds to a layer of concurrency within the CUDA execution model and to a 
 level within the memory hierarchy, becoming increasingly finer moving left to right.
@@ -66,20 +66,18 @@ level within the memory hierarchy, becoming increasingly finer moving left to ri
 ### Threadblock-level GEMM
 
 Each threadblock computes its portion of the output GEMM by iteratively loading tiles of input
-matrices and computing an accumulated matrix product. At the threadblock level, data is loaded from
-global memory. The blocking strategy in general is key to achieving efficiency. However, there are
-multiple conflicting goals that a programmer aims to achieve to strike a reasonable compromise. A
-larger threadblock means fewer fetches from global memory, thereby ensuring that DRAM bandwidth
-does not become a bottleneck. 
-
+matrices and computing an accumulated matrix product. At the threadblock level, data are loaded from
+global memory. The blocking strategy in general is key to achieving efficiency. However, the programmer
+must balance multiple conflicting goals.  A larger threadblock means fewer fetches from global memory,
+thereby ensuring that DRAM bandwidth does not become a bottleneck. 
 However, large threadblock tiles may not match the dimensions of the problem well. If either the
 GEMM _M_ or _N_ dimension is small, some threads within the threadblock may not perform meaningful
 work, as the threadblock may be partially outside the bounds of the problem. If both _M_ and _N_
 are small while _K_ is large, this scheme may launch relatively few threadblocks and fail to
-fully utilize all multiprocessors within the GPU. Strategies to optimize performance for this case
+make full use of all multiprocessors within the GPU. Strategies to optimize performance for this case
 are described in the section [Parallelized Reductions](efficient_gemm.md#parallelized-reductions) 
 which partition the GEMM K dimension across multiple threadblocks or multiple warps. These compute
-matrix products in parallel which is then reduced to compute the result.
+matrix products in parallel; the products are then reduced to compute the result.
 
 In CUTLASS, the dimensions of the threadblock tile are specified as `ThreadblockShape::{kM, kN, kK}`
 and may be tuned to specialize the GEMM computation for the target processor and dimensions of
@@ -94,14 +92,14 @@ Warp-level GEMMs may be implemented either by TensorCores issuing
 [mma.sync](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-mma) 
 or [wmma](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-wmma-mma) 
 instructions or by thread-level matrix computations issued to CUDA cores.
-For maximum performance, access to shared memory should be bank conflict free. To maximize data
+For maximum performance, access to shared memory should be free of bank conflicts. To maximize data
 reuse within the warp, a large warp-level GEMM tile should be chosen.
 
 
 ### Thread-level GEMM
 
 At the lowest level of blocking, each thread is responsible for processing a certain number of
-elements. Threads cannot access each other's registers so we choose an organization that enables
+elements. Threads cannot access each other's registers, so we choose an organization that enables
 values held in registers to be reused for multiple math instructions. This results in a 2D tiled
 structure within a thread, in which each thread issues a sequence of independent math instructions
 to the CUDA cores and computes an accumulated outer product.
@@ -117,7 +115,7 @@ held in the registers of each thread within the threadblock. The mapping of logi
 in the output tile to each thread is chosen to maximize performance of the matrix multiply
 computation but does not result in efficient, coalesced loads and stores to global memory.
 
-The epilogue is a separate phase in which threads exchange data through shared memory then
+The epilogue is a separate phase in which threads exchange data through shared memory, then
 cooperatively access global memory using efficient striped access patterns. It is also
 the phase in which linear scaling and other elementwise operations may be conveniently
 computed using the matrix product results as inputs.
@@ -136,20 +134,20 @@ for all corners of the design space, maximizing parallelism and exploiting data 
 The blocked structure demands a large storage allocation within the registers of each CUDA thread. The
 accumulator elements typically occupy at least half a thread's total register budget. Consequently, 
 occupancy -- the number of concurrent threads, warps, and threadblocks -- is relatively low compared
-to other classes of GPU workloads. This limits the GPUs ability to hide memory latency and other stalls
+to other classes of GPU workloads. This limits the GPU's ability to hide memory latency and other stalls
 by context switching to other concurrent threads within an SM.
 
-To mitigate the effects of memory latency, *software pipelining* is used to overlap memory accesses
-with other computation within a thread. In CUTLASS, this is achieved by double buffering at the
-following scopes
+To mitigate the effects of memory latency, CUTLASS uses *software pipelining* to overlap memory accesses
+with other computation within a thread. CUTLASS accomplishes this by double buffering at the
+following scopes.
 
-- **threadblock-scoped shared memory tiles:** two tiles are allocated within shared memory; one is used
+- **Threadblock-scoped shared memory tiles:** two tiles are allocated within shared memory.  One is used to
   load data for the current matrix operation, while the other tile is used to buffer data loaded from
-  global memory for the next mainloop iteration
+  global memory for the next mainloop iteration.
 
-- **warp-scoped matrix fragments:** two fragments are allocated within registers; one fragment is passed
+- **Warp-scoped matrix fragments:** two fragments are allocated within registers.  One fragment is passed
   to CUDA and TensorCores during the current matrix computation, while the other is used to receive
-  shared memory fetch returns for the next warp-level matrix operation
+  shared memory fetch returns for the next warp-level matrix operation.
 
 The efficient, pipelined mainloop body used in CUTLASS GEMMs is illustrated as follows.
 
@@ -181,35 +179,37 @@ benefits of large threadblock-level GEMM tiles.
 
 CUTLASS implements parallel reductions across threadblocks by partitioning the GEMM _K_ dimension
 and launching an additional set of threadblocks for each partition. Consequently, we refer to
-this strategy within CUTLASS as "parallel reduction splitK." The "parallel reduction splitK" in cutlass 
+this strategy within CUTLASS as "parallel reduction splitK." The "parallel reduction splitK" strategy 
 requires the execution of 2 kernels. The first one is called partitionedK GEMM. The second one is called 
 batched reduction.
 
-The partitionedK GEMM is very similar to one flavor of batched strided GEMM. Instead of requiring users 
+PartitionedK GEMM resembles one flavor of batched strided GEMM. Instead of requiring users 
 to specify the problem size of each batch, partitionedK GEMM asks for the overall problem size and the 
-number of partition that will be applied along K dimension for operand A and B. For example, parameters o
-f m=128, n=128, k=4096 and partition=16 will result in 16 batched strided GEMMs with each batch of 
-m=128, n=128, k=256. PartitionedK also allows scenario where k is not divisible by partition count. 
+number of partitions that will be applied along the K dimension for operands A and B. For example, parameters
+of m=128, n=128, k=4096 and partition=16 will result in 16 batched strided GEMMs with each batch of 
+m=128, n=128, k=256. PartitionedK also allows the scenario where k is not divisible by the partition count. 
 
-For example, parameters of m=128, n=128, k=4096 and partition=20 will result in 20 batched strided GEMMs 
-with the first 19 batches of m=128, n=128, k=4096/20=204 and the last batch of m=128, n=128, k=220.
+For example, parameters of m=128, n=128, k=4096 and partition=20 will result in 20 batched strided GEMMs.
+The first 19 batches will have m=128, n=128, and k=4096/20=204,
+and the last batch will have m=128, n=128, and k=220.
 
-The batched reduction kernel will further perform reduction along the K-dimension. Thus, the input of 
-the batched reduction kernel is the output (C) of partitionedK GEMM. An workspace memory is managed by 
-the users to store this intermediate results.
+The batched reduction kernel will further perform a reduction along the K-dimension. Thus, the input of 
+the batched reduction kernel is the output (C) of partitionedK GEMM. Users must manage workspace memory
+to store this intermediate result.
 
 **Sliced K - reduction across warps**
 
-Similar to the split-k scenario, sliced-k aims at improving the efficiency of kernels with smaller M, N,
- but large K dimensions. In general at the thread-block level, the parameters CtaTileN, CtaTileM expose parallelism 
-by partitioning the the work the among warps, and larger warpTiles expose better ILP (Instruction 
-level parallelism) and reuse, but it also limits the number of warps running per thread-block, which reduces efficiency.
+Similar to the split-k scenario, sliced-k aims at improving the efficiency of kernels with smaller M and N dimensions,
+but large K dimension. At the thread-block level, the parameters CtaTileN and CtaTileM expose parallelism 
+by partitioning the work among warps.  Larger warpTiles expose better instruction-level parallelism (ILP) 
+and reuse, but also limit the number of warps running per thread-block, which reduces efficiency.
 
-So in order to improve efficiency in such scenarios, partitioning the warpTiles also along ctaTileK helps improve the utilization 
-of the underlying hardware by allowing more warps to run concurrently in a CTA.  Now, since sliced-k kernels breaks 
+In order to improve efficiency in such scenarios, partitioning the warpTiles also along ctaTileK helps use
+the hardware more efficiently by allowing more warps to run concurrently in a CTA.  Sliced-k kernels break
 down a thread-blocks's computation among participating warps not just among the CtaTileN, CtaTileM dimension, 
-but also the CtaTileK dimension it entails a small cost in form of a reduction which has to happen at the end among the 
-participating warps - since each warp now owns a partial sum (since they compute using only a "slice" of ctaTileK). 
+but also the CtaTileK dimension.  Thus, sliced-k entails a small cost in the form of a reduction
+which has to happen at the end among the participating warps.  This is because each warp computes
+using only a "slice" of CtaTileK, so each warp only has a partial sum before the reduction.
 
 # Resources
 
