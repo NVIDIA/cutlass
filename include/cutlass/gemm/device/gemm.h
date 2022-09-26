@@ -362,7 +362,18 @@ public:
     if (!kSplitKSerial && args.split_k_slices > 1) {
       return Status::kErrorInvalidProblem;
     }
+    
+    // MaxDynamicSharedMemorySize must be smaller than the device attribute cudaDevAttrMaxSharedMemoryPerBlockOptin minus the function attribute sharedSizeBytes  
+    int smem_size = int(sizeof(typename GemmKernel::SharedStorage));
+    cudaFuncAttributes attr;
+    cudaFuncGetAttributes(&attr, Kernel<GemmKernel>);
+    int max_mem = 0;
+    cudaDeviceGetAttribute(&max_mem, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0);
+    if (smem_size > (int) (max_mem - attr.sharedSizeBytes)) {
+      return Status::kErrorMemoryAllocation;
+    }
 
+    
     Status status = GemmKernel::can_implement(
       args.problem_size,
       args.ref_A.non_const_ref(),
@@ -481,15 +492,6 @@ public:
 
     int smem_size = int(sizeof(typename GemmKernel::SharedStorage));
     
-    // MaxDynamicSharedMemorySize must be smaller than the device attribute cudaDevAttrMaxSharedMemoryPerBlockOptin minus the function attribute sharedSizeBytes  
-    cudaFuncAttributes attr;
-    cudaFuncGetAttributes(&attr, Kernel<GemmKernel>);
-    int max_mem = 0;
-    cudaDeviceGetAttribute(&max_mem, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0);
-    if (smem_size > (int) (max_mem - attr.sharedSizeBytes)) {
-      return Status::kErrorMemoryAllocation;
-    }
-
     if (smem_size >= (48 << 10)) {
       result = cudaFuncSetAttribute(Kernel<GemmKernel>,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
