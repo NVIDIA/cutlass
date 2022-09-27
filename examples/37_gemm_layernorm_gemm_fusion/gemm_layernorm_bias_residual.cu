@@ -59,6 +59,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <limits>
 
@@ -505,12 +506,15 @@ struct Testbed {
         0
       );
     
-    cutlass::reference::host::TensorFillRandomUniform(
-      tensor_Bias1.host_view(),
-        options.seed + 5,
-        ElementInputBias1(5),
-        ElementInputBias1(-5),
-        0
+    // cutlass::reference::host::TensorFillRandomUniform(
+    //   tensor_Bias1.host_view(),
+    //     options.seed + 5,
+    //     ElementInputBias1(5),
+    //     ElementInputBias1(-5),
+    //     0
+    //   );
+    cutlass::reference::host::TensorFill(
+      tensor_Bias1.host_view()
       );
 
     cutlass::reference::host::TensorFillRandomUniform(
@@ -557,21 +561,25 @@ struct Testbed {
     // Setup arguments
     //
 
-    /* TODO: add tensor_R0, tensor_Bias0 and tensor_Bias1 as args here
+    /* TODO: add tensor_R0, tensor_Bias0 and tensor_Bias1 as args here */
     typename GemmLayernormWithBias::Arguments args(
       options.problem_size0,
       options.problem_size1,
       tensor_A0.device_ref().data(),
       tensor_B0.device_ref().data(),
-      tensor_C0.device_ref().data(),
+      tensor_Bias0.device_ref().data(),
+      tensor_R0.device_ref().data(),
       tensor_C0.device_ref().data(),
       tensor_A1.device_ref().data(),
+      tensor_Bias1.device_ref().data(),
       tensor_C1.device_ref().data(),
       tensor_A0.device_ref().stride(0),
       tensor_B0.device_ref().stride(0),
-      tensor_C0.device_ref().stride(0),
+      tensor_Bias0.device_ref().stride(0),
+      tensor_R0.device_ref().stride(0),
       tensor_C0.device_ref().stride(0),
       tensor_A1.device_ref().stride(0),
+      tensor_Bias1.device_ref().stride(0),
       tensor_C1.device_ref().stride(0),
       {
         ElementCompute(options.alpha),
@@ -583,7 +591,6 @@ struct Testbed {
       tensor_Beta.device_ref(),
       tensor_Shifted_K.device_ref().data()
     );
-    */
 
     //
     // Launch
@@ -789,12 +796,18 @@ struct Testbed {
 
   /// Emits all tensor values
   void emit_results() {
-    std::cout << "tensor_C1 = \n" << tensor_C1.host_view() << "\n\n";
-    std::cout << "Reference C1 = \n" << reference_C1.host_view() << "\n\n";
-    std::cout << "Mean = \n" << tensor_Mean.host_view() << "\n\n";
-    std::cout << "rsqrt(Variance) = \n" << tensor_Variance.host_view() << "\n\n";
-    std::cout << "Reference Mean = \n" << reference_Mean.host_view() << "\n\n";
-    std::cout << "Reference rsqrt(Variance) = \n" << reference_Variance.host_view() << "\n\n";
+    std::stringstream fname;
+      fname << "output_gemm_epilogue_broadcast_and_layernorm.txt";
+    std::cout << "Dumping results in " << fname.str() << "\n";
+
+    std::ofstream file(fname.str());
+
+    file << "tensor_C1 = \n" << tensor_C1.host_view() << "\n\n";
+    file << "Reference C1 = \n" << reference_C1.host_view() << "\n\n";
+    file << "Mean = \n" << tensor_Mean.host_view() << "\n\n";
+    file << "rsqrt(Variance) = \n" << tensor_Variance.host_view() << "\n\n";
+    file << "Reference Mean = \n" << reference_Mean.host_view() << "\n\n";
+    file << "Reference rsqrt(Variance) = \n" << reference_Variance.host_view() << "\n\n";
   }
 
   template<typename Element, typename Layout>

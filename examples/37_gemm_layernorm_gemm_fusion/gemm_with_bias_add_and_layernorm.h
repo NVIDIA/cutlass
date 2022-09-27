@@ -48,6 +48,7 @@
 #include <limits>
 
 #include "cutlass/cutlass.h"
+#include "cutlass/array.h"
 #include "cutlass/arch/memory.h"
 #include "cutlass/arch/memory_sm75.h"
 #include "cutlass/gemm/device/gemm_layernorm_mainloop_fusion.h"
@@ -301,12 +302,42 @@ public:
   static int const kThreadsInColumn = kThreads / kThreadsPerRow;
   static int const kHalfThreadsPerRow = (kThreadsPerRow >> 1);
 
+  using ElementCompute = ElementAccumulator;
+
+  /// Compute fragment
+  using FragmentCompute = Array<ElementCompute, OutputTileIterator::Fragment::kElements>;
+
+  /// Thread map used by output tile iterators
+  using ThreadMap = typename OutputTileIterator::ThreadMap;
+
+  /// Fragment object used to store the broadcast values
+  using BroadcastFragment = Array<
+    ElementCompute, 
+    ThreadMap::Iterations::kColumn * ThreadMap::kElementsPerAccess>;
+
+  /// Used for the broadcast
+  struct BroadcastDetail {
+
+    /// Number of threads per warp
+    static int const kWarpSize = 32;
+
+    static int const kElementsPerAccess = ThreadMap::kElementsPerAccess;
+
+    /// Number of distinct scalar column indices handled by each thread
+    static int const kColumnsPerThread = ThreadMap::Iterations::kColumn * ThreadMap::kElementsPerAccess;
+
+    /// Number of distinct scalar row indices handled by each thread
+    static int const kRowsPerThread = ThreadMap::Iterations::kCount / ThreadMap::Iterations::kColumn;
+
+  };
+
   /// Argument structure
   struct Arguments {
 
     typename ElementwiseFunctor::Params   elementwise;
     TensorRefD                            ref_C;
     TensorRefD                            ref_D;
+    ElementOutput                         *ptr_broadcast;
     ElementVariance                       *ptr_Variance;
     ElementMean                           *ptr_Mean;
     ElementOutput                         *ptr_Shifted_K;
@@ -315,6 +346,7 @@ public:
     // Methods
     //
     Arguments():
+      ptr_broadcast(nullptr),
       ptr_Variance(nullptr),
       ptr_Mean(nullptr),
       ptr_Shifted_K(nullptr)
@@ -326,6 +358,7 @@ public:
       typename ElementwiseFunctor::Params   elementwise_,
       TensorRefD                            ref_C_,
       TensorRefD                            ref_D_,
+      ElementOutput                         *ptr_broadcast,
       ElementVariance                       *ptr_Variance,
       ElementMean                           *ptr_Mean_,
       ElementOutput                         *ptr_Shifted_K_ = nullptr
@@ -333,6 +366,7 @@ public:
       elementwise(elementwise_),
       ref_C(ref_C_),
       ref_D(ref_D_),
+      ptr_broadcast(ptr_broadcast),
       ptr_Variance(ptr_Variance),
       ptr_Mean(ptr_Mean_),
       ptr_Shifted_K(ptr_Shifted_K_)
@@ -348,6 +382,7 @@ public:
     typename OutputTileIterator::Params   params_D;
     typename OutputTileIterator::Element *ptr_C;
     typename OutputTileIterator::Element *ptr_D;
+    ElementOutput                         *ptr_broadcast;
     ElementVariance                       *ptr_Variance;
     ElementMean                           *ptr_Mean;
     ElementOutput                         *ptr_Shifted_K;
@@ -358,6 +393,7 @@ public:
     CUTLASS_HOST_DEVICE
     Params():
       ptr_D(nullptr),
+      ptr_broadcast(nullptr),
       ptr_Variance(nullptr),
       ptr_Mean(nullptr)
     {
@@ -371,6 +407,7 @@ public:
       params_D(args.ref_D.layout()),
       ptr_C(args.ref_C.data()),
       ptr_D(args.ref_D.data()),
+      ptr_broadcast(args.ptr_broadcast),
       ptr_Variance(args.ptr_Variance),
       ptr_Mean(args.ptr_Mean),
       ptr_Shifted_K(args.ptr_Shifted_K)
@@ -396,6 +433,8 @@ private:
   typename OutputTileIterator::Fragment fragment_C_;
   typename OutputTileIterator::Fragment fragment_D_;
 
+  BroadcastFragment                     broadcast_fragment;
+
   ElementAccumulator                    alpha_;
   ElementAccumulator                    beta_;
   ConvertedShiftFragment                shift_k_frag_;
@@ -404,6 +443,10 @@ private:
   ElementLayernormCompute               accum_sum_element_;
 
   MatrixCoord                           thread_offset_;
+  MatrixCoord                           threadblock_offset_;
+  
+  /// Thread index within the threadblock
+  int thread_idx_;
 
 public:
 
@@ -422,7 +465,8 @@ public:
     extent_(problem_size0),
     elementwise_(params.elementwise),
     iterator_C_(params.params_C, params.ptr_C, problem_size0, thread_idx, threadblock_offset),
-    iterator_D_(params.params_D, params.ptr_D, problem_size0, thread_idx, threadblock_offset)
+    iterator_D_(params.params_D, params.ptr_D, problem_size0, thread_idx, threadblock_offset),
+    threadblock_offset_(threadblock_offset), thread_idx_(thread_idx)
   {
     alpha_ = (params.elementwise.alpha_ptr ? *params.elementwise.alpha_ptr : params.elementwise.alpha);
     beta_ =  (params.elementwise.beta_ptr ? *params.elementwise.beta_ptr : params.elementwise.beta);
@@ -471,6 +515,9 @@ public:
 
     }
 
+    // Load broadcast fragment
+    load_broadcast_fragment_(broadcast_fragment, params_.ptr_broadcast, extent_, threadblock_offset_);
+
   }
 
   /// Called at the start of one step before starting accumulator exchange
@@ -508,6 +555,10 @@ public:
     Mul       mul;
     Exp       exponential;
 
+    // For residual addition
+    using Plus = cutlass::plus<AccumulatorFragment>;
+    Plus      plus;
+
     LayernormFragment result;
 
     thread_offset_ =
@@ -517,12 +568,17 @@ public:
     NumericArrayConverter<ElementLayernormCompute, ElementOutput, kElementsPerAccess> source_converter;
     OutputVector &source_vector = reinterpret_cast<OutputVector *>(&fragment_C_)[frag_idx];
 
+    using AccessTypeBroadcast = Array<ElementCompute, kElementsPerAccess>;
+
+    AccessTypeBroadcast const *frag_Broadcast_ptr =
+      reinterpret_cast<AccessTypeBroadcast const *>(&broadcast_fragment);
+
     bool column_guard = (thread_offset_.column() < extent_.column());
 
     if (elementwise_.kScale == cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling) {
-      result = source_converter(elementwise_(accum));
+      result = source_converter(plus(elementwise_(accum), frag_Broadcast_ptr[frag_idx % ThreadMap::Iterations::kColumn]));
     }else{
-      result = source_converter(elementwise_(accum, source_vector));
+      result = source_converter(plus(elementwise_(accum, source_vector), frag_Broadcast_ptr[frag_idx % ThreadMap::Iterations::kColumn]));
     }
 
 
@@ -601,6 +657,51 @@ public:
   }
 
 private:
+
+  CUTLASS_DEVICE
+  void load_broadcast_fragment_(
+    BroadcastFragment & broadcast_fragment,      ///< Fragment containing the accumulated partial reduction over columns
+    ElementOutput const * broadcast_ptr,         ///< Broadcast vector
+    MatrixCoord const &problem_size,             ///< Problem size needed to guard against out-of-bounds accesses
+    MatrixCoord const &threadblock_offset        ///< Threadblock's initial offset within the problem size space
+    ) {
+
+    broadcast_fragment.clear();
+    
+    // If no pointer is supplied, set with all zeros and avoid memory accesses
+    if (!broadcast_ptr) {
+      return;
+    }
+
+    int thread_initial_column = ThreadMap::initial_offset(thread_idx_).column();
+
+    int thread_column_idx = threadblock_offset.column() + thread_initial_column;
+    broadcast_ptr += thread_initial_column;
+
+    NumericArrayConverter<ElementCompute, ElementOutput, BroadcastDetail::kElementsPerAccess> converter;
+    using AccessType = AlignedArray<ElementOutput, BroadcastDetail::kElementsPerAccess>;
+    using ComputeFragmentType = Array<ElementCompute, BroadcastDetail::kElementsPerAccess>;
+
+    ComputeFragmentType *frag_ptr = reinterpret_cast<ComputeFragmentType *>(&broadcast_fragment);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int j = 0; j < ThreadMap::Iterations::kColumn; ++j) {
+
+      AccessType loaded;
+
+      loaded.clear();
+
+      if (thread_column_idx < problem_size.column()) {
+        loaded = *reinterpret_cast<AccessType const *>(broadcast_ptr);
+      }
+
+      ComputeFragmentType cvt = converter(loaded);
+      frag_ptr[j] = cvt;
+
+      thread_column_idx += ThreadMap::Delta::kColumn;
+      broadcast_ptr += ThreadMap::Delta::kColumn;
+    }
+  }
 
   CUTLASS_DEVICE
   ElementLayernormCompute load_shift_k_(int row_offset, bool is_load) {
@@ -861,15 +962,19 @@ public:
       cutlass::gemm::GemmCoord problem_size1,
       ElementInputA0 * ptr_A,
       ElementInputB0 * ptr_B,
+      ElementOutputC0 * ptr_Bias0,
       ElementOutputC0 * ptr_C,
       ElementOutputC0 * ptr_D,
       ElementOutputC0 * ptr_E,
+      ElementOutputC0 * ptr_Bias1,
       ElementOutputC0 * ptr_O,
       int64_t    ldm_A,
       int64_t    ldm_B,
+      int64_t    ldm_bias0,
       int64_t    ldm_C,
       int64_t    ldm_D,
       int64_t    ldm_E,
+      int64_t    ldm_bias1,
       int64_t    ldm_O,
       typename EpilogueFunctorOp::Params linear_scaling,
       TensorVariance ref_Variance_,
@@ -891,6 +996,7 @@ public:
           linear_scaling,
           {ptr_C, ldm_C},
           {ptr_D, ldm_D},
+          ptr_Bias0,
           ref_Variance_.data(),
           ref_Mean_.data(),
           ptr_Shifted_K
