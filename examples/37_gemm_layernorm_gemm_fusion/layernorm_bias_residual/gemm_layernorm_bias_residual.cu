@@ -68,6 +68,7 @@
 #include "cutlass/arch/memory_sm75.h"
 #include "cutlass/gemm/device/gemm_complex.h"
 #include "cutlass/epilogue/thread/scale_type.h"
+#include "cutlass/epilogue/thread/linear_combination_bias_elementwise.h"
 
 #include "cutlass/util/command_line.h"
 #include "cutlass/util/host_tensor.h"
@@ -281,11 +282,13 @@ struct Testbed {
   static bool const kIsShiftedVariance = false;
 
   /// Linear scaling operator
-  using EpilogueFunctorOp = cutlass::epilogue::thread::LinearCombination<
+  using EpilogueFunctorOp = cutlass::epilogue::thread::LinearCombinationBiasElementwise<
+    ElementOutput, 
+    ElementOutput, // ElementAccumulator_
     ElementOutput,
-    128 / cutlass::sizeof_bits<ElementOutput>::value,
-    ElementCompute,
-    ElementCompute
+    ElementCompute, // ElementZ_
+    ElementCompute, // ElementT_
+    128 / cutlass::sizeof_bits<ElementOutput>::value
   >;
 
   using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 32>;
@@ -344,6 +347,8 @@ struct Testbed {
   cutlass::HostTensor<ElementInputBias1, LayoutInputBias1>           tensor_Bias1;
   cutlass::HostTensor<ElementOutputC1, LayoutOutputC1>               tensor_C1;
 
+  cutlass::HostTensor<ElementOutputC1, LayoutOutputC1>               tensor_T;
+
   cutlass::HostTensor<ElementOutput, LayoutOutputC0>                 reference_C0;
   cutlass::HostTensor<ElementOutputC1, LayoutOutputC1>               reference_C1;
 
@@ -381,6 +386,8 @@ struct Testbed {
     tensor_A1.reset({options.problem_size1.m(), options.problem_size1.k()});  // Row Major, c*F_in x F_in, the linear weight (c = 4 in this example)
     tensor_Bias1.reset({1, options.intermediate_scale * options.hidden_dim}); // Row Major, c*F_in, the linear bias
     tensor_C1.reset({options.problem_size1.m(), options.problem_size1.n()});  // Col Major, c*F_in x #ValidWords, the final output
+
+    tensor_T.reset({options.problem_size1.m(), options.problem_size1.n()});  // Col Major, c*F_in x #ValidWords, the final output
 
     reference_C0.reset({options.problem_size0.m(), options.problem_size0.n()});
     reference_C1.reset({options.problem_size1.m(), options.problem_size1.n()});
@@ -506,15 +513,12 @@ struct Testbed {
         0
       );
     
-    // cutlass::reference::host::TensorFillRandomUniform(
-    //   tensor_Bias1.host_view(),
-    //     options.seed + 5,
-    //     ElementInputBias1(5),
-    //     ElementInputBias1(-5),
-    //     0
-    //   );
-    cutlass::reference::host::TensorFill(
-      tensor_Bias1.host_view()
+    cutlass::reference::host::TensorFillRandomUniform(
+      tensor_Bias1.host_view(),
+        options.seed + 5,
+        ElementInputBias1(5),
+        ElementInputBias1(-5),
+        0
       );
 
     cutlass::reference::host::TensorFillRandomUniform(
@@ -573,6 +577,7 @@ struct Testbed {
       tensor_A1.device_ref().data(),
       tensor_Bias1.device_ref().data(),
       tensor_C1.device_ref().data(),
+      tensor_T.device_ref().data(),
       tensor_A0.device_ref().stride(0),
       tensor_B0.device_ref().stride(0),
       tensor_Bias0.device_ref().stride(0),
@@ -581,6 +586,7 @@ struct Testbed {
       tensor_A1.device_ref().stride(0),
       tensor_Bias1.device_ref().stride(0),
       tensor_C1.device_ref().stride(0),
+      tensor_T.device_ref().stride(0),
       {
         ElementCompute(options.alpha),
         ElementCompute(options.beta)
@@ -840,6 +846,7 @@ struct Testbed {
     tensor_Variance.sync_host();
     tensor_Mean.sync_host();
     tensor_C1.sync_host();
+    // tensor_T.sync_host();
     reference_C1.sync_host();
 
     // Verification checks - set any of these to 'true' to override the verification checks.

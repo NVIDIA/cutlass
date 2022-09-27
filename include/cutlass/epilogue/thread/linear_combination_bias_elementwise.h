@@ -40,6 +40,7 @@
 #include "cutlass/array.h"
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
+#include "cutlass/epilogue/thread/scale_type.h"
 
 #include "cutlass/epilogue/thread/activation.h"
 
@@ -61,7 +62,8 @@ template <
   typename ElementT_,
   int ElementsPerAccess,
   typename ElementwiseOp_ = Identity<ElementCompute_>,
-  typename BinaryOp_ = plus<ElementCompute_>
+  typename BinaryOp_ = plus<ElementCompute_>,
+  ScaleType::Kind Scale = ScaleType::Default          ///< Control Alpha and Beta scaling
 >
 class LinearCombinationBiasElementwise {
 public:
@@ -87,6 +89,7 @@ public:
   using FragmentOutput = FragmentZ;
 
   static bool const kIsHeavy = ElementwiseOp::kIsHeavy;
+  static const ScaleType::Kind kScale = Scale;
 
   /// If true, the 'Z' tensor is stored
   static bool const kStoreZ = true;

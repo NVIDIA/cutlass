@@ -34,7 +34,7 @@
 
     GemmLayernormWithBias example =  GEMM0 with partial reduction fused in epilogue with residual bias addition (EpilogueVisitorBiasAddAndLayerNorm)
                           +  lightweight full reduction kernel (ApplyFinalReduction)
-                          +  GEMM1 with elemenwise operations fused in mainloop (GemmLayernormMainloopFusion)
+                          +  GEMM1 with elemenwise operations fused in mainloop (GemmLayernormMainloopFusionWithBroadcast)
                           
 */
 
@@ -51,7 +51,7 @@
 #include "cutlass/array.h"
 #include "cutlass/arch/memory.h"
 #include "cutlass/arch/memory_sm75.h"
-#include "cutlass/gemm/device/gemm_layernorm_mainloop_fusion.h"
+// #include "cutlass/gemm/device/gemm_layernorm_mainloop_fusion.h"
 #include "cutlass/gemm/kernel/gemm_transpose_operands.h"
 #include "cutlass/gemm/kernel/default_gemm.h"
 #include "cutlass/gemm/kernel/default_gemm_complex.h"
@@ -60,7 +60,8 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "gemm_with_epilogue_visitor.h"
+#include "device/gemm_layernorm_mainloop_fusion_with_broadcast.h"
+#include "../gemm_with_epilogue_visitor.h"
 #include "helper.h"
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -573,12 +574,19 @@ public:
     AccessTypeBroadcast const *frag_Broadcast_ptr =
       reinterpret_cast<AccessTypeBroadcast const *>(&broadcast_fragment);
 
+    AccessTypeBroadcast frag_Z; // convert to result
+    AccessTypeBroadcast frag_T; // We don't need to store frag_T
+
     bool column_guard = (thread_offset_.column() < extent_.column());
 
     if (elementwise_.kScale == cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling) {
-      result = source_converter(plus(elementwise_(accum), frag_Broadcast_ptr[frag_idx % ThreadMap::Iterations::kColumn]));
+      elementwise_(frag_Z, frag_T, accum, frag_Broadcast_ptr[frag_idx % ThreadMap::Iterations::kColumn]);
+      result = source_converter(frag_Z);
+      // result = source_converter(plus(elementwise_(accum), frag_Broadcast_ptr[frag_idx % ThreadMap::Iterations::kColumn]));
     }else{
-      result = source_converter(plus(elementwise_(accum, source_vector), frag_Broadcast_ptr[frag_idx % ThreadMap::Iterations::kColumn]));
+      elementwise_(frag_Z, frag_T, accum, source_vector, frag_Broadcast_ptr[frag_idx % ThreadMap::Iterations::kColumn]);
+      result = source_converter(frag_Z);
+      // result = source_converter(plus(elementwise_(accum, source_vector), frag_Broadcast_ptr[frag_idx % ThreadMap::Iterations::kColumn]));
     }
 
 
@@ -926,7 +934,7 @@ public:
     kIsShiftedVariance
   >;
 
-using GemmMainloopFusion = typename cutlass::gemm::device::GemmLayernormMainloopFusion<
+using GemmMainloopFusionWithBroadcast = typename cutlass::gemm::device::GemmLayernormMainloopFusionWithBroadcast<
   ElementInputA1, LayoutInputA1,
   ElementInputB1, LayoutInputB1,
   ElementInputScaleBias, LayoutInputScaleBias,
@@ -948,7 +956,7 @@ public:
   struct Arguments {
 
     typename GemmEpilogueFusion::Arguments         gemm0;
-    typename GemmMainloopFusion::Arguments         gemm1;
+    typename GemmMainloopFusionWithBroadcast::Arguments         gemm1;
     typename ApplyFinalReductionKernel::Arguments reduction;
     cutlass::gemm::GemmCoord extend;
 
@@ -968,6 +976,7 @@ public:
       ElementOutputC0 * ptr_E,
       ElementOutputC0 * ptr_Bias1,
       ElementOutputC0 * ptr_O,
+      ElementOutputC0 * ptr_T,
       int64_t    ldm_A,
       int64_t    ldm_B,
       int64_t    ldm_bias0,
@@ -976,6 +985,7 @@ public:
       int64_t    ldm_E,
       int64_t    ldm_bias1,
       int64_t    ldm_O,
+      int64_t    ldm_T,
       typename EpilogueFunctorOp::Params linear_scaling,
       TensorVariance ref_Variance_,
       TensorMean ref_Mean_,
@@ -1021,6 +1031,8 @@ public:
         ref_Gamma_.data(),
         ref_Beta_.data(),
         ptr_O,
+        ptr_Bias1,
+        ptr_T,
         ptr_O,
         problem_size1.m() * problem_size1.k(),
         problem_size1.n() * problem_size1.k(),
@@ -1030,6 +1042,8 @@ public:
         problem_size1.k(),
         problem_size1.m() * problem_size1.n(),
         problem_size1.m() * problem_size1.n(),
+        problem_size1.m(),
+        problem_size1.m() * problem_size1.n(),
         kInternalTranspose ? ldm_E : ldm_D,
         kInternalTranspose ? ldm_D : ldm_D,
         ref_Variance_.layout().stride(0),
@@ -1037,6 +1051,8 @@ public:
         ref_Gamma_.layout().stride(0),
         ref_Beta_.layout().stride(0),
         ldm_O,
+        ldm_O,
+        0,
         ldm_O
       ),
       extend(problem_size0)
@@ -1076,7 +1092,7 @@ public:
 private:
 
   Params params_;
-  GemmMainloopFusion gemm_fusion_op;
+  GemmMainloopFusionWithBroadcast gemm_fusion_op;
 
 public:
 

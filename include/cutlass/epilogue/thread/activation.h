@@ -53,6 +53,7 @@ namespace thread {
 
 template <typename T>
 struct Identity {
+  static const bool kIsHeavy=false;
   CUTLASS_HOST_DEVICE
   T operator()(T value) const {
     return value;
