@@ -561,7 +561,7 @@ Result profile(Options const &options) {
   
     tensor_reduction.sync_host();
   
-    // Compute bias + relu in host code
+    // ReduceK in host code
     if (ReduceKForA) {
       for (int m = 0; m < options.problem_size.m(); ++m) {
         for (int k = 0; k < options.problem_size.k(); ++k) {
