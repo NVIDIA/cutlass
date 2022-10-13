@@ -5,6 +5,8 @@ on:
 jobs:
   triage:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
     - uses: actions/labeler@master
       with:
