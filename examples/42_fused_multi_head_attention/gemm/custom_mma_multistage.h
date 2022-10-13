@@ -88,7 +88,7 @@ template <
     /// Use zfill or predicate for out-of-bound cp.async
     SharedMemoryClearOption SharedMemoryClear = SharedMemoryClearOption::kNone,
     /// Upper boundon the K dimension
-    int kMaxK = std::numeric_limits<int>::max(),
+    int kMaxK = cutlass::platform::numeric_limits<int>::max(),
     /// Used for partial specialization
     typename Enable = bool>
 class CustomMmaMultistage : public CustomMmaBase<Shape_, Policy_, Stages> {

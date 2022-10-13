@@ -38,9 +38,12 @@ struct MakeCustomMma<
         SharedMemoryClear>,
     kMaxK> {
   // Reduce the number of stages if we don't need that many
-  static int constexpr kStages = kMaxK == std::numeric_limits<int>::max()
+  static int constexpr kStages =
+      kMaxK == cutlass::platform::numeric_limits<int>::max()
       ? Stages
-      : std::min(Stages, (kMaxK + int(Shape::kK) - 1) / int(Shape::kK));
+      : cutlass::const_min(
+            Stages,
+            (kMaxK + int(Shape::kK) - 1) / int(Shape::kK));
   using Mma = cutlass::gemm::threadblock::CustomMmaMultistage<
       Shape,
       IteratorA,

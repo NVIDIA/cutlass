@@ -114,7 +114,7 @@ struct FindDefaultMma<
     InstructionShape,
     kStages,
     Operator,
-    typename std::enable_if<(kAlignmentA > 1)>::type> {
+    typename cutlass::platform::enable_if<(kAlignmentA > 1)>::type> {
   using LayoutC = layout::RowMajor;
   using OperatorClass = arch::OpClassTensorOp;
   using ArchTag = arch::Sm80;

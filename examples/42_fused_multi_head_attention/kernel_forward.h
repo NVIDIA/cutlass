@@ -44,7 +44,8 @@ namespace {
 template <typename scalar_t, typename Arch>
 constexpr int getWarpsPerSm() {
   return (
-      Arch::kMinComputeCapability >= 80 && !std::is_same<scalar_t, float>::value
+      Arch::kMinComputeCapability >= 80 &&
+              !cutlass::platform::is_same<scalar_t, float>::value
           ? 16
           : 12);
 }
@@ -75,8 +76,8 @@ struct AttentionKernel {
   static constexpr bool kPreloadV = ArchTag::kMinComputeCapability >= 80 &&
       cutlass::sizeof_bits<scalar_t>::value == 16;
   static constexpr bool kKeepOutputInRF = kSingleValueIteration;
-  static constexpr bool kNeedsOutputAccumulatorBuffer =
-      !kKeepOutputInRF && !std::is_same<output_accum_t, output_t>::value;
+  static constexpr bool kNeedsOutputAccumulatorBuffer = !kKeepOutputInRF &&
+      !cutlass::platform::is_same<output_accum_t, output_t>::value;
 
   static_assert(kQueriesPerBlock % 32 == 0, "");
   static_assert(kKeysPerBlock % 32 == 0, "");
@@ -413,7 +414,7 @@ struct AttentionKernel {
     }
   };
 
-  using SharedStorage = typename std::conditional<
+  using SharedStorage = typename cutlass::platform::conditional<
       kSingleValueIteration || kKeepOutputInRF,
       SharedStorageEpilogueAtEnd,
       SharedStorageEpilogueInLoop>::type;
@@ -446,8 +447,9 @@ struct AttentionKernel {
     static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize, "");
     if (thread_id() < kQueriesPerBlock) {
       s_prime[thread_id()] = accum_t(0);
-      m_prime[thread_id()] = gemm_kernel_utils::TypeTraits<accum_t>::kMinusInf;
-      mi[thread_id()] = gemm_kernel_utils::TypeTraits<accum_t>::kMinusInf;
+      m_prime[thread_id()] =
+          -cutlass::platform::numeric_limits<accum_t>::infinity();
+      mi[thread_id()] = -cutlass::platform::numeric_limits<accum_t>::infinity();
     }
     typename MM1::Mma::FragmentC accum_o;
     accum_o.clear();
@@ -580,7 +582,8 @@ struct AttentionKernel {
             },
             [&](int accum_m, int accum_n, int idx) {
               if (accum_n > last_col) {
-                accum[idx] = gemm_kernel_utils::TypeTraits<accum_t>::kMinusInf;
+                accum[idx] =
+                    -cutlass::platform::numeric_limits<accum_t>::infinity();
               }
             },
             [&](int accum_m) {});
@@ -609,7 +612,7 @@ struct AttentionKernel {
                                 warp_id(),
                                 p.num_keys - iter_key_start,
                                 iteratorC_tile_offset,
-                                1.0f / std::sqrt(float(p.head_dim)));
+                                1.0f / cutlass::fast_sqrt(float(p.head_dim)));
                           }));
                     }));
 
@@ -683,7 +686,7 @@ struct AttentionKernel {
                       using ElementCompute = typename DefaultOp::ElementCompute;
                       using EpilogueOutputOp = typename cutlass::epilogue::
                           thread::MemoryEfficientAttentionNormalize<
-                              typename std::conditional<
+                              typename cutlass::platform::conditional<
                                   kIsLast,
                                   output_t,
                                   output_accum_t>::type,
@@ -699,7 +702,7 @@ struct AttentionKernel {
                               typename DefaultEpilogue::Shape,
                               typename MM1::Mma::Operator,
                               DefaultEpilogue::kPartitionsK,
-                              typename std::conditional<
+                              typename cutlass::platform::conditional<
                                   kIsLast,
                                   typename MM1::OutputTileIterator,
                                   typename MM1::OutputTileIteratorAccum>::type,
@@ -787,11 +790,11 @@ struct AttentionKernel {
     if (p.logsumexp_ptr && thread_id() < kQueriesPerBlock) {
       auto lse_dim = ceil_div((int32_t)p.num_queries, kAlignLSE) * kAlignLSE;
       if (thread_id() < p.num_queries) {
-        p.logsumexp_ptr[thread_id()] =
-            accum_t(mi[thread_id()]) + std::log(accum_t(s_prime[thread_id()]));
+        p.logsumexp_ptr[thread_id()] = accum_t(mi[thread_id()]) +
+            cutlass::fast_log(accum_t(s_prime[thread_id()]));
       } else if (thread_id() < lse_dim) {
         p.logsumexp_ptr[thread_id()] =
-            gemm_kernel_utils::TypeTraits<accum_t>::kInf;
+            cutlass::platform::numeric_limits<accum_t>::infinity();
       }
     }
   }
