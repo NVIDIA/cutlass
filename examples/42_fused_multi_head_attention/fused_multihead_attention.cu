@@ -132,7 +132,9 @@ struct Options {
   int head_number;
   int batch_size;
   int head_size;
+  int head_size_v;
   int seq_length;
+  int seq_length_kv;
   int iterations;
 
   // alpha0, alpha1 and beta are fixed 
@@ -153,7 +155,9 @@ struct Options {
     head_number(12),
     batch_size(16),
     head_size(64),
+    head_size_v(64),
     seq_length(1024),
+    seq_length_kv(1024),
     use_mask(false),
     iterations(20),
     causal(false)
@@ -172,7 +176,9 @@ struct Options {
     cmd.get_cmd_line_argument("head_number", head_number, 12);
     cmd.get_cmd_line_argument("batch_size", batch_size, 16);
     cmd.get_cmd_line_argument("head_size", head_size, 64);
+    cmd.get_cmd_line_argument("head_size_v", head_size_v, head_size);
     cmd.get_cmd_line_argument("seq_length", seq_length, 1024);
+    cmd.get_cmd_line_argument("seq_length_kv", seq_length_kv, seq_length);
     cmd.get_cmd_line_argument("use_mask", use_mask, false);
     cmd.get_cmd_line_argument("iterations", iterations, 20);
     cmd.get_cmd_line_argument("reference-check", reference_check, true);
@@ -199,19 +205,21 @@ struct Options {
     for (int i = 0; i < batch_size; ++i) {
       // problems belonging to the same batch share the same seq len
       int m_real = seq_length; // (rand() % seq_length);
+      int mkv_real = seq_length_kv; // (rand() % seq_length_kv);
       int m = (m_real + alignment - 1) / alignment * alignment;
-      int n = m;
-      int k = head_size;
+      int mkv = (mkv_real + alignment - 1) / alignment * alignment;
+      int k0 = head_size;
+      int k1 = head_size_v;
 
       for (int j = 0; j < head_number; ++j) {
-        cutlass::gemm::GemmCoord problem0(m, n, k);
-        cutlass::gemm::GemmCoord problem1(m, k, n);
+        cutlass::gemm::GemmCoord problem0(m, mkv, k0);
+        cutlass::gemm::GemmCoord problem1(m, k1, mkv);
         problem_sizes0.push_back(problem0);
         problem_sizes1.push_back(problem1);
 
         if (use_mask) {
-          cutlass::gemm::GemmCoord problem0_real(m_real, m_real, k);
-          cutlass::gemm::GemmCoord problem1_real(m_real, k, m_real);
+          cutlass::gemm::GemmCoord problem0_real(m_real, mkv_real, k0);
+          cutlass::gemm::GemmCoord problem1_real(m_real, k1, mkv_real);
           problem_sizes0_real.push_back(problem0_real);
           problem_sizes1_real.push_back(problem1_real);
         }
@@ -229,7 +237,9 @@ struct Options {
       << "  --head_number=<int>         Head number in multi-head attention (default: --head_number=12)\n"
       << "  --batch_size=<int>          Batch size in multi-head attention (default: --batch_size=16)\n"
       << "  --head_size=<int>           Head size in multi-head attention (default: --head_size=64)\n"
-      << "  --seq_length=<int>          Max sequence length in multi-head attention (default: --seq_length=1024)\n"
+      << "  --head_size_v=<int>         Head size in multi-head attention for V (default: --head_size_v=head_size)\n"
+      << "  --seq_length=<int>          Sequence length in multi-head attention for Q (default: --seq_length=1024)\n"
+      << "  --seq_length_kv=<int>       Sequence length in multi-head attention for K/V(default: --seq_length_kv=seq_length)\n"
       << "  --use_mask=<bool>           If true, performs padding-like masking in softmax.\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n"
       << "  --reference-check=<bool>    If true, performs reference check.\n"
@@ -450,16 +460,17 @@ private:
 
     for (int32_t i = 0; i < problem_count(); ++i) {
 
-      auto problem = options.problem_sizes0.at(i);
+      auto problem0 = options.problem_sizes0.at(i);
+      auto problem1 = options.problem_sizes1.at(i);
 
-      ldq_host.at(i) = LayoutQ::packed({problem.m(), problem.k()}).stride(0);
-      ldk_host.at(i) = LayoutK::packed({problem.n(), problem.k()}).stride(0);
-      ldp_host.at(i) = LayoutP::packed({problem.m(), problem.n()}).stride(0);
-      ldv_host.at(i) = LayoutV::packed({problem.n(), problem.k()}).stride(0);
-      ldo_host.at(i) = LayoutO::packed({problem.m(), problem.k()}).stride(0);
+      ldq_host.at(i) = LayoutQ::packed({problem0.m(), problem0.k()}).stride(0);
+      ldk_host.at(i) = LayoutK::packed({problem0.n(), problem0.k()}).stride(0);
+      ldp_host.at(i) = LayoutP::packed({problem0.m(), problem0.n()}).stride(0);
+      ldv_host.at(i) = LayoutV::packed({problem1.k(), problem1.n()}).stride(0);
+      ldo_host.at(i) = LayoutO::packed({problem1.m(), problem1.n()}).stride(0);
 
       // m = n for attention problems.
-      seqlen_host.at(i) = problem.m();
+      seqlen_host.at(i) = problem0.m();
 
       offset_Q.push_back(total_elements_Q);
       offset_K.push_back(total_elements_K);
@@ -467,11 +478,11 @@ private:
       offset_V.push_back(total_elements_V);
       offset_O.push_back(total_elements_O);
 
-      int64_t elements_Q = problem.m() * problem.k();
-      int64_t elements_K = problem.k() * problem.n();
-      int64_t elements_P = problem.m() * problem.n();
-      int64_t elements_V = problem.n() * problem.k();
-      int64_t elements_O = problem.m() * problem.k();
+      int64_t elements_Q = problem0.m() * problem0.k();
+      int64_t elements_K = problem0.k() * problem0.n();
+      int64_t elements_P = problem0.m() * problem0.n();
+      int64_t elements_V = problem1.k() * problem1.n();
+      int64_t elements_O = problem1.m() * problem1.n();
 
       total_elements_Q += elements_Q;
       total_elements_K += elements_K;
@@ -594,7 +605,7 @@ private:
     bool passed = true;
 
     for (int32_t i = 0; i < problem_count(); ++i) {
-      cutlass::gemm::GemmCoord problem = options.problem_sizes0.at(i);
+      cutlass::gemm::GemmCoord problem0 = options.problem_sizes0.at(i);
       cutlass::gemm::GemmCoord problem1 = options.problem_sizes1.at(i);
 
       LayoutQ layout_Q(ldq_host.at(i));
@@ -603,11 +614,11 @@ private:
       LayoutV layout_V(ldv_host.at(i));
       LayoutO layout_O(ldo_host.at(i));
 
-      MatrixCoord extent_Q{problem.m(), problem.k()};
-      MatrixCoord extent_K{problem.n(), problem.k()};
-      MatrixCoord extent_P{problem.m(), problem.n()};
-      MatrixCoord extent_V{problem.n(), problem.k()};
-      MatrixCoord extent_O{problem.m(), problem.k()};
+      MatrixCoord extent_Q{problem0.m(), problem0.k()};
+      MatrixCoord extent_K{problem0.n(), problem0.k()};
+      MatrixCoord extent_P{problem0.m(), problem0.n()};
+      MatrixCoord extent_V{problem1.k(), problem1.n()};
+      MatrixCoord extent_O{problem1.m(), problem1.k()};
 
       cutlass::TensorView<ElementQ, LayoutQ> view_Q(block_Q.get() + offset_Q.at(i), layout_Q, extent_Q);
       cutlass::TensorView<ElementK, LayoutK_T> view_K(block_K.get() + offset_K.at(i), layout_K, extent_K);
@@ -627,7 +638,7 @@ private:
           ElementP, LayoutP, 
           ElementCompute, ElementAccumulator
       >(
-        problem,
+        problem0,
         ElementAccumulator(options.alpha0), 
         view_Q,
         Attention::MM0::Mma::kTransformA,
@@ -645,14 +656,14 @@ private:
       std::vector<ElementP> matrix_Ref(layout_P.capacity(extent_P));
       cutlass::device_memory::copy_to_host(matrix_Ref.data(), block_Ref.get(), matrix_Ref.size());
       cutlass::TensorView<ElementP, LayoutP> view_Ref_host(matrix_Ref.data(), layout_P, extent_P);
-      std::vector<ElementNorm> vector_Norm_Ref(problem.m());
-      std::vector<ElementSum> vector_Sum_Ref(problem.m());
+      std::vector<ElementNorm> vector_Norm_Ref(problem0.m());
+      std::vector<ElementSum> vector_Sum_Ref(problem0.m());
 
-      int n_dim = options.use_mask ? options.problem_sizes0_real.at(i).n() : problem.n();
+      int n_dim = options.use_mask ? options.problem_sizes0_real.at(i).n() : problem0.n();
 
       // Compute softmax for referece matrix
       // Assumed a row-major storage
-      for (int m = 0; m < problem.m(); m++) {
+      for (int m = 0; m < problem0.m(); m++) {
         int n_dim_row = n_dim;
         if (options.causal) {
           n_dim_row = std::min(m + 1, n_dim);
@@ -686,8 +697,8 @@ private:
 
       // when not using mask, problem_real and problem share the same sizes
       if (options.use_mask) {
-        for (int m = 0; m < problem.m(); m++) {
-          for (int n = n_dim; n < problem.n(); n++) {
+        for (int m = 0; m < problem0.m(); m++) {
+          for (int n = n_dim; n < problem0.n(); n++) {
             view_Ref_host.ref().at({m, n}) = ElementP(0);
           }
         }
@@ -781,22 +792,22 @@ public:
       p.num_heads = options.head_number;
       p.num_batches = options.batch_size;
       p.head_dim = options.head_size;
-      p.head_dim_value = options.head_size;
+      p.head_dim_value = options.head_size_v;
       p.num_queries = options.seq_length;
-      p.num_keys = options.seq_length;
+      p.num_keys = options.seq_length_kv;
       p.causal = options.causal;
 
       p.q_strideM = ldq_host[0];
       p.k_strideM = ldk_host[0];
       p.v_strideM = ldv_host[0];
       p.q_strideH = p.q_strideM * options.seq_length;
-      p.k_strideH = p.k_strideM * options.seq_length;
-      p.v_strideH = p.v_strideM * options.seq_length;
-      p.o_strideH = options.head_size * options.seq_length;
+      p.k_strideH = p.k_strideM * options.seq_length_kv;
+      p.v_strideH = p.v_strideM * options.seq_length_kv;
+      p.o_strideH = options.head_size_v * options.seq_length;
       p.q_strideB = p.q_strideH * options.head_number;
       p.k_strideB = p.k_strideH * options.head_number;
       p.v_strideB = p.v_strideH * options.head_number;
-      p.o_strideB = options.head_size * options.seq_length * options.head_number;
+      p.o_strideB = options.head_size_v * options.seq_length * options.head_number;
     }
 
     // launch kernel :)
@@ -909,8 +920,9 @@ public:
     std::cout << std::endl;
     std::cout << "CUTLASS Attention:\n"
       << "====================================================" << std::endl;
-    std::cout << "    " << " {max sequence length, head size, head number, batch size} = {" << options.seq_length \
-      << ", " << options.head_size << ", " << options.head_number << ", " << options.batch_size << "}." << std::endl;
+    std::cout << "    " << " {seq length Q, seq length KV, head size, head size V, head number, batch size} = {" << options.seq_length \
+      << ", " << options.seq_length_kv << ", " << options.head_size << ", " << options.head_size_v << ", " << options.head_number\
+      << ", " << options.batch_size << "}." << std::endl;
     std::cout << std::endl;
     std::cout << "    " << "Runtime: " << result.runtime_ms << " ms" << std::endl;
     std::cout << "    " << "GFLOPs: " << result.gflops << std::endl;
@@ -982,18 +994,18 @@ int main(int argc, char const **args) {
   // Set grid size
   constexpr int64_t kQueriesPerBlock = kIs64x64 ? 64 : 32;
   constexpr int64_t kKeysPerBlock = kIs64x64 ? 64 : 128;
-  if (kIs64x64 && options.head_size > kKeysPerBlock) {
+  if (kIs64x64 && options.head_size_v > kKeysPerBlock) {
     std::cerr << "WARNING: you will get better performance with `kIs64x64=false`\n";
   }
 
   constexpr bool kSingleValueIteration = true;
-  if (kSingleValueIteration && options.head_size > kKeysPerBlock) {
+  if (kSingleValueIteration && options.head_size_v > kKeysPerBlock) {
     std::cerr << "ERROR  : Use kSingleValueIteration to keep output in RF. " \
     "This requires to have `head_size <= kKeysPerBlock` " \
-    "but head_size=" << options.head_size << " and kKeysPerBlock=" << kKeysPerBlock << "\n";
+    "but head_size_v=" << options.head_size_v << " and kKeysPerBlock=" << kKeysPerBlock << "\n";
     return -2;
   }
-  if (!kSingleValueIteration && options.head_size <= kKeysPerBlock) {
+  if (!kSingleValueIteration && options.head_size_v <= kKeysPerBlock) {
     std::cerr << "WARNING: you will get better performance with `kSingleValueIteration=true` (keeps the output in RF rather than GMEM)\n";
   }
 
