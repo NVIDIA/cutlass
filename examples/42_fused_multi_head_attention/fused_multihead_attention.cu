@@ -757,7 +757,10 @@ public:
       p.key_ptr = block_K.get();
       p.value_ptr = block_V.get();
       p.logsumexp_ptr = nullptr; // Only needed for bw
-      p.output_accum_ptr = nullptr; // TODO: Provide a buffer for when K > 128
+      p.output_accum_ptr = nullptr;
+      if (Attention::kNeedsOutputAccumulatorBuffer) {
+        cudaMalloc(&p.output_accum_ptr, block_O.size() * sizeof(typename Attention::output_accum_t));
+      }
       p.output_ptr = block_O.get();
 
       // TODO: support arbitrary seq lengths
@@ -793,7 +796,10 @@ public:
     if (smem_bytes > 0xc000) {
       cudaFuncSetAttribute(kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
     }
-    Attention::check_supported(p);
+    if (!Attention::check_supported(p)) {
+      std::cerr << "Kernel does not support these inputs" << std::endl;
+      return result;
+    }
     kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
 
     // Wait for completion
@@ -968,13 +974,18 @@ int main(int argc, char const **args) {
   constexpr int64_t kQueriesPerBlock = kIs64x64 ? 64 : 32;
   constexpr int64_t kKeysPerBlock = kIs64x64 ? 64 : 128;
   if (kIs64x64 && options.head_size > kKeysPerBlock) {
-    std::cerr << "Warning: you will get better performance with `kIs64x64=false`\n";
+    std::cerr << "WARNING: you will get better performance with `kIs64x64=false`\n";
   }
 
   constexpr bool kSingleValueIteration = true;
   if (kSingleValueIteration && options.head_size > kKeysPerBlock) {
-    std::cerr << "Use kSingleValueIteration to keep output in RF. This requires to have `value.shape[-1] <= kKeysPerBlock`\n";
+    std::cerr << "ERROR  : Use kSingleValueIteration to keep output in RF. " \
+    "This requires to have `head_size <= kKeysPerBlock` " \
+    "but head_size=" << options.head_size << " and kKeysPerBlock=" << kKeysPerBlock << "\n";
     return -2;
+  }
+  if (!kSingleValueIteration && options.head_size <= kKeysPerBlock) {
+    std::cerr << "WARNING: you will get better performance with `kSingleValueIteration=true` (keeps the output in RF rather than GMEM)\n";
   }
 
   using Attention = AttentionKernel<

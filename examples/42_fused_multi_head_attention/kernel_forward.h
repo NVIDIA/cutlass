@@ -424,6 +424,12 @@ struct AttentionKernel {
     CHECK_ALIGNED_PTR(p.key_ptr, kAlignmentK);
     CHECK_ALIGNED_PTR(p.value_ptr, kAlignmentV);
     XFORMERS_CHECK(
+        p.q_strideM % kAlignmentQ == 0, "query is not correctly aligned");
+    XFORMERS_CHECK(
+        p.k_strideM % kAlignmentK == 0, "key is not correctly aligned");
+    XFORMERS_CHECK(
+        p.v_strideM % kAlignmentV == 0, "value is not correctly aligned");
+    XFORMERS_CHECK(
         p.q_strideH % kAlignmentQ == 0, "query is not correctly aligned");
     XFORMERS_CHECK(
         p.k_strideH % kAlignmentK == 0, "key is not correctly aligned");
