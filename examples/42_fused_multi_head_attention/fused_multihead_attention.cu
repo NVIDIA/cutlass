@@ -120,6 +120,7 @@ struct Options {
   bool error;
   bool reference_check;
   bool use_mask;
+  bool causal;
 
   std::vector<cutlass::gemm::GemmCoord> problem_sizes0;
   std::vector<cutlass::gemm::GemmCoord> problem_sizes1;
@@ -133,7 +134,6 @@ struct Options {
   int head_size;
   int seq_length;
   int iterations;
-  int cuda_streams;
 
   // alpha0, alpha1 and beta are fixed 
   // in this multi-head attention example
@@ -156,7 +156,7 @@ struct Options {
     seq_length(1024),
     use_mask(false),
     iterations(20),
-    cuda_streams(0)
+    causal(false)
   { }
 
   // Parses the command line
@@ -175,8 +175,8 @@ struct Options {
     cmd.get_cmd_line_argument("seq_length", seq_length, 1024);
     cmd.get_cmd_line_argument("use_mask", use_mask, false);
     cmd.get_cmd_line_argument("iterations", iterations, 20);
-    cmd.get_cmd_line_argument("streams", cuda_streams, 0);
     cmd.get_cmd_line_argument("reference-check", reference_check, true);
+    cmd.get_cmd_line_argument("causal", causal, true);
 
     randomize_problems();
 
@@ -232,7 +232,8 @@ struct Options {
       << "  --seq_length=<int>          Max sequence length in multi-head attention (default: --seq_length=1024)\n"
       << "  --use_mask=<bool>           If true, performs padding-like masking in softmax.\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n"
-      << "  --reference-check=<bool>    If true, performs reference check.\n";
+      << "  --reference-check=<bool>    If true, performs reference check.\n"
+      << "  --causal=<bool>             If true, uses causal masking.\n";
 
     return out;
   }
@@ -652,25 +653,33 @@ private:
       // Compute softmax for referece matrix
       // Assumed a row-major storage
       for (int m = 0; m < problem.m(); m++) {
+        int n_dim_row = n_dim;
+        if (options.causal) {
+          n_dim_row = std::min(m + 1, n_dim);
+        }
         ElementSoftmaxCompute max = ElementSoftmaxCompute(view_Ref_host.ref().at({m, 0}));
-        for (int n = 1; n < n_dim; n++) {
+        for (int n = 1; n < n_dim_row; n++) {
            max = std::max(max, ElementSoftmaxCompute(view_Ref_host.ref().at({m, n})));
         }
 
         vector_Norm_Ref.at(m) = ElementNorm(max);
 
         ElementSoftmaxCompute sum = ElementSoftmaxCompute();
-        for (int n = 0; n < n_dim; n++) {
+        for (int n = 0; n < n_dim_row; n++) {
           sum += std::exp( ElementSoftmaxCompute(view_Ref_host.ref().at({m, n})) - max );
         }
         ElementSoftmaxCompute inv_sum = ElementSoftmaxCompute(1.0f / sum);
 
         vector_Sum_Ref.at(m) = ElementSum(inv_sum);
 
-        for (int n = 0; n < n_dim; n++) {
+        for (int n = 0; n < n_dim_row; n++) {
           view_Ref_host.ref().at({m, n}) = ElementP(
             std::exp( ElementSoftmaxCompute(view_Ref_host.ref().at({m, n})) - max ) * inv_sum
           );
+        }
+        // Mask out the rest of the attention matrix
+        for (int n = n_dim_row; n < n_dim; ++n) {
+          view_Ref_host.ref().at({m, n}) = ElementP(0);
         }
 
       }
@@ -775,7 +784,7 @@ public:
       p.head_dim_value = options.head_size;
       p.num_queries = options.seq_length;
       p.num_keys = options.seq_length;
-      p.causal = false; // TODO: add an option to test causal as well
+      p.causal = options.causal;
 
       p.q_strideM = ldq_host[0];
       p.k_strideM = ldk_host[0];
