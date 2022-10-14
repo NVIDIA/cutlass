@@ -574,21 +574,6 @@ using std::is_trivially_copyable;
 
 #endif
 
-
-//-----------------------------------------------------------------------------
-// bit_cast <bit>
-//-----------------------------------------------------------------------------
-
-template< class To, class From >
-constexpr To CUTLASS_HOST_DEVICE bit_cast(const From& from ) noexcept;
-
-template <class To, class From>
-constexpr To CUTLASS_HOST_DEVICE bit_cast(const From& src) noexcept
-{
-  static_assert(sizeof(To) == sizeof(From), "sizes must match");
-  return reinterpret_cast<To const &>(src);
-}
-
 //-----------------------------------------------------------------------------
 // Alignment and layout utilities
 //-----------------------------------------------------------------------------
@@ -883,7 +868,7 @@ struct numeric_limits<uint8_t> {
 template <>
 struct numeric_limits<float> {
   CUTLASS_HOST_DEVICE
-  static constexpr float infinity() noexcept { return bit_cast<float, int32_t>(0x7f800000);}
+  static constexpr float infinity() noexcept { return 1.0f / 0.0f;}
   static constexpr bool is_integer = false;
   static constexpr bool has_infinity = true;
 };
