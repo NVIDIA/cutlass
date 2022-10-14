@@ -52,7 +52,7 @@ struct RegisterOps {
       typename T::TensorCoord const& tile_offset,
       float scaling) {
     // Convert to `accum_t` (rather than double)
-    constexpr float kLog2e = M_LOG2E;
+    constexpr float kLog2e = 1.4426950408889634074; // log_2(e) = M_LOG2E
     if (!kIsFirst) {
       if (thread_id < kQueriesPerBlock) {
         m_prime[thread_id] = mi[thread_id];
