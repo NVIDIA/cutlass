@@ -120,6 +120,7 @@ foreach(EXAMPLE
   38_syr2k_grouped
   39_gemm_permute
   41_multi_head_attention
+  42_fused_multi_head_attention
   )
 
   add_subdirectory(${EXAMPLE})
