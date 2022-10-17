@@ -849,9 +849,10 @@ public:
       p.num_keys = options.seq_length_kv;
       p.causal = options.causal;
 
-      p.q_strideM = ldq_host[0];
-      p.k_strideM = ldk_host[0];
-      p.v_strideM = ldv_host[0];
+      // TODO: This might overflow for big tensors
+      p.q_strideM = int32_t(ldq_host[0]);
+      p.k_strideM = int32_t(ldk_host[0]);
+      p.v_strideM = int32_t(ldv_host[0]);
       p.q_strideH = p.q_strideM * options.seq_length;
       p.k_strideH = p.k_strideM * options.seq_length_kv;
       p.v_strideH = p.v_strideM * options.seq_length_kv;
