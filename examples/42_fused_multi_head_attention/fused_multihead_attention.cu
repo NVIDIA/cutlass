@@ -32,18 +32,55 @@
 /*! \file
     \brief CUTLASS Attention Example.
 
-    This workload computes an attention example with non-fixed sequence length input. Pointers of arrays
-    are fed into grouped-GEMM functions fused with softmax for computation.
+    This workload computes a fused multi head attention.
+    Because it keeps the attention matrix in shared memory, it's both faster and
+    uses less global memory.
+
+    This is based on `"Self-Attention Does Not Need O(n^2) Memory" <http://arxiv.org/abs/2112.05682>`_,
+    and very similar to `"FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness" <https://arxiv.org/abs/2205.14135>`_.
+
+    Algorithm:
+      In short, we can compute the output incrementally in blocks of size B,
+      we just need to divide the final result by the sum of all coefficients in
+      the softmax (which we compute incrementally) with the following pseudo-code:
+
+      ```
+      s_prime = torch.zeros([num_queries, B])
+      O = torch.zeros([num_queries, head_size_v])
+      for i in range(0, K.shape[0], B):
+        si = exp((Q . K[i * B:(i+1) * B].t) * scale)
+        sum_coefs += attn_unscaled.sum(-1)
+        O  += si . V[i * B:(i+1) * B]
+      O = O / s_prime
+      ```
+
+      In practice, and for numerical stability reasons,
+      we also substract the maximum so far (`mi`) before doing
+      the exponential. When we encounter new keys, the maximum
+      used to compute O so far (`m_prime`) can differ from the
+      current maximum, so we update O before accumulating with
+
+      ```
+      O       = O * exp(m_prime - mi)
+      m_prime = mi
+      ```
+
+    Implementation details:
+      - `si` is stored in shared memory between the 2 back to back gemms
+      - we keep and accumulate the output
+      directly in registers if we can (`head_size_v <= 128`).
+      Otherwise, we store it & accumulate in global memory (slower)
+      - blocks are parallelized across the batch dimension, the number
+      of heads, and the query sequence size
+
 
     Examples:
 
-      # Run an attention example with default setup (max sequence length = 1024, batch size = 16, head size = 64, head number = 12)
-      $ ./examples/41_multi_head_attention/41_multi_head_attention
+      # Run an attention example with default setup
+      $ ./examples/42_fused_multi_head_attention/42_fused_multi_head_attention
 
-      # Run an attention example with batch size = 64 and head number = 16 without checking the correctness
-      $ ./examples/41_multi_head_attention/41_multi_head_attention --head_number=16 --batch_size=64 --reference-check=false
-
-      Acknowledgement: this example is inspired by the idea originally prototyped by ByteDance Inc.
+      # Run an attention example with custom setup
+      $ ./examples/42_fused_multi_head_attention/42_fused_multi_head_attention --head_number=2 --batch_size=3 --head_size=32 --head_size_v=64 --seq_length=512 --seq_length_kv=1024 --causal=true
 
 */
 
