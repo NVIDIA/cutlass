@@ -41,6 +41,7 @@
 #include "cutlass/semaphore.h"
 
 #include "../threadblock/dual_mma_multistage.h"
+#include "../threadblock/dual_mma_multistage2.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -265,7 +266,6 @@ struct DualGemm {
   /// Executes one GEMM
   CUTLASS_DEVICE
   void operator()(Params const &params, SharedStorage &shared_storage) {
-
     // Compute threadblock location
     ThreadblockSwizzle threadblock_swizzle;
 

@@ -526,10 +526,10 @@ struct DualFusedGemmRun
 
 
     CHECK_TRUE(initialize_tensor(tensor_A0.host_view(), init_A, seed + 2019));
-    CHECK_TRUE(initialize_tensor(tensor_B0.host_view(), init_B, seed + 2018));
+    CHECK_TRUE(initialize_tensor(tensor_B0.host_view(), init_B, seed + 2118));
     CHECK_TRUE(initialize_tensor(tensor_C0.host_view(), init_C, seed + 2017));
-    CHECK_TRUE(initialize_tensor(tensor_Bias0.host_view(), init_Bias, seed + 2013));
-    CHECK_TRUE(initialize_tensor(tensor_B1.host_view(), init_B, seed + 2016));
+    CHECK_TRUE(initialize_tensor(tensor_Bias0.host_view(), init_Bias, seed + 2011));
+    CHECK_TRUE(initialize_tensor(tensor_B1.host_view(), init_B, seed + 2113));
     CHECK_TRUE(initialize_tensor(tensor_C1.host_view(), init_C, seed + 2015));
     CHECK_TRUE(initialize_tensor(tensor_Bias1.host_view(), init_Bias, seed + 2012));
 
@@ -674,16 +674,17 @@ struct DualFusedGemmRun
     CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D1.host_view()), 0);
     CHECK_GT(cutlass::reference::host::TensorNorm(reference_D1.host_view()), 0);
 
-    bool passed = cutlass::reference::host::TensorEquals(
+    bool passed_out0 = cutlass::reference::host::TensorEquals(
       reference_D0.host_view(), 
       tensor_D0.host_view());
 
-    CHECK_TRUE(passed);
-    passed = passed && cutlass::reference::host::TensorEquals(
+    CHECK_TRUE(passed_out0);
+    bool passed_out1 = cutlass::reference::host::TensorEquals(
       reference_D1.host_view(), 
       tensor_D1.host_view());
-    CHECK_TRUE(passed);
+    CHECK_TRUE(passed_out1);
 
+    bool passed = passed_out0 && passed_out1;
     if (!passed)
     {
 
