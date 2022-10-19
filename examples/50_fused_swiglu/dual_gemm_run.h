@@ -264,7 +264,9 @@ struct NonFusedDualGemmRun
         status = gemm_op_1();
         CUTLASS_CHECK(status);
     }
-
+#ifdef IS_PROFILING
+    return true;
+#endif
     //
     // Run the GEMM
     //
@@ -463,9 +465,9 @@ struct DualFusedGemmRun
     cutlass::gemm::GemmCoord problem_size_0, 
     cutlass::gemm::GemmCoord problem_size_1, 
     ElementCompute alpha0 = ElementCompute(1), 
-    ElementCompute beta0 = ElementCompute(0),
+    ElementCompute beta0 = ElementCompute(1),
     ElementCompute alpha1 = ElementCompute(1), 
-    ElementCompute beta1 = ElementCompute(0),
+    ElementCompute beta1 = ElementCompute(1),
     bool relu = false,
     int warm_ups = 1,
     int runs = 100) {
@@ -592,6 +594,9 @@ struct DualFusedGemmRun
         CUTLASS_CHECK(status);
     }
 
+#ifdef IS_PROFILING
+    return true;
+#endif
     //
     // Run the GEMM
     //
