@@ -68,39 +68,21 @@ template <
     /// Layout type for C and D matrix operands
     typename LayoutC_,
     /// Element type for internal accumulation
-    typename ElementAccumulator_ = ElementC_,
+    typename ElementAccumulator_,
     /// Operator class tag
-    typename OperatorClass_ = arch::OpClassSimt,
+    typename OperatorClass_,
     /// Tag indicating architecture to tune for
-    typename ArchTag_ = arch::Sm70,
+    typename ArchTag_,
     /// Threadblock-level tile size (concept: GemmShape)
-    typename ThreadblockShape0_ = typename DefaultGemmConfiguration<
-        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::ThreadblockShape,
-    /// Threadblock-level tile size (concept: GemmShape)
-    typename ThreadblockShape1_ = typename DefaultGemmConfiguration<
-        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::ThreadblockShape,
+    typename ThreadblockShape_,
     /// Warp-level tile size (concept: GemmShape)
-    typename WarpShape0_ = typename DefaultGemmConfiguration<
-        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::WarpShape,
-    /// Warp-level tile size (concept: GemmShape)
-    typename WarpShape1_ = typename DefaultGemmConfiguration<
-        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::WarpShape,
+    typename WarpShape_,
     /// Instruction-level tile size (concept: GemmShape)
-    typename InstructionShape_ = typename DefaultGemmConfiguration<
-        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::InstructionShape,
+    typename InstructionShape_,
     /// Epilogue output operator
-    typename EpilogueOutputOp0_ = typename DefaultGemmConfiguration<
-        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::EpilogueOutputOp,
-    /// Epilogue output operator
-    typename EpilogueOutputOp1_ = typename DefaultGemmConfiguration<
-        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::EpilogueOutputOp,
+    typename EpilogueOutputOp0_,
+    typename EpilogueOutputOp1_,
+    typename EpilogueOutputOp2_,
     /// Threadblock-level swizzling operator
     typename ThreadblockSwizzle_ = threadblock::GemmIdentityThreadblockSwizzle<>,
     /// Number of stages used in the pipelined mainloop
@@ -137,13 +119,12 @@ class DualGemm {
   using ElementAccumulator = ElementAccumulator_;
   using OperatorClass = OperatorClass_;
   using ArchTag = ArchTag_;
-  using ThreadblockShape0 = ThreadblockShape0_;
-  using ThreadblockShape1 = ThreadblockShape1_;
-  using WarpShape0 = WarpShape0_;
-  using WarpShape1 = WarpShape1_;
+  using ThreadblockShape = ThreadblockShape_;
+  using WarpShape = WarpShape_;
   using InstructionShape = InstructionShape_;
   using EpilogueOutputOp0 = EpilogueOutputOp0_;
   using EpilogueOutputOp1 = EpilogueOutputOp1_;
+  using EpilogueOutputOp2 = EpilogueOutputOp2_;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
   using Operator = Operator_;
   static int const kStages = Stages;
@@ -161,33 +142,31 @@ class DualGemm {
   using Mma0 = typename cutlass::gemm::threadblock::DefaultMma<
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm80,
-      ThreadblockShape0, WarpShape0, 
+      ThreadblockShape, WarpShape, 
       InstructionShape, Stages, Operator>::ThreadblockMma;
   using Mma1 = typename cutlass::gemm::threadblock::DefaultMma<
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm80,
-      ThreadblockShape1, WarpShape1, 
+      ThreadblockShape, WarpShape, 
       InstructionShape, Stages, Operator>::ThreadblockMma;
 
-  static const int kPartitionsK0 = ThreadblockShape0::kK / WarpShape0::kK;
-  static const int kPartitionsK1 = ThreadblockShape1::kK / WarpShape1::kK;
-  static_assert(kPartitionsK0 == kPartitionsK1, "");
+  static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
 
   /// Define the epilogue
   using Epilogue0 =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
-          ThreadblockShape0, typename Mma0::Operator, kPartitionsK0, EpilogueOutputOp0,
+          ThreadblockShape, typename Mma0::Operator, kPartitionsK, EpilogueOutputOp0,
           EpilogueOutputOp0::kCount>::Epilogue;
   using Epilogue1 =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
-          ThreadblockShape1, typename Mma1::Operator, kPartitionsK1, EpilogueOutputOp1,
+          ThreadblockShape, typename Mma1::Operator, kPartitionsK, EpilogueOutputOp1,
           EpilogueOutputOp1::kCount>::Epilogue;
 
   /// Define the kernel-level GEMM operator.
   using DualGemmKernel = kernel::DualGemm<
     Mma0, Mma1,
-    Epilogue0, Epilogue1,
-    ThreadblockSwizzle, SplitKSerial>;
+    Epilogue0, Epilogue1, EpilogueOutputOp2,
+    ThreadblockSwizzle, kSplitKSerial>;
 
   /// Argument structure
   struct Arguments {
@@ -205,8 +184,10 @@ class DualGemm {
     TensorRef<ElementB const, LayoutB> ref_B1;
     TensorRef<ElementC const, LayoutC> ref_C1;
     TensorRef<ElementC, LayoutC> ref_D1;
+    TensorRef<ElementC, LayoutC> ref_D2;
     typename EpilogueOutputOp0::Params epilogue0;
     typename EpilogueOutputOp1::Params epilogue1;
+    typename EpilogueOutputOp2::Params epilogue2;
     int split_k_slices;
 
     //
@@ -231,6 +212,7 @@ class DualGemm {
       TensorRef<ElementB const, LayoutB> ref_B1_,
       TensorRef<ElementC const, LayoutC> ref_C1_,
       TensorRef<ElementC, LayoutC> ref_D1_,
+      TensorRef<ElementC, LayoutC> ref_D2_,
       typename EpilogueOutputOp0::Params epilogue0_ = 
         typename EpilogueOutputOp0::Params(),
       typename EpilogueOutputOp1::Params epilogue1_ = 
@@ -246,6 +228,7 @@ class DualGemm {
       ref_B1(ref_B1_),
       ref_C1(ref_C1_),
       ref_D1(ref_D1_),
+      ref_D2(ref_D2_),
       epilogue0(epilogue0_),
       epilogue1(epilogue1_),
       split_k_slices(split_k_slices_) {
@@ -279,7 +262,8 @@ public:
       args.ref_D0,
       args.ref_B1.non_const_ref(),
       args.ref_C1.non_const_ref(),
-      args.ref_D1
+      args.ref_D1,
+      args.ref_D2
     );
 
     if (status != Status::kSuccess) {
@@ -299,7 +283,7 @@ public:
 
     cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
       args.problem_size_0, 
-      {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
+      {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
       args.split_k_slices);
 
     if (kSplitKSerial && args.split_k_slices > 1) {
@@ -319,7 +303,7 @@ public:
 
     cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
       args.problem_size_0, 
-      {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
+      {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
       args.split_k_slices);
 //    cutlass::gemm::GemmCoord grid_shape_1 = threadblock_swizzle.get_tiled_shape(
 //      args.problem_size_1, 
@@ -360,8 +344,10 @@ public:
       args.ref_B1.non_const_ref(),
       args.ref_C1.non_const_ref(),
       args.ref_D1,
+      args.ref_D2,
       args.epilogue0,
       args.epilogue1,
+      args.epilogue2,
       static_cast<int *>(workspace),
     };
 
@@ -384,8 +370,10 @@ public:
     params_.ref_B1.reset(args.ref_B1.non_const_ref().data());
     params_.ref_C1.reset(args.ref_C1.non_const_ref().data());
     params_.ref_D1.reset(args.ref_D1.data());
+    params_.ref_D2.reset(args.ref_D2.data());
     params_.output_op_0 = args.epilogue0;
     params_.output_op_1 = args.epilogue1;
+    params_.output_op_2 = args.epilogue2;
     params_.semaphore = static_cast<int *>(workspace);
 
     return Status::kSuccess;

@@ -54,6 +54,78 @@
     if(!(val)) \
         std::cerr << __FILE__ << " " << __LINE__ << ": CHECK_TRUE failed\n";
 
+template <
+  typename OutputOp,
+  typename Element,
+  typename Layout>
+struct TensorEpilogueForEachFunc {
+  /// View type
+  using TensorView = cutlass::TensorView<Element, Layout>;
+
+  /// Coordinate in tensor's index space
+  using TensorCoord = typename TensorView::TensorCoord;
+
+  /// Parameters structure
+  struct Params {
+
+    //
+    // Data members
+    //
+
+    TensorView view_x0;
+    TensorView view_x1;
+    TensorView view_y;
+    OutputOp output_op;
+
+
+    //
+    // Methods
+    //
+
+    Params(
+      TensorView view_x0_ = TensorView(),
+      TensorView view_x1_ = TensorView(),
+      TensorView view_y_ = TensorView(),
+      OutputOp output_op_ = OutputOp(typename OutputOp::Params{})
+    ):
+      view_x0(view_x0_), view_x1(view_x1_), view_y(view_y_), output_op(output_op_) {
+    }
+  };
+
+  Params params;
+
+  CUTLASS_DEVICE
+  TensorEpilogueForEachFunc(Params const &params): params(params) {
+
+  }
+
+  CUTLASS_DEVICE
+  void operator()(TensorCoord const &coord) {
+    Element const & x0 = params.view_x0.at(coord);
+    Element const & x1 = params.view_x1.at(coord);
+    Element& y = params.view_y.at(coord);
+    y = params.output_op(x0, x1);
+  }
+};
+
+template <
+  typename OutputOp,
+  typename Element,
+  typename Layout>
+void TensorEpilogueForEach(
+  cutlass::TensorView<Element, Layout> x0,
+  cutlass::TensorView<Element, Layout> x1,
+  cutlass::TensorView<Element, Layout> y) {
+  
+  using Func = TensorEpilogueForEachFunc<OutputOp, Element, Layout>;
+  using Params = typename Func::Params;
+
+  cutlass::reference::device::TensorForEach<Func, Layout::kRank, Params>(
+    y.extent(),
+    Params(x0, x1, y)
+  );
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 template <typename Gemm0_, typename Gemm1_>
@@ -394,6 +466,7 @@ struct DualFusedGemmRun
   using DualGemm = DualGemm_;
   using ElementAccumulator = typename DualGemm::ElementAccumulator;
   using ElementCompute = typename DualGemm::DualGemmKernel::Epilogue0::OutputOp::ElementCompute;
+  using EpilogueOutputOp2 = typename DualGemm::EpilogueOutputOp2;
 
   /// Initialization
   cutlass::Distribution::Kind init_A;
@@ -493,10 +566,6 @@ struct DualFusedGemmRun
       typename DualGemm::LayoutScaleBias> tensor_Bias0({1, problem_size_0.n()});
 
     cutlass::HostTensor<
-      ElementAccumulator, 
-      typename DualGemm::LayoutC> reference_Z0(problem_size_0.mn());
-
-    cutlass::HostTensor<
       typename DualGemm::ElementC, 
       typename DualGemm::LayoutC> tensor_D0(problem_size_0.mn());
 
@@ -522,8 +591,15 @@ struct DualFusedGemmRun
 
     cutlass::HostTensor<
       typename DualGemm::ElementC, 
+      typename DualGemm::LayoutC> tensor_D2(problem_size_1.mn());
+
+    cutlass::HostTensor<
+      typename DualGemm::ElementC, 
       typename DualGemm::LayoutC> reference_D1(problem_size_1.mn());
 
+    cutlass::HostTensor<
+      typename DualGemm::ElementC, 
+      typename DualGemm::LayoutC> reference_D2(problem_size_1.mn());
 
     CHECK_TRUE(initialize_tensor(tensor_A0.host_view(), init_A, seed + 2019));
     CHECK_TRUE(initialize_tensor(tensor_B0.host_view(), init_B, seed + 2118));
@@ -538,9 +614,13 @@ struct DualFusedGemmRun
     cutlass::reference::host::TensorFill(
       tensor_D1.host_view());
     cutlass::reference::host::TensorFill(
+      tensor_D2.host_view());
+    cutlass::reference::host::TensorFill(
       reference_D0.host_view());
     cutlass::reference::host::TensorFill(
       reference_D1.host_view());
+    cutlass::reference::host::TensorFill(
+      reference_D2.host_view());
 
     tensor_A0.sync_device();
     tensor_B0.sync_device();
@@ -551,8 +631,10 @@ struct DualFusedGemmRun
     tensor_Bias1.sync_device();
     tensor_D0.sync_device();
     tensor_D1.sync_device();
+    tensor_D2.sync_device();
     reference_D0.sync_device();
     reference_D1.sync_device();
+    reference_D2.sync_device();
 
     //
     // Initialize the GEMM operator
@@ -568,6 +650,7 @@ struct DualFusedGemmRun
       tensor_B1.device_ref(),
       {tensor_Bias1.device_data(), typename DualGemm::LayoutC::Stride(0)},
       tensor_D1.device_ref(),
+      tensor_D2.device_ref(),
       {alpha0, beta0},
       {alpha1, beta1},
     };
@@ -621,6 +704,7 @@ struct DualFusedGemmRun
 
     tensor_D0.sync_host();
     tensor_D1.sync_host();
+    tensor_D2.sync_host();
 
     //
     // Verify
@@ -665,9 +749,11 @@ struct DualFusedGemmRun
     if(relu) {
        cutlass::reference::device::TensorReLu(reference_D1.device_view()); 
     }
+    TensorEpilogueForEach<EpilogueOutputOp2>(reference_D0.device_view(), reference_D1.device_view(), reference_D2.device_view());
     cudaDeviceSynchronize();
     reference_D0.sync_host();
     reference_D1.sync_host();
+    reference_D2.sync_host();
 
     CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D0.host_view()), 0);
     CHECK_GT(cutlass::reference::host::TensorNorm(reference_D0.host_view()), 0);
@@ -683,8 +769,12 @@ struct DualFusedGemmRun
       reference_D1.host_view(), 
       tensor_D1.host_view());
     CHECK_TRUE(passed_out1);
+    bool passed_out2 = cutlass::reference::host::TensorEquals(
+      reference_D2.host_view(), 
+      tensor_D2.host_view());
+    CHECK_TRUE(passed_out2);
 
-    bool passed = passed_out0 && passed_out1;
+    bool passed = passed_out0 && passed_out1 && passed_out2;
     if (!passed)
     {
 
@@ -706,11 +796,14 @@ struct DualFusedGemmRun
         << "\n\nReference0 =\n" << reference_D0.host_view()
         << "\nComputed0 =\n" << tensor_D0.host_view()
         << "\n\nReference1 =\n" << reference_D1.host_view()
-        << "\nComputed1 =\n" << tensor_D1.host_view();
+        << "\nComputed1 =\n" << tensor_D1.host_view()
+        << "\n\nReference2 =\n" << reference_D2.host_view()
+        << "\nComputed2 =\n" << tensor_D2.host_view();
     }
     //std::cout << "A0 " << tensor_A0.host_view() << std::endl;
-    //std::cout << "tensor_Bias0 " << tensor_Bias0.host_view() << std::endl;
-    //std::cout << "tensor_D0 " << tensor_D0.host_view() << std::endl;
+    // std::cout << "reference_D0 " << reference_D0.host_view() << std::endl;
+    // std::cout << "reference_D1 " << reference_D1.host_view() << std::endl;
+    // std::cout << "reference_D2 " << reference_D2.host_view() << std::endl;
     //std::cout << "reference_D0 " << reference_D0.host_view() << std::endl;
     return passed;
   }

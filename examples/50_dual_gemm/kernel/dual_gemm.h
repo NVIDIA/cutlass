@@ -42,6 +42,7 @@
 
 #include "../threadblock/dual_mma_multistage.h"
 #include "../threadblock/dual_mma_multistage2.h"
+#include "../threadblock/dual_epilogue.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -56,6 +57,7 @@ template <
   typename Mma1_,               ///! Threadblock-scoped matrix multiply-accumulate 
   typename Epilogue0_,             ///! Epilogue
   typename Epilogue1_,             ///! Epilogue
+  typename OutputOp2_,             ///! Epilogue
   typename ThreadblockSwizzle_,   ///! Threadblock swizzling function
   bool SplitKSerial               ///! If true, code supporting split-K via serial reduction is enabled.
 >
@@ -82,7 +84,25 @@ struct DualGemm {
   using Epilogue1 = Epilogue1_;
   using OutputOp0 = typename Epilogue0::OutputOp;
   using OutputOp1 = typename Epilogue1::OutputOp;
+  using OutputOp2 = OutputOp2_;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
+
+  using DualEpilogue = cutlass::epilogue::threadblock::DualEpilogue<
+      typename Epilogue0::Shape,
+      typename Epilogue0::WarpMmaOperator,
+      Epilogue0::kPartitionsK,
+      typename Epilogue0::OutputTileIterator,
+      typename Epilogue0::AccumulatorFragmentIterator,
+      typename Epilogue0::WarpTileIterator,
+      typename Epilogue0::SharedLoadIterator,
+      OutputOp0,
+      OutputOp1,
+      OutputOp2,
+      typename Epilogue0::Padding,
+      Epilogue0::kFragmentsPerIteration,
+      true // IterationsUnroll
+  >;
+
   static bool const kSplitKSerial = SplitKSerial;
 
   /// Warp count (concept: GemmShape)
@@ -116,6 +136,10 @@ struct DualGemm {
     typename Epilogue1::OutputTileIterator::TensorRef ref_D1;
     typename OutputOp1::Params output_op_1;
 
+    typename Epilogue1::OutputTileIterator::Params params_D2;
+    typename Epilogue1::OutputTileIterator::TensorRef ref_D2;
+    typename OutputOp2::Params output_op_2;
+
     int *semaphore;
     int gemm_k_iterations_0;
     int gemm_k_size_0;
@@ -145,8 +169,10 @@ struct DualGemm {
       typename Epilogue1::OutputTileIterator::TensorRef ref_C1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_D1,
 
+      typename Epilogue1::OutputTileIterator::TensorRef ref_D2,
       typename OutputOp0::Params output_op_0 = typename OutputOp0::Params(),
       typename OutputOp1::Params output_op_1 = typename OutputOp1::Params(),
+      typename OutputOp2::Params output_op_2 = typename OutputOp2::Params(),
       int *workspace = nullptr
     ):
       problem_size_0(problem_size_0),
@@ -169,8 +195,11 @@ struct DualGemm {
       ref_C1(ref_C1),
       params_D1(ref_D1.layout()),
       ref_D1(ref_D1),
+      params_D2(ref_D2.layout()),
+      ref_D2(ref_D2),
       output_op_0(output_op_0),
-      output_op_1(output_op_1) {
+      output_op_1(output_op_1),
+      output_op_2(output_op_2) {
 
       int total_gemm_k_iterations_0 = (problem_size_0.k() + Mma0::Shape::kK - 1) / Mma0::Shape::kK;
       int gemm_k_iterations_0 = (total_gemm_k_iterations_0 + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
@@ -185,7 +214,11 @@ struct DualGemm {
 
   /// Shared memory storage structure
   union SharedStorage {
+    // fused
     typename DualMma::SharedStorage main_loop;
+    typename DualEpilogue::SharedStorage epilogue;
+
+    // non-fused
     typename Mma0::SharedStorage main_loop0;
     typename Mma1::SharedStorage main_loop1;
     typename Epilogue0::SharedStorage epilogue0;
@@ -209,7 +242,8 @@ struct DualGemm {
       typename Epilogue0::OutputTileIterator::TensorRef ref_D0,
       typename Mma1::IteratorB::TensorRef ref_B1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_C1,
-      typename Epilogue1::OutputTileIterator::TensorRef ref_D1) {
+      typename Epilogue1::OutputTileIterator::TensorRef ref_D1,
+      typename Epilogue1::OutputTileIterator::TensorRef ref_D2) {
 
     static int const kAlignmentA = Mma0::IteratorA::AccessType::kElements;
     static int const kAlignmentB = Mma0::IteratorB::AccessType::kElements;
@@ -240,6 +274,10 @@ struct DualGemm {
     }
 
     if (!TensorRef_aligned(ref_D1, kAlignmentC)) {
+      return Status::kErrorMisalignedOperand;
+    }
+
+    if (!TensorRef_aligned(ref_D2, kAlignmentC)) {
       return Status::kErrorMisalignedOperand;
     }
 
@@ -386,6 +424,7 @@ struct DualGemm {
 
     OutputOp0 output_op_0(params.output_op_0);
     OutputOp1 output_op_1(params.output_op_1);
+    OutputOp2 output_op_2(params.output_op_2);
 
     //
     // Masked tile iterators constructed from members
@@ -414,6 +453,7 @@ struct DualGemm {
       // Indicate which position in a serial reduction the output operator is currently updating
       output_op_0.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
       output_op_1.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
+      output_op_2.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
     }
 
     // Tile iterator loading from source tensor.
@@ -447,7 +487,15 @@ struct DualGemm {
       thread_idx,
       threadblock_offset
     );
+    typename Epilogue1::OutputTileIterator iterator_D2(
+      params.params_D2,
+      params.ref_D2.data(),
+      params.problem_size_1.mn(),
+      thread_idx,
+      threadblock_offset
+    );
 
+    /*
     Epilogue0 epilogue0(
       shared_storage.epilogue0,
       thread_idx, 
@@ -455,6 +503,12 @@ struct DualGemm {
       lane_idx);
     Epilogue1 epilogue1(
       shared_storage.epilogue1,
+      thread_idx, 
+      warp_idx, 
+      lane_idx);
+    */
+    DualEpilogue epilogue(
+      shared_storage.epilogue,
       thread_idx, 
       warp_idx, 
       lane_idx);
@@ -474,8 +528,17 @@ struct DualGemm {
     }
 
     // Execute the epilogue operator to update the destination tensor.
-    epilogue0(output_op_0, iterator_D0, accum0, iterator_C0); 
-    epilogue1(output_op_1, iterator_D1, accum1, iterator_C1); 
+    typename Epilogue0::OutputTileIterator source_iters[2] = {
+      iterator_C0, iterator_C1
+    };
+    epilogue(
+      output_op_0, output_op_1, output_op_2,
+      iterator_D0, iterator_D1, iterator_D2,
+      accum0, accum1,
+      source_iters
+    );
+    // epilogue0(output_op_0, iterator_D0, accum0, iterator_C0); 
+    // epilogue1(output_op_1, iterator_D1, accum1, iterator_C1); 
     
     //
     // Release the semaphore

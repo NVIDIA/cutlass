@@ -33,6 +33,25 @@ PROFILING=1 CUDA_VISIBLE_DEVICES=0 TMPDIR=. ncu --export report.ncu-rep --force-
  *
  **************************************************************************************************/
 
+/*! \file
+    \brief CUTLASS Dual-GEMM Example.
+
+    Fused kernel that outputs `D0` and `D1`.
+    We assume that B0/B1 have the same shape/layout
+
+```
+D0 = alpha . X @ B0 + beta . C0
+D1 = alpha . X @ B1 + beta . C1
+D2 = element_wise(D0, D1)
+```
+
+    Examples:
+
+      # TODO
+      $ TODO
+
+*/
+
 // #define IS_PROFILING
 
 #include <iostream>
@@ -55,7 +74,7 @@ PROFILING=1 CUDA_VISIBLE_DEVICES=0 TMPDIR=. ncu --export report.ncu-rep --force-
 ////////////////////////////////////////////////////////////////////////////////
 
 cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_0(4728, 4096, 1536);
-// cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_0(32, 32, 32);
+// cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_0(8, 8, 32);
 cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_1 = gemm_f16_sm80_problem_size_0;
 
 using ElementOutput = cutlass::half_t;
@@ -132,7 +151,7 @@ bool run_nonfused_gemm_f16_sm80() {
 
   NonFusedDualGemmRun<Gemm0, Gemm1> nonFusedGemm;
 
-  std::cout << "Running Non-fused SwiGLU FP16 TN GEMMs...\n";
+  std::cout << "Running Non-fused GEMMs FP16 TN GEMMs...\n";
   bool pass = nonFusedGemm.run(gemm_f16_sm80_problem_size_0, gemm_f16_sm80_problem_size_1, alpha0, beta0, alpha1, beta1);
   if(pass)
     std::cout << "Pass\n";
@@ -142,6 +161,24 @@ bool run_nonfused_gemm_f16_sm80() {
   return pass;
 }
 
+struct LeftSiLUAndMul {
+  struct Params{};
+  CUTLASS_HOST_DEVICE LeftSiLUAndMul(Params p) {}
+
+  CUTLASS_HOST_DEVICE void set_k_partition(int k1, int k2) {}
+
+  template <typename T>
+  CUTLASS_HOST_DEVICE T operator() (
+    T const &lhs, 
+    T const &rhs) const {
+    cutlass::epilogue::thread::SiLu<T> silu;
+    cutlass::multiplies<T> mul;
+    auto silu_lhs = silu(lhs);
+    return mul(silu_lhs, rhs);
+  }
+};
+
+
 bool run_fused_gemm_f16_sm80_shmem() {
 
   ElementCompute alpha0 = ElementCompute(1);
@@ -149,10 +186,8 @@ bool run_fused_gemm_f16_sm80_shmem() {
   ElementCompute alpha1 = ElementCompute(1);
   ElementCompute beta1 = ElementCompute(1); //beta=1 for bias
 
-  using ThreadblockShape0 = cutlass::gemm::GemmShape<128, 128, 32>;
-  using WarpShape0 = cutlass::gemm::GemmShape<64, 64, 32>;
-  using ThreadblockShape1 = cutlass::gemm::GemmShape<128, 128, 32>;
-  using WarpShape1 = cutlass::gemm::GemmShape<64, 64, 32>;
+  using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 32>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 64, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
 
   using EpilogueOutputOp0 = 
@@ -172,6 +207,7 @@ bool run_fused_gemm_f16_sm80_shmem() {
       ElementCompute,
       cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >;
+  using EpilogueOutputOp2 = LeftSiLUAndMul;
 
   using DualGemm = cutlass::gemm::device::DualGemm<
     cutlass::half_t,
@@ -183,13 +219,12 @@ bool run_fused_gemm_f16_sm80_shmem() {
     ElementAccumulator,
     cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
-    ThreadblockShape0,
-    ThreadblockShape1,
-    WarpShape0,
-    WarpShape1,
+    ThreadblockShape,
+    WarpShape,
     InstructionShape,
     EpilogueOutputOp0,
     EpilogueOutputOp1,
+    EpilogueOutputOp2,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     3
   >;
