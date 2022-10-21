@@ -30,7 +30,7 @@
 
 
 cutlass_example_add_executable(
-  50_dual_gemm
+  43_dual_gemm
   dual_gemm.cu 
   )
 
