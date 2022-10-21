@@ -429,12 +429,16 @@ struct NonFusedDualGemmRun
     CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D1.host_view()), 0);
     CHECK_GT(cutlass::reference::host::TensorNorm(reference_D1.host_view()), 0);
 
-    bool passed = cutlass::reference::host::TensorEquals(
+    bool passed0 = cutlass::reference::host::TensorEquals(
       reference_D1.host_view(), 
       tensor_D1.host_view());
+    CHECK_TRUE(passed0);
 
-    CHECK_TRUE(passed);
-    if (!passed) {
+    bool passed1 = cutlass::reference::host::TensorEquals(
+      reference_D1.host_view(), 
+      tensor_D1.host_view());
+    CHECK_TRUE(passed1);
+    if (!passed0 || !passed1) {
 
       std::stringstream fname;
 
@@ -455,7 +459,7 @@ struct NonFusedDualGemmRun
         << "\n\nReference =\n" << reference_D1.host_view()
         << "\nComputed =\n" << tensor_D1.host_view();
     }
-    return passed;
+    return passed0 && passed1;
   }
 };
 
@@ -642,15 +646,22 @@ struct DualFusedGemmRun
 
     int split_k_slices = DualGemm::kSplitKSerial ? 2 : 1;
     typename cutlass::TensorRef<typename DualGemm::ElementC, typename DualGemm::LayoutC> nullptr_ref{};
+    decltype(nullptr_ref) ref_B0, ref_B1;
+    if (beta0 != ElementCompute(0)) {
+      ref_B0 = {tensor_Bias0.device_data(), typename DualGemm::LayoutC::Stride(0)};
+    }
+    if (beta1 != ElementCompute(0)) {
+      ref_B1 = {tensor_Bias1.device_data(), typename DualGemm::LayoutC::Stride(0)};
+    }
     typename DualGemm::Arguments arguments{
       problem_size_0,
       problem_size_1,
       tensor_A0.device_ref(),
       tensor_B0.device_ref(),
-      {tensor_Bias0.device_data(), typename DualGemm::LayoutC::Stride(0)},
+      ref_B0,
       DualGemm::kStoreD0 ? tensor_D0.device_ref() : nullptr_ref,
       tensor_B1.device_ref(),
-      {tensor_Bias1.device_data(), typename DualGemm::LayoutC::Stride(0)},
+      ref_B1,
       DualGemm::kStoreD1 ? tensor_D1.device_ref() : nullptr_ref,
       tensor_D2.device_ref(),
       {alpha0, beta0},
@@ -778,7 +789,7 @@ struct DualFusedGemmRun
     bool passed_out1 = true;
     if (DualGemm::kStoreD1) {
       CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D1.host_view()), 0);
-      passed_out0 = cutlass::reference::host::TensorEquals(
+      passed_out1 = cutlass::reference::host::TensorEquals(
         reference_D1.host_view(), 
         tensor_D1.host_view());
     }

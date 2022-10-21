@@ -240,10 +240,9 @@ public:
     AccumulatorTile const &accumulator0,
     AccumulatorTile const &accumulator1,
     OutputTileIterator source_iterator[2],
-    bool writeToD2
+    bool writeToD2 // true if it's the final split-k
   ) {
-    
-    assert(output_op.is_source_needed());
+    // TODO: Implement when no source is needed
 
     typename OutputTileIterator::Fragment source_fragment[2];
     CUTLASS_PRAGMA_UNROLL

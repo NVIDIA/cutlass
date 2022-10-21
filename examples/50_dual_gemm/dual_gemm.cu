@@ -75,18 +75,36 @@ cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_1 = gemm_f16_sm80_problem_si
 
 constexpr int kStages = 3;
 constexpr bool kSplitKSerial = false;
+constexpr bool kUseBias = true;
 
 using ElementOutput = cutlass::half_t;
 using ElementAccumulator = cutlass::half_t;
 using ElementCompute = cutlass::half_t;
+constexpr auto kScaleType = kUseBias ? cutlass::epilogue::thread::ScaleType::NoBetaScaling : (
+  // No bias
+  kSplitKSerial ? cutlass::epilogue::thread::ScaleType::Default : cutlass::epilogue::thread::ScaleType::Nothing
+);
+using EpilogueOutputOp0 = cutlass::epilogue::thread::LinearCombination<
+  ElementOutput,
+  128 / cutlass::sizeof_bits<ElementOutput>::value,
+  ElementAccumulator,
+  ElementCompute,
+  kScaleType
+>;
+using EpilogueOutputOp1 = cutlass::epilogue::thread::LinearCombination<
+  ElementOutput,
+  128 / cutlass::sizeof_bits<ElementOutput>::value,
+  ElementAccumulator,
+  ElementCompute,
+  kScaleType
+>;
+
+const ElementCompute alpha0 = ElementCompute(1);
+const ElementCompute beta0 = ElementCompute(kUseBias ? 1 : 0);
+const ElementCompute alpha1 = ElementCompute(1);
+const ElementCompute beta1 = ElementCompute(kUseBias ? 1 : 0);
 
 bool run_nonfused_gemm_f16_sm80() {
-
-  ElementCompute alpha0 = ElementCompute(1);
-  ElementCompute beta0 = ElementCompute(1); //beta=1 for bias
-  ElementCompute alpha1 = ElementCompute(1);
-  ElementCompute beta1 = ElementCompute(1); //beta=1 for bias
-
   using ThreadblockShape0 = cutlass::gemm::GemmShape<128, 128, 32>;
   using WarpShape0 = cutlass::gemm::GemmShape<64, 64, 32>;
   using ThreadblockShape1 = cutlass::gemm::GemmShape<128, 128, 32>;
@@ -106,13 +124,7 @@ bool run_nonfused_gemm_f16_sm80() {
     ThreadblockShape0,
     WarpShape0,
     InstructionShape,
-    cutlass::epilogue::thread::LinearCombination<
-      ElementOutput,
-      128 / cutlass::sizeof_bits<ElementOutput>::value,
-      ElementAccumulator,
-      ElementCompute,
-      cutlass::epilogue::thread::ScaleType::NoBetaScaling
-    >,
+    EpilogueOutputOp0,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     kStages,
     8,
@@ -132,13 +144,7 @@ bool run_nonfused_gemm_f16_sm80() {
     ThreadblockShape1,
     WarpShape1,
     InstructionShape,
-    cutlass::epilogue::thread::LinearCombination<
-      ElementOutput,
-      128 / cutlass::sizeof_bits<ElementOutput>::value,
-      ElementAccumulator,
-      ElementCompute,
-      cutlass::epilogue::thread::ScaleType::NoBetaScaling
-    >,
+    EpilogueOutputOp1,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
     kStages,
     8,
@@ -177,33 +183,9 @@ struct LeftSiLUAndMul {
 
 
 bool run_fused_gemm_f16_sm80_shmem() {
-
-  ElementCompute alpha0 = ElementCompute(1);
-  ElementCompute beta0 = ElementCompute(1); //beta=1 for bias
-  ElementCompute alpha1 = ElementCompute(1);
-  ElementCompute beta1 = ElementCompute(1); //beta=1 for bias
-
   using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 32>;
   using WarpShape = cutlass::gemm::GemmShape<64, 64, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
-
-  using EpilogueOutputOp0 = 
-    cutlass::epilogue::thread::LinearCombination<
-      ElementOutput,
-      128 / cutlass::sizeof_bits<ElementOutput>::value,
-      ElementAccumulator,
-      ElementCompute,
-      cutlass::epilogue::thread::ScaleType::NoBetaScaling
-    >;
-
-  using EpilogueOutputOp1 = 
-    cutlass::epilogue::thread::LinearCombination<
-      ElementOutput,
-      128 / cutlass::sizeof_bits<ElementOutput>::value,
-      ElementAccumulator,
-      ElementCompute,
-      cutlass::epilogue::thread::ScaleType::NoBetaScaling
-    >;
   using EpilogueOutputOp2 = LeftSiLUAndMul;
 
   // Optionally, we might not need intermediate GEMM outputs
@@ -253,9 +235,8 @@ int main() {
     &run_fused_gemm_f16_sm80_shmem
   };
 
-  return testRun(80, funcs, "gemm f16 shmem staging");
-
-
+  std::string test_name = "dual-gemm f16 bias=" + std::to_string(kUseBias) + " split_k_serial=" + std::to_string(kSplitKSerial);
+  return testRun(80, funcs, test_name);
 }
 
 
