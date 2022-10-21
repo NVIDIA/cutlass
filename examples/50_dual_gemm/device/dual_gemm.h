@@ -29,7 +29,12 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Template for a pipelined GEMM kernel. Does not compute batching or support split-K.
+    \brief Performs a dual gemm:
+```
+D0 = epilogue0(X @ B0, C0)
+D1 = epilogue0(X @ B1, C1)
+D2 = element_wise(D0, D1)
+```
 */
 
 #pragma once
@@ -89,6 +94,10 @@ template <
     int Stages =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
                                  ElementC_, ElementAccumulator_>::kStages,
+    bool StoreD0 = true,
+    bool StoreD1 = true,
+    /// If true, kernel supports split-K with serial reduction
+    bool SplitKSerial = false,
     /// Access granularity of A matrix in units of elements
     int AlignmentA =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
@@ -97,8 +106,6 @@ template <
     int AlignmentB =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
                                  ElementC_, ElementAccumulator_>::kAlignmentB,
-    /// If true, kernel supports split-K with serial reduction
-    bool SplitKSerial = false,
     /// Operation performed by GEMM
     typename Operator_ = typename DefaultGemmConfiguration<
         OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
@@ -132,41 +139,54 @@ class DualGemm {
   static int const kAlignmentB = AlignmentB;
   static int const kAlignmentC = EpilogueOutputOp1::kCount;
   static bool const kSplitKSerial = SplitKSerial;
+  static bool constexpr kStoreD0 = StoreD0;
+  static bool constexpr kStoreD1 = StoreD1;
   static ComplexTransform const kTransformA = ComplexTransform::kNone;
   static ComplexTransform const kTransformB = ComplexTransform::kNone;
 
   using LayoutScaleBias = layout::RowMajor;
   /// Define the kernel
-
   /// Define the threadblock-scoped matrix multiply-accumulate
-  using Mma0 = typename cutlass::gemm::threadblock::DefaultMma<
+  static_assert(ArchTag::kMinComputeCapability >= 80, "Only multistage is implemented");
+  static_assert(kStages >= 3, "Only multistage is implemented");
+  using Mma = typename cutlass::gemm::threadblock::DefaultMma<
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
-      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm80,
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, ArchTag,
       ThreadblockShape, WarpShape, 
       InstructionShape, Stages, Operator>::ThreadblockMma;
-  using Mma1 = typename cutlass::gemm::threadblock::DefaultMma<
-      ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
-      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm80,
-      ThreadblockShape, WarpShape, 
-      InstructionShape, Stages, Operator>::ThreadblockMma;
+  using DualMma = threadblock::DualMmaMultistage<
+    typename Mma::Shape,
+    typename Mma::IteratorA,
+    typename Mma::SmemIteratorA,
+    Mma::kCacheOpA,
+    typename Mma::IteratorB,
+    typename Mma::SmemIteratorB,
+    Mma::kCacheOpB,
+    typename Mma::ElementC,
+    typename Mma::LayoutC,
+    typename Mma::Policy,
+    Mma::kStages,
+    SharedMemoryClearOption::kNone
+  >;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
 
   /// Define the epilogue
   using Epilogue0 =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
-          ThreadblockShape, typename Mma0::Operator, kPartitionsK, EpilogueOutputOp0,
+          ThreadblockShape, typename DualMma::Operator, kPartitionsK, EpilogueOutputOp0,
           EpilogueOutputOp0::kCount>::Epilogue;
   using Epilogue1 =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
-          ThreadblockShape, typename Mma1::Operator, kPartitionsK, EpilogueOutputOp1,
+          ThreadblockShape, typename DualMma::Operator, kPartitionsK, EpilogueOutputOp1,
           EpilogueOutputOp1::kCount>::Epilogue;
 
   /// Define the kernel-level GEMM operator.
   using DualGemmKernel = kernel::DualGemm<
-    Mma0, Mma1,
+    DualMma,
     Epilogue0, Epilogue1, EpilogueOutputOp2,
-    ThreadblockSwizzle, kSplitKSerial>;
+    ThreadblockSwizzle, kSplitKSerial,
+    kStoreD0, kStoreD1>;
 
   /// Argument structure
   struct Arguments {
@@ -213,10 +233,12 @@ class DualGemm {
       TensorRef<ElementC const, LayoutC> ref_C1_,
       TensorRef<ElementC, LayoutC> ref_D1_,
       TensorRef<ElementC, LayoutC> ref_D2_,
-      typename EpilogueOutputOp0::Params epilogue0_ = 
+      typename EpilogueOutputOp0::Params epilogue0_ =
         typename EpilogueOutputOp0::Params(),
-      typename EpilogueOutputOp1::Params epilogue1_ = 
+      typename EpilogueOutputOp1::Params epilogue1_ =
         typename EpilogueOutputOp1::Params(),
+      typename EpilogueOutputOp2::Params epilogue2_ =
+        typename EpilogueOutputOp2::Params(),
       int split_k_slices_ = 1
     ):
       problem_size_0(problem_size_0_),
@@ -231,6 +253,7 @@ class DualGemm {
       ref_D2(ref_D2_),
       epilogue0(epilogue0_),
       epilogue1(epilogue1_),
+      epilogue2(epilogue2_),
       split_k_slices(split_k_slices_) {
 
     }
@@ -251,6 +274,12 @@ public:
 
     if (!kSplitKSerial && args.split_k_slices > 1) {
       return Status::kErrorInvalidProblem;
+    }
+    if (kStoreD0 != (args.ref_D0.data() != nullptr)) {
+      return Status::kErrorInternal;
+    }
+    if (kStoreD1 != (args.ref_D1.data() != nullptr)) {
+      return Status::kErrorInternal;
     }
 
     Status status = DualGemmKernel::can_implement(
@@ -305,10 +334,6 @@ public:
       args.problem_size_0, 
       {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
       args.split_k_slices);
-//    cutlass::gemm::GemmCoord grid_shape_1 = threadblock_swizzle.get_tiled_shape(
-//      args.problem_size_1, 
-//      {ThreadblockShape1::kM, ThreadblockShape1::kN, ThreadblockShape1::kK},
-//      args.split_k_slices);
 
     if (kSplitKSerial) {
       if (args.split_k_slices > 1) {

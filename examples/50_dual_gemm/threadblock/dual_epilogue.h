@@ -84,6 +84,8 @@ template <
   typename OutputOp1_,
   typename OutputOp2_,
   typename Padding_,                        ///< Padding added to SMEM allocation to avoid bank conflicts (concept: MatrixShape)
+  bool StoreD0 = true,
+  bool StoreD1 = true,
   int FragmentsPerPartition = 1,            ///< Used to coarsten the epilogue granularity
   int IterationsUnroll =                    ///< Used to reduce binary size when epilogue op is large
     (!IsEpilogueFunctorHeavy<OutputOp0_>::value)
@@ -104,6 +106,8 @@ public:
   using Shape = Shape_;
   using WarpMmaOperator = WarpMmaOperator_;
   static int const kPartitionsK = PartitionsK;
+  static bool constexpr kStoreD0 = StoreD0;
+  static bool constexpr kStoreD1 = StoreD1;
   using OutputTileIterator = OutputTileIterator_;
   using AccumulatorFragmentIterator = AccumulatorFragmentIterator_;
   using WarpTileIterator = WarpTileIterator_;
@@ -235,7 +239,8 @@ public:
     OutputTileIterator dest2,
     AccumulatorTile const &accumulator0,
     AccumulatorTile const &accumulator1,
-    OutputTileIterator source_iterator[2]
+    OutputTileIterator source_iterator[2],
+    bool writeToD2
   ) {
     
     assert(output_op.is_source_needed());
@@ -326,12 +331,18 @@ public:
       // Store the final result
       //
 
-      dest0.store(output_fragment[0]);
-      dest1.store(output_fragment[1]);
-      dest2.store(output_fragment[2]);
-      ++dest0;
-      ++dest1;
-      ++dest2;
+      if (kStoreD0) {
+        dest0.store(output_fragment[0]);
+        ++dest0;
+      }
+      if (kStoreD1) {
+        dest1.store(output_fragment[1]);
+        ++dest1;
+      }
+      if (writeToD2) {
+        dest2.store(output_fragment[2]);
+        ++dest2;
+      }
     }
   }
 

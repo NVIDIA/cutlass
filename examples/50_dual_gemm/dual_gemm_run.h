@@ -44,7 +44,6 @@
 #include "cutlass/util/reference/device/gemm.h"
 #include "cutlass/util/reference/device/tensor_relu.h"
 
-#include "reference/device/tensor_scale_bias.h"
 #include "helper.h"
 
 #define CHECK_GT(val1, val2) \
@@ -293,7 +292,7 @@ struct NonFusedDualGemmRun
     // Initialize the GEMM operator
     //
 
-    int split_k_slices = 1;
+    int split_k_slices = Gemm0::kSplitKSerial ? 2 : 1;
     typename Gemm0::Arguments arguments_0{
       problem_size_0,
       tensor_A0.device_ref(),
@@ -304,6 +303,7 @@ struct NonFusedDualGemmRun
       split_k_slices
     };
 
+    split_k_slices = Gemm1::kSplitKSerial ? 2 : 1;
     typename Gemm1::Arguments arguments_1{
       problem_size_1,
       tensor_A0.device_ref(),
@@ -369,7 +369,7 @@ struct NonFusedDualGemmRun
     cudaEventElapsedTime(&totalTime, start, stop2);
     std::cout << "gemm 0 time " << gemm0Time / (float)runs << " ms\n";
     std::cout << "gemm 1 time " << gemm1Time / (float)runs << " ms\n";
-    std::cout << "Non-fusion time " << totalTime / (float)runs << " ms\n";
+    std::cout << "Non-fusion GEMM only time " << totalTime / (float)runs << " ms\n";
 
     tensor_D0.sync_host();
     tensor_D1.sync_host();
@@ -640,23 +640,29 @@ struct DualFusedGemmRun
     // Initialize the GEMM operator
     //
 
+    int split_k_slices = DualGemm::kSplitKSerial ? 2 : 1;
+    typename cutlass::TensorRef<typename DualGemm::ElementC, typename DualGemm::LayoutC> nullptr_ref{};
     typename DualGemm::Arguments arguments{
       problem_size_0,
       problem_size_1,
       tensor_A0.device_ref(),
       tensor_B0.device_ref(),
       {tensor_Bias0.device_data(), typename DualGemm::LayoutC::Stride(0)},
-      tensor_D0.device_ref(),
+      DualGemm::kStoreD0 ? tensor_D0.device_ref() : nullptr_ref,
       tensor_B1.device_ref(),
       {tensor_Bias1.device_data(), typename DualGemm::LayoutC::Stride(0)},
-      tensor_D1.device_ref(),
+      DualGemm::kStoreD1 ? tensor_D1.device_ref() : nullptr_ref,
       tensor_D2.device_ref(),
       {alpha0, beta0},
       {alpha1, beta1},
+      {},
+      split_k_slices
     };
 
     DualGemm b2b_gemm_op;
 
+    cutlass::device_memory::allocation<uint8_t> workspace(b2b_gemm_op.get_workspace_size(arguments));
+  
     cutlass::Status status = b2b_gemm_op.can_implement(arguments);
 
     if(status != cutlass::Status::kSuccess) {
@@ -668,7 +674,7 @@ struct DualFusedGemmRun
                 << "    ThreadblockShape1::kN = problem_size_1.N" << std::endl;
     }
 
-    status = b2b_gemm_op.initialize(arguments);
+    status = b2b_gemm_op.initialize(arguments, workspace.get());
 
     CUTLASS_CHECK(status);
 
@@ -755,20 +761,29 @@ struct DualFusedGemmRun
     reference_D1.sync_host();
     reference_D2.sync_host();
 
-    CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D0.host_view()), 0);
     CHECK_GT(cutlass::reference::host::TensorNorm(reference_D0.host_view()), 0);
-    CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D1.host_view()), 0);
     CHECK_GT(cutlass::reference::host::TensorNorm(reference_D1.host_view()), 0);
+    CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D2.host_view()), 0);
+    CHECK_GT(cutlass::reference::host::TensorNorm(reference_D2.host_view()), 0);
 
-    bool passed_out0 = cutlass::reference::host::TensorEquals(
-      reference_D0.host_view(), 
-      tensor_D0.host_view());
-
+    bool passed_out0 = true;
+    if (DualGemm::kStoreD0) {
+      CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D0.host_view()), 0);
+      passed_out0 = cutlass::reference::host::TensorEquals(
+        reference_D0.host_view(), 
+        tensor_D0.host_view());
+    }
     CHECK_TRUE(passed_out0);
-    bool passed_out1 = cutlass::reference::host::TensorEquals(
-      reference_D1.host_view(), 
-      tensor_D1.host_view());
+
+    bool passed_out1 = true;
+    if (DualGemm::kStoreD1) {
+      CHECK_GT(cutlass::reference::host::TensorNorm(tensor_D1.host_view()), 0);
+      passed_out0 = cutlass::reference::host::TensorEquals(
+        reference_D1.host_view(), 
+        tensor_D1.host_view());
+    }
     CHECK_TRUE(passed_out1);
+
     bool passed_out2 = cutlass::reference::host::TensorEquals(
       reference_D2.host_view(), 
       tensor_D2.host_view());

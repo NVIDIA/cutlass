@@ -1,7 +1,3 @@
-/*
-PROFILING=1 CUDA_VISIBLE_DEVICES=0 TMPDIR=. ncu --export report.ncu-rep --force-overwrite --target-processes application-only --replay-mode kernel --kernel-name-base function --launch-skip-before-match 0 --section ComputeWorkloadAnalysis --section InstructionStats --section LaunchStats --section MemoryWorkloadAnalysis --section MemoryWorkloadAnalysis_Chart --section MemoryWorkloadAnalysis_Tables --section Nvlink_Tables --section Nvlink_Topology --section Occupancy --section SchedulerStats --section SourceCounters --section SpeedOfLight --section SpeedOfLight_RooflineChart --section WarpStateStats --sampling-interval auto --sampling-max-passes 5 --sampling-buffer-size 33554432 --profile-from-start 1 --cache-control all --clock-control base --apply-rules yes --import-source yes --check-exit-code yes \
-  ./examples/50_fused_swiglu/50_fused_swiglu
-*/
 /***************************************************************************************************
  * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
@@ -40,10 +36,11 @@ PROFILING=1 CUDA_VISIBLE_DEVICES=0 TMPDIR=. ncu --export report.ncu-rep --force-
     We assume that B0/B1 have the same shape/layout
 
 ```
-D0 = alpha . X @ B0 + beta . C0
-D1 = alpha . X @ B1 + beta . C1
-D2 = element_wise(D0, D1)
+D0 = epilogue0(X @ B0, C0)
+D1 = epilogue1(X @ B1, C1)
+D2 = epilogue2(D0, D1)
 ```
+    D0 and D1 will be optionally stored in gmem (`kStoreD0` / `kStoreD1`)
 
     Examples:
 
@@ -73,9 +70,11 @@ D2 = element_wise(D0, D1)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_0(4728, 4096, 1536);
-// cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_0(8, 8, 32);
+cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_0(4096, 4096, 8192);
 cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_1 = gemm_f16_sm80_problem_size_0;
+
+constexpr int kStages = 3;
+constexpr bool kSplitKSerial = false;
 
 using ElementOutput = cutlass::half_t;
 using ElementAccumulator = cutlass::half_t;
@@ -93,8 +92,6 @@ bool run_nonfused_gemm_f16_sm80() {
   using ThreadblockShape1 = cutlass::gemm::GemmShape<128, 128, 32>;
   using WarpShape1 = cutlass::gemm::GemmShape<64, 64, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
-
-  constexpr int kStages = 3;
 
   using Gemm0 = cutlass::gemm::device::Gemm<
     cutlass::half_t,
@@ -120,7 +117,7 @@ bool run_nonfused_gemm_f16_sm80() {
     kStages,
     8,
     8,
-    true
+    kSplitKSerial
   >;
   using Gemm1 = cutlass::gemm::device::Gemm<
     cutlass::half_t,
@@ -146,7 +143,7 @@ bool run_nonfused_gemm_f16_sm80() {
     kStages,
     8,
     8,
-    true
+    kSplitKSerial
   >;
 
   NonFusedDualGemmRun<Gemm0, Gemm1> nonFusedGemm;
@@ -165,7 +162,7 @@ struct LeftSiLUAndMul {
   struct Params{};
   CUTLASS_HOST_DEVICE LeftSiLUAndMul(Params p) {}
 
-  CUTLASS_HOST_DEVICE void set_k_partition(int k1, int k2) {}
+  CUTLASS_HOST_DEVICE void set_k_partition(int, int) {}
 
   template <typename T>
   CUTLASS_HOST_DEVICE T operator() (
@@ -209,6 +206,10 @@ bool run_fused_gemm_f16_sm80_shmem() {
     >;
   using EpilogueOutputOp2 = LeftSiLUAndMul;
 
+  // Optionally, we might not need intermediate GEMM outputs
+  constexpr bool kStoreD0 = true;
+  constexpr bool kStoreD1 = true;
+
   using DualGemm = cutlass::gemm::device::DualGemm<
     cutlass::half_t,
     cutlass::layout::RowMajor,
@@ -226,12 +227,15 @@ bool run_fused_gemm_f16_sm80_shmem() {
     EpilogueOutputOp1,
     EpilogueOutputOp2,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
-    3
+    kStages,
+    kStoreD0,
+    kStoreD1,
+    kSplitKSerial
   >;
 
   DualFusedGemmRun<DualGemm> fusedGemm;
 
-  std::cout << "Running Fused FP16 TN GEMMs...\n";
+  std::cout << "Running Fused FP16 TN GEMMs + Epilogue2...\n";
   bool passed = fusedGemm.run(gemm_f16_sm80_problem_size_0, gemm_f16_sm80_problem_size_1, alpha0, beta0, alpha1, beta1);
   if(passed)
     std::cout << "Pass\n";

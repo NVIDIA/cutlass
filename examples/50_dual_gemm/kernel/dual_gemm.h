@@ -53,32 +53,18 @@ namespace kernel {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
-  typename Mma0_,               ///! Threadblock-scoped matrix multiply-accumulate 
-  typename Mma1_,               ///! Threadblock-scoped matrix multiply-accumulate 
+  typename DualMma_,               ///! Threadblock-scoped matrix multiply-accumulate 
   typename Epilogue0_,             ///! Epilogue
   typename Epilogue1_,             ///! Epilogue
   typename OutputOp2_,             ///! Epilogue
   typename ThreadblockSwizzle_,   ///! Threadblock swizzling function
-  bool SplitKSerial               ///! If true, code supporting split-K via serial reduction is enabled.
+  bool SplitKSerial,              ///! If true, code supporting split-K via serial reduction is enabled.
+  bool StoreD0,
+  bool StoreD1
 >
 struct DualGemm {
 
-  using Mma0 = Mma0_;
-  using Mma1 = Mma1_;
-  using DualMma = threadblock::DualMmaMultistage<
-    typename Mma0::Shape,
-    typename Mma0::IteratorA,
-    typename Mma0::SmemIteratorA,
-    Mma0::kCacheOpA,
-    typename Mma0::IteratorB,
-    typename Mma0::SmemIteratorB,
-    Mma0::kCacheOpB,
-    typename Mma0::ElementC,
-    typename Mma0::LayoutC,
-    typename Mma0::Policy,
-    Mma0::kStages,
-    SharedMemoryClearOption::kNone
-  >;
+  using DualMma = DualMma_;
 
   using Epilogue0 = Epilogue0_;
   using Epilogue1 = Epilogue1_;
@@ -86,6 +72,8 @@ struct DualGemm {
   using OutputOp1 = typename Epilogue1::OutputOp;
   using OutputOp2 = OutputOp2_;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
+  static constexpr bool kStoreD0 = StoreD0;
+  static constexpr bool kStoreD1 = StoreD1;
 
   using DualEpilogue = cutlass::epilogue::threadblock::DualEpilogue<
       typename Epilogue0::Shape,
@@ -99,14 +87,18 @@ struct DualGemm {
       OutputOp1,
       OutputOp2,
       typename Epilogue0::Padding,
+      kStoreD0,
+      kStoreD1,
       Epilogue0::kFragmentsPerIteration,
       true // IterationsUnroll
   >;
 
   static bool const kSplitKSerial = SplitKSerial;
+  static_assert(!kSplitKSerial || (kStoreD0 && kStoreD1),
+    "Split-K serial requires buffers for D0/D1 for reduction");
 
   /// Warp count (concept: GemmShape)
-  using WarpCount0 = typename Mma0::WarpCount;
+  using WarpCount0 = typename DualMma::WarpCount;
   static int const kThreadCount = 32 * WarpCount0::kCount;
 
   /// Parameters structure
@@ -117,10 +109,10 @@ struct DualGemm {
     int swizzle_log_tile;
 
     // Mma0
-    typename Mma0::IteratorA::Params params_A0;
-    typename Mma0::IteratorA::TensorRef ref_A0;
-    typename Mma0::IteratorB::Params params_B0;
-    typename Mma0::IteratorB::TensorRef ref_B0;
+    typename DualMma::IteratorA::Params params_A0;
+    typename DualMma::IteratorA::TensorRef ref_A0;
+    typename DualMma::IteratorB::Params params_B0;
+    typename DualMma::IteratorB::TensorRef ref_B0;
     typename Epilogue0::OutputTileIterator::Params params_C0;
     typename Epilogue0::OutputTileIterator::TensorRef ref_C0;
     typename Epilogue0::OutputTileIterator::Params params_D0;
@@ -128,8 +120,8 @@ struct DualGemm {
     typename OutputOp0::Params output_op_0;
 
     // Mma1
-    typename Mma1::IteratorB::Params params_B1;
-    typename Mma1::IteratorB::TensorRef ref_B1;
+    typename DualMma::IteratorB::Params params_B1;
+    typename DualMma::IteratorB::TensorRef ref_B1;
     typename Epilogue1::OutputTileIterator::Params params_C1;
     typename Epilogue1::OutputTileIterator::TensorRef ref_C1;
     typename Epilogue1::OutputTileIterator::Params params_D1;
@@ -160,12 +152,12 @@ struct DualGemm {
       cutlass::gemm::GemmCoord const & problem_size_1,
       cutlass::gemm::GemmCoord const & grid_tiled_shape,
       // Mma0: D0 = A @ B0 + C0
-      typename Mma0::IteratorA::TensorRef ref_A0,
-      typename Mma0::IteratorB::TensorRef ref_B0,
+      typename DualMma::IteratorA::TensorRef ref_A0,
+      typename DualMma::IteratorB::TensorRef ref_B0,
       typename Epilogue0::OutputTileIterator::TensorRef ref_C0,
       typename Epilogue0::OutputTileIterator::TensorRef ref_D0,
       // Mma1: D1 = A @ B1 + C1
-      typename Mma1::IteratorB::TensorRef ref_B1,
+      typename DualMma::IteratorB::TensorRef ref_B1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_C1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_D1,
 
@@ -201,12 +193,12 @@ struct DualGemm {
       output_op_1(output_op_1),
       output_op_2(output_op_2) {
 
-      int total_gemm_k_iterations_0 = (problem_size_0.k() + Mma0::Shape::kK - 1) / Mma0::Shape::kK;
+      int total_gemm_k_iterations_0 = (problem_size_0.k() + DualMma::Shape::kK - 1) / DualMma::Shape::kK;
       int gemm_k_iterations_0 = (total_gemm_k_iterations_0 + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
-      gemm_k_size_0 = gemm_k_iterations_0 * Mma0::Shape::kK;
-      int total_gemm_k_iterations_1 = (problem_size_1.k() + Mma1::Shape::kK - 1) / Mma1::Shape::kK;
+      gemm_k_size_0 = gemm_k_iterations_0 * DualMma::Shape::kK;
+      int total_gemm_k_iterations_1 = (problem_size_1.k() + DualMma::Shape::kK - 1) / DualMma::Shape::kK;
       int gemm_k_iterations_1 = (total_gemm_k_iterations_1 + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
-      gemm_k_size_1 = gemm_k_iterations_1 * Mma1::Shape::kK;
+      gemm_k_size_1 = gemm_k_iterations_1 * DualMma::Shape::kK;
 
     semaphore = workspace;
     }
@@ -219,8 +211,8 @@ struct DualGemm {
     typename DualEpilogue::SharedStorage epilogue;
 
     // non-fused
-    typename Mma0::SharedStorage main_loop0;
-    typename Mma1::SharedStorage main_loop1;
+    typename DualMma::SharedStorage main_loop0;
+    typename DualMma::SharedStorage main_loop1;
     typename Epilogue0::SharedStorage epilogue0;
     typename Epilogue1::SharedStorage epilogue1;
   };
@@ -236,17 +228,17 @@ struct DualGemm {
     static Status can_implement(
       cutlass::gemm::GemmCoord const & problem_size_0,
       cutlass::gemm::GemmCoord const & problem_size_1,
-      typename Mma0::IteratorA::TensorRef ref_A0,
-      typename Mma0::IteratorB::TensorRef ref_B0,
+      typename DualMma::IteratorA::TensorRef ref_A0,
+      typename DualMma::IteratorB::TensorRef ref_B0,
       typename Epilogue0::OutputTileIterator::TensorRef ref_C0,
       typename Epilogue0::OutputTileIterator::TensorRef ref_D0,
-      typename Mma1::IteratorB::TensorRef ref_B1,
+      typename DualMma::IteratorB::TensorRef ref_B1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_C1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_D1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_D2) {
 
-    static int const kAlignmentA = Mma0::IteratorA::AccessType::kElements;
-    static int const kAlignmentB = Mma0::IteratorB::AccessType::kElements;
+    static int const kAlignmentA = DualMma::IteratorA::AccessType::kElements;
+    static int const kAlignmentB = DualMma::IteratorB::AccessType::kElements;
     static int const kAlignmentC = Epilogue0::OutputTileIterator::kElementsPerAccess;
 
     if (!TensorRef_aligned(ref_A0, kAlignmentA)) {
@@ -319,18 +311,18 @@ struct DualGemm {
 
     // Compute initial location in logical coordinates
     cutlass::MatrixCoord tb_offset_A0{
-      threadblock_tile_offset.m() * Mma0::Shape::kM,
+      threadblock_tile_offset.m() * DualMma::Shape::kM,
       threadblock_tile_offset.k() * params.gemm_k_size_0,
     };
 
     cutlass::MatrixCoord tb_offset_B0{
       threadblock_tile_offset.k() * params.gemm_k_size_0,
-      threadblock_tile_offset.n() * Mma0::Shape::kN
+      threadblock_tile_offset.n() * DualMma::Shape::kN
     };
 
     cutlass::MatrixCoord tb_offset_B1{
       threadblock_tile_offset.k() * params.gemm_k_size_1,
-      threadblock_tile_offset.n() * Mma1::Shape::kN
+      threadblock_tile_offset.n() * DualMma::Shape::kN
     };
 
     // Problem size is a function of threadblock index in the K dimension
@@ -339,7 +331,7 @@ struct DualGemm {
       (threadblock_tile_offset.k() + 1) * params.gemm_k_size_0);
 
     // Compute threadblock-scoped matrix multiply-add
-    int gemm_k_iterations_0 = (problem_size_k_0 - tb_offset_A0.column() + Mma0::Shape::kK - 1) / Mma0::Shape::kK;
+    int gemm_k_iterations_0 = (problem_size_k_0 - tb_offset_A0.column() + DualMma::Shape::kK - 1) / DualMma::Shape::kK;
 
     // Problem size is a function of threadblock index in the K dimension
     int problem_size_k_1 = min(
@@ -347,28 +339,28 @@ struct DualGemm {
       (threadblock_tile_offset.k() + 1) * params.gemm_k_size_1);
 
     // Compute threadblock-scoped matrix multiply-add
-    int gemm_k_iterations_1 = (problem_size_k_1 - tb_offset_B1.row() + Mma1::Shape::kK - 1) / Mma1::Shape::kK;
+    int gemm_k_iterations_1 = (problem_size_k_1 - tb_offset_B1.row() + DualMma::Shape::kK - 1) / DualMma::Shape::kK;
 
 
     // Compute position within threadblock
     int thread_idx = threadIdx.x;
 
     // Construct iterators to A and B operands
-    typename Mma0::IteratorA iterator_A0(
+    typename DualMma::IteratorA iterator_A0(
       params.params_A0,
       params.ref_A0.data(),
       {params.problem_size_0.m(), problem_size_k_0},
       thread_idx,
       tb_offset_A0);
 
-    typename Mma0::IteratorB iterator_B0(
+    typename DualMma::IteratorB iterator_B0(
       params.params_B0,
       params.ref_B0.data(),
       {problem_size_k_0, params.problem_size_0.n()},
       thread_idx,
       tb_offset_B0);
 
-    typename Mma1::IteratorB iterator_B1(
+    typename DualMma::IteratorB iterator_B1(
       params.params_B1,
       params.ref_B1.data(),
       {problem_size_k_1, params.problem_size_1.n()},
@@ -387,35 +379,18 @@ struct DualGemm {
 
 
     // Construct thread-scoped matrix multiply
-    typename Mma0::FragmentC accum0;
-    typename Mma0::FragmentC accum1;
+    typename DualMma::FragmentC accum0;
+    typename DualMma::FragmentC accum1;
     accum0.clear();
     accum1.clear();
-    static constexpr bool kFuse = true;
 
-    if (kFuse) {
-      DualMma mma(shared_storage.main_loop, thread_idx, warp_idx, lane_idx);
-      if (!kSplitKSerial || gemm_k_iterations_0 > 0) {
-        // Compute threadblock-scoped matrix multiply-add
-        mma(gemm_k_iterations_0,
-          accum0, accum1,
-          iterator_A0, iterator_B0, iterator_B1,
-          accum0, accum1);
-      }
-    } else {
-      // Mma0
-      Mma0 mma0(shared_storage.main_loop0, thread_idx, warp_idx, lane_idx);
-      if (!kSplitKSerial || gemm_k_iterations_0 > 0) {
-        // Compute threadblock-scoped matrix multiply-add
-        mma0(gemm_k_iterations_0, accum0, iterator_A0, iterator_B0, accum0);
-      }
-
-      // Mma1
-      Mma1 mma1(shared_storage.main_loop1, thread_idx, warp_idx, lane_idx);
-      if (!kSplitKSerial || gemm_k_iterations_0 > 0) {
-        // Compute threadblock-scoped matrix multiply-add
-        mma1(gemm_k_iterations_1, accum1, iterator_A0, iterator_B1, accum1);
-      }
+    DualMma mma(shared_storage.main_loop, thread_idx, warp_idx, lane_idx);
+    if (!kSplitKSerial || gemm_k_iterations_0 > 0) {
+      // Compute threadblock-scoped matrix multiply-add
+      mma(gemm_k_iterations_0,
+        accum0, accum1,
+        iterator_A0, iterator_B0, iterator_B1,
+        accum0, accum1);
     }
 
     //
@@ -435,8 +410,8 @@ struct DualGemm {
 
     //assume identity swizzle
     MatrixCoord threadblock_offset(
-      threadblock_tile_offset.m() * Mma1::Shape::kM,
-      threadblock_tile_offset.n() * Mma1::Shape::kN
+      threadblock_tile_offset.m() * DualMma::Shape::kM,
+      threadblock_tile_offset.n() * DualMma::Shape::kN
     );
 
     int block_idx = threadblock_tile_offset.m() + threadblock_tile_offset.n() * params.grid_tiled_shape.m();
@@ -453,7 +428,6 @@ struct DualGemm {
       // Indicate which position in a serial reduction the output operator is currently updating
       output_op_0.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
       output_op_1.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
-      output_op_2.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
     }
 
     // Tile iterator loading from source tensor.
@@ -495,18 +469,6 @@ struct DualGemm {
       threadblock_offset
     );
 
-    /*
-    Epilogue0 epilogue0(
-      shared_storage.epilogue0,
-      thread_idx, 
-      warp_idx, 
-      lane_idx);
-    Epilogue1 epilogue1(
-      shared_storage.epilogue1,
-      thread_idx, 
-      warp_idx, 
-      lane_idx);
-    */
     DualEpilogue epilogue(
       shared_storage.epilogue,
       thread_idx, 
@@ -528,17 +490,17 @@ struct DualGemm {
     }
 
     // Execute the epilogue operator to update the destination tensor.
-    typename Epilogue0::OutputTileIterator source_iters[2] = {
+    typename Epilogue0::OutputTileIterator source_iters[] = {
       iterator_C0, iterator_C1
     };
+    const bool writeToD2 = (!kSplitKSerial || params.grid_tiled_shape.k() == threadblock_tile_offset.k() + 1);
     epilogue(
       output_op_0, output_op_1, output_op_2,
       iterator_D0, iterator_D1, iterator_D2,
       accum0, accum1,
-      source_iters
+      source_iters,
+      writeToD2
     );
-    // epilogue0(output_op_0, iterator_D0, accum0, iterator_C0); 
-    // epilogue1(output_op_1, iterator_D1, accum1, iterator_C1); 
     
     //
     // Release the semaphore
