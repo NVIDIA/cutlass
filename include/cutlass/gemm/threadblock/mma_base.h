@@ -34,6 +34,7 @@
 
 #pragma once
 
+#include "cutlass/tensor_ref.h"
 #include "cutlass/aligned_buffer.h"
 #include "cutlass/arch/memory.h"
 #include "cutlass/array.h"

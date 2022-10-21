@@ -47,7 +47,9 @@ D2 = element_wise(D0, D1)
 #include "cutlass/gemm/threadblock/threadblock_swizzle.h"
 
 #include "cutlass/gemm/device/default_gemm_configuration.h"
+#include "cutlass/gemm/threadblock/default_mma.h"
 #include "cutlass/epilogue/thread/linear_combination_relu.h"
+#include "cutlass/epilogue/threadblock/default_epilogue_tensor_op.h"
 
 #include "../kernel/dual_gemm.h"
 
@@ -195,8 +197,7 @@ class DualGemm {
     // Data members
     //
 
-    GemmCoord problem_size_0;
-    GemmCoord problem_size_1;
+    GemmCoord problem_size;
     TensorRef<ElementA const, LayoutA> ref_A0;
     TensorRef<ElementB const, LayoutB> ref_B0;
     TensorRef<ElementC const, LayoutC> ref_C0;
@@ -216,15 +217,14 @@ class DualGemm {
 
     /// Default ctor
     CUTLASS_HOST_DEVICE
-    Arguments(): problem_size_0(0, 0, 0), problem_size_1(0, 0, 0), split_k_slices(1) {
+    Arguments(): problem_size(0, 0, 0), split_k_slices(1) {
 
     }
 
     /// Constructs an Arguments structure 
     CUTLASS_HOST_DEVICE
     Arguments(
-      GemmCoord problem_size_0_,
-      GemmCoord problem_size_1_,
+      GemmCoord problem_size_,
       TensorRef<ElementA const, LayoutA> ref_A0_,
       TensorRef<ElementB const, LayoutB> ref_B0_,
       TensorRef<ElementC const, LayoutC> ref_C0_,
@@ -241,8 +241,7 @@ class DualGemm {
         typename EpilogueOutputOp2::Params(),
       int split_k_slices_ = 1
     ):
-      problem_size_0(problem_size_0_),
-      problem_size_1(problem_size_1_),
+      problem_size(problem_size_),
       ref_A0(ref_A0_),
       ref_B0(ref_B0_),
       ref_C0(ref_C0_),
@@ -283,8 +282,7 @@ public:
     }
 
     Status status = DualGemmKernel::can_implement(
-      args.problem_size_0,
-      args.problem_size_1,
+      args.problem_size,
       args.ref_A0.non_const_ref(),
       args.ref_B0.non_const_ref(),
       args.ref_C0.non_const_ref(),
@@ -311,7 +309,7 @@ public:
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size_0, 
+      args.problem_size, 
       {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
       args.split_k_slices);
 
@@ -331,7 +329,7 @@ public:
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size_0, 
+      args.problem_size, 
       {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
       args.split_k_slices);
 
@@ -359,8 +357,7 @@ public:
 
     // Initialize the Params structure
     params_ = typename DualGemmKernel::Params{
-      args.problem_size_0,
-      args.problem_size_1,
+      args.problem_size,
       grid_shape,
       args.ref_A0.non_const_ref(),
       args.ref_B0.non_const_ref(),

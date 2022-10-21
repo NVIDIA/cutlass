@@ -200,11 +200,10 @@ struct NonFusedDualGemmRun
 
   /// Executes one test
   bool run(
-    cutlass::gemm::GemmCoord problem_size_0, 
-    cutlass::gemm::GemmCoord problem_size_1, 
-    ElementCompute alpha0 = ElementCompute(1), 
+    cutlass::gemm::GemmCoord problem_size,
+    ElementCompute alpha0 = ElementCompute(1),
     ElementCompute beta0 = ElementCompute(0),
-    ElementCompute alpha1 = ElementCompute(1), 
+    ElementCompute alpha1 = ElementCompute(1),
     ElementCompute beta1 = ElementCompute(0),
     bool relu = false,
     int warm_ups = 1,
@@ -216,47 +215,47 @@ struct NonFusedDualGemmRun
 
     cutlass::HostTensor<
       typename Gemm0::ElementA, 
-      typename Gemm0::LayoutA> tensor_A0(problem_size_0.mk());
+      typename Gemm0::LayoutA> tensor_A0(problem_size.mk());
 
     cutlass::HostTensor<
       typename Gemm0::ElementB, 
-      typename Gemm0::LayoutB> tensor_B0(problem_size_0.kn());
+      typename Gemm0::LayoutB> tensor_B0(problem_size.kn());
 
     cutlass::HostTensor<
       typename Gemm0::ElementC, 
-      typename Gemm0::LayoutC> tensor_C0(problem_size_0.mn());
+      typename Gemm0::LayoutC> tensor_C0(problem_size.mn());
 
     cutlass::HostTensor<
       ElementCompute, 
-      typename Gemm0::LayoutC> tensor_Bias0({1, problem_size_0.n()});
+      typename Gemm0::LayoutC> tensor_Bias0({1, problem_size.n()});
 
     cutlass::HostTensor<
       typename Gemm0::ElementC, 
-      typename Gemm0::LayoutC> tensor_D0(problem_size_0.mn());
+      typename Gemm0::LayoutC> tensor_D0(problem_size.mn());
 
     cutlass::HostTensor<
       typename Gemm0::ElementC, 
-      typename Gemm0::LayoutC> reference_D0(problem_size_0.mn());
+      typename Gemm0::LayoutC> reference_D0(problem_size.mn());
 
     cutlass::HostTensor<
       typename Gemm1::ElementB, 
-      typename Gemm1::LayoutB> tensor_B1(problem_size_1.kn());
+      typename Gemm1::LayoutB> tensor_B1(problem_size.kn());
 
     cutlass::HostTensor<
       typename Gemm1::ElementC, 
-      typename Gemm1::LayoutC> tensor_C1(problem_size_1.mn());
+      typename Gemm1::LayoutC> tensor_C1(problem_size.mn());
 
     cutlass::HostTensor<
       ElementCompute, 
-      typename Gemm1::LayoutC> tensor_Bias1({1, problem_size_1.n()});
+      typename Gemm1::LayoutC> tensor_Bias1({1, problem_size.n()});
 
     cutlass::HostTensor<
       typename Gemm1::ElementC, 
-      typename Gemm1::LayoutC> tensor_D1(problem_size_1.mn());
+      typename Gemm1::LayoutC> tensor_D1(problem_size.mn());
 
     cutlass::HostTensor<
       typename Gemm1::ElementC, 
-      typename Gemm1::LayoutC> reference_D1(problem_size_1.mn());
+      typename Gemm1::LayoutC> reference_D1(problem_size.mn());
 
 
     CHECK_TRUE(initialize_tensor(tensor_A0.host_view(), init_A, seed + 2019));
@@ -294,7 +293,7 @@ struct NonFusedDualGemmRun
 
     int split_k_slices = Gemm0::kSplitKSerial ? 2 : 1;
     typename Gemm0::Arguments arguments_0{
-      problem_size_0,
+      problem_size,
       tensor_A0.device_ref(),
       tensor_B0.device_ref(),
       {tensor_Bias0.device_data(), typename Gemm0::LayoutC::Stride(0)},
@@ -305,7 +304,7 @@ struct NonFusedDualGemmRun
 
     split_k_slices = Gemm1::kSplitKSerial ? 2 : 1;
     typename Gemm1::Arguments arguments_1{
-      problem_size_1,
+      problem_size,
       tensor_A0.device_ref(),
       tensor_B1.device_ref(),
       {tensor_Bias1.device_data(), typename Gemm1::LayoutC::Stride(0)},
@@ -392,7 +391,7 @@ struct NonFusedDualGemmRun
         reference_gemm_1;
 
     reference_gemm_0(
-      problem_size_0,
+      problem_size,
       alpha0, 
       tensor_A0.device_ref(), 
       tensor_B0.device_ref(), 
@@ -406,7 +405,7 @@ struct NonFusedDualGemmRun
     }
 
     reference_gemm_1(
-      problem_size_1,
+      problem_size,
       alpha1, 
       tensor_A0.device_ref(), 
       tensor_B1.device_ref(), 
@@ -539,11 +538,10 @@ struct DualFusedGemmRun
 
   /// Executes one test
   bool run(
-    cutlass::gemm::GemmCoord problem_size_0, 
-    cutlass::gemm::GemmCoord problem_size_1, 
-    ElementCompute alpha0 = ElementCompute(1), 
+    cutlass::gemm::GemmCoord problem_size,
+    ElementCompute alpha0 = ElementCompute(1),
     ElementCompute beta0 = ElementCompute(1),
-    ElementCompute alpha1 = ElementCompute(1), 
+    ElementCompute alpha1 = ElementCompute(1),
     ElementCompute beta1 = ElementCompute(1),
     bool relu = false,
     int warm_ups = 1,
@@ -555,55 +553,55 @@ struct DualFusedGemmRun
 
     cutlass::HostTensor<
       typename DualGemm::ElementA, 
-      typename DualGemm::LayoutA> tensor_A0(problem_size_0.mk());
+      typename DualGemm::LayoutA> tensor_A0(problem_size.mk());
 
     cutlass::HostTensor<
       typename DualGemm::ElementB, 
-      typename DualGemm::LayoutB> tensor_B0(problem_size_0.kn());
+      typename DualGemm::LayoutB> tensor_B0(problem_size.kn());
 
     cutlass::HostTensor<
       typename DualGemm::ElementC, 
-      typename DualGemm::LayoutC> tensor_C0(problem_size_0.mn());
+      typename DualGemm::LayoutC> tensor_C0(problem_size.mn());
 
     cutlass::HostTensor<
       ElementCompute, 
-      typename DualGemm::LayoutScaleBias> tensor_Bias0({1, problem_size_0.n()});
+      typename DualGemm::LayoutScaleBias> tensor_Bias0({1, problem_size.n()});
 
     cutlass::HostTensor<
       typename DualGemm::ElementC, 
-      typename DualGemm::LayoutC> tensor_D0(problem_size_0.mn());
+      typename DualGemm::LayoutC> tensor_D0(problem_size.mn());
 
     cutlass::HostTensor<
       typename DualGemm::ElementC, 
-      typename DualGemm::LayoutC> reference_D0(problem_size_0.mn());
+      typename DualGemm::LayoutC> reference_D0(problem_size.mn());
 
     cutlass::HostTensor<
       typename DualGemm::ElementB, 
-      typename DualGemm::LayoutB> tensor_B1(problem_size_1.kn());
+      typename DualGemm::LayoutB> tensor_B1(problem_size.kn());
 
     cutlass::HostTensor<
       typename DualGemm::ElementC, 
-      typename DualGemm::LayoutC> tensor_C1(problem_size_1.mn());
+      typename DualGemm::LayoutC> tensor_C1(problem_size.mn());
 
     cutlass::HostTensor<
       ElementCompute, 
-      typename DualGemm::LayoutScaleBias> tensor_Bias1({1, problem_size_1.n()});
+      typename DualGemm::LayoutScaleBias> tensor_Bias1({1, problem_size.n()});
 
     cutlass::HostTensor<
       typename DualGemm::ElementC, 
-      typename DualGemm::LayoutC> tensor_D1(problem_size_1.mn());
+      typename DualGemm::LayoutC> tensor_D1(problem_size.mn());
 
     cutlass::HostTensor<
       typename DualGemm::ElementC, 
-      typename DualGemm::LayoutC> tensor_D2(problem_size_1.mn());
+      typename DualGemm::LayoutC> tensor_D2(problem_size.mn());
 
     cutlass::HostTensor<
       typename DualGemm::ElementC, 
-      typename DualGemm::LayoutC> reference_D1(problem_size_1.mn());
+      typename DualGemm::LayoutC> reference_D1(problem_size.mn());
 
     cutlass::HostTensor<
       typename DualGemm::ElementC, 
-      typename DualGemm::LayoutC> reference_D2(problem_size_1.mn());
+      typename DualGemm::LayoutC> reference_D2(problem_size.mn());
 
     CHECK_TRUE(initialize_tensor(tensor_A0.host_view(), init_A, seed + 2019));
     CHECK_TRUE(initialize_tensor(tensor_B0.host_view(), init_B, seed + 2118));
@@ -654,8 +652,7 @@ struct DualFusedGemmRun
       ref_B1 = {tensor_Bias1.device_data(), typename DualGemm::LayoutC::Stride(0)};
     }
     typename DualGemm::Arguments arguments{
-      problem_size_0,
-      problem_size_1,
+      problem_size,
       tensor_A0.device_ref(),
       tensor_B0.device_ref(),
       ref_B0,
@@ -676,14 +673,7 @@ struct DualFusedGemmRun
   
     cutlass::Status status = b2b_gemm_op.can_implement(arguments);
 
-    if(status != cutlass::Status::kSuccess) {
-        std::cout << "Problem sizes not supported.\n"
-                << "Requirments:\n"
-                << "    problem_size_0.M = problem_size_1.M\n"
-                << "    problem_size_0.N = problem_size_1.K\n"
-                << "    ThreadblockShape0::kN = problem_size_0.N\n"
-                << "    ThreadblockShape1::kN = problem_size_1.N" << std::endl;
-    }
+    CUTLASS_CHECK(status);
 
     status = b2b_gemm_op.initialize(arguments, workspace.get());
 
@@ -742,7 +732,7 @@ struct DualFusedGemmRun
         reference_gemm_1;
 
     reference_gemm_0(
-      problem_size_0,
+      problem_size,
       alpha0,
       tensor_A0.device_ref(), 
       tensor_B0.device_ref(), 
@@ -755,7 +745,7 @@ struct DualFusedGemmRun
     }
 
     reference_gemm_1(
-      problem_size_1,
+      problem_size,
       alpha1, 
       tensor_A0.device_ref(), 
       tensor_B1.device_ref(), 

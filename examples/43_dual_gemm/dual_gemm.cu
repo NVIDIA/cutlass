@@ -64,8 +64,7 @@ D2 = epilogue2(D0, D1)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_0(4096, 4096, 8192);
-cutlass::gemm::GemmCoord gemm_f16_sm80_problem_size_1 = gemm_f16_sm80_problem_size_0;
+cutlass::gemm::GemmCoord problem_size(4096, 4096, 8192);
 
 constexpr int kStages = 3;
 constexpr bool kSplitKSerial = false;
@@ -149,7 +148,7 @@ bool run_nonfused_gemm_f16_sm80() {
   NonFusedDualGemmRun<Gemm0, Gemm1> nonFusedGemm;
 
   std::cout << "Running Non-fused GEMMs FP16 TN GEMMs...\n";
-  bool pass = nonFusedGemm.run(gemm_f16_sm80_problem_size_0, gemm_f16_sm80_problem_size_1, alpha0, beta0, alpha1, beta1);
+  bool pass = nonFusedGemm.run(problem_size, alpha0, beta0, alpha1, beta1);
   if(pass)
     std::cout << "Pass\n";
   else
@@ -212,7 +211,7 @@ bool run_fused_gemm_f16_sm80_shmem() {
   DualFusedGemmRun<DualGemm> fusedGemm;
 
   std::cout << "Running Fused FP16 TN GEMMs + Epilogue2...\n";
-  bool passed = fusedGemm.run(gemm_f16_sm80_problem_size_0, gemm_f16_sm80_problem_size_1, alpha0, beta0, alpha1, beta1);
+  bool passed = fusedGemm.run(problem_size, alpha0, beta0, alpha1, beta1);
   if(passed)
     std::cout << "Pass\n";
   else
