@@ -41,12 +41,6 @@ D1 = epilogue1(X @ B1, C1)
 D2 = epilogue2(D0, D1)
 ```
     D0 and D1 will be optionally stored in gmem (`kStoreD0` / `kStoreD1`)
-
-    Examples:
-
-      # TODO
-      $ TODO
-
 */
 
 // #define IS_PROFILING
