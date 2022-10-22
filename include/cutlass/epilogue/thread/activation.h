@@ -347,6 +347,7 @@ struct Sigmoid<Array<half_t, N>> {
 
   using Params = LinearCombinationGenericParams<T>;
 
+  CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &z, Params const &params_) const {
     return this->operator()(z);
   }
