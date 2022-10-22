@@ -49,12 +49,7 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <iostream>
-#include <fstream>
-#include <sstream>
 #include <vector>
-#include <map>
-#include <unordered_map>
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/gemm.h"
