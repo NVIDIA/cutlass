@@ -81,9 +81,9 @@ The tiling size of above operations can also be customized.
 ## Installation
 
 ### Using Docker
-You can run the PyCUTLASS on NGC pytorch container. 
+You can run the PyCUTLASS on NGC PyTorch container. 
 ```shell
-docker run --gpus all -it --rm nvcr.io/nvidia/pytorch:22.08-py3
+docker run --gpus all -it --rm nvcr.io/nvidia/pytorch:22.09-py3
 ```
 PyCUTLASS requires additional dependency Boost C++ library, which can be installed with
 ```bash
