@@ -226,7 +226,7 @@ struct NonFusedDualGemmRun
       typename Gemm0::LayoutC> tensor_C0(problem_size.mn());
 
     cutlass::HostTensor<
-      ElementCompute, 
+      typename Gemm1::ElementC,
       typename Gemm0::LayoutC> tensor_Bias0({1, problem_size.n()});
 
     cutlass::HostTensor<
@@ -246,7 +246,7 @@ struct NonFusedDualGemmRun
       typename Gemm1::LayoutC> tensor_C1(problem_size.mn());
 
     cutlass::HostTensor<
-      ElementCompute, 
+      typename Gemm1::ElementC,
       typename Gemm1::LayoutC> tensor_Bias1({1, problem_size.n()});
 
     cutlass::HostTensor<
@@ -552,55 +552,55 @@ struct DualFusedGemmRun
     //
 
     cutlass::HostTensor<
-      typename DualGemm::ElementA, 
+      typename DualGemm::ElementA,
       typename DualGemm::LayoutA> tensor_A0(problem_size.mk());
 
     cutlass::HostTensor<
-      typename DualGemm::ElementB, 
+      typename DualGemm::ElementB,
       typename DualGemm::LayoutB> tensor_B0(problem_size.kn());
 
     cutlass::HostTensor<
-      typename DualGemm::ElementC, 
+      typename DualGemm::ElementC,
       typename DualGemm::LayoutC> tensor_C0(problem_size.mn());
 
     cutlass::HostTensor<
-      ElementCompute, 
+      typename DualGemm::ElementC,
       typename DualGemm::LayoutScaleBias> tensor_Bias0({1, problem_size.n()});
 
     cutlass::HostTensor<
-      typename DualGemm::ElementC, 
+      typename DualGemm::ElementC,
       typename DualGemm::LayoutC> tensor_D0(problem_size.mn());
 
     cutlass::HostTensor<
-      typename DualGemm::ElementC, 
+      typename DualGemm::ElementC,
       typename DualGemm::LayoutC> reference_D0(problem_size.mn());
 
     cutlass::HostTensor<
-      typename DualGemm::ElementB, 
+      typename DualGemm::ElementB,
       typename DualGemm::LayoutB> tensor_B1(problem_size.kn());
 
     cutlass::HostTensor<
-      typename DualGemm::ElementC, 
+      typename DualGemm::ElementC,
       typename DualGemm::LayoutC> tensor_C1(problem_size.mn());
 
     cutlass::HostTensor<
-      ElementCompute, 
+      typename DualGemm::ElementC,
       typename DualGemm::LayoutScaleBias> tensor_Bias1({1, problem_size.n()});
 
     cutlass::HostTensor<
-      typename DualGemm::ElementC, 
+      typename DualGemm::ElementC,
       typename DualGemm::LayoutC> tensor_D1(problem_size.mn());
 
     cutlass::HostTensor<
-      typename DualGemm::ElementC, 
+      typename DualGemm::ElementC,
       typename DualGemm::LayoutC> tensor_D2(problem_size.mn());
 
     cutlass::HostTensor<
-      typename DualGemm::ElementC, 
+      typename DualGemm::ElementC,
       typename DualGemm::LayoutC> reference_D1(problem_size.mn());
 
     cutlass::HostTensor<
-      typename DualGemm::ElementC, 
+      typename DualGemm::ElementC,
       typename DualGemm::LayoutC> reference_D2(problem_size.mn());
 
     CHECK_TRUE(initialize_tensor(tensor_A0.host_view(), init_A, seed + 2019));

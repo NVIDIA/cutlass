@@ -154,6 +154,9 @@ public:
   struct SharedStorage {
     using Element = typename WarpTileIterator::Element;
 
+    /// Tensor reference to shared memory allocation
+    using TensorRef = typename WarpTileIterator::TensorRef;
+
     /// Logical shape of the shared memory tile written to by all warps.
     using Shape = typename Base::Shape;
 
@@ -321,9 +324,10 @@ public:
      
       typename OutputTileIterator::Fragment output_fragment[3];
 
-      apply_output_operator_(output_fragment[0], output_op0, aligned_accum_fragment0[0], source_fragment[0]);
-      apply_output_operator_(output_fragment[1], output_op1, aligned_accum_fragment1[0], source_fragment[1]);
-      apply_output_operator_(output_fragment[2], output_op2, output_fragment[0], output_fragment[1]);
+      apply_output_operator_(output_fragment,
+        output_op0, output_op1, output_op2,
+        aligned_accum_fragment0[0], aligned_accum_fragment1[0],
+        source_fragment);
 
 
       //
@@ -377,22 +381,31 @@ private:
   };
 
   /// Helper to invoke the output functor over each vector of output
-  template <typename OutputOp>
   CUTLASS_DEVICE
   void apply_output_operator_(
-    typename OutputTileIterator::Fragment &output_fragment,
-    OutputOp const &output_op,                    ///< Output operator
-    typename SharedLoadIterator::Fragment const &aligned_accum_fragment,
-    typename OutputTileIterator::Fragment const &source_fragment) {
+    typename OutputTileIterator::Fragment (&output_fragment)[3],
+    OutputOp0 const &output_op0,
+    OutputOp1 const &output_op1,
+    OutputOp2 const &output_op2,
+    typename SharedLoadIterator::Fragment const& aligned_accum_fragment0,
+    typename SharedLoadIterator::Fragment const& aligned_accum_fragment1,
+    typename OutputTileIterator::Fragment const (&source_fragment)[2]) {
       
-    OutputAccessType *output_frag_ptr = 
-      reinterpret_cast<OutputAccessType *>(&output_fragment);
+    OutputAccessType* output_frag_ptr[3] = {
+      reinterpret_cast<OutputAccessType *>(&output_fragment[0]),
+      reinterpret_cast<OutputAccessType *>(&output_fragment[1]),
+      reinterpret_cast<OutputAccessType *>(&output_fragment[2])
+    };
 
-    AccumulatorAccessType const *compute_frag_ptr = 
-      reinterpret_cast<AccumulatorAccessType const *>(&aligned_accum_fragment);
+    AccumulatorAccessType const *compute_frag_ptr[2] = {
+      reinterpret_cast<AccumulatorAccessType const *>(&aligned_accum_fragment0),
+      reinterpret_cast<AccumulatorAccessType const *>(&aligned_accum_fragment1)
+    };
 
-    OutputAccessType const *source_frag_ptr = 
-      reinterpret_cast<OutputAccessType const *>(&source_fragment);
+    OutputAccessType const *source_frag_ptr[2] = {
+      reinterpret_cast<OutputAccessType const *>(&source_fragment[0]),
+      reinterpret_cast<OutputAccessType const *>(&source_fragment[1])
+    };
 
     int const kOutputOpIterations = 
       OutputTileIterator::Fragment::kElements / OutputTileIterator::kElementsPerAccess;
@@ -400,8 +413,10 @@ private:
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < kOutputOpIterations; ++i) {
 
-      // Call the output operator
-      output_frag_ptr[i] = output_op(compute_frag_ptr[i], source_frag_ptr[i]);
+      // Call the output operators
+      output_frag_ptr[0][i] = output_op0(compute_frag_ptr[0][i], source_frag_ptr[0][i]);
+      output_frag_ptr[1][i] = output_op1(compute_frag_ptr[1][i], source_frag_ptr[1][i]);
+      output_frag_ptr[2][i] = output_op2(output_frag_ptr[0][i], output_frag_ptr[1][i]);
     }
   }
 };

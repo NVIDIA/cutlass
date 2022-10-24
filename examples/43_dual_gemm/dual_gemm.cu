@@ -58,6 +58,7 @@ D2 = epilogue2(D0, D1)
 #include "cutlass/util/reference/host/gemm.h"
 
 #include "device/dual_gemm.h"
+#include "thread/left_silu_and_mul.h"
 #include "dual_gemm_run.h"
 #include "test_run.h"
 
@@ -70,9 +71,21 @@ constexpr int kStages = 3;
 constexpr bool kSplitKSerial = false;
 constexpr bool kUseBias = true;
 
+
+#if 0
+using ElementOperandA = cutlass::bfloat16_t;
+using ElementOperandB = cutlass::bfloat16_t;
+using ElementOutput = cutlass::bfloat16_t;
+using ElementAccumulator = float;
+using ElementCompute = float;
+#else
+using ElementOperandA = cutlass::half_t;
+using ElementOperandB = cutlass::half_t;
 using ElementOutput = cutlass::half_t;
 using ElementAccumulator = cutlass::half_t;
 using ElementCompute = cutlass::half_t;
+#endif
+
 constexpr auto kScaleType = kUseBias ? cutlass::epilogue::thread::ScaleType::NoBetaScaling : (
   // No bias
   kSplitKSerial ? cutlass::epilogue::thread::ScaleType::Default : cutlass::epilogue::thread::ScaleType::Nothing
@@ -91,6 +104,12 @@ using EpilogueOutputOp1 = cutlass::epilogue::thread::LinearCombination<
   ElementCompute,
   kScaleType
 >;
+using EpilogueOutputOp2 = cutlass::epilogue::thread::LeftSiLUAndMul<
+  ElementOutput,
+  128 / cutlass::sizeof_bits<ElementOutput>::value,
+  ElementOutput,
+  ElementCompute
+>;
 
 const ElementCompute alpha0 = ElementCompute(1);
 const ElementCompute beta0 = ElementCompute(kUseBias ? 1 : 0);
@@ -98,24 +117,22 @@ const ElementCompute alpha1 = ElementCompute(1);
 const ElementCompute beta1 = ElementCompute(kUseBias ? 1 : 0);
 
 bool run_nonfused_gemm_f16_sm80() {
-  using ThreadblockShape0 = cutlass::gemm::GemmShape<128, 128, 32>;
-  using WarpShape0 = cutlass::gemm::GemmShape<64, 64, 32>;
-  using ThreadblockShape1 = cutlass::gemm::GemmShape<128, 128, 32>;
-  using WarpShape1 = cutlass::gemm::GemmShape<64, 64, 32>;
+  using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 32>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 64, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
 
   using Gemm0 = cutlass::gemm::device::Gemm<
-    cutlass::half_t,
+    ElementOperandA,
     cutlass::layout::RowMajor,
-    cutlass::half_t,
+    ElementOperandB,
     cutlass::layout::ColumnMajor,
     ElementOutput,
     cutlass::layout::RowMajor,
     ElementAccumulator,
     cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
-    ThreadblockShape0,
-    WarpShape0,
+    ThreadblockShape,
+    WarpShape,
     InstructionShape,
     EpilogueOutputOp0,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
@@ -125,17 +142,17 @@ bool run_nonfused_gemm_f16_sm80() {
     kSplitKSerial
   >;
   using Gemm1 = cutlass::gemm::device::Gemm<
-    cutlass::half_t,
+    ElementOperandA,
     cutlass::layout::RowMajor,
-    cutlass::half_t,
+    ElementOperandB,
     cutlass::layout::ColumnMajor,
     ElementOutput,
     cutlass::layout::RowMajor,
     ElementAccumulator,
     cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
-    ThreadblockShape1,
-    WarpShape1,
+    ThreadblockShape,
+    WarpShape,
     InstructionShape,
     EpilogueOutputOp1,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
@@ -157,13 +174,13 @@ bool run_nonfused_gemm_f16_sm80() {
   return pass;
 }
 
+template <typename T>
 struct LeftSiLUAndMul {
   struct Params{};
   CUTLASS_HOST_DEVICE LeftSiLUAndMul(Params p) {}
 
   CUTLASS_HOST_DEVICE void set_k_partition(int, int) {}
 
-  template <typename T>
   CUTLASS_HOST_DEVICE T operator() (
     T const &lhs, 
     T const &rhs) const {
@@ -172,23 +189,31 @@ struct LeftSiLUAndMul {
     auto silu_lhs = silu(lhs);
     return mul(silu_lhs, rhs);
   }
+
+  template <int kCount>
+  CUTLASS_HOST_DEVICE cutlass::Array<T, kCount> operator() (
+    cutlass::Array<T, kCount> const &lhs, 
+    cutlass::Array<T, kCount> const &rhs) const {
+    cutlass::epilogue::thread::SiLu<T> silu;
+    cutlass::multiplies<T> mul;
+    auto silu_lhs = silu(lhs);
+    return mul(silu_lhs, rhs);
+  }
 };
 
-
 bool run_fused_gemm_f16_sm80_shmem() {
-  using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 32>;
-  using WarpShape = cutlass::gemm::GemmShape<64, 64, 32>;
+  using ThreadblockShape = cutlass::gemm::GemmShape<128, 64, 32>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 32, 32>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
-  using EpilogueOutputOp2 = LeftSiLUAndMul;
 
   // Optionally, we might not need intermediate GEMM outputs
   constexpr bool kStoreD0 = true;
   constexpr bool kStoreD1 = true;
 
   using DualGemm = cutlass::gemm::device::DualGemm<
-    cutlass::half_t,
+    ElementOperandA,
     cutlass::layout::RowMajor,
-    cutlass::half_t,
+    ElementOperandB,
     cutlass::layout::ColumnMajor,
     ElementOutput,
     cutlass::layout::RowMajor,
