@@ -34,7 +34,6 @@
 
 #pragma once
 
-#include "cutlass/tensor_ref.h"
 #include "cutlass/aligned_buffer.h"
 #include "cutlass/arch/memory.h"
 #include "cutlass/array.h"
@@ -43,37 +42,13 @@
 #include "cutlass/matrix_shape.h"
 #include "cutlass/numeric_types.h"
 
+#include "cutlass/gemm/threadblock/mma_base.h"
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace gemm {
 namespace threadblock {
-
-////////////////////////////////////////////////////////////////////////////////
-
-/// Policy object describing MmaTensorOp
-template <
-    /// Warp-level GEMM operator (concept: gemm::warp::Mma)
-    typename Operator_,
-    /// Padding used for A operand in shared memory (concept: MatrixShape)
-    typename SmemPaddingA_,
-    /// Padding used for B operand in shared memory (concept: MatrixShape)
-    typename SmemPaddingB_,
-    /// Number of partitions of K dimension of GEMM
-    int PartitionsK = 1>
-struct MmaPolicy {
-  /// Warp-level GEMM operator (concept: gemm::warp::MmaTensorOp or gemm::warp::MmaSimt)
-  using Operator = Operator_;
-
-  /// Padding used for A operand in shared memory
-  using SmemPaddingA = SmemPaddingA_;
-
-  /// Padding used for B operand in shared memory
-  using SmemPaddingB = SmemPaddingB_;
-
-  /// Number of partitions of K dimension
-  static int const kPartitionsK = PartitionsK;
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -88,7 +63,7 @@ template <
     int Stages,
     /// Used for partial specialization
     typename Enable = bool>
-class MmaBase {
+class DualMmaBase {
  public:
   ///< Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
@@ -162,7 +137,8 @@ class MmaBase {
     AlignedBuffer<typename Operator::ElementA, ShapeA::kCount> operand_A;
 
     /// Buffer for B operand
-    AlignedBuffer<typename Operator::ElementB, ShapeB::kCount> operand_B;
+    AlignedBuffer<typename Operator::ElementB, ShapeB::kCount> operand_B0;
+    AlignedBuffer<typename Operator::ElementB, ShapeB::kCount> operand_B1;
 
    public:
 
@@ -190,8 +166,12 @@ class MmaBase {
 
     /// Returns a TensorRef to the B operand
     CUTLASS_HOST_DEVICE
-    TensorRefB operand_B_ref() {
-      return TensorRefB{operand_B.data(), LayoutB()};
+    TensorRefB operand_B0_ref() {
+      return TensorRefB{operand_B0.data(), LayoutB()};
+    }
+    CUTLASS_HOST_DEVICE
+    TensorRefB operand_B1_ref() {
+      return TensorRefB{operand_B1.data(), LayoutB()};
     }
   };
 
@@ -205,13 +185,14 @@ class MmaBase {
   typename Operator::IteratorA warp_tile_iterator_A_;
 
   /// Iterator to load a warp-scoped tile of B operand from shared memory
-  typename Operator::IteratorB warp_tile_iterator_B_;
+  typename Operator::IteratorB warp_tile_iterator_B0_;
+  typename Operator::IteratorB warp_tile_iterator_B1_;
 
 public:
 
   /// Construct from tensor references
   CUTLASS_DEVICE
-  MmaBase(
+  DualMmaBase(
       ///< Shared storage needed for internal use by threadblock-scoped GEMM
       SharedStorage &shared_storage,
       ///< ID within the threadblock
@@ -222,7 +203,8 @@ public:
       int lane_idx
     ):
       warp_tile_iterator_A_(shared_storage.operand_A_ref(), lane_idx),
-      warp_tile_iterator_B_(shared_storage.operand_B_ref(), lane_idx) {
+      warp_tile_iterator_B0_(shared_storage.operand_B0_ref(), lane_idx),
+      warp_tile_iterator_B1_(shared_storage.operand_B1_ref(), lane_idx) {
 
   }
 };
