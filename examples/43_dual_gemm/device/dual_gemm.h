@@ -29,10 +29,10 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Performs a dual gemm:
+    \brief Performs a dual gemm in one fused kernel:
 ```
 D0 = epilogue0(X @ B0, C0)
-D1 = epilogue0(X @ B1, C1)
+D1 = epilogue1(X @ B1, C1)
 D2 = element_wise(D0, D1)
 ```
 */
@@ -266,7 +266,7 @@ private:
 public:
 
   /// Constructs the GEMM.
-  DualGemm() { }
+  DualGemm() = default;
 
   /// Determines whether the GEMM can execute the given problem.
   static Status can_implement(Arguments const &args) {
@@ -370,7 +370,7 @@ public:
       args.epilogue0,
       args.epilogue1,
       args.epilogue2,
-      static_cast<int *>(workspace),
+      reinterpret_cast<int *>(workspace),
     };
 
     return Status::kSuccess;
@@ -396,7 +396,7 @@ public:
     params_.output_op_0 = args.epilogue0;
     params_.output_op_1 = args.epilogue1;
     params_.output_op_2 = args.epilogue2;
-    params_.semaphore = static_cast<int *>(workspace);
+    params_.semaphore = reinterpret_cast<int *>(workspace);
 
     return Status::kSuccess;
   }

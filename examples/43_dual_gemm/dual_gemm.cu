@@ -38,7 +38,7 @@
 ```
 D0 = epilogue0(X @ B0, C0)
 D1 = epilogue1(X @ B1, C1)
-D2 = epilogue2(D0, D1)
+D2 = element_wise(D0, D1)
 ```
     D0 and D1 will be optionally stored in gmem (`kStoreD0` / `kStoreD1`)
 */

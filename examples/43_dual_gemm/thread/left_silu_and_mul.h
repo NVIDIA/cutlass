@@ -92,7 +92,7 @@ public:
 
   /// Constructs the function object, possibly loading from pointers in host memory
   CUTLASS_HOST_DEVICE
-  LeftSiLUAndMul(Params const &params) {}
+  LeftSiLUAndMul(Params const &/*params*/) {}
 
   /// Returns true if source is needed
   CUTLASS_HOST_DEVICE

@@ -204,7 +204,7 @@ struct DualGemm {
   //
 
   CUTLASS_HOST_DEVICE
-  DualGemm() { } 
+  DualGemm() { }
 
   /// Determines whether kernel satisfies alignment
     static Status can_implement(
@@ -290,9 +290,10 @@ struct DualGemm {
     };
 
     // Problem size is a function of threadblock index in the K dimension
-    int problem_size_k = min(
-      params.problem_size.k(), 
-      (threadblock_tile_offset.k() + 1) * params.gemm_k_size);
+    int problem_size_k =
+      (params.problem_size.k() < (threadblock_tile_offset.k() + 1) * params.gemm_k_size) ?
+       params.problem_size.k() :
+       (threadblock_tile_offset.k() + 1) * params.gemm_k_size;
 
     // Compute threadblock-scoped matrix multiply-add
     int gemm_k_iterations = (problem_size_k - tb_offset_A0.column() + DualMma::Shape::kK - 1) / DualMma::Shape::kK;
