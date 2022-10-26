@@ -121,6 +121,7 @@ foreach(EXAMPLE
   39_gemm_permute
   41_multi_head_attention
   42_fused_multi_head_attention
+  43_dual_gemm
   )
 
   add_subdirectory(${EXAMPLE})
