@@ -224,7 +224,7 @@ struct Options {
       << " permute([0, 2, 1, 3]) to be in shape of [B/D1, M, D1, N].\n\n"
       << " 2) This example also profiles the performance of a normal GEMM kernel with output as permuted 5D Tensor."
       << " The GEMM matrix output in shape of [M, N]  is reshaped as [M/T1, T1, T2, T3, N/T2/T3] and then permuted"
-      << " with permute([2, 0, 3, 1, 4]) to be in shape of [T2, M/T1, T3, T1, N//T2/T3].\n\n"
+      << " with permute([2, 0, 3, 1, 4]) to be in shape of [T2, M/T1, T3, T1, N/T2/T3].\n\n"
       << " Note: D1, T1, T2, T3 are compile-time constants defined in gemm_permute.cu\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement.\n\n"

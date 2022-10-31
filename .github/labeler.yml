@@ -1,0 +1,18 @@
+# https://github.com/actions/labeler#common-examples
+
+examples:
+  - examples/**
+  
+source:
+  - cmake/**
+  - include/cutlass/**
+  
+documentation:
+  - docs/**
+  - media/**
+  
+testing:
+  - test/**
+  
+tooling:
+  - tools/**

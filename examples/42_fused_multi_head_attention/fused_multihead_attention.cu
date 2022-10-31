@@ -32,24 +32,66 @@
 /*! \file
     \brief CUTLASS Attention Example.
 
-    This workload computes an attention example with non-fixed sequence length input. Pointers of arrays
-    are fed into grouped-GEMM functions fused with softmax for computation.
+    This workload computes a fused multi head attention.
+    Because it keeps the attention matrix in shared memory, it's both faster and
+    uses less global memory.
+
+    This is based on `"Self-Attention Does Not Need O(n^2) Memory" <http://arxiv.org/abs/2112.05682>`_,
+    and very similar to `"FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness" <https://arxiv.org/abs/2205.14135>`_.
+
+    Algorithm:
+      In short, we can compute the output incrementally in blocks of size B,
+      we just need to divide the final result by the sum of all coefficients in
+      the softmax (which we compute incrementally) with the following pseudo-code:
+
+      ```
+      s_prime = torch.zeros([num_queries, B])
+      O = torch.zeros([num_queries, head_size_v])
+      for i in range(0, K.shape[0], B):
+        si = exp((Q . K[i * B:(i+1) * B].t) * scale)
+        sum_coefs += attn_unscaled.sum(-1)
+        O  += si . V[i * B:(i+1) * B]
+      O = O / s_prime
+      ```
+
+      In practice, and for numerical stability reasons,
+      we also substract the maximum so far (`mi`) before doing
+      the exponential. When we encounter new keys, the maximum
+      used to compute O so far (`m_prime`) can differ from the
+      current maximum, so we update O before accumulating with
+
+      ```
+      O       = O * exp(m_prime - mi)
+      m_prime = mi
+      ```
+
+    Implementation details:
+      - `si` is stored in shared memory between the 2 back to back gemms
+      - we keep and accumulate the output
+      directly in registers if we can (`head_size_v <= 128`).
+      Otherwise, we store it & accumulate in global memory (slower)
+      - blocks are parallelized across the batch dimension, the number
+      of heads, and the query sequence size
+
 
     Examples:
 
-      # Run an attention example with default setup (max sequence length = 1024, batch size = 16, head size = 64, head number = 12)
-      $ ./examples/41_multi_head_attention/41_multi_head_attention
+      # Run an attention example with default setup
+      $ ./examples/42_fused_multi_head_attention/42_fused_multi_head_attention
 
-      # Run an attention example with batch size = 64 and head number = 16 without checking the correctness
-      $ ./examples/41_multi_head_attention/41_multi_head_attention --head_number=16 --batch_size=64 --reference-check=false
-
-      Acknowledgement: this example is inspired by the idea originally prototyped by ByteDance Inc.
+      # Run an attention example with custom setup
+      $ ./examples/42_fused_multi_head_attention/42_fused_multi_head_attention --head_number=2 --batch_size=3 --head_size=32 --head_size_v=64 --seq_length=512 --seq_length_kv=1024 --causal=true
 
 */
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include <iostream>
+#include <fstream>
+#include <sstream>
 #include <vector>
+#include <map>
+#include <unordered_map>
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/gemm.h"
@@ -80,7 +122,7 @@
 
 #include "cutlass/epilogue/threadblock/epilogue_with_visitor.h"
 #include "cutlass/fast_math.h"
-#include "gemm_attention.h"
+#include "kernel_forward.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -115,6 +157,7 @@ struct Options {
   bool error;
   bool reference_check;
   bool use_mask;
+  bool causal;
 
   std::vector<cutlass::gemm::GemmCoord> problem_sizes0;
   std::vector<cutlass::gemm::GemmCoord> problem_sizes1;
@@ -126,9 +169,10 @@ struct Options {
   int head_number;
   int batch_size;
   int head_size;
+  int head_size_v;
   int seq_length;
+  int seq_length_kv;
   int iterations;
-  int cuda_streams;
 
   // alpha0, alpha1 and beta are fixed 
   // in this multi-head attention example
@@ -143,15 +187,17 @@ struct Options {
   Options():
     help(false),
     error(false),
-    alignment(16),
+    alignment(1),
     reference_check(true),
     head_number(12),
     batch_size(16),
     head_size(64),
+    head_size_v(64),
     seq_length(1024),
+    seq_length_kv(1024),
     use_mask(false),
     iterations(20),
-    cuda_streams(0)
+    causal(false)
   { }
 
   // Parses the command line
@@ -163,15 +209,17 @@ struct Options {
       return;
     }
 
-    cmd.get_cmd_line_argument("alignment", alignment, 16);
+    cmd.get_cmd_line_argument("alignment", alignment, 1);
     cmd.get_cmd_line_argument("head_number", head_number, 12);
     cmd.get_cmd_line_argument("batch_size", batch_size, 16);
     cmd.get_cmd_line_argument("head_size", head_size, 64);
+    cmd.get_cmd_line_argument("head_size_v", head_size_v, head_size);
     cmd.get_cmd_line_argument("seq_length", seq_length, 1024);
+    cmd.get_cmd_line_argument("seq_length_kv", seq_length_kv, seq_length);
     cmd.get_cmd_line_argument("use_mask", use_mask, false);
     cmd.get_cmd_line_argument("iterations", iterations, 20);
-    cmd.get_cmd_line_argument("streams", cuda_streams, 0);
     cmd.get_cmd_line_argument("reference-check", reference_check, true);
+    cmd.get_cmd_line_argument("causal", causal, true);
 
     randomize_problems();
 
@@ -193,20 +241,22 @@ struct Options {
 
     for (int i = 0; i < batch_size; ++i) {
       // problems belonging to the same batch share the same seq len
-      int m_real = (rand() % seq_length);
-      int m = (m_real + 1 + alignment - 1) / alignment * alignment;
-      int n = m;
-      int k = head_size;
+      int m_real = seq_length; // (rand() % seq_length);
+      int mkv_real = seq_length_kv; // (rand() % seq_length_kv);
+      int m = (m_real + alignment - 1) / alignment * alignment;
+      int mkv = (mkv_real + alignment - 1) / alignment * alignment;
+      int k0 = head_size;
+      int k1 = head_size_v;
 
       for (int j = 0; j < head_number; ++j) {
-        cutlass::gemm::GemmCoord problem0(m, n, k);
-        cutlass::gemm::GemmCoord problem1(m, k, n);
+        cutlass::gemm::GemmCoord problem0(m, mkv, k0);
+        cutlass::gemm::GemmCoord problem1(m, k1, mkv);
         problem_sizes0.push_back(problem0);
         problem_sizes1.push_back(problem1);
 
         if (use_mask) {
-          cutlass::gemm::GemmCoord problem0_real(m_real, m_real, k);
-          cutlass::gemm::GemmCoord problem1_real(m_real, k, m_real);
+          cutlass::gemm::GemmCoord problem0_real(m_real, mkv_real, k0);
+          cutlass::gemm::GemmCoord problem1_real(m_real, k1, mkv_real);
           problem_sizes0_real.push_back(problem0_real);
           problem_sizes1_real.push_back(problem1_real);
         }
@@ -218,16 +268,19 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "41_multi_head_attention\n\n"
+    out << "42_fused_multi_head_attention\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement.\n\n"
       << "  --head_number=<int>         Head number in multi-head attention (default: --head_number=12)\n"
       << "  --batch_size=<int>          Batch size in multi-head attention (default: --batch_size=16)\n"
       << "  --head_size=<int>           Head size in multi-head attention (default: --head_size=64)\n"
-      << "  --seq_length=<int>          Max sequence length in multi-head attention (default: --seq_length=1024)\n"
+      << "  --head_size_v=<int>         Head size in multi-head attention for V (default: --head_size_v=head_size)\n"
+      << "  --seq_length=<int>          Sequence length in multi-head attention for Q (default: --seq_length=1024)\n"
+      << "  --seq_length_kv=<int>       Sequence length in multi-head attention for K/V(default: --seq_length_kv=seq_length)\n"
       << "  --use_mask=<bool>           If true, performs padding-like masking in softmax.\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n"
-      << "  --reference-check=<bool>    If true, performs reference check.\n";
+      << "  --reference-check=<bool>    If true, performs reference check.\n"
+      << "  --causal=<bool>             If true, uses causal masking.\n";
 
     return out;
   }
@@ -236,15 +289,30 @@ struct Options {
   double gflops(double runtime_s) const {
 
     // Number of real-valued multiply-adds 
-    int64_t fmas = int64_t();
+    int64_t fops = int64_t();
 
-    for (auto const & problem : problem_sizes0) {
-      // Two flops per multiply-add
-      fmas += problem.product() * 2;
+    for (int i = 0; i < problem_sizes0.size(); ++i) {
+      auto const& problem0 = problem_sizes0[i];
+      auto const& problem1 = problem_sizes1[i];
+      for (int row = 0; row < problem0.m(); ++row) {
+        int num_cols0 = problem0.n();
+        if (causal) {
+          num_cols0 = std::min(row + 1, num_cols0);
+        }
+        // P <- Q . K_t
+        fops += 2 * num_cols0 * problem0.k();
+        // P <- exp(P - max(P))
+        fops += 2 * num_cols0;
+        // S <- sum(P)
+        fops += num_cols0 - 1;
+        // O <- P . V
+        fops += 2 * num_cols0 * problem1.n();
+        // O <- O / S
+        fops += num_cols0 * problem1.n();
+      }
     }
-    
-    // Multiply another '2' because of the back-to-back GEMM problems in attention
-    return 2.0 * double(fmas) / double(1.0e9) / runtime_s;
+
+    return double(fops) / double(1.0e9) / runtime_s;
   }
 };
 
@@ -260,30 +328,27 @@ public:
   // Type definitions
   //
 
-  using ElementQ = typename Attention::ElementQ;
-  using ElementK = typename Attention::ElementK;
-  using ElementP = typename Attention::ElementP;
-  using ElementAccumulator = typename Attention::GemmGrouped0::ElementAccumulator;
-  using ElementV = typename Attention::ElementV;
-  using ElementO = typename Attention::ElementOutput;
+  using ElementQ = typename Attention::scalar_t;
+  using ElementK = typename Attention::scalar_t;
+  using ElementP = typename Attention::accum_t;
+  using ElementAccumulator = typename Attention::accum_t;
+  using ElementV = typename Attention::scalar_t;
+  using ElementO = typename Attention::output_t;
 
-  using EpilogueOutputOp = typename Attention::GemmGrouped0::GemmKernel::EpilogueVisitor::ElementwiseFunctor;
-  using ElementCompute = typename EpilogueOutputOp::ElementCompute;
+  using ElementCompute = typename Attention::accum_t;
 
-  using ElementNorm = typename Attention::ElementNorm;
-  using ElementSum = typename Attention::ElementSum;
-  using ElementSoftmaxCompute = typename Attention::ElementSoftmaxCompute;
+  using ElementNorm = typename Attention::accum_t;
+  using ElementSum = typename Attention::accum_t;
+  using ElementSoftmaxCompute = typename Attention::accum_t;
 
-  using LayoutQ = typename Attention::LayoutQ;
-  using LayoutK = typename Attention::LayoutK;
-  using LayoutP = typename Attention::LayoutP;
-  using LayoutV = typename Attention::LayoutV;
-  using LayoutO = typename Attention::LayoutO;
+  using LayoutQ = cutlass::layout::RowMajor;
+  using LayoutK = cutlass::layout::RowMajor;
+  using LayoutK_T = cutlass::layout::ColumnMajor; // transposed
+  using LayoutP = cutlass::layout::RowMajor;
+  using LayoutV = cutlass::layout::RowMajor;
+  using LayoutO = cutlass::layout::RowMajor;
 
   using MatrixCoord = typename LayoutP::TensorCoord;
-
-  using ProblemVisitor0 = typename Attention::GemmKernel0::ProblemVisitor;
-  using ProblemVisitor1 = typename Attention::GemmKernel1::ProblemVisitor;
 
 private:
 
@@ -310,8 +375,6 @@ private:
   std::vector<int64_t> offset_P;
   std::vector<int64_t> offset_V;
   std::vector<int64_t> offset_O;
-  std::vector<int64_t> offset_Norm;
-  std::vector<int64_t> offset_Sum;
 
   std::vector<int64_t> ldq_host;
   std::vector<int64_t> ldk_host;
@@ -336,16 +399,12 @@ private:
   cutlass::DeviceAllocation<ElementSum> block_Sum;
 
   cutlass::DeviceAllocation<int64_t> offset_P_Device;
-  cutlass::DeviceAllocation<int64_t> offset_Norm_Device;
-  cutlass::DeviceAllocation<int64_t> offset_Sum_Device;
 
   cutlass::DeviceAllocation<ElementQ *> ptr_Q;
   cutlass::DeviceAllocation<ElementK *> ptr_K;
   cutlass::DeviceAllocation<ElementP *> ptr_P;
   cutlass::DeviceAllocation<ElementV *> ptr_V;
   cutlass::DeviceAllocation<ElementO *> ptr_O;
-  cutlass::DeviceAllocation<ElementNorm *> ptr_Max;
-  cutlass::DeviceAllocation<ElementSum *> ptr_Sum;
 
 public:
 
@@ -382,7 +441,7 @@ private:
 
       Element scope_max, scope_min;
       int bits_input = cutlass::sizeof_bits<Element>::value;
-      int bits_output = cutlass::sizeof_bits<typename Attention::ElementP>::value;
+      int bits_output = cutlass::sizeof_bits<ElementP>::value;
 
       if (bits_input == 1) {
         scope_max = 2;
@@ -444,8 +503,6 @@ private:
     int64_t total_elements_V = 0;
     int64_t total_elements_O = 0;
 
-    int64_t total_elements_partial_norm = 0;
-
     ldq_host.resize(problem_count());
     ldk_host.resize(problem_count());
     ldp_host.resize(problem_count());
@@ -455,42 +512,35 @@ private:
 
     for (int32_t i = 0; i < problem_count(); ++i) {
 
-      auto problem = options.problem_sizes0.at(i);
+      auto problem0 = options.problem_sizes0.at(i);
+      auto problem1 = options.problem_sizes1.at(i);
 
-      ldq_host.at(i) = LayoutQ::packed({problem.m(), problem.k()}).stride(0);
-      ldk_host.at(i) = LayoutK::packed({problem.k(), problem.n()}).stride(0);
-      ldp_host.at(i) = LayoutP::packed({problem.m(), problem.n()}).stride(0);
-      ldv_host.at(i) = LayoutV::packed({problem.n(), problem.k()}).stride(0);
-      ldo_host.at(i) = LayoutO::packed({problem.m(), problem.k()}).stride(0);
+      ldq_host.at(i) = LayoutQ::packed({problem0.m(), problem0.k()}).stride(0);
+      ldk_host.at(i) = LayoutK::packed({problem0.n(), problem0.k()}).stride(0);
+      ldp_host.at(i) = LayoutP::packed({problem0.m(), problem0.n()}).stride(0);
+      ldv_host.at(i) = LayoutV::packed({problem1.k(), problem1.n()}).stride(0);
+      ldo_host.at(i) = LayoutO::packed({problem1.m(), problem1.n()}).stride(0);
 
       // m = n for attention problems.
-      int64_t non_leading_dim = ldp_host.at(i);
-      int64_t threadblock_n = Attention::GemmGrouped0::GemmKernel::EpilogueVisitor::ThreadblockShape::kN;
-      int64_t threadblock_num = (ldp_host.at(i) + threadblock_n - 1) / threadblock_n;
-
-      seqlen_host.at(i) = problem.m();
+      seqlen_host.at(i) = problem0.m();
 
       offset_Q.push_back(total_elements_Q);
       offset_K.push_back(total_elements_K);
       offset_P.push_back(total_elements_P);
       offset_V.push_back(total_elements_V);
       offset_O.push_back(total_elements_O);
-      offset_Norm.push_back(total_elements_partial_norm);
-      offset_Sum.push_back(total_elements_partial_norm);
 
-      int64_t elements_Q = problem.m() * problem.k();
-      int64_t elements_K = problem.k() * problem.n();
-      int64_t elements_P = problem.m() * problem.n();
-      int64_t elements_V = problem.n() * problem.k();
-      int64_t elements_O = problem.m() * problem.k();
-      int64_t elements_norm = non_leading_dim * threadblock_num;
+      int64_t elements_Q = problem0.m() * problem0.k();
+      int64_t elements_K = problem0.k() * problem0.n();
+      int64_t elements_P = problem0.m() * problem0.n();
+      int64_t elements_V = problem1.k() * problem1.n();
+      int64_t elements_O = problem1.m() * problem1.n();
 
       total_elements_Q += elements_Q;
       total_elements_K += elements_K;
       total_elements_P += elements_P;
       total_elements_V += elements_V;
       total_elements_O += elements_O;
-      total_elements_partial_norm += elements_norm;
 
     }
 
@@ -527,17 +577,11 @@ private:
     block_P.reset(total_elements_P);
     block_V.reset(total_elements_V);
     block_O.reset(total_elements_O);
-    block_Norm.reset(total_elements_partial_norm);
-    block_Sum.reset(total_elements_partial_norm);
 
     offset_P_Device.reset(problem_count());
-    offset_Norm_Device.reset(problem_count());
-    offset_Sum_Device.reset(problem_count());
 
     // sync offset with device
     cutlass::device_memory::copy_to_device(offset_P_Device.get(), offset_P.data(), offset_P.size());
-    cutlass::device_memory::copy_to_device(offset_Norm_Device.get(), offset_Norm.data(), offset_Norm.size());
-    cutlass::device_memory::copy_to_device(offset_Sum_Device.get(), offset_Sum.data(), offset_Sum.size());
 
     std::vector<ElementQ *> ptr_Q_host(problem_count());
     std::vector<ElementK *> ptr_K_host(problem_count());
@@ -553,8 +597,6 @@ private:
       ptr_P_host.at(i) = block_P.get() + offset_P.at(i);
       ptr_V_host.at(i) = block_V.get() + offset_V.at(i);
       ptr_O_host.at(i) = block_O.get() + offset_O.at(i);
-      ptr_norm_host.at(i) = block_Norm.get() + offset_Norm.at(i);
-      ptr_sum_host.at(i) = block_Sum.get() + offset_Sum.at(i);
     }
 
     ptr_Q.reset(problem_count());
@@ -571,12 +613,6 @@ private:
 
     ptr_O.reset(problem_count());
     ptr_O.copy_from_host(ptr_O_host.data());
-
-    ptr_Max.reset(problem_count());
-    ptr_Max.copy_from_host(ptr_norm_host.data());
-
-    ptr_Sum.reset(problem_count());
-    ptr_Sum.copy_from_host(ptr_sum_host.data());
 
     //
     // Initialize the problems of the workspace
@@ -606,7 +642,7 @@ private:
       float abs_ref = fabs((float)vector_Input_Ref.at(i) + 1e-5f);
       float relative_diff = abs_diff / abs_ref;
       if ( (isnan(abs_diff) || isinf(abs_diff)) ||  (abs_diff > abs_tol && relative_diff > rel_tol)) {
-        printf("diff = %f, rel_diff = %f, {%f, %f}.\n", abs_diff, relative_diff, (float)(vector_Input.at(i)), (float)(vector_Input_Ref.at(i)));
+        printf("[%d/%d] diff = %f, rel_diff = %f, {computed=%f, ref=%f}.\n", int(i), int(size), abs_diff, relative_diff, (float)(vector_Input.at(i)), (float)(vector_Input_Ref.at(i)));
         return false;
       }
 
@@ -621,23 +657,23 @@ private:
     bool passed = true;
 
     for (int32_t i = 0; i < problem_count(); ++i) {
-      cutlass::gemm::GemmCoord problem = options.problem_sizes0.at(i);
+      cutlass::gemm::GemmCoord problem0 = options.problem_sizes0.at(i);
       cutlass::gemm::GemmCoord problem1 = options.problem_sizes1.at(i);
 
       LayoutQ layout_Q(ldq_host.at(i));
-      LayoutK layout_K(ldk_host.at(i));
+      LayoutK_T layout_K(ldk_host.at(i));
       LayoutP layout_P(ldp_host.at(i));
       LayoutV layout_V(ldv_host.at(i));
       LayoutO layout_O(ldo_host.at(i));
 
-      MatrixCoord extent_Q{problem.m(), problem.k()};
-      MatrixCoord extent_K{problem.k(), problem.n()};
-      MatrixCoord extent_P{problem.m(), problem.n()};
-      MatrixCoord extent_V{problem.n(), problem.k()};
-      MatrixCoord extent_O{problem.m(), problem.k()};
+      MatrixCoord extent_Q{problem0.m(), problem0.k()};
+      MatrixCoord extent_K{problem0.n(), problem0.k()};
+      MatrixCoord extent_P{problem0.m(), problem0.n()};
+      MatrixCoord extent_V{problem1.k(), problem1.n()};
+      MatrixCoord extent_O{problem1.m(), problem1.k()};
 
       cutlass::TensorView<ElementQ, LayoutQ> view_Q(block_Q.get() + offset_Q.at(i), layout_Q, extent_Q);
-      cutlass::TensorView<ElementK, LayoutK> view_K(block_K.get() + offset_K.at(i), layout_K, extent_K);
+      cutlass::TensorView<ElementK, LayoutK_T> view_K(block_K.get() + offset_K.at(i), layout_K, extent_K);
       cutlass::TensorView<ElementP, LayoutP> view_P(block_P.get() + offset_P.at(i), layout_P, extent_P);
       cutlass::TensorView<ElementV, LayoutV> view_V(block_V.get() + offset_V.at(i), layout_V, extent_V);
 
@@ -650,16 +686,16 @@ private:
       // Reference GEMM
       cutlass::reference::device::GemmComplex<
           ElementQ, LayoutQ,
-          ElementK, LayoutK,
+          ElementK, LayoutK_T,
           ElementP, LayoutP, 
           ElementCompute, ElementAccumulator
       >(
-        problem,
+        problem0,
         ElementAccumulator(options.alpha0), 
         view_Q,
-        Attention::GemmGrouped0::kTransformA,
+        Attention::MM0::Mma::kTransformA,
         view_K,
-        Attention::GemmGrouped0::kTransformB,
+        Attention::MM0::Mma::kTransformB,
         ElementAccumulator(options.beta), 
         view_P, 
         view_Ref_device, 
@@ -672,41 +708,49 @@ private:
       std::vector<ElementP> matrix_Ref(layout_P.capacity(extent_P));
       cutlass::device_memory::copy_to_host(matrix_Ref.data(), block_Ref.get(), matrix_Ref.size());
       cutlass::TensorView<ElementP, LayoutP> view_Ref_host(matrix_Ref.data(), layout_P, extent_P);
-      std::vector<ElementNorm> vector_Norm_Ref(problem.m());
-      std::vector<ElementSum> vector_Sum_Ref(problem.m());
+      std::vector<ElementNorm> vector_Norm_Ref(problem0.m());
+      std::vector<ElementSum> vector_Sum_Ref(problem0.m());
 
-      int n_dim = options.use_mask ? options.problem_sizes0_real.at(i).n() : problem.n();
+      int n_dim = options.use_mask ? options.problem_sizes0_real.at(i).n() : problem0.n();
 
       // Compute softmax for referece matrix
       // Assumed a row-major storage
-      for (int m = 0; m < problem.m(); m++) {
+      for (int m = 0; m < problem0.m(); m++) {
+        int n_dim_row = n_dim;
+        if (options.causal) {
+          n_dim_row = std::min(m + 1, n_dim);
+        }
         ElementSoftmaxCompute max = ElementSoftmaxCompute(view_Ref_host.ref().at({m, 0}));
-        for (int n = 1; n < n_dim; n++) {
+        for (int n = 1; n < n_dim_row; n++) {
            max = std::max(max, ElementSoftmaxCompute(view_Ref_host.ref().at({m, n})));
         }
 
         vector_Norm_Ref.at(m) = ElementNorm(max);
 
         ElementSoftmaxCompute sum = ElementSoftmaxCompute();
-        for (int n = 0; n < n_dim; n++) {
+        for (int n = 0; n < n_dim_row; n++) {
           sum += std::exp( ElementSoftmaxCompute(view_Ref_host.ref().at({m, n})) - max );
         }
         ElementSoftmaxCompute inv_sum = ElementSoftmaxCompute(1.0f / sum);
 
         vector_Sum_Ref.at(m) = ElementSum(inv_sum);
 
-        for (int n = 0; n < n_dim; n++) {
+        for (int n = 0; n < n_dim_row; n++) {
           view_Ref_host.ref().at({m, n}) = ElementP(
             std::exp( ElementSoftmaxCompute(view_Ref_host.ref().at({m, n})) - max ) * inv_sum
           );
+        }
+        // Mask out the rest of the attention matrix
+        for (int n = n_dim_row; n < n_dim; ++n) {
+          view_Ref_host.ref().at({m, n}) = ElementP(0);
         }
 
       }
 
       // when not using mask, problem_real and problem share the same sizes
       if (options.use_mask) {
-        for (int m = 0; m < problem.m(); m++) {
-          for (int n = n_dim; n < problem.n(); n++) {
+        for (int m = 0; m < problem0.m(); m++) {
+          for (int n = n_dim; n < problem0.n(); n++) {
             view_Ref_host.ref().at({m, n}) = ElementP(0);
           }
         }
@@ -724,9 +768,9 @@ private:
         problem1,
         ElementAccumulator(options.alpha1), 
         view_P,
-        Attention::GemmGrouped0::kTransformA,
+        Attention::MM0::Mma::kTransformA,
         view_V,
-        Attention::GemmGrouped0::kTransformB,
+        Attention::MM0::Mma::kTransformB,
         ElementAccumulator(options.beta), 
         view_Ref_O_device, 
         view_Ref_O_device, 
@@ -734,55 +778,29 @@ private:
       );
 
       // Copy to host memory
-
-      int64_t threadblock_n = Attention::GemmGrouped0::GemmKernel::EpilogueVisitor::ThreadblockShape::kN;
-      int64_t threadblock_num = (problem.m() + threadblock_n - 1) / threadblock_n;
-
-      std::vector<ElementNorm> vector_Norm(problem.m() * threadblock_num);
-      std::vector<ElementSum> vector_Sum(problem.m() * threadblock_num);
-
-      cutlass::device_memory::copy_to_host(vector_Norm.data(),   block_Norm.get() + offset_Norm.at(i), vector_Norm.size());
-      cutlass::device_memory::copy_to_host(vector_Sum.data(),   block_Sum.get() + offset_Sum.at(i), vector_Sum.size());
-
       cutlass::TensorView<ElementP, LayoutP> view_Ref(matrix_Ref.data(), layout_P, extent_P);
 
       std::vector<ElementO> matrix_O(layout_O.capacity(extent_O));
       cutlass::device_memory::copy_to_host(matrix_O.data(),   block_O.get() + offset_O.at(i), matrix_O.size());
-      std::vector<ElementP> matrix_Ref_O(layout_O.capacity(extent_O));
+      std::vector<ElementO> matrix_Ref_O(layout_O.capacity(extent_O));
       cutlass::device_memory::copy_to_host(matrix_Ref_O.data(), block_Ref_O.get(), matrix_Ref_O.size());
 
-      bool verified_N = false;
-      bool verified_S = false;
+      // printf("Pb %d: \n    Q=(offset=%d, ldq=%d)\n    K=(offset=%d, ldk=%d)\n    O=(offset=%d, ldo=%d)\n",
+      //   int(i), int(offset_Q[i]), int(ldq_host[i]), int(offset_K[i]), int(ldk_host[i]), int(offset_O[i]), int(ldo_host[i]));
+  
       bool verified_O = false;
-
-      if (!verified_N) {
-        verified_N = verify_tensor_<ElementNorm>(vector_Norm, vector_Norm_Ref);
-      }
-      
-      if (!verified_S) {
-        verified_S = verify_tensor_<ElementSum>(vector_Sum, vector_Sum_Ref);
-      }
-
 
       if (!verified_O) {
         verified_O = verify_tensor_<ElementO>(matrix_O, matrix_Ref_O);
       }
 
-      passed = passed && verified_N && verified_S && verified_O;
+      passed = passed && verified_O;
 
       if (!passed) {
         std::cerr << "\n***\nError - problem " << i << " failed the QA check\n***\n" << std::endl;
 
         if (!verified_O) {
           std::cout << "Final matrix output is incorrect" << std::endl;
-        }
-
-        if (!verified_N) {
-          std::cout << "Max is incorrect" << std::endl;
-        }
-
-        if (!verified_S) {
-          std::cout << "Sum is incorrect" << std::endl;
         }
 
         return passed;
@@ -795,112 +813,67 @@ private:
 
 public:
 
-  /// Returns the number of threadblocks to launch if the kernel can run on the target
-  /// device. Otherwise, returns zero.
-  int sufficient() const {
-    cudaDeviceProp properties;
-    int device_idx;
-    cudaError_t result = cudaGetDevice(&device_idx);
-
-    if (result != cudaSuccess) {
-      throw std::runtime_error("cudaGetDevice() API call failed.");
-    }
-
-    result = cudaGetDeviceProperties(&properties, device_idx);
-
-    if (result != cudaSuccess) {
-      throw std::runtime_error("cudaGetDeviceProperties() failed");
-    }
-
-    int occupancy = Attention::GemmGrouped0::maximum_active_blocks();
-
-    return properties.multiProcessorCount * occupancy;
-
-  }
-
 
   /// Executes a CUTLASS Attention kernel and measures runtime.
   Result profile_grouped() {
 
     Result result;
-
-    int threadblock_count = sufficient();
-
-    // Early exit
-    if (!threadblock_count) {
-      std::cout << "Active CUDA device lacks hardware resources to run CUTLASS Attention kernel." << std::endl;
-      return result;
-    }
-
     result.passed = false;
 
     // Initialize the problem
     initialize_();
 
-    typename Attention::Arguments args(
-      problem_sizes_device0.get(),
-      problem_sizes_device1.get(),
-      problem_count(),
-      threadblock_count,
-      ptr_Q.get(),
-      ptr_K.get(),
-      ptr_P.get(),
-      ptr_V.get(),
-      ptr_O.get(),
-      ptr_Max.get(),
-      ptr_Sum.get(),
-      block_P.get(),
-      block_Norm.get(),
-      block_Sum.get(),
-      offset_P_Device.get(),
-      offset_Norm_Device.get(),
-      offset_Sum_Device.get(),
-      ldq.get(),
-      ldk.get(),
-      ldp.get(),
-      ldv.get(),
-      ldo.get(),
-      ElementAccumulator(options.alpha0),
-      ElementAccumulator(options.alpha1),
-      ElementAccumulator(options.beta),
-      options.head_number,
-      options.batch_size,
-      options.seq_length,
-      options.problem_sizes0.data(),
-      options.problem_sizes1.data(),
-      problem_sizes_device0_real.get()
-    );
+    typename Attention::Params p;
+    { // set parameters
+      p.query_ptr = block_Q.get();
+      p.key_ptr = block_K.get();
+      p.value_ptr = block_V.get();
+      p.logsumexp_ptr = nullptr; // Only needed for bw
+      p.output_accum_ptr = nullptr;
+      if (Attention::kNeedsOutputAccumulatorBuffer) {
+        cudaMalloc(&p.output_accum_ptr, block_O.size() * sizeof(typename Attention::output_accum_t));
+      }
+      p.output_ptr = block_O.get();
 
-    size_t workspace_size0 = ProblemVisitor0::kRequiresPrecomputation ?\
-      ProblemVisitor0::get_workspace_size(options.problem_sizes0.data(),\
-                                          problem_count(),\
-                                          threadblock_count)\
-      : 0;
+      // TODO: support arbitrary seq lengths
+      // if (cu_seqlens_q.has_value()) {
+      //   p.cu_seqlens_q_ptr = (int32_t*)cu_seqlens_q->data_ptr();
+      //   p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
+      // }
 
-    size_t workspace_size1 = ProblemVisitor1::kRequiresPrecomputation ?\
-      ProblemVisitor1::get_workspace_size(options.problem_sizes1.data(),\
-                                          problem_count(),\
-                                          threadblock_count)\
-      : 0;
+      p.num_heads = options.head_number;
+      p.num_batches = options.batch_size;
+      p.head_dim = options.head_size;
+      p.head_dim_value = options.head_size_v;
+      p.num_queries = options.seq_length;
+      p.num_keys = options.seq_length_kv;
+      p.causal = options.causal;
 
-    cutlass::DeviceAllocation<uint8_t> workspace0(workspace_size0);
-    cutlass::DeviceAllocation<uint8_t> workspace1(workspace_size1);
-
-    Attention attention;
-
-    result.status = attention.initialize(args, workspace0.get(), workspace1.get());
-
-    if (result.status != cutlass::Status::kSuccess) {
-      std::cerr << "Failed to initialize CUTLASS Attention kernel." << std::endl;
-      return result;
+      // TODO: This might overflow for big tensors
+      p.q_strideM = int32_t(ldq_host[0]);
+      p.k_strideM = int32_t(ldk_host[0]);
+      p.v_strideM = int32_t(ldv_host[0]);
+      p.q_strideH = p.q_strideM * options.seq_length;
+      p.k_strideH = p.k_strideM * options.seq_length_kv;
+      p.v_strideH = p.v_strideM * options.seq_length_kv;
+      p.o_strideH = options.head_size_v * options.seq_length;
+      p.q_strideB = p.q_strideH * options.head_number;
+      p.k_strideB = p.k_strideH * options.head_number;
+      p.v_strideB = p.v_strideH * options.head_number;
+      p.o_strideB = options.head_size_v * options.seq_length * options.head_number;
     }
 
-    result.status = attention.run();
-
-    if (result.status != cutlass::Status::kSuccess) {
-      std::cerr << "Failed to initialize CUTLASS Attention kernel." << std::endl;
+    // launch kernel :)
+    constexpr auto kernel_fn = attention_kernel_batched_impl<Attention>;
+    int smem_bytes = sizeof(typename Attention::SharedStorage);
+    if (smem_bytes > 0xc000) {
+      cudaFuncSetAttribute(kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
+    }
+    if (!Attention::check_supported(p)) {
+      std::cerr << "Kernel does not support these inputs" << std::endl;
       return result;
     }
+    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
 
     // Wait for completion
     result.error = cudaDeviceSynchronize();
@@ -923,7 +896,7 @@ public:
     // Warm-up run of the grouped GEMM object
     //
 
-    result.status = attention.run();
+    kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
 
     if (result.status != cutlass::Status::kSuccess) {
       std::cerr << "Failed to run CUTLASS Attention kernel." << std::endl;
@@ -956,7 +929,7 @@ public:
     //
 
     for (int iter = 0; iter < options.iterations; ++iter) {
-      attention();
+      kernel_fn<<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes>>>(p);
     }
 
     //
@@ -1000,8 +973,9 @@ public:
     std::cout << std::endl;
     std::cout << "CUTLASS Attention:\n"
       << "====================================================" << std::endl;
-    std::cout << "    " << " {max sequence length, head size, head number, batch size} = {" << options.seq_length \
-      << ", " << options.head_size << ", " << options.head_number << ", " << options.batch_size << "}." << std::endl;
+    std::cout << "    " << " {seq length Q, seq length KV, head size, head size V, head number, batch size} = {" << options.seq_length \
+      << ", " << options.seq_length_kv << ", " << options.head_size << ", " << options.head_size_v << ", " << options.head_number\
+      << ", " << options.batch_size << "}." << std::endl;
     std::cout << std::endl;
     std::cout << "    " << "Runtime: " << result.runtime_ms << " ms" << std::endl;
     std::cout << "    " << "GFLOPs: " << result.gflops << std::endl;
@@ -1059,61 +1033,42 @@ int main(int argc, char const **args) {
     return -1;
   }
 
-  //
-  // Define the CUTLASS Attention type
-  //
-
-  using ElementOutput = cutlass::half_t;
-  using ElementAccumulator = cutlass::half_t;
-
-  using ElementQ = cutlass::half_t;
-  using ElementK = cutlass::half_t;
-  using ElementP = ElementOutput;
-
-  using LayoutQ = cutlass::layout::RowMajor;
-  using LayoutK = cutlass::layout::ColumnMajor;
-  using LayoutP = cutlass::layout::RowMajor;
-
-  static bool const UseMask = false;
-
-  if (UseMask != options.use_mask) {
-    std::cerr << "UseMask and user-defined use_mask need to be consistant, "
-    << " aborted execution.\n";
+  if (options.use_mask) {
+    std::cerr << "--use_mask is not supported at the moment\n";
     return -2;
   }
-
-  using OperatorClass = cutlass::arch::OpClassTensorOp;
+  if (options.alignment != 1) {
+    std::cerr << "--alignment=1 is the only supported value\n";
+    return -2;
+  }
   using ArchTag = cutlass::arch::Sm80;
 
-  using ThreadblockShape0 = cutlass::gemm::GemmShape<128, 128, 32>;
-  using WarpShape0 = cutlass::gemm::GemmShape<64, 64, 32>;
+  constexpr bool kIs64x64 = true;
+  // Set grid size
+  constexpr int64_t kQueriesPerBlock = kIs64x64 ? 64 : 32;
+  constexpr int64_t kKeysPerBlock = kIs64x64 ? 64 : 128;
+  if (kIs64x64 && options.head_size_v > kKeysPerBlock) {
+    std::cerr << "WARNING: you will get better performance with `kIs64x64=false`\n";
+  }
 
-  using ThreadblockShape1 = cutlass::gemm::GemmShape<64, 64, 32>;
-  using WarpShape1 = cutlass::gemm::GemmShape<32, 32, 32>;
-  
-  static int const Stages0 = 3;
-  static int const Stages1 = 4;
+  constexpr bool kSingleValueIteration = true;
+  if (kSingleValueIteration && options.head_size_v > kKeysPerBlock) {
+    std::cerr << "ERROR  : Use kSingleValueIteration to keep output in RF. " \
+    "This requires to have `head_size <= kKeysPerBlock` " \
+    "but head_size_v=" << options.head_size_v << " and kKeysPerBlock=" << kKeysPerBlock << "\n";
+    return -2;
+  }
+  if (!kSingleValueIteration && options.head_size_v <= kKeysPerBlock) {
+    std::cerr << "WARNING: you will get better performance with `kSingleValueIteration=true` (keeps the output in RF rather than GMEM)\n";
+  }
 
-  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
-
-  using Attention = cutlass::FusedMultiHeadAttention<
-    ElementQ,
-    LayoutQ,
-    ElementK,
-    LayoutK,
-    ElementP,
-    LayoutP,
-    ElementAccumulator,
-    OperatorClass,
+  using Attention = AttentionKernel<
+    cutlass::half_t, // scalar_t
     ArchTag,
-    ThreadblockShape0,
-    ThreadblockShape1,
-    WarpShape0,
-    WarpShape1,
-    InstructionShape,
-    Stages0,
-    Stages1,
-    UseMask
+    true, // memory is aligned
+    kQueriesPerBlock,
+    kKeysPerBlock,
+    kSingleValueIteration
   >;
 
   //
@@ -1121,11 +1076,6 @@ int main(int argc, char const **args) {
   //
 
   TestbedAttention<Attention> testbed(options);
-
-  if (!testbed.sufficient()) {
-    std::cout << "The active CUDA device lacks sufficient hardware resources to execute this kernel.\n";
-    return 0;
-  }
 
   Result result = testbed.profile_grouped();
   if (!result.passed) {

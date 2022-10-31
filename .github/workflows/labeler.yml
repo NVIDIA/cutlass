@@ -5,7 +5,8 @@ on:
 jobs:
   triage:
     runs-on: ubuntu-latest
+    permissions: read-all|write-all
     steps:
-    - uses: actions/labeler@main
+    - uses: actions/labeler@master
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
