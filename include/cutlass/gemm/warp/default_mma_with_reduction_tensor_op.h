@@ -61,7 +61,9 @@ template <
     /// Layout of C matrix (concept: MatrixLayout)
     typename LayoutC,
     /// Operator describing the tensor operation
-    typename Operator_ = arch::OpMultiplyAdd,
+    typename Operator_,
+    /// Reduce operand A or B along K dimension
+    bool ReduceKForA_,
     /// Number of partitions along K dimension
     int PartitionsK = 1,
     /// Store the accumulators in row major or column major.  Row major is used
@@ -78,7 +80,7 @@ struct DefaultMmaWithReductionTensorOp {
   // Define the warp-level tensor op
   using Type = cutlass::gemm::warp::MmaWithReductionTensorOp<
       WarpShape_, ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC,
-      Policy, PartitionsK, AccumulatorsInRowMajor>;
+      Policy, ReduceKForA_, PartitionsK, AccumulatorsInRowMajor>;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
