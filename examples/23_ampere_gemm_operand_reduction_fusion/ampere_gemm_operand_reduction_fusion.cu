@@ -376,21 +376,21 @@ Result profile(Options const &options) {
   // Fill input and output matrices on host using CUTLASS helper functions
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_a.host_view(),
-      1,
+      1997,
       ElementInputA(2),
       ElementInputA(-2),
       0);  // <- Fill tensor A on host with uniform-distribution random data
 
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_b.host_view(),
-      1,
+      2003,
       ElementInputB(2),
       ElementInputB(-2),
       0);  // <- Fill tensor B on host with uniform-distribution random data
 
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_c.host_view(),
-      1,
+      2017,
       ElementOutput(2),
       ElementOutput(-2),
       0);  // <- Fill matrix C on host with uniform-distribution random data
