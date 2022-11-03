@@ -41,6 +41,7 @@
 #include "cutlass/matrix_coord.h"
 #include "cutlass/complex.h"
 #include "cutlass/semaphore.h"
+#include "cutlass/layout/pitch_linear.h"
 
 #include "cutlass/trace.h"
 
