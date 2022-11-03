@@ -90,7 +90,7 @@ template <
     typename LayoutC,
     /// Indicates type of math operator (arch::OpClassSimt or arch::OpClassTensorOp)
     typename OperatorClass,
-    ///                                                                                               
+    /// Reduce operand A or B along K dimension
     bool ReduceKForA_,
     /// Number of stages
     int Stages = 2,
