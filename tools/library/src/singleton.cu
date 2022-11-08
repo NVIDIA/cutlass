@@ -51,7 +51,7 @@ Singleton::Singleton() {
 
 Singleton const & Singleton::get() {
   static Singleton instance;
-  return &instance;
+  return instance;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
