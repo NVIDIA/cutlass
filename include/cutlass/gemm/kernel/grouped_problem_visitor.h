@@ -126,11 +126,7 @@ struct BaseGroupedProblemVisitor {
   /// Get the grid shape
   CUTLASS_HOST_DEVICE
   static cutlass::gemm::GemmCoord grid_shape(const cutlass::gemm::GemmCoord& problem) {
-
-    return cutlass::gemm::GemmCoord(
-      ((problem.m() - 1 + ThreadblockShape::kM) / ThreadblockShape::kM),
-      ((problem.n() - 1 + ThreadblockShape::kN) / ThreadblockShape::kN),
-      1);
+    return ProblemSizeHelper::grid_shape(problem);
   }
 
   /// Gets the global tile index
@@ -346,7 +342,7 @@ struct GroupedProblemVisitor<ProblemSizeHelper,
                              PrefetchTileCount,
                              ThreadCount> : public BaseGroupedProblemVisitor<ProblemSizeHelper, ThreadblockShape> {
   static_assert(PrefetchTileCount > 0,
-                "GroupedProblemVisitor with GroupScheduleMode `kHost` currently requires prefetching to shared memory");
+                "GroupedProblemVisitor with GroupScheduleMode `kHostPrecompute` currently requires prefetching to shared memory");
 
   using Base = BaseGroupedProblemVisitor<ProblemSizeHelper, ThreadblockShape>;
   using Params = typename Base::Params;

@@ -2,7 +2,7 @@
     \brief Cutlass provides helper template functions to figure out the right
    datastructures to instanciate to run a GEMM with various parameters (see
    `cutlass/gemm/threadblock/default_mma.h`). However, due to template
-   instanciation priority rules, it will only create an MmaMultiStage with
+   instantiation priority rules, it will only create an MmaMultiStage with
    kStages=3 (otherwise creates an MmePipelined - which is not compatible with
    FastF32). kStages=3 uses too much shared memory and we want to use kStages=2,
    so we just copy-pasted some code from `default_mma.h` and

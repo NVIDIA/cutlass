@@ -77,21 +77,16 @@
     Examples:
 
       # Run an attention example with default setup
-      $ ./examples/42_fused_multi_head_attention/42_fused_multi_head_attention
+      $ ./examples/42_fused_multi_head_attention/42_fused_multi_head_attention_fixed_seqlen
 
       # Run an attention example with custom setup
-      $ ./examples/42_fused_multi_head_attention/42_fused_multi_head_attention --head_number=2 --batch_size=3 --head_size=32 --head_size_v=64 --seq_length=512 --seq_length_kv=1024 --causal=true
+      $ ./examples/42_fused_multi_head_attention/42_fused_multi_head_attention_fixed_seqlen --head_number=2 --batch_size=3 --head_size=32 --head_size_v=64 --seq_length=512 --seq_length_kv=1024 --causal=true
 
 */
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <iostream>
-#include <fstream>
-#include <sstream>
 #include <vector>
-#include <map>
-#include <unordered_map>
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/gemm.h"
@@ -241,8 +236,8 @@ struct Options {
 
     for (int i = 0; i < batch_size; ++i) {
       // problems belonging to the same batch share the same seq len
-      int m_real = seq_length; // (rand() % seq_length);
-      int mkv_real = seq_length_kv; // (rand() % seq_length_kv);
+      int m_real = seq_length;
+      int mkv_real = seq_length_kv;
       int m = (m_real + alignment - 1) / alignment * alignment;
       int mkv = (mkv_real + alignment - 1) / alignment * alignment;
       int k0 = head_size;
@@ -268,7 +263,7 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "42_fused_multi_head_attention\n\n"
+    out << "42_fused_multi_head_attention_fixed_seqlen\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement.\n\n"
       << "  --head_number=<int>         Head number in multi-head attention (default: --head_number=12)\n"
@@ -276,7 +271,7 @@ struct Options {
       << "  --head_size=<int>           Head size in multi-head attention (default: --head_size=64)\n"
       << "  --head_size_v=<int>         Head size in multi-head attention for V (default: --head_size_v=head_size)\n"
       << "  --seq_length=<int>          Sequence length in multi-head attention for Q (default: --seq_length=1024)\n"
-      << "  --seq_length_kv=<int>       Sequence length in multi-head attention for K/V(default: --seq_length_kv=seq_length)\n"
+      << "  --seq_length_kv=<int>       Sequence length in multi-head attention for K/V (default: --seq_length_kv=seq_length)\n"
       << "  --use_mask=<bool>           If true, performs padding-like masking in softmax.\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n"
       << "  --reference-check=<bool>    If true, performs reference check.\n"
@@ -641,7 +636,7 @@ private:
       float abs_diff = fabs(diff);
       float abs_ref = fabs((float)vector_Input_Ref.at(i) + 1e-5f);
       float relative_diff = abs_diff / abs_ref;
-      if ( (isnan(abs_diff) || isinf(abs_diff)) ||  (abs_diff > abs_tol && relative_diff > rel_tol)) {
+      if ( (isnan(vector_Input_Ref.at(i)) || isnan(abs_diff) || isinf(abs_diff)) ||  (abs_diff > abs_tol && relative_diff > rel_tol)) {
         printf("[%d/%d] diff = %f, rel_diff = %f, {computed=%f, ref=%f}.\n", int(i), int(size), abs_diff, relative_diff, (float)(vector_Input.at(i)), (float)(vector_Input_Ref.at(i)));
         return false;
       }
@@ -988,6 +983,40 @@ public:
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <
+  int kQueriesPerBlock,
+  int kKeysPerBlock,
+  bool kSingleValueIteration
+>
+int run_attention(Options& options) {
+  using Attention = AttentionKernel<
+    cutlass::half_t,      // scalar_t
+    cutlass::arch::Sm80,  // ArchTag
+    true,                 // Memory is aligned
+    kQueriesPerBlock,
+    kKeysPerBlock,
+    kSingleValueIteration
+  >;
+
+  //
+  // Test and profile
+  //
+
+  TestbedAttention<Attention> testbed(options);
+
+  Result result = testbed.profile_grouped();
+  if (!result.passed) {
+    std::cout << "Profiling CUTLASS attention has failed.\n";
+    std::cout << "\nFailed\n";
+    return -1;
+  }
+
+  std::cout << "\nPassed\n";
+  return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 int main(int argc, char const **args) {
 
   //
@@ -1041,52 +1070,25 @@ int main(int argc, char const **args) {
     std::cerr << "--alignment=1 is the only supported value\n";
     return -2;
   }
-  using ArchTag = cutlass::arch::Sm80;
 
-  constexpr bool kIs64x64 = true;
-  // Set grid size
-  constexpr int64_t kQueriesPerBlock = kIs64x64 ? 64 : 32;
-  constexpr int64_t kKeysPerBlock = kIs64x64 ? 64 : 128;
-  if (kIs64x64 && options.head_size_v > kKeysPerBlock) {
-    std::cerr << "WARNING: you will get better performance with `kIs64x64=false`\n";
+  // Determine kernel configuration based on head size.
+  // If head size is less than or equal to 64, each block operates over 64 queries and
+  // 64 keys, and parital results can be stored in the register file.
+  // If head size is greater than 64, each block operates over 32 queries and 128 keys,
+  // and partial results are stored in shared memory.
+  if (options.head_size_v > 64) {
+    static int const kQueriesPerBlock = 32;
+    static int const kKeysPerBlock = 128;
+    if (options.head_size_v <= kKeysPerBlock) {
+      return run_attention<kQueriesPerBlock, kKeysPerBlock, true>(options);
+    } else {
+      return run_attention<kQueriesPerBlock, kKeysPerBlock, false>(options);
+    }
+  } else {
+    static int const kQueriesPerBlock = 64;
+    static int const kKeysPerBlock = 64;
+    return run_attention<kQueriesPerBlock, kKeysPerBlock, true>(options);
   }
-
-  constexpr bool kSingleValueIteration = true;
-  if (kSingleValueIteration && options.head_size_v > kKeysPerBlock) {
-    std::cerr << "ERROR  : Use kSingleValueIteration to keep output in RF. " \
-    "This requires to have `head_size <= kKeysPerBlock` " \
-    "but head_size_v=" << options.head_size_v << " and kKeysPerBlock=" << kKeysPerBlock << "\n";
-    return -2;
-  }
-  if (!kSingleValueIteration && options.head_size_v <= kKeysPerBlock) {
-    std::cerr << "WARNING: you will get better performance with `kSingleValueIteration=true` (keeps the output in RF rather than GMEM)\n";
-  }
-
-  using Attention = AttentionKernel<
-    cutlass::half_t, // scalar_t
-    ArchTag,
-    true, // memory is aligned
-    kQueriesPerBlock,
-    kKeysPerBlock,
-    kSingleValueIteration
-  >;
-
-  //
-  // Test and profile
-  //
-
-  TestbedAttention<Attention> testbed(options);
-
-  Result result = testbed.profile_grouped();
-  if (!result.passed) {
-    std::cout << "Profiling CUTLASS attention has failed.\n";
-    std::cout << "\nFailed\n";
-    return -1;
-  }
-
-  std::cout << "\nPassed\n";
-
-  return 0;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

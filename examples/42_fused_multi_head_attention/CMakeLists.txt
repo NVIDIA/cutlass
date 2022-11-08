@@ -27,10 +27,18 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
-
 cutlass_example_add_executable(
-  42_fused_multi_head_attention
-  fused_multihead_attention.cu 
+  42_fused_multi_head_attention_fixed_seqlen
+  fused_multihead_attention_fixed_seqlen.cu
   )
 
+cutlass_example_add_executable(
+  42_fused_multi_head_attention_variable_seqlen
+  fused_multihead_attention_variable_seqlen.cu
+  )
+
+
+add_custom_target(42_fused_multi_head_attention
+DEPENDS 42_fused_multi_head_attention_fixed_seqlen
+        42_fused_multi_head_attention_variable_seqlen
+)
