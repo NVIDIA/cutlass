@@ -50,18 +50,6 @@ namespace epilogue {
 namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename T>
-struct Identity {
-  static const bool kIsHeavy=false;
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T value) const {
-    return value;
-  }
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 struct LinearCombinationGenericParams {
   T alpha;                  ///< scales accumulators
@@ -94,6 +82,39 @@ struct LinearCombinationGenericParams {
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Identity operator
+template <typename T>
+struct Identity {
+  static const bool kIsHeavy=false;
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T value) const {
+    return value;
+  }
+
+  using Params = LinearCombinationGenericParams<T>;
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &value, Params const &params_) const {
+    return this->operator()(value);
+  }
+};
+
+template <typename T, int N>
+struct Identity<Array<T, N> > {
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs) const {
+    return rhs;
+  }
+
+  using Params = LinearCombinationGenericParams<T>;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &rhs, Params const &params_) const {
+    return this->operator()(rhs);
+  }
+};
 
 /// ReLu operator - propagates NaNs
 /// Always put threshold in the right hand side of max to propagate NaN.
