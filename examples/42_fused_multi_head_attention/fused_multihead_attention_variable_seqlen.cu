@@ -1165,10 +1165,6 @@ int main(int argc, char const **args) {
     std::cerr << "--use_mask is not supported at the moment\n";
     return -2;
   }
-  if (options.alignment != 1) {
-    std::cerr << "--alignment=1 is the only supported value\n";
-    return -2;
-  }
 
   // Determine kernel configuration based on head size.
   // If head size is less than or equal to 64, each block operates over 64 queries and

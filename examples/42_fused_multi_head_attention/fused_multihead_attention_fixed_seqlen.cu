@@ -216,6 +216,15 @@ struct Options {
     cmd.get_cmd_line_argument("reference-check", reference_check, true);
     cmd.get_cmd_line_argument("causal", causal, true);
 
+    if (seq_length % alignment != 0 || seq_length_kv % alignment != 0 ||
+        head_size % alignment != 0 || head_size_v % alignment != 0) {
+      std::cerr << "seq_length (" << seq_length << "), seq_length_kv (" << seq_length_kv
+                << "), head_size (" << head_size << "), and head_size_v (" << head_size_v << ") "
+                << "must be multiples of alignment (" << alignment << ")" << std::endl;
+      error = true;
+      return;
+    }
+
     randomize_problems();
 
   }
@@ -1064,10 +1073,6 @@ int main(int argc, char const **args) {
 
   if (options.use_mask) {
     std::cerr << "--use_mask is not supported at the moment\n";
-    return -2;
-  }
-  if (options.alignment != 1) {
-    std::cerr << "--alignment=1 is the only supported value\n";
     return -2;
   }
 
