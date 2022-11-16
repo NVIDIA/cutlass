@@ -1,3 +1,5 @@
+#pragma once
+
 #ifdef HAS_PYTORCH
 #include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
