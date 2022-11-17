@@ -231,7 +231,7 @@ class Coord;
 
 **Example:** Vector operations on coordinates.
 ```c++
-Coord<2> compute_offset(Corod<2> const & base) {
+Coord<2> compute_offset(Coord<2> const & base) {
   
   Coord<2> stride = make_Coord(1, kM);
 

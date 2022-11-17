@@ -91,7 +91,7 @@ template <
     typename ElementAccumulator,
     /// Operator class tag
     typename OperatorClass,
-    ///
+    /// Reduce A or B along the K dimension
     bool ReduceKForA_,
     /// Tag indicating architecture to tune for
     typename ArchTag,

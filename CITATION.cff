@@ -73,6 +73,7 @@ abstract: >-
 keywords:
   - 'cutlass, tensor cores, cuda'
 license: BSD-3-Clause
+<<<<<<< HEAD
 license-url: https://github.com/NVIDIA/cutlass/blob/v2.9.0/LICENSE.txt
 version: '2.9'
 date-released: '2022-04-27'
@@ -80,3 +81,12 @@ identifiers:
   - type: url
     value: "https://github.com/NVIDIA/cutlass/tree/v2.9.0"
     description: The GitHub release URL of tag 2.9.0
+=======
+license-url: https://github.com/NVIDIA/cutlass/blob/v2.10.0/LICENSE.txt
+version: '2.10.0'
+date-released: '2022-09-15'
+identifiers:
+  - type: url
+    value: "https://github.com/NVIDIA/cutlass/tree/v2.10.0"
+    description: The GitHub release URL of tag 2.10.0
+>>>>>>> 3c90f6aea6a93841fc67eb147a7d6602e6b7c28e

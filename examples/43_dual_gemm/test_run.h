@@ -29,34 +29,67 @@
  *
  **************************************************************************************************/
 
-#include <memory>
-#include "cutlass/library/library.h"
-#include "cutlass/library/manifest.h"
-#include "cutlass/library/operation_table.h"
-#include "cutlass/library/singleton.h"
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
+#include <iostream>
 
-namespace cutlass {
-namespace library {
+// Run tests on GPUs 
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
+int testRun(int arch, std::vector<bool (*)()> & test_funcs, const std::string & test_name) {
 
-Singleton::Singleton() {
+  bool supported = false;
 
-  manifest.initialize();
+  int arch_major = arch / 10;
+  int arch_minor = arch - arch / 10 * 10;  
 
-  operation_table.append(manifest);
+  if(arch_major >= 8) {
+    // Ampere Tensor Core operations exposed with mma.sync are first available in CUDA 11.0.
+    //
+    // CUTLASS must be compiled with CUDA 11 Toolkit to run Conv2dFprop examples.
+    if (__CUDACC_VER_MAJOR__ > 11 || (__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ >= 0)) {
+      supported = true;
+    }
+  }
+  else if(arch_major >= 7) {
+    // Turing Tensor Core operations exposed with mma.sync are first available in CUDA 10.2.
+    //
+    // CUTLASS must be compiled with CUDA 10.2 Toolkit to run these examples.
+    if (__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2)) {
+      supported = true;
+    }
+  }
+
+  cudaDeviceProp props;
+
+  cudaError_t error = cudaGetDeviceProperties(&props, 0);
+  if (error != cudaSuccess) {
+    std::cerr << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
+    return -1;
+  }
+
+  if (!(props.major == arch_major && props.minor == arch_minor)) {
+    supported = false;
+  }
+
+  if (!supported) {
+    // Returning zero so this test passes on older Toolkits. Its actions are no-op.
+    std::cout << "This example isn't supported on current architecture" << std::endl;
+    return 0;
+  }
+
+  bool pass = true;
+ 
+  std::cout << "Device: " << props.name << std::endl;
+  std::cout << "Arch: SM" << arch << std::endl;
+  std::cout << "Test: " << test_name << std::endl;
+  for(auto func : test_funcs) {
+    pass &= func();
+  }
+
+
+  if(pass)
+    return 0;
+  else
+    return -1;
+
 }
 
-Singleton const & Singleton::get() {
-  static Singleton instance;
-  return instance;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-} // namespace library
-} // namespace cutlass
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
