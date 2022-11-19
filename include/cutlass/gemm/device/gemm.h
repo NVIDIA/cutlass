@@ -365,11 +365,15 @@ public:
     
     // MaxDynamicSharedMemorySize must be smaller than the device attribute cudaDevAttrMaxSharedMemoryPerBlockOptin minus the function attribute sharedSizeBytes  
     int smem_size = int(sizeof(typename GemmKernel::SharedStorage));
-    cudaFuncAttributes attr;
-    cudaFuncGetAttributes(&attr, Kernel<GemmKernel>);
-    int max_mem = 0;
-    cudaDeviceGetAttribute(&max_mem, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0);
-    if (smem_size > (int) (max_mem - attr.sharedSizeBytes)) {
+    cudaDeviceProp properties;
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      return Status::kErrorMemoryAllocation;
+    }
+
+    smem_capacity = static_cast<int>(properties.sharedMemPerMultiprocessor);
+    if (smem_size > smem_capacity) {
       return Status::kErrorMemoryAllocation;
     }
 
