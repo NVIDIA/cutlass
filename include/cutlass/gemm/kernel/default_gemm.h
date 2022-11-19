@@ -135,6 +135,77 @@ template <
 struct DefaultGemm;
 
 ////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Hopper Architecture
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// If true, kernel is configured to support serial reduction in the
+    /// epilogue
+    bool SplitKSerial,
+    /// Operation performed by GEMM
+    typename Operator,
+    /// Use zfill or predicate for out-of-bound cp.async
+    SharedMemoryClearOption SharedMemoryClear,
+    /// Gather operand A by using an index array
+    bool GatherA,
+    /// Gather operand B by using an index array
+    bool GatherB,
+    /// Scatter result D by using an index array
+    bool ScatterD,
+    /// Permute result D
+    typename PermuteDLayout
+>
+struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB, ElementC,
+                   layout::RowMajor, ElementAccumulator, arch::OpClassTensorOp,
+                   arch::Sm90, ThreadblockShape, WarpShape, InstructionShape,
+                   EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
+                   Operator, SharedMemoryClear, GatherA, GatherB, ScatterD, PermuteDLayout> {
+  /// Define the threadblock-scoped matrix multiply-accumulate
+  using Mma = typename cutlass::gemm::threadblock::DefaultMma<
+      ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm90,
+      ThreadblockShape, WarpShape, InstructionShape, Stages,
+      Operator, false, SharedMemoryClear, GatherA, GatherB>::ThreadblockMma;
+
+  static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+          ThreadblockShape, typename Mma::Operator, kPartitionsK, EpilogueOutputOp,
+          EpilogueOutputOp::kCount, ScatterD, PermuteDLayout>::Epilogue;
+
+  /// Define the kernel-level GEMM operator.
+  using GemmKernel = kernel::Gemm<Mma, Epilogue, ThreadblockSwizzle, SplitKSerial>;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for Ampere Architecture

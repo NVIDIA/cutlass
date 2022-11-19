@@ -11,6 +11,8 @@ import argparse
 
 from library import *
 from manifest import *
+from itertools import product
+
 ###################################################################################################
 
 #
@@ -49,6 +51,8 @@ def EpilogueAlignment(max_alignment, tile, epilogue_steps = 8):
 def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
   alignment_constraints, complex_transforms = None, epilogue_functor = EpilogueFunctor.LinearCombination, \
   swizzling_functor = SwizzlingFunctor.Identity8):
+# Use StreamK decomposition for basic GEMMs
+#  swizzling_functor = SwizzlingFunctor.StreamK):
 
   if complex_transforms is None:
     complex_transforms = [(ComplexTransform.none, ComplexTransform.none),]
@@ -373,11 +377,26 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
   
         # Strided support for Analytic and Optimized Fprop
         for iterator_algorithm in iterator_algorithms:
-          new_operation = Conv2dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
-            A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_)
-  
-          manifest.append(new_operation)
-          operations.append(new_operation)
+          new_operations = [
+            # None grouped kernel
+            Conv2dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
+              A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_),
+          ]
+
+          # Instance group conv kernel
+          if tile.math_instruction.opcode_class == OpcodeClass.TensorOp and A.layout == LayoutType.TensorNHWC:
+            # SingleGroup kernel
+            new_operations.append(Conv2dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
+              A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_, group_mode=GroupMode.SingleGroup))
+
+            # Analytic iterator supports MultipleGroup mode
+            if iterator_algorithm == IteratorAlgorithm.Analytic:
+              new_operations.append(Conv2dOperation(ConvKind.Fprop, iterator_algorithm, tile.minimum_compute_capability, tile,\
+                A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_, group_mode=GroupMode.MultipleGroup))
+
+          for new_operation in new_operations:
+            manifest.append(new_operation)
+            operations.append(new_operation)
   
       #
       # Conv2d Dgrad
@@ -593,6 +612,62 @@ def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignme
 
   return operations
 
+# Convolution for Depthwise 2d conv
+def CreateDepthwiseConv2dOperator(manifest, layout, tile_descriptions, data_type, alignment_constraints, \
+  conv_kinds = [ConvKind.Fprop, ConvKind.Dgrad, ConvKind.Wgrad], \
+  epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity4):
+  
+  element_a, element_b, element_c, element_epilogue = data_type
+  
+  # iterator algorithm (FixedStrideDilation, Optimized)
+  iterator_algorithms = [IteratorAlgorithm.FixedStrideDilation, IteratorAlgorithm.Optimized]
+
+  # by default, only generate the largest tile size, largest alignment, and optimized iterator
+  if manifest.kernel_filter == '':
+    tile_descriptions = [tile_descriptions[0],]
+    alignment_constraints = [alignment_constraints[0],]
+
+  operations = []
+
+  for tile in tile_descriptions:
+    for alignment in alignment_constraints:
+
+      alignment_c = min(8, alignment)
+
+      A = TensorDescription(element_a, layout[0], alignment)
+      B = TensorDescription(element_b, layout[1], alignment)
+      C = TensorDescription(element_c, layout[2], alignment_c)
+      
+      swizzling_functor_ = swizzling_functor
+
+      if ConvKind.Fprop in conv_kinds:
+  
+        # Strided support for Optimized and FixedStridedDilation Depthwise Conv
+        for iterator_algorithm in iterator_algorithms:
+          stride_support = StrideSupport.Strided
+          if iterator_algorithm == IteratorAlgorithm.FixedStrideDilation:
+              if tile.stride == [-1, -1] or tile.dilation == [-1,-1]:
+                continue
+              stride_support = StrideSupport.Fixed
+
+          if iterator_algorithm == IteratorAlgorithm.Optimized:
+              if tile.stride != [-1, -1] or tile.dilation != [-1,-1]:
+                continue 
+          new_operation = Conv2dOperation(ConvKind.Fprop, 
+                                          iterator_algorithm, 
+                                          tile.minimum_compute_capability, 
+                                          tile,
+                                          A, B, C, 
+                                          element_epilogue, 
+                                          stride_support, 
+                                          epilogue_functor, 
+                                          swizzling_functor_, 
+                                          group_mode=GroupMode.Depthwise)
+
+          manifest.append(new_operation)
+          operations.append(new_operation)
+
+  return operations
 
 ###################################################################################################
 ###################################################################################################
@@ -748,10 +823,83 @@ def GenerateSM60_Simt(manifest, cuda_version):
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 #
+def GenerateSM60_Simt_DepthwiseConv2d(manifest, cuda_version):
+
+  math_instructions = [
+    MathInstruction(                                  \
+      [1, 1, 1],                                      \
+      DataType.f16, DataType.f16, DataType.f16,       \
+      OpcodeClass.Simt,                               \
+      MathOperation.multiply_add),
+  ]
+  
+  min_cc = 60
+  max_cc = 1024
+
+  alignment_constraints = [8,]
+
+  filter_3x3 = [3, 3]
+  filter_5x5 = [5, 5]
+
+  # [stride_h, stride_w]
+  # [-1, -1] means all stride size.
+  strides = [[-1,-1], [1, 1], [2, 2]]
+  # [dilation_h, dilation_w]
+  # [-1, -1] means all dilation size.
+  dilations = [[-1,-1], [1, 1], [2, 2]]
+
+  #groups per thread block
+  g16 = 16
+  g32 = 32
+  g64 = 64
+
+  #output shape per thread block
+  npq_1x4x4 = [1, 4, 4]
+  npq_1x8x8 = [1, 8, 8]
+  npq_1x10x10 = [1, 10, 10]
+
+  tile_descriptions = []
+  for math_inst in math_instructions:
+    for stride, dilation in product(strides, dilations):
+      tile_descriptions.extend([
+        # filter3x3               ThreadBlock_output, filter, stage, warp 
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g32], filter_3x3, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g64], filter_3x3, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g16], filter_3x3, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
+
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x10x10+[g64], filter_3x3, 2, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
+        
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x4x4+[g32], filter_3x3, 4, stride, dilation, [4, 1, 1],  math_inst, min_cc, max_cc),
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x4x4+[g64], filter_3x3, 4,  stride, dilation,[4, 1, 1], math_inst, min_cc, max_cc),
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x4x4+[g16], filter_3x3, 4, stride, dilation, [4, 1, 1],  math_inst, min_cc, max_cc),
+
+        # filter5x5               ThreadBlock_output, filter, stage, warp 
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g32], filter_5x5, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g64], filter_5x5, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g16], filter_5x5, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
+
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x10x10+[g64], filter_5x5, 2, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
+
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x4x4+[g32], filter_5x5, 4, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x4x4+[g64], filter_5x5, 4, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
+        Direct2dConvFixedStrideDilationTileDescription(npq_1x4x4+[g16], filter_5x5, 4, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc)
+      ])
+
+    data_type = [
+      math_inst.element_a,
+      math_inst.element_b,
+      math_inst.element_accumulator,
+      math_inst.element_accumulator,
+    ]
+
+    conv_layout = (LayoutType.TensorNHWC, LayoutType.TensorNHWC, LayoutType.TensorNHWC)
+    CreateDepthwiseConv2dOperator(manifest, conv_layout, tile_descriptions, data_type, alignment_constraints)
+#
 
 #
 def GenerateSM60(manifest, cuda_version):
   GenerateSM60_Simt(manifest, cuda_version)
+  GenerateSM60_Simt_DepthwiseConv2d(manifest, cuda_version)
 
 ###################################################################################################
 ###################################################################################################
@@ -3813,6 +3961,627 @@ def GenerateSM80(manifest, cuda_version):
   GenerateSM80_Simt_complex(manifest, cuda_version)
 
 ###################################################################################################
+
+#
+def GenerateSM90_TensorOp_1684(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.ColumnMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([128, 128, 16], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([256, 64, 16], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 256, 16], 3, [2, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([256, 32, 16], 3, [4, 1, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 256, 16], 3, [1, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 64, 16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 128, 16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 64, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 32, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 64, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 32, 16], 5, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([16, 32, 16], 5, [1, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 16, 16], 5, [2, 1, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.f64, DataType.f64, DataType.f64, DataType.f64]
+
+  CreateGemmOperator(manifest, layouts, tile_descriptions, \
+    data_type, alignment_constraints)
+
+#
+
+#
+def GenerateSM90_TensorOp_1684_complex(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.ColumnMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add_complex)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([128, 64,  8 ], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64,  128, 8 ], 3, [2, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([64,  64,  8 ], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64,  32,  8 ], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32,  64,  8 ], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32,  32,  8 ], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([16,  32,  8 ], 4, [1, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32,  16,  8 ], 4, [2, 1, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 64,  16], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64,  128, 16], 3, [2, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([64,  64,  16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64,  32,  16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32,  64,  16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32,  32,  16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([16,  32,  16], 4, [1, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32,  16,  16], 3, [2, 1, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.cf64, DataType.cf64, DataType.cf64, DataType.cf64]
+
+  complex_transforms = [
+    (ComplexTransform.none, ComplexTransform.none),
+    (ComplexTransform.conj, ComplexTransform.none),
+    (ComplexTransform.none, ComplexTransform.conj),
+    (ComplexTransform.conj, ComplexTransform.conj)
+  ]
+
+  CreateGemmOperator(manifest, layouts, tile_descriptions, \
+    data_type, alignment_constraints, complex_transforms)
+#
+
+#
+def GenerateSM90_TensorOp_1684_complex_gaussian(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.ColumnMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add_complex_gaussian)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([64, 64, 8], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 64, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([16, 32, 8], 4, [1, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 16, 8], 4, [2, 1, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.cf64, DataType.cf64, DataType.cf64, DataType.cf64]
+
+  complex_transforms = [
+    (ComplexTransform.none, ComplexTransform.none),
+    (ComplexTransform.conj, ComplexTransform.none),
+    (ComplexTransform.none, ComplexTransform.conj),
+    (ComplexTransform.conj, ComplexTransform.conj)
+  ]
+
+  CreateGemmOperator(manifest, layouts, tile_descriptions, \
+    data_type, alignment_constraints, complex_transforms)
+#
+
+#
+def GenerateSM90_TensorOp_1684_rank_k(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.ColumnMajor),
+  ]
+
+  fill_modes = [
+    FillMode.Lower, FillMode.Upper, 
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([128, 128, 16], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 128, 16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 64, 16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 64, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 32, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 64, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 32, 16], 5, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([16, 32, 16], 5, [1, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 16, 16], 5, [2, 1, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.f64, DataType.f64, DataType.f64]
+
+  CreateRankKOperator(manifest, layouts, fill_modes, tile_descriptions, \
+    data_type, alignment_constraints, BlasMode.symmetric)
+#
+
+#
+def GenerateSM90_TensorOp_1684_rank_k_complex(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.ColumnMajor),
+  ]
+
+  fill_modes = [
+    FillMode.Lower, FillMode.Upper,
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add_complex)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([128, 64, 8], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 128, 8], 3, [2, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 64, 8], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([64, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([32, 64, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([32, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([16, 32, 8], 4, [1, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([32, 16, 8], 4, [2, 1, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.cf64, DataType.cf64, DataType.cf64]
+
+  # SYRK computation
+  CreateRankKOperator(manifest, layouts, fill_modes, tile_descriptions, \
+    data_type, alignment_constraints, BlasMode.symmetric)
+
+  # HERK computation
+  CreateRankKOperator(manifest, layouts, fill_modes, tile_descriptions, \
+    data_type, alignment_constraints, BlasMode.hermitian)
+
+#
+
+#
+def GenerateSM90_TensorOp_1684_rank_k_complex_gaussian(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.ColumnMajor),
+  ]
+
+  fill_modes = [
+    FillMode.Lower, FillMode.Upper,
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add_complex_gaussian)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([64, 64, 8], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 64, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([32, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([16, 32, 8], 4, [1, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([32, 16, 8], 4, [2, 1, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.cf64, DataType.cf64, DataType.cf64]
+
+  complex_transforms = [ComplexTransform.none,]
+
+  # SYRK computation
+  CreateRankKOperator(manifest, layouts, fill_modes, tile_descriptions, \
+    data_type, alignment_constraints, BlasMode.symmetric)
+
+  # HERK computation
+  CreateRankKOperator(manifest, layouts, fill_modes, tile_descriptions, \
+    data_type, alignment_constraints, BlasMode.hermitian)
+#
+
+#
+def GenerateSM90_TensorOp_1684_trmm(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+  ]
+
+  side_modes = [
+    SideMode.Left, SideMode.Right,
+  ]
+
+  fill_modes = [
+    FillMode.Lower, FillMode.Upper,
+  ]
+
+  diag_types = [
+    DiagType.NonUnit, DiagType.Unit,
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([128, 128, 16], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 128, 16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 64, 16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 64, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.f64, DataType.f64, DataType.f64, DataType.f64]
+
+  CreateTrmmOperator(manifest, layouts, side_modes, fill_modes, diag_types, tile_descriptions, \
+    data_type, alignment_constraints)
+#
+
+#
+def GenerateSM90_TensorOp_1684_trmm_complex(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+  ]
+
+  side_modes = [
+    SideMode.Left, SideMode.Right,
+  ]
+
+  fill_modes = [
+    FillMode.Lower, FillMode.Upper,
+  ]
+
+  diag_types = [
+    DiagType.NonUnit, DiagType.Unit,
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add_complex)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([128, 64, 8], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 128, 8], 3, [2, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 64, 8], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 64, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.cf64, DataType.cf64, DataType.cf64, DataType.cf64]
+
+  complex_transforms = [
+    ComplexTransform.none, ComplexTransform.conj,
+  ]
+
+  CreateTrmmOperator(manifest, layouts, side_modes, fill_modes, diag_types, tile_descriptions, \
+    data_type, alignment_constraints, complex_transforms)
+#
+
+
+#
+def GenerateSM90_TensorOp_1684_trmm_complex_gaussian(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+  ]
+
+  side_modes = [
+    SideMode.Left, SideMode.Right,
+  ]
+
+  fill_modes = [
+    FillMode.Lower, FillMode.Upper,
+  ]
+
+  diag_types = [
+    DiagType.NonUnit, DiagType.Unit,
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add_complex_gaussian)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([64, 64, 8], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 64, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.cf64, DataType.cf64, DataType.cf64, DataType.cf64]
+
+  complex_transforms = [
+    ComplexTransform.none, ComplexTransform.conj,
+  ]
+
+  CreateTrmmOperator(manifest, layouts, side_modes, fill_modes, diag_types, tile_descriptions, \
+    data_type, alignment_constraints, complex_transforms)
+#
+
+#
+def GenerateSM90_TensorOp_1684_symm(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+  ]
+
+  side_modes = [
+    SideMode.Left, SideMode.Right,
+  ]
+
+  fill_modes = [
+    FillMode.Lower, FillMode.Upper, 
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([128, 128, 16], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 128, 16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([128, 64, 16], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 64, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 32, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 64, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 32, 16], 5, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([16, 32, 16], 5, [1, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 16, 16], 5, [2, 1, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.f64, DataType.f64, DataType.f64, DataType.f64]
+
+  CreateSymmOperator(manifest, layouts, side_modes, fill_modes, tile_descriptions, \
+    data_type, alignment_constraints, BlasMode.symmetric)
+#
+
+#
+def GenerateSM90_TensorOp_1684_symm_complex(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+  ]
+
+  side_modes = [
+    SideMode.Left, SideMode.Right,
+  ]
+
+  fill_modes = [
+    FillMode.Lower, FillMode.Upper,
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add_complex)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([128, 64, 8], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 128, 8], 3, [2, 4, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 64, 8], 3, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([64, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([32, 64, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([32, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([16, 32, 8], 4, [1, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([32, 16, 8], 4, [2, 1, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.cf64, DataType.cf64, DataType.cf64, DataType.cf64]
+
+  # SYMM computation
+  CreateSymmOperator(manifest, layouts, side_modes, fill_modes, tile_descriptions, \
+    data_type, alignment_constraints, BlasMode.symmetric)
+
+  # HEMM computation
+  CreateSymmOperator(manifest, layouts, side_modes, fill_modes, tile_descriptions, \
+    data_type, alignment_constraints, BlasMode.hermitian)
+#
+
+#
+def GenerateSM90_TensorOp_1684_symm_complex_gaussian(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
+    return
+
+  layouts = [
+    (LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+  ]
+
+  side_modes = [
+    SideMode.Left, SideMode.Right,
+  ]
+
+  fill_modes = [
+    FillMode.Lower, FillMode.Upper,
+  ]
+
+  math_inst =                                             \
+    MathInstruction(                                      \
+      [16, 8, 4],                                          \
+      DataType.f64, DataType.f64, DataType.f64,           \
+      OpcodeClass.TensorOp,                               \
+      MathOperation.multiply_add_complex_gaussian)
+
+  min_cc = 90
+  max_cc = 1024
+
+  alignment_constraints = [1,]
+
+  tile_descriptions = [
+    TileDescription([64, 64, 8], 3, [4, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([64, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    TileDescription([32, 64, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([32, 32, 8], 4, [2, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([16, 32, 8], 4, [1, 2, 1], math_inst, min_cc, max_cc),
+    #TileDescription([32, 16, 8], 4, [2, 1, 1], math_inst, min_cc, max_cc),
+  ]
+
+  data_type = [DataType.cf64, DataType.cf64, DataType.cf64, DataType.cf64]
+
+  complex_transforms = [ComplexTransform.none,]
+
+  # SYMM computation
+  CreateSymmOperator(manifest, layouts, side_modes, fill_modes, tile_descriptions, \
+    data_type, alignment_constraints, BlasMode.symmetric)
+
+  # HEMM computation
+  CreateSymmOperator(manifest, layouts, side_modes, fill_modes, tile_descriptions, \
+    data_type, alignment_constraints, BlasMode.hermitian)
+#
+
+###################################################################################################
+
+#
+def GenerateSM90(manifest, cuda_version):
+
+  GenerateSM90_TensorOp_1684(manifest, cuda_version)
+  GenerateSM90_TensorOp_1684_complex(manifest, cuda_version)
+  GenerateSM90_TensorOp_1684_complex_gaussian(manifest, cuda_version)
+
+  GenerateSM90_TensorOp_1684_rank_k(manifest, cuda_version)
+  GenerateSM90_TensorOp_1684_rank_k_complex(manifest, cuda_version)
+  GenerateSM90_TensorOp_1684_rank_k_complex_gaussian(manifest, cuda_version)
+  GenerateSM90_TensorOp_1684_trmm(manifest, cuda_version)
+  GenerateSM90_TensorOp_1684_trmm_complex(manifest, cuda_version)
+  GenerateSM90_TensorOp_1684_trmm_complex_gaussian(manifest, cuda_version)
+  GenerateSM90_TensorOp_1684_symm(manifest, cuda_version)
+  GenerateSM90_TensorOp_1684_symm_complex(manifest, cuda_version)
+  GenerateSM90_TensorOp_1684_symm_complex_gaussian(manifest, cuda_version)
+
 ###################################################################################################
 
 if __name__ == "__main__":
@@ -3842,6 +4611,8 @@ if __name__ == "__main__":
   GenerateSM70(manifest, args.cuda_version)
   GenerateSM75(manifest, args.cuda_version)
   GenerateSM80(manifest, args.cuda_version)
+  GenerateSM90(manifest, args.cuda_version)
+
   if 'library' in args.generator_target.split(','):
     manifest.emit(GeneratorTarget.Library)
 

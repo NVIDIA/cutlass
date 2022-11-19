@@ -451,7 +451,7 @@ template <>
 CUTLASS_DEVICE
 void shared_store<16>(uint32_t ptr, void const *src) {
   uint4 const *dst_u128 = reinterpret_cast<uint4 const *>(src);
-  asm volatile("ld.shared.v4.u32 [%0], {%1, %2, %3, %4};\n"
+  asm volatile("st.shared.v4.u32 [%0], {%1, %2, %3, %4};\n"
     : :
       "r"(ptr),
       "r"(dst_u128->x),

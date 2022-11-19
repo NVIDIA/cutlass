@@ -471,9 +471,11 @@ SharedMemPerCC = {
   70: 96,  #  96KB of SMEM
   72: 96,  #  96KB of SMEM
   75: 64,  #  64KB of SMEM
-  80: 160, # 164KB of SMEM - 4KB reserved for the driver
-  86: 100, # 100KB of SMEM
-  87: 160, # 164KB of SMEM - 4KB reserved for the driver
+  80: 163, # 163KB of SMEM - 1KB reserved for the driver
+  86:  99, #  99KB of SMEM - 1KB reserved for the driver
+  87: 163, # 163KB of SMEM - 1KB reserved for the driver
+  89:  99, #  99KB of SMEM - 1KB reserved for the driver
+  90: 227, # 227KB of SMEM - 1KB reserved for the driver
 }
 
 ###################################################################################################
@@ -561,7 +563,8 @@ class SwizzlingFunctor(enum.Enum):
   StridedDgradIdentity1 = enum_auto()
   StridedDgradIdentity4 = enum_auto()
   StridedDgradHorizontal = enum_auto()
-
+  StreamK = enum_auto()
+  
 #
 SwizzlingFunctorTag = {
   SwizzlingFunctor.Identity1: 'cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>',
@@ -572,6 +575,7 @@ SwizzlingFunctorTag = {
   SwizzlingFunctor.StridedDgradIdentity1: 'cutlass::conv::threadblock::StridedDgradIdentityThreadblockSwizzle<1>',
   SwizzlingFunctor.StridedDgradIdentity4: 'cutlass::conv::threadblock::StridedDgradIdentityThreadblockSwizzle<4>',
   SwizzlingFunctor.StridedDgradHorizontal: 'cutlass::conv::threadblock::StridedDgradHorizontalThreadblockSwizzle',
+  SwizzlingFunctor.StreamK: 'cutlass::gemm::threadblock::ThreadblockSwizzleStreamK',
 }
 
 #
@@ -618,38 +622,65 @@ class IteratorAlgorithm(enum.Enum):
   Optimized = enum_auto()
   FixedChannels = enum_auto()
   FewChannels = enum_auto()
+  FixedStrideDilation = enum_auto()
 
 #
 IteratorAlgorithmTag = {
   IteratorAlgorithm.Analytic: 'cutlass::conv::IteratorAlgorithm::kAnalytic',
   IteratorAlgorithm.Optimized: 'cutlass::conv::IteratorAlgorithm::kOptimized',
   IteratorAlgorithm.FixedChannels: 'cutlass::conv::IteratorAlgorithm::kFixedChannels',
-  IteratorAlgorithm.FewChannels: 'cutlass::conv::IteratorAlgorithm::kFewChannels'
+  IteratorAlgorithm.FewChannels: 'cutlass::conv::IteratorAlgorithm::kFewChannels',
+  IteratorAlgorithm.FixedStrideDilation: 'cutlass::conv::IteratorAlgorithm::kFixedStrideDilation'
 }
 
 IteratorAlgorithmNames = {
   IteratorAlgorithm.Analytic: 'analytic',
   IteratorAlgorithm.Optimized: 'optimized',
   IteratorAlgorithm.FixedChannels: 'fixed_channels',
-  IteratorAlgorithm.FewChannels: 'few_channels'
+  IteratorAlgorithm.FewChannels: 'few_channels',
+  IteratorAlgorithm.FixedStrideDilation: 'fixed_stride_dilation'
 }
 
 #
 class StrideSupport(enum.Enum):
   Strided = enum_auto()
   Unity = enum_auto()
+  Fixed = enum_auto()
 
 #
 StrideSupportTag = {
   StrideSupport.Strided: 'cutlass::conv::StrideSupport::kStrided',
   StrideSupport.Unity: 'cutlass::conv::StrideSupport::kUnity',
+  StrideSupport.Fixed: 'cutlass::conv::StrideSupport::kFixed'
 }
 
 StrideSupportNames = {
   StrideSupport.Strided: '',
   StrideSupport.Unity: 'unity_stride',
+  StrideSupport.Fixed: 'fixed_stride'
 }
 
+#
+class GroupMode(enum.Enum):
+  NoneGroup = enum_auto()         # dense conv (G=1)
+  SingleGroup = enum_auto()       # grouped convolution (single group per CTA)
+  MultipleGroup = enum_auto()     # grouped convolution ( multiple groups per CTA)
+  Depthwise = enum_auto()    # Depthwise convolution ( C=K=G )
+
+#
+GroupModeTag = {
+  GroupMode.NoneGroup: 'cutlass::conv::GroupMode::kNone',
+  GroupMode.SingleGroup: 'cutlass::conv::GroupMode::kSingleGroup',
+  GroupMode.MultipleGroup: 'cutlass::conv::GroupMode::kMultipleGroup',
+  GroupMode.Depthwise: 'cutlass::conv::GroupMode::kDepthwise',
+}
+
+GroupModeNames = {
+  GroupMode.NoneGroup: '',
+  GroupMode.SingleGroup: 'single_group',
+  GroupMode.MultipleGroup: 'multiple_group',
+  GroupMode.Depthwise: 'depthwise',
+}
 
 ###################################################################################################
 
@@ -676,6 +707,39 @@ class TileDescription:
 
   def procedural_name(self):
     return "%dx%d_%dx%d" % (self.threadblock_shape[0], self.threadblock_shape[1], self.threadblock_shape[2], self.stages)
+
+#
+class Direct2dConvFixedStrideDilationTileDescription:
+  def __init__(self, threadblock_output_shape, filter_shape, stages, stride, dilation, warp_count, math_instruction, min_compute, max_compute):
+    self.threadblock_shape = [threadblock_output_shape[0]*threadblock_output_shape[1]*threadblock_output_shape[2], threadblock_output_shape[3], filter_shape[0]*filter_shape[1]]
+    self.threadblock_output_shape = threadblock_output_shape
+    self.filter_shape = filter_shape
+    self.stages = stages
+    self.warp_count = warp_count
+    self.stride = stride
+    self.dilation =  dilation
+    self.math_instruction = math_instruction
+    self.minimum_compute_capability = min_compute
+    self.maximum_compute_capability = max_compute
+
+  def procedural_name(self):
+    str_name = "%dx%dx%d_%dx%dx%dx%d_%d_filter%dx%d" % (self.threadblock_shape[0], 
+                                      self.threadblock_shape[1], 
+                                      self.threadblock_shape[2],
+                                      self.threadblock_output_shape[0],
+                                      self.threadblock_output_shape[1],
+                                      self.threadblock_output_shape[2],
+                                      self.threadblock_output_shape[3],
+                                      self.stages, 
+                                      self.filter_shape[0], 
+                                      self.filter_shape[1])
+    # Fixed Strided and dilation
+    if self.stride != [-1, -1] and self.dilation != [-1, -1]:
+      str_name += "_stride%dx%d_dilation%dx%d" % (self.stride[0],
+                                                  self.stride[1],
+                                                  self.dilation[0],
+                                                  self.dilation[1])
+    return str_name
 
 #
 class TensorDescription:

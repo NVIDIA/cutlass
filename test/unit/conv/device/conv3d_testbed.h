@@ -184,7 +184,7 @@ public:
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Conv3d::ImplicitGemmKernel::SharedStorage));
+    int smem_size = int(sizeof(typename Conv3d::UnderlyingKernel::SharedStorage));
 
     cudaDeviceProp properties;
     int device_idx;
@@ -200,7 +200,7 @@ public:
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
 
@@ -294,15 +294,15 @@ public:
         cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
         {
           reinterpret_cast<ElementAccumulator*> (workspace.get()),
-          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::UnderlyingKernel::kTensorCStrideIdx])
         },
         {
           tensor_D_computed.device_data(),
-          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::UnderlyingKernel::kTensorCStrideIdx])
         },
         {
           tensor_C.device_data(),
-          ReductionStrideIndex(tensor_C.stride()[Conv3d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv3d::UnderlyingKernel::kTensorCStrideIdx])
         },
         // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
         {alpha, beta}
@@ -573,9 +573,9 @@ bool TestAllConv3d(
       // CUTLASS DGRAD's unity stride specialization only support stride {1, 1, 1} 
       if ((ImplicitGemm::kConvolutionalOperator == 
             cutlass::conv::Operator::kDgrad) && 
-          ((ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+          ((ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
             cutlass::conv::StrideSupport::kUnity) ||
-           (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorB::kStrideSupport == 
+           (ImplicitGemm::UnderlyingKernel::Mma::IteratorB::kStrideSupport == 
             cutlass::conv::StrideSupport::kUnity))) {
         if (!((conv_problem.stride_d == 1) &&
               (conv_problem.stride_h == 1) && 

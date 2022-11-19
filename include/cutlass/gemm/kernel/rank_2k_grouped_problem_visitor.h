@@ -281,6 +281,14 @@ struct Rank2KGroupedProblemSizeHelper {
   using OffsetHelper = Rank2KGroupedProblemVisitorOffsetHelper<ThreadblockShape>;
 
   CUTLASS_HOST_DEVICE
+  static cutlass::gemm::GemmCoord grid_shape(const cutlass::gemm::GemmCoord& problem) {
+    return cutlass::gemm::GemmCoord(
+      ((problem.m() - 1 + ThreadblockShape::kM) / ThreadblockShape::kM),
+      ((problem.n() - 1 + ThreadblockShape::kN) / ThreadblockShape::kN),
+      1);
+  }
+
+  CUTLASS_HOST_DEVICE
   static int32_t tile_count(const cutlass::gemm::GemmCoord& grid) {
     // Return the number of tiles at or below the diagonal (or at and above
     // for mode kUpper). We do this by first calculating this value assuming

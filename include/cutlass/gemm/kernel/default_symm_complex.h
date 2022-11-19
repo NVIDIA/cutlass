@@ -117,6 +117,199 @@ struct DefaultSymmComplex;
 
 ////////////////////////////////////////////////////////////////////////////////
 
+/// Partial specialization for Hopper Architecture complex datatype (symmetric)
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Side Mode for A (kLeft or kRight)
+    SideMode kSideModeA,
+    /// Fill Mode for A (kLower or kUpper)
+    FillMode kFillModeA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// Operation performed by GEMM
+    typename Operator,
+    /// If true, kernel is configured to support serial reduction in the
+    /// epilogue
+    bool SplitKSerial>
+struct DefaultSymmComplex<
+  ElementA, LayoutA, kSideModeA, kFillModeA, ElementB, LayoutB, ElementC, 
+  layout::RowMajor, ElementAccumulator, arch::OpClassTensorOp,
+  arch::Sm90, ThreadblockShape, WarpShape, InstructionShape, 
+  EpilogueOutputOp, ThreadblockSwizzle, Stages, 
+  Operator, SplitKSerial, BlasMode::kSymmetric> {
+
+  static BlasMode const kBlasMode = BlasMode::kSymmetric;
+  // Complex Transform don't appply to A or B for SYMM
+  static ComplexTransform const TransformA = ComplexTransform::kNone; 
+  static ComplexTransform const TransformB = ComplexTransform::kNone; 
+
+  /// Define the threadblock-scoped triagular matrix multiply-accumulate
+  /// TRMM - with diagonal: alpha * A * B or alpha * B * A
+	static const DiagType kDiagTypeMma1 = DiagType::kNonUnit;
+  using Mma1 = typename cutlass::gemm::threadblock::DefaultMultistageTrmmComplex<
+      ElementA, LayoutA, 
+      ElementB, LayoutB, 
+      kSideModeA, kFillModeA, kDiagTypeMma1, 
+      ElementAccumulator, layout::RowMajor, 
+      arch::OpClassTensorOp, arch::Sm90,
+      ThreadblockShape, WarpShape, InstructionShape,
+      Stages, TransformA, TransformB, Operator>::ThreadblockMma;
+
+  /// Define the threadblock-scoped triagular matrix multiply-accumulate
+  /// TRMM - withOUT diagonal: alpha * AT * B or alpha * B * AT
+	static const DiagType kDiagTypeMma2 = DiagType::kZero;
+  using LayoutAMma2 = typename platform::conditional<
+                                (kSideModeA == SideMode::kLeft), 
+                                typename layout::LayoutTranspose<LayoutA>::type, 
+                                LayoutA
+                              >::type;
+  using LayoutBMma2 = typename platform::conditional<
+                                (kSideModeA == SideMode::kLeft), 
+                                LayoutB, 
+                                typename layout::LayoutTranspose<LayoutB>::type
+                              >::type; 
+	using Mma2 = typename cutlass::gemm::threadblock::DefaultMultistageTrmmComplex<
+			ElementA, LayoutAMma2, 
+			ElementB, LayoutBMma2, 
+			kSideModeA, InvertFillMode<kFillModeA>::mode, kDiagTypeMma2, 
+			ElementAccumulator, layout::RowMajor, 
+			arch::OpClassTensorOp, arch::Sm90,
+			ThreadblockShape, WarpShape, InstructionShape,
+			Stages, TransformA, TransformB, Operator>::ThreadblockMma;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueComplexTensorOp<
+          ThreadblockShape, typename Mma1::Operator, 1, EpilogueOutputOp,
+          EpilogueOutputOp::kCount, Operator>::Epilogue;
+
+  /// Define the kernel-level Symm operator.
+  using SymmKernel = kernel::SymmUniversal<Mma1, Mma2, Epilogue, ThreadblockSwizzle, kSideModeA, kFillModeA>;
+
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Hopper Architecture complex datatype (hermitian)
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Side Mode for A (kLeft or kRight)
+    SideMode kSideModeA,
+    /// Fill Mode for A (kLower or kUpper)
+    FillMode kFillModeA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// Operation performed by GEMM
+    typename Operator,
+    /// If true, kernel is configured to support serial reduction in the
+    /// epilogue
+    bool SplitKSerial>
+struct DefaultSymmComplex<
+  ElementA, LayoutA, kSideModeA, kFillModeA, ElementB, LayoutB, ElementC, 
+  layout::RowMajor, ElementAccumulator, arch::OpClassTensorOp,
+  arch::Sm90, ThreadblockShape, WarpShape, InstructionShape, 
+  EpilogueOutputOp, ThreadblockSwizzle, Stages, 
+  Operator, SplitKSerial, BlasMode::kHermitian> {
+
+  static BlasMode const kBlasMode = BlasMode::kHermitian;
+
+
+  /// Define the threadblock-scoped triagular matrix multiply-accumulate
+  /// TRMM - with diagonal: alpha * A * B or alpha * B * A
+	static const DiagType kDiagTypeMma1 = DiagType::kNonUnit;
+  static ComplexTransform const TransformAMma1 = ComplexTransform::kNone; 
+  static ComplexTransform const TransformBMma1 = ComplexTransform::kNone; 
+  using Mma1 = typename cutlass::gemm::threadblock::DefaultMultistageTrmmComplex<
+      ElementA, LayoutA, 
+      ElementB, LayoutB, 
+      kSideModeA, kFillModeA, kDiagTypeMma1, 
+      ElementAccumulator, layout::RowMajor, 
+      arch::OpClassTensorOp, arch::Sm90,
+      ThreadblockShape, WarpShape, InstructionShape,
+      Stages, TransformAMma1, TransformBMma1, Operator, BlasMode::kHermitian>::ThreadblockMma;
+
+  /// Define the threadblock-scoped triagular matrix multiply-accumulate
+  /// TRMM - withOUT diagonal - with conjugate transpose: alpha * AT * B or alpha * B * AT
+	static const DiagType kDiagTypeMma2 = DiagType::kZero;
+  using LayoutAMma2 = typename platform::conditional<
+                                (kSideModeA == SideMode::kLeft), 
+                                typename layout::LayoutTranspose<LayoutA>::type, 
+                                LayoutA
+                              >::type;
+  using LayoutBMma2 = typename platform::conditional<
+                                (kSideModeA == SideMode::kLeft), 
+                                LayoutB, 
+                                typename layout::LayoutTranspose<LayoutB>::type
+                              >::type;
+  static ComplexTransform const TransformAMma2 = (kSideModeA == SideMode::kLeft) ? 
+                                              ComplexTransform::kConjugate : ComplexTransform::kNone;
+  static ComplexTransform const TransformBMma2 = (kSideModeA == SideMode::kLeft) ? 
+                                              ComplexTransform::kNone : ComplexTransform::kConjugate;
+
+	using Mma2 = typename cutlass::gemm::threadblock::DefaultMultistageTrmmComplex<
+			ElementA, LayoutAMma2, 
+			ElementB, LayoutBMma2, 
+			kSideModeA, InvertFillMode<kFillModeA>::mode, kDiagTypeMma2, 
+			ElementAccumulator, layout::RowMajor, 
+			arch::OpClassTensorOp, arch::Sm90,
+			ThreadblockShape, WarpShape, InstructionShape,
+			Stages, TransformAMma2, TransformBMma2, Operator>::ThreadblockMma;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueComplexTensorOp<
+          ThreadblockShape, typename Mma1::Operator, 1, EpilogueOutputOp,
+          EpilogueOutputOp::kCount, Operator>::Epilogue;
+
+  /// Define the kernel-level Symm operator.
+  using SymmKernel = kernel::SymmUniversal<Mma1, Mma2, Epilogue, ThreadblockSwizzle, kSideModeA, kFillModeA>;
+
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
 /// Partial specialization for Ampere Architecture complex datatype (symmetric)
 template <
     /// Element type for A matrix operand
@@ -309,7 +502,6 @@ struct DefaultSymmComplex<
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-
 
 }  // namespace kernel
 }  // namespace gemm

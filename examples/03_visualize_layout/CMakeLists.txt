@@ -29,7 +29,6 @@
 
 
 set(TEST_COMMAND_00 RowMajor --extent=16,16)
-set(TEST_COMMAND_01 \"ColumnMajorInterleaved<4>\" --extent=32,8 --output-shape=16 --vectorize=4)
 
 cutlass_example_add_executable(
   03_visualize_layout
@@ -37,6 +36,5 @@ cutlass_example_add_executable(
   register_layout.cu
   TEST_COMMAND_OPTIONS
   TEST_COMMAND_00
-  TEST_COMMAND_01
   )
 

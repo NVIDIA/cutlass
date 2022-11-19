@@ -37,6 +37,7 @@
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
 #include "cutlass/epilogue/thread/activation.h"
+#include "cutlass/epilogue/thread/scale_type.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

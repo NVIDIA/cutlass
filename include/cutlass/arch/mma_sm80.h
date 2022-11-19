@@ -2156,6 +2156,7 @@ struct Mma<
 
     int const *C = reinterpret_cast<int const *>(&c);
     int *D = reinterpret_cast<int *>(&d);
+
     asm volatile(
         "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.xor.popc {%0,%1,%2,%3}, "
         "{%4,%5,%6,%7}, "

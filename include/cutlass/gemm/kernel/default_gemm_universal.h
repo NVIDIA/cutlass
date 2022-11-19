@@ -49,6 +49,7 @@
 #include "cutlass/numeric_types.h"
 
 #include "cutlass/gemm/kernel/gemm_universal.h"
+#include "cutlass/gemm/kernel/gemm_universal_streamk.h"
 #include "cutlass/gemm/kernel/default_gemm.h"
 #include "cutlass/gemm/kernel/default_gemm_complex.h"
 
@@ -227,12 +228,26 @@ struct DefaultGemmUniversal<
     PermuteDLayout
   >::GemmKernel;
 
-    /// Define the kernel in terms of the default kernel
-  using GemmKernel = kernel::GemmUniversal<
-    typename DefaultGemmKernel::Mma,
-    typename DefaultGemmKernel::Epilogue,
-    ThreadblockSwizzle
-  >;
+  /// Universal kernel without StreamkFeature member type
+  template <class SwizzleT, class Enable = void>
+  class SelectBase :
+    public kernel::GemmUniversal<
+      typename DefaultGemmKernel::Mma,
+      typename DefaultGemmKernel::Epilogue,
+      SwizzleT>
+  {};
+
+  /// Universal kernel with StreamkFeature member type
+  template <class SwizzleT>
+  class SelectBase<SwizzleT, typename SwizzleT::StreamkFeature> :
+    public kernel::GemmUniversalStreamk<
+      typename DefaultGemmKernel::Mma,
+      typename DefaultGemmKernel::Epilogue,
+      SwizzleT>
+  {};
+
+  /// Select kernel by ThreadblockSwizzle's support for StreamkFeature
+  using GemmKernel = SelectBase<ThreadblockSwizzle>;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -336,12 +351,26 @@ struct DefaultGemmUniversal<
     false
   >::GemmKernel;
 
-  /// Define the kernel in terms of the default kernel
-  using GemmKernel = kernel::GemmUniversal<
-    typename DefaultGemmKernel::Mma,
-    typename DefaultGemmKernel::Epilogue, 
-    ThreadblockSwizzle
-  >;
+  /// Universal kernel without StreamkFeature member type
+  template <class SwizzleT, class Enable = void>
+  class SelectBase :
+    public kernel::GemmUniversal<
+      typename DefaultGemmKernel::Mma,
+      typename DefaultGemmKernel::Epilogue,
+      SwizzleT>
+  {};
+
+  /// Universal kernel with StreamkFeature member type
+  template <class SwizzleT>
+  class SelectBase<SwizzleT, typename SwizzleT::StreamkFeature> :
+    public kernel::GemmUniversalStreamk<
+      typename DefaultGemmKernel::Mma,
+      typename DefaultGemmKernel::Epilogue,
+      SwizzleT>
+  {};
+
+  /// Select kernel by ThreadblockSwizzle's support for StreamkFeature
+  using GemmKernel = SelectBase<ThreadblockSwizzle>;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

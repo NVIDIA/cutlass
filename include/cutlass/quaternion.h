@@ -35,6 +35,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/functional.h"
 #include "cutlass/array.h"
 #include "cutlass/real.h"
 #include "cutlass/coord.h"
@@ -651,7 +652,10 @@ CUTLASS_HOST_DEVICE
   }
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Factories
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <>
 CUTLASS_HOST_DEVICE
@@ -670,6 +674,77 @@ CUTLASS_HOST_DEVICE
 cutlass::Quaternion<double> from_real<cutlass::Quaternion<double> >(double r) {
   return cutlass::Quaternion<double>(r);
 }
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// functional.h numeric specializations
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename T>
+struct multiplies<Quaternion<T>> {
+  CUTLASS_HOST_DEVICE
+  Quaternion<T> operator()(Quaternion<T> lhs, Quaternion<T> const &rhs) const {
+    lhs = lhs * rhs;
+    return lhs;
+  }
+};
+
+/// Squares with optional conversion
+template <typename T, typename Output>
+struct magnitude_squared<Quaternion<T>, Output> {
+  CUTLASS_HOST_DEVICE
+  Output operator()(Quaternion<T> lhs) const {
+    multiplies<Output> mul_op;
+
+    Output y_w = Output(lhs.w());
+    Output y_x = Output(lhs.x());
+    Output y_y = Output(lhs.y());
+    Output y_z = Output(lhs.z());
+
+    return mul_op(y_w, y_w) + mul_op(y_x, y_x) + mul_op(y_y, y_y) + \
+           mul_op(y_z, y_z);
+  }
+};
+
+template <typename T>
+struct multiply_add<Quaternion<T>, Quaternion<T>, Quaternion<T>> {
+  CUTLASS_HOST_DEVICE
+  Quaternion<T> operator()(
+    Quaternion<T> const &a,
+    Quaternion<T> const &b,
+    Quaternion<T> const &c) const {
+
+    T x = c.x();
+    T y = c.y();
+    T z = c.z();
+    T w = c.w();
+
+    x += a.w() * b.x();
+    x += b.w() * a.x();
+    x += a.y() * b.z();
+    x += -a.z() * b.y(),
+
+    y += a.w() * b.y();
+    y += b.w() * a.y();
+    y += a.z() * b.x();
+    y += -a.x() * b.z();
+
+    z += a.w() * b.z();
+    z += b.w() * a.z();
+    z += a.x() * b.y();
+    z += -a.y() * b.x();
+
+    w += a.w() * b.w();
+    w += -a.x() * b.x();
+    w += -a.y() * b.y();
+    w += -a.z() * b.z();
+
+    return cutlass::make_Quaternion(x, y, z, w);
+  }
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

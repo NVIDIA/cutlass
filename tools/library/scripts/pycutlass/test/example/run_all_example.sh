@@ -1,4 +1,4 @@
-pushd $CUTLASS_PATH/examples/40_cutlass_py/
+pushd $CUTLASS_PATH/examples/40_cutlass_py/customizable
 
 python gemm.py -i 8 8 4 -ta float64 -tb float64 -tc float64 -tacc float64 -m multiply_add -op TensorOp -b 32 32 16 -s 4 -w 2 2 1 -cc 80 -la ColumnMajor -aa 1 -lb RowMajor -ab 1 -lc RowMajor -ac 1 -te float64 -ep LinearCombination -sw IdentitySwizzle1 -p 512 256 128 -alpha 1.0 -beta 0.5 -gm Gemm -k 1
 

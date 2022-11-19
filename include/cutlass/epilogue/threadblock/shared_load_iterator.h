@@ -201,6 +201,11 @@ public:
     }
   }
 
+  /// Loads a fragment from memory
+  CUTLASS_DEVICE
+  void set_smem_base_address(Index address) {
+  }
+
   /// Loads a fragment
   CUTLASS_DEVICE
   void load(Fragment &frag) const {

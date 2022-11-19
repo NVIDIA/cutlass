@@ -58,6 +58,11 @@ namespace device {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /*! 
+  GemmUniversal is a stateful, reusable GEMM handle.  Once initialized for a given GEMM computation
+  (problem geometry and data references), it can be reused across different GEMM problems having the
+  geometry.  (Once initialized, details regarding problem geometry and references to workspace memory
+  cannot be updated.)
+
   The universal GEMM accommodates serial reductions, parallel reductions, batched strided, and 
   batched array variants.
 */

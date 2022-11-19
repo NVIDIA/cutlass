@@ -120,6 +120,84 @@ template <
     BlasMode BlasMode_ = BlasMode::kSymmetric>
 struct DefaultRank2K;
 
+////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Hopper Architecture
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Fill Mode for C (kLower or kUpper)
+    FillMode FillModeC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// If true, kernel is configured to support serial reduction in the
+    /// epilogue
+    bool SplitKSerial,
+    /// Operation performed by GEMM
+    typename Operator>
+struct DefaultRank2K<
+                    ElementA, LayoutA, kAlignmentA, 
+                    ElementB, LayoutB, kAlignmentB, 
+                    ElementC,layout::RowMajor, FillModeC, 
+                    ElementAccumulator, arch::OpClassTensorOp, arch::Sm90, 
+                    ThreadblockShape, WarpShape, InstructionShape,
+                    EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
+                    Operator> {
+  /// Define the threadblock-scoped matrix multiply-accumulate (A x BT)
+  using Mma1 = typename cutlass::gemm::threadblock::DefaultMma<
+      ElementA, LayoutA, 
+      kAlignmentA, 
+      ElementB, typename layout::LayoutTranspose<LayoutB>::type, 
+      kAlignmentB,
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm90,
+      ThreadblockShape, WarpShape, InstructionShape, Stages,
+      Operator>::ThreadblockMma;
+  
+  /// Define the threadblock-scoped matrix multiply-accumulate (B x AT)
+  using Mma2 = typename cutlass::gemm::threadblock::DefaultMma<
+      ElementB, LayoutB, 
+      kAlignmentB, 
+      ElementA, typename layout::LayoutTranspose<LayoutA>::type, 
+      kAlignmentA,
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm90,
+      ThreadblockShape, WarpShape, InstructionShape, Stages,
+      Operator>::ThreadblockMma;
+
+  static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOpBlas3<
+          ThreadblockShape, typename Mma1::Operator, kPartitionsK, EpilogueOutputOp,
+          EpilogueOutputOp::kCount, BlasMode::kSymmetric>::Epilogue;
+
+  /// Define the kernel-level Rank2K operator.
+  using Rank2Kkernel = kernel::Rank2KUniversal<Mma1, Mma2, Epilogue, ThreadblockSwizzle, FillModeC, BlasMode::kSymmetric>;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -247,7 +247,7 @@ public:
   CUTLASS_HOST_DEVICE
   cutlass::Tensor4DCoord filter_extent() const {
 
-    return cutlass::Tensor4DCoord ({K, R, S, C});
+    return cutlass::Tensor4DCoord ({K, R, S, C / groups});
   }
 
   /// Returns output extent as Tensor4DCoord
@@ -336,7 +336,7 @@ cutlass::gemm::GemmCoord implicit_gemm_problem_size(
     return gemm::GemmCoord(
       problem_size.N * problem_size.P * problem_size.Q,
       problem_size.K,
-      problem_size.R * problem_size.S * problem_size.C
+      problem_size.R * problem_size.S * problem_size.C / problem_size.groups
     );
   case Operator::kDgrad:
     return gemm::GemmCoord(
@@ -451,11 +451,42 @@ int implicit_gemm_k_iterations(
         default:
           break;
       }
+    } else if (algorithm == IteratorAlgorithm::kOptimized) {
+      // Current optimized iterator only support GroupMode::kSingleGroup
+      if (group_mode == GroupMode::kSingleGroup) {
+        switch (conv_operator) {
+          case Operator::kFprop:
+            iterations = problem_size.R * problem_size.S * ((channels_per_group + threadblock_K - 1) / threadblock_K);
+            break;
+
+          default:
+            break;
+        }
+      }
     }
 
   }
 
   return iterations;
+}
+
+
+template <int N = 1, int Output_P = 1, int Output_Q = 1>
+CUTLASS_HOST_DEVICE
+int depthwise_gemm_k_iterations(
+  Operator conv_operator, 
+  int threadblock_K, 
+  Conv2dProblemSize const &problem_size,
+  IteratorAlgorithm algorithm = IteratorAlgorithm::kAnalytic,
+  GroupMode group_mode = GroupMode::kNone,
+  int threadblock_N = 0) {
+
+    int n =  problem_size.N;
+    int p = (problem_size.P + Output_P - 1) /  Output_P;
+    int q = (problem_size.Q + Output_Q - 1) /  Output_Q;
+
+    int iterations = (n * p * q + problem_size.split_k_slices - 1) / problem_size.split_k_slices;
+    return iterations;
 }
 
 

@@ -36,6 +36,9 @@
 
       Partial specializations for threadblock::Mma operations targeting TensorOp
    instructions.
+
+      SM80 Multi stage kernel expects stage number to be larger or equal to 3
+   to use asyncronous copy.
 */
 
 #pragma once

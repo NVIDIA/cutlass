@@ -1445,6 +1445,9 @@ struct ConvArguments {
   /// pointer to implicit gemm matrix B
   void const *B;
 
+  /// pointer to reordered matrix B
+  void const *reordered_B;
+  
   /// pointer to implicit gemm matrix C
   void const *C;
 

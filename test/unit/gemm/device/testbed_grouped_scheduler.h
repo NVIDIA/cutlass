@@ -312,7 +312,8 @@ template <typename ThreadblockShape,
           cutlass::gemm::kernel::GroupScheduleMode... Args>
 struct TestbedGroupedGemmScheduler {
 
-  using BaselinePV = BaselineProblemVisitor<cutlass::gemm::kernel::detail::GemmGroupedProblemSizeHelper<Transpose>,
+  using PSHelper = cutlass::gemm::kernel::detail::GemmGroupedProblemSizeHelper<ThreadblockShape, Transpose>;
+  using BaselinePV = BaselineProblemVisitor<PSHelper,
                                             ThreadblockShape,
                                             PrefetchTileCount,
                                             ThreadCount>;

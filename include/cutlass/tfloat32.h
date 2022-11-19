@@ -34,7 +34,9 @@
 */
 #pragma once
 
-#if !defined(__CUDACC_RTC__)
+#if defined(__CUDACC_RTC__)
+#include "cutlass/floating_point_nvrtc.h"
+#else
 #include <cmath>
 #include <limits>
 #include <cstdint>
@@ -87,22 +89,23 @@ struct alignas(4) tfloat32_t {
   }
 
   /// Default constructor
-  CUTLASS_HOST_DEVICE
-  tfloat32_t() : storage(0) { }
+  tfloat32_t() = default;
 
   /// Floating-point conversion - round toward nearest even
   CUTLASS_HOST_DEVICE
-  explicit tfloat32_t(float x): storage(round_half_ulp_truncate(x).storage) { }
+//  explicit tfloat32_t(float x): storage(round_half_ulp_truncate(x).storage) { }
+  tfloat32_t(float x): storage(round_half_ulp_truncate(x).storage) { }
 
   /// Floating-point conversion - round toward nearest even
   CUTLASS_HOST_DEVICE
-  explicit tfloat32_t(double x): tfloat32_t(float(x)) {
-
+//  explicit tfloat32_t(double x): tfloat32_t(float(x)) {
+  tfloat32_t(double x): tfloat32_t(float(x)) {
   }
 
   /// Integer conversion - round toward zero
   CUTLASS_HOST_DEVICE
-  explicit tfloat32_t(int x) {
+//  explicit tfloat32_t(int x) {
+  tfloat32_t(int x) {
     float flt = static_cast<float>(x);
     #if defined(__CUDA_ARCH__)
     storage = reinterpret_cast<uint32_t const &>(flt);

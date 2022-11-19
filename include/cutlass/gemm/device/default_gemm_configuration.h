@@ -765,6 +765,52 @@ struct DefaultGemmConfiguration<
 ////////////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////////////////
+
+template <typename ElementC,
+          typename ElementAccumulator>
+struct DefaultGemmConfiguration<arch::OpClassTensorOp, arch::Sm90, double,
+                                double, ElementC, ElementAccumulator> {
+
+  static int const kAlignmentA = 1;
+  static int const kAlignmentB = 1;
+  
+  using ThreadblockShape = GemmShape<128, 256, 64>;
+  using WarpShape = GemmShape<64, 64, 64>;
+  using InstructionShape = GemmShape<16, 8, 4>;
+  static int const kStages = 3;
+
+  using EpilogueOutputOp = epilogue::thread::LinearCombination<
+      ElementC, 128 / sizeof_bits<ElementC>::value, ElementAccumulator,
+      ElementAccumulator>;
+
+  using Operator = arch::OpMultiplyAdd;
+};
+
+template <>
+struct DefaultGemmConfiguration<
+    arch::OpClassTensorOp, 
+    arch::Sm90, 
+    complex<double>,
+    complex<double>, 
+    complex<double>,
+    complex<double>
+  > {
+
+  static int const kAlignmentA = 1;
+  static int const kAlignmentB = 1;
+  
+  using ThreadblockShape = GemmShape<64, 64, 16>;
+  using WarpShape = GemmShape<32, 32, 16>;
+  using InstructionShape = GemmShape<16, 8, 4>;
+  static int const kStages = 3;
+
+  using EpilogueOutputOp = epilogue::thread::LinearCombination<
+      complex<double>, 1, complex<double>,
+      complex<double>>;
+
+  using Operator = arch::OpMultiplyAddComplex;
+};
+
 } // namespace device
 } // namespace gemm
 } // namespace cutlass

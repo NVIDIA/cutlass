@@ -64,15 +64,15 @@ void RegisterLayouts(std::map<std::string, std::unique_ptr<VisualizeLayoutBase> 
       // All Ampere/Turing H/Integer matrix multiply tensor core kernels uses the same swizzling
       // layout implementation with different templates.
       //
-      // BMMA 88128  Interleaved-256
-      // BMMA 168256 Interleaved-256
+      // mma.sync.aligned.m8n8k128.s32.b1.b1.s32 Interleaved-256
+      // mma.sync.aligned.m16n8k256.s32.b1.b1.s32 Interleaved-256
       {"TensorOpMultiplicand<1,256>",
        new VisualizeLayout<cutlass::layout::TensorOpMultiplicand<1, 256>>},
-      // BMMA 88128  TN kblock512
-      // BMMA 168256 TN kblock512
+      // mma.sync.aligned.m8n8k128.s32.b1.b1.s32 TN kblock512
+      // mma.sync.aligned.m16n8k256.s32.b1.b1.s32 TN kblock512
       {"TensorOpMultiplicand<1,512>",
        new VisualizeLayout<cutlass::layout::TensorOpMultiplicand<1, 512>>},
-      // BMMA 168256 TN kblock1024
+      // mma.sync.aligned.m16n8k256.s32.b1.b1.s32 TN kblock1024
       {"TensorOpMultiplicand<1,1024>",
        new VisualizeLayout<cutlass::layout::TensorOpMultiplicand<1, 1024>>},
       // Integer matrix multiply.int4 8832  Interleaved-64

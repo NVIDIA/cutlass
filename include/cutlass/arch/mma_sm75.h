@@ -1065,7 +1065,7 @@ struct Mma<
   int const *C = reinterpret_cast<int const *>(&c);
   int *D = reinterpret_cast<int *>(&d);
 
-  asm volatile("mma.sync.aligned.m8n8k32.row.col.satfinite.s32.u4.s4.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
+  asm volatile("_mma.m8n8k32.row.col.u4.s4.sat {%0,%1}, %2, %3, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 
@@ -1247,7 +1247,8 @@ struct Mma<
   ) const {
 
 #if defined(CUTLASS_ARCH_MMA_SM75_ENABLED)
-#if defined(CUTLASS_ARCH_WMMA_ENABLED)
+
+#if (__CUDA_ARCH__ >= 900) || (defined(CUTLASS_ARCH_WMMA_ENABLED))
   using WmmaFragmentA = nvcuda::wmma::fragment<
           nvcuda::wmma::matrix_a,
           Shape::kM,
@@ -1279,6 +1280,7 @@ struct Mma<
 
   nvcuda::wmma::bmma_sync(D, A, B, C, nvcuda::wmma::experimental::bmmaBitOpXOR, 
                                           nvcuda::wmma::experimental::bmmaAccumulateOpPOPC);
+
 #else
 
   CUTLASS_UNUSED(a);
@@ -1289,14 +1291,7 @@ struct Mma<
 
 #endif // defined(CUTLASS_ARCH_WMMA_ENABLED)
 
-#else
-    CUTLASS_UNUSED(a);
-    CUTLASS_UNUSED(b);
-    CUTLASS_UNUSED(c);
-    CUTLASS_UNUSED(d);
-    assert(0);
 #endif
-
   }
 };
 

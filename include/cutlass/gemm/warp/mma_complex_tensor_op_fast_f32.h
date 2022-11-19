@@ -301,7 +301,7 @@ class MmaComplexTensorOpFastF32;
 /// Partial specialization for complex*complex+complex => complex:
 //  Operands data type: complex<float>
 //  Rounding: float -> tfloat32_t (round half_ulp_truncate nearest)
-//  Math instruction: MMA.1688.F32.TF32
+//  Math instruction: mma.sync.aligned.m16n8k8.f32.tf32.tf32.f32
 //  Output data type: complex<float>
 // 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -497,7 +497,7 @@ public:
   using MmaOperandC = typename ArchMmaOperator::FragmentC;
 
   static_assert(platform::is_same<cutlass::gemm::GemmShape<16, 8, 8>, typename ArchMmaOperator::Shape>::value, 
-    "This implementation only supports MMA.1688 math instructions.");
+    "This implementation only supports mma.m16n8k8 math instructions.");
 
   static_assert(InstMmaOperandA::kElements == 4, 
     "This implementation only supports math instructions in which exactly four element is needed for the A operand."

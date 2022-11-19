@@ -98,9 +98,9 @@ public:
     description_.tile_description.threadblock_stages = Operator::kStages;
 
     description_.tile_description.warp_count = make_Coord(
-      Operator::ImplicitGemmKernel::WarpCount::kM,
-      Operator::ImplicitGemmKernel::WarpCount::kN,
-      Operator::ImplicitGemmKernel::WarpCount::kK);
+      Operator::UnderlyingKernel::WarpCount::kM,
+      Operator::UnderlyingKernel::WarpCount::kN,
+      Operator::UnderlyingKernel::WarpCount::kK);
     
     description_.tile_description.math_instruction.instruction_shape = make_Coord(
       Operator::InstructionShape::kM,

@@ -17,7 +17,8 @@ from library import *
 class Conv2dOperation:
   #
   def __init__(self, conv_kind, iterator_algorithm, arch, tile_description, A, B, C, element_epilogue, \
-    stride_support, epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity1):
+    stride_support, epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity1, \
+    group_mode = GroupMode.NoneGroup):
 
     self.operation_kind = OperationKind.Conv2d
     self.arch = arch
@@ -31,6 +32,7 @@ class Conv2dOperation:
     self.iterator_algorithm = iterator_algorithm
     self.stride_support = stride_support
     self.swizzling_functor = swizzling_functor
+    self.group_mode = group_mode
   #
   def is_complex(self):
     complex_operators = [
@@ -95,17 +97,18 @@ class Conv2dOperation:
 
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
     
-    threadblock = "%dx%d_%dx%d" % (
-      self.tile_description.threadblock_shape[0],
-      self.tile_description.threadblock_shape[1],
-      self.tile_description.threadblock_shape[2],
-      self.tile_description.stages
-    )
+    threadblock = self.tile_description.procedural_name()
+
+    # grouped conv
+    if self.group_mode != GroupMode.NoneGroup:
+      group_conv_name = f"{GroupModeNames[self.group_mode]}_"
+    else:
+      group_conv_name = ""
 
     if self.stride_support == StrideSupport.Unity:
-      configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_unity_stride_align${alignment}"
+      configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_unity_stride_${group_conv_name}align${alignment}"
     else:
-      configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_align${alignment}"
+      configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_${group_conv_name}align${alignment}"
 
     return SubstituteTemplate(
       configuration_name,
@@ -115,6 +118,7 @@ class Conv2dOperation:
         'threadblock': threadblock,
         'layout': self.layout_name(),
         'alignment': "%d" % self.A.alignment,
+        'group_conv_name': group_conv_name
       }
     )
 
@@ -162,7 +166,77 @@ class EmitConv2dInstance:
     ${align_b}
   >::Kernel;
 """
+    self.template_group_conv = """
+  // Conv2d${conv_kind_name} ${iterator_algorithm_name} kernel instance "${operation_name}"
+  using ${operation_name}_base =
+  typename cutlass::conv::kernel::DefaultConv2dGroup${conv_kind_name}<
+    ${element_a},
+    ${layout_a},
+    ${element_b},
+    ${layout_b},
+    ${element_c},
+    ${layout_c},
+    ${element_accumulator},
+    ${opcode_class},
+    ${arch},
+    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+    cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k} >,
+    cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
+    ${epilogue_functor}<
+      ${element_c},
+      ${epilogue_vector_length},
+      ${element_accumulator},
+      ${element_epilogue}
+    >,
+    ${swizzling_functor}, // cutlass::gemm::threadblock::GemmSplitKIdentityThreadblockSwizzle<>,
+    ${stages},
+    ${math_operator},
+    ${group_mode},
+    ${iterator_algorithm},
+    ${stride_support},
+    ${align_a},
+    ${align_b}
+  >::Kernel;
+"""
+    self.template_depthwise_direct_conv = """
+  // Conv2d${conv_kind_name} ${iterator_algorithm_name} kernel instance "${operation_name}"
+  using ${operation_name}_base =
+  typename cutlass::conv::kernel::DefaultDepthwiseDirect2dConv${conv_kind_name}<
+    ${element_a},
+    ${layout_a},
+    ${element_b},
+    ${layout_b},
+    ${element_c},
+    ${layout_c},
+    ${element_accumulator},
+    ${opcode_class},
+    ${arch},
+    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+    cutlass::conv::TensorNHWCShape<${threadblock_output_shape_n}, ${threadblock_output_shape_p}, ${threadblock_output_shape_q}, ${groups_per_cta}>,
+    cutlass::MatrixShape<${filter_shape_r}, ${filter_shape_s}>,
+    cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k}>,
+    cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
+    ${epilogue_functor}<
+      ${element_c},
+      ${epilogue_vector_length},
+      ${element_accumulator},
+      ${element_epilogue},
+      cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
+    >,
 
+    cutlass::conv::threadblock::DepthwiseDirect2dConvIdentityThreadblockSwizzle<
+          1,
+          ${threadblock_output_shape_n},
+          ${threadblock_output_shape_p},
+          ${threadblock_output_shape_q}>, 
+    ${stages},
+    ${math_operator},
+    ${iterator_algorithm},
+    ${stride_support},
+    cutlass::MatrixShape<${stride_r}, ${stride_s}>,
+    cutlass::MatrixShape<${dilation_r}, ${dilation_s}>
+  >::Kernel;
+"""
 
   def emit(self, operation):
 
@@ -206,7 +280,32 @@ class EmitConv2dInstance:
       'align_b': str(operation.B.alignment),
     }
 
-    return SubstituteTemplate(self.template, values)
+    if operation.group_mode == GroupMode.NoneGroup:
+      return SubstituteTemplate(self.template, values)
+
+    elif operation.group_mode == GroupMode.Depthwise:
+      values['group_mode'] = GroupModeTag[operation.group_mode]
+      # Setup other template params
+      values['threadblock_output_shape_n'] = str(operation.tile_description.threadblock_output_shape[0])
+      values['threadblock_output_shape_p'] = str(operation.tile_description.threadblock_output_shape[1])
+      values['threadblock_output_shape_q'] = str(operation.tile_description.threadblock_output_shape[2])
+      
+      values['groups_per_cta'] = str(operation.tile_description.threadblock_output_shape[3])
+
+      values['filter_shape_r'] = str(operation.tile_description.filter_shape[0])
+      values['filter_shape_s'] = str(operation.tile_description.filter_shape[1])
+
+      values['stride_r'] = str(operation.tile_description.stride[0])
+      values['stride_s'] = str(operation.tile_description.stride[1])
+
+      values['dilation_r'] = str(operation.tile_description.dilation[0])
+      values['dilation_s'] = str(operation.tile_description.dilation[1])
+
+      return SubstituteTemplate(self.template_depthwise_direct_conv, values)
+
+    else:
+      values['group_mode'] = GroupModeTag[operation.group_mode]
+      return SubstituteTemplate(self.template_group_conv, values)
 
 ###################################################################################################
 #
@@ -294,6 +393,16 @@ void initialize_${configuration_name}(Manifest &manifest) {
 
 """
 
+    self.configuration_direct_conv_instance = """
+  using Operation_${operation_name} = cutlass::conv::device::DirectConvolution<
+    ${operation_name}>;
+
+  manifest.append(new cutlass::library::DirectConv2dOperation<
+    Operation_${operation_name}>(
+      "${operation_name}"));
+
+"""
+
     self.configuration_epilogue = """
 }
 """
@@ -334,10 +443,16 @@ void initialize_${configuration_name}(Manifest &manifest) {
       }))
 
     for operation in self.operations:
-      self.configuration_file.write(SubstituteTemplate(self.configuration_instance, {
-        'configuration_name': self.configuration_name,
-        'operation_name': operation.procedural_name()  
-      }))
+      if operation.group_mode == GroupMode.Depthwise:
+        self.configuration_file.write(SubstituteTemplate(self.configuration_direct_conv_instance, {
+          'configuration_name': self.configuration_name,
+          'operation_name': operation.procedural_name()  
+        }))
+      else: 
+        self.configuration_file.write(SubstituteTemplate(self.configuration_instance, {
+          'configuration_name': self.configuration_name,
+          'operation_name': operation.procedural_name()  
+        }))
 
     self.configuration_file.write(self.configuration_epilogue)
     self.configuration_file.write(self.epilogue_template)

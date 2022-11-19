@@ -40,25 +40,8 @@
 #endif
 
 #if defined(__CUDACC_RTC__)
-/* All floating-point numbers can be put in one of these categories.  */
-enum
-  {
-    FP_NAN =
-# define FP_NAN 0
-      FP_NAN,
-    FP_INFINITE =
-# define FP_INFINITE 1
-      FP_INFINITE,
-    FP_ZERO =
-# define FP_ZERO 2
-      FP_ZERO,
-    FP_SUBNORMAL =
-# define FP_SUBNORMAL 3
-      FP_SUBNORMAL,
-    FP_NORMAL =
-# define FP_NORMAL 4
-      FP_NORMAL
-  };
+
+#include "cutlass/floating_point_nvrtc.h"
 
 // F16C extensions are not meaningful when compiling for NVRTC which only accommodates device code.
 #undef CUTLASS_ENABLE_F16C
@@ -79,6 +62,7 @@ enum
 #include <cuda_fp16.h>
 
 #include "cutlass/cutlass.h"
+#include "cutlass/float8.h"
 #include "cutlass/platform/platform.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -372,8 +356,7 @@ struct alignas(2) half_t {
   //
 
   /// Default constructor
-  CUTLASS_HOST_DEVICE
-  half_t() : storage(0) { }
+  half_t() = default;
 
   /// Reinterpret cast from CUDA's half type
   CUTLASS_HOST_DEVICE
@@ -395,6 +378,18 @@ struct alignas(2) half_t {
   /// Floating point conversion
   CUTLASS_HOST_DEVICE
   explicit half_t(double x): half_t(float(x)) {
+
+  }
+
+  /// float_e4m3_t conversion
+  CUTLASS_HOST_DEVICE
+  explicit half_t(float_e4m3_t x): half_t(float(x)) {
+
+  }
+
+  /// float_e5m2_t conversion
+  CUTLASS_HOST_DEVICE
+  explicit half_t(float_e5m2_t x): half_t(float(x)) {
 
   }
 
@@ -618,19 +613,19 @@ struct numeric_limits<cutlass::half_t> {
   /// Returns smallest finite value
   static cutlass::half_t epsilon() { return cutlass::half_t::bitcast(0x1800); }
 
-  /// Returns smallest finite value
+  /// Returns maximum rounding error
   static cutlass::half_t round_error() { return cutlass::half_t(0.5f); }
 
-  /// Returns smallest finite value
+  /// Returns positive infinity value
   static cutlass::half_t infinity() { return cutlass::half_t::bitcast(0x7c00); }
 
-  /// Returns smallest finite value
+  /// Returns quiet NaN value
   static cutlass::half_t quiet_NaN() { return cutlass::half_t::bitcast(0x7fff); }
 
-  /// Returns smallest finite value
+  /// Returns signaling NaN value
   static cutlass::half_t signaling_NaN() { return cutlass::half_t::bitcast(0x7fff); }
 
-  /// Returns smallest finite value
+  /// Returns smallest positive subnormal value
   static cutlass::half_t denorm_min() { return cutlass::half_t::bitcast(0x0001); }
 };
 }  // namespace std
@@ -680,23 +675,23 @@ struct numeric_limits<cutlass::half_t> {
   CUTLASS_HOST_DEVICE
   static cutlass::half_t epsilon() { return cutlass::half_t::bitcast(0x1800); }
 
-  /// Returns smallest finite value
+  /// Returns maximum rounding error
   CUTLASS_HOST_DEVICE
   static cutlass::half_t round_error() { return cutlass::half_t(0.5f); }
 
-  /// Returns smallest finite value
+  /// Returns positive infinity value
   CUTLASS_HOST_DEVICE
   static cutlass::half_t infinity() { return cutlass::half_t::bitcast(0x7c00); }
 
-  /// Returns smallest finite value
+  /// Returns quiet NaN value
   CUTLASS_HOST_DEVICE
   static cutlass::half_t quiet_NaN() { return cutlass::half_t::bitcast(0x7fff); }
 
-  /// Returns smallest finite value
+  /// Returns signaling NaN value
   CUTLASS_HOST_DEVICE
   static cutlass::half_t signaling_NaN() { return cutlass::half_t::bitcast(0x7fff); }
 
-  /// Returns smallest finite value
+  /// Returns smallest positive subnormal value
   CUTLASS_HOST_DEVICE
   static cutlass::half_t denorm_min() { return cutlass::half_t::bitcast(0x0001); }
 };

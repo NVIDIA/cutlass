@@ -1272,7 +1272,7 @@ template <typename Element>
 struct RandomSparseMetaFunc {
   
   uint64_t seed;
-  double range;
+  int range;
   int MetaSizeInBits;
 
   //
@@ -1302,9 +1302,8 @@ struct RandomSparseMetaFunc {
     Element result = 0x0;
 
     for (int i = 0; i < cutlass::sizeof_bits<Element>::value / 4; ++i) {
-      double rnd = double(std::rand()) / double(RAND_MAX);
-      rnd = range * rnd;
-      Element meta = MetaArray[(int)rnd];
+      int rnd = std::rand() % range;
+      Element meta = MetaArray[rnd];
 
       result = (Element)(result | ((Element)(meta << (i * 4))));
     }
@@ -1390,6 +1389,37 @@ void BlockFillRandomSparseMeta(
 
   for (size_t i = 0; i < capacity; ++i) {
     ptr[i] = random_func();
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fills a ell block index matrix with random values with a uniform random distribution.
+template <
+  typename Element,                                ///< Element type
+  typename Layout>                                 ///< Layout function
+void TensorFillRandomEllIdx(
+  TensorView<Element, Layout> dst,                 ///< destination tensor
+  uint64_t seed,                                   ///< seed for RNG
+  int rows, int ell_cols, int cols) {              ///< dimension of the matrix 
+
+  std::srand((unsigned)seed);
+
+  for (int i = 0; i < rows; ++i) {
+    int col_idx = std::rand() % cols;
+   
+    for (int j = 0; j < ell_cols; ++j) {
+      dst.at({i, j}) = col_idx;
+
+      if (col_idx != -1) {
+        if (col_idx == (cols - 1)) {
+          col_idx = -1;
+        } else {
+          col_idx = std::rand() % (cols - col_idx - 1) + col_idx + 1;
+        }
+      }
+    }
   }
 }
 

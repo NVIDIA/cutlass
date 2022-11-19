@@ -192,7 +192,7 @@ public:
     // Determine SMEM requirements and waive if not satisfied
     //
 
-    int smem_size = int(sizeof(typename Conv2d::ImplicitGemmKernel::SharedStorage));
+    int smem_size = int(sizeof(typename Conv2d::UnderlyingKernel::SharedStorage));
 
     cudaDeviceProp properties;
     int device_idx;
@@ -208,7 +208,7 @@ public:
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
 
@@ -305,15 +305,15 @@ public:
         cutlass::conv::implicit_gemm_tensor_c_size(kConvolutionalOperator, problem_size),
         {
           reinterpret_cast<ElementAccumulator*> (workspace.get()),
-          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::UnderlyingKernel::kTensorCStrideIdx])
         },
         {
           tensor_D_computed.device_data(),
-          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::UnderlyingKernel::kTensorCStrideIdx])
         },
         {
           tensor_C.device_data(),
-          ReductionStrideIndex(tensor_C.stride()[Conv2d::ImplicitGemmKernel::kTensorCStrideIdx])
+          ReductionStrideIndex(tensor_C.stride()[Conv2d::UnderlyingKernel::kTensorCStrideIdx])
         },
         // apply alpha, beta to obtain the following equation alpha * ReduceAdd(A * B) + beta * C 
         {alpha, beta} 
@@ -637,7 +637,7 @@ bool TestAllConv2d(
     // CUTLASS DGRAD's *unity* stride specialization only support stride {1, 1} 
     if ((ImplicitGemm::kConvolutionalOperator == 
           cutlass::conv::Operator::kDgrad) && 
-        (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+        (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
           cutlass::conv::StrideSupport::kUnity)) {
       if (!((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
         continue;
@@ -645,17 +645,17 @@ bool TestAllConv2d(
     }
 
     // Fixed channels algorithm requires channel count to match access size
-    if (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kIteratorAlgorithm ==
+    if (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kIteratorAlgorithm ==
         cutlass::conv::IteratorAlgorithm::kFixedChannels) {
-      if (conv_problem.C != ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::AccessType::kElements) {
+      if (conv_problem.C != ImplicitGemm::UnderlyingKernel::Mma::IteratorA::AccessType::kElements) {
         continue;
       }
     }
 
     // Few channels algorithm requires channel count to match access size
-    if (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kIteratorAlgorithm ==
+    if (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kIteratorAlgorithm ==
         cutlass::conv::IteratorAlgorithm::kFewChannels) {
-      if (conv_problem.C % ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::AccessType::kElements) {
+      if (conv_problem.C % ImplicitGemm::UnderlyingKernel::Mma::IteratorA::AccessType::kElements) {
         continue;
       }
     }
@@ -665,7 +665,7 @@ bool TestAllConv2d(
     // to run strided dgrad for non-unity strides 
     if ((ImplicitGemm::kConvolutionalOperator == 
           cutlass::conv::Operator::kDgrad) && 
-        (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+        (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
           cutlass::conv::StrideSupport::kStrided)) {
        if (((conv_problem.stride_h == 1) && (conv_problem.stride_w == 1))) {
          continue;
@@ -704,14 +704,14 @@ bool TestAllConv2d(
   }
 
   // Small-channels convolution can't run here.
-  if (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kIteratorAlgorithm ==
+  if (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kIteratorAlgorithm ==
         cutlass::conv::IteratorAlgorithm::kFixedChannels) {
 
     return true;
   }
 
   // Small-channels convolution can't run here.
-  if (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kIteratorAlgorithm ==
+  if (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kIteratorAlgorithm ==
         cutlass::conv::IteratorAlgorithm::kFewChannels) {
 
     return true;
@@ -720,7 +720,7 @@ bool TestAllConv2d(
   // CUTLASS DGRAD's *strided* specialization does not support split-k mode 
   if ((ImplicitGemm::kConvolutionalOperator == 
           cutlass::conv::Operator::kDgrad) && 
-      (ImplicitGemm::ImplicitGemmKernel::Mma::IteratorA::kStrideSupport == 
+      (ImplicitGemm::UnderlyingKernel::Mma::IteratorA::kStrideSupport == 
         cutlass::conv::StrideSupport::kStrided)) {
 
     passed = testbed.run(
