@@ -293,6 +293,141 @@ struct DefaultIteratorsTensorOp<
 
   static int const kFragmentsPerIteration = 1;
 };
+
+/// Partial specialization for float_e4m3_t <= float x 16/8 epilogues avoids shared memory bank conflicts.
+/// Threadblock::kN = 256 still has bank conflicts.
+template <
+  int ElementsPerAccess,
+  typename ThreadblockShape,
+  typename WarpShape,
+  typename InstructionShape,
+  typename ThreadMap
+>
+struct DefaultIteratorsTensorOp<
+  cutlass::float_e4m3_t,
+  float, 
+  ElementsPerAccess,
+  ThreadblockShape, 
+  WarpShape, 
+  InstructionShape, 
+  ThreadMap> {
+
+  using ElementOutput = cutlass::float_e4m3_t;
+
+  static_assert((ElementsPerAccess == 16 || ElementsPerAccess == 8),
+              "ElementsPerAccess needs to be 16 or 8.");
+  
+  using WarpTileIteratorMixed = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
+    WarpShape,
+    InstructionShape,
+    float,
+    32,
+    cutlass::sizeof_bits<ElementOutput>::value,
+    ElementsPerAccess,
+    8
+  >;
+
+  using WarpTileIteratorNotMixed =  cutlass::epilogue::warp::TileIteratorTensorOp<
+    WarpShape,
+    InstructionShape,
+    float,
+    layout::RowMajor
+  >;
+
+  using WarpTileIterator = typename platform::conditional<
+                             (ThreadblockShape::kN == 256),
+                             WarpTileIteratorNotMixed,
+                             WarpTileIteratorMixed>::type;
+
+  using SharedLoadIteratorMixed = cutlass::epilogue::threadblock::SharedLoadIteratorMixed<
+    ThreadMap,
+    float,
+    32,
+    cutlass::sizeof_bits<ElementOutput>::value,
+    ElementsPerAccess,
+    8
+  >;
+
+  using SharedLoadIteratorNotMixed = cutlass::epilogue::threadblock::SharedLoadIterator<
+    ThreadMap,
+    float
+  >;
+
+  using SharedLoadIterator = typename platform::conditional<
+                             (ThreadblockShape::kN == 256),
+                             SharedLoadIteratorNotMixed,
+                             SharedLoadIteratorMixed>::type;
+
+  static int const kFragmentsPerIteration = 1;
+};
+
+/// Partial specialization for float_e5m2_t <= float x 16/8 epilogues avoids shared memory bank conflicts.
+/// Threadblock::kN = 256 still has bank conflicts.
+template <
+  int ElementsPerAccess,
+  typename ThreadblockShape,
+  typename WarpShape,
+  typename InstructionShape,
+  typename ThreadMap
+>
+struct DefaultIteratorsTensorOp<
+  cutlass::float_e5m2_t,
+  float, 
+  ElementsPerAccess,
+  ThreadblockShape, 
+  WarpShape, 
+  InstructionShape, 
+  ThreadMap> {
+
+  using ElementOutput = cutlass::float_e5m2_t;
+
+  static_assert((ElementsPerAccess == 16 || ElementsPerAccess == 8),
+              "ElementsPerAccess needs to be 16 or 8.");
+  
+  using WarpTileIteratorMixed = cutlass::epilogue::warp::TileIteratorTensorOpMixed<
+    WarpShape,
+    InstructionShape,
+    float,
+    32,
+    cutlass::sizeof_bits<ElementOutput>::value,
+    ElementsPerAccess,
+    8
+  >;
+
+  using WarpTileIteratorNotMixed =  cutlass::epilogue::warp::TileIteratorTensorOp<
+    WarpShape,
+    InstructionShape,
+    float,
+    layout::RowMajor
+  >;
+
+  using WarpTileIterator = typename platform::conditional<
+                             (ThreadblockShape::kN == 256),
+                             WarpTileIteratorNotMixed,
+                             WarpTileIteratorMixed>::type;
+
+  using SharedLoadIteratorMixed = cutlass::epilogue::threadblock::SharedLoadIteratorMixed<
+    ThreadMap,
+    float,
+    32,
+    cutlass::sizeof_bits<ElementOutput>::value,
+    ElementsPerAccess,
+    8
+  >;
+
+  using SharedLoadIteratorNotMixed = cutlass::epilogue::threadblock::SharedLoadIterator<
+    ThreadMap,
+    float
+  >;
+
+  using SharedLoadIterator = typename platform::conditional<
+                             (ThreadblockShape::kN == 256),
+                             SharedLoadIteratorNotMixed,
+                             SharedLoadIteratorMixed>::type;
+
+  static int const kFragmentsPerIteration = 1;
+};
+
 } // namespace detail
 
 ////////////////////////////////////////////////////////////////////////////////

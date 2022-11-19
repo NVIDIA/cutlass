@@ -45,6 +45,7 @@
 #include "cutlass/util/tensor_view_io.h"
 
 #include "testbed.h"
+#include "testbed_universal.h"
 
 #if (CUTLASS_ARCH_MMA_SM80_SUPPORTED)
  
@@ -102,6 +103,44 @@ CUTLASS_TEST_L1(SM80_Device_Gemm_f16n_f16t_f32t_tensor_op_f32, 128x128x64_64x64x
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+} )
+
+CUTLASS_TEST_L1(SM80_Device_Gemm_f16n_f16t_f32t_tensor_op_f32, 128x128x64_64x64x64_sk, {
+  using ElementOutput = float;
+  using ElementAccumulator = float;
+
+  using Gemm = cutlass::gemm::device::GemmUniversal<
+      cutlass::half_t, cutlass::layout::ColumnMajor,
+      cutlass::half_t, cutlass::layout::RowMajor,
+      ElementOutput, cutlass::layout::RowMajor,
+      ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
+      cutlass::gemm::GemmShape<128, 128, 64>,
+      cutlass::gemm::GemmShape<64, 64, 64>, cutlass::gemm::GemmShape<16, 8, 16>,
+      cutlass::epilogue::thread::LinearCombination<
+          ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
+          ElementAccumulator, ElementAccumulator>,
+      cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, 3>;
+
+  EXPECT_TRUE(test::gemm::device::TestAllGemmUniversal<Gemm>());
+} )
+
+CUTLASS_TEST_L1(SM80_Device_Gemm_f16n_f16t_f32n_tensor_op_f32, 128x128x64_64x64x64_sk, {
+  using ElementOutput = float;
+  using ElementAccumulator = float;
+
+  using Gemm = cutlass::gemm::device::GemmUniversal<
+      cutlass::half_t, cutlass::layout::ColumnMajor,
+      cutlass::half_t, cutlass::layout::RowMajor,
+      ElementOutput, cutlass::layout::ColumnMajor,
+      ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
+      cutlass::gemm::GemmShape<128, 128, 64>,
+      cutlass::gemm::GemmShape<64, 64, 64>, cutlass::gemm::GemmShape<16, 8, 16>,
+      cutlass::epilogue::thread::LinearCombination<
+          ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
+          ElementAccumulator, ElementAccumulator>,
+      cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, 3>;
+
+  EXPECT_TRUE(test::gemm::device::TestAllGemmUniversal<Gemm>());
 } )
 
 CUTLASS_TEST_L1(SM80_Device_Gemm_f16n_f16t_f32t_tensor_op_f32, 256x64x64_64x64x64, {

@@ -974,7 +974,7 @@ struct NumericArrayConverter<bfloat16_t, float, 2, FloatRoundStyle::round_to_nea
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Partial specialization for Array<half> <= Array<float>
+/// Partial specialization for Array<bfloat16_t> <= Array<float>
 template <
   int N,
   FloatRoundStyle Round
@@ -1270,6 +1270,849 @@ struct NumericArrayConverter<uint8_t, int, N, Round> {
 };
 
 #endif
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Partial specializations for Array<float, N> <=> Array<float_e4m3_t, N>
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Array<float, 4> <= Array<float_e4m3_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float, float_e4m3_t, 4, Round> {
+  using result_element = float;
+  using source_element = float_e4m3_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    uint32_t out_fp16[2];
+    uint32_t const& src_packed = reinterpret_cast<uint32_t const&>(source);
+
+    asm volatile( \
+        "{\n" \
+        ".reg .b16 lo, hi;\n" \
+        "mov.b32 {lo, hi}, %2;\n" \
+        "cvt.rn.f16x2.e4m3x2 %0, lo;\n" \
+        "cvt.rn.f16x2.e4m3x2 %1, hi;\n" \
+        "}\n" : "=r"(out_fp16[0]), "=r"(out_fp16[1]) : "r"(src_packed));
+
+    float2 res0 = __half22float2(reinterpret_cast<__half2 &>(out_fp16[0]));
+    float2 res1 = __half22float2(reinterpret_cast<__half2 &>(out_fp16[1]));
+
+    result_type out;
+    out[0] = res0.x;
+    out[1] = res0.y;
+    out[2] = res1.x;
+    out[3] = res1.y;
+    return out;
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float_e4m3_t, 4> <= Array<float, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e4m3_t, float, 4, Round> {
+  using result_element = float_e4m3_t;
+  using source_element = float;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    uint32_t out;
+
+    asm volatile( \
+        "{\n" \
+        ".reg .b16 lo;\n" \
+        ".reg .b16 hi;\n" \
+        "cvt.rn.satfinite.e4m3x2.f32   lo, %2, %1;\n" \
+        "cvt.rn.satfinite.e4m3x2.f32   hi, %4, %3;\n" \
+        "mov.b32 %0, {lo, hi};\n" \
+        "}" \
+        : "=r"(out) : "f"(source[0]), "f"(source[1]), "f"(source[2]), "f"(source[3]));
+
+    return reinterpret_cast<result_type const &>(out);
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float, 4> <= Array<float_e5m2_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float, float_e5m2_t, 4, Round> {
+  using result_element = float;
+  using source_element = float_e5m2_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    uint32_t out_fp16[2];
+    uint32_t const& src_packed = reinterpret_cast<uint32_t const&>(source);
+
+    asm volatile( \
+        "{\n" \
+        ".reg .b16 lo, hi;\n" \
+        "mov.b32 {lo, hi}, %2;\n" \
+        "cvt.rn.f16x2.e5m2x2 %0, lo;\n" \
+        "cvt.rn.f16x2.e5m2x2 %1, hi;\n" \
+        "}\n" : "=r"(out_fp16[0]), "=r"(out_fp16[1]) : "r"(src_packed));
+
+    float2 res0 = __half22float2(reinterpret_cast<__half2 &>(out_fp16[0]));
+    float2 res1 = __half22float2(reinterpret_cast<__half2 &>(out_fp16[1]));
+
+    result_type out;
+    out[0] = res0.x;
+    out[1] = res0.y;
+    out[2] = res1.x;
+    out[3] = res1.y;
+    return out;
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float_e5m2_t, 4> <= Array<float, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e5m2_t, float, 4, Round> {
+  using result_element = float_e5m2_t;
+  using source_element = float;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    uint32_t out;
+
+    asm volatile( \
+        "{\n" \
+        ".reg .b16 lo;\n" \
+        ".reg .b16 hi;\n" \
+        "cvt.rn.satfinite.e5m2x2.f32   lo, %2, %1;\n" \
+        "cvt.rn.satfinite.e5m2x2.f32   hi, %4, %3;\n" \
+        "mov.b32 %0, {lo, hi};\n" \
+        "}" \
+        : "=r"(out) : "f"(source[0]), "f"(source[1]), "f"(source[2]), "f"(source[3]));
+
+    return reinterpret_cast<result_type const &>(out);
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Partial specializations for Array<half_t, 4> <=> Array<float_e4m3_t, 4>
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Array<half_t, 4> <= Array<float_e4m3_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<half_t, float_e4m3_t, 4, Round> {
+  using result_element = half_t;
+  using source_element = float_e4m3_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    uint32_t out[2];
+    uint32_t const& src_packed = reinterpret_cast<uint32_t const&>(source);
+    asm volatile( \
+        "{\n" \
+        ".reg .b16 lo, hi;\n" \
+        "mov.b32 {lo, hi}, %2;\n" \
+        "cvt.rn.f16x2.e4m3x2 %0, lo;\n" \
+        "cvt.rn.f16x2.e4m3x2 %1, hi;\n" \
+        "}\n" : "=r"(out[0]), "=r"(out[1]) : "r"(src_packed));
+    return reinterpret_cast<result_type const &>(out);
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float_e4m3_t, 4> <= Array<half_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e4m3_t, half_t, 4, Round> {
+  using result_element = float_e4m3_t;
+  using source_element = half_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    uint32_t out;
+    uint32_t const* src_packed = reinterpret_cast<uint32_t const*>(&source);
+
+    asm volatile( \
+        "{\n" \
+        ".reg .b16 lo;\n" \
+        ".reg .b16 hi;\n" \
+        "cvt.rn.satfinite.e4m3x2.f16x2   lo, %1;\n" \
+        "cvt.rn.satfinite.e4m3x2.f16x2   hi, %2;\n" \
+        "mov.b32 %0, {lo, hi};\n" \
+        "}" \
+        : "=r"(out) : "r"(src_packed[0]), "r"(src_packed[1]));
+
+    return reinterpret_cast<result_type const &>(out);
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<half_t, 4> <= Array<float_e5m2_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<half_t, float_e5m2_t, 4, Round> {
+  using result_element = half_t;
+  using source_element = float_e5m2_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    uint32_t out[2];
+    uint32_t const& src_packed = reinterpret_cast<uint32_t const&>(source);
+    asm volatile( \
+        "{\n" \
+        ".reg .b16 lo, hi;\n" \
+        "mov.b32 {lo, hi}, %2;\n" \
+        "cvt.rn.f16x2.e5m2x2 %0, lo;\n" \
+        "cvt.rn.f16x2.e5m2x2 %1, hi;\n" \
+        "}\n" : "=r"(out[0]), "=r"(out[1]) : "r"(src_packed));
+    return reinterpret_cast<result_type const &>(out);
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float_e5m2_t, 4> <= Array<half_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e5m2_t, half_t, 4, Round> {
+  using result_element = float_e5m2_t;
+  using source_element = half_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    uint32_t out;
+    uint32_t const* src_packed = reinterpret_cast<uint32_t const*>(&source);
+
+    asm volatile( \
+        "{\n" \
+        ".reg .b16 lo;\n" \
+        ".reg .b16 hi;\n" \
+        "cvt.rn.satfinite.e5m2x2.f16x2   lo, %1;\n" \
+        "cvt.rn.satfinite.e5m2x2.f16x2   hi, %2;\n" \
+        "mov.b32 %0, {lo, hi};\n" \
+        "}" \
+        : "=r"(out) : "r"(src_packed[0]), "r"(src_packed[1]));
+
+    return reinterpret_cast<result_type const &>(out);
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Partial specializations for Array<bfloat16_t, 4> <=> Array<float_e4m3_t, 4>
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Array<bfloat16_t, 4> <= Array<float_e4m3_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<bfloat16_t, float_e4m3_t, 4, Round> {
+  using result_element = bfloat16_t;
+  using source_element = float_e4m3_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    // Convert f8 to float
+    NumericArrayConverter<float, source_element, 4, Round> src2float;
+    Array<float, 4> tmp_floats = src2float(source);
+
+    // Convert float to bf16
+    result_type out;
+    Array<float, 2>* packed_tmp = reinterpret_cast<Array<float, 2>*>(&tmp_floats);
+    Array<result_element, 2>* packed_out = reinterpret_cast<Array<result_element, 2>*>(&out);
+    NumericArrayConverter<result_element, float, 2, Round> float2result;
+    packed_out[0] = float2result(packed_tmp[0]);
+    packed_out[1] = float2result(packed_tmp[1]);
+
+    return out;
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float_e4m3_t, 4> <= Array<bfloat16_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e4m3_t, bfloat16_t, 4, Round> {
+  using result_element = float_e4m3_t;
+  using source_element = bfloat16_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    // Convert bf16 to float
+    Array<float, 4> tmp;
+    Array<float, 2>* packed_tmp = reinterpret_cast<Array<float, 2>*>(&tmp);
+    Array<source_element, 2> const* packed_source = reinterpret_cast<Array<source_element, 2> const*>(&source);
+    NumericArrayConverter<float, source_element, 2, Round> src2float;
+    packed_tmp[0] = src2float(packed_source[0]);
+    packed_tmp[1] = src2float(packed_source[1]);
+
+    // Convert float to f8
+    NumericArrayConverter<result_element, float, 4, Round> float2result;
+    return float2result(tmp);
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<bfloat16_t, 4> <= Array<float_e5m2_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<bfloat16_t, float_e5m2_t, 4, Round> {
+  using result_element = bfloat16_t;
+  using source_element = float_e5m2_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    // Convert f8 to float
+    NumericArrayConverter<float, source_element, 4, Round> src2float;
+    Array<float, 4> tmp_floats = src2float(source);
+
+    // Convert float to bf16
+    result_type out;
+    Array<float, 2>* packed_tmp = reinterpret_cast<Array<float, 2>*>(&tmp_floats);
+    Array<result_element, 2>* packed_out = reinterpret_cast<Array<result_element, 2>*>(&out);
+    NumericArrayConverter<result_element, float, 2, Round> float2result;
+    packed_out[0] = float2result(packed_tmp[0]);
+    packed_out[1] = float2result(packed_tmp[1]);
+
+    return out;
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float_e5m2_t, 4> <= Array<bfloat16_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e5m2_t, bfloat16_t, 4, Round> {
+  using result_element = float_e5m2_t;
+  using source_element = bfloat16_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+
+  #if defined(CUDA_PTX_FP8_CVT_ENABLED)
+    // Convert bf16 to float
+    Array<float, 4> tmp;
+    Array<float, 2>* packed_tmp = reinterpret_cast<Array<float, 2>*>(&tmp);
+    Array<source_element, 2> const* packed_source = reinterpret_cast<Array<source_element, 2> const*>(&source);
+    NumericArrayConverter<float, source_element, 2, Round> src2float;
+    packed_tmp[0] = src2float(packed_source[0]);
+    packed_tmp[1] = src2float(packed_source[1]);
+
+    // Convert float to f8
+    NumericArrayConverter<result_element, float, 4, Round> float2result;
+    return float2result(tmp);
+  #else
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  #endif
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Partial specializations for Array<float_e4m3_t, 4> <=> Array<float_e5m2_t, 4>
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Array<float_e4m3_t, 4> <= Array<float_e5m2_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e4m3_t, float_e5m2_t, 4, Round> {
+  using result_element = float_e4m3_t;
+  using source_element = float_e5m2_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float_e5m2_t, 4> <= Array<float_e4m3_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e5m2_t, float_e4m3_t, 4, Round> {
+  using result_element = float_e5m2_t;
+  using source_element = float_e4m3_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+    result_type result;
+    NumericConverter<result_element, source_element, Round> converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      result[i] = converter(source[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Partial specializations for:
+//      Array<float_e4m3_t, 4> <=> Array<float_e4m3_t, 4>
+//      Array<float_e5m2_t, 4> <=> Array<float_e5m2_t, 4>
+//
+// These are needed to avoid multiple-matching-template compilation errors (e.g., when
+// compiling float_e4m3_t <=> float_e4m3_t, which among T <= float_e4m3_t and float_e4m3_t <= T
+// should be used?)
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Array<float_e4m3_t, 4> <= Array<float_e4m3_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e4m3_t, float_e4m3_t, 4, Round> {
+  using result_element = float_e4m3_t;
+  using source_element = float_e4m3_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return s;
+  }
+};
+
+/// Partial specialization for Array<float_e5m2_t, 4> <= Array<float_e5m2_t, 4>
+template <
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e5m2_t, float_e5m2_t, 4, Round> {
+  using result_element = float_e5m2_t;
+  using source_element = float_e5m2_t;
+
+  using result_type = Array<result_element, 4>;
+  using source_type = Array<source_element, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return s;
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Partial specialziations for:
+//       Array<T, N> <=> Array<float_e4m3_t, N>
+//       Array<T, N> <=> Array<float_e5m2_t, N>
+// using packed converter under the hood
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  typename T,
+  typename S,
+  int N,
+  FloatRoundStyle Round
+>
+struct PackedNumericArrayConverter {
+  using result_element = T;
+  using source_element = S;
+
+  using result_type = Array<result_element, N>;
+  using source_type = Array<source_element, N>;
+
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using packed_result_type = Array<result_element, 4>;
+  using packed_source_type = Array<source_element, 4>;
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const & source) {
+    result_type result;
+    packed_result_type* packed_result = reinterpret_cast<packed_result_type*>(&result);
+    const packed_source_type* packed_source = reinterpret_cast<const packed_source_type*>(&source);
+
+    NumericArrayConverter<result_element, source_element, 4, Round> packed_converter;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 4; ++i) {
+      packed_result[i] = packed_converter(packed_source[i]);
+    }
+
+    // Handle leftovers
+    NumericConverter<result_element, source_element, Round> converter;
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N % 4; ++i) {
+      int idx = ((N / 4) * 4) + i;
+      result[idx] = converter(source[idx]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_HOST_DEVICE
+  result_type operator()(source_type const &s) {
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<T, N> <= Array<float_e4m3_t, N>
+template <
+  typename T,
+  int N,
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<T, float_e4m3_t, N, Round> :
+  public PackedNumericArrayConverter<T, float_e4m3_t, N, Round> {};
+
+/// Partial specialization for Array<T, N> <= Array<float_e5m2_t, N>
+template <
+  typename T,
+  int N,
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<T, float_e5m2_t, N, Round> :
+  public PackedNumericArrayConverter<T, float_e5m2_t, N, Round> {};
+
+/// Partial specialization for Array<float_e4m3_t, N> <= Array<S, N>
+template <
+  typename S,
+  int N,
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e4m3_t, S, N, Round> :
+  public PackedNumericArrayConverter<float_e4m3_t, S, N, Round> {};
+
+/// Partial specialization for Array<float_e5m2_t, N> <= Array<S, N>
+template <
+  typename S,
+  int N,
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e5m2_t, S, N, Round> :
+  public PackedNumericArrayConverter<float_e5m2_t, S, N, Round> {};
+
+/// Partial specialization for Array<float_e4m3_t, N> <= Array<float_e5m2_t, N>
+template <
+  int N,
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e4m3_t, float_e5m2_t, N, Round> :
+  public PackedNumericArrayConverter<float_e4m3_t, float_e5m2_t, N, Round> {};
+
+/// Partial specialization for Array<float_e5m2_t, N> <= Array<float_e4m3_t, N>
+template <
+  int N,
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e5m2_t, float_e4m3_t, N, Round> :
+  public PackedNumericArrayConverter<float_e5m2_t, float_e4m3_t, N, Round> {};
+
+/// Partial specialization for Array<float_e4m3_t, N> <= Array<float_e4m3_t, N>
+template <
+  int N,
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e4m3_t, float_e4m3_t, N, Round> :
+  public PackedNumericArrayConverter<float_e4m3_t, float_e4m3_t, N, Round> {};
+
+/// Partial specialization for Array<float_e5m2_t, N> <= Array<float_e5m2_t, N>
+template <
+  int N,
+  FloatRoundStyle Round
+>
+struct NumericArrayConverter<float_e5m2_t, float_e5m2_t, N, Round> :
+  public PackedNumericArrayConverter<float_e5m2_t, float_e5m2_t, N, Round> {};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -531,17 +531,17 @@ Result profile_convolution(Options const &options) {
         // Reduction input
         {
             reinterpret_cast<ElementAccumulator*> (workspace.get()),
-            ReductionStrideIndex(tensor_c.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
+            ReductionStrideIndex(tensor_c.stride()[ImplicitGemm::UnderlyingKernel::kTensorCStrideIdx])
         },
         // Destination
         {
             tensor_d.device_data(),
-            ReductionStrideIndex(tensor_d.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
+            ReductionStrideIndex(tensor_d.stride()[ImplicitGemm::UnderlyingKernel::kTensorCStrideIdx])
         },
         // Source
         {
             tensor_c.device_data(),
-            ReductionStrideIndex(tensor_c.stride()[ImplicitGemm::ImplicitGemmKernel::kTensorCStrideIdx])
+            ReductionStrideIndex(tensor_c.stride()[ImplicitGemm::UnderlyingKernel::kTensorCStrideIdx])
         },
         {options.alpha, options.beta}
     );

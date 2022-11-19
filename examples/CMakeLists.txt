@@ -119,9 +119,11 @@ foreach(EXAMPLE
   37_gemm_layernorm_gemm_fusion
   38_syr2k_grouped
   39_gemm_permute
-  41_multi_head_attention
-  42_fused_multi_head_attention
-  43_dual_gemm
+  41_fused_multi_head_attention
+  42_ampere_tensorop_group_conv
+  43_ell_block_sparse_gemm
+  45_dual_gemm
+  46_depthwise_simt_conv2dfprop
   )
 
   add_subdirectory(${EXAMPLE})

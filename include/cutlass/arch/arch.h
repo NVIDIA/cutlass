@@ -85,6 +85,10 @@ struct Sm86 {
   static int const kMinComputeCapability = 86;
 };
 
+struct Sm90 {
+  static int const kMinComputeCapability = 90; 
+};
+
 /// Triggers a breakpoint on the device
 CUTLASS_DEVICE
 void device_breakpoint() {

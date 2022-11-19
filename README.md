@@ -1,8 +1,8 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS 2.10
+# CUTLASS 2.11
 
-_CUTLASS 2.10 - August 2022_
+_CUTLASS 2.11 - November 2022_
 
 CUTLASS is a collection of CUDA C++ template abstractions for implementing
 high-performance matrix-multiplication (GEMM) and related computations at all levels 
@@ -36,21 +36,21 @@ See the [Quick Start Guide](/media/docs/quickstart.md) to get started quickly.
 See the [functionality listing](/media/docs/functionality.md) for the list of operations
 supported at each level of the execution model hierarchy.
 
-# What's New in CUTLASS 2.10
+# What's New in CUTLASS 2.11
 
-CUTLASS 2.10 is an update to CUTLASS adding:
-- [CUTLASS Python](/examples/40_cutlass_py) now supports GEMM, Convolution and Grouped GEMM for different data types as well as different epilogue flavors.  
-- Optimizations for CUTLASS's [Grouped GEMM](examples/24_gemm_grouped/gemm_grouped.cu) kernel.  It can move some scheduling into the host side if applicable.
-- Optimizations for [GEMM+Softmax](examples/35_gemm_softmax).
-- [Grouped GEMM for Multihead Attention](examples/41_multi_head_attention) is a general MHA that does not require equal sequence length in every GEMM.
-- [GEMM + Layer norm fusion for Ampere](examples/37_gemm_layernorm_gemm_fusion/) can fuse the layernorm into GEMMs before and after.
-- [GEMM Epilogue Permutation Fusion](examples/39_gemm_permute) can permute the GEMM output before storing.
-- [Grouped convolution targeting implicit GEMM](test/unit/conv/device/group_conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu) introduces the first group convolution implementation to CUTLASS.  It is an Analytical implementation, not an Optimized.
-- [Depthwise separable convolution](test/unit/conv/device/depthwise_fprop_implicit_gemm_f16nhwc_f16nhwc_f16nhwc_simt_f16_sm60.cu) introduces the first depthwise convolution which is also Analytical for now.
-- Standalone [Layernorm](/tools/util/include/cutlass/util/device_layernorm.h) and [Pooling](/tools/util/include/cutlass/util/device_nhwc_pooling.h) kernels.
-- [Back-to-back GEMM](examples/13_two_tensor_op_fusion) enhancements.
-- Updates and bugfixes from the community (thanks!)
-- **Deprecation announcement:** CUTLASS plans to deprecate the following:
+CUTLASS 2.11 is an update to CUTLASS adding:
+- Stream-K, which is a new general way to do split-K.  It can not only improve performance, but can also significantly reduce the number of tile sizes that need to be profiled to find the best one.  
+- [Fused multi-head attention kernel](/examples/41_fused_multi_head_attention).  It has two variants: one for fixed sequence lengths, and another for variable sequence lengths.
+- [Dual GEMM](/examples/45_dual_gemm).  It can run two GEMMs that share the same left input matrix in one kernel.
+- Hopper improves [double precision matrix multiplication](/test/unit/gemm/device/gemm_f64n_f64t_f64t_tensor_op_f64_sm90.cu) by 2x compared to Ampere at iso-clocks. It is supported since CUDA 11.8.
+- [BLAS3](/test/unit/gemm/device/hemm_cf64_cf64_cf64_tensor_op_f64_sm90.cu) functions with Hoppers new double precision matrix multiplication instructions.
+- [ELL Block Sparse GEMM](/examples/43_ell_block_sparse_gemm).
+- [Optimized Group Conv](/examples/42_ampere_tensorop_group_conv).
+- [Optimized DepthWise Conv](/examples/46_depthwise_simt_conv2dfprop).
+- [Scripts](/examples/44_multi_gemm_ir_and_codegen) to fuse multiple back-to-back GEMM.
+- [FP8 data type definition](/include/cutlass/float8.h) and [conversion routines](/include/cutlass/numeric_conversion.h#L1274-2115).
+- Updates and bugfixes from the community (thanks!).  Big shout out to Meta's [xFormers](https://github.com/facebookresearch/xformers).
+- **Deprecation announcement:** CUTLASS plans to deprecate the following in the next major release:
   - Maxwell and Pascal GPU architectures
   - Ubuntu 16.04
   - CUDA 10.2
@@ -80,10 +80,11 @@ as shown in the above figure.  Tensor Core operations are still implemented usin
 
 # Compatibility
 
-CUTLASS requires a C++11 host compiler and 
-performs best when built with the [**CUDA 11.6u2 Toolkit**](https://developer.nvidia.com/cuda-toolkit).
-It is also compatible with CUDA 11.0, CUDA 11.1, CUDA 11.2, CUDA 11.3, CUDA 11.4, and CUDA 11.5.
+CUTLASS requires a C++11 host compiler and performs best when built with the [**CUDA 11.8 Toolkit**](https://developer.nvidia.com/cuda-toolkit).
 
+It is also compatible with CUDA 11.x.
+
+## Operating Systems
 We have tested the following environments.
 
 |**Operating System** | **Compiler** |
@@ -93,11 +94,12 @@ We have tested the following environments.
 |                 | Microsoft Visual Studio 2019|
 | Ubuntu 18.04 | GCC 7.5.0 |
 | Ubuntu 20.04 | GCC 10.3.0 |
-| Ubuntu 21.04 | GCC 11.2.0 |
+| Ubuntu 22.04 | GCC 11.2.0 |
 
 Additionally, CUTLASS may be built with clang. 
 See [these instructions](media/docs/quickstart.md#clang) for more details.
 
+## Hardware
 CUTLASS runs successfully on the following NVIDIA GPUs, and it is expected to be efficient on
 any Volta-, Turing-, or NVIDIA Ampere- architecture NVIDIA GPU. 
 
@@ -110,9 +112,7 @@ any Volta-, Turing-, or NVIDIA Ampere- architecture NVIDIA GPU.
 |NVIDIA A100|8.0|11.0|11.0|
 |NVIDIA A10 |8.6|11.1|11.1|
 |NVIDIA GeForce 3090|8.6|11.1|11.1|
-
-For all GPUs, we recommend compiling with the [CUDA 11.6u2 Toolkit](https://developer.nvidia.com/cuda-toolkit)
-for best performance.
+|NVIDIA H100 PCIe|9.0|11.8|11.8|
 
 # Documentation
 
@@ -133,8 +133,15 @@ CUTLASS is described in the following documents and the accompanying
 - [CUTLASS Profiler](media/docs/profiler.md) - command-line driven profiling application
 - [CUTLASS Utilities](media/docs/utilities.md) - additional templates used to facilate rapid development
 
+# Resources
 We have also described the structure of an efficient GEMM in our talk at the
 [GPU Technology Conference 2018](http://on-demand.gputechconf.com/gtc/2018/presentation/s8854-cutlass-software-primitives-for-dense-linear-algebra-at-all-levels-and-scales-within-cuda.pdf).
+
+ - [CUTLASS: Software Primitives for Dense Linear Algebra at All Levels and Scales within CUDA](https://www.nvidia.com/en-us/on-demand/session/gtcsiliconvalley2018-s8854/)
+ - [Developing CUDA Kernels to Push Tensor Cores to the Absolute Limit on NVIDIA A100](https://www.nvidia.com/en-us/on-demand/session/gtcsj20-s21745/)
+ - [Accelerating Convolution with Tensor Cores in CUTLASS](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s31883/)
+ - [Accelerating Backward Data Gradient by Increasing Tensor Core Utilization in CUTLASS](https://www.nvidia.com/en-us/on-demand/session/gtcspring22-s41996/)
+ - [CUTLASS: Python API, Enhancements, and NVIDIA Hopper](https://www.nvidia.com/en-us/on-demand/session/gtcfall22-a41131/)
 
 # Building CUTLASS
 
@@ -199,6 +206,8 @@ include/                     # client applications should target this directory 
 
     conv/                    # code specialized for convolution
 
+    epilogue/                # code specialized for the epilogue of gemm/convolution
+
     gemm/                    # code specialized for general matrix product computations
 
     layout/                  # layout definitions for matrices, tensors, and other mathematical objects in memory
@@ -206,6 +215,8 @@ include/                     # client applications should target this directory 
     platform/                # CUDA-capable Standard Library components
 
     reduction/               # bandwidth-limited reduction kernels that do not fit the "gemm" model
+
+    thread/                  # simt code that can be performed within a CUDA thread
     
     transform/               # code specialized for layout, type, and domain transformations
 
@@ -215,49 +226,6 @@ include/                     # client applications should target this directory 
 ### CUTLASS SDK Examples
 
 [CUTLASS SDK examples](/examples) apply CUTLASS templates to implement basic computations.
-
-```
-examples/
-  00_basic_gemm/                   # launches a basic GEMM with single precision inputs and outputs
-
-  01_cutlass_utilities/            # demonstrates CUTLASS Utilities for allocating and initializing tensors
-  
-  02_dump_reg_smem/                # debugging utilities for printing register and shared memory contents
-  
-  03_visualize_layout/             # utility for visualizing all layout functions in CUTLASS
-
-  04_tile_iterator/                # example demonstrating an iterator over tiles in memory
-
-  05_batched_gemm/                 # example demonstrating CUTLASS's batched strided GEMM operation
-
-  06_splitK_gemm/                  # exmaple demonstrating CUTLASS's Split-K parallel reduction kernel
-
-  07_volta_tensorop_gemm/          # example demonstrating mixed precision GEMM using Volta Tensor Cores
-
-  08_turing_tensorop_gemm/         # example demonstrating integer GEMM using Turing Tensor Cores
-
-  09_turing_tensorop_conv2dfprop/  # example demonstrating integer implicit GEMM convolution (forward propagation) using Turing Tensor Cores
-
-  10_planar_complex/               # example demonstrating planar complex GEMM kernels
-
-  11_planar_complex_array/         # example demonstrating planar complex kernels with batch-specific problem sizes
-
-  12_gemm_bias_relu/               # example demonstrating GEMM fused with bias and relu
-
-  13_fused_two_gemms/              # example demonstrating two GEMMs fused in one kernel
-
-  22_ampere_tensorop_conv2dfprop/  # example demonstrating integer implicit GEMM convolution (forward propagation) using Ampere Tensor Cores
-
-  31_basic_syrk                    # example demonstrating Symmetric Rank-K update
-
-  32_basic_trmm                    # example demonstrating Triangular Matrix-Matrix multiplication
-
-  33_ampere_3xtf32_tensorop_symm   # example demonstrating Symmetric Matrix-Matrix multiplication with FP32 emulation
-
-  35_gemm_softmax                  # example demonstrating GEMM fused with Softmax in mixed precision using Ampere Tensor Cores
-
-  40_cutlass_py                    # example demonstrating CUTLASS with CUDA Python
-```
 
 ### Tools
 

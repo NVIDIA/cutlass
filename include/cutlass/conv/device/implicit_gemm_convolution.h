@@ -52,33 +52,33 @@ template<typename ImplicitGemmKernel_>
 class ImplicitGemmConvolution {
 public:
 
-  using ImplicitGemmKernel = ImplicitGemmKernel_;
+  using UnderlyingKernel = ImplicitGemmKernel_;
 
-  using ElementA = typename ImplicitGemmKernel::ElementA;
-  using LayoutA = typename ImplicitGemmKernel::LayoutA;
-  using ElementB = typename ImplicitGemmKernel::ElementB;
-  using LayoutB = typename ImplicitGemmKernel::LayoutB;
-  using ElementC = typename ImplicitGemmKernel::ElementC;
-  using LayoutC = typename ImplicitGemmKernel::LayoutC;
-  using ElementAccumulator = typename ImplicitGemmKernel::ElementAccumulator;
-  using ElementCompute = typename ImplicitGemmKernel::ElementCompute;
-  using OperatorClass = typename ImplicitGemmKernel::OperatorClass;
-  using ArchTag = typename ImplicitGemmKernel::ArchTag;
-  using ThreadblockShape = typename ImplicitGemmKernel::ThreadblockShape;
-  using WarpShape = typename ImplicitGemmKernel::WarpShape;
-  using InstructionShape = typename ImplicitGemmKernel::InstructionShape;
-  using ThreadblockSwizzle = typename ImplicitGemmKernel::ThreadblockSwizzle;
-  using EpilogueOutputOp = typename ImplicitGemmKernel::EpilogueOutputOp;
-  static int const kStages = ImplicitGemmKernel::kStages;
-  static int const kConvDim = ImplicitGemmKernel::kConvDim;
-  using WarpMmaOperator = typename ImplicitGemmKernel::WarpMmaOperator;
-  using ArchMmaOperator = typename ImplicitGemmKernel::ArchMmaOperator;
-  using MathOperator = typename ImplicitGemmKernel::MathOperator; 
+  using ElementA = typename UnderlyingKernel::ElementA;
+  using LayoutA = typename UnderlyingKernel::LayoutA;
+  using ElementB = typename UnderlyingKernel::ElementB;
+  using LayoutB = typename UnderlyingKernel::LayoutB;
+  using ElementC = typename UnderlyingKernel::ElementC;
+  using LayoutC = typename UnderlyingKernel::LayoutC;
+  using ElementAccumulator = typename UnderlyingKernel::ElementAccumulator;
+  using ElementCompute = typename UnderlyingKernel::ElementCompute;
+  using OperatorClass = typename UnderlyingKernel::OperatorClass;
+  using ArchTag = typename UnderlyingKernel::ArchTag;
+  using ThreadblockShape = typename UnderlyingKernel::ThreadblockShape;
+  using WarpShape = typename UnderlyingKernel::WarpShape;
+  using InstructionShape = typename UnderlyingKernel::InstructionShape;
+  using ThreadblockSwizzle = typename UnderlyingKernel::ThreadblockSwizzle;
+  using EpilogueOutputOp = typename UnderlyingKernel::EpilogueOutputOp;
+  static int const kStages = UnderlyingKernel::kStages;
+  static int const kConvDim = UnderlyingKernel::kConvDim;
+  using WarpMmaOperator = typename UnderlyingKernel::WarpMmaOperator;
+  using ArchMmaOperator = typename UnderlyingKernel::ArchMmaOperator;
+  using MathOperator = typename UnderlyingKernel::MathOperator; 
 
-  static cutlass::conv::Operator const kConvolutionalOperator = ImplicitGemmKernel::kConvolutionalOperator;
-  static cutlass::conv::IteratorAlgorithm const kIteratorAlgorithm = ImplicitGemmKernel::kIteratorAlgorithm;
-  static cutlass::conv::StrideSupport const kStrideSupport = ImplicitGemmKernel::kStrideSupport;
-  static cutlass::conv::GroupMode const kGroupMode = ImplicitGemmKernel::kGroupMode;
+  static cutlass::conv::Operator const kConvolutionalOperator = UnderlyingKernel::kConvolutionalOperator;
+  static cutlass::conv::IteratorAlgorithm const kIteratorAlgorithm = UnderlyingKernel::kIteratorAlgorithm;
+  static cutlass::conv::StrideSupport const kStrideSupport = UnderlyingKernel::kStrideSupport;
+  static cutlass::conv::GroupMode const kGroupMode = UnderlyingKernel::kGroupMode;
 
   static int const kWarpCount = 
     (ThreadblockShape::kM / WarpShape::kM) * 
@@ -86,12 +86,12 @@ public:
     (ThreadblockShape::kK / WarpShape::kK);
 
   /// Argument structure
-  using Arguments = typename ImplicitGemmKernel::Arguments;
+  using Arguments = typename UnderlyingKernel::Arguments;
 
 private:
 
   /// Kernel parameters object
-  typename ImplicitGemmKernel::Params params_;
+  typename UnderlyingKernel::Params params_;
 
 public:
 
@@ -102,12 +102,12 @@ public:
   static Status can_implement(Arguments const &args) {
 
     // dispatch to iterators
-    Status status = ImplicitGemmKernel::Mma::IteratorA::can_implement(args.problem_size);
+    Status status = UnderlyingKernel::Mma::IteratorA::can_implement(args.problem_size);
     if (Status::kSuccess != status) {
       return status;
     }
 
-    status = ImplicitGemmKernel::Mma::IteratorB::can_implement(args.problem_size);
+    status = UnderlyingKernel::Mma::IteratorB::can_implement(args.problem_size);
     if (Status::kSuccess != status) {
       return status;
     }
@@ -138,9 +138,15 @@ public:
       if (kGroupMode == conv::GroupMode::kMultipleGroup && ThreadblockShape::kN % k_per_group) {
         return Status::kErrorInvalidProblem;
       }
+
+      // current optimized iterator algo only supports SingleGroup mode
+      if (kIteratorAlgorithm == IteratorAlgorithm::kOptimized &&
+        kGroupMode != conv::GroupMode::kSingleGroup) {
+        return Status::kErrorInvalidProblem;
+      }
     }
 
-    static int const kAlignmentC = ImplicitGemmKernel::Epilogue::OutputTileIterator::kElementsPerAccess;
+    static int const kAlignmentC = UnderlyingKernel::Epilogue::OutputTileIterator::kElementsPerAccess;
     if (kConvolutionalOperator == conv::Operator::kFprop) {
       if (args.problem_size.K % kAlignmentC)
         return Status::kErrorMisalignedOperand;
@@ -249,15 +255,15 @@ public:
     }
 
     // initialize the params structure from the arguments
-    params_ = typename ImplicitGemmKernel::Params(
+    params_ = typename UnderlyingKernel::Params(
     	args,
     	static_cast<int *>(workspace)
     );
     
-    int smem_size = int(sizeof(typename ImplicitGemmKernel::SharedStorage));
+    int smem_size = int(sizeof(typename UnderlyingKernel::SharedStorage));
 
     if (smem_size >= (48 << 10)) {
-      cudaError_t result = cudaFuncSetAttribute(cutlass::Kernel<ImplicitGemmKernel>,
+      cudaError_t result = cudaFuncSetAttribute(cutlass::Kernel<UnderlyingKernel>,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     smem_size);
 
@@ -292,9 +298,9 @@ public:
     dim3 grid = threadblock_swizzle.get_grid_shape(params_.grid_tiled_shape);
     dim3 block(32 * kWarpCount, 1, 1);
 
-    int smem_size = int(sizeof(typename ImplicitGemmKernel::SharedStorage));
+    int smem_size = int(sizeof(typename UnderlyingKernel::SharedStorage));
 
-    cutlass::Kernel<ImplicitGemmKernel><<<grid, block, smem_size, stream>>>(params_);
+    cutlass::Kernel<UnderlyingKernel><<<grid, block, smem_size, stream>>>(params_);
 
     cudaError_t result = cudaGetLastError();
 

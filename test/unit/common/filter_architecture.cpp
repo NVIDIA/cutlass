@@ -78,6 +78,7 @@ void FilterArchitecture() {
     { "SM70*",                      70, 75},
     { "SM75*",                      75, kMaxDevice},
     { "SM80*",                      80, kMaxDevice},
+    { "SM90*",                      90, kMaxDevice},
     { 0, 0, false }
   };
 

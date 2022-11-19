@@ -234,6 +234,10 @@ public:
     }
   }
 
+  /// Set base smem address
+  CUTLASS_DEVICE
+  void set_smem_base_address(Index address) {}
+
   /// Loads a fragment
   CUTLASS_DEVICE
   void load(Fragment &frag) const {
@@ -395,6 +399,10 @@ public:
     }
   }
 
+  /// Set base smem address
+  CUTLASS_DEVICE
+  void set_smem_base_address(Index address) {}
+
   /// Loads a fragment
   CUTLASS_DEVICE
   void load(Fragment &frag) {
@@ -555,6 +563,10 @@ public:
       }
     }
   }
+
+  /// Set base smem address
+  CUTLASS_DEVICE
+  void set_smem_base_address(Index address) {}
 
   /// Loads a fragment
   CUTLASS_DEVICE

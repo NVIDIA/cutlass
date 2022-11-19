@@ -29,253 +29,125 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 ################################################################################
-import pycutlass
-from pycutlass import *
-import csv
+"""
+Basic example of using the CUTLASS Python interface to run a grouped GEMM
+"""
 
 import argparse
+import numpy as np
+import sys
 
-# parse the arguments
-parser = argparse.ArgumentParser(
-    description="Launch CUTLASS GEMM Grouped kernels from python")
+import cutlass
+import pycutlass
+from pycutlass import *
+import util
 
-# Operation description
-# math instruction description
-parser.add_argument("-i", "--instruction_shape",
-                    default=[1, 1, 1], nargs=3, type=int, 
-                    help="This option describes the size of MMA op")
-parser.add_argument("-ta", "--element_a", default="float32", type=str,
-                    choices=['float64', 'float32', 'float16', 'bfloat16', 'int32', 'int8'], 
-                    help='Data type of elements in input tensor A')
-parser.add_argument("-tb", "--element_b", default="float32", type=str,
-                    choices=['float64', 'float32', 'float16', 'bfloat16', 'int32', 'int8'], 
-                    help='Data type of elements in input tensor B')
-parser.add_argument("-tc", "--element_c", default="float32", type=str,
-                    choices=['float64', 'float32', 'float16', 'bfloat16', 'int32', 'int8'], 
-                    help='Data type of elements in input tensor C and output tensor D')
-parser.add_argument("-tacc", "--element_acc", default="float32", type=str,
-                    choices=['float64', 'float32', 'float16', 'bfloat16', 'int32', 'int8'], 
-                    help='Data type of accumulator')
-parser.add_argument('-m', "--math", default="multiply_add",
-                    type=str, choices=["multiply_add", "multiply_add_fast_bf16", "multiply_add_fast_f32"], help="math instruction")
-parser.add_argument('-op', "--opcode", default="simt", type=str,
-                    choices=["Simt", 'TensorOp'], help='This option describes whether you want to use tensor \
-                        cores (TensorOp) or regular SIMT cores (Simt) on GPU SM')
-# tile description
-parser.add_argument("-b", "--threadblock_shape",
-                    default=[128, 128, 8], nargs=3, type=int, 
-                    help="This option describes the tile size a thread block with compute")
-parser.add_argument("-s", "--stages", default=4,
-                    type=int, help="Number of pipelines you want to use")
-parser.add_argument("-w", "--warp_count", default=[
-                    4, 2, 1], nargs=3, type=int, 
-                    help="This option describes the number of warps along M, N, and K of the threadblock")
-parser.add_argument("-cc", "--compute_capability", default=80,
-                    type=int, help="This option describes CUDA SM architecture number")
-# A
-parser.add_argument('-la', "--layout_a", default="RowMajor", type=str, choices=[
-                    "RowMajor", "ColumnMajor", "RowMajorInterleaved32", "ColumnMajorInterleaved32"], 
-                    help="Memory layout of input tensor A")
-parser.add_argument('-aa', '--alignment_a', default=1,
-                    type=int, help="Memory alignment of input tensor A")
-# B
-parser.add_argument('-lb', "--layout_b", default="RowMajor", type=str, choices=[
-                    "RowMajor", "ColumnMajor", "RowMajorInterleaved32", "ColumnMajorInterleaved32"], 
-                    help="Memory layout of input tensor B")
-parser.add_argument('-ab', '--alignment_b', default=1,
-                    type=int, help="Memory alignment of input tensor B")
-# C
-parser.add_argument('-lc', "--layout_c", default="RowMajor", type=str, choices=[
-                    "RowMajor", "ColumnMajor", "RowMajorInterleaved32", "ColumnMajorInterleaved32"], 
-                    help="Memory layout of input tensor C and output tensor D")
-parser.add_argument('-ac', '--alignment_c', default=1,
-                    type=int, help="Memory alignment of input tensor C and output tensor D")
-# epilogue
-parser.add_argument("-te", "--element_epilogue", default="float32", type=str,
-                    choices=['float64', 'float32', 'float16', 'bfloat16'], help='Epilogue datatype')
-parser.add_argument("-ep", "--epilogue_functor", default="LinearCombination",
-                    type=str, choices=['LinearCombination', 'FastLinearCombinationClamp', 'LinearCombinationClamp'], 
-                    help="This option describes the epilogue part of the kernel")
-# swizzling
-parser.add_argument("-sw", "--swizzling_functor", default="IdentitySwizzle1", type=str, choices=[
-                    "IdentitySwizzle1", "IdentitySwizzle2", "IdentitySwizzle4", "IdentitySwizzle8", "HorizontalSwizzle"],
-                    help="This option describes how thread blocks are scheduled on GPU. \
-                         NOTE: Threadblock swizzling is currently not supported by CUTLASS's grouped kernels. \
-                         This parameter is passed in at present to match the APIs of other kernels. The parameter \
-                         is unused within the kernel")
-# precompute mode
-parser.add_argument("-pm", "--precompute_mode",
-                    default="Device", type=str, choices=["Host", "Device"],
-                    help="Grouped Gemm Scheduing on device only (Device) or using host precompute (Host)")
-# arguments
-parser.add_argument("-p", "--problem_size_dir", type=str, 
-                    help="path to the csv file contains the problem sizes")
-parser.add_argument("-alpha", "--alpha", default=1.0, type=float, help="alpha")
-parser.add_argument("-beta", "--beta", default=0.0, type=float, help="beta")
-parser.add_argument('-bias', '--bias', action='store_true', help="C is bias vector")
 
-# Activation function
-parser.add_argument("-activ", "--activation_function", default="identity",
-    choices=["identity", "relu", "leaky_relu", "tanh", "sigmoid", "silu", "hardswish", "gelu"], help="activation function")
-parser.add_argument("-activ_arg", "--activation_args", default=[], nargs="+", type=float,
-    help="addition arguments for activation")
-parser.add_argument('--print_cuda', action="store_true",
-                    help="print the underlying CUDA kernel")
+parser = argparse.ArgumentParser(description="Launch a grouped GEMM kernel from Python")
+parser.add_argument('--print_cuda', action="store_true", help="Print the underlying CUDA kernel")
 
 try:
     args = parser.parse_args()
 except:
     sys.exit(0)
 
-pycutlass.get_memory_pool(init_pool_size=2**30, max_pool_size=2**32)
+# Check that the device is of a sufficient compute capability
+cc = util.get_device_cc()
+assert cc >= 70, "The CUTLASS Python grouped GEMM example requires compute capability greater than or equal to 70."
 
 np.random.seed(0)
 
-element_a = getattr(cutlass, args.element_a)
-element_b = getattr(cutlass, args.element_b)
-element_c = getattr(cutlass, args.element_c)
-element_acc = getattr(cutlass, args.element_acc)
-math_operation = getattr(MathOperation, args.math)
-opclass = getattr(cutlass.OpClass, args.opcode)
+# Allocate a pool of device memory to be used by the kernel
+pycutlass.get_memory_pool(init_pool_size=2**30, max_pool_size=2**32)
+
+# Set the compiler to use to NVCC
+pycutlass.compiler.nvcc()
+
+# Set up A, B, C and accumulator
+alignment = 1
+A = TensorDescription(cutlass.float16, cutlass.ColumnMajor, alignment)
+B = TensorDescription(cutlass.float16, cutlass.RowMajor, alignment)
+C = TensorDescription(cutlass.float32, cutlass.ColumnMajor, alignment)
+element_acc = cutlass.float32
+element_epilogue = cutlass.float32
 
 math_inst = MathInstruction(
-    args.instruction_shape, element_a, element_b,
-    element_acc, opclass, math_operation
+    [16, 8, 8],                         # Shape of the Tensor Core instruction
+    A.element, B.element, element_acc,
+    cutlass.OpClass.TensorOp,
+    MathOperation.multiply_add
 )
 
 tile_description = TileDescription(
-    args.threadblock_shape, args.stages, args.warp_count,
+    [128, 128, 32],   # Threadblock shape
+    2,                # Number of stages
+    [2, 2, 1],        # Number of warps within each dimension of the threadblock shape
     math_inst
 )
 
-layout_a = getattr(cutlass, args.layout_a)
-layout_b = getattr(cutlass, args.layout_b)
-layout_c = getattr(cutlass, args.layout_c)
-
-A = TensorDescription(
-    element_a, layout_a, args.alignment_a
-)
-
-B = TensorDescription(
-    element_b, layout_b, args.alignment_b
-)
-
-C = TensorDescription(
-    element_c, layout_c, args.alignment_c
-)
-
-element_epilogue = getattr(cutlass, args.element_epilogue)
-if args.activation_function == "identity":
-    epilogue_functor = getattr(pycutlass, args.epilogue_functor)(
-        C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
-else:
-    epilogue_functor = getattr(pycutlass, "LinearCombinationGeneric")(
-        getattr(pycutlass, args.activation_function)(element_epilogue),
-        C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
-swizzling_functor = getattr(cutlass, args.swizzling_functor)
-precompute_mode = getattr(SchedulerMode, args.precompute_mode)
+epilogue_functor = pycutlass.LinearCombination(C.element, C.alignment, element_acc, element_epilogue)
 
 operation = GemmOperationGrouped(
-    arch=args.compute_capability, tile_description=tile_description,
+    arch=cc, tile_description=tile_description,
     A=A, B=B, C=C,
-    epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor,
-    precompute_mode=precompute_mode
-)
+    epilogue_functor=epilogue_functor,
+    precompute_mode=SchedulerMode.Device)
 
 if args.print_cuda:
     print(operation.rt_module.emit())
 
-pycutlass.compiler.add_module([operation, ])
+operations = [operation, ]
 
-reference_module = ReferenceModule(A, B, C)
+# Compile the operation
+pycutlass.compiler.add_module(operations)
 
-# get problems
-problem_sizes = []
-with open(args.problem_size_dir) as csv_file:
-    reader = csv.reader(csv_file)
-    for row in reader:
-        problem_sizes.append(
-            cutlass.gemm.GemmCoord(int(row[0]), int(row[1]), int(row[2]))
-        )
-
+# Initialize tensors for each problem in the group
+problem_sizes = [
+    cutlass.gemm.GemmCoord(128, 128, 64),
+    cutlass.gemm.GemmCoord(512, 256, 128)
+]
 problem_count = len(problem_sizes)
+
+alpha = 1.
+beta = 0.
 
 tensor_As = []
 tensor_Bs = []
 tensor_Cs = []
 tensor_Ds = []
-problem_sizes_coord = []
 tensor_D_refs = []
 
+reference = ReferenceModule(A, B, C)
+
 for problem_size in problem_sizes:
-    if args.element_a != "int8":
-        if args.element_a == "bfloat16":
-            tensor_A = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.m()
-                                                                           * problem_size.k(),))).astype(bfloat16)
-        else:
-            tensor_A = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.m()
-                                                                           * problem_size.k(),))).astype(getattr(np, args.element_a))
-    else:
-        tensor_A = np.random.uniform(low=-2, high=2, size=(problem_size.m()
-                                                           * problem_size.k(),)).astype(getattr(np, args.element_a))
-
-    if args.element_b != "int8":
-        if args.element_b == "bfloat16":
-            tensor_B = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.k()
-                                                                           * problem_size.n(),))).astype(bfloat16)
-        else:
-            tensor_B = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(problem_size.k()
-                                                                           * problem_size.n(),))).astype(getattr(np, args.element_b))
-    else:
-        tensor_B = np.random.uniform(low=-2, high=2, size=(problem_size.k()
-                                                           * problem_size.n(),)).astype(getattr(np, args.element_b))
-
-    if args.element_c != "int8":
-        if args.bias:
-            if args.layout_c == "RowMajor":
-                c_size = problem_size.n()
-            elif args.layout_c == "ColumnMajor":
-                c_size = problem_size.m()
-            else:
-                raise ValueError(args.layout_c)
-        else:
-            c_size = problem_size.m() * problem_size.n()
-        if args.element_c == "bfloat16":
-            tensor_C = np.ceil(
-                np.random.uniform(low=-8.5, high=7.5, size=(c_size,))
-            ).astype(bfloat16)
-        else:
-            tensor_C = np.ceil(
-                np.random.uniform(low=-8.5, high=7.5, size=(c_size,))
-            ).astype(getattr(np, args.element_c))
-    else:
-        tensor_C = np.random.uniform(
-            low=-2, high=2, size=(problem_size.m() * problem_size.n(),)
-        ).astype(getattr(np, args.element_c))
-    tensor_D = np.zeros(
-        shape=(problem_size.m() * problem_size.n(),)
-    ).astype(getattr(np, args.element_c))
+    # Randomly initialize tensors
+    m = problem_size.m()
+    n = problem_size.n()
+    k = problem_size.k()
+    tensor_A = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(m * k,))).astype(np.float16)
+    tensor_B = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(k * n,))).astype(np.float16)
+    tensor_C = np.ceil(np.random.uniform(low=-8.5, high=7.5, size=(m * n,))).astype(np.float32)
+    tensor_D = np.zeros(shape=(m * n,)).astype(np.float32)
 
     tensor_As.append(tensor_A)
     tensor_Bs.append(tensor_B)
     tensor_Cs.append(tensor_C)
     tensor_Ds.append(tensor_D)
-    tensor_D_ref = reference_module.run(
-        tensor_A, tensor_B, tensor_C, problem_size, 
-        args.alpha, args.beta, args.bias)
-    tensor_D_ref = getattr(pycutlass, args.activation_function).numpy(*([tensor_D_ref,] + args.activation_args))
+
+    # Run the reference GEMM
+    tensor_D_ref = reference.run(tensor_A, tensor_B, tensor_C, problem_size, alpha, beta)
     tensor_D_refs.append(tensor_D_ref)
-    problem_sizes_coord.append(problem_size)
 
 arguments = GemmGroupedArguments(
-    operation, problem_sizes_coord, tensor_As, tensor_Bs, tensor_Cs, tensor_Ds,
-    output_op=operation.epilogue_type(*([args.alpha, args.beta] + args.activation_args))
+    operation, problem_sizes, tensor_As, tensor_Bs, tensor_Cs, tensor_Ds,
+    output_op=operation.epilogue_type(alpha, beta)
 )
 
+# Run the operation
 operation.run(arguments)
-
 arguments.sync()
 
+# Compare the CUTLASS result to the host reference result
 for tensor_d, tensor_d_ref in zip(tensor_Ds, tensor_D_refs):
     try:
         assert np.array_equal(tensor_d, tensor_d_ref)

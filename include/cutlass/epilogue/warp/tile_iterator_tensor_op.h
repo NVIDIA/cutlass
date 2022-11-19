@@ -228,6 +228,11 @@ public:
   TileIteratorTensorOp & operator++() {
     return add_tile_offset({1, 0});
   }
+  
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address) {
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -419,6 +424,11 @@ public:
   CUTLASS_HOST_DEVICE
   TileIteratorTensorOp & operator++() {
     return add_tile_offset({0, 1});
+  }
+
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address) {
   }
 };
 
@@ -644,6 +654,11 @@ public:
   CUTLASS_HOST_DEVICE
   TileIteratorTensorOpCanonical & operator++() {
     return add_tile_offset({1, 0});
+  }
+  
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address) {
   }
 };
 

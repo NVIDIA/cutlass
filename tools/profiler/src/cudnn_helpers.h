@@ -245,7 +245,7 @@ struct cudnnConvDispatcher {
         data_type_filter,
         layout_filter,
         configuration.problem_size.K,
-        configuration.problem_size.C,
+        configuration.problem_size.C / configuration.problem_size.groups,
         configuration.problem_size.R,
         configuration.problem_size.S
     ));

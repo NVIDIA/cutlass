@@ -56,7 +56,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // complex<double> * complex<double> => complex<double>
 // Input data type: complex<double>
-// Math instruction: MMA.884.F64.F64
+// Math instruction: mma.sync.aligned.m8n8k4.f64.f64.f64.f64
 // Output data type: complex<double>
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_warp_gemm_complex_tensor_op_f64, 8x8x4_8x8x4_nt) {
@@ -293,7 +293,7 @@ TEST(SM80_warp_gemm_complex_tensor_op_f64, 16x16x4_8x8x4_tn) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // complex<float> * complex<float> => complex<float>
 // Input data type: complex<float>
-// Math instruction: MMA.1688.F32.TF32
+// Math instruction: mma.sync.aligned.m16n8k8.f32.tf32.tf32.f32
 // Output data type: complex<float>
 // Shared memory layout: Congrous
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -495,7 +495,7 @@ TEST(SM80_warp_gemm_complex_tensor_op_f32, 32x32x8_16x8x8_ct) {
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // complex<float> * complex<float> => complex<float>
 // Input data type: complex<float>
-// Math instruction: MMA.1688.F32.TF32
+// Math instruction: mma.sync.aligned.m16n8k8.f32.tf32.tf32.f32
 // Output data type: complex<float>
 // Shared memory layout: Crosswise
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -526,7 +526,7 @@ TEST(SM80_warp_gemm_complex_tensor_op_f32, 16x16x8_16x8x8_tn) {
       .run();
 }
 
-// TEST FAILS crosswise complex<float> TN MMA.1688.F32.TF32 test fails for k = 2*8 = 16
+// TEST FAILS crosswise complex<float> TN mma.sync.aligned.m16n8k8.f32.tf32.tf32.f32 test fails for k = 2*8 = 16
 TEST(SM80_warp_gemm_complex_tensor_op_f32, 16x16x16_16x8x8_tn) {
 
   using Shape = cutlass::gemm::GemmShape<16, 16, 16>;

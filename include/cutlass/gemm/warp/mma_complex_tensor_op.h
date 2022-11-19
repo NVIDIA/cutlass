@@ -46,6 +46,8 @@
 #include "cutlass/arch/memory_sm75.h"
 #include "cutlass/arch/mma_sm75.h"
 #include "cutlass/arch/mma_sm80.h"
+#include "cutlass/arch/mma_sm90.h"
+
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/warp/mma.h"
 
@@ -545,7 +547,7 @@ public:
 /// Partial specialization for complex*complex+complex => complex:
 //  Operands data type: complex<float>
 //  Rounding: float -> tfloat32_t (round half_ulp_truncate nearest)
-//  Math instruction: MMA.1688.F32.TF32
+//  Math instruction: mma.sync.aligned.m16n8k8.f32.tf32.tf32.f32
 //  Output data type: complex<float>
 // 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -733,7 +735,7 @@ public:
     using MmaOperandC = typename ArchMmaOperator::FragmentC;
 
     static_assert(platform::is_same<cutlass::gemm::GemmShape<16, 8, 8>, typename ArchMmaOperator::Shape>::value, 
-      "This implementation only supports MMA.1688 math instructions.");
+      "This implementation only supports mma.m16n8k8 math instructions.");
 
     static_assert(InstMmaOperandA::kElements == 4, 
       "This implementation only supports math instructions in which exactly four element is needed for the A operand."
@@ -843,6 +845,312 @@ public:
     // Convert Fragment[A|B] holding complex<RealElement[A|B]> to InstMmaOperand[A|B] holding InstMmaOperand[A|B]::Element
     convert_A(reinterpret_cast<InstMmaOperandA *>(&dst_A), A); 
     convert_B(reinterpret_cast<InstMmaOperandB *>(&dst_B), B); 
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Partial specialization for complex*complex+complex => complex:
+//  Operands data type: complex<double>
+//  Math instruction: mma.sync.aligned.m16n8k4.f64.f64.f64.f64
+//  Output data type: complex<double>
+// 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+template <
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
+  typename Shape_,
+  /// Layout of A matrix (concept: MatrixLayout)
+  typename LayoutA_,
+  /// Layout of B matrix (concept: MatrixLayout)
+  typename LayoutB_,
+  /// Layout of C matrix (concept: MatrixLayout)
+  typename LayoutC_,
+  /// Policy describing warp-level MmaTensorOp (concept: MmaTensorOp policy)
+  typename Policy_,
+  /// Complex transform on A operand
+  ComplexTransform TransformA,
+  /// Complex transform on B operand
+  ComplexTransform TransformB
+>
+class MmaComplexTensorOp<
+  Shape_, 
+  complex<double>, 
+  LayoutA_, 
+  complex<double>,
+  LayoutB_,
+  complex<double>,
+  LayoutC_,
+  Policy_,
+  TransformA,
+  TransformB,
+  true>  {
+public:
+  /// Shape of warp-level matrix operation (concept: GemmShape)
+  using Shape = Shape_;
+
+  /// Data type of members of complex multiplicand A
+  using RealElementA = double;
+
+  /// Data type of multiplicand A
+  using ElementA = complex<RealElementA>;
+
+  /// Layout of multiplicand A
+  using LayoutA = LayoutA_;
+
+  /// Data type of members of complex multiplicand B
+  using RealElementB = double;
+
+  /// Data type of multiplicand B
+  using ElementB = complex<RealElementB>;
+
+  /// Layout of multiplicand B
+  using LayoutB = LayoutB_;
+
+  /// Data type of members of complex accumulator matrix C
+  using RealElementC = double;
+
+  /// Data type of accumulator matrix C
+  using ElementC = complex<RealElementC>;
+
+  /// Layout of accumulator matrix C
+  using LayoutC = LayoutC_;
+
+  /// Shape of the warp in units of thread (concept: MmaLanePolicyTensorOp)
+  using Policy = Policy_;
+
+  /// Underlying matrix multiply operator (concept: arch::Mma)
+  using ArchMmaOperator = typename Policy::Operator;
+
+  /// Shape of underlying instruction
+  using InstructionShape = typename ArchMmaOperator::Shape;
+
+  /// Underlying arch tag
+  using ArchTag = typename ArchMmaOperator::ArchTag;
+
+  /// Indicates class of matrix operator
+  using OperatorClass = arch::OpClassTensorOp;
+
+  /// Indicates math operator 
+  using MathOperator = typename arch::OpMultiplyAddComplex;
+
+  /// Complex transform on A operand
+  static ComplexTransform const kTransformA = TransformA;
+
+  /// Complex transform on B operand
+  static ComplexTransform const kTransformB = TransformB;
+
+  /// Number of threads participating in warp-level matrix product
+  static int const kThreadCount = 32;
+
+public:
+
+  /// Iterates over the A operand in memory
+  using IteratorA = MmaTensorOpMultiplicandTileIterator<
+    MatrixShape<Shape::kM, Shape::kK>,
+    Operand::kA,
+    ElementA,
+    LayoutA,
+    MatrixShape<ArchMmaOperator::Shape::kM, ArchMmaOperator::Shape::kK>,
+    Policy::OpDelta::kRow,
+    32,
+    1
+  >;
+
+  /// Storage for A tile
+  using FragmentA = typename IteratorA::Fragment;
+
+  /// Storage for transformed A tile
+  using TransformedFragmentA = FragmentA;
+
+  /// Iterates over the B operand in memory
+  using IteratorB = MmaTensorOpMultiplicandTileIterator<
+    MatrixShape<Shape::kK, Shape::kN>,
+    Operand::kB,
+    ElementB,
+    LayoutB,
+    MatrixShape<ArchMmaOperator::Shape::kK, ArchMmaOperator::Shape::kN>,
+    Policy::OpDelta::kColumn,
+    32,
+    1
+  >;
+
+  /// Storage for B tile
+  using FragmentB = typename IteratorB::Fragment;
+
+  /// Storage for transformed B tile
+  using TransformedFragmentB = FragmentB;
+
+  static_assert(
+    !(Shape::kM % ArchMmaOperator::Shape::kM) && 
+    !(Shape::kN % ArchMmaOperator::Shape::kN),
+    "Shape of warp-level Mma must be divisible by operator shape.");
+
+  /// Number of mma operations performed
+  using MmaIterations = MatrixShape<
+    Shape::kM / ArchMmaOperator::Shape::kM,
+    Shape::kN / ArchMmaOperator::Shape::kN
+  >;
+
+  /// Iterates over the C operand in memory
+  using IteratorC = MmaTensorOpAccumulatorTileIterator<
+     MatrixShape<Shape::kM, Shape::kN>, 
+     ElementC, 
+     LayoutC,
+     typename ArchMmaOperator::Shape, 
+     typename Policy::OpDelta>;
+
+  /// Storage for C tile, the accumulator. Note, regardless of multiplicand type, this
+  /// storage arrangement is to be considered 'planar complex' in the sense that all real-valued
+  /// parts are stored consecutively followed by all imaginary parts. This matches the structure
+  /// of Tensor Cores which are always real-valued matrix multiplies.
+  using FragmentC = typename IteratorC::Fragment;
+
+  static_assert(
+    FragmentC::kElements == 2 * MmaIterations::kCount * ArchMmaOperator::FragmentC::kElements,
+    "Unexpected planar complex fragment length.");
+
+private:
+
+  //
+  // Data members
+  //
+
+  /// Underlying real-valued matrix multiply operator (concept: arch::Mma)
+  ArchMmaOperator mma;
+
+public:
+
+  //
+  // Methods
+  //
+
+  /// Ctor
+  CUTLASS_DEVICE
+  MmaComplexTensorOp() {}
+
+  /// Performs a warp-level matrix multiply-accumulate operation
+  CUTLASS_DEVICE
+  void operator()(
+    FragmentC &D, 
+    FragmentA const &A, 
+    FragmentB const &B, 
+    FragmentC const &C
+  ) const {
+
+    // Alias types for underlying real-valued matrix multiply operator
+    using MmaOperandA = typename ArchMmaOperator::FragmentA;
+    using MmaOperandB = typename ArchMmaOperator::FragmentB;
+    using MmaOperandC = typename ArchMmaOperator::FragmentC;
+
+    D = C;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int m = 0; m < MmaIterations::kRow; ++m) {
+
+      // mma(accum.real(), a.real(), b.real(), accum.real());
+      CUTLASS_PRAGMA_UNROLL
+      for (int n = 0; n < MmaIterations::kColumn; ++n) {
+
+        // Pack operands together. This may result in actual MOVs 
+        MmaOperandA operand_A;
+        MmaOperandB operand_B;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int mk = 0; mk < MmaOperandA::kElements; ++mk)
+          operand_A[mk] = A[m*MmaOperandA::kElements + mk].real();
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int nk = 0; nk < MmaOperandB::kElements; ++nk)
+          operand_B[nk] = B[n*MmaOperandB::kElements + nk].real();
+
+        // Real-valued accumulator part
+        MmaOperandC *accum = reinterpret_cast<MmaOperandC *>(&D) + 
+          (m + n * MmaIterations::kRow);
+
+          mma(*accum, operand_A, operand_B, *accum);
+      }
+
+      // mma(accum.imag(), a.real(), b.imag(), accum.imag()); 
+      CUTLASS_PRAGMA_UNROLL
+      for (int n = MmaIterations::kColumn - 1; n >= 0; --n) {
+
+        // Pack operands together. This may result in actual MOVs 
+        MmaOperandA operand_A;
+        MmaOperandB operand_B;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int mk = 0; mk < MmaOperandA::kElements; ++mk)
+          operand_A[mk] = A[m*MmaOperandA::kElements + mk].real();
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int nk = 0; nk < MmaOperandB::kElements; ++nk)
+          operand_B[nk] = (kTransformB == ComplexTransform::kConjugate ? 
+                          -B[n*MmaOperandB::kElements + nk].imag() : B[n*MmaOperandB::kElements + nk].imag());
+
+        // Complex-valued accumulator part
+        MmaOperandC *accum = reinterpret_cast<MmaOperandC *>(&D) + 
+          (m + n * MmaIterations::kRow) + MmaIterations::kCount;
+
+        mma(*accum, operand_A, operand_B, *accum);
+      }
+
+      // mma(accum.real(), -a.imag(), b.imag(), accum.real())
+      CUTLASS_PRAGMA_UNROLL
+      for (int n = 0; n < MmaIterations::kColumn; ++n) {
+
+        // Pack operands together. This may result in actual MOVs 
+        MmaOperandA operand_A;
+        MmaOperandB operand_B;
+
+        // A imaginary part is intentionally negated
+        CUTLASS_PRAGMA_UNROLL
+        for (int mk = 0; mk < MmaOperandA::kElements; ++mk)
+          operand_A[mk] = (kTransformA == ComplexTransform::kConjugate ?
+                          A[m*MmaOperandA::kElements + mk].imag() : -A[m*MmaOperandA::kElements + mk].imag());
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int nk = 0; nk < MmaOperandB::kElements; ++nk)
+            operand_B[nk] = (kTransformB == ComplexTransform::kConjugate ?
+                            -B[n*MmaOperandB::kElements + nk].imag() : B[n*MmaOperandB::kElements + nk].imag());
+
+        // Real-valued accumulator part
+        MmaOperandC *accum = reinterpret_cast<MmaOperandC *>(&D) + 
+          (m + n * MmaIterations::kRow);
+
+        mma(*accum, operand_A, operand_B, *accum);
+      }
+
+      // mma(accum.imag(), a.imag(), b.real(), accum.imag())
+      CUTLASS_PRAGMA_UNROLL
+      for (int n = MmaIterations::kColumn - 1; n >= 0; --n) {
+
+        // Pack operands together. This may result in actual MOVs 
+        MmaOperandA operand_A;
+        MmaOperandB operand_B;
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int mk = 0; mk < MmaOperandA::kElements; ++mk)
+          operand_A[mk] = (kTransformA == ComplexTransform::kConjugate ?
+                          -A[m*MmaOperandA::kElements + mk].imag() : A[m*MmaOperandA::kElements + mk].imag());
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int nk = 0; nk < MmaOperandB::kElements; ++nk)
+          operand_B[nk] = B[n*MmaOperandB::kElements + nk].real();
+
+        // Complex-valued accumulator part
+        MmaOperandC *accum = reinterpret_cast<MmaOperandC *>(&D) + 
+          (m + n * MmaIterations::kRow) + MmaIterations::kCount;
+
+        mma(*accum, operand_A, operand_B, *accum);
+      }
+    }
+  }
+
+  /// Transform the mma operands to the required types
+  CUTLASS_DEVICE
+  void transform(TransformedFragmentA &dst_A, TransformedFragmentB &dst_B,
+                 FragmentA const &A, FragmentB const &B) const {
+    dst_A = A;
+    dst_B = B;
   }
 };
 

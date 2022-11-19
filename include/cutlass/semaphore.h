@@ -36,7 +36,6 @@
 
 #include "cutlass/cutlass.h"
 
-#include "cutlass/aligned_buffer.h"
 #include "cutlass/array.h"
 
 #include "cutlass/numeric_types.h"

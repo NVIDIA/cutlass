@@ -65,7 +65,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x256x64_64x64x64) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 256x128x64_64x64x64) {
@@ -83,7 +83,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 256x128x64_64x64x64) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x128x64_64x64x64) {
@@ -101,7 +101,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x128x64_64x64x64) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 256x64x64_64x64x64) {
@@ -119,7 +119,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 256x64x64_64x64x64) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x256x64_64x64x64) {
@@ -137,7 +137,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x256x64_64x64x64) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x128x64_32x64x64) {
@@ -155,7 +155,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x128x64_32x64x64) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x64x64_64x32x64) {
@@ -173,7 +173,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x64x64_64x32x64) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x64x64_32x32x64) {
@@ -191,7 +191,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x64x64_32x32x64) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x256x32_64x64x32) {
@@ -209,7 +209,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x256x32_64x64x32) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 256x128x32_64x64x32) {
@@ -227,7 +227,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 256x128x32_64x64x32) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x128x32_64x64x32) {
@@ -245,7 +245,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x128x32_64x64x32) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 256x64x32_64x64x32) {
@@ -263,7 +263,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 256x64x32_64x64x32) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x256x32_64x64x32) {
@@ -281,7 +281,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x256x32_64x64x32) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x128x32_32x64x32) {
@@ -299,7 +299,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x128x32_32x64x32) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x64x32_64x32x32) {
@@ -317,7 +317,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 128x64x32_64x32x32) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x64x32_32x32x32) {
@@ -335,7 +335,7 @@ TEST(SM80_Device_Gemm_bf16t_bf16t_bf16t_tensor_op_f32, 64x64x32_32x32x32) {
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 10>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -69,9 +69,12 @@ def get_gemm_arguments(epilogue_functor):
 
     class _GemmArguments(ctypes.Structure):
         _fields_ = [
+            # Arguments from UniversalArgumentsBase
             ("mode", ctypes.c_int),
             ("problem_size", GemmCoord_),
             ("batch_count", ctypes.c_int),
+            ("batch_stride_D", ctypes.c_longlong),
+            # Remaining arguments
             ("epilogue", _EpilogueOutputOpParams),
             ("ptr_A", ctypes.c_void_p),
             ("ptr_B", ctypes.c_void_p),
@@ -80,7 +83,6 @@ def get_gemm_arguments(epilogue_functor):
             ("batch_stride_A", ctypes.c_longlong),
             ("batch_stride_B", ctypes.c_longlong),
             ("batch_stride_C", ctypes.c_longlong),
-            ("batch_stride_D", ctypes.c_longlong),
             ("stride_a", ctypes.c_longlong),
             ("stride_b", ctypes.c_longlong),
             ("stride_c", ctypes.c_longlong),

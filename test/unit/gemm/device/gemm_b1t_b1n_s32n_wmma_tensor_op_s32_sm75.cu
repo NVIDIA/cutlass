@@ -83,7 +83,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 128x256x512_64x64x512_8x8
     cutlass::arch::OpXorPopc
   >;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 256x128x512_64x64x512_8x8x128) {
@@ -114,7 +114,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 256x128x512_64x64x512_8x8
       2, 128, 128, false, 
       cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 128x128x512_64x64x512_8x8x128) {
@@ -145,7 +145,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 128x128x512_64x64x512_8x8
       2, 128, 128, false, 
       cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 64x128x512_32x64x512_8x8x128) {
@@ -176,7 +176,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 64x128x512_32x64x512_8x8x
       2, 128, 128, false, 
       cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 128x64x512_64x32x512_8x8x128) {
@@ -207,7 +207,7 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 128x64x512_64x32x512_8x8x
       2, 128, 128, false, 
       cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 64x64x512_32x32x512_8x8x128) {
@@ -238,6 +238,6 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 64x64x512_32x32x512_8x8x1
       2, 128, 128, false, 
       cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 #endif //CUTLASS_SUBBYTE_INTEGER_MATRIX_MULTIPLY_ENABLED

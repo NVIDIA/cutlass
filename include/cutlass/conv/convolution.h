@@ -100,14 +100,16 @@ enum class IteratorAlgorithm {
   kAnalytic,      ///< functionally correct in all cases but lower performance
   kOptimized,     ///< optimized for R <= 32, S <= 32 and unity-stride dgrad
   kFixedChannels, ///< Analytic algorithm optimized for fixed channel count (C == AccessSize)
-  kFewChannels    ///< Analytic algorithm optimized for few channels (C divisible by AccessSize)
+  kFewChannels,   ///< Analytic algorithm optimized for few channels (C divisible by AccessSize)
+  kFixedStrideDilation ///< Optimized for fixed stride and dilation
 };
 
 /// Distinguishes among partial specializations that accelerate certain problems where convolution
 /// stride is unit.
 enum class StrideSupport {
   kStrided,       ///< arbitrary convolution stride
-  kUnity          ///< unit convolution stride
+  kUnity,         ///< unit convolution stride
+  kFixed          ///< fixed convolution stride
 };
 
 /// Identifies split-K mode
@@ -123,6 +125,38 @@ enum class GroupMode {
   kSingleGroup,   ///< One CTA calculates one group or less
   kMultipleGroup, ///< One CTA calculates multiple groups
   kDepthwise      ///< One CTA calculates cta_n groups (problem_size.C == problem_size.K == problem_size.groups)
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Shape of a tensor
+template <
+  int N = 1,
+  int H = 1,
+  int W = 1,
+  int C = 1
+>
+struct TensorNHWCShape {
+  static int const kN = N;
+  static int const kH = H;
+  static int const kW = W;
+  static int const kC = C;
+
+  static int const kHW = H * W;
+  static int const kNHW = N * kHW;
+  static int const kNHWC = N * H * W * C;
+
+  static int const kCount = kNHWC;
+
+  //
+  // Static member functions
+  //
+
+  /// Returns a Coord object
+  CUTLASS_HOST_DEVICE
+  static Coord<4> toCoord() {
+    return make_Coord(kN, kH, kW, kC);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

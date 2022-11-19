@@ -88,20 +88,15 @@ struct PitchLinearStripminedThreadMap {
 
     static_assert(!(Shape::kContiguous % kElementsPerAccess), "");
 
-    static_assert(!((Shape::kContiguous * Shape::kStrided) % (kThreads * kElementsPerAccess)), 
-      "Shape must be divisible thread count.");
-
     /// Shape of the tile in units of vectors
     using ShapeVec = layout::PitchLinearShape<
       Shape::kContiguous / kElementsPerAccess,
       Shape::kStrided
     >;
 
-    static_assert(
-      (Threads < ShapeVec::kContiguous && !(ShapeVec::kContiguous % kThreads)) ||
-      (!(kThreads % ShapeVec::kContiguous) && !(ShapeVec::kStrided % (kThreads / ShapeVec::kContiguous))),
-      "Shape must be divisible by number of iterations of each thread."
-    );
+    static_assert((Threads < ShapeVec::kContiguous && !(ShapeVec::kContiguous % kThreads)) ||
+                      (!(kThreads % ShapeVec::kContiguous)),
+                  "Shape must be divisible by number of iterations of each thread.");
   };
 
   /// Number of iterations by each thread
@@ -112,11 +107,12 @@ struct PitchLinearStripminedThreadMap {
           // Redo the comparison here to work around divide by zero compiler
           // error.  The compiler evaluates both path of platform::conditional.
           (Threads >= Detail::ShapeVec::kContiguous
-               ? Detail::ShapeVec::kStrided /
+               ? (Detail::ShapeVec::kStrided + (kThreads / Detail::ShapeVec::kContiguous - 1)) /
                      (kThreads / Detail::ShapeVec::kContiguous)
                : 0)>,
       layout::PitchLinearShape<Detail::ShapeVec::kContiguous / kThreads,
                                Detail::ShapeVec::kStrided>>::type;
+  
 
   /// Interval between accesses along each dimension of the tensor's logical coordinate space
   /// (in units of Elements)
@@ -131,6 +127,13 @@ struct PitchLinearStripminedThreadMap {
       1
     >
   >::type;
+
+  /// Shape of the tile in units of vectors
+  using StorageShape = typename platform::conditional<
+      Threads >= Detail::ShapeVec::kContiguous,
+      layout::PitchLinearShape<Shape::kContiguous,
+                               Iterations::kStrided*(kThreads / Detail::ShapeVec::kContiguous)>,
+      layout::PitchLinearShape<Shape::kContiguous, Shape::kStrided>>::type;
 
   /// Maps thread ID to a coordinate offset within the tensor's logical coordinate space
   /// (in units of Elements)

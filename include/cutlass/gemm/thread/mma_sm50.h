@@ -144,7 +144,10 @@ struct MmaGeneric {
     CUTLASS_PRAGMA_UNROLL
     for (int k = 0; k < Shape::kK; ++k) {
       #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 860)
-      if (kMultipleOf2 && platform::is_same<ElementA, float>::value && platform::is_same<ElementB, float>::value && platform::is_same<ElementC, float>::value) {
+      if (kMultipleOf2 &&
+        platform::is_same<ElementA, float>::value &&
+        platform::is_same<ElementB, float>::value &&
+        platform::is_same<ElementC, float>::value) {
 
         //2x2 zigzag - m and n loops to increment by 2. Inner loop to process 4 multiply-adds in a 2x2 tile.
         CUTLASS_PRAGMA_UNROLL
@@ -249,6 +252,184 @@ struct MmaGeneric {
   }
 };
 
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+/// Matrix multiply-add operation - assumes operand B is not changing
+struct MmaComplexF32_Column {
+
+  using Shape = gemm::GemmShape<1, 1, 1>;
+  using ElementC = complex<float>;
+
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    Array<complex<float>, 1> &d,
+    Array<complex<float>, 1> const &a,
+    Array<complex<float>, 1> const &b,
+    Array<complex<float>, 1> const &c
+  ) {
+
+    d[0].real() =  a[0].real() * b[0].real() + c[0].real();
+    d[0].imag() =  a[0].real() * b[0].imag() + d[0].imag();
+    d[0].real() = -a[0].imag() * b[0].imag() + d[0].real();
+    d[0].imag() =  a[0].imag() * b[0].real() + c[0].imag();
+  }
+};
+
+/// Matrix multiply-add operation - assumes operand A is not changing
+struct MmaComplexF32_Corner {
+
+  using Shape = gemm::GemmShape<1, 1, 1>;
+  using ElementC = complex<float>;
+
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    Array<complex<float>, 1> &d,
+    Array<complex<float>, 1> const &a,
+    Array<complex<float>, 1> const &b,
+    Array<complex<float>, 1> const &c
+  ) {
+
+    d[0].real() = -a[0].imag() * b[0].imag() + d[0].real();
+    d[0].imag() =  a[0].real() * b[0].imag() + d[0].imag();
+    d[0].real() =  a[0].real() * b[0].real() + c[0].real();
+    d[0].imag() =  a[0].imag() * b[0].real() + c[0].imag();
+  }
+};
+
+} // namespace detail
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Gemplate that handles all packed matrix layouts
+template <
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
+  typename Shape_,
+  /// Layout of A matrix (concept: layout::MapFunc)
+  typename LayoutA_,
+  /// Layout of B matrix (concept: layout::MapFunc)
+  typename LayoutB_,
+  /// Layout of C matrix (concept: layout::MapFunc)
+  typename LayoutC_
+>
+struct MmaGeneric<
+  Shape_,
+  complex<float>,
+  LayoutA_,
+  complex<float>,
+  LayoutB_,
+  complex<float>,
+  LayoutC_,
+  arch::OpMultiplyAdd> {
+
+  /// Size of the Gemm problem - concept: gemm::GemmShape<>
+  using Shape = Shape_;
+
+  /// Data type of operand A
+  using ElementA = complex<float>;
+
+  /// Layout of A matrix (concept: layout::MapFunc)
+  using LayoutA = LayoutA_;
+
+  /// Data type of operand B
+  using ElementB = complex<float>;
+
+  /// Layout of B matrix (concept: layout::MapFunc)
+  using LayoutB = LayoutB_;
+
+  /// Element type of operand C
+  using ElementC = complex<float>;
+
+  /// Layout of C matrix (concept: layout::MapFunc)
+  using LayoutC = LayoutC_;
+
+  /// Underlying mathematical operator
+  using Operator = arch::OpMultiplyAdd;
+
+  /// A operand storage
+  using FragmentA = Array<ElementA, Shape::kMK>;
+
+  /// B operand storage
+  using FragmentB = Array<ElementB, Shape::kKN>;
+
+  /// C operand storage
+  using FragmentC = Array<ElementC, Shape::kMN>;
+
+  /// Instruction
+  using MmaOp = arch::Mma<
+    gemm::GemmShape<1,1,1>,
+    1,
+    ElementA, LayoutA,
+    ElementB, LayoutB,
+    ElementC, LayoutC,
+    Operator>;
+
+  //
+  // Methods
+  //
+
+  /// Computes a matrix product D = A * B + C
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    FragmentC & D,
+    FragmentA const & A,
+    FragmentB const & B,
+    FragmentC const & C) {
+
+    TensorRef<ElementA const, LayoutA> a_ref(
+      reinterpret_cast<ElementA const *>(&A), LayoutA::packed({Shape::kM, Shape::kK}));
+
+    TensorRef<ElementB const, LayoutB> b_ref(
+      reinterpret_cast<ElementB const *>(&B), LayoutB::packed({Shape::kK, Shape::kN}));
+
+    TensorRef<ElementC, LayoutC> d_ref(
+      reinterpret_cast<ElementC *>(&D), LayoutC::packed(make_Coord(Shape::kM, Shape::kN)));
+
+    detail::MmaComplexF32_Column mma_column;
+    detail::MmaComplexF32_Corner mma_corner;
+
+    // Copy accumulators
+    D = C;
+
+    // Compute matrix product
+    CUTLASS_PRAGMA_UNROLL
+    for (int k = 0; k < Shape::kK; ++k) {
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int n = 0; n < Shape::kN; ++n) {
+
+        CUTLASS_PRAGMA_UNROLL
+        for (int m = 0; m < Shape::kM; ++m) {
+
+          int m_serpentine = (n % 2) ? (Shape::kM - 1 - m) : m;
+
+          MatrixCoord mn(m_serpentine, n);
+          MatrixCoord mk(m_serpentine, k);
+          MatrixCoord kn(k, n);
+
+          Array<ElementC, 1> d;
+          Array<ElementA, 1> a;
+          Array<ElementB, 1> b;
+
+          d[0] = d_ref.at(mn);
+          a[0] = a_ref.at(mk);
+          b[0] = b_ref.at(kn);
+
+          if ((m == 0 && n) || m == Shape::kM - 1) {
+            mma_corner(d, a, b, d);
+          }
+          else {
+            mma_column(d, a, b, d);
+          }
+
+          d_ref.at(mn) = d[0];
+        }
+      }
+    }
+  }
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

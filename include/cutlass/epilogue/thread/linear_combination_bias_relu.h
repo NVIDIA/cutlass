@@ -223,6 +223,9 @@ public:
   using ElementwiseOp = ReLu<ElementCompute>;
   using BinaryOp = plus<ElementCompute>;
 
+  // Indicates that this epilogue applies only one binary operation
+  static bool const kIsSingleSource = true;
+
   using FragmentAccumulator = Array<ElementAccumulator, kElementsPerAccess>;
   using FragmentCompute = Array<ElementCompute, kElementsPerAccess>;
   using FragmentC = Array<ElementOutput, kElementsPerAccess>;

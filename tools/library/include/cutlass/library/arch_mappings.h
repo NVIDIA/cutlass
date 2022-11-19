@@ -97,6 +97,11 @@ template <typename OperatorClass> struct ArchMap<arch::Sm86, OperatorClass> {
   static int const kMax = 1024;
 };
 
+template <typename OperatorClass> struct ArchMap<arch::Sm90, OperatorClass> {
+  static int const kMin = 90;
+  static int const kMax = 1024;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library

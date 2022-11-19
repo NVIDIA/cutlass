@@ -77,6 +77,8 @@ struct uint128_t {
     uint64_t lo;
     uint64_t hi;
 
+    hilo() = default;
+
     CUTLASS_HOST_DEVICE hilo(uint64_t lo_, uint64_t hi_):lo(lo_), hi(hi_) {}
   };
 
@@ -94,8 +96,7 @@ struct uint128_t {
   //
 
   /// Default ctor
-  CUTLASS_HOST_DEVICE
-  uint128_t(): hilo_(0, 0) { }
+  uint128_t() = default;
 
   /// Constructor from uint64
   CUTLASS_HOST_DEVICE
@@ -222,6 +223,7 @@ struct uint128_t {
     quotient = _udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
     // TODO - not implemented
+    CUTLASS_UNUSED(remainder);
     CUTLASS_UNUSED(divisor);
     exception();
 #endif

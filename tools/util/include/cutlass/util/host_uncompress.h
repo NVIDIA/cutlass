@@ -42,6 +42,7 @@
 
 namespace cutlass {
 
+// uncompress sparse tensor core A matrix
 template <typename ElementA, typename LayoutA, typename ElementE,
           typename LayoutE>
 void uncompress(TensorRef<ElementA, LayoutA> uncompressed_tensor_a,
@@ -119,5 +120,38 @@ void uncompress(TensorRef<ElementA, LayoutA> uncompressed_tensor_a,
     }
   }
 }
+
+// uncompress ELL block sparse matrix
+template <typename ElementA, typename LayoutA,
+          typename ElementE, typename LayoutE>
+void uncompress_ell_block_sparse(
+                TensorRef<ElementA, LayoutA> uncompressed_tensor_a,
+                TensorRef<ElementA, LayoutA> tensor_a,
+                TensorRef<ElementE, LayoutE> ell_idx,
+                int rows, int cols,
+                int ell_num_cols, int ell_blocksize) {
+
+  for (int r = 0; r < rows / ell_blocksize; ++r) {
+    for (int c = 0; c < ell_num_cols / ell_blocksize; ++c) {
+
+      ElementE idx = ell_idx.at(MatrixCoord(r, c));
+
+      if (idx != -1) {
+        int row_begin = r * ell_blocksize;
+        int col_begin_real = idx * ell_blocksize;
+        int col_begin = c * ell_blocksize;
+  
+        for (int i = 0; i < ell_blocksize; ++i) {
+          for (int j = 0; j < ell_blocksize; ++j) {
+            uncompressed_tensor_a.at(MatrixCoord(row_begin + i, col_begin_real + j)) =
+                tensor_a.at(
+                    MatrixCoord(row_begin + i, col_begin +j));
+          }
+        }
+      }
+    }
+  }
+}
+
 } // namespace cutlass
 

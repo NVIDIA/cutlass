@@ -51,7 +51,7 @@
 #include "cutlass/transform/pitch_linear_thread_map.h"
 #include "cutlass/transform/threadblock/regular_tile_iterator.h"
 
-#include "cutlass/epilogue/threadblock/epilogue_base.h"
+#include "cutlass/epilogue/threadblock/epilogue_base_streamk.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -78,8 +78,21 @@ template <
     typename OutputOp_,
     /// Number of interleaved k
     int InterleavedK>
-class InterleavedEpilogue {
- public:
+class InterleavedEpilogue :
+  public EpilogueBaseStreamK<
+    Shape_,
+    PartitionsK,
+    WarpMmaOperator_,
+    AccumulatorFragmentIterator_>
+{
+public:
+
+  using BaseStreamK = EpilogueBaseStreamK<
+    Shape_,
+    PartitionsK,
+    WarpMmaOperator_,
+    AccumulatorFragmentIterator_>;
+
   using Shape = Shape_;
   using WarpMmaOperator = WarpMmaOperator_;
   static int const kPartitionsK = PartitionsK;
@@ -89,6 +102,9 @@ class InterleavedEpilogue {
 
   /// The complete warp-level accumulator tile
   using AccumulatorTile = typename AccumulatorFragmentIterator::AccumulatorTile;
+
+  /// Fragment type used by the accumulator tile's fragment iterator
+  using AccumulatorFragment = typename AccumulatorFragmentIterator::Fragment;
 
   /// Accumulator element
   using ElementAccumulator = typename AccumulatorTile::Element;
@@ -122,7 +138,8 @@ class InterleavedEpilogue {
       gemm::GemmShape<Shape::kM / WarpMmaOperator::Shape::kM,
                       Shape::kN / WarpMmaOperator::Shape::kN, kPartitionsK>;
 
- public:
+public:
+
   static_assert(OutputTileIterator::kElementsPerAccess,
                 "This must not be zero.");
 
@@ -134,15 +151,58 @@ class InterleavedEpilogue {
   struct SharedStorage {};
 
 
- public:
+public:
+
   /// Constructor
   CUTLASS_DEVICE
   InterleavedEpilogue(
       SharedStorage &shared_storage,  ///< Shared storage object
       int thread_idx,                 ///< ID of a thread within the threadblock
       int warp_idx,                   ///< ID of warp within threadblock
-      int lane_idx                    ///< Id of thread within warp
-    ) {}
+      int lane_idx)                   ///< Id of thread within warp
+  :
+      BaseStreamK(thread_idx)
+  {}
+
+
+  /// Aggregates the accumulator sets shared by peer blocks in the global workspace,
+  /// performing epilogue computations, writing to output
+  CUTLASS_DEVICE
+  void reduce(
+      int peer_idx_begin,
+      int peer_idx_end,
+      int reduce_fragment_idx,
+      ElementAccumulator *element_workspace,
+      OutputOp const &output_op,                      ///< Output operator
+      OutputTileIterator destination_iterator,        ///< Tile iterator for destination
+      OutputTileIterator source_iterator)             ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
+  {
+    // Redcuce peer accumulator fragments into one fragment
+    AccumulatorFragment accum_fragment;
+    BaseStreamK::reduce(accum_fragment, peer_idx_begin, peer_idx_end, reduce_fragment_idx, element_workspace);
+
+    // Source-fragment data (zero-initialized for scenarios where the
+    // output operator allows us to skip loading it from global input)
+    typename OutputTileIterator::Fragment source_fragment;
+    source_fragment.clear();
+
+    if (output_op.is_source_needed())
+    {
+      source_iterator += reduce_fragment_idx;
+      source_iterator.load(source_fragment);
+    }
+
+    // Compute the output result
+    typename OutputTileIterator::Fragment output_fragment;
+
+    // Apply the output operator
+    apply_output_operator(output_fragment, output_op, accum_fragment, source_fragment);
+
+    // Store the final result
+    destination_iterator += reduce_fragment_idx;
+    destination_iterator.store(output_fragment);
+  }
+
 
   /// Streams the result to global memory
   CUTLASS_DEVICE
@@ -194,7 +254,7 @@ class InterleavedEpilogue {
       //
 
       typename OutputTileIterator::Fragment output_fragment;
-      apply_output_operator_source_not_needed_(output_op, output_fragment, accum_fragment);
+      apply_output_operator_source_not_needed(output_fragment, output_op, accum_fragment);
 
       //
       // Store the final result
@@ -257,7 +317,7 @@ class InterleavedEpilogue {
       //
 
       typename OutputTileIterator::Fragment output_fragment;
-      apply_output_operator_source_needed_(output_op, output_fragment, accum_fragment, source_fragment);
+      apply_output_operator(output_fragment, output_op, accum_fragment, source_fragment);
 
       //
       // Store the final result
@@ -269,15 +329,16 @@ class InterleavedEpilogue {
     }
   }
 
- private:
+protected:
+
   /// Helper to invoke the output functor over each vector of output
   CUTLASS_DEVICE
-  void apply_output_operator_source_needed_(
-    OutputOp const &output_op,                    ///< Output operator
-      typename OutputTileIterator::Fragment &output_fragment,
-      typename AccumulatorFragmentIterator::Fragment const
-          &aligned_accum_fragment,
-      typename OutputTileIterator::Fragment const &source_fragment) {
+  void apply_output_operator(
+    typename OutputTileIterator::Fragment &output_fragment,
+    OutputOp const &output_op,
+    typename AccumulatorFragmentIterator::Fragment const &aligned_accum_fragment,
+    typename OutputTileIterator::Fragment const &source_fragment)
+  {
     OutputAccessType *output_frag_ptr =
         reinterpret_cast<OutputAccessType *>(&output_fragment);
 
@@ -300,11 +361,11 @@ class InterleavedEpilogue {
 
   /// Helper to invoke the output functor over each vector of output
   CUTLASS_DEVICE
-  void apply_output_operator_source_not_needed_(
-    OutputOp const &output_op,                    ///< Output operator
-      typename OutputTileIterator::Fragment &output_fragment,
-      typename AccumulatorFragmentIterator::Fragment const
-          &aligned_accum_fragment) {
+  void apply_output_operator_source_not_needed(
+    typename OutputTileIterator::Fragment &output_fragment,
+    OutputOp const &output_op,
+    typename AccumulatorFragmentIterator::Fragment const &aligned_accum_fragment)
+  {
     OutputAccessType *output_frag_ptr =
         reinterpret_cast<OutputAccessType *>(&output_fragment);
 

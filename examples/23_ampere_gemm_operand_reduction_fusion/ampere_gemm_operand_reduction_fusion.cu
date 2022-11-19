@@ -426,7 +426,7 @@ Result profile(Options const &options) {
 
   // Create a tuple of gemm kernel arguments. This is later passed as arguments to launch
   // instantiated CUTLASS kernel
-  typename Gemm::Arguments arguments{
+  typename Gemm::Arguments arguments(
     mode,
     options.problem_size,
     batch_count,
@@ -445,8 +445,7 @@ Result profile(Options const &options) {
     tensor_b.layout().stride(0),
     tensor_c.layout().stride(0),
     tensor_d.layout().stride(0),
-    tensor_reduction.layout().stride(0)
-  };                    
+    tensor_reduction.layout().stride(0));
 
   // Instantiate CUTLASS kernel depending on templates
   Gemm gemm_op;
@@ -515,15 +514,14 @@ Result profile(Options const &options) {
 
     cutlass::TensorRef<ElementOutput, cutlass::layout::RowMajor> tensor_nullptr_tensorref(nullptr, splitk_vector_layout);
 
-    typename ReduceVectorSplitK::Arguments reduce_vector_splitk_arguments{
+    typename ReduceVectorSplitK::Arguments reduce_vector_splitk_arguments(
       cutlass::MatrixCoord(1, reduce_vector_length),
       batch_count,
       size_t(reduce_vector_length),
       workspace_vector_tensorref,
       tensor_reduction_tensorref,
       tensor_nullptr_tensorref,
-      {1.0f, 0.0f} 
-    };
+      {1.0f, 0.0f});
 
     ReduceVectorSplitK reduce_vector_splitk_op;
    

@@ -31,6 +31,7 @@ cutlass_test_unit_add_executable(
   array.cu
   half.cu
   bfloat16.cu
+  float8.cu
   tfloat32.cu
   complex.cu
   quaternion.cu

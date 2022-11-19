@@ -122,6 +122,74 @@ struct DefaultTrmmComplex;
 
 ////////////////////////////////////////////////////////////////////////////////
 
+/// Partial specialization for Hopper Architecture
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Side Mode for the kernel
+    SideMode kSideMode,
+    /// Fill Mode for the triangular matrix
+    FillMode kFillMode,
+    /// Diag Type for the triangular matrix
+    DiagType kDiagType,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// Complex elementwise transformation on A operand
+    ComplexTransform TransformA,
+    /// Complex elementwise transformation on B operand
+    ComplexTransform TransformB,
+    /// Multiply-add operator 
+    // (arch::OpMultiplyAddComplex, arch::OpMultiplyGaussianComplex)
+    typename Operator,
+    /// If true, kernel is configured to support serial reduction in the epilogue
+    bool SplitKSerial
+  >
+struct DefaultTrmmComplex<
+  ElementA, LayoutA, ElementB, LayoutB, 
+  kSideMode, kFillMode, kDiagType,
+  ElementC, layout::RowMajor, ElementAccumulator, arch::OpClassTensorOp,
+  arch::Sm90, ThreadblockShape, WarpShape, InstructionShape,
+  EpilogueOutputOp, ThreadblockSwizzle, Stages, TransformA, TransformB, Operator, SplitKSerial> {
+
+  /// Define the threadblock-scoped matrix multiply-accumulate
+  using Mma = typename cutlass::gemm::threadblock::DefaultMultistageTrmmComplex<
+      ElementA, LayoutA, ElementB, LayoutB, 
+      kSideMode, kFillMode, kDiagType,
+      ElementAccumulator,layout::RowMajor, arch::OpClassTensorOp, arch::Sm90, ThreadblockShape,
+      WarpShape, InstructionShape, Stages, TransformA, TransformB, Operator>::ThreadblockMma;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueComplexTensorOp<
+          ThreadblockShape, typename Mma::Operator, 1, EpilogueOutputOp,
+          EpilogueOutputOp::kCount, Operator>::Epilogue;
+
+  /// Define the kernel-level TRMM operator.
+  using TrmmKernel = kernel::TrmmUniversal<Mma, Epilogue, ThreadblockSwizzle, kSideMode, kFillMode, kDiagType>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
 /// Partial specialization for Ampere Architecture
 template <
     /// Element type for A matrix operand

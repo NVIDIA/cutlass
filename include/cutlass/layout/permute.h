@@ -72,9 +72,6 @@ private:
 
   Index stride_permute_;
 
-  Index col_permute_;
-  Index row_permute_;
-
 public:
   //
   // Methods
@@ -140,7 +137,7 @@ public:
   /// Computes the address offset after Permute Op in Bytes
   CUTLASS_HOST_DEVICE
   LongIndex operator()(MatrixCoord offset_init) {
-    // Permute as torch.permute(X1, [0, 2, 1, 3]) -> 4D Tensor indices as [i, j, k, l], the dimension of X
+    // Permute as torch.permute(X1, [0, 2, 1, 3]) -> 4D Tensor indices as [i,j,k,l], the dimension of X
     // is [D0, D1, D2, D3], after permutation the dim of X1 is [D0, D2, D1, D3].
     assert(extent_.row() % D1 == 0);
     assert(extent_.column() % D2 == 0);

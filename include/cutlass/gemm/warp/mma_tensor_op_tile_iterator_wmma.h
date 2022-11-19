@@ -493,7 +493,7 @@ public:
 
     Index elements_offset = layout_({WmmaShape::kRow, 0});
 
-    byte_offset_ -= (elements_offset + sizeof_bits<Element>::value) / 8;
+    byte_offset_ -= (elements_offset * sizeof_bits<Element>::value) / 8;
     return *this;
   }
 

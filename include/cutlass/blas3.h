@@ -40,6 +40,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/array.h"
 #include "cutlass/coord.h"
+#include "cutlass/complex.h"
 #include "cutlass/functional.h"
 #include "cutlass/numeric_types.h"
 

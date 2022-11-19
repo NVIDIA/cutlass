@@ -80,9 +80,9 @@ public:
   typedef value_type *pointer;
   typedef value_type const * const_pointer;
 
-  using ArrayType = Array<T, N>;
-  using reference = typename ArrayType::reference;
-  using const_reference = typename ArrayType::const_reference;
+  using Array = Array<T, N>;
+  using reference = typename Array::reference;
+  using const_reference = typename Array::const_reference;
 
 public:
 

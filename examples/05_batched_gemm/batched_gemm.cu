@@ -81,7 +81,7 @@ matrix A can be seen as
 ---------------------------------------
      batch 0      |      batch 1
 , where batch size is 2, M is 6 and K is 2
-The stride (batch_stride_B) between the first element of two batches is lda * k
+The stride (batch_stride_A) between the first element of two batches is lda * k
 
 matrix B can be seen as
 -----------------------------
@@ -94,7 +94,7 @@ matrix B can be seen as
 (1,1,0) | (1,1,1) | (1,1,2) |
 -----------------------------
 , where the batch size is 2, N is 3 and K is 2
-The stride (batch_stride_C) between the first element of two batches is k
+The stride (batch_stride_B) between the first element of two batches is k
 
 
 */

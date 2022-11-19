@@ -680,9 +680,66 @@ public:
           state_[2] = 0;
           byte_pointer_ += params_.advance_tile;
           store_byte_pointer_ += params_.advance_tile;
+
+          thread_start_row_ += ThreadMap::Shape::kGroup * ThreadMap::Shape::kRow
+            * ThreadMap::Shape::kCluster * ThreadMap::Shape::kTile;
         }
       }
     }
+
+    return *this;
+  }
+
+  /// Advances a number of positions to load or store
+  CUTLASS_HOST_DEVICE
+  PredicatedTileIterator &operator+=(int increment)
+  {
+    // Row
+    state_[0] += increment;
+    int increment_row = state_[0] / ThreadMap::Count::kRow;
+    state_[0] = state_[0] % ThreadMap::Count::kRow;
+
+    byte_pointer_ += (params_.advance_row * increment);
+    store_byte_pointer_ += (params_.advance_row * increment);
+    thread_start_row_ += (ThreadMap::Shape::kRow * increment);
+
+    // Group
+    state_[1] += increment_row;
+    int increment_group = state_[1] / ThreadMap::Count::kGroup;
+    state_[1] = state_[1] % ThreadMap::Count::kGroup;
+
+    byte_pointer_ += (params_.advance_group * increment_row);
+    store_byte_pointer_ += (params_.advance_group * increment_row);
+    thread_start_row_ +=
+        (ThreadMap::Shape::kGroup - 1) *
+        ThreadMap::Shape::kRow *
+        ThreadMap::Count::kRow *
+        increment_row;
+
+
+    // Cluster
+    state_[2] += increment_group;
+    int increment_cluster = state_[2] / ThreadMap::Count::kCluster;
+    state_[2] = state_[2] % ThreadMap::Count::kCluster;
+
+    byte_pointer_ += (params_.advance_cluster * increment_group);
+    store_byte_pointer_ += (params_.advance_cluster * increment_group);
+    thread_start_row_ +=
+        ThreadMap::Count::kGroup *
+        ThreadMap::Shape::kGroup *
+        ThreadMap::Count::kRow *
+        ThreadMap::Shape::kRow *
+        increment_group;
+
+    // Tile
+    byte_pointer_ += (params_.advance_tile * increment_cluster);
+    store_byte_pointer_ += (params_.advance_tile * increment_cluster);
+    thread_start_row_ +=
+        ThreadMap::Shape::kGroup *
+        ThreadMap::Shape::kRow *
+        ThreadMap::Shape::kCluster *
+        ThreadMap::Shape::kTile *
+        increment_cluster;
 
     return *this;
   }
@@ -940,6 +997,23 @@ public:
         iteration_strided_ = 0;
       }
     }
+
+    return *this;
+  }
+
+  /// Advances a number of positions to load or store
+  CUTLASS_HOST_DEVICE
+  InterleavedPredicatedTileIterator &operator+=(int increment)
+  {
+    // Contiguous
+    iteration_contiguous_ += increment;
+    int increment_strided = iteration_contiguous_ / ThreadMap::Iterations::kContiguous;
+    iteration_contiguous_ = iteration_contiguous_ % ThreadMap::Iterations::kContiguous;
+    byte_pointer_ += (params_.advance_row * increment);
+
+    // Strided
+    iteration_strided_ += increment_strided;
+    byte_pointer_ += (params_.advance_column * increment_strided);
 
     return *this;
   }
