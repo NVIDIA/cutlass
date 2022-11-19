@@ -34,6 +34,7 @@
 
 #include "../../common/cutlass_unit_test.h"
 
+#include "cutlass/layout/layout.h"
 #include "cutlass/epilogue/thread/activation.h"
 
 #include "cutlass/util/host_tensor.h"

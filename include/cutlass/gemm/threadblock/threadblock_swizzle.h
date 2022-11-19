@@ -41,68 +41,14 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/conv/conv2d_problem_size.h"
 #include "cutlass/conv/conv3d_problem_size.h"
+#include "cutlass/gemm/threadblock/index_remat.h"
+#include "cutlass/gemm/threadblock/threadblock_swizzle_streamk.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace gemm {
 namespace threadblock {
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Helper to rematerialize block Idx. Reduces register liveness.
-CUTLASS_DEVICE
-int RematerializeThreadIdxX() {
-  return threadIdx.x;
-}
-
-/// Helper to rematerialize block Idx. Reduces register liveness.
-CUTLASS_DEVICE
-int RematerializeThreadIdxY() {
-  return threadIdx.y;
-}
-
-/// Helper to rematerialize block Idx. Reduces register liveness.
-CUTLASS_DEVICE
-int RematerializeThreadIdxZ() {
-  return threadIdx.z;
-}
-
-/// Helper to rematerialize block Idx. Reduces register liveness.
-CUTLASS_DEVICE
-int RematerializeBlockIdxX() {
-  return blockIdx.x;
-}
-
-/// Helper to rematerialize block Idx. Reduces register liveness.
-CUTLASS_DEVICE
-int RematerializeBlockIdxY() {
-  return blockIdx.y;
-}
-
-/// Helper to rematerialize block Idx. Reduces register liveness.
-CUTLASS_DEVICE
-int RematerializeBlockIdxZ() {
-  return blockIdx.z;
-}
-
-/// Helper to rematerialize block Dim. Reduces register liveness.
-CUTLASS_DEVICE
-int RematerializeBlockDimX() {
-  return blockDim.x;
-}
-
-/// Helper to rematerialize block Dim. Reduces register liveness.
-CUTLASS_DEVICE
-int RematerializeBlockDimY() {
-  return blockDim.y;
-}
-
-/// Helper to rematerialize block Dim. Reduces register liveness.
-CUTLASS_DEVICE
-int RematerializeBlockDimZ() {
-  return blockDim.z;
-}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

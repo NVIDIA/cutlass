@@ -38,10 +38,18 @@
 #include "cutlass/gemm/threadblock/threadblock_swizzle.h"
 #include "cutlass/conv/threadblock/threadblock_swizzle.h"
 
-#include <boost/core/demangle.hpp>
+#include <cxxabi.h>
 #include <cuda_runtime.h>
 
 namespace py = pybind11;
+
+std::string demangle(const char* mangled_name) {
+    std::size_t len = 0;
+    int status = 0;
+    std::unique_ptr<char> ptr(
+                __cxxabiv1::__cxa_demangle(mangled_name, nullptr, &len, &status));
+    return ptr.get();
+}
 
 template<typename T>
 void bind_identity_swizzle(py::module & m, std::string name) {
@@ -80,7 +88,7 @@ void bind_identity_swizzle(py::module & m, std::string name) {
             py::arg("tiled_shape"), 
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")
         .def("tag", [](const T & swizzle){
-            return boost::core::demangle(typeid(T).name());
+            return demangle(typeid(T).name());
         }, R"pbdoc(Returns the c++ name of the swizzling for code emittion)pbdoc");
 }
 
@@ -101,7 +109,7 @@ void bind_swizzle(py::module & m, std::string name, std::string doc) {
             py::arg("tiled_shape"), 
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")
         .def("tag", [](const T & swizzle){
-            return boost::core::demangle(typeid(T).name());
+            return demangle(typeid(T).name());
         }, R"pbdoc(Returns the c++ name of the swizzling for code emittion)pbdoc");
 }
 
@@ -124,7 +132,7 @@ void bind_dgrad_swizzle(py::module & m, std::string name) {
         }, py::arg("tiled_shape"), 
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")
         .def("tag", [](const T & swizzle){
-            return boost::core::demangle(typeid(T).name());
+            return demangle(typeid(T).name());
         }, R"pbdoc(Returns the c++ name of the swizzling for code emittion)pbdoc");
 }
 

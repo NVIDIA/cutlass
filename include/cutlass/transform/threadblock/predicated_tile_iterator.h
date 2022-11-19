@@ -207,13 +207,13 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
    public:
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout) : params_(layout) { }
-    
-    CUTLASS_HOST_DEVICE
-    Params() { }
+    Params(Layout const &layout) : params_(layout) {}
+
+    /// Default constructor
+    Params() = default;
 
     CUTLASS_HOST_DEVICE
-    Params(Base const &base) 
+    Params(Base const &base)
         : params_(base) {}
   };
 
@@ -230,6 +230,10 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
   TileAccessIterator address_iterator_;
 
  public:
+
+  /// Default constructor
+  PredicatedTileIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -457,18 +461,17 @@ public:
     typename UnderlyingIterator::Params params_;
 
   public:
-    
-    CUTLASS_HOST_DEVICE
-    Params() { }
+
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout): params_(layout::PitchLinear(layout.stride(0))) {
-
-    }
+    Params(Layout const &layout): params_(layout::PitchLinear(layout.stride(0)))
+    {}
 
     CUTLASS_HOST_DEVICE
-    Params(typename UnderlyingIterator::Params::Base const &base) 
+    Params(typename UnderlyingIterator::Params::Base const &base)
         : params_(base) {}
   };
 
@@ -483,6 +486,9 @@ private:
   UnderlyingIterator iterator_;
 
 public:
+
+  /// Default constructor
+  PredicatedTileIterator() = default;
 
   /// Constructs a TileIterator from its precomputed state, threadblock offset, and thread ID
   CUTLASS_HOST_DEVICE
@@ -670,16 +676,16 @@ public:
     typename UnderlyingIterator::Params params_;
 
   public:
-    
-    CUTLASS_HOST_DEVICE
-    Params() { } 
+
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
     Params(Layout const &layout): params_(layout::PitchLinear(layout.stride(0))) {}
 
     CUTLASS_HOST_DEVICE
-    Params(typename UnderlyingIterator::Params::Base const &base) 
+    Params(typename UnderlyingIterator::Params::Base const &base)
         : params_(base) {}
 
   };
@@ -694,6 +700,9 @@ private:
   UnderlyingIterator iterator_;
 
 public:
+
+  /// Default constructor
+  PredicatedTileIterator() = default;
 
   /// Constructs a TileIterator from its precomputed state, threadblock offset, and thread ID
   CUTLASS_HOST_DEVICE
@@ -878,10 +887,10 @@ class PredicatedTileIterator<Shape_, Element_, layout::AffineRankN<2>, AdvanceRa
    public:
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout) : params_(layout) { }
-    
-    CUTLASS_HOST_DEVICE
-    Params() { }
+    Params(Layout const &layout) : params_(layout) {}
+
+    /// Default constructor
+    Params() = default;
   };
 
  private:
@@ -897,6 +906,10 @@ class PredicatedTileIterator<Shape_, Element_, layout::AffineRankN<2>, AdvanceRa
   TileAccessIterator address_iterator_;
 
  public:
+
+  /// Default constructor
+  PredicatedTileIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -1123,15 +1136,14 @@ public:
     typename UnderlyingIterator::Params params_;
 
   public:
-    
-    CUTLASS_HOST_DEVICE
-    Params() { }
+
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given an AffineRankN<2> tensor's layout
     CUTLASS_HOST_DEVICE
-    Params(Layout const &layout): params_(layout::AffineRankN<2>(layout.stride(0), layout.stride(1))) {
-
-    }
+    Params(Layout const &layout): params_(layout::AffineRankN<2>(layout.stride(0), layout.stride(1)))
+    {}
   };
 
 private:
@@ -1144,6 +1156,9 @@ private:
   UnderlyingIterator iterator_;
 
 public:
+
+  /// Default constructor
+  PredicatedTileIterator() = default;
 
   /// Constructs a TileIterator from its precomputed state, threadblock offset, and thread ID
   CUTLASS_HOST_DEVICE
@@ -1329,9 +1344,9 @@ public:
     typename UnderlyingIterator::Params params_;
 
   public:
-    
-    CUTLASS_HOST_DEVICE
-    Params() { } 
+
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given an AffineRankN<2> tensor's layout
     CUTLASS_HOST_DEVICE
@@ -1349,6 +1364,9 @@ private:
   UnderlyingIterator iterator_;
 
 public:
+
+  /// Default constructor
+  PredicatedTileIterator() = default;
 
   /// Constructs a TileIterator from its precomputed state, threadblock offset, and thread ID
   CUTLASS_HOST_DEVICE
@@ -1530,8 +1548,9 @@ class PredicatedTileIterator<Shape_, Element_,
     typename UnderlyingIterator::Params params_;
 
    public:
-    CUTLASS_HOST_DEVICE
-    Params() {}
+
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
@@ -1539,7 +1558,7 @@ class PredicatedTileIterator<Shape_, Element_,
         : params_(layout::PitchLinear(layout.stride(0))) {}
 
     CUTLASS_HOST_DEVICE
-    Params(typename UnderlyingIterator::Params::Base const &base) 
+    Params(typename UnderlyingIterator::Params::Base const &base)
         : params_(base) {}
 
   };
@@ -1553,6 +1572,10 @@ class PredicatedTileIterator<Shape_, Element_,
   UnderlyingIterator iterator_;
 
  public:
+
+  /// Default constructor
+  PredicatedTileIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE
@@ -1701,7 +1724,7 @@ class PredicatedTileIterator<Shape_, Element_,
 
 
   using AccessType = typename UnderlyingIterator::AccessType;
-  
+
   /// Fragment object to be loaded or stored
   using Fragment = cutlass::Array<Element, ThreadMap::Iterations::kCount *
                                                ThreadMap::kElementsPerAccess>;
@@ -1718,8 +1741,9 @@ class PredicatedTileIterator<Shape_, Element_,
     typename UnderlyingIterator::Params params_;
 
    public:
-    CUTLASS_HOST_DEVICE
-    Params() {}
+
+    /// Default constructor
+    Params() = default;
 
     /// Construct the Params object given a pitch-linear tensor's layout
     CUTLASS_HOST_DEVICE
@@ -1727,7 +1751,7 @@ class PredicatedTileIterator<Shape_, Element_,
         : params_(layout::PitchLinear(layout.stride(0))) {}
 
     CUTLASS_HOST_DEVICE
-    Params(typename UnderlyingIterator::Params::Base const &base) 
+    Params(typename UnderlyingIterator::Params::Base const &base)
         : params_(base) {}
   };
 
@@ -1740,6 +1764,10 @@ class PredicatedTileIterator<Shape_, Element_,
   UnderlyingIterator iterator_;
 
  public:
+
+  /// Default constructor
+  PredicatedTileIterator() = default;
+
   /// Constructs a TileIterator from its precomputed state, threadblock offset,
   /// and thread ID
   CUTLASS_HOST_DEVICE

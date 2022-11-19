@@ -70,7 +70,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x256x1024_64x64x1024) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 256x128x1024_64x64x1024) {
@@ -90,7 +90,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 256x128x1024_64x64x1024) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x128x1024_64x64x1024) {
@@ -111,7 +111,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x128x1024_64x64x1024) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 256x64x1024_64x64x1024) {
@@ -131,7 +131,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 256x64x1024_64x64x1024) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x256x1024_64x64x1024) {
@@ -151,7 +151,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x256x1024_64x64x1024) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x128x1024_32x64x1024) {
@@ -171,7 +171,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x128x1024_32x64x1024) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x64x1024_64x32x1024) {
@@ -191,7 +191,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x64x1024_64x32x1024) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x64x1024_32x32x1024) {
@@ -211,7 +211,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x64x1024_32x32x1024) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x256x512_64x64x512) {
@@ -231,7 +231,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x256x512_64x64x512) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 256x128x512_64x64x512) {
@@ -251,7 +251,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 256x128x512_64x64x512) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x128x512_64x64x512) {
@@ -271,7 +271,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x128x512_64x64x512) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 256x64x512_64x64x512) {
@@ -291,7 +291,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 256x64x512_64x64x512) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x256x512_64x64x512) {
@@ -311,7 +311,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x256x512_64x64x512) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 3, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x128x512_32x64x512) {
@@ -331,7 +331,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x128x512_32x64x512) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x64x512_64x32x512) {
@@ -351,7 +351,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 128x64x512_64x32x512) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 4, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x64x512_32x32x512) {
@@ -371,7 +371,7 @@ TEST(SM80_Device_Gemm_XOR_b1t_b1n_s32n_tensor_op_s32, 64x64x512_32x32x512) {
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6, 128, 128,
       false, cutlass::arch::OpXorPopc>;
 
-  EXPECT_TRUE(test::gemm::device::TestAllGemm<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
 
 ////////////////////////////////////////////////////////////////////////////////

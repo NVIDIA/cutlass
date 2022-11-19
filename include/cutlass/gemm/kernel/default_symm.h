@@ -123,6 +123,101 @@ template <
     BlasMode BlasMode_ = BlasMode::kSymmetric>
 struct DefaultSymm;
 
+////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Hopper Architecture
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Side Mode for A (kLeft or kRight)
+    SideMode kSideModeA,
+    /// Fill Mode for A (kLower or kUpper)
+    FillMode kFillModeA,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// If true, kernel is configured to support serial reduction in the
+    /// epilogue
+    bool SplitKSerial,
+    /// Operation performed by GEMM
+    typename Operator>
+struct DefaultSymm<
+                    ElementA, LayoutA, kSideModeA, kFillModeA, kAlignmentA, 
+                    ElementB, LayoutB, kAlignmentB, 
+                    ElementC,layout::RowMajor, 
+                    ElementAccumulator, arch::OpClassTensorOp, arch::Sm90, 
+                    ThreadblockShape, WarpShape, InstructionShape,
+                    EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
+                    Operator> {
+
+  /// Define the threadblock-scoped triagular matrix multiply-accumulate
+  /// TRMM - with diagonal: alpha * A * B or alpha * B * A
+	static const DiagType kDiagTypeMma1 = DiagType::kNonUnit;
+  using Mma1 = typename cutlass::gemm::threadblock::DefaultTrmm<
+      ElementA, LayoutA, kAlignmentA, 
+      ElementB, LayoutB, kAlignmentB,
+      kSideModeA, kFillModeA, kDiagTypeMma1, 
+      ElementAccumulator, layout::RowMajor, 
+      arch::OpClassTensorOp, arch::Sm90,
+      ThreadblockShape, WarpShape, InstructionShape,
+      Stages, Operator>::ThreadblockMma;
+
+  /// Define the threadblock-scoped triagular matrix multiply-accumulate 
+  /// TRMM - withOUT diagonal: alpha * AT * B or alpha * B * AT
+	static const DiagType kDiagTypeMma2 = DiagType::kZero;
+  using LayoutAMma2 = typename platform::conditional<
+                                (kSideModeA == SideMode::kLeft), 
+                                typename layout::LayoutTranspose<LayoutA>::type, 
+                                LayoutA
+                              >::type;
+  using LayoutBMma2 = typename platform::conditional<
+                                (kSideModeA == SideMode::kLeft), 
+                                LayoutB, 
+                                typename layout::LayoutTranspose<LayoutB>::type
+                              >::type; 
+	using Mma2 = typename cutlass::gemm::threadblock::DefaultTrmm<
+			ElementA, LayoutAMma2, kAlignmentA, 
+			ElementB, LayoutBMma2, kAlignmentB,
+			kSideModeA, InvertFillMode<kFillModeA>::mode, kDiagTypeMma2, 
+			ElementAccumulator, layout::RowMajor, 
+			arch::OpClassTensorOp, arch::Sm90,
+			ThreadblockShape, WarpShape, InstructionShape,
+			Stages, Operator>::ThreadblockMma;
+
+  static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+          ThreadblockShape, typename Mma1::Operator, kPartitionsK, EpilogueOutputOp,
+          EpilogueOutputOp::kCount>::Epilogue;
+
+  /// Define the kernel-level SYMM/HEMM operator.
+  using SymmKernel = kernel::SymmUniversal<Mma1, Mma2, Epilogue, ThreadblockSwizzle, kSideModeA, kFillModeA>;
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -220,7 +315,6 @@ struct DefaultSymm<
   using SymmKernel = kernel::SymmUniversal<Mma1, Mma2, Epilogue, ThreadblockSwizzle, kSideModeA, kFillModeA>;
 };
 ////////////////////////////////////////////////////////////////////////////////
-
 
 }  // namespace kernel
 }  // namespace gemm

@@ -240,10 +240,299 @@ public:
   void load(Fragment &frag) const {
     load_with_pointer_offset(frag, 0);
   }
+
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address) {
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Template for reading and writing tiles of accumulators to shared memory
+template <typename WarpShape_,     ///< shape of warp-level GEMM (concept: GemmShape)
+          typename Operator_,      ///< matrix multiply operation (concept: arch::Mma)
+          typename Element_,       ///< data type of element to be written
+          typename Layout_,         ///< target shared memory layout
+          typename MmaSimtPolicy_  ///< policy defining lane arrangement (concept: MmaSimtPolicy)
+          >
+class TileIteratorSimtDirectConv {
+ public:
+
+  using WarpShape = WarpShape_;
+  using Operator = Operator_;
+  using Element = Element_;
+  using Layout = layout::RowMajor;
+
+  using TensorRef = TensorRef<Element, Layout>;  ///< Tensor Reference object
+  using TensorCoord = MatrixCoord;               ///< Logical coordinate in referenced tensor
+  using Index = typename TensorRef::Index;
+  using LongIndex = typename TensorRef::LongIndex;
+
+  using Policy = SimtPolicy<WarpShape, Operator, Layout, MmaSimtPolicy_>;
+
+  /// Shape of the tile in memory
+  using Shape = MatrixShape<Policy::kRowsPerIteration, WarpShape::kN>;
+
+  /// This is the fragment size produced by one access of the iterator.
+  using Fragment = Array<typename Operator::ElementC, Policy::kElementsPerIteration>;
+
+  /// This is the complete warp-level accumulator tile.
+  using AccumulatorTile = Array<typename Operator::ElementC, Policy::kAccumulatorElementCount>;
+
+  /// Number of times this iterator can be incremented
+  static int const kIterations = Policy::kIterations;
+
+  /// Padding quantity
+  using Padding = MatrixShape<0,
+                              0
+                              >;
+
+private:
+  /// Storage type for accessing memory
+  using AccessType = AlignedArray<
+    Element, 
+    Policy::kElementsPerAccess
+  >;
+
+  //
+  // Data members
+  //
+
+  /// Internal pointer to memory
+  AccessType *pointer_;
+
+  /// Internal layout object
+  Layout layout_;
+
+  /// Base smem offset;
+  Index base_smem_address_;
+
+ public:
+  /// Default constructor
+  CUTLASS_HOST_DEVICE
+  TileIteratorSimtDirectConv() : pointer_(nullptr) {}
+
+  /// Constructor from TensorRef
+  CUTLASS_HOST_DEVICE
+  TileIteratorSimtDirectConv(
+    TensorRef const &ref,
+    unsigned lane_id
+  ):
+    pointer_(reinterpret_cast<AccessType *>(ref.data())),
+    layout_(ref.stride()[0] / AccessType::kElements) {
+
+    auto lane_layout = Policy::MmaSimtPolicy::get_lane_layout();
+    MatrixCoord lane_offset = lane_layout.inverse(lane_id);
+
+    pointer_ += layout_({
+      lane_offset.row(),
+      lane_offset.column() * Policy::kElementsPerAccess / int(AccessType::kElements)
+    });
+  }
+
+  /// Adds a pointer offset
+  CUTLASS_HOST_DEVICE
+  TileIteratorSimtDirectConv & add_pointer_offset(Index pointer_offset) {
+    pointer_ += pointer_offset / AccessType::kElements;
+    return *this;
+  }
+
+  ///< advances in units of whole tiles along the logical coordinate space of the tensor
+  CUTLASS_HOST_DEVICE
+  TileIteratorSimtDirectConv & add_tile_offset(TensorCoord const &tile_offset) {
+
+    pointer_ += layout_({
+      tile_offset.row() * Shape::kRow, 
+      (tile_offset.column() * Shape::kColumn / int(AccessType::kElements))
+    });
+
+    return *this;
+  }
+
+  ///< advances in units of whole tiles along the logical coordinate space of the tensor
+  CUTLASS_HOST_DEVICE
+  TileIteratorSimtDirectConv & operator+=(TensorCoord const &tile_offset) {
+
+    add_tile_offset(tile_offset);
+    
+    return *this;
+  }
+
+  /// Store
+  CUTLASS_HOST_DEVICE
+  void store_with_pointer_offset(Fragment const &frag, Index pointer_offset) {
+
+    // original vector stores
+    AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
+    AccessType * load_pointer_ = reinterpret_cast<AccessType *>(reinterpret_cast<uint8_t *>(pointer_) + base_smem_address_);
+    CUTLASS_PRAGMA_UNROLL
+    for (int n = 0; n < Policy::kAccessesPerIteration; ++n) {
+      load_pointer_[n * Policy::MmaSimtPolicy::WarpShape::kColumn + pointer_offset / int(AccessType::kElements)] = frag_ptr[n];
+    }
+  }
+
+  /// Store
+  CUTLASS_HOST_DEVICE
+  void store(Fragment const &frag) {
+    store_with_pointer_offset(frag, 0);
+  }
+
+  /// Load
+  CUTLASS_HOST_DEVICE
+  void load_with_pointer_offset(Fragment &frag, Index pointer_offset) const {
+
+    AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int n = 0; n < Policy::kAccessesPerIteration; ++n) {
+      frag_ptr[n] = pointer_[n * Policy::MmaSimtPolicy::WarpShape::kColumn + pointer_offset / int(AccessType::kElements)];
+    }
+  }
+
+  /// Load
+  CUTLASS_HOST_DEVICE
+  void load(Fragment &frag) const {
+    load_with_pointer_offset(frag, 0);
+  }
+
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address){
+    base_smem_address_ = address;
+  }
+
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Template for reading and writing tiles of accumulators to shared memory
+template <typename WarpShape_,               ///< shape of warp-level GEMM (concept: GemmShape)
+          typename ThreadOutputShape_,       /// Size of the matrix to load (concept: TensorNHWC)
+          typename ThreadBlockOutputShape_,  /// Size of the matrix to load (concept: TensorNHWC)
+          typename Operator_,                ///< matrix multi ply operation (concept: arch::Mma)
+          typename Element_,                 ///< data type of element to be written
+          typename Layout_,                  ///< target shared memory layout
+          typename MmaSimtPolicy_            ///< policy defining lane arrangement (concept: MmaSimtPolicy)
+          >
+class TileIteratorSimtDirect2dConv {
+ public:
+  using WarpShape = WarpShape_;
+  using ThreadOutputShape = ThreadOutputShape_;
+  using ThreadBlockOutputShape = ThreadBlockOutputShape_;
+  using Operator = Operator_;
+  using Element = Element_;
+  using Layout = layout::RowMajor;
+  using MmaSimtPolicy = MmaSimtPolicy_;
+
+  using TensorRef = TensorRef<Element, Layout>;  ///< Tensor Reference object
+  using TensorCoord = MatrixCoord;               ///< Logical coordinate in referenced tensor
+  using Index = typename TensorRef::Index;
+  using LongIndex = typename TensorRef::LongIndex;
+
+  // Thread-level shape of a fragment
+  using ThreadShape = MatrixShape<ThreadOutputShape::kNHW, ThreadOutputShape::kC>;
+
+  static_assert(!(ThreadShape::kColumn % MmaSimtPolicy::LaneMmaShape::kN),
+                "Thread-level GEMM must be divisible by Policy::LaneMmaShape.");
+
+  using ThreadTileCount = MatrixShape<ThreadBlockOutputShape::kH / ThreadOutputShape::kH,
+                                      ThreadBlockOutputShape::kW / ThreadOutputShape::kW>;
+
+  using Iterations =
+      MatrixShape<ThreadShape::kRow, ThreadShape::kColumn / MmaSimtPolicy::LaneMmaShape::kN>;
+
+  /// This is the complete warp-level accumulator tile.
+  using AccumulatorTile = typename Operator::FragmentC;
+
+  /// This is the fragment size produced by one access of the iterator.
+  using Fragment = AccumulatorTile;
+
+  /// Padding quantity
+  using Padding = MatrixShape<0, 0>;
+
+ private:
+  // Storage type for accessing memory
+  using AccessType = AlignedArray<Element, MmaSimtPolicy::LaneMmaShape::kN>;
+  //
+  // Data members
+  //
+
+  /// Internal pointer to memory
+  AccessType *pointer_;
+
+  /// Internal layout object
+  Layout layout_;
+
+  /// Base smem offset;
+  Index base_smem_address_;
+
+ public:
+  /// Default constructor
+  CUTLASS_HOST_DEVICE
+  TileIteratorSimtDirect2dConv() : pointer_(nullptr) {}
+
+  /// Constructor from TensorRef
+  CUTLASS_HOST_DEVICE
+  TileIteratorSimtDirect2dConv(TensorRef const &ref, unsigned thread_id, unsigned lane_id)
+      : pointer_(reinterpret_cast<AccessType *>(ref.data())),
+        layout_(ref.stride()[0] / AccessType::kElements) {
+  
+    auto lane_layout = MmaSimtPolicy::get_lane_layout();
+
+    MatrixCoord lane_offset = lane_layout.inverse(lane_id);
+
+    // Get base HW offset of current threads
+    const int threadgroup = thread_id / (ThreadBlockOutputShape::kC / ThreadOutputShape::kC);
+    const int base_p = (threadgroup / (ThreadTileCount::kColumn)) * ThreadOutputShape::kH;
+    const int base_q = (threadgroup % (ThreadTileCount::kColumn)) * ThreadOutputShape::kW;
+
+    const int row_offset = base_p * ThreadBlockOutputShape::kW + base_q;
+
+    pointer_ += layout_(
+        {row_offset,
+         lane_offset.column() * MmaSimtPolicy::LaneMmaShape::kN / int(AccessType::kElements)});
+  }
+
+  /// Adds a pointer offset
+  CUTLASS_HOST_DEVICE
+  TileIteratorSimtDirect2dConv &add_pointer_offset(Index pointer_offset) {
+    pointer_ += pointer_offset / AccessType::kElements;
+    return *this;
+  }
+
+  /// Store
+  CUTLASS_HOST_DEVICE
+  void store_with_pointer_offset(Fragment const &frag, Index pointer_offset) {
+    AccessType *storer_pointer_ =
+        reinterpret_cast<AccessType *>(reinterpret_cast<uint8_t *>(pointer_) + base_smem_address_);
+    AccessType const *frag_ptr = reinterpret_cast<AccessType const *>(&frag);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int h = 0; h < ThreadOutputShape::kH; ++h) {
+      CUTLASS_PRAGMA_UNROLL
+      for (int w = 0; w < ThreadOutputShape::kW; ++w) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int col = 0; col < Iterations::kColumn; ++col) {
+          int offset = (w + h * ThreadBlockOutputShape::kW) *
+                           (ThreadBlockOutputShape::kC / AccessType::kElements) +
+                       col;
+          storer_pointer_[offset + pointer_offset / int(AccessType::kElements)] =
+              frag_ptr[w + h * ThreadOutputShape::kW + col];
+        }
+      }
+    }
+  }
+
+  /// Store
+  CUTLASS_HOST_DEVICE
+  void store(Fragment const &frag) { store_with_pointer_offset(frag, 0); }
+
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address) { base_smem_address_ = address; }
+};
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Template for reading and writing tiles of accumulators to shared memory
@@ -482,6 +771,10 @@ public:
     return add_tile_offset({1, 0});
   }
 
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address) {
+  }
 };
 
 

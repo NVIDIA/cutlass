@@ -309,12 +309,6 @@ public:
     return can_implement(args.problem_size);
   }
 
-  static size_t get_extra_workspace_size(Arguments const &args,
-                                         cutlass::gemm::GemmCoord const &grid_tiled_shape) {
-
-    return 0;
-  }
-
   /// Executes one GEMM
   CUTLASS_DEVICE
   void operator()(Params const &params, SharedStorage &shared_storage) {

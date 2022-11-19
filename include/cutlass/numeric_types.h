@@ -88,6 +88,7 @@ using make_index_sequence = typename index_sequence_helper<N>::type;
 #include "cutlass/half.h"
 #include "cutlass/bfloat16.h"
 #include "cutlass/tfloat32.h"
+#include "cutlass/float8.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

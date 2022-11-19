@@ -68,7 +68,12 @@ cutlass_test_unit_add_executable(
 
   simt_sgemm_nt_sm80.cu
   simt_sgemm_tn_sm80.cu
-  
+
+  simt_cgemm_nt_sm80.cu
+  simt_cgemm_tn_sm80.cu
+
+  simt_f8gemm_tn_sm50.cu
+
   simt_cgemm_nn_sm50.cu
   simt_cgemm_nt_sm50.cu
   simt_cgemm_tn_sm50.cu
@@ -239,6 +244,13 @@ cutlass_test_unit_add_executable(
   gemm_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu
   gemm_cf64t_cf64n_cf64t_tensor_op_f64_gaussian_sm80.cu
 
+  # SM90 device level tests
+  gemm_f64n_f64t_f64t_tensor_op_f64_sm90.cu
+  gemm_f64t_f64n_f64t_tensor_op_f64_sm90.cu
+  gemm_cf64n_cf64t_cf64t_tensor_op_f64_sm90.cu
+  gemm_cf64t_cf64n_cf64t_tensor_op_f64_sm90.cu
+  gemm_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm90.cu
+  gemm_cf64t_cf64n_cf64t_tensor_op_f64_gaussian_sm90.cu
 )
 
 cutlass_test_unit_add_executable(
@@ -430,7 +442,7 @@ cutlass_test_unit_add_executable(
   BATCH_SOURCES ON
   BATCH_SIZE 4
 
-  ## SYRK 
+  ## SYRK
   # Syrk SM80 f64 tests
   syrk_f64n_f64t_tensor_op_f64_sm80.cu 
   syrk_f64t_f64n_tensor_op_f64_sm80.cu 
@@ -452,6 +464,12 @@ cutlass_test_unit_add_executable(
   syrk_cf32n_cf32t_tensor_op_fast_f32_sm80.cu
   syrk_cf32n_cf32n_tensor_op_fast_f32_sm80.cu
 
+  # Syrk SM90 f64 tests
+  syrk_f64_f64_tensor_op_f64_sm90.cu
+
+  # Syrk SM90 complex f64 tests
+  syrk_cf64_cf64_tensor_op_f64_sm90.cu
+
   ## HERK 
   # Herk SM80 complex f64 tests
   herk_cf64h_cf64n_tensor_op_f64_sm80.cu
@@ -459,6 +477,9 @@ cutlass_test_unit_add_executable(
   # Herk SM80 complex f32 tests
   herk_cf32h_cf32n_tensor_op_f32_sm80.cu
   herk_cf32h_cf32n_tensor_op_fast_f32_sm80.cu
+
+  # Herk SM90 complex f64 tests
+  herk_cf64_cf64_tensor_op_f64_sm90.cu
 
   ## TRMM
   # Trmm SM80 f64 tests
@@ -486,6 +507,12 @@ cutlass_test_unit_add_executable(
   trmm_cf32n_cf32n_cf32t_tensor_op_f32_sm80.cu
   trmm_cf32n_cf32n_cf32t_tensor_op_fast_f32_sm80.cu
 
+  # Trmm SM90 f64 tests
+  trmm_f64_f64_f64_tensor_op_f64_sm90.cu
+
+  # Trmm SM90 complex f64 tests
+  trmm_cf64_cf64_cf64_tensor_op_f64_sm90.cu
+
   ## SYR2K
   # Syr2k SM80 f64 tests
   syr2k_f64n_f64t_tensor_op_f64_sm80.cu
@@ -508,6 +535,12 @@ cutlass_test_unit_add_executable(
   syr2k_cf32n_cf32n_tensor_op_fast_f32_sm80.cu
   syr2k_cf32n_cf32t_tensor_op_fast_f32_sm80.cu
 
+  # Syr2k SM90 f64 tests
+  syr2k_f64_f64_tensor_op_f64_sm90.cu
+
+  # Syr2k SM90 complex f64 tests
+  syr2k_cf64_cf64_tensor_op_f64_sm90.cu
+
   ## HER2K
   # Her2k SM80 complex f64 tests
   her2k_cf64n_cf64n_tensor_op_f64_sm80.cu
@@ -515,6 +548,9 @@ cutlass_test_unit_add_executable(
   # Her2k SM80 complex f32 tests
   her2k_cf32h_cf32n_tensor_op_f32_sm80.cu
   her2k_cf32h_cf32n_tensor_op_fast_f32_sm80.cu
+
+  # Her2k SM90 complex f64 tests
+  her2k_cf64_cf64_tensor_op_f64_sm90.cu
 
   ## SYMM
   # Symm SM80 f64 tests
@@ -546,6 +582,12 @@ cutlass_test_unit_add_executable(
   symm_cf32n_cf32n_tensor_op_fast_f32_ls_sm80.cu
   symm_cf32n_cf32n_tensor_op_fast_f32_rs_sm80.cu
 
+  # Symm SM90 f64 tests
+  symm_f64_f64_tensor_op_f64_sm90.cu
+
+  # Symm SM90 complex f64 tests
+  symm_cf64_cf64_cf64_tensor_op_f64_sm90.cu
+
   # Hemm SM80 complex f64 tests
   hemm_cf64h_cf64n_cf64n_tensor_op_ls_f64_sm80.cu
   hemm_cf64h_cf64n_cf64n_tensor_op_rs_f64_sm80.cu
@@ -556,7 +598,10 @@ cutlass_test_unit_add_executable(
   hemm_cf32h_cf32n_tensor_op_f32_rs_sm80.cu
   hemm_cf32h_cf32n_tensor_op_fast_f32_ls_sm80.cu
   hemm_cf32h_cf32n_tensor_op_fast_f32_rs_sm80.cu
-  )
+
+  # Hemm SM90 complex f64 tests
+  hemm_cf64_cf64_cf64_tensor_op_f64_sm90.cu
+)
 
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_grouped_blas3
@@ -579,6 +624,16 @@ cutlass_test_unit_add_executable(
   # Grouped HER2K SM80 f64 tests
   her2k_cf64n_cf64n_tensor_op_f64_grouped_sm80.cu
   her2k_cf64h_cf64n_tensor_op_f64_grouped_sm80.cu
+)
+
+endif()
+
+if (NOT CUDA_COMPILER MATCHES "[Cc]lang")
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_broadcast
+
+  gemm_f16t_f16n_f16t_tensor_op_f16_broadcast_sm80.cu
 )
 
 endif()

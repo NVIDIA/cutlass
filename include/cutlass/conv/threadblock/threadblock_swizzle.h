@@ -165,7 +165,29 @@ struct StridedDgradIdentityThreadblockSwizzle :
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Threadblock swizzling function for GEMMs
+template <int N = 1, int Output_N = 1, int Output_P = 1, int Output_Q = 1>
+struct DepthwiseDirect2dConvIdentityThreadblockSwizzle
+    : public gemm::threadblock::GemmIdentityThreadblockSwizzle<N> {
+  CUTLASS_HOST_DEVICE
+  DepthwiseDirect2dConvIdentityThreadblockSwizzle() {}
+
+  /// Returns the shape of the problem in units of logical tiles
+  CUTLASS_HOST_DEVICE
+  gemm::GemmCoord get_tiled_shape(cutlass::conv::Operator conv_operator,
+                            cutlass::conv::Conv2dProblemSize const &problem_size,
+                            gemm::GemmCoord tile_size,
+                            int split_k_slices) const {
+        
+    gemm::GemmCoord implicit_gemm_problem_size =
+        cutlass::conv::implicit_gemm_problem_size(conv_operator, problem_size);
+
+    return gemm::GemmCoord(1,
+                     (implicit_gemm_problem_size.n() + tile_size.n() - 1) / tile_size.n(),
+                     split_k_slices);
+  }
+};
 
 } // namespace threadblock
-} // namespace gemm
+} // namespace conv
 } // namespace cutlass

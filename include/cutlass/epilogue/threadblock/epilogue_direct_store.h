@@ -77,7 +77,6 @@ public:
   using OutputTileIterator = OutputTileIterator_;
   using AccumulatorFragmentIterator = AccumulatorFragmentIterator_;
   using WarpTileIterator = WarpTileIterator_;
-  using SharedLoadIterator = SharedLoadIterator_;
   using OutputOp = OutputOp_;
   using Padding = MatrixShape<0, 0>;
 

@@ -242,6 +242,11 @@ public:
   void load(Fragment const &frag) {
     load_with_pointer_offset(frag, 0);
   }
+  
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address) {
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -418,6 +423,11 @@ public:
   CUTLASS_HOST_DEVICE
   void load(Fragment const &frag) {
     load_with_pointer_offset(frag, 0);
+  }
+  
+  /// Set smem base address
+  CUTLASS_HOST_DEVICE
+  void set_smem_base_address(Index address) {
   }
 };
 

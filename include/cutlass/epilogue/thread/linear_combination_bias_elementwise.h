@@ -78,6 +78,9 @@ public:
   using ElementwiseOp = ElementwiseOp_;
   using BinaryOp = BinaryOp_;
 
+  // Indicates that this epilogue applies only one binary operation
+  static bool const kIsSingleSource = true;
+
   using FragmentAccumulator = Array<ElementAccumulator, kElementsPerAccess>;
   using FragmentCompute = Array<ElementCompute, kElementsPerAccess>;
   using FragmentC = Array<ElementOutput, kElementsPerAccess>;

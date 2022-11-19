@@ -29,7 +29,8 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief
+    \brief Template for a GEMM kernel that can reduce one of the input matrix
+    into a vector along the K dimension.
 */
 
 #pragma once

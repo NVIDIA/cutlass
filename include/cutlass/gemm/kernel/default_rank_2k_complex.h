@@ -163,6 +163,170 @@ template <>
 };
 
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Hopper Architecture complex datatype (symmetric)
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Fill Mode for C (kLower or kUpper)
+    FillMode FillModeC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// Complex elementwise transformation on A operand
+    ComplexTransform TransformA,
+    /// Complex elementwise transformation on B operand
+    ComplexTransform TransformB,
+    /// Operation performed by GEMM
+    typename Operator,
+    /// If true, kernel is configured to support serial reduction in the
+    /// epilogue
+    bool SplitKSerial>
+struct DefaultRank2KComplex<
+  ElementA, LayoutA, ElementB, LayoutB, ElementC, 
+  layout::RowMajor, FillModeC, ElementAccumulator, arch::OpClassTensorOp,
+  arch::Sm90, ThreadblockShape, WarpShape, InstructionShape, 
+  EpilogueOutputOp, ThreadblockSwizzle, Stages, 
+  TransformA, TransformB, Operator, SplitKSerial, BlasMode::kSymmetric> {
+
+  static BlasMode const kBlasMode = BlasMode::kSymmetric;
+  
+  /// Define the threadblock-scoped matrix multiply-accumulate (A x B^T)
+  using Mma1 = typename cutlass::gemm::threadblock::DefaultMultistageMmaComplex<
+      ElementA, LayoutA, 
+      ElementB, typename layout::LayoutTranspose<LayoutB>::type, 
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm90, 
+      ThreadblockShape, WarpShape, InstructionShape, Stages, 
+      TransformA, TransformB, Operator>::ThreadblockMma;
+
+  /// Define the threadblock-scoped matrix multiply-accumulate (B x A^T)
+  using Mma2 = typename cutlass::gemm::threadblock::DefaultMultistageMmaComplex<
+      ElementB, LayoutB, 
+      ElementA, typename layout::LayoutTranspose<LayoutA>::type, 
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm90, 
+      ThreadblockShape, WarpShape, InstructionShape, Stages, 
+      TransformA, TransformB, Operator>::ThreadblockMma;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueComplexTensorOpBlas3<
+          ThreadblockShape, typename Mma1::Operator, 1, EpilogueOutputOp,
+          EpilogueOutputOp::kCount, Operator, kBlasMode>::Epilogue;
+
+  /// Define the kernel-level Rank2K operator.
+  using Rank2Kkernel = kernel::Rank2KUniversal<Mma1, Mma2, Epilogue, ThreadblockSwizzle, FillModeC, kBlasMode>;
+
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for Hopper Architecture complex datatype (hermitian)
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Fill Mode for C (kLower or kUpper)
+    FillMode FillModeC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// Complex elementwise transformation on A operand
+    ComplexTransform TransformA,
+    /// Complex elementwise transformation on B operand
+    ComplexTransform TransformB,
+    /// Operation performed by GEMM
+    typename Operator,
+    /// If true, kernel is configured to support serial reduction in the
+    /// epilogue
+    bool SplitKSerial>
+struct DefaultRank2KComplex<
+  ElementA, LayoutA, ElementB, LayoutB, ElementC, 
+  layout::RowMajor, FillModeC, ElementAccumulator, arch::OpClassTensorOp,
+  arch::Sm90, ThreadblockShape, WarpShape, InstructionShape, 
+  EpilogueOutputOp, ThreadblockSwizzle, Stages, 
+  TransformA, TransformB, Operator, SplitKSerial, BlasMode::kHermitian> {
+
+  static BlasMode const kBlasMode = BlasMode::kHermitian;
+
+  // Complex transform for input A and B matrices (function on input layout)
+  static ComplexTransform const kTransformA = TransformA;
+  static ComplexTransform const kTransformB = TransformB;
+
+  using TransposedComplexTransform = detail::Rank2KTransposedComplexTransform<
+                                        LayoutA, LayoutB, 
+                                        TransformA, TransformB,
+                                        kBlasMode>;
+
+  // Complex transform on operandA and operandB (function of blas3 computation)
+  static ComplexTransform const kTransformOperandA = TransposedComplexTransform::kTransformA;
+  static ComplexTransform const kTransformOperandB = TransposedComplexTransform::kTransformB;
+
+  /// Define the threadblock-scoped matrix multiply-accumulate (A x B^H)
+  using Mma1 = typename cutlass::gemm::threadblock::DefaultMultistageMmaComplex<
+      ElementA, LayoutA, 
+      ElementB, typename layout::LayoutTranspose<LayoutB>::type, 
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm90, 
+      ThreadblockShape, WarpShape, InstructionShape, Stages, 
+      kTransformOperandA, kTransformOperandB, Operator>::ThreadblockMma;
+
+  /// Define the threadblock-scoped matrix multiply-accumulate (B x A^H)
+  using Mma2 = typename cutlass::gemm::threadblock::DefaultMultistageMmaComplex<
+      ElementB, LayoutB, 
+      ElementA, typename layout::LayoutTranspose<LayoutA>::type, 
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm90, 
+      ThreadblockShape, WarpShape, InstructionShape, Stages, 
+      kTransformOperandA, kTransformOperandB, Operator>::ThreadblockMma;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueComplexTensorOpBlas3<
+          ThreadblockShape, typename Mma1::Operator, 1, EpilogueOutputOp,
+          EpilogueOutputOp::kCount, Operator, kBlasMode>::Epilogue;
+
+  /// Define the kernel-level Rank2K operator.
+  using Rank2Kkernel = kernel::Rank2KUniversal<Mma1, Mma2, Epilogue, ThreadblockSwizzle, FillModeC, kBlasMode>;
+
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for Ampere Architecture complex datatype (symmetric)

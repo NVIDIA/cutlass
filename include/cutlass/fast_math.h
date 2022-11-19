@@ -280,6 +280,36 @@ struct FastDivmod {
   unsigned int multiplier;
   unsigned int shift_right;
 
+  /// Find quotient and remainder using device-side intrinsics
+  CUTLASS_HOST_DEVICE
+  void fast_divmod(int& quotient, int& remainder, int dividend) const {
+
+#if defined(__CUDA_ARCH__)
+    // Use IMUL.HI if divisor != 1, else simply copy the source.
+    quotient = (divisor != 1) ? __umulhi(dividend, multiplier) >> shift_right : dividend;
+#else
+    quotient = int((divisor != 1) ? int(((int64_t)dividend * multiplier) >> 32) >> shift_right : dividend);
+#endif
+
+    // The remainder.
+    remainder = dividend - (quotient * divisor);
+  }
+
+  /// For long int input
+  CUTLASS_HOST_DEVICE
+  void fast_divmod(int& quotient, int64_t& remainder, int64_t dividend) const {
+
+#if defined(__CUDA_ARCH__)
+    // Use IMUL.HI if divisor != 1, else simply copy the source.
+    quotient = (divisor != 1) ? __umulhi(dividend, multiplier) >> shift_right : dividend;
+#else
+    quotient = int((divisor != 1) ? ((dividend * multiplier) >> 32) >> shift_right : dividend);
+#endif
+    // The remainder.
+    remainder = dividend - (quotient * divisor);
+  }
+
+
   /// Construct the FastDivmod object, in host code ideally.
   ///
   /// This precomputes some values based on the divisor and is computationally expensive.
@@ -288,17 +318,35 @@ struct FastDivmod {
   FastDivmod(): divisor(0), multiplier(0), shift_right(0) { }
 
   CUTLASS_HOST_DEVICE
-  FastDivmod(int divisor_): divisor(divisor_) {
-    find_divisor(multiplier, shift_right, divisor);
+  FastDivmod(int divisor): divisor(divisor) {
+
+    if (divisor != 1) {
+      unsigned int p = 31 + find_log2(divisor);
+      unsigned m = unsigned(((1ull << p) + unsigned(divisor) - 1) / unsigned(divisor));
+
+      multiplier = m;
+      shift_right = p - 32;
+    } else {
+      multiplier = 0;
+      shift_right = 0;
+    }
   }
 
   /// Computes integer division and modulus using precomputed values. This is computationally
   /// inexpensive.
   CUTLASS_HOST_DEVICE
   void operator()(int &quotient, int &remainder, int dividend) const {
-    fast_divmod(quotient, remainder, dividend, divisor, multiplier, shift_right);
+    fast_divmod(quotient, remainder, dividend);
   }
 
+  /// Computes integer division using precomputed values. This is computationally
+  /// inexpensive.
+  CUTLASS_HOST_DEVICE
+  int div(int dividend) const {
+    int quotient, remainder;
+    fast_divmod(quotient, remainder, dividend);
+    return quotient;
+  }
 
   /// Computes integer division and modulus using precomputed values. This is computationally
   /// inexpensive.
@@ -307,7 +355,7 @@ struct FastDivmod {
   CUTLASS_HOST_DEVICE
   int divmod(int &remainder, int dividend) const {
     int quotient;
-    fast_divmod(quotient, remainder, dividend, divisor, multiplier, shift_right);
+    fast_divmod(quotient, remainder, dividend);
     return quotient;
   }
 
@@ -315,7 +363,7 @@ struct FastDivmod {
   /// inexpensive.
   CUTLASS_HOST_DEVICE
   void operator()(int &quotient, int64_t &remainder, int64_t dividend) const {
-    fast_divmod(quotient, remainder, dividend, divisor, multiplier, shift_right);
+    fast_divmod(quotient, remainder, dividend);
   }
 
   /// Computes integer division and modulus using precomputed values. This is computationally
@@ -323,9 +371,14 @@ struct FastDivmod {
   CUTLASS_HOST_DEVICE
   int divmod(int64_t &remainder, int64_t dividend) const {
     int quotient;
-    fast_divmod(quotient, remainder, dividend, divisor, multiplier, shift_right);
+    fast_divmod(quotient, remainder, dividend);
     return quotient;
   }
+
+  /// Returns the divisor when cast to integer
+  CUTLASS_HOST_DEVICE
+  operator int() const { return divisor; }
+
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

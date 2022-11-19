@@ -58,7 +58,7 @@ namespace device {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Gemm>
+template <typename Gemm, bool Relu = false>
 struct TestbedUniversal {
 
   using ElementAccumulator = typename Gemm::ElementAccumulator;
@@ -158,9 +158,10 @@ struct TestbedUniversal {
 
     // It is possible to randomly initialize to all zeros, so override this with non-zeros
     // in the upper left corner of each operand.
-    tensor_A.host_view().at({0, 0}) = typename Gemm::ElementA(1);
-    tensor_B.host_view().at({0, 0}) = typename Gemm::ElementB(1);
-    tensor_C.host_view().at({0, 0}) = typename Gemm::ElementC(1);
+    cutlass::Coord<2> origin(0);
+    tensor_A.host_view().at(origin) = typename Gemm::ElementA(1);
+    tensor_B.host_view().at(origin) = typename Gemm::ElementB(1);
+    tensor_C.host_view().at(origin) = typename Gemm::ElementC(1);
 
     cutlass::reference::host::TensorCopy(reference_D.host_view(), tensor_C.host_view());
 
@@ -253,6 +254,17 @@ struct TestbedUniversal {
       ElementAccumulator(0)
     );
 
+    if (Relu) {
+      for (int i = 0; i < problem_size.m(); ++i) {
+        for (int j = 0; j < problem_size.n(); ++j) {
+           reference_D.at(cutlass::MatrixCoord(i, j)) =
+                  ((ElementCompute)reference_D.at(cutlass::MatrixCoord(i, j)) < (ElementCompute)0)
+                  ? (typename Gemm::ElementC)0
+                  : reference_D.at(cutlass::MatrixCoord(i, j));
+        }
+      }
+    }
+
     return compare_reference(problem_size, alpha, beta);
   }
 
@@ -278,7 +290,7 @@ struct TestbedUniversal {
       throw std::runtime_error("cudaGetDeviceProperties() failed");
     }
 
-    if (properties.sharedMemPerMultiprocessor < smem_size) {
+    if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
 
@@ -288,10 +300,20 @@ struct TestbedUniversal {
   /// Executes one test
   bool run(
     cutlass::gemm::GemmUniversalMode mode,
-    cutlass::gemm::GemmCoord problem_size, 
+    cutlass::gemm::GemmCoord problem_size,
     int batch_count = 1,
-    ElementCompute alpha = ElementCompute(1), 
-    ElementCompute beta = ElementCompute(0)) {
+    ElementCompute alpha = ElementCompute(1),
+    ElementCompute beta = ElementCompute(0))
+  {
+/*
+    std::cout << "\n-----------------------\n";
+    std::cout << "mode: " << (int) mode << "\n";
+    std::cout << "problem size: " << problem_size << "\n";
+    std::cout << "batch_count: " << batch_count << "\n";
+    std::cout << "alpha: " << alpha << "\n";
+    std::cout << "beta: " << beta << "\n";
+    std::cout << "-----------------------\n\n";
+*/
 
     // Waive test if insufficient CUDA device
     if (!sufficient()) {
@@ -359,7 +381,7 @@ struct TestbedUniversal {
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-template <typename Gemm>
+template <typename Gemm, bool Relu = false>
 bool TestGemmUniversal(
   cutlass::gemm::GemmCoord const & problem_size,
   cutlass::gemm::GemmUniversalMode mode,
@@ -369,7 +391,7 @@ bool TestGemmUniversal(
 
   bool passed = true;
 
-  TestbedUniversal<Gemm> testbed;
+  TestbedUniversal<Gemm, Relu> testbed;
   
   using ElementCompute = typename Gemm::EpilogueOutputOp::ElementCompute;
 
@@ -384,7 +406,7 @@ bool TestGemmUniversal(
   return passed;
 }
 
-template <typename Gemm>
+template <typename Gemm, bool Relu = false>
 bool TestAllGemmUniversal() {
   bool passed = true;
 
@@ -412,9 +434,9 @@ bool TestAllGemmUniversal() {
                           cutlass::platform::is_same<typename Gemm::ElementB, int8_t>::value &&
                           (cutlass::platform::is_same<typename Gemm::LayoutA, cutlass::layout::RowMajor>::value ||
                           cutlass::platform::is_same<typename Gemm::LayoutB, cutlass::layout::ColumnMajor>::value) ? 4 : kAlignment;
-  
-  
-  
+
+
+
   cutlass::gemm::GemmUniversalMode modes[] = {
     cutlass::gemm::GemmUniversalMode::kGemm,
   };
@@ -428,8 +450,8 @@ bool TestAllGemmUniversal() {
   };
 
   int problem_size_k[] = {
-    kAlignmentK, 
-    Gemm::ThreadblockShape::kK * Gemm::kStages - kAlignmentK, 
+    kAlignmentK,
+    Gemm::ThreadblockShape::kK * Gemm::kStages - kAlignmentK,
     Gemm::ThreadblockShape::kK * Gemm::kStages * 3 - kAlignmentK
   };
 
@@ -468,7 +490,7 @@ bool TestAllGemmUniversal() {
 
                 cutlass::gemm::GemmCoord problem_size(m, n, k);
 
-                TestbedUniversal<Gemm> testbed;
+                TestbedUniversal<Gemm, Relu> testbed;
 
                 passed = testbed.run(
                   mode,

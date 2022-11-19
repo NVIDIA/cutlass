@@ -85,18 +85,11 @@ You can run the PyCUTLASS on NGC PyTorch container.
 ```shell
 docker run --gpus all -it --rm nvcr.io/nvidia/pytorch:22.09-py3
 ```
-PyCUTLASS requires additional dependency Boost C++ library, which can be installed with
-```bash
-apt-get update
-apt-get -y install libboost-all-dev
-```
-
-
 
 ### Environment variables
 PyCUTLASSS requires two environment variables:
-* `CUTLASS_PATH`: the root directory of CUTLASS
-* `CUDA_INSTALL_PATH`: the directory where cuda toolkit is installed
+* `CUTLASS_PATH`: the root directory of CUTLASS. You can set this from the location at which you cloned CUTLASS via: `export CUTLASS_PATH=$(pwd)`.
+* `CUDA_INSTALL_PATH`: the directory where cuda toolkit is installed. If running in bash with `nvcc` installed under a CUDA toolkit, you can set this to the location of your `nvcc` installation via: `export CUDA_INSTALL_PATH=$(which nvcc | awk -F'/bin/nvcc' '{print $1}')`
 
 After setting these two environment variables, PyCUTLASS can be installed with 
 ```shell

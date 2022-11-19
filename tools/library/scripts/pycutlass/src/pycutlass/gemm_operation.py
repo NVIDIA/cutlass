@@ -229,7 +229,7 @@ class GemmArguments(ArgumentBase):
         elif operand in ["c", "d"]:
             tensor_coord = problem_size.mn()
         else:
-            raise ValueError("unknonw operand: " + operand)
+            raise ValueError("unknown operand: " + operand)
         
         layout = tensor_layout.packed(tensor_coord)
 
@@ -245,22 +245,27 @@ class GemmArguments(ArgumentBase):
         )
         if self.gemm_mode == cutlass.gemm.Mode.Array:
             arguments = self.operation.argument_type(
-                self.gemm_mode, problem_size_, self.batch_count, self.output_op, 
+                # Arguments from UniversalArgumentsBase
+                self.gemm_mode, problem_size_, self.batch_count, 0,
+                # Remaining arguments
+                self.output_op,
                 int(self.ptr_A_array_buffer.ptr), 
                 int(self.ptr_B_array_buffer.ptr),
                 int(self.ptr_C_array_buffer.ptr),
                 int(self.ptr_D_array_buffer.ptr),
-                0, 0, 0, 0,
+                0, 0, 0,
                 self.lda, self.ldb, self.ldc, self.ldd,
                 self.lda, self.ldb, self.ldc, self.ldd,
                 0, 0, 0
             )
         else:
             arguments = self.operation.argument_type(
-                self.gemm_mode, problem_size_, self.batch_count, self.output_op, 
+                # Arguments from UniversalArgumentsBase
+                self.gemm_mode, problem_size_, self.batch_count, self.batched_stride_D,
+                # Remaining arguments
+                self.output_op, 
                 int(self.ptr_A), int(self.ptr_B), int(self.ptr_C), int(self.ptr_D),
                 self.batched_stride_A, self.batched_stride_B, self.batched_stride_C, 
-                self.batched_stride_D,
                 self.lda, self.ldb, self.ldc, self.ldd,
                 self.lda, self.ldb, self.ldc, self.ldd,
                 0, 0, 0
@@ -299,8 +304,7 @@ class GemmArguments(ArgumentBase):
 
         arguments, grid_tiled_shape, gemm_k_size = self.arguments
         res_arg = self.operation.rt_module.get_args(
-            ctypes.byref(arguments), ctypes.byref(grid_tiled_shape), 
-            gemm_k_size, ctypes.c_void_p(int(device_workspace)))
+            ctypes.byref(arguments), ctypes.c_void_p(int(device_workspace)))
         host_workspace = bytearray(res_arg.contents)
 
         device_workspace = None
@@ -582,10 +586,15 @@ extern "C" {
   }
 
   // Get the params as byte array
-  char* ${operation_name}_get_params(${operation_name}_base::Arguments* argument, \
-    cutlass::gemm::GemmCoord* grid_tiled_shape, int gemm_k_size, int* workspace){
+  char* ${operation_name}_get_params(${operation_name}_base::Arguments* argument, int* workspace){
     ${operation_name}_base::Params* params;
-    params = new ${operation_name}_base::Params(*argument, *grid_tiled_shape, gemm_k_size, workspace);
+    params = new ${operation_name}_base::Params(*argument,
+                                                -1, // SM count. Only used for stream-K
+                                                -1  // Occupancy. Only used for stream-K
+                                                );
+
+    // Semaphore holds the pointer to the workspace in the Params struct
+    params->semaphore = workspace;
 
     char *bytes = ((char*)(params));
     char *output = new char[sizeof(${operation_name}_base::Params)];

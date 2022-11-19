@@ -690,7 +690,7 @@ public:
     // Initialize the GEMM object
     GemmBatched gemm;
 
-    result.status = gemm.initialize(arguments);
+    result.status = gemm.initialize(arguments, nullptr);
 
     if (result.status != cutlass::Status::kSuccess) {
       std::cerr << "Failed to initialize CUTLASS Batched GEMM kernel." << std::endl;
@@ -854,7 +854,7 @@ public:
     // Initialize the GEMM object
     GemmPermute gemm_normal;
 
-    result.status = gemm_normal.initialize(arguments);
+    result.status = gemm_normal.initialize(arguments, nullptr);
 
     if (result.status != cutlass::Status::kSuccess) {
       std::cerr << "Failed to initialize CUTLASS Batched GEMM kernel." << std::endl;

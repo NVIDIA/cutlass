@@ -77,8 +77,7 @@ struct integer_subbyte {
   //
 
   /// No operation
-  CUTLASS_HOST_DEVICE
-  integer_subbyte() { }
+  integer_subbyte() = default;
 
   /// Conversion from integer type
   CUTLASS_HOST_DEVICE

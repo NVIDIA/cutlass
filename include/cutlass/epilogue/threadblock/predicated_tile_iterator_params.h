@@ -35,8 +35,11 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/layout/matrix.h"
+
+#include "cutlass/conv/conv2d_problem_size.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -244,6 +247,87 @@ struct PredicatedTileIteratorParams {
   }
 };
 
+
+
+///////////////////////////////////////////////////////////////////////////////
+
+//
+// Parameters struct for PredicatedTileIteratorDirect2dConv
+//
+
+struct PredicatedTileIteratorDirect2dConvParams{
+  using Index = int32_t;
+  using LongIndex = int64_t;
+
+  //
+  // Data members
+  //
+  FastDivmod pq_divmod;
+  FastDivmod q_divmod;
+
+  LongIndex stride;
+  LongIndex stride_n;
+  LongIndex stride_p;
+
+  int N;
+  int P;
+  int Q;
+
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  Status initialize(LongIndex stride_,
+                    cutlass::conv::Conv2dProblemSize const &problem_size,
+                    MatrixCoord threadblock_output_shape) {
+    stride = stride_; // The stride per row of output tensor (bytes)
+    stride_n = problem_size.P * problem_size.Q;
+    stride_p = problem_size.Q ;
+
+    N = problem_size.N;
+    P = problem_size.P;
+    Q = problem_size.Q;
+
+    // Fastdivmod for output O, P, Q
+    if(threadblock_output_shape.row() != 0 && threadblock_output_shape.column() !=0 ){
+      int tiles_p =
+          (problem_size.P + (threadblock_output_shape.row() - 1)) / (threadblock_output_shape.row());
+      int tiles_q = (problem_size.Q + (threadblock_output_shape.column() - 1)) /
+                    (threadblock_output_shape.column());
+
+      pq_divmod = FastDivmod(tiles_p * tiles_q);
+      q_divmod = FastDivmod(tiles_q);
+    }
+
+    return Status::kSuccess;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Status initialize(
+      Index stride_,
+      cutlass::conv::Conv2dProblemSize const &problem_size = cutlass::conv::Conv2dProblemSize(),
+      MatrixCoord threadblock_output_shape = MatrixCoord()) {
+    return initialize(LongIndex(stride_), problem_size, threadblock_output_shape);
+  }
+
+  CUTLASS_HOST_DEVICE
+  PredicatedTileIteratorDirect2dConvParams() { initialize(LongIndex(0)); }
+
+  CUTLASS_HOST_DEVICE
+  PredicatedTileIteratorDirect2dConvParams(Index stride,
+                               cutlass::conv::Conv2dProblemSize const &problem_size,
+                               MatrixCoord threadblock_output_shape) {
+    initialize(stride, problem_size, threadblock_output_shape);
+  }
+
+  CUTLASS_HOST_DEVICE
+  PredicatedTileIteratorDirect2dConvParams(LongIndex stride,
+                               cutlass::conv::Conv2dProblemSize const &problem_size,
+                               MatrixCoord threadblock_output_shape) {
+    initialize(stride, problem_size, threadblock_output_shape);
+  }
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 //  InterleavedPredicatedTileIterator

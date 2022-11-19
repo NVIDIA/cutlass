@@ -42,6 +42,7 @@
 #include "cutlass/complex.h"
 #include "cutlass/semaphore.h"
 #include "cutlass/layout/pitch_linear.h"
+#include "cutlass/gemm/kernel/params_universal_base.h"
 
 #include "cutlass/trace.h"
 
@@ -105,15 +106,11 @@ public:
   //
 
   /// Argument structure
-  struct Arguments {
-
+  struct Arguments : UniversalArgumentsBase
+  {
     //
     // Data members
     //
-
-    GemmUniversalMode mode;
-    GemmCoord problem_size;
-    int batch_count;
 
     typename EpilogueOutputOp::Params epilogue;
 
@@ -126,7 +123,6 @@ public:
     int64_t batch_stride_A;
     int64_t batch_stride_B;
     int64_t batch_stride_C;
-    int64_t batch_stride_D;
     int64_t batch_stride_gemm_k_reduction;
 
     typename LayoutA::Stride::Index lda;
@@ -138,11 +134,14 @@ public:
     //
     // Methods
     //
-    
-    Arguments(): 
-      mode(GemmUniversalMode::kGemm), 
-      batch_count(1), 
-      ptr_A(nullptr), ptr_B(nullptr), ptr_C(nullptr), ptr_D(nullptr), ptr_gemm_k_reduction(nullptr) { }
+
+    Arguments() :
+      ptr_A(nullptr),
+      ptr_B(nullptr),
+      ptr_C(nullptr),
+      ptr_D(nullptr),
+      ptr_gemm_k_reduction(nullptr)
+    {}
 
     /// constructs an arguments structure
     Arguments(
@@ -164,23 +163,21 @@ public:
       typename LayoutB::Stride::Index ldb,
       typename LayoutC::Stride::Index ldc,
       typename LayoutC::Stride::Index ldd,
-      typename LayoutGemmKReduction::Stride::Index ld_gemm_k_reduction
-    ):
-      mode(mode), 
-      problem_size(problem_size), 
-      batch_count(batch_count),
-      epilogue(epilogue), 
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D), ptr_gemm_k_reduction(ptr_gemm_k_reduction), 
-      batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C), batch_stride_D(batch_stride_D), batch_stride_gemm_k_reduction(batch_stride_gemm_k_reduction),
-      lda(lda), ldb(ldb), ldc(ldc), ldd(ldd), ld_gemm_k_reduction(ld_gemm_k_reduction) {
-
+      typename LayoutGemmKReduction::Stride::Index ld_gemm_k_reduction)
+    :
+      UniversalArgumentsBase(mode, problem_size, batch_count, batch_stride_D),
+      epilogue(epilogue),
+      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D), ptr_gemm_k_reduction(ptr_gemm_k_reduction),
+      batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C), batch_stride_gemm_k_reduction(batch_stride_gemm_k_reduction),
+      lda(lda), ldb(ldb), ldc(ldc), ldd(ldd), ld_gemm_k_reduction(ld_gemm_k_reduction)
+    {
       CUTLASS_TRACE_HOST("GemmUniversal::Arguments::Arguments() - problem_size: " << problem_size);
-      }
+    }
 
     /// Returns arguments for the transposed problem
     Arguments transposed_problem() const {
       Arguments args(*this);
-      
+
       std::swap(args.problem_size.m(), args.problem_size.n());
       std::swap(args.ptr_A, args.ptr_B);
       std::swap(args.lda, args.ldb);
@@ -190,16 +187,29 @@ public:
     }
   };
 
+
   //
   // Structure for precomputing values in host memory and passing to kernels
   //
 
   /// Parameters structure
-  struct Params {
+  struct Params : UniversalParamsBase<
+    ThreadblockSwizzle,
+    ThreadblockShape,
+    ElementA,
+    ElementB,
+    ElementC>
+  {
+    using ParamsBase = UniversalParamsBase<
+      ThreadblockSwizzle,
+      ThreadblockShape,
+      ElementA,
+      ElementB,
+      ElementC>;
 
-    cutlass::gemm::GemmCoord problem_size;
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int swizzle_log_tile;
+    //
+    // Data members
+    //
     
     typename Mma::IteratorA::Params params_A;
     typename Mma::IteratorB::Params params_B;
@@ -207,10 +217,6 @@ public:
     typename Epilogue::OutputTileIterator::Params params_D;
     
     typename EpilogueOutputOp::Params output_op;
-
-    GemmUniversalMode mode;
-    int batch_count;
-    int gemm_k_size;
 
     void * ptr_A;
     void * ptr_B;
@@ -221,97 +227,86 @@ public:
     int64_t batch_stride_A;
     int64_t batch_stride_B;
     int64_t batch_stride_C;
-    int64_t batch_stride_D;
     int64_t batch_stride_gemm_k_reduction;
 
-    int *semaphore;
-
     //
-    // Methods
+    // Host dispatch API
     //
 
-    CUTLASS_HOST_DEVICE
-    Params():
-      swizzle_log_tile(0),
-      params_A(0),
-      params_B(0),
-      params_C(0),
-      params_D(0),
-      batch_count(0),
-      gemm_k_size(0),
-      mode(cutlass::gemm::GemmUniversalMode::kGemm),
-      ptr_A(nullptr),
-      ptr_B(nullptr),
-      ptr_C(nullptr),
-      ptr_D(nullptr),
-      ptr_gemm_k_reduction(nullptr),
-      batch_stride_A(0),
-      batch_stride_B(0),
-      batch_stride_C(0),
-      batch_stride_D(0),
-      batch_stride_gemm_k_reduction(0),
-      semaphore(nullptr) { }
+    /// Default constructor
+    Params() = default;
 
-    CUTLASS_HOST_DEVICE
+    /// Constructor
     Params(
-      Arguments const &args,
-      cutlass::gemm::GemmCoord const & grid_tiled_shape,
-      int gemm_k_size,
-      void *workspace = nullptr
-    ):
-      problem_size(args.problem_size),
-      grid_tiled_shape(grid_tiled_shape),
-      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
+      Arguments const &args,  /// GEMM application arguments
+      int device_sms,         /// Number of SMs on the device
+      int sm_occupancy)       /// Kernel SM occupancy (in thread blocks)
+    :
+      ParamsBase(args, device_sms, sm_occupancy),
       params_A(args.lda),
       params_B(args.ldb),
       params_C(args.ldc),
       params_D(args.ldd),
       output_op(args.epilogue),
-      mode(args.mode),
-      batch_count(args.batch_count),
-      gemm_k_size(gemm_k_size),
       ptr_A(const_cast<void *>(args.ptr_A)),
       ptr_B(const_cast<void *>(args.ptr_B)),
       ptr_C(const_cast<void *>(args.ptr_C)),
       batch_stride_A(args.batch_stride_A),
       batch_stride_B(args.batch_stride_B),
       batch_stride_C(args.batch_stride_C),
-      batch_stride_D(args.batch_stride_D),
       batch_stride_gemm_k_reduction(args.batch_stride_gemm_k_reduction),
-      semaphore(static_cast<int *>(workspace)) {
+      ptr_D(args.ptr_D),
+      ptr_gemm_k_reduction(args.ptr_gemm_k_reduction)
+    {}
 
-      CUTLASS_TRACE_HOST("GemmUniversal::Params::Params() - problem_size: " << problem_size);
+    /// Assign and initialize the specified workspace buffer.  Assumes
+    /// the memory allocated to workspace is at least as large as get_workspace_size().
+    Status init_workspace(
+      void *workspace,
+      cudaStream_t stream = nullptr)
+    {
+      CUTLASS_TRACE_HOST("GemmUniversal::Params::Params() - problem_size: " << this->problem_size);
 
-      if (args.mode == GemmUniversalMode::kGemmSplitKParallel) {
+      if (this->mode == GemmUniversalMode::kGemmSplitKParallel) {
         ptr_D = workspace;
         ptr_gemm_k_reduction = static_cast<uint8_t *>(workspace)
-                 + sizeof(ElementC) * size_t(args.batch_stride_D) * size_t(grid_tiled_shape.k());
-      } else {
-        ptr_D = args.ptr_D;
-        ptr_gemm_k_reduction = args.ptr_gemm_k_reduction;
+                 + sizeof(ElementC) * size_t(this->batch_stride_D) * size_t(this->grid_tiled_shape.k());
+
+        return Status::kSuccess;
       }
+
+      return ParamsBase::init_workspace(workspace, stream);
     }
 
-    CUTLASS_HOST_DEVICE
-    void update(
-      Arguments const &args,
-      void *workspace = nullptr) {
+    /// Returns the workspace size (in bytes) needed for this problem geometry
+    size_t get_workspace_size() const
+    {
+      size_t workspace_bytes = ParamsBase::get_workspace_size();
 
+      if (this->mode == GemmUniversalMode::kGemmSplitKParallel)
+      {
+        // Split-K parallel always requires a temporary workspace
+        workspace_bytes +=
+          sizeof(ElementC) *
+          size_t(batch_stride_gemm_k_reduction) *
+          size_t(this->grid_tiled_shape.k());
+      }
+
+      return workspace_bytes;
+    }
+
+    /// Lightweight update given a subset of arguments.  Problem geometry is assumed
+    /// to remain the same.
+    void update(Arguments const &args)
+    {
       ptr_A = const_cast<void *>(args.ptr_A);
       ptr_B = const_cast<void *>(args.ptr_B);
       ptr_C = const_cast<void *>(args.ptr_C);
       ptr_D = args.ptr_D;
       ptr_gemm_k_reduction = args.ptr_gemm_k_reduction;
 
-      batch_stride_A = args.batch_stride_A;
-      batch_stride_B = args.batch_stride_B;
-      batch_stride_C = args.batch_stride_C;
-      batch_stride_D = args.batch_stride_D;
-      batch_stride_gemm_k_reduction = args.batch_stride_gemm_k_reduction;
-
       output_op = args.epilogue;
 
-      semaphore = static_cast<int *>(workspace);
       CUTLASS_TRACE_HOST("GemmUniversal::Params::update()");
     }
   };
@@ -322,14 +317,12 @@ public:
     typename Epilogue::SharedStorage epilogue;
   };
 
+
 public:
 
   //
-  // Methods
+  // Host dispatch API
   //
-
-  CUTLASS_DEVICE
-  GemmWithKReduction() { } 
 
   /// Determines whether kernel satisfies alignment
   static Status can_implement(
@@ -410,26 +403,29 @@ public:
     return Status::kSuccess;
   }
 
+
   static Status can_implement(Arguments const &args) {
     return can_implement(args.problem_size);
   }
 
-  static size_t get_extra_workspace_size(Arguments const &args,
-                                         cutlass::gemm::GemmCoord const &grid_tiled_shape) {
-    size_t workspace_bytes = 0;
 
-    if (args.mode == GemmUniversalMode::kGemmSplitKParallel) {                                        
-      
-      // Split-K parallel always requires a temporary workspace                                       
-      workspace_bytes =  
-        sizeof(ElementC) *
-        size_t(args.batch_stride_gemm_k_reduction) * 
-        size_t(grid_tiled_shape.k());                                                                 
-    }
+public:
 
-    return workspace_bytes;
+  //
+  // Device-only API
+  //
+
+  // Factory invocation
+  CUTLASS_DEVICE
+  static void invoke(
+    Params const &params,
+    SharedStorage &shared_storage)
+  {
+    GemmWithKReduction op;
+    op(params, shared_storage);
   }
-  
+
+
   /// Executes one GEMM
   CUTLASS_DEVICE
   void operator()(Params const &params, SharedStorage &shared_storage) {

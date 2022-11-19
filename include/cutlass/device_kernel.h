@@ -57,6 +57,23 @@ void Kernel(typename Operator::Params params) {
   op(params, *shared_storage);
 }
 
+
+/// Generic CUTLASS kernel template.
+template <typename Operator>
+__global__
+void Kernel2(typename Operator::Params params) {
+  // Dynamic shared memory base pointer
+  extern __shared__ int SharedStorageBase[];
+
+  // Declare pointer to dynamic shared memory.
+  typename Operator::SharedStorage *shared_storage =
+      reinterpret_cast<typename Operator::SharedStorage *>(SharedStorageBase);
+
+  Operator::invoke(params, *shared_storage);
+
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////
 } /// namespace cutlass
 
