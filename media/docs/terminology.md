@@ -41,7 +41,7 @@ contiguous and strided dimensions of a tile.
 **Rank**: number of dimensions in a multidimensional index space, array, tensor, or matrix. Consistent with 
   [C++ Standard Library](https://en.cppreference.com/w/cpp/types/rank)
 
-**Register**: in device code, registes are the most efficient storage for statically sized arrays of elements.
+**Register**: in device code, registers are the most efficient storage for statically sized arrays of elements.
   Arrays may be expected to be stored in registers if all accesses are made via constexpr indices or within
   fully unrolled loops.
 
