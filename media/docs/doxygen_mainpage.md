@@ -33,7 +33,7 @@ CUTLASS 2.0 is a substantial refactoring from the previous version, intended to 
 # Example CUTLASS GEMM
 
 The following illustrates an example function that defines a CUTLASS GEMM kernel
-with single-precision inputs and outputs. This is an exercpt from the CUTLASS SDK 
+with single-precision inputs and outputs. This is an excerpt from the CUTLASS SDK 
 [basic_gemm example](https://github.com/NVIDIA/cutlass/tree/master/examples/00_basic_gemm/basic_gemm.cu).
 
 ~~~~~~~~~~~~~~~~~~~~~{.cpp}
