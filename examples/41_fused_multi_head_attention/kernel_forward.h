@@ -163,7 +163,9 @@ struct AttentionKernel {
     int32_t num_heads;
 
     CUTLASS_HOST_DEVICE int32_t o_strideM() const {
-      return head_dim_value;
+      // Note: Note in sync with cutlass' main branch!! Make sure to apply
+      // when updating cutlass.
+      return head_dim_value * num_heads;
     }
 
     // Moves pointers to what we should process
