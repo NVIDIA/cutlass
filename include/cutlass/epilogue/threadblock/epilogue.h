@@ -62,7 +62,6 @@
 #include "cutlass/epilogue/threadblock/epilogue_base.h"
 #include "cutlass/epilogue/threadblock/epilogue_base_streamk.h"
 #include "cutlass/epilogue/threadblock/predicated_tile_iterator.h"
-#include "cutlass/util/index_sequence.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
