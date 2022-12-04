@@ -206,7 +206,7 @@ public:
       (Z == conv.Z) &&(P == conv.P) && (Q == conv.Q) &&
       (pad_d == conv.pad_d) && (pad_h == conv.pad_h) && (pad_w == conv.pad_w) &&
       (stride_d == conv.stride_d) && (stride_h == conv.stride_h) && (stride_w == conv.stride_h) &&
-      (dilation_d == conv.dilation_d) && (dilation_h == conv.dilation_h) && (dilation_h == conv.dilation_h)
+      (dilation_d == conv.dilation_d) && (dilation_h == conv.dilation_h) && (dilation_w == conv.dilation_w)
     );  
   }
 
