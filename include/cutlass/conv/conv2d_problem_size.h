@@ -278,7 +278,7 @@ public:
     return (N * P * Q * K);
   }
   
-  /// Returns output extent as Tensor4DCoord
+  /// Returns padding as Tensor4DCoord
   CUTLASS_HOST_DEVICE
   cutlass::Tensor4DCoord padding() const {
 
