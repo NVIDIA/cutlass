@@ -112,7 +112,7 @@ any Volta-, Turing-, or NVIDIA Ampere- architecture NVIDIA GPU.
 |NVIDIA A100|8.0|11.0|11.0|
 |NVIDIA A10 |8.6|11.1|11.1|
 |NVIDIA GeForce 3090|8.6|11.1|11.1|
-|NVIDIA H100 PCIe|9.0|11.8|11.8|
+|NVIDIA H100 PCIe|9.0|11.8|Double-precision: 11.8|
 
 # Documentation
 
