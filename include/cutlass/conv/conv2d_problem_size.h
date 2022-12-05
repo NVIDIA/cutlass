@@ -221,12 +221,12 @@ public:
   CUTLASS_HOST_DEVICE
   bool operator==(Conv2dProblemSize const &conv) const {
     return (
-      (N == conv.N) && (W == conv.H) && (W == conv.W) && (C == conv.C) &&
+      (N == conv.N) && (H == conv.H) && (W == conv.W) && (C == conv.C) &&
       (K == conv.K) && (R == conv.R) && (S == conv.S) &&
       (P == conv.P) && (Q == conv.Q) &&
       (pad_h == conv.pad_h) && (pad_w == conv.pad_w) &&
       (stride_h == conv.stride_h) && (stride_w == conv.stride_w) &&
-      (dilation_h == conv.dilation_h) && (dilation_h == conv.dilation_h)
+      (dilation_h == conv.dilation_h) && (dilation_w == conv.dilation_w)
     );  
   }
 
@@ -278,7 +278,7 @@ public:
     return (N * P * Q * K);
   }
   
-  /// Returns output extent as Tensor4DCoord
+  /// Returns padding as Tensor4DCoord
   CUTLASS_HOST_DEVICE
   cutlass::Tensor4DCoord padding() const {
 
