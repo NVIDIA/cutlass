@@ -39,6 +39,7 @@
 #include "cutlass/numeric_types.h"
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
+#include "cutlass/matrix_coord.h"
 
 #include "cutlass/tensor_view.h"
 #include "cutlass/gemm/gemm.h"
