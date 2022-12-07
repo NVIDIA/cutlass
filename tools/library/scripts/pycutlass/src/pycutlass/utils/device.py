@@ -31,14 +31,22 @@
 #################################################################################################
 
 """
-Utility functions for interacting with device
+Utility functions for interacting with the device
 """
 
 from cuda import cudart
 
 
-# Raises an exception if `result` returned an error. Otherwise returns the result.
 def check_cuda_errors(result: list):
+    """
+    Checks whether `result` contains a CUDA error raises the error as an exception, if so. Otherwise,
+    returns the result contained in the remaining fields of `result`.
+
+    :param result: the results of the `cudart` method, consisting of an error code and any method results
+    :type result: list
+
+    :return: non-error-code results from the `results` parameter
+    """
     # `result` is of the format : (cudaError_t, result...)
     err = result[0]
     if err.value:
@@ -52,8 +60,16 @@ def check_cuda_errors(result: list):
         return result[1:]
 
 
-# Returns the integer representation of the device compute capability
-def get_device_cc(device: int = 0):
+def device_cc(device: int = 0) -> int:
+    """
+    Returns the compute capability of the device with ID `device`.
+
+    :param device: ID of the device to query
+    :type device: int
+
+    :return: compute capability of the queried device (e.g., 80 for SM80)
+    :rtype: int
+    """
     deviceProp = check_cuda_errors(cudart.cudaGetDeviceProperties(device))
     major = str(deviceProp.major)
     minor = str(deviceProp.minor)

@@ -102,8 +102,10 @@ Examples can be found in [$CUTLASS_PATH/examples/40_cutlass_py](examples/40_cutl
 ## Test
 The test cases are listed in `$CUTLASS_PATH//tools/library/scripts/pycutlass/test`. The unit test can be run with
 ```shell
+# Each of these tests are only supported on devices with compute capability of SM80. For other devices,
+# see the basic examples in $CUTLASS_PATH/examples/40_cutlass_py
 cd $CUTLASS_PATH/tools/library/scripts/pycutlass/test/unit && python test_sm80.py
-cd $CUTLASS_PATH/tools/library/scripts/pycutlass/test/example && run_all_example.sh
+cd $CUTLASS_PATH/tools/library/scripts/pycutlass/test/example && bash run_all_example.sh
 ```
 
 ## build documentation

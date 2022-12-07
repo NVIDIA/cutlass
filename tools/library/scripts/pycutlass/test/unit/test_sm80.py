@@ -35,12 +35,14 @@
 import pycutlass
 from pycutlass import *
 from pycutlass.test import *
+from pycutlass.utils.device import device_cc
 import unittest
 
 #
 # Create GEMM operation
 #
 
+@unittest.skipIf(device_cc() < 80, "Device compute capability is insufficient for SM80 tests.")
 def TestGemmOperator(gemm_kind, math_inst, layout, alignment, tiling, arch, mixed=False,
     epilogue_functor=None, swizzling_functor=cutlass.IdentitySwizzle1, **kwargs):
     """

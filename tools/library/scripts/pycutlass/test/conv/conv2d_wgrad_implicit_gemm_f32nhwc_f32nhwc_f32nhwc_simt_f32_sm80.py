@@ -3,8 +3,11 @@ import pycutlass
 from pycutlass.conv2d_operation import *
 from pycutlass import *
 from pycutlass.test import *
+from pycutlass.utils.device import device_cc
 import unittest
 
+
+@unittest.skipIf(device_cc() < 80, "Device compute capability is insufficient for SM80 tests.")
 class Conv2dWgradImplicitGemmF32nhwcF32nhwcF32nhwcSimtF32SM80(unittest.TestCase):
     def test_SM80_Device_Conv2d_Wgrad_Analytic_ImplicitGemm_f32nhwc_f32nhwc_f32nhwc_simt_f32(self):
         math_inst = MathInstruction(
