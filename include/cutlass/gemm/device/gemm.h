@@ -372,7 +372,7 @@ public:
       return Status::kErrorMemoryAllocation;
     }
 
-    int smem_capacity = static_cast<int>(properties.sharedMemPerMultiprocessor);
+    int smem_capacity = static_cast<int>(properties.sharedMemPerBlockOptin);
     if (smem_size > smem_capacity) {
       return Status::kErrorMemoryAllocation;
     }
