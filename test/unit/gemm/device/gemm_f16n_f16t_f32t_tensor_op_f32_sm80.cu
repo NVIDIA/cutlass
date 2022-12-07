@@ -33,12 +33,10 @@
 */
 
 #include <iostream>
-#include <vector>
 
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/device/gemm.h"
-#include "cutlass/gemm/device/gemm_universal.h"
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/host/gemm.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
@@ -50,7 +48,7 @@
 #include "testbed_universal.h"
 
 #if (CUTLASS_ARCH_MMA_SM80_SUPPORTED)
-
+ 
 ////////////////////////////////////////////////////////////////////////////////
 
 CUTLASS_TEST_L1(SM80_Device_Gemm_f16n_f16t_f32t_tensor_op_f32, 128x256x64_64x64x64, {
@@ -143,37 +141,6 @@ CUTLASS_TEST_L1(SM80_Device_Gemm_f16n_f16t_f32n_tensor_op_f32, 128x128x64_64x64x
       cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, 3>;
 
   EXPECT_TRUE(test::gemm::device::TestAllGemmUniversal<Gemm>());
-} )
-
-CUTLASS_TEST_L1(SM80_Device_Gemm_f16t_f16n_f32t_tensor_op_f32, 128x128x64_64x64x64_sk, {
-  using ElementOutput = float;
-  using ElementAccumulator = float;
-
-  using Gemm = cutlass::gemm::device::GemmUniversal<
-      cutlass::half_t, cutlass::layout::RowMajor,
-      cutlass::half_t, cutlass::layout::ColumnMajor,
-      ElementOutput, cutlass::layout::RowMajor,
-      ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
-      cutlass::gemm::GemmShape<128, 128, 64>,
-      cutlass::gemm::GemmShape<64, 64, 64>, cutlass::gemm::GemmShape<16, 8, 16>,
-      cutlass::epilogue::thread::LinearCombination<
-          ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
-          ElementAccumulator, ElementAccumulator>,
-      cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, 3>;
-
-  // Some custom problem sizes to test relaxed alignment
-  std::vector<int> problem_m{
-    1, 3
-  };
-  std::vector<int> problem_n{
-    4,
-  };
-  std::vector<int> problem_k{
-    512,
-  };
-  EXPECT_TRUE(test::gemm::device::TestAllGemmUniversalWithCustomProblemSizes<Gemm>(
-    problem_m, problem_n, problem_k
-  ));
 } )
 
 CUTLASS_TEST_L1(SM80_Device_Gemm_f16n_f16t_f32t_tensor_op_f32, 256x64x64_64x64x64, {
@@ -414,3 +381,4 @@ CUTLASS_TEST_L1(SM80_Device_Gemm_f16n_f16t_f32t_tensor_op_f32, 64x64x32_32x32x32
 ////////////////////////////////////////////////////////////////////////////////
 
 #endif  // CUTLASS_ARCH_MMA_SM80_SUPPORTED
+
