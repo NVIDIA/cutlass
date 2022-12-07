@@ -276,7 +276,7 @@ public:
           return -1;
         }
 
-        smem_capacity = static_cast<int>(properties.sharedMemPerMultiprocessor);
+        smem_capacity = static_cast<int>(properties.sharedMemPerBlockOptin);
       }
 
       int occupancy = std::min(max_active_blocks, smem_capacity / smem_size);
