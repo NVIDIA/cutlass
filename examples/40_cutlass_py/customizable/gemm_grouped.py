@@ -32,6 +32,7 @@
 import numpy as np
 import pycutlass
 from pycutlass import *
+from pycutlass.utils.device import device_cc
 import csv
 import sys
 
@@ -128,6 +129,11 @@ try:
     args = parser.parse_args()
 except:
     sys.exit(0)
+
+cc = device_cc()
+if args.compute_capability != cc:
+    raise Exception(("Parameter --compute-capability of {} "
+                    "does not match that of the device of {}.").format(args.compute_capability, cc))
 
 pycutlass.get_memory_pool(init_pool_size=2**30, max_pool_size=2**32)
 

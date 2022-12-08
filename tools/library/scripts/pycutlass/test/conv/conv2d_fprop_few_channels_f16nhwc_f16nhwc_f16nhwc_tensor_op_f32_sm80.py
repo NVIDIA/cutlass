@@ -1,8 +1,11 @@
 # test/unit/conv/device/conv2d_fprop_few_channels_f16nhwc_f16nhwc_f16nhwc_tensor_op_f32_sm80.cu
 import pycutlass
 from pycutlass.test import *
+from pycutlass.utils.device import device_cc
 import unittest
 
+
+@unittest.skipIf(device_cc() < 80, "Device compute capability is insufficient for SM80 tests.")
 def conv2d_few_channel_problemsizes(channels):
     problem_sizes = [
         cutlass.conv.Conv2dProblemSize(

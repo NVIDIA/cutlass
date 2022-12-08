@@ -33,6 +33,7 @@
 import pycutlass
 import unittest
 from pycutlass import *
+from pycutlass.utils.device import device_cc
 import torch
 import cupy as cp
 
@@ -42,13 +43,18 @@ class Test_Frontend(unittest.TestCase):
         #
         # define the cutlass operator
         #
+        cc = device_cc()
         math_inst = MathInstruction(
             [1, 1, 1], cutlass.float32, cutlass.float32, cutlass.float32,
             cutlass.OpClass.Simt, MathOperation.multiply_add
         )
 
+        # Stages > 2 is supported only for compute capability 80 and beyond
+        stages = 4 if cc >= 80 else 2
+
+
         tile_description = TileDescription(
-            [128, 128, 8], 4, [2, 4, 1],
+            [128, 128, 8], stages, [2, 4, 1],
             math_inst
         )
 
@@ -69,7 +75,7 @@ class Test_Frontend(unittest.TestCase):
             math_inst.element_accumulator, cutlass.float32)
 
         self.operation = GemmOperationUniversal(
-            arch=80, tile_description=tile_description,
+            arch=cc, tile_description=tile_description,
             A=A, B=B, C=C, 
             epilogue_functor=epilogue_functor, 
             swizzling_functor=cutlass.IdentitySwizzle1
