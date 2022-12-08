@@ -4,8 +4,10 @@ from pycutlass.test import *
 import unittest
 
 from pycutlass.test.gemm_grouped_testbed import TestbedGrouped
+from pycutlass.utils.device import device_cc
 
 
+@unittest.skipIf(device_cc() < 80, "Device compute capability is insufficient for SM80 tests.")
 class GemmGroupedSm80(unittest.TestCase):
     def test_SM80_Device_GemmGrouped_f16n_f16t_f32n_tensor_op_f32_128x128x32_64x64x32(self):
         math_inst = MathInstruction(

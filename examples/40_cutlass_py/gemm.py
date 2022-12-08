@@ -40,7 +40,7 @@ import sys
 import cutlass
 import pycutlass
 from pycutlass import *
-import util
+from pycutlass.utils.device import device_cc
 
 
 parser = argparse.ArgumentParser(description="Launch a GEMM kernel from Python: 'D = alpha * A * B + beta * C'")
@@ -55,7 +55,7 @@ except:
     sys.exit(0)
 
 # Check that the device is of a sufficient compute capability
-cc = util.get_device_cc()
+cc = device_cc()
 assert cc >= 70, "The CUTLASS Python GEMM example requires compute capability greater than or equal to 70."
 
 alignment = 8
@@ -78,12 +78,22 @@ C = TensorDescription(cutlass.float32, cutlass.ColumnMajor, alignment)
 element_acc = cutlass.float32
 element_epilogue = cutlass.float32
 
+# Select instruction shape based on the Tensor Core instructions supported
+# by the device on which we are running
+if cc == 70:
+    instruction_shape = [8, 8, 4]
+elif cc == 75:
+    instruction_shape = [16, 8, 8]
+else:
+    instruction_shape = [16, 8, 16]
+
 math_inst = MathInstruction(
-    [16, 8, 8],                         # Shape of the Tensor Core instruction
+    instruction_shape,
     A.element, B.element, element_acc,
     cutlass.OpClass.TensorOp,
     MathOperation.multiply_add
 )
+
 
 tile_description = TileDescription(
     [128, 128, 32],   # Threadblock shape

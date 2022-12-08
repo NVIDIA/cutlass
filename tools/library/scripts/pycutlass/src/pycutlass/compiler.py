@@ -308,7 +308,7 @@ class ArtifactManager:
         cmd = "echo '%s'|g++ -x c++ -fpermissive -w -fPIC" % source_buffer_host
         for opt in options:
             opt = opt.decode("utf-8")
-            if opt not in ['-default-device', '-std=c++11', '-arch=sm_80', '-Xcicc', '-Xllc']:
+            if opt not in ['-default-device', '-std=c++11', '-Xcicc', '-Xllc'] and '-arch=sm_' not in opt:
                 if '--include-path=' in opt:
                     cmd += " " + opt.replace('--include-path=', '-I')
                 else:

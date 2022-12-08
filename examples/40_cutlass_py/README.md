@@ -2,7 +2,6 @@
 This directory contains examples of using CUTLASS's Python interface. It consists of two types of examples:
 * _Basic examples_: minimal examples that illustrate how to set up GEMMs, convolutions, and grouped GEMM operations
 * [_Customizable examples_](customizable): examples that allow one to specify a variety of template parameters for the given kernel
->>>>>>> Add simplified examples
 
 ## Setting up the Python interface
 Please follow the instructions [here](/tools/library/scripts/pycutlass/README.md#installation) to set up the Python API.
