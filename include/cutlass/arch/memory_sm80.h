@@ -36,6 +36,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/complex.h"
 #include "cutlass/arch/memory.h"
 #include "cutlass/arch/memory_sm75.h"
 #include "cutlass/arch/cache_operation.h"
