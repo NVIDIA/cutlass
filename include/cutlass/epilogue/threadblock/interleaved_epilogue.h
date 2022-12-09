@@ -172,7 +172,7 @@ public:
       int peer_idx_begin,
       int peer_idx_end,
       int reduce_fragment_idx,
-      ElementAccumulator *element_workspace,
+      void *element_workspace,
       OutputOp const &output_op,                      ///< Output operator
       OutputTileIterator destination_iterator,        ///< Tile iterator for destination
       OutputTileIterator source_iterator)             ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)

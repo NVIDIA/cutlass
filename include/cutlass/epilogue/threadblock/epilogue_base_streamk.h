@@ -53,19 +53,20 @@ template <
   typename Shape,                          ///< Shape of threadblock tile (concept: GemmShape)
   int PartitionsK,
   typename WarpMmaOperator,                ///< Warp-level MMA operator (concept: gemm::warp::MmaTensorOp)
-  typename AccumulatorFragmentIterator>    ///< Fragment iterator selecting accumulators
+  typename AccumulatorFragmentIterator>    ///< Iterator for enumerating fragments within the per-thread tile of raw accumulators
 class EpilogueBaseStreamK
 {
 
 protected:
 
-  /// The complete warp-level accumulator tile
+  /// The per-thread tile of raw accumulators
   using AccumulatorTile = typename AccumulatorFragmentIterator::AccumulatorTile;
 
   /// Number of warps
   using WarpCount = gemm::GemmShape<
                         Shape::kM / WarpMmaOperator::Shape::kM,
-                        Shape::kN / WarpMmaOperator::Shape::kN, PartitionsK>;
+                        Shape::kN / WarpMmaOperator::Shape::kN,
+                        PartitionsK>;
 
   /// Number of threads per block
   static int const kBlockThreads = 32 * WarpCount::kCount;
@@ -76,25 +77,26 @@ protected:
   /// Fragment type used by the accumulator tile's fragment iterator
   using AccumulatorFragment = typename AccumulatorFragmentIterator::Fragment;
 
-  /// Block-striped transfer utility for sharing AccumulatorFragment
-  using BlockStripedT = BlockStriped<kBlockThreads, AccumulatorFragment, ElementAccumulator>;
-
-  /// Number of elements per fragment
-  static int const kFragmentElements = sizeof(AccumulatorFragment) / sizeof(ElementAccumulator);
-
 public:
 
-  /// Number of fragments per accumulator tile
+  /// Number of AccumulatorTile fragments per thread
   static int const kAccumulatorFragments = AccumulatorFragmentIterator::Policy::kIterations;
-
-  /// Number of workspace accumulation elements shared per output tile
-  static int const kPeerAccumulators = WarpMmaOperator::Shape::kMN * WarpCount::kCount;
 
 protected:
 
-  /// ElementAccumulator stride in the shared workspace between different peer blocks (two: each peer block can share accumulators for up to two tiles)
-  static const int kPeerStride = kPeerAccumulators * 2;
+  /// Number of AccumulatorTile fragments per block output tile
+  static int const kOutputTileFragments = kBlockThreads * kAccumulatorFragments;
 
+  /// Block-striped transfer utility for sharing AccumulatorFragment
+  using BlockStripedT = BlockStriped<kBlockThreads, AccumulatorFragment>;
+
+  /// AccumulatorFragment stride in the shared workspace between different peer blocks (each thread block can share accumulators for up to two block output tiles)
+  static const int kPeerFragmentStride = kOutputTileFragments * 2;
+
+public:
+
+  /// Workspace bytes per thread block
+  static size_t const kWorkspaceBytesPerBlock =sizeof(AccumulatorFragment) * kPeerFragmentStride;
 
 public:
 
@@ -119,28 +121,29 @@ public:
       int peer_idx_begin,
       int peer_idx_end,
       int reduce_fragment_idx,
-      ElementAccumulator *element_workspace)
+      void *workspace_ptr)
   {
     plus<AccumulatorFragment> add_fragments;
 
-    int accum_set_offset =
-        (peer_idx_begin * kPeerStride) +
-        (reduce_fragment_idx * kBlockThreads * kFragmentElements);
+    AccumulatorFragment *fragment_workspace = reinterpret_cast<AccumulatorFragment *>(workspace_ptr);
+
+    int fragment_offset = (peer_idx_begin * kPeerFragmentStride) + (reduce_fragment_idx * kBlockThreads);
 
     // Load first peer fragment
-    BlockStripedT::load(accum_fragment, element_workspace + accum_set_offset, this->thread_idx);
+    BlockStripedT::load(accum_fragment, fragment_workspace + fragment_offset, this->thread_idx);
 
-    accum_set_offset += kPeerStride;            // Move to next peer
-    accum_set_offset += kPeerAccumulators;      // Move to non-starting accumulator set for peer
+    fragment_offset += kPeerFragmentStride;         // Move to next peer
+    fragment_offset += kOutputTileFragments;        // Move to the set of fragments for this peer's "non-started" output tile
 
-    // Reduce additional peer fragments
+    // Reduce fragments from additional peers
     #pragma unroll 2
-    while (accum_set_offset < peer_idx_end * kPeerStride)
+    for (; fragment_offset < peer_idx_end * kPeerFragmentStride; fragment_offset += kPeerFragmentStride)
     {
+      // Load peer fragment
       AccumulatorFragment addend_fragment;
-      BlockStripedT::load(addend_fragment, element_workspace + accum_set_offset, this->thread_idx);
-      accum_set_offset += kPeerStride;
+      BlockStripedT::load(addend_fragment, fragment_workspace + fragment_offset, this->thread_idx);
 
+      // Add peer fragment
       accum_fragment = add_fragments(accum_fragment, addend_fragment);
     }
   }
@@ -150,19 +153,22 @@ public:
   CUTLASS_DEVICE
   void share(
       int peer_idx,
-      ElementAccumulator *element_workspace,          ///< Output pointer for writing this block's accumulator set to
-      AccumulatorTile const &accumulators,            ///< Complete warp-level accumulator tile
-      bool started_tile)
+      void *workspace_ptr,
+      AccumulatorTile const &accumulators,
+      bool started_tile)                      ///< Whether this thread block computed the first work volume for the current output tile
   {
-    int accum_set_offset = peer_idx * kPeerStride;
+    AccumulatorFragment *fragment_workspace = reinterpret_cast<AccumulatorFragment *>(workspace_ptr);
+
+    int fragment_offset = peer_idx * kPeerFragmentStride;
 
     if (!started_tile) {
-      // Move to non-starting accumulator set
-      accum_set_offset += kPeerAccumulators;
+      // Move to the set of fragments for the "non-started" output tile
+      fragment_offset += kOutputTileFragments;
     }
 
     AccumulatorFragmentIterator accum_fragment_iterator(accumulators);
 
+    // Convert raw accumulator tile to fragments and store
     CUTLASS_PRAGMA_UNROLL
     for (int iter = 0; iter < kAccumulatorFragments; ++iter)
     {
@@ -172,9 +178,9 @@ public:
       ++accum_fragment_iterator;
 
       // Store accumulator fragment
-      BlockStripedT::store(element_workspace + accum_set_offset, accum_fragment, this->thread_idx);
+      BlockStripedT::store(fragment_workspace + fragment_offset, accum_fragment, this->thread_idx);
 
-      accum_set_offset += (kFragmentElements * kBlockThreads);
+      fragment_offset += kBlockThreads;
     }
   }
 
