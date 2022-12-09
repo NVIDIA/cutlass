@@ -741,7 +741,7 @@ private:
       LayoutO layout_O(ldo_host.at(i));
 
       MatrixCoord extent_Q{problem0.m(), problem0.k()};
-      MatrixCoord extent_K{problem0.n(), problem0.k()};
+      MatrixCoord extent_K{problem0.k(), problem0.n()};
       MatrixCoord extent_P{problem0.m(), problem0.n()};
       MatrixCoord extent_V{problem1.k(), problem1.n()};
       MatrixCoord extent_O{problem1.m(), problem1.n()};
@@ -789,7 +789,6 @@ private:
       int n_dim = options.use_mask ? options.problem_sizes0_real.at(i).n() : problem0.n();
 
       // Compute softmax for reference matrix
-      // Assumed a row-major storage
       for (int m = 0; m < problem0.m(); m++) {
         int n_dim_row = n_dim;
         if (options.causal) {
