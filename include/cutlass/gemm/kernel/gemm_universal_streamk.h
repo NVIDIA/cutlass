@@ -77,7 +77,9 @@ public:
   using LayoutB = typename Mma::IteratorB::Layout;
   using ElementC = typename Epilogue::OutputTileIterator::Element;
   using LayoutC = typename Epilogue::OutputTileIterator::Layout;
-  using ElementAccumulator = typename Mma::ElementC;
+
+  /// The per-thread tile of raw accumulators
+  using AccumulatorTile = typename Mma::FragmentC;
 
   static ComplexTransform const kTransformA = Mma::kTransformA;
   static ComplexTransform const kTransformB = Mma::kTransformB;
@@ -94,21 +96,18 @@ public:
   static int const kAlignmentB = Mma::IteratorB::AccessType::kElements;
   static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
 
-  /// Number of workspace accumulation elements shared per per block
-  static int const kPeerAccumulators = Epilogue::kPeerAccumulators;
-
-  /// Number of fragments per (thread) accumulator tile
-  static int const kAccumulatorFragments = Epilogue::kAccumulatorFragments;
-
-  /// Number of numeric accumulation elements per fragment
-  static int const kAccumTileElements = sizeof(typename Mma::FragmentC) / sizeof(ElementAccumulator);
-
   /// Warp count (concept: GemmShape)
   using WarpCount = typename Mma::WarpCount;
   static int const kThreadCount = 32 * WarpCount::kCount;
 
+  /// Workspace bytes per thread block
+  static size_t const kWorkspaceBytesPerBlock =
+    __NV_STD_MAX(
+      kThreadCount * sizeof(AccumulatorTile),
+      Epilogue::kWorkspaceBytesPerBlock);
+
   /// Block-striped reduction utility
-  using BlockStripedReduceT = BlockStripedReduce<kThreadCount, typename Mma::FragmentC, ElementAccumulator>;
+  using BlockStripedReduceT = BlockStripedReduce<kThreadCount, AccumulatorTile>;
 
 
 
@@ -276,7 +275,7 @@ public:
     int64_t batch_stride_D;
 
     void *barrier_workspace;
-    ElementAccumulator *partials_workspace;
+    void *partials_workspace;
 
   protected:
 
@@ -305,11 +304,8 @@ public:
     /// Get the workspace size needed for intermediate partial sums
     size_t get_partials_workspace_size() const
     {
-      // For atomic reduction, each SK-block can share one accumulator tile.  For parallel reduction,
-      // each SK-block can share up to two accumulator tiles.
-      size_t tile_bytes_accumulators = sizeof(ElementAccumulator) * kPeerAccumulators * 2;
       int sk_blocks = block_mapping.sk_regions * block_mapping.sk_blocks_per_region;
-      return cacheline_align_up(tile_bytes_accumulators * sk_blocks);
+      return cacheline_align_up(kWorkspaceBytesPerBlock * sk_blocks);
     }
 
 
@@ -388,7 +384,7 @@ public:
         if (!workspace) {
           return Status::kErrorWorkspaceNull;
         }
-        partials_workspace = reinterpret_cast<ElementAccumulator*>(ptr);
+        partials_workspace = ptr;
         ptr += partials_workspace_bytes;
       }
 
@@ -400,7 +396,7 @@ public:
         if (!workspace) {
           return Status::kErrorWorkspaceNull;
         }
-        barrier_workspace = reinterpret_cast<ElementAccumulator*>(ptr);
+        barrier_workspace = ptr;
         ptr += barrier_workspace_bytes;
       }
 
@@ -630,13 +626,11 @@ public:
     return Status::kSuccess;
   }
 
-
   /// Determines whether the GEMM problem satisfies this kernel's
   /// alignment requirements
   static Status can_implement(Arguments const &args) {
     return can_implement(args.problem_size);
   }
-
 
 protected:
 
@@ -762,14 +756,16 @@ protected:
 
   /// Share accumulators with peers
   CUTLASS_DEVICE
-  void share_accumulators(typename Mma::FragmentC const &accumulator_tile, int first_block_idx)
+  void share_accumulators(AccumulatorTile const &accumulator_tile, int first_block_idx)
   {
-    int block_tile_offset = first_block_idx * kPeerAccumulators;
+    AccumulatorTile *accum_tile_workspace = reinterpret_cast<AccumulatorTile *>(params.partials_workspace);
+
+    int accum_tile_offset = first_block_idx * kThreadCount;
 
     if (block_idx == first_block_idx)
     {
       // First peer initializes the workspace partials
-      BlockStripedReduceT::store(params.partials_workspace + block_tile_offset, accumulator_tile, thread_idx);
+      BlockStripedReduceT::store(accum_tile_workspace + accum_tile_offset, accumulator_tile, thread_idx);
     }
     else
     {
@@ -787,7 +783,7 @@ protected:
       }
 
       // Perform reduction in workspace
-      BlockStripedReduceT::reduce(params.partials_workspace + block_tile_offset, accumulator_tile, thread_idx);
+      BlockStripedReduceT::reduce(accum_tile_workspace + accum_tile_offset, accumulator_tile, thread_idx);
     }
 
     // Signal our arrival
@@ -797,17 +793,19 @@ protected:
 
   /// Acquire accumulators from peers
   CUTLASS_DEVICE
-  void acquire_accumulators_atomic(
-    typename Mma::FragmentC &accumulator_tile,
+  void acquire_accumulators(
+    AccumulatorTile &accumulator_tile,
     int first_block_idx)
   {
+    AccumulatorTile *accum_tile_workspace = reinterpret_cast<AccumulatorTile *>(params.partials_workspace);
+
     // Wait for arrival
     int num_carry_in = block_idx - first_block_idx;
     Barrier::wait_eq_reset(params.barrier_workspace, thread_idx, first_block_idx, num_carry_in);
 
     // Load and add peer-partials accumulator tile to local accumulator tile
-    int block_tile_offset = first_block_idx * kPeerAccumulators;
-    BlockStripedReduceT::load_add(accumulator_tile, params.partials_workspace + block_tile_offset, thread_idx);
+    int accum_tile_offset = first_block_idx * kThreadCount;
+    BlockStripedReduceT::load_add(accumulator_tile, accum_tile_workspace + accum_tile_offset, thread_idx);
   }
 
 
@@ -815,7 +813,7 @@ protected:
   CUTLASS_DEVICE
   void do_epilogue(
     TileWorkDesc &tile_work,
-    typename Mma::FragmentC &accumulator_tile)
+    AccumulatorTile &accumulator_tile)
   {
     ElementC *ptr_C = static_cast<ElementC *>(params.ptr_C);
     ElementC *ptr_D = static_cast<ElementC *>(params.ptr_D);
@@ -867,8 +865,8 @@ protected:
     int peer_idx_begin, peer_idx_last, reduce_tile_idx, reduce_fragment_idx;
 
     // Reduce by sk-tile (every tile contributed to by one or more blocks)
-    reduce_tile_idx = reduce_idx / kAccumulatorFragments;
-    reduce_fragment_idx = reduce_idx % kAccumulatorFragments;
+    reduce_tile_idx = reduce_idx / Epilogue::kAccumulatorFragments;
+    reduce_fragment_idx = reduce_idx % Epilogue::kAccumulatorFragments;
 
     int iter_tile_first = reduce_tile_idx * params.block_mapping.iters_per_tile;
     int iter_tile_last = iter_tile_first + params.block_mapping.iters_per_tile - 1;
@@ -882,7 +880,7 @@ protected:
     Barrier::wait_eq_reset(
         params.barrier_workspace,
         thread_idx,
-        (reduce_tile_idx * kAccumulatorFragments) + reduce_fragment_idx,
+        (reduce_tile_idx * Epilogue::kAccumulatorFragments) + reduce_fragment_idx,
         num_peers);
 
     /// The location of this tile (in threadblock-tile coordinates) in the output matrix
@@ -946,7 +944,7 @@ protected:
     typename Mma::IteratorB iterator_B = init_iterator_B(tile_work);
 
     // Initialize accumulators
-    typename Mma::FragmentC accumulator_tile;
+    AccumulatorTile accumulator_tile;
     accumulator_tile.clear();
 
     // Perform this tile's range of multiply-accumulate (MAC) iterations
@@ -978,7 +976,7 @@ protected:
         if (!tile_work.tile_started())
         {
           // A "finishing" SK block must first aggregate its accumulator partial sums with those shared by peer threadblocks
-          acquire_accumulators_atomic(accumulator_tile, first_block_idx);
+          acquire_accumulators(accumulator_tile, first_block_idx);
         }
 
         do_epilogue(tile_work, accumulator_tile);
@@ -997,8 +995,8 @@ protected:
       Barrier::arrive_range_inc(
         params.barrier_workspace,
         thread_idx,
-        tile_work.tile_idx * kAccumulatorFragments,
-        kAccumulatorFragments);
+        tile_work.tile_idx * Epilogue::kAccumulatorFragments,
+        Epilogue::kAccumulatorFragments);
     }
   }
 

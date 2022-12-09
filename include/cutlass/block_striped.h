@@ -146,7 +146,6 @@ struct StripedAccessType<
 template <
   int BlockThreads,
   typename ArrayT,
-  typename T,
   typename AccessT = StripedAccessType<ArrayT> >
 struct BlockStriped
 {
@@ -156,7 +155,7 @@ struct BlockStriped
 
   /// Load
   CUTLASS_DEVICE
-  static void load(ArrayT &data, T *ptr, int thread_idx)
+  static void load(ArrayT &data, ArrayT *ptr, int thread_idx)
   {
     AccessT *access_input = reinterpret_cast<AccessT*>(ptr);
     AccessT *access_data = reinterpret_cast<AccessT*>(&data);
@@ -169,7 +168,7 @@ struct BlockStriped
 
   /// Load & Add
   CUTLASS_DEVICE
-  static void load_add(ArrayT &data, T *ptr, int thread_idx)
+  static void load_add(ArrayT &data, ArrayT *ptr, int thread_idx)
   {
     AccessT *access_input = reinterpret_cast<AccessT*>(ptr);
     AccessT *access_data = reinterpret_cast<AccessT*>(&data);
@@ -185,7 +184,7 @@ struct BlockStriped
 
   /// Store
   CUTLASS_DEVICE
-  static void store(T *ptr, const ArrayT &data, int thread_idx)
+  static void store(ArrayT *ptr, const ArrayT &data, int thread_idx)
   {
     AccessT *access_output = reinterpret_cast<AccessT*>(ptr);
     const AccessT *access_data = reinterpret_cast<const AccessT*>(&data);
@@ -210,19 +209,24 @@ struct BlockStriped
 template <
   int BlockThreads,
   typename ArrayT,
-  typename T>
-struct BlockStripedReduce : BlockStriped<BlockThreads, ArrayT, T, T>
+  typename ElementT = typename StripedAccessType<ArrayT>::Element>
+struct BlockStripedReduce :
+  BlockStriped<
+    BlockThreads,
+    ArrayT,
+    ElementT>
 {
   /// Reduce
   CUTLASS_DEVICE
-  static void reduce(T *ptr, const ArrayT &data, int thread_idx)
+  static void reduce(ArrayT *ptr, const ArrayT &data, int thread_idx)
   {
-    cutlass::red<T> reduce;
-    const T *access_data = reinterpret_cast<const T*>(&data);
+    cutlass::red<ElementT> reduce;
+    ElementT *access_output = reinterpret_cast<ElementT*>(ptr);
+    const ElementT *access_data = reinterpret_cast<const ElementT*>(&data);
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < BlockStripedReduce::kStripes; ++i) {
-      reduce(ptr + (BlockThreads * i) + thread_idx, access_data[i]);
+      reduce(access_output + (BlockThreads * i) + thread_idx, access_data[i]);
     }
   }
 };
@@ -234,13 +238,17 @@ struct BlockStripedReduce : BlockStriped<BlockThreads, ArrayT, T, T>
 template <
   int BlockThreads,
   typename ArrayT>
-struct BlockStripedReduce<BlockThreads, ArrayT, half_t> : BlockStriped<BlockThreads, ArrayT, half_t, half2>
+struct BlockStripedReduce<BlockThreads, ArrayT, half_t> :
+  BlockStriped<
+    BlockThreads,
+    ArrayT,
+    half2>
 {
   static_assert(BlockStripedReduce::kStripes % 2 == 0, "Array of half must be even number in length");
 
   /// Reduce
   CUTLASS_DEVICE
-  static void reduce(half_t *ptr, const ArrayT &data, int thread_idx)
+  static void reduce(ArrayT *ptr, const ArrayT &data, int thread_idx)
   {
     cutlass::red<half2> reduce;
     half2 *access_output = reinterpret_cast<half2*>(ptr);
