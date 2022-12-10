@@ -126,7 +126,7 @@ struct AttentionKernel {
   struct Params {
     // Input tensors
     scalar_t* query_ptr; // [num_queries, num_heads, head_dim]
-    scalar_t* key_ptr; // [num_keys, num_heads, head_dim]
+    scalar_t* key_ptr;   // [num_keys, num_heads, head_dim]
     scalar_t* value_ptr; // [num_keys, num_heads, head_dim_value]
     int32_t* cu_seqlens_q_ptr = nullptr;
     int32_t* cu_seqlens_k_ptr = nullptr;
@@ -165,6 +165,7 @@ struct AttentionKernel {
     CUTLASS_HOST_DEVICE int32_t o_strideM() const {
       return head_dim_value;
     }
+
     // Moves pointers to what we should process
     // Returns "false" if there is no work to do
     CUTLASS_DEVICE bool advance_to_block() {
