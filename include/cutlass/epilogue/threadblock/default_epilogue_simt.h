@@ -42,7 +42,10 @@
 #include "cutlass/numeric_types.h"
 #include "cutlass/array.h"
 
+#include "cutlass/arch/mma.h"
+
 #include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/warp/mma.h"
 
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/epilogue/thread/linear_combination_clamp.h"
