@@ -54,6 +54,9 @@ CUTLASS 2.11 is an update to CUTLASS adding:
   - Maxwell and Pascal GPU architectures
   - Ubuntu 16.04
   - CUDA 10.2
+  - C++ 11
+- ** Future requirement announcement:**CUTLASS plans to add the following requirements in the next major release:
+  - Minimum C++ standard - C++17
 
 **See the [CHANGELOG](CHANGELOG.md) for a detailed listing of releases and updates.**
 
