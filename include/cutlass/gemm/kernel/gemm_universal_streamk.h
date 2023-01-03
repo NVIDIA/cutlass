@@ -551,7 +551,7 @@ public:
   static Status can_implement(
     cutlass::gemm::GemmCoord const & problem_size)
   {
-    CUTLASS_TRACE_HOST("GemmUniversal::can_implement()");
+    CUTLASS_TRACE_HOST("GemmUniversalStreamk::can_implement()");
 
     static int const kAlignmentA = (platform::is_same<LayoutA,
                                                       layout::ColumnMajorInterleaved<32>>::value)
@@ -851,7 +851,7 @@ protected:
         threadblock_item_begin);
 
     // Execute the epilogue operator to update the destination tensor.
-    epilogue(
+    epilogue.unified(
         EpilogueOutputOp(params.output_op),
         iterator_D,
         accumulator_tile,

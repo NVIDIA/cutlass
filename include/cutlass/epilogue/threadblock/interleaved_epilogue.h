@@ -147,6 +147,101 @@ public:
                   OutputTileIterator::kElementsPerAccess),
                 "Divisibility");
 
+public:
+
+  /// Aspect for when epilogue source is not needed
+  struct SourceAspectNotNeeded
+  {
+    /// Constructor
+    CUTLASS_DEVICE
+    SourceAspectNotNeeded()
+    {}
+
+    /// Invoke the output functor over each vector of output
+    CUTLASS_DEVICE
+    void apply_output_operator(
+      typename OutputTileIterator::Fragment &output_fragment,
+      OutputOp const &output_op,
+      typename AccumulatorFragmentIterator::Fragment const &aligned_accum_fragment)
+    {
+      OutputAccessType *output_frag_ptr =
+        reinterpret_cast<OutputAccessType *>(&output_fragment);
+
+      AccumulatorAccessType const *compute_frag_ptr =
+        reinterpret_cast<AccumulatorAccessType const *>(&aligned_accum_fragment);
+
+      int const kOutputOpIterations =
+        OutputTileIterator::Fragment::kElements / OutputTileIterator::kElementsPerAccess;
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < kOutputOpIterations; ++i)
+      {
+        // Call the output operator
+        output_frag_ptr[i] = output_op(compute_frag_ptr[i]);
+      }
+    }
+  };
+
+
+  /// Aspect for when epilogue source is needed
+  struct SourceAspectNeeded
+  {
+    OutputTileIterator source_iterator;
+
+    typename OutputTileIterator::Fragment source_fragment;
+
+    /// Invoke the output functor over each vector of output
+    CUTLASS_DEVICE
+    static void apply_output_operator(
+      typename OutputTileIterator::Fragment &output_fragment,
+      OutputOp const &output_op,
+      typename AccumulatorFragmentIterator::Fragment const &aligned_accum_fragment,
+      typename OutputTileIterator::Fragment const &source_fragment)
+    {
+      OutputAccessType *output_frag_ptr =
+        reinterpret_cast<OutputAccessType *>(&output_fragment);
+
+      AccumulatorAccessType const *compute_frag_ptr =
+        reinterpret_cast<AccumulatorAccessType const *>(&aligned_accum_fragment);
+
+      OutputAccessType const *source_frag_ptr =
+        reinterpret_cast<OutputAccessType const *>(&source_fragment);
+
+      int const kOutputOpIterations =
+        OutputTileIterator::Fragment::kElements / OutputTileIterator::kElementsPerAccess;
+
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < kOutputOpIterations; ++i)
+      {
+        // Call the output operator
+        output_frag_ptr[i] = output_op(compute_frag_ptr[i], source_frag_ptr[i]);
+      }
+    }
+
+    /// Constructor
+    CUTLASS_DEVICE
+    SourceAspectNeeded(OutputTileIterator source_iterator) :
+      source_iterator(source_iterator)
+    {
+      source_fragment.clear();
+    }
+
+    /// Invoke the output functor over each vector of output
+    CUTLASS_DEVICE
+    void apply_output_operator(
+      typename OutputTileIterator::Fragment &output_fragment,
+      OutputOp const &output_op,
+      typename AccumulatorFragmentIterator::Fragment const &aligned_accum_fragment)
+    {
+      // Load addend source fragment from global memory
+      source_iterator.load(source_fragment);
+      ++source_iterator;
+
+      apply_output_operator(output_fragment, output_op, aligned_accum_fragment, source_fragment);
+    }
+  };
+
+
   /// Shared storage allocation needed by the epilogue
   struct SharedStorage {};
 
@@ -196,7 +291,7 @@ public:
     typename OutputTileIterator::Fragment output_fragment;
 
     // Apply the output operator
-    apply_output_operator(output_fragment, output_op, accum_fragment, source_fragment);
+    SourceAspectNeeded::apply_output_operator(output_fragment, output_op, accum_fragment, source_fragment);
 
     // Store the final result
     destination_iterator += reduce_fragment_idx;
@@ -204,29 +299,65 @@ public:
   }
 
 
-  /// Streams the result to global memory
+  /// Perform the epilogue computations and stream the result to global memory.
   CUTLASS_DEVICE
   void operator()(
-    OutputOp const &output_op,                    ///< Output operator
-    OutputTileIterator destination_iterator,      ///< Tile iterator for destination
-    AccumulatorTile const &accumulators,          ///< Complete warp-level accumulator tile
-    OutputTileIterator source_iterator) {         ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
-    if (!output_op.is_source_needed()) {
-      compute_source_not_needed_(output_op, destination_iterator, accumulators);  
+    OutputOp const &output_op,                      ///< Output operator
+    OutputTileIterator destination_iterator,        ///< Tile iterator for destination
+    AccumulatorTile const &accumulators)            ///< Complete warp-level accumulator tile
+  {
+    operator()(output_op, destination_iterator, accumulators, SourceAspectNotNeeded());
+  }
+
+
+  /// Perform the epilogue computations and stream the result to global memory.  Implements
+  /// two alternative codepaths, depending on whether the output op requires addend data to be loaded.
+  CUTLASS_DEVICE
+  void operator()(
+    OutputOp const &output_op,                      ///< Output operator
+    OutputTileIterator destination_iterator,        ///< Tile iterator for destination
+    AccumulatorTile const &accumulators,            ///< Complete warp-level accumulator tile
+    OutputTileIterator source_iterator )            ///< Tile iterator for addend source
+  {
+    if (output_op.is_source_needed())
+    {
+      operator()(output_op, destination_iterator, accumulators, SourceAspectNeeded(source_iterator));
     }
-    else {
-      compute_source_needed_(output_op, destination_iterator, accumulators, source_iterator);
+    else
+    {
+      operator()(output_op, destination_iterator, accumulators, SourceAspectNotNeeded());
     }
   }
-   
-  /// Streams the result to global memory
-  CUTLASS_DEVICE
-  void compute_source_not_needed_(
-    OutputOp const &output_op,                    ///< Output operator
-    OutputTileIterator destination_iterator,      ///< Tile iterator for destination
-    AccumulatorTile const &accumulators           ///< Complete warp-level accumulator tile
-    ) { 
 
+
+  /// Perform the epilogue computations and stream the result to global memory.  Implements a
+  /// single codepath, regardless of whether the output op requires addend data to be loaded
+  CUTLASS_DEVICE
+  void unified(
+    OutputOp const &output_op,                      ///< Output operator
+    OutputTileIterator destination_iterator,        ///< Tile iterator for destination
+    AccumulatorTile const &accumulators,            ///< Complete warp-level accumulator tile
+    OutputTileIterator source_iterator )            ///< Tile iterator for addend source
+  {
+    if (!output_op.is_source_needed())
+    {
+      source_iterator.clear_mask();
+      __syncthreads();  // Dummy (CUDA 11.0)
+    }
+
+    operator()(output_op, destination_iterator, accumulators, SourceAspectNeeded(source_iterator));
+  }
+
+
+  /// Streams the result to global memory
+  template <typename SourceAspect>
+  CUTLASS_DEVICE
+  void operator()(
+    OutputOp const &output_op,                      ///< Output operator
+    OutputTileIterator destination_iterator,        ///< Tile iterator for destination
+    AccumulatorTile const &accumulators,            ///< Complete warp-level accumulator tile
+    SourceAspect source)
+  {
     //
     // Iterator over warp-level accumulator fragment
     //
@@ -254,7 +385,7 @@ public:
       //
 
       typename OutputTileIterator::Fragment output_fragment;
-      apply_output_operator_source_not_needed(output_fragment, output_op, accum_fragment);
+      source.apply_output_operator(output_fragment, output_op, accum_fragment);
 
       //
       // Store the final result
@@ -263,123 +394,6 @@ public:
       destination_iterator.set_iteration_index(iter);
       destination_iterator.store(output_fragment);
       ++destination_iterator;
-    }
-  } 
-
-  /// Streams the result to global memory
-  CUTLASS_DEVICE
-  void compute_source_needed_(
-    OutputOp const &output_op,                    ///< Output operator
-    OutputTileIterator destination_iterator,      ///< Tile iterator for destination
-    AccumulatorTile const &accumulators,          ///< Complete warp-level accumulator tile
-    OutputTileIterator source_iterator           ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
-    ) { 
- 
-    //
-    // Predicated tile iterators constructed from members
-    //
-
-    typename OutputTileIterator::Fragment source_fragment;
-
-    source_fragment.clear();
-
-    //
-    // Iterator over warp-level accumulator fragment
-    //
-
-    AccumulatorFragmentIterator accum_fragment_iterator(accumulators);
-
-    //
-    // Iterate over accumulator tile
-    //
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int iter = 0; iter < OutputTileIterator::kIterations; ++iter) {
-      //
-      // Load the source
-      //
-
-      source_iterator.set_iteration_index(iter);
-      source_iterator.load(source_fragment);
-      ++source_iterator;
-
-      //
-      // Convert fragment
-      //
-
-      typename AccumulatorFragmentIterator::Fragment accum_fragment;
-
-      accum_fragment_iterator.load(accum_fragment);
-      ++accum_fragment_iterator;
-
-      //
-      // Compute the output result
-      //
-
-      typename OutputTileIterator::Fragment output_fragment;
-      apply_output_operator(output_fragment, output_op, accum_fragment, source_fragment);
-
-      //
-      // Store the final result
-      //
-
-      destination_iterator.set_iteration_index(iter);
-      destination_iterator.store(output_fragment);
-      ++destination_iterator;
-    }
-  }
-
-protected:
-
-  /// Helper to invoke the output functor over each vector of output
-  CUTLASS_DEVICE
-  void apply_output_operator(
-    typename OutputTileIterator::Fragment &output_fragment,
-    OutputOp const &output_op,
-    typename AccumulatorFragmentIterator::Fragment const &aligned_accum_fragment,
-    typename OutputTileIterator::Fragment const &source_fragment)
-  {
-    OutputAccessType *output_frag_ptr =
-        reinterpret_cast<OutputAccessType *>(&output_fragment);
-
-    AccumulatorAccessType const *compute_frag_ptr =
-        reinterpret_cast<AccumulatorAccessType const *>(
-            &aligned_accum_fragment);
-
-    OutputAccessType const *source_frag_ptr =
-        reinterpret_cast<OutputAccessType const *>(&source_fragment);
-
-    int const kOutputOpIterations = OutputTileIterator::Fragment::kElements /
-                                    OutputTileIterator::kElementsPerAccess;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kOutputOpIterations; ++i) {
-      // Call the output operator
-      output_frag_ptr[i] = output_op(compute_frag_ptr[i], source_frag_ptr[i]);
-    }
-  }
-
-  /// Helper to invoke the output functor over each vector of output
-  CUTLASS_DEVICE
-  void apply_output_operator_source_not_needed(
-    typename OutputTileIterator::Fragment &output_fragment,
-    OutputOp const &output_op,
-    typename AccumulatorFragmentIterator::Fragment const &aligned_accum_fragment)
-  {
-    OutputAccessType *output_frag_ptr =
-        reinterpret_cast<OutputAccessType *>(&output_fragment);
-
-    AccumulatorAccessType const *compute_frag_ptr =
-        reinterpret_cast<AccumulatorAccessType const *>(
-            &aligned_accum_fragment);
-
-    int const kOutputOpIterations = OutputTileIterator::Fragment::kElements /
-                                    OutputTileIterator::kElementsPerAccess;
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < kOutputOpIterations; ++i) {
-      // Call the output operator
-      output_frag_ptr[i] = output_op(compute_frag_ptr[i]);
     }
   }
 };
