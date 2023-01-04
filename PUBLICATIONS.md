@@ -6,6 +6,8 @@
 
 - ["Recovering single precision accuracy from Tensor Cores while surpassing the FP32 theoretical peak performance"](https://arxiv.org/abs/2203.03341). Hiroyuki Ootomo, Rio Yokota. _International Journal of High Performance Computing_, March 2022.
 
+- ["Breaking the Computation and Communication Abstraction Barrier in Distributed Machine Learning Workloads"](https://arxiv.org/abs/2105.05720). Abhinav Jangda, Jun Huang, Guodong Liu, Amir Hossein Nodehi Sabet, Saeed Maleki, Youshan Miao, Madanlal Musuvathi, Todd Mytkowicz, Olli Sarikivi. _Proceedings of the 27th ACM International Conference on Architectural Support for Programming Languages and Operating Systems_, February 2022.
+
 ## 2021
 
 - ["Arithmetic-intensity-guided fault tolerance for neural network inference on GPUs"](https://dl.acm.org/doi/abs/10.1145/3458817.3476184). Jack Kosaian, K. V. Rashmi. _Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis_, November 2021.
