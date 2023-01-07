@@ -35,8 +35,23 @@
 #include <cute/arch/copy.hpp>
 
 // Config
-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 750))
-#  define CUTE_ARCH_LDSM_SM75_ENABLED
+#if defined(__clang__) && defined(__CUDA__)
+  // ldmatrix PTX instructions added in Clang 14: https://reviews.llvm.org/D107046
+  // ... but broken until Clang 15:
+  //   * https://reviews.llvm.org/D121666
+  //   * https://reviews.llvm.org/D126846
+  #define CUTE_ARCH_CLANG_SUPPORTS_LDSM_SM75 (__clang_major__ >= 15)
+#endif
+
+#ifdef __CUDACC__
+  // ldmatrix PTX instruction added in CUDA 10.2+
+  #define CUTE_ARCH_NVCC_SUPPORTS_LDSM_SM75 ((__CUDACC_VER_MAJOR__  == 10 && __CUDACC_VER_MINOR__ >= 2) || __CUDACC_VER_MAJOR__ >= 11)
+#endif
+
+#define CUTE_ARCH_LDSM_SM75_SUPPORTED (CUTE_ARCH_NVCC_SUPPORTS_LDSM_SM75 || CUTE_ARCH_CLANG_SUPPORTS_LDSM_SM75)
+
+#if CUTE_ARCH_LDSM_SM75_SUPPORTED && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 750
+  #define CUTE_ARCH_LDSM_SM75_ENABLED
 #endif
 
 namespace cute
