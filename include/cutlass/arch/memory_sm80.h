@@ -104,6 +104,40 @@ static const uint32_t OOB_NAN_F16x2 = ((OOB_NAN_F16 << 16) | OOB_NAN_F16);
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Fallback specialization for 1 byte copies
+template <
+    /// Cache operation - ignored
+    CacheOperation::Kind cache_op>
+struct cp_async<1, cache_op> {
+
+  /// Copy
+  CUTLASS_DEVICE
+  cp_async(void *smem_ptr, void const *global_ptr, bool pred_guard = true) {
+      using AccessType  = Array<uint8_t, 1>;
+
+      if (pred_guard) {
+        *static_cast<AccessType *>(smem_ptr) = *static_cast<AccessType const *>(global_ptr);
+      }
+  }
+};
+
+/// Fallback specialization for 2 byte copies
+template <
+    /// Cache operation - ignored
+    CacheOperation::Kind cache_op>
+struct cp_async<2, cache_op> {
+
+  /// Copy
+  CUTLASS_DEVICE
+  cp_async(void *smem_ptr, void const *global_ptr, bool pred_guard = true) {
+      using AccessType  = Array<uint8_t, 2>;
+
+      if (pred_guard) {
+        *static_cast<AccessType *>(smem_ptr) = *static_cast<AccessType const *>(global_ptr);
+      }
+  }
+};
+
 /// Partial specialization
 template <
     /// Size of the access in bytes
@@ -140,6 +174,50 @@ struct cp_async<SizeInBytes, CacheOperation::Always> {
         *static_cast<AccessType *>(smem_ptr) = *static_cast<AccessType const *>(global_ptr);
       }
     #endif
+  }
+};
+
+/// Fallback specialization for 1 byte copies
+template <
+    /// Cache operation - ignored
+    CacheOperation::Kind cache_op>
+struct cp_async_zfill<1, cache_op> {
+
+  /// Copy with zero fill
+  CUTLASS_DEVICE
+  cp_async_zfill(void *smem_ptr, void const *global_ptr, bool pred_guard) {
+      using AccessType  = Array<uint8_t, 1>;
+
+      if (pred_guard) {
+        *static_cast<AccessType *>(smem_ptr) = *static_cast<AccessType const *>(global_ptr);
+      }
+      else {
+        AccessType zeros;
+        zeros.clear();
+        *static_cast<AccessType *>(smem_ptr) = zeros;
+      }
+  }
+};
+
+/// Fallback specialization for 2 byte copies
+template <
+    /// Cache operation - ignored
+    CacheOperation::Kind cache_op>
+struct cp_async_zfill<2, cache_op> {
+
+  /// Copy with zero fill
+  CUTLASS_DEVICE
+  cp_async_zfill(void *smem_ptr, void const *global_ptr, bool pred_guard) {
+      using AccessType  = Array<uint8_t, 2>;
+
+      if (pred_guard) {
+        *static_cast<AccessType *>(smem_ptr) = *static_cast<AccessType const *>(global_ptr);
+      }
+      else {
+        AccessType zeros;
+        zeros.clear();
+        *static_cast<AccessType *>(smem_ptr) = zeros;
+      }
   }
 };
 
