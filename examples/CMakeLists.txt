@@ -124,6 +124,7 @@ foreach(EXAMPLE
   43_ell_block_sparse_gemm
   45_dual_gemm
   46_depthwise_simt_conv2dfprop
+  47_ampere_gemm_universal_streamk
   )
 
   add_subdirectory(${EXAMPLE})

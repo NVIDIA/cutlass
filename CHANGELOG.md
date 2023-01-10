@@ -1,7 +1,7 @@
 # NVIDIA CUTLASS Changelog
 
 ## [2.11.0](https://github.com/NVIDIA/cutlass/releases/tag/v2.11.0) (2022-11-19)
-* Stream-K, which is a new general way to do split-K.  It can not only improve performance, but can also significantly reduce the number of tile sizes that need to be profiled to find the best one. 
+* [Stream-K](/examples/47_ampere_gemm_universal_streamk), which is a new general way to do split-K.  It can not only improve performance, but can also significantly reduce the number of tile sizes that need to be profiled to find the best one.
 * [Fused multi-head attention Kernel](/examples/41_fused_multi_head_attention).  It has two variants: one uses batched GEMM for the fixed sequence length, and the other one uses group GEMM for the variable sequence length.  Both versions just need one kernel.
 * [Dual GEMM](/examples/45_dual_gemm), which can fuse A x B and A x C into one kernel. Two GEMMs has no producer-consumer dependency.
 * Hopper improves [double precision matrix multiplication](/test/unit/gemm/device/gemm_f64n_f64t_f64t_tensor_op_f64_sm90.cu) by 2x compared to Ampere at iso-clocks. It is supported since CUDA 11.8.

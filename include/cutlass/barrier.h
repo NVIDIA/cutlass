@@ -57,32 +57,23 @@ public:
 
 protected:
 
-  /// Load flag, as a strong operation (int specialization)
+  /// Load flag, as a strong acquire operation (int specialization)
   CUTLASS_DEVICE
-  static int ld_strong(int *ptr)
+  static int ld_acquire(int *ptr)
   {
     int state = 0;
 
 #if (__CUDA_ARCH__ >= 700)
-      /// SM70 and newer use memory consistency qualifiers
-      asm volatile ("ld.global.relaxed.gpu.b32 %0, [%1];\n" : "=r"(state) : "l"(ptr));
+    /// SM70 and newer use memory consistency qualifiers
+
+    // Acquire pattern using acquire modifier
+    asm volatile ("ld.global.acquire.gpu.b32 %0, [%1];\n" : "=r"(state) : "l"(ptr));
+
 #else
-      asm volatile ("ld.cg.global.b32 %0, [%1];\n" : "=r"(state) : "l"(ptr));
+    asm volatile ("ld.cg.global.b32 %0, [%1];\n" : "=r"(state) : "l"(ptr));
 #endif // (__CUDA_ARCH__ >= 700)
 
     return state;
-  }
-
-  /// Store flag, as a strong operation (int specialization)
-  CUTLASS_DEVICE
-  static void st_strong(int *ptr, int val)
-  {
-#if (__CUDA_ARCH__ >= 700)
-      /// SM70 and newer use memory consistency qualifiers
-      asm volatile ("st.global.relaxed.gpu.b32 [%0], %1;\n" : : "l"(ptr), "r"(val));
-#else
-      asm volatile ("st.cg.global.b32 [%0], %1;\n" : : "l"(ptr), "r"(val));
-#endif // (__CUDA_ARCH__ >= 700)
   }
 
 
@@ -92,11 +83,16 @@ protected:
   {
 #if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
 #if (__CUDA_ARCH__ >= 700)
-      /// SM70 and newer use memory consistency qualifiers
-      asm volatile ("red.release.gpu.global.add.s32 [%0], %1;\n" : : "l"(ptr), "r"(val));
+    /// SM70 and newer use memory consistency qualifiers
+
+    // Release pattern using acq_rel fence + relaxed modifier.  (The fence also releases data
+    // that was weakly-written by other threads prior to the last syncthreads)
+    asm volatile ("fence.acq_rel.gpu;\n");
+    asm volatile ("red.relaxed.gpu.global.add.s32 [%0], %1;\n" : : "l"(ptr), "r"(val));
+
 #else
-      __threadfence();
-      atomicAdd(ptr, val);
+    __threadfence();
+    atomicAdd(ptr, val);
 #endif // (__CUDA_ARCH__ >= 700)
 #endif
   }
@@ -115,7 +111,7 @@ public:
     {
         // Spin-loop
         #pragma unroll 1
-        while(ld_strong(flag_ptr) < count) {}
+        while(ld_acquire(flag_ptr) < count) {}
     }
 
     __syncthreads();
@@ -133,9 +129,8 @@ public:
     {
         // Spin-loop
         #pragma unroll 1
-        while(ld_strong(flag_ptr) != val) {}
+        while(ld_acquire(flag_ptr) != val) {}
     }
-
     __syncthreads();
 #endif
   }
@@ -166,7 +161,8 @@ public:
 
     __syncthreads();
 
-    if (thread_idx == 0) {
+    if (thread_idx == 0)
+    {
       red_release(flag_ptr, 1);
     }
 #endif

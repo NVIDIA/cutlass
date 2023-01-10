@@ -50,9 +50,9 @@ def EpilogueAlignment(max_alignment, tile, epilogue_steps = 8):
 #
 def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
   alignment_constraints, complex_transforms = None, epilogue_functor = EpilogueFunctor.LinearCombination, \
-  swizzling_functor = SwizzlingFunctor.Identity8):
+#  swizzling_functor = SwizzlingFunctor.Identity8):
 # Use StreamK decomposition for basic GEMMs
-#  swizzling_functor = SwizzlingFunctor.StreamK):
+  swizzling_functor = SwizzlingFunctor.StreamK):
 
   if complex_transforms is None:
     complex_transforms = [(ComplexTransform.none, ComplexTransform.none),]
@@ -4600,6 +4600,7 @@ if __name__ == "__main__":
   parser.add_argument('--selected-kernel-list',   type=str, default=None, required=False,
                         help='Specify the output log file containing all enabled kernels in this build')
   parser.add_argument("--interface-dir", default=None, required=False, help="Interface header to kernels")
+  parser.add_argument("--disable-full-archs-compilation", action="store_true", required=False, help="Disable compilation for every archs in --architectures")
 
   args = parser.parse_args()
 

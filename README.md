@@ -39,7 +39,7 @@ supported at each level of the execution model hierarchy.
 # What's New in CUTLASS 2.11
 
 CUTLASS 2.11 is an update to CUTLASS adding:
-- Stream-K, which is a new general way to do split-K.  It can not only improve performance, but can also significantly reduce the number of tile sizes that need to be profiled to find the best one.  
+- [Stream-K](/examples/47_ampere_gemm_universal_streamk), which is a new general way to do split-K.  It can not only improve performance, but can also significantly reduce the number of tile sizes that need to be profiled to find the best one.
 - [Fused multi-head attention kernel](/examples/41_fused_multi_head_attention).  It has two variants: one for fixed sequence lengths, and another for variable sequence lengths.
 - [Dual GEMM](/examples/45_dual_gemm).  It can run two GEMMs that share the same left input matrix in one kernel.
 - Hopper improves [double precision matrix multiplication](/test/unit/gemm/device/gemm_f64n_f64t_f64t_tensor_op_f64_sm90.cu) by 2x compared to Ampere at iso-clocks. It is supported since CUDA 11.8.
@@ -115,7 +115,7 @@ any Volta-, Turing-, or NVIDIA Ampere- architecture NVIDIA GPU.
 |NVIDIA A100|8.0|11.0|11.0|
 |NVIDIA A10 |8.6|11.1|11.1|
 |NVIDIA GeForce 3090|8.6|11.1|11.1|
-|NVIDIA H100 PCIe|9.0|11.8|Double-precision: 11.8|
+|NVIDIA H100 PCIe|9.0|11.8|Double-precision: 11.8; Mixed precision: 12.0|
 
 # Documentation
 
