@@ -125,6 +125,7 @@ foreach(EXAMPLE
   45_dual_gemm
   46_depthwise_simt_conv2dfprop
   47_ampere_gemm_universal_streamk
+  48_fused_multi_head_attention_bias
   )
 
   add_subdirectory(${EXAMPLE})

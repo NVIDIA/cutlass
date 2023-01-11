@@ -28,17 +28,11 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 cutlass_example_add_executable(
-  41_fused_multi_head_attention_fixed_seqlen
+  48_fused_multi_head_attention_fixed_seqlen_bias
   fused_multihead_attention_fixed_seqlen.cu
   )
 
-cutlass_example_add_executable(
-  41_fused_multi_head_attention_variable_seqlen
-  fused_multihead_attention_variable_seqlen.cu
-  )
 
-
-add_custom_target(41_fused_multi_head_attention
-DEPENDS 41_fused_multi_head_attention_fixed_seqlen
-        41_fused_multi_head_attention_variable_seqlen
+add_custom_target(48_fused_multi_head_attention_bias
+DEPENDS 48_fused_multi_head_attention_fixed_seqlen_bias
 )
