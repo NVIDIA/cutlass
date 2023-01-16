@@ -29,15 +29,6 @@
  *
  **************************************************************************************************/
 
-#pragma once
-
-#ifdef HAS_PYTORCH
-#include <ATen/ATen.h>
-#include <ATen/cuda/CUDAContext.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <torch/library.h>
-#endif
-
 #include <cmath>
 #include <vector>
 
@@ -126,7 +117,7 @@ struct AttentionKernel {
   struct Params {
     // Input tensors
     scalar_t* query_ptr; // [num_queries, num_heads, head_dim]
-    scalar_t* key_ptr;   // [num_keys, num_heads, head_dim]
+    scalar_t* key_ptr; // [num_keys, num_heads, head_dim]
     scalar_t* value_ptr; // [num_keys, num_heads, head_dim_value]
     int32_t* cu_seqlens_q_ptr = nullptr;
     int32_t* cu_seqlens_k_ptr = nullptr;
@@ -136,6 +127,9 @@ struct AttentionKernel {
     output_accum_t*
         output_accum_ptr; // [num_queries, num_heads, head_dim_value]
     lse_scalar_t* logsumexp_ptr; // [num_heads, num_queries] - can be null
+
+    // Scale
+    accum_t scale;
 
     // Dimensions/strides
     int32_t head_dim;
@@ -154,18 +148,15 @@ struct AttentionKernel {
     int32_t q_strideH;
     int32_t k_strideH;
     int32_t v_strideH;
-    int32_t o_strideH;
     int64_t q_strideB;
     int64_t k_strideB;
     int64_t v_strideB;
-    int64_t o_strideB;
     int32_t num_batches;
     int32_t num_heads;
 
     CUTLASS_HOST_DEVICE int32_t o_strideM() const {
-      return head_dim_value;
+      return head_dim_value * num_heads;
     }
-
     // Moves pointers to what we should process
     // Returns "false" if there is no work to do
     CUTLASS_DEVICE bool advance_to_block() {
@@ -195,9 +186,9 @@ struct AttentionKernel {
         query_ptr += batch_id * q_strideB;
         key_ptr += batch_id * k_strideB;
         value_ptr += batch_id * v_strideB;
-        output_ptr += batch_id * o_strideB;
+        output_ptr += int64_t(batch_id * num_queries) * o_strideM();
         if (output_accum_ptr != nullptr) {
-          output_accum_ptr += batch_id * o_strideB;
+          output_accum_ptr += int64_t(batch_id * num_queries) * o_strideM();
         }
         q_start = 0;
         k_start = 0;
@@ -208,11 +199,11 @@ struct AttentionKernel {
       key_ptr += k_start * k_strideM + head_id * k_strideH;
       value_ptr += k_start * v_strideM + head_id * v_strideH;
       output_ptr += int64_t(q_start + query_start) * o_strideM() +
-          head_id * o_strideH;
+          head_id * head_dim_value;
 
       if (output_accum_ptr != nullptr) {
         output_accum_ptr += int64_t(q_start + query_start) * o_strideM() +
-            head_id * o_strideH;
+            head_id * head_dim_value;
       } else {
         // Accumulate directly in the destination buffer (eg for f32)
         output_accum_ptr = (accum_t*)output_ptr;
@@ -652,7 +643,7 @@ struct AttentionKernel {
                                 warp_id(),
                                 p.num_keys - iter_key_start,
                                 iteratorC_tile_offset,
-                                1.0f / cutlass::fast_sqrt(float(p.head_dim)));
+                                p.scale);
                           }));
                     }));
 
