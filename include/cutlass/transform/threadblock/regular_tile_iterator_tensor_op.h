@@ -511,7 +511,6 @@ class RegularTileIterator<Shape_, Element_,
                   "This iterator requires a policy whose access size is 128bs");
   };
 
- private:
   /// Element type per access
   using AccessType = Array<Element, Layout::kElementsPerAccess>;
 
@@ -540,10 +539,20 @@ class RegularTileIterator<Shape_, Element_,
                       )
       : address_iterator_(ref, thread_id) {}
 
+  /// Overrides the internal iteration index
+  CUTLASS_HOST_DEVICE
+  void set_iteration_index(int index) { address_iterator_.set_iteration_index(index); }
+
   /// Adds a pointer offset in units of Element
   CUTLASS_HOST_DEVICE
   void add_pointer_offset(LongIndex pointer_offset) {
     address_iterator_.add_pointer_offset(pointer_offset);
+  }
+
+  /// Returns a pointer
+  CUTLASS_HOST_DEVICE
+  AccessType *get() const {
+    return address_iterator_.get();
   }
 
   /// Advances to the next tile in memory.
@@ -663,6 +672,8 @@ class RegularTileIterator<Shape_, Element_,
                                             Crosswise>,
       (kAdvanceRank == 0 ? 0 : 1), ThreadMap_>;
 
+  using AccessType = typename UnderlyingIterator::AccessType;
+
  public:
   /// Fragment object to be loaded or stored
   using Fragment = Array<Element, UnderlyingIterator::Fragment::kElements>;
@@ -679,10 +690,20 @@ class RegularTileIterator<Shape_, Element_,
                       )
       : iterator_({ref.data(), ref.stride()}, thread_id) {}
 
+  /// Overrides the internal iteration index
+  CUTLASS_HOST_DEVICE
+  void set_iteration_index(int index) { iterator_.set_iteration_index(index); }
+
   /// Adds a pointer offset in units of Element
   CUTLASS_HOST_DEVICE
   void add_pointer_offset(LongIndex pointer_offset) {
     iterator_.add_pointer_offset(pointer_offset);
+  }
+
+  /// Returns a pointer
+  CUTLASS_HOST_DEVICE
+  AccessType *get() const {
+    return iterator_.get();
   }
 
   /// Adds a tile offset
@@ -771,6 +792,8 @@ class RegularTileIterator<Shape_, Element_,
                                             Crosswise>,
       (kAdvanceRank == 0 ? 1 : 0), ThreadMap_>;
 
+  using AccessType = typename UnderlyingIterator::AccessType;
+
  public:
   /// Fragment object to be loaded or stored
   using Fragment = Array<Element, UnderlyingIterator::Fragment::kElements>;
@@ -787,10 +810,20 @@ class RegularTileIterator<Shape_, Element_,
                       )
       : iterator_({ref.data(), ref.stride()}, thread_id) {}
 
+  /// Overrides the internal iteration index
+  CUTLASS_HOST_DEVICE
+  void set_iteration_index(int index) { iterator_.set_iteration_index(index); }
+
   /// Adds a pointer offset in units of Element
   CUTLASS_HOST_DEVICE
   void add_pointer_offset(LongIndex pointer_offset) {
     iterator_.add_pointer_offset(pointer_offset);
+  }
+
+  /// Returns a pointer
+  CUTLASS_HOST_DEVICE
+  AccessType *get() const {
+    return iterator_.get();
   }
 
   /// Adds a tile offset
