@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-  
-  \brief A file contains the epilogue visitor Op with reduction over rows in CTA
+
+  \brief Epilogue visitor operation that performs a column-wise reduction within a threadblock
 */
 
 #pragma once

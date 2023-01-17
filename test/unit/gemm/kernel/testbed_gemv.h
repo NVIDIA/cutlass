@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -61,7 +61,7 @@ template<typename ThreadBlockShape_,
         typename LayoutA_,
         typename LayoutB_,
         typename LayoutCD_,
-        int LDG_B = 1, // batch tile size
+        int THREAD_B = 1, // batch tile size
         bool DEBUG=false>
 void batched_gemv_kernel_test(cutlass::gemm::BatchedGemmCoord problem_size,
                               ElementCD_ alpha = ElementCD_(1),
@@ -154,7 +154,7 @@ void batched_gemv_kernel_test(cutlass::gemm::BatchedGemmCoord problem_size,
     cutlass::gemm::BatchedGemmCoord tiled_size{ThreadBlockShape::kM,
                                                 ThreadBlockShape::kN,
                                                 problem_size.k(), // no split-k
-                                                DEBUG ? 1 : LDG_B };
+                                                DEBUG ? 1 : THREAD_B };
 
     cutlass::gemm::BatchedGemmCoord tiled_shape = swizzle.get_tiled_shape(problem_size, tiled_size);
 
@@ -334,7 +334,7 @@ template<typename ThreadBlockShape_,
         typename LayoutA_,
         typename LayoutB_,
         typename LayoutCD_,
-        int LDG_B = 1, // batch tile size
+        int THREAD_B = 1, // batch tile size
         bool DEBUG=false>
 void batched_gemv_kernel_perf_test(cutlass::gemm::BatchedGemmCoord problem_size,
                                    ElementCD_ alpha = ElementCD_(1),
@@ -349,7 +349,7 @@ void batched_gemv_kernel_perf_test(cutlass::gemm::BatchedGemmCoord problem_size,
                              LayoutA_,
                              LayoutB_,
                              LayoutCD_,
-                             LDG_B,
+                             THREAD_B,
                              DEBUG>(problem_size, alpha, beta, true, iter);
 }
     

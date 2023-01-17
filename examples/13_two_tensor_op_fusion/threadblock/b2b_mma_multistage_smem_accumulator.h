@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -205,15 +205,15 @@ public:
                   "GEMM operations.");
 
     /// Number of cp.async instructions to load one stage of operand A
-    static int const TBLDGSTSIterationsA0 =
+    static int const TBLoadIterationsA0 =
         IteratorA0::ThreadMap::Iterations::kCount;
 
     /// Number of cp.async instructions to load one stage of operand B
-    static int const TBLDGSTSIterationsB0 =
+    static int const TBLoadIterationsB0 =
         IteratorB0::ThreadMap::Iterations::kCount;
 
     /// Number of cp.async instructions to load one stage of operand B
-    static int const TBLDGSTSIterationsB1 =
+    static int const TBLoadIterationsB1 =
         IteratorB1::ThreadMap::Iterations::kCount;
 
     /// Number of stages
@@ -221,15 +221,15 @@ public:
 
     /// Number of cp.async instructions to load on group of operand A
     static int const kAccessesPerGroupA0 =
-        (TBLDGSTSIterationsA0 + Base::kWarpGemmIterations0 - 1) / Base::kWarpGemmIterations0;
+        (TBLoadIterationsA0 + Base::kWarpGemmIterations0 - 1) / Base::kWarpGemmIterations0;
 
     /// Number of cp.async instructions to load on group of operand B
     static int const kAccessesPerGroupB0 =
-        (TBLDGSTSIterationsB0 + Base::kWarpGemmIterations0 - 1) / Base::kWarpGemmIterations0;
+        (TBLoadIterationsB0 + Base::kWarpGemmIterations0 - 1) / Base::kWarpGemmIterations0;
 
     /// Number of cp.async instructions to load on group of operand B
     static int const kAccessesPerGroupB1 =
-        (TBLDGSTSIterationsB1 + Base::kWarpGemmIterations1 - 1) / Base::kWarpGemmIterations1;
+        (TBLoadIterationsB1 + Base::kWarpGemmIterations1 - 1) / Base::kWarpGemmIterations1;
   };
 
  private:
@@ -327,10 +327,10 @@ public:
                                    IteratorA0::kAccessesPerVector);
     this->smem_iterator_A0_.set_iteration_index(group_start_A0);
 
-    // LDGSTS for operand A
+    // cp.async for operand A
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupA0; ++j) {
-      if (group_start_A0 + j < Detail::TBLDGSTSIterationsA0) {
+      if (group_start_A0 + j < Detail::TBLoadIterationsA0) {
         typename IteratorA0::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorA0::AccessType *>(
                 this->smem_iterator_A0_.get());
@@ -357,10 +357,10 @@ public:
                                    IteratorB0::kAccessesPerVector);
     this->smem_iterator_B0_.set_iteration_index(group_start_B0);
 
-    // LDGSTS for operand B
+    // cp.async for operand B
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupB0; ++j) {
-      if (group_start_B0 + j < Detail::TBLDGSTSIterationsB0) {
+      if (group_start_B0 + j < Detail::TBLoadIterationsB0) {
         typename IteratorB0::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorB0::AccessType *>(
                 this->smem_iterator_B0_.get());
@@ -390,10 +390,10 @@ public:
                                    IteratorB1::kAccessesPerVector);
     this->smem_iterator_B1_.set_iteration_index(group_start_B1);
 
-    // LDGSTS for operand B
+    // cp.async for operand B
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupB1; ++j) {
-      if (group_start_B1 + j < Detail::TBLDGSTSIterationsB1) {
+      if (group_start_B1 + j < Detail::TBLoadIterationsB1) {
         typename IteratorB1::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorB1::AccessType *>(
                 this->smem_iterator_B1_.get());
@@ -453,9 +453,9 @@ public:
       iterator_A0.set_iteration_index(0);
       this->smem_iterator_A0_.set_iteration_index(0);
 
-      // LDGSTS for operand A
+      // cp.async for operand A
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsA0; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsA0; ++j) {
         typename IteratorA0::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorA0::AccessType *>(
                 this->smem_iterator_A0_.get());
@@ -481,9 +481,9 @@ public:
       iterator_B0.set_iteration_index(0);
       this->smem_iterator_B0_.set_iteration_index(0);
 
-      // LDGSTS for operand B
+      // cp.async for operand B
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsB0; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsB0; ++j) {
         typename IteratorB0::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorB0::AccessType *>(
                 this->smem_iterator_B0_.get());
@@ -689,9 +689,9 @@ public:
       iterator_B1.set_iteration_index(0);
       this->smem_iterator_B1_.set_iteration_index(0);
 
-      // LDGSTS for operand B
+      // cp.async for operand B
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsB1; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsB1; ++j) {
         typename IteratorB1::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorB1::AccessType *>(
                 this->smem_iterator_B1_.get());

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -157,15 +157,15 @@ public:
   struct Detail {
 
     /// Number of async copies to load one stage of operand A
-    static int const TBLDGSTSIterationsA =
+    static int const TBLoadIterationsA =
         IteratorA::ThreadMap::Iterations::kCount;
 
     /// Number of async copies to load one stage of operand B
-    static int const TBLDGSTSIterationsB =
+    static int const TBLoadIterationsB =
         IteratorB::ThreadMap::Iterations::kCount;
 
     /// Number of async copies to load one stage of operand E
-    static int const TBLDGSTSIterationsE =
+    static int const TBLoadIterationsE =
         IteratorE::ThreadMap::Iterations::kCount;
 
     /// Number of stages
@@ -173,15 +173,15 @@ public:
 
     /// Number of async copies to load one group of operand A
     static int const kAccessesPerGroupA =
-        (TBLDGSTSIterationsA + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
+        (TBLoadIterationsA + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
 
     /// Number of async copies to load one group of operand B
     static int const kAccessesPerGroupB =
-        (TBLDGSTSIterationsB + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
+        (TBLoadIterationsB + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
 
     /// Number of async copies to load one group of operand E
     static int const kAccessesPerGroupE =
-        (TBLDGSTSIterationsE + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
+        (TBLoadIterationsE + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
 
     /// E operand is tiny.  For the most of time, not all the warps are needed
     /// to load it from the global memory.
@@ -279,7 +279,7 @@ public:
     // async copy for operand A
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupA; ++j) {
-      if (group_start_A + j < Detail::TBLDGSTSIterationsA) {
+      if (group_start_A + j < Detail::TBLoadIterationsA) {
         typename IteratorA::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorA::AccessType *>(
                 this->smem_iterator_A_.get());
@@ -309,7 +309,7 @@ public:
     // async copy for operand B
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupB; ++j) {
-      if (group_start_B + j < Detail::TBLDGSTSIterationsB) {
+      if (group_start_B + j < Detail::TBLoadIterationsB) {
         typename IteratorB::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorB::AccessType *>(
                 this->smem_iterator_B_.get());
@@ -337,7 +337,7 @@ public:
     // async copy for operand E
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupE; ++j) {
-      if (group_start_E + j < Detail::TBLDGSTSIterationsE) {
+      if (group_start_E + j < Detail::TBLoadIterationsE) {
         typename IteratorE::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorE::AccessType *>(
                 this->smem_iterator_E_.get());
@@ -390,7 +390,7 @@ public:
 
       // async copy for operand A
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsA; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsA; ++j) {
         typename IteratorA::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorA::AccessType *>(
                 this->smem_iterator_A_.get());
@@ -416,7 +416,7 @@ public:
 
       // async copy for operand B
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsB; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsB; ++j) {
         typename IteratorB::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorB::AccessType *>(
                 this->smem_iterator_B_.get());
@@ -442,7 +442,7 @@ public:
 
       // async copy for operand E
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsE; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsE; ++j) {
         typename IteratorE::AccessType *dst_ptr =
             reinterpret_cast<typename IteratorE::AccessType *>(
                 this->smem_iterator_E_.get());
@@ -467,14 +467,13 @@ public:
       this->smem_iterator_B_.add_tile_offset({1, 0});
       this->smem_iterator_E_.add_tile_offset({0, 1});
 
-      // LDGDEPBAR - completes a stage
+      // cp.async.commit_group - completes a stage
       cutlass::arch::cp_async_fence();
     }
 
     // Perform accumulation in the 'd' output operand
     accum = src_accum;
 
-    // DEPBAR+SYNC
     cutlass::arch::cp_async_wait<Base::kStages - 2>();
     __syncthreads();
 

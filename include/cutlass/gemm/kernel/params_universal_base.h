@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -189,16 +189,15 @@ struct UniversalParamsBase
     void *workspace,
     cudaStream_t stream = nullptr)
   {
-    semaphore = static_cast<int *>(workspace);
     // Zero-initialize entire workspace
-    if (semaphore)
+    if (workspace)
     {
       size_t workspace_bytes = get_workspace_size();
 
       CUTLASS_TRACE_HOST("  Initialize " << workspace_bytes << " workspace bytes");
 
       cudaError_t result = cudaMemsetAsync(
-        semaphore,
+        workspace,
         0,
         workspace_bytes,
         stream);
@@ -209,6 +208,7 @@ struct UniversalParamsBase
       }
     }
 
+    semaphore = static_cast<int *>(workspace);
     return Status::kSuccess;
   }
 

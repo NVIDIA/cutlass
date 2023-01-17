@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,12 +38,35 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifdef CUTLASS_NAMESPACE
-#define cutlass CUTLASS_NAMESPACE
+#define concat_tok(a, b) a ## b
+#define mkcutlassnamespace(pre, ns) concat_tok(pre, ns)
+#define cutlass mkcutlassnamespace(cutlass_, CUTLASS_NAMESPACE)
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#define CUTLASS_UNUSED(expr) do { ; } while (&expr != &expr)
+#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
+#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
+#define CUTLASS_DEVICE __forceinline__ __device__
+#elif defined(__CUDACC_RTC__)
+#define CUTLASS_HOST_DEVICE __forceinline__ __device__
+#define CUTLASS_DEVICE __forceinline__ __device__
+#else
+#define CUTLASS_HOST_DEVICE inline
+#define CUTLASS_DEVICE inline
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename T>
+CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &) 
+{ }
+
+#if defined(__GNUC__)
+  #define CUTLASS_UNUSED(expr) __CUTLASS_UNUSED(expr)
+#else
+  #define CUTLASS_UNUSED(expr) do { ; } while (&expr != &expr)
+#endif
 
 #if !defined(__CUDACC_RTC__)
 
@@ -68,19 +91,6 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
-#define CUTLASS_HOST_DEVICE __forceinline__ __device__ __host__
-#define CUTLASS_DEVICE __forceinline__ __device__
-#elif defined(__CUDACC_RTC__)
-#define CUTLASS_HOST_DEVICE __forceinline__ __device__
-#define CUTLASS_DEVICE __forceinline__ __device__
-#else
-#define CUTLASS_HOST_DEVICE inline
-#define CUTLASS_DEVICE inline
-#endif
 
 /// Status code returned by CUTLASS operations
 enum class Status {

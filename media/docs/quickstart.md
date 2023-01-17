@@ -347,7 +347,7 @@ Note, the above could be simplified as follows using helper methods defined in `
 
 # CUTLASS Library
 
-The [CUTLASS Library](../../tools/library) defines an API for managing and executing collections of compiled
+The [CUTLASS Library](/tools/library) defines an API for managing and executing collections of compiled
 kernel instances and launching them from host code without template instantiations in client code.
 
 The host-side launch API is designed to be analogous to BLAS implementations for convenience, though its 
@@ -542,7 +542,7 @@ $ cmake .. -DCUTLASS_NVCC_ARCHS='70;75;80' -DCUTLASS_LIBRARY_KERNELS=tensorop*s*
 
 # Copyright
 
-Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: BSD-3-Clause
 
 ```

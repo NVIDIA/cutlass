@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights
  *reserved. SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -620,12 +620,12 @@ class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
         "GEMM operations.");
 
     /// Number of cp.async instructions to load one stage of operand B
-    static int const TBLDGSTSIterationsB1 =
+    static int const TBLoadIterationsB1 =
         IteratorB1::ThreadMap::Iterations::kCount;
 
     /// Number of cp.async instructions to load on group of operand B
     static int const kAccessesPerGroupB1 =
-        (TBLDGSTSIterationsB1 + Base::kWarpGemmIterations1 - 1) /
+        (TBLoadIterationsB1 + Base::kWarpGemmIterations1 - 1) /
         Base::kWarpGemmIterations1;
   };
 
@@ -720,10 +720,10 @@ class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
         group_start_B1 * IteratorB1::kAccessesPerVector);
     this->smem_iterator_B1_.set_iteration_index(group_start_B1);
 
-    // LDGSTS for operand B
+    // Load for operand B
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupB1; ++j) {
-      if (group_start_B1 + j < Detail::TBLDGSTSIterationsB1) {
+      if (group_start_B1 + j < Detail::TBLoadIterationsB1) {
         typename IteratorB1::AccessType* dst_ptr =
             reinterpret_cast<typename IteratorB1::AccessType*>(
                 this->smem_iterator_B1_.get());
@@ -761,9 +761,9 @@ class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
       iterator_B1.set_iteration_index(0);
       smem_iterator_B1_.set_iteration_index(0);
 
-      // LDGSTS for operand B
+      // Load for operand B
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsB1; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsB1; ++j) {
         typename IteratorB1::AccessType* dst_ptr =
             reinterpret_cast<typename IteratorB1::AccessType*>(
                 smem_iterator_B1_.get());
@@ -828,9 +828,9 @@ class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
         iterator_B1.set_iteration_index(0);
         this->smem_iterator_B1_.set_iteration_index(0);
 
-        // LDGSTS for operand B
+        // Load for operand B
         CUTLASS_PRAGMA_UNROLL
-        for (int j = 0; j < Detail::TBLDGSTSIterationsB1; ++j) {
+        for (int j = 0; j < Detail::TBLoadIterationsB1; ++j) {
           CUTLASS_PRAGMA_UNROLL
           for (int v = 0; v < IteratorB1::kAccessesPerVector; ++v) {
             ++iterator_B1;
