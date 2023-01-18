@@ -50,9 +50,8 @@ def EpilogueAlignment(max_alignment, tile, epilogue_steps = 8):
 #
 def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
   alignment_constraints, complex_transforms = None, epilogue_functor = EpilogueFunctor.LinearCombination, \
-#  swizzling_functor = SwizzlingFunctor.Identity8):
-# Use StreamK decomposition for basic GEMMs
-  swizzling_functor = SwizzlingFunctor.StreamK):
+  swizzling_functor = SwizzlingFunctor.Identity8):
+  # To use StreamK decomposition for basic GEMMs, set `swizzling_functor = SwizzlingFunctor.StreamK`
 
   if complex_transforms is None:
     complex_transforms = [(ComplexTransform.none, ComplexTransform.none),]
@@ -348,8 +347,7 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
   # one exceptional case
   
   # iterator algorithm (analytic and optimized)
-  #iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
-  iterator_algorithms = [IteratorAlgorithm.Optimized]
+  iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
 
   # by default, only generate the largest tile size, largest alignment, and optimized iterator
   if manifest.kernel_filter == '':
@@ -546,8 +544,7 @@ def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignme
   alignment_c = min(8, alignment)
   
   # iterator algorithm (analytic and optimized)
-#  iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
-  iterator_algorithms = [IteratorAlgorithm.Optimized]
+  iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
 
   # by default, only generate the largest tile size and optimized iterators
   if manifest.kernel_filter == '':
