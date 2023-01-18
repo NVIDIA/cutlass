@@ -69,8 +69,10 @@ template <
     typename LayoutA_,
     /// Element type for B matrix operand
     typename ElementB_,
-    /// Layout type for B matrix operand
-    typename LayoutB_,
+    /// Layout type for B0 matrix operand
+    typename LayoutB0_,
+    /// Layout type for B1 matrix operand
+    typename LayoutB1_,
     /// Element type for C and D matrix operands
     typename ElementC_,
     /// Layout type for C and D matrix operands
@@ -120,8 +122,10 @@ class DualGemm {
   using LayoutA = LayoutA_;
   using TensorRefA = TensorRef<ElementA const, LayoutA>;
   using ElementB = ElementB_;
-  using LayoutB = LayoutB_;
-  using TensorRefB = TensorRef<ElementB const, LayoutB>;
+  using LayoutB0 = LayoutB0_;
+  using LayoutB1 = LayoutB1_;
+  using TensorRefB0 = TensorRef<ElementB const, LayoutB0>;
+  using TensorRefB1 = TensorRef<ElementB const, LayoutB1>;
   using ElementC = ElementC_;
   using LayoutC = LayoutC_;
   using TensorRefC = TensorRef<ElementC const, LayoutC>;
@@ -152,23 +156,31 @@ class DualGemm {
   /// Define the threadblock-scoped matrix multiply-accumulate
   static_assert(ArchTag::kMinComputeCapability >= 80, "Only multistage is implemented");
   static_assert(kStages >= 3, "Only multistage is implemented");
-  using Mma = typename cutlass::gemm::threadblock::DefaultMma<
-      ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
+  using Mma0 = typename cutlass::gemm::threadblock::DefaultMma<
+      ElementA, LayoutA, kAlignmentA, ElementB, LayoutB0, kAlignmentB,
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, ArchTag,
+      ThreadblockShape, WarpShape, 
+      InstructionShape, Stages, Operator>::ThreadblockMma;
+  using Mma1 = typename cutlass::gemm::threadblock::DefaultMma<
+      ElementA, LayoutA, kAlignmentA, ElementB, LayoutB1, kAlignmentB,
       ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, ArchTag,
       ThreadblockShape, WarpShape, 
       InstructionShape, Stages, Operator>::ThreadblockMma;
   using DualMma = threadblock::DualMmaMultistage<
-    typename Mma::Shape,
-    typename Mma::IteratorA,
-    typename Mma::SmemIteratorA,
-    Mma::kCacheOpA,
-    typename Mma::IteratorB,
-    typename Mma::SmemIteratorB,
-    Mma::kCacheOpB,
-    typename Mma::ElementC,
-    typename Mma::LayoutC,
-    typename Mma::Policy,
-    Mma::kStages,
+    typename Mma0::Shape,
+    typename Mma0::IteratorA,
+    typename Mma0::SmemIteratorA,
+    Mma0::kCacheOpA,
+    typename Mma0::IteratorB,
+    typename Mma0::SmemIteratorB,
+    Mma0::kCacheOpB,
+    typename Mma1::IteratorB,
+    typename Mma1::SmemIteratorB,
+    typename Mma0::ElementC,
+    typename Mma0::LayoutC,
+    typename Mma0::Policy,
+    typename Mma1::Policy,
+    Mma0::kStages,
     SharedMemoryClearOption::kNone
   >;
 
@@ -177,11 +189,11 @@ class DualGemm {
   /// Define the epilogue
   using Epilogue0 =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
-          ThreadblockShape, typename DualMma::Operator, kPartitionsK, EpilogueOutputOp0,
+          ThreadblockShape, typename DualMma::Operator0, kPartitionsK, EpilogueOutputOp0,
           EpilogueOutputOp0::kCount>::Epilogue;
   using Epilogue1 =
       typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
-          ThreadblockShape, typename DualMma::Operator, kPartitionsK, EpilogueOutputOp1,
+          ThreadblockShape, typename DualMma::Operator1, kPartitionsK, EpilogueOutputOp1,
           EpilogueOutputOp1::kCount>::Epilogue;
 
   /// Define the kernel-level GEMM operator.
@@ -201,10 +213,10 @@ class DualGemm {
     DualGemmMode mode;
     GemmCoord problem_size;
     TensorRef<ElementA const, LayoutA> ref_A0;
-    TensorRef<ElementB const, LayoutB> ref_B0;
+    TensorRef<ElementB const, LayoutB0> ref_B0;
     TensorRef<ElementC const, LayoutC> ref_C0;
     TensorRef<ElementC, LayoutC> ref_D0;
-    TensorRef<ElementB const, LayoutB> ref_B1;
+    TensorRef<ElementB const, LayoutB1> ref_B1;
     TensorRef<ElementC const, LayoutC> ref_C1;
     TensorRef<ElementC, LayoutC> ref_D1;
     TensorRef<ElementC, LayoutC> ref_D2;
@@ -215,7 +227,8 @@ class DualGemm {
 
     int batch_count;
     int64_t batch_stride_A;
-    int64_t batch_stride_B;
+    int64_t batch_stride_B0;
+    int64_t batch_stride_B1;
     int64_t batch_stride_C;
     int64_t batch_stride_D;
 
@@ -235,10 +248,10 @@ class DualGemm {
       DualGemmMode mode,
       GemmCoord problem_size_,
       TensorRef<ElementA const, LayoutA> ref_A0_,
-      TensorRef<ElementB const, LayoutB> ref_B0_,
+      TensorRef<ElementB const, LayoutB0> ref_B0_,
       TensorRef<ElementC const, LayoutC> ref_C0_,
       TensorRef<ElementC, LayoutC> ref_D0_,
-      TensorRef<ElementB const, LayoutB> ref_B1_,
+      TensorRef<ElementB const, LayoutB1> ref_B1_,
       TensorRef<ElementC const, LayoutC> ref_C1_,
       TensorRef<ElementC, LayoutC> ref_D1_,
       TensorRef<ElementC, LayoutC> ref_D2_,
@@ -251,7 +264,8 @@ class DualGemm {
       int split_k_slices_ = 1,
       int batch_count = 1,
       int64_t batch_stride_A = 0,
-      int64_t batch_stride_B = 0,
+      int64_t batch_stride_B0 = 0,
+      int64_t batch_stride_B1 = 0,
       int64_t batch_stride_C = 0,
       int64_t batch_stride_D = 0
     ):
@@ -271,7 +285,8 @@ class DualGemm {
       split_k_slices(split_k_slices_),
       batch_count(batch_count),
       batch_stride_A(batch_stride_A),
-      batch_stride_B(batch_stride_B),
+      batch_stride_B0(batch_stride_B0),
+      batch_stride_B1(batch_stride_B1),
       batch_stride_C(batch_stride_C),
       batch_stride_D(batch_stride_D) {
 
@@ -394,7 +409,8 @@ public:
       args.epilogue2,
       reinterpret_cast<int *>(workspace),
       args.batch_stride_A,
-      args.batch_stride_B,
+      args.batch_stride_B0,
+      args.batch_stride_B1,
       args.batch_stride_C,
       args.batch_stride_D,
     };

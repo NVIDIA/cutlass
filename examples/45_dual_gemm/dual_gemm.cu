@@ -224,6 +224,7 @@ bool run_fused_gemm_f16_sm80_shmem() {
     cutlass::layout::RowMajor,
     ElementOperandB,
     cutlass::layout::ColumnMajor,
+    cutlass::layout::ColumnMajor,
     ElementOutput,
     cutlass::layout::RowMajor,
     ElementAccumulator,
@@ -245,14 +246,21 @@ bool run_fused_gemm_f16_sm80_shmem() {
   DualFusedGemmRun<DualGemm> fusedGemm;
 
   std::cout << "Running Fused FP16 TN GEMMs + Epilogue2...\n";
-  bool passed = fusedGemm.run(problem_size, alpha0, beta0, alpha1, beta1);
+
+  bool passed = fusedGemm.run(
+    problem_size, 
+    alpha0, 
+    beta0, 
+    alpha1, 
+    beta1
+  );
+
   if(passed)
     std::cout << "Pass\n";
   else
     std::cout << "Fail\n";
 
   return passed;
-
 }
 
 bool run_batched_fused_gemm_f16_sm80_shmem() {
@@ -268,6 +276,7 @@ bool run_batched_fused_gemm_f16_sm80_shmem() {
     ElementOperandA,
     cutlass::layout::RowMajor,
     ElementOperandB,
+    cutlass::layout::ColumnMajor,
     cutlass::layout::ColumnMajor,
     ElementOutput,
     cutlass::layout::RowMajor,
@@ -298,6 +307,121 @@ bool run_batched_fused_gemm_f16_sm80_shmem() {
     alpha1, 
     beta1, 
     kBatchCount,
+    false,  /* broadcast_b1 */
+    false   /* is_profiling */
+  );
+
+  if(passed)
+    std::cout << "Pass\n";
+  else
+    std::cout << "Fail\n";
+
+  return passed;
+}
+
+bool run_broadcast_fused_gemm_f16_sm80_shmem() {
+  using ThreadblockShape = cutlass::gemm::GemmShape<128, 64, 32>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 32, 32>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
+
+  // Optionally, we might not need intermediate GEMM outputs
+  constexpr bool kStoreD0 = true;
+  constexpr bool kStoreD1 = true;
+
+  using DualGemm = cutlass::gemm::device::DualGemm<
+    ElementOperandA,
+    cutlass::layout::RowMajor,
+    ElementOperandB,
+    // different LayoutB0 and B1
+    cutlass::layout::RowMajor,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    ThreadblockShape,
+    WarpShape,
+    InstructionShape,
+    EpilogueOutputOp0,
+    EpilogueOutputOp1,
+    EpilogueOutputOp2,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
+    kStages,
+    kStoreD0,
+    kStoreD1,
+    kSplitKSerial
+  >;
+
+  DualFusedGemmRun<DualGemm> fusedGemm;
+
+  std::cout << "Running Broadcast Fused FP16 TN GEMMs + Epilogue2...\n";
+
+  bool passed = fusedGemm.run(
+    problem_size, 
+    alpha0, 
+    beta0, 
+    alpha1, 
+    beta1, 
+    1,     /* batch_count */
+    true,  /* broadcast_b1 */
+    true   /* is_profiling */
+  );
+
+  if(passed)
+    std::cout << "Pass\n";
+  else
+    std::cout << "Fail\n";
+
+  return passed;
+}
+
+bool run_batched_broadcast_fused_gemm_f16_sm80_shmem() {
+  using ThreadblockShape = cutlass::gemm::GemmShape<128, 64, 32>;
+  using WarpShape = cutlass::gemm::GemmShape<64, 32, 32>;
+  using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
+
+  // Optionally, we might not need intermediate GEMM outputs
+  constexpr bool kStoreD0 = true;
+  constexpr bool kStoreD1 = true;
+
+  using DualGemm = cutlass::gemm::device::DualGemm<
+    ElementOperandA,
+    cutlass::layout::RowMajor,
+    ElementOperandB,
+    // different LayoutB0 and B1
+    cutlass::layout::RowMajor,
+    cutlass::layout::ColumnMajor,
+    ElementOutput,
+    cutlass::layout::RowMajor,
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
+    ThreadblockShape,
+    WarpShape,
+    InstructionShape,
+    EpilogueOutputOp0,
+    EpilogueOutputOp1,
+    EpilogueOutputOp2,
+    cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>,
+    kStages,
+    kStoreD0,
+    kStoreD1,
+    kSplitKSerial
+  >;
+
+  DualFusedGemmRun<DualGemm> fusedGemm;
+
+  std::cout << "Running Batch Broadcast Fused FP16 TN GEMMs + Epilogue2...\n";
+
+  bool passed = fusedGemm.run(
+    batch_problem_size, 
+    alpha0, 
+    beta0, 
+    alpha1, 
+    beta1, 
+    kBatchCount,
+    true,  /* broadcast_b1 */
     false  /* is_profiling */
   );
 
@@ -307,7 +431,6 @@ bool run_batched_fused_gemm_f16_sm80_shmem() {
     std::cout << "Fail\n";
 
   return passed;
-
 }
 
 int main() {
@@ -315,7 +438,9 @@ int main() {
   std::vector<bool (*)()>funcs = {
     &run_nonfused_gemm_f16_sm80,
     &run_fused_gemm_f16_sm80_shmem,
-    &run_batched_fused_gemm_f16_sm80_shmem
+    &run_batched_fused_gemm_f16_sm80_shmem,
+    &run_broadcast_fused_gemm_f16_sm80_shmem,
+    &run_batched_broadcast_fused_gemm_f16_sm80_shmem
   };
 
   std::string test_name = (

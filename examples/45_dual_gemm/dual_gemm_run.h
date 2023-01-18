@@ -551,6 +551,7 @@ struct DualFusedGemmRun
     ElementCompute alpha1 = ElementCompute(1),
     ElementCompute beta1 = ElementCompute(1),
     int batch_count = 1,
+    bool broadcast_b1 = false,
     bool is_profiling = true,
     bool relu = false,
     int warm_ups = 1,
@@ -569,8 +570,8 @@ struct DualFusedGemmRun
 
     cutlass::HostTensor<
       typename DualGemm::ElementB,
-      typename DualGemm::LayoutB> tensor_B0(
-        std::is_same<typename DualGemm::LayoutB, cutlass::layout::RowMajor>::value ? 
+      typename DualGemm::LayoutB0> tensor_B0(
+        std::is_same<typename DualGemm::LayoutB0, cutlass::layout::RowMajor>::value ? 
           cutlass::MatrixCoord(batch_count * problem_size.k(), problem_size.n()) : 
           cutlass::MatrixCoord(problem_size.k(), batch_count * problem_size.n()));
 
@@ -601,10 +602,13 @@ struct DualFusedGemmRun
 
     cutlass::HostTensor<
       typename DualGemm::ElementB,
-      typename DualGemm::LayoutB> tensor_B1(
-        std::is_same<typename DualGemm::LayoutB, cutlass::layout::RowMajor>::value ? 
+      typename DualGemm::LayoutB1> tensor_B1(
+        std::is_same<typename DualGemm::LayoutB1, cutlass::layout::RowMajor>::value ? 
           cutlass::MatrixCoord(batch_count * problem_size.k(), problem_size.n()) : 
           cutlass::MatrixCoord(problem_size.k(), batch_count * problem_size.n()));
+    if (broadcast_b1) {
+      tensor_B1.resize({problem_size.k(), batch_count});
+    }
 
     cutlass::HostTensor<
       typename DualGemm::ElementC,
@@ -685,7 +689,12 @@ struct DualFusedGemmRun
     //
 
     int64_t batch_stride_A = problem_size.m() * problem_size.k();
-    int64_t batch_stride_B = problem_size.k() * problem_size.n();
+    int64_t batch_stride_B0 = problem_size.k() * problem_size.n();
+    int64_t batch_stride_B1 = problem_size.k() * problem_size.n();
+    if (broadcast_b1) {
+      // B1 is a (column) vector
+      batch_stride_B1 = problem_size.k();
+    }
     int64_t batch_stride_Bias = problem_size.n();
     int64_t batch_stride_D = problem_size.m() * problem_size.n();
 
@@ -711,7 +720,9 @@ struct DualFusedGemmRun
       tensor_B0.device_ref(),
       ref_B0,
       DualGemm::kStoreD0 ? tensor_D0.device_ref() : nullptr_ref,
-      tensor_B1.device_ref(),
+      (broadcast_b1 ? 
+        typename DualGemm::TensorRefB1(tensor_B1.device_data(), 0) : 
+        tensor_B1.device_ref()),
       ref_B1,
       DualGemm::kStoreD1 ? tensor_D1.device_ref() : nullptr_ref,
       tensor_D2.device_ref(),
@@ -721,7 +732,8 @@ struct DualFusedGemmRun
       split_k_slices,
       batch_count,
       batch_stride_A,
-      batch_stride_B,
+      batch_stride_B0,
+      batch_stride_B1,
       batch_stride_Bias,
       batch_stride_D,
     };
@@ -778,16 +790,16 @@ struct DualFusedGemmRun
     // Verify
     //
 
-    using GemmUniversal = cutlass::gemm::device::GemmUniversal<
+    using GemmUniversal0 = cutlass::gemm::device::GemmUniversal<
       typename DualGemm::ElementA, typename DualGemm::LayoutA,
-      typename DualGemm::ElementB, typename DualGemm::LayoutB,
+      typename DualGemm::ElementB, typename DualGemm::LayoutB0,
       typename DualGemm::ElementC, typename DualGemm::LayoutC, 
       ElementAccumulator
     >;
 
-    GemmUniversal reference_gemm;
+    GemmUniversal0 reference_gemm0;
 
-    typename GemmUniversal::Arguments args0 {
+    typename GemmUniversal0::Arguments args0 {
       (batch_count > 1 ? 
         cutlass::gemm::GemmUniversalMode::kBatched : 
         cutlass::gemm::GemmUniversalMode::kGemm),
@@ -799,7 +811,7 @@ struct DualFusedGemmRun
       tensor_Bias0.device_data(),
       reference_D0.device_data(),
       batch_stride_A,
-      batch_stride_B,
+      batch_stride_B0,
       batch_stride_Bias,
       batch_stride_D,
       tensor_A0.stride(0),
@@ -808,12 +820,21 @@ struct DualFusedGemmRun
       reference_D0.stride(0),
     };
 
-    status = reference_gemm.can_implement(args0);
+    status = reference_gemm0.can_implement(args0);
     CUTLASS_CHECK(status);
-    status = reference_gemm(args0);
+    status = reference_gemm0(args0);
     CUTLASS_CHECK(status);
 
-    typename GemmUniversal::Arguments args1 {
+    using GemmUniversal1 = cutlass::gemm::device::GemmUniversal<
+      typename DualGemm::ElementA, typename DualGemm::LayoutA,
+      typename DualGemm::ElementB, typename DualGemm::LayoutB1,
+      typename DualGemm::ElementC, typename DualGemm::LayoutC, 
+      ElementAccumulator
+    >;
+
+    GemmUniversal1 reference_gemm1;
+
+    typename GemmUniversal1::Arguments args1 {
       (batch_count > 1 ? 
         cutlass::gemm::GemmUniversalMode::kBatched : 
         cutlass::gemm::GemmUniversalMode::kGemm),
@@ -825,18 +846,18 @@ struct DualFusedGemmRun
       tensor_Bias1.device_data(),
       reference_D1.device_data(),
       batch_stride_A,
-      batch_stride_B,
+      batch_stride_B1,
       batch_stride_Bias,
       batch_stride_D,
       tensor_A0.stride(0),
-      tensor_B1.stride(0),
+      (broadcast_b1 ? 0 : tensor_B1.stride(0)),
       0,  // zero stride for the bias vector
       reference_D1.stride(0),
     };
 
-    status = reference_gemm.can_implement(args1);
+    status = reference_gemm1.can_implement(args1);
     CUTLASS_CHECK(status);
-    status = reference_gemm(args1);
+    status = reference_gemm1(args1);
     CUTLASS_CHECK(status);
 
     if(relu) {
@@ -881,7 +902,6 @@ struct DualFusedGemmRun
     bool passed = passed_out0 && passed_out1 && passed_out2;
     if (!passed)
     {
-
       std::stringstream fname;
 
       fname << "error_DualGemm_device_fused.txt";

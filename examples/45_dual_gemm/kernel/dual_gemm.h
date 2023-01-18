@@ -94,7 +94,7 @@ struct DualGemm {
   >;
 
   using ElementA = typename DualMma::IteratorA::Element;
-  using ElementB = typename DualMma::IteratorB::Element;
+  using ElementB = typename DualMma::IteratorB0::Element;
   using ElementC = typename DualEpilogue::OutputTileIterator::Element;
 
   static bool const kSplitKSerial = SplitKSerial;
@@ -115,8 +115,8 @@ struct DualGemm {
     // Mma0
     typename DualMma::IteratorA::Params params_A0;
     typename DualMma::IteratorA::TensorRef ref_A0;
-    typename DualMma::IteratorB::Params params_B0;
-    typename DualMma::IteratorB::TensorRef ref_B0;
+    typename DualMma::IteratorB0::Params params_B0;
+    typename DualMma::IteratorB0::TensorRef ref_B0;
     typename Epilogue0::OutputTileIterator::Params params_C0;
     typename Epilogue0::OutputTileIterator::TensorRef ref_C0;
     typename Epilogue0::OutputTileIterator::Params params_D0;
@@ -124,8 +124,8 @@ struct DualGemm {
     typename OutputOp0::Params output_op_0;
 
     // Mma1
-    typename DualMma::IteratorB::Params params_B1;
-    typename DualMma::IteratorB::TensorRef ref_B1;
+    typename DualMma::IteratorB1::Params params_B1;
+    typename DualMma::IteratorB1::TensorRef ref_B1;
     typename Epilogue1::OutputTileIterator::Params params_C1;
     typename Epilogue1::OutputTileIterator::TensorRef ref_C1;
     typename Epilogue1::OutputTileIterator::Params params_D1;
@@ -140,7 +140,8 @@ struct DualGemm {
     int gemm_k_size;
 
     int64_t batch_stride_A;
-    int64_t batch_stride_B;
+    int64_t batch_stride_B0;
+    int64_t batch_stride_B1;
     int64_t batch_stride_C;
     int64_t batch_stride_D;
 
@@ -158,11 +159,11 @@ struct DualGemm {
       cutlass::gemm::GemmCoord const & grid_tiled_shape,
       // Mma0: D0 = A @ B0 + C0
       typename DualMma::IteratorA::TensorRef ref_A0,
-      typename DualMma::IteratorB::TensorRef ref_B0,
+      typename DualMma::IteratorB0::TensorRef ref_B0,
       typename Epilogue0::OutputTileIterator::TensorRef ref_C0,
       typename Epilogue0::OutputTileIterator::TensorRef ref_D0,
       // Mma1: D1 = A @ B1 + C1
-      typename DualMma::IteratorB::TensorRef ref_B1,
+      typename DualMma::IteratorB1::TensorRef ref_B1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_C1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_D1,
 
@@ -172,7 +173,8 @@ struct DualGemm {
       typename OutputOp2::Params output_op_2 = typename OutputOp2::Params(),
       int *workspace = nullptr,
       int64_t batch_stride_A = 1,
-      int64_t batch_stride_B = 1,
+      int64_t batch_stride_B0 = 1,
+      int64_t batch_stride_B1 = 1,
       int64_t batch_stride_C = 1,
       int64_t batch_stride_D = 1
     ):
@@ -202,7 +204,8 @@ struct DualGemm {
       output_op_1(output_op_1),
       output_op_2(output_op_2),
       batch_stride_A(batch_stride_A),
-      batch_stride_B(batch_stride_B),
+      batch_stride_B0(batch_stride_B0),
+      batch_stride_B1(batch_stride_B1),
       batch_stride_C(batch_stride_C),
       batch_stride_D(batch_stride_D) {
 
@@ -231,16 +234,16 @@ struct DualGemm {
     static Status can_implement(
       cutlass::gemm::GemmCoord const & problem_size,
       typename DualMma::IteratorA::TensorRef ref_A0,
-      typename DualMma::IteratorB::TensorRef ref_B0,
+      typename DualMma::IteratorB0::TensorRef ref_B0,
       typename Epilogue0::OutputTileIterator::TensorRef ref_C0,
       typename Epilogue0::OutputTileIterator::TensorRef ref_D0,
-      typename DualMma::IteratorB::TensorRef ref_B1,
+      typename DualMma::IteratorB1::TensorRef ref_B1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_C1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_D1,
       typename Epilogue1::OutputTileIterator::TensorRef ref_D2) {
 
     static int const kAlignmentA = DualMma::IteratorA::AccessType::kElements;
-    static int const kAlignmentB = DualMma::IteratorB::AccessType::kElements;
+    static int const kAlignmentB = DualMma::IteratorB0::AccessType::kElements;
     static int const kAlignmentC = Epilogue0::OutputTileIterator::kElementsPerAccess;
 
     if (!TensorRef_aligned(ref_A0, kAlignmentA)) {
@@ -313,8 +316,8 @@ struct DualGemm {
     }
     else if (params.mode == DualGemmMode::kBatched) {
       ptr_A0 += threadblock_tile_offset.k() * params.batch_stride_A;
-      ptr_B0 += threadblock_tile_offset.k() * params.batch_stride_B;
-      ptr_B1 += threadblock_tile_offset.k() * params.batch_stride_B;
+      ptr_B0 += threadblock_tile_offset.k() * params.batch_stride_B0;
+      ptr_B1 += threadblock_tile_offset.k() * params.batch_stride_B1;
     }
 
     // Compute initial location in logical coordinates
@@ -344,14 +347,14 @@ struct DualGemm {
       thread_idx,
       tb_offset_A0);
 
-    typename DualMma::IteratorB iterator_B0(
+    typename DualMma::IteratorB0 iterator_B0(
       params.params_B0,
       ptr_B0,
       {problem_size_k, params.problem_size.n()},
       thread_idx,
       tb_offset_B0);
 
-    typename DualMma::IteratorB iterator_B1(
+    typename DualMma::IteratorB1 iterator_B1(
       params.params_B1,
       ptr_B1,
       {problem_size_k, params.problem_size.n()},
