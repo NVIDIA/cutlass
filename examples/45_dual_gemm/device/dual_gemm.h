@@ -52,6 +52,7 @@ D2 = element_wise(D0, D1)
 #include "cutlass/epilogue/threadblock/default_epilogue_tensor_op.h"
 
 #include "../kernel/dual_gemm.h"
+#include "../dual_gemm_common.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -197,6 +198,7 @@ class DualGemm {
     // Data members
     //
 
+    DualGemmMode mode;
     GemmCoord problem_size;
     TensorRef<ElementA const, LayoutA> ref_A0;
     TensorRef<ElementB const, LayoutB> ref_B0;
@@ -211,6 +213,12 @@ class DualGemm {
     typename EpilogueOutputOp2::Params epilogue2;
     int split_k_slices;
 
+    int batch_count;
+    int64_t batch_stride_A;
+    int64_t batch_stride_B;
+    int64_t batch_stride_C;
+    int64_t batch_stride_D;
+
     //
     // Methods
     //
@@ -224,6 +232,7 @@ class DualGemm {
     /// Constructs an Arguments structure 
     CUTLASS_HOST_DEVICE
     Arguments(
+      DualGemmMode mode,
       GemmCoord problem_size_,
       TensorRef<ElementA const, LayoutA> ref_A0_,
       TensorRef<ElementB const, LayoutB> ref_B0_,
@@ -239,8 +248,14 @@ class DualGemm {
         typename EpilogueOutputOp1::Params(),
       typename EpilogueOutputOp2::Params epilogue2_ =
         typename EpilogueOutputOp2::Params(),
-      int split_k_slices_ = 1
+      int split_k_slices_ = 1,
+      int batch_count = 1,
+      int64_t batch_stride_A = 0,
+      int64_t batch_stride_B = 0,
+      int64_t batch_stride_C = 0,
+      int64_t batch_stride_D = 0
     ):
+      mode(mode),
       problem_size(problem_size_),
       ref_A0(ref_A0_),
       ref_B0(ref_B0_),
@@ -253,7 +268,12 @@ class DualGemm {
       epilogue0(epilogue0_),
       epilogue1(epilogue1_),
       epilogue2(epilogue2_),
-      split_k_slices(split_k_slices_) {
+      split_k_slices(split_k_slices_),
+      batch_count(batch_count),
+      batch_stride_A(batch_stride_A),
+      batch_stride_B(batch_stride_B),
+      batch_stride_C(batch_stride_C),
+      batch_stride_D(batch_stride_D) {
 
     }
   };
@@ -271,6 +291,9 @@ public:
   /// Determines whether the GEMM can execute the given problem.
   static Status can_implement(Arguments const &args) {
 
+    if (args.mode == DualGemmMode::kBatched && kSplitKSerial) {
+      return Status::kErrorInvalidProblem;
+    }
     if (!kSplitKSerial && args.split_k_slices > 1) {
       return Status::kErrorInvalidProblem;
     }
@@ -304,17 +327,15 @@ public:
   static size_t get_workspace_size(Arguments const &args) {
 
     size_t bytes = 0;
-      
-    // Determine grid shape
-    ThreadblockSwizzle threadblock_swizzle;
-
-    cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size, 
-      {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
-      args.split_k_slices);
 
     if (kSplitKSerial && args.split_k_slices > 1) {
+      // Determine grid shape
+      ThreadblockSwizzle threadblock_swizzle;
 
+      cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
+        args.problem_size, 
+        {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
+        args.split_k_slices);
 
       bytes += sizeof(int) * size_t(tiled_shape.m()) * size_t(tiled_shape.n());
     }
@@ -331,7 +352,7 @@ public:
     cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
       args.problem_size, 
       {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
-      args.split_k_slices);
+      args.mode == DualGemmMode::kBatched ? args.batch_count : args.split_k_slices);
 
     if (kSplitKSerial) {
       if (args.split_k_slices > 1) {
@@ -357,6 +378,7 @@ public:
 
     // Initialize the Params structure
     params_ = typename DualGemmKernel::Params{
+      args.mode,
       args.problem_size,
       grid_shape,
       args.ref_A0.non_const_ref(),
@@ -371,6 +393,10 @@ public:
       args.epilogue1,
       args.epilogue2,
       reinterpret_cast<int *>(workspace),
+      args.batch_stride_A,
+      args.batch_stride_B,
+      args.batch_stride_C,
+      args.batch_stride_D,
     };
 
     return Status::kSuccess;
