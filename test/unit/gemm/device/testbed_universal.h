@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -91,7 +91,7 @@ struct TestbedUniversal {
   /// Helper to initialize a tensor view
   template <typename Element, typename Layout>
   bool initialize_tensor(
-    cutlass::TensorView<Element, Layout> view, 
+    cutlass::TensorView<Element, Layout> view,
     cutlass::Distribution::Kind dist_kind,
     uint64_t seed) {
 
@@ -117,11 +117,11 @@ struct TestbedUniversal {
 
       cutlass::reference::host::TensorFillRandomUniform(
         view, seed, scope_max, scope_min, 0);
-    } 
+    }
     else if (dist_kind == cutlass::Distribution::Identity) {
 
       cutlass::reference::host::TensorFillIdentity(view);
-    } 
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
       cutlass::reference::host::TensorFillRandomGaussian(view, seed, 0, 0.5);
@@ -130,7 +130,7 @@ struct TestbedUniversal {
 
       cutlass::reference::host::BlockFillSequential(
         view.data(), view.capacity());
-    } 
+    }
     else {
       // TODO: Implement the rest
       EXPECT_TRUE(false) << "Not implemented";
@@ -173,8 +173,8 @@ struct TestbedUniversal {
 
   /// Compares computed reference with device reference and outputs to a file if incorrect
   bool compare_reference(
-    cutlass::gemm::GemmCoord problem_size, 
-    ElementCompute alpha, 
+    cutlass::gemm::GemmCoord problem_size,
+    ElementCompute alpha,
     ElementCompute beta) {
 
     tensor_D.sync_host();
@@ -182,7 +182,7 @@ struct TestbedUniversal {
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_A.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_B.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_C.host_view()), 0);
-    
+
     EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_D.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(reference_D.host_view()), 0);
 
@@ -199,11 +199,11 @@ struct TestbedUniversal {
         << problem_size.m() << "x"
         << problem_size.n() << "x"
         << problem_size.k() << "_"
-        << Gemm::ThreadblockShape::kM << "x"  
-        << Gemm::ThreadblockShape::kN << "x"  
+        << Gemm::ThreadblockShape::kM << "x"
+        << Gemm::ThreadblockShape::kN << "x"
         << Gemm::ThreadblockShape::kK << "_"
-        << Gemm::WarpShape::kM << "x"  
-        << Gemm::WarpShape::kN << "x"  
+        << Gemm::WarpShape::kM << "x"
+        << Gemm::WarpShape::kN << "x"
         << Gemm::WarpShape::kK << ".txt";
 
       std::ofstream file(fname.str());
@@ -212,10 +212,10 @@ struct TestbedUniversal {
       std::ofstream file("testbed_universal_errors.txt");
 
       file
-        << "problem: " << problem_size 
+        << "problem: " << problem_size
         << ", alpha: " << alpha << ", beta: " << beta << "\n\n";
 
-      file 
+      file
         << "A =\n" << tensor_A.host_view()
         << "\nB =\n" << tensor_B.host_view()
         << "\nC =\n" << tensor_C.host_view()
@@ -228,8 +228,8 @@ struct TestbedUniversal {
 
   /// Verifies the result is a GEMM
   bool verify(
-    cutlass::gemm::GemmCoord problem_size, 
-    ElementCompute alpha, 
+    cutlass::gemm::GemmCoord problem_size,
+    ElementCompute alpha,
     ElementCompute beta) {
 
     //
@@ -239,18 +239,18 @@ struct TestbedUniversal {
     cutlass::reference::host::GemmComplex<
         typename Gemm::ElementA, typename Gemm::LayoutA,
         typename Gemm::ElementB, typename Gemm::LayoutB,
-        typename Gemm::ElementC, typename Gemm::LayoutC, 
+        typename Gemm::ElementC, typename Gemm::LayoutC,
         ElementCompute, ElementAccumulator
     >(
       problem_size,
-      alpha, 
+      alpha,
       tensor_A.host_ref(),
       Gemm::kTransformA,
       tensor_B.host_ref(),
       Gemm::kTransformB,
-      beta, 
-      tensor_C.host_ref(), 
-      reference_D.host_ref(), 
+      beta,
+      tensor_C.host_ref(),
+      reference_D.host_ref(),
       ElementAccumulator(0)
     );
 
@@ -386,20 +386,20 @@ bool TestGemmUniversal(
   cutlass::gemm::GemmCoord const & problem_size,
   cutlass::gemm::GemmUniversalMode mode,
   int batch_count,
-  double alpha = 1.0, 
+  double alpha = 1.0,
   double beta = 2.0) {
 
   bool passed = true;
 
   TestbedUniversal<Gemm, Relu> testbed;
-  
+
   using ElementCompute = typename Gemm::EpilogueOutputOp::ElementCompute;
 
   passed = testbed.run(
     mode,
-    problem_size, 
+    problem_size,
     batch_count,
-    cutlass::from_real<ElementCompute>(alpha), 
+    cutlass::from_real<ElementCompute>(alpha),
     cutlass::from_real<ElementCompute>(beta)
   );
 
@@ -494,9 +494,9 @@ bool TestAllGemmUniversal() {
 
                 passed = testbed.run(
                   mode,
-                  problem_size, 
+                  problem_size,
                   batch_count,
-                  cutlass::from_real<ElementCompute>(alpha), 
+                  cutlass::from_real<ElementCompute>(alpha),
                   cutlass::from_real<ElementCompute>(beta)
                 );
 
@@ -520,9 +520,9 @@ bool TestAllGemmUniversal() {
 
     passed = testbed.run(
       cutlass::gemm::GemmUniversalMode::kGemm,
-      problem_size, 
+      problem_size,
       split_k_slices,
-      cutlass::from_real<ElementCompute>(1.0), 
+      cutlass::from_real<ElementCompute>(1.0),
       cutlass::from_real<ElementCompute>(2.0)
     );
 
@@ -542,4 +542,3 @@ bool TestAllGemmUniversal() {
 } // namespace test
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-

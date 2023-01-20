@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -150,24 +150,22 @@ public:
                   "The pipelined structure requires at least two warp-level "
                   "GEMM operations.");
 
-    /// Number of LDGSTS instructions to load one stage of operand A
-    static int const TBLDGSTSIterationsA =
+    /// Number of cp.async instructions to load one stage of operand A
+    static int const TBLoadIterationsA =
         IteratorA::ThreadMap::Iterations::kCount;
 
-    /// Number of LDGSTS instructions to load one stage of operand B
-    static int const TBLDGSTSIterationsB =
+    /// Number of cp.async instructions to load one stage of operand B
+    static int const TBLoadIterationsB =
         IteratorB::ThreadMap::Iterations::kCount;
 
     /// Number of stages
     static int const kStages = Stages;
 
-    /// Number of LDGSTS instructions to load on group of operand A
     static int const kAccessesPerGroupA =
-        (TBLDGSTSIterationsA + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
+        (TBLoadIterationsA + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
 
-    /// Number of LDGSTS instructions to load on group of operand B
     static int const kAccessesPerGroupB =
-        (TBLDGSTSIterationsB + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
+        (TBLoadIterationsB + Base::kWarpGemmIterations - 1) / Base::kWarpGemmIterations;
   };
 
  private:
@@ -239,7 +237,7 @@ private:
     iterator_A_imag.set_iteration_index(group_start_A * IteratorA::kAccessesPerVector);
     this->smem_iterator_A_.set_iteration_index(group_start_A);
 
-    // LDGSTS for operand A
+    // Load for operand A
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupA; ++j) {
         
@@ -277,7 +275,7 @@ private:
     iterator_B_imag.set_iteration_index(group_start_B * IteratorB::kAccessesPerVector);
     this->smem_iterator_B_.set_iteration_index(group_start_B);
 
-    // LDGSTS for operand B
+    // Load for operand B
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupB; ++j) {
       typename IteratorB::AccessType *dst_ptr = 
@@ -386,9 +384,9 @@ public:
 
       this->smem_iterator_A_.set_iteration_index(0);
 
-      // LDGSTS for operand A
+      // Load for operand A
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsA; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsA; ++j) {
 
         typename IteratorA::AccessType *dst_ptr = 
           reinterpret_cast<typename IteratorA::AccessType *>(this->smem_iterator_A_.get());
@@ -427,9 +425,9 @@ public:
 
       this->smem_iterator_B_.set_iteration_index(0);
 
-      // LDGSTS for operand B
+      // Load for operand B
       CUTLASS_PRAGMA_UNROLL
-      for (int j = 0; j < Detail::TBLDGSTSIterationsB; ++j) {
+      for (int j = 0; j < Detail::TBLoadIterationsB; ++j) {
 
         typename IteratorB::AccessType *dst_ptr = 
           reinterpret_cast<typename IteratorB::AccessType *>(this->smem_iterator_B_.get());

@@ -1,5 +1,5 @@
   /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -350,6 +350,8 @@ struct red<double>
   void operator()(double *ptr, const double &data)
   {
 #if !defined(__CUDA_ARCH__)
+      CUTLASS_UNUSED(ptr);
+      CUTLASS_UNUSED(data);
 #elif (__CUDA_ARCH__ >= 600)
 
     atomicAdd(ptr, data);
@@ -380,6 +382,8 @@ struct red<half2>
   void operator()(half2 *ptr, const half2 &data)
   {
 #if !defined(__CUDA_ARCH__)
+      CUTLASS_UNUSED(ptr);
+      CUTLASS_UNUSED(data);
 #elif (__CUDA_ARCH__ >= 600)
 
     // Vector-2 atomic reduction requires .target sm_60 or higher

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,12 +30,11 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief A file contains all functioning classes needed by GemmLayernorm.
+    \brief Epilogue visitor type used for partial computation of a layernorm operation
 
     GemmLayernorm example =  GEMM0 with partial reduction fused in epilogue (EpilogueVisitorLayerNorm)
                           +  lightweight full reduction kernel (ApplyFinalReduction)
-                          +  GEMM1 with elemenwise operations fused in mainloop (GemmLayernormMainloopFusion)
-                          
+                          +  GEMM1 with elementwise operations fused in mainloop (GemmLayernormMainloopFusion)
 */
 
 #pragma once

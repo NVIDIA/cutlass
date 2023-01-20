@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-  
-  \brief A file contains the epilogue visitor Op with Binary op
+
+  \brief Epilogue visitor operator performing a binary operation between two visitor nodes
 */
 
 #pragma once

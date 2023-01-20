@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -37,6 +37,7 @@ else()
 endif()
 
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
+set(IMPLICIT_CMAKE_CXX_STANDARD OFF CACHE BOOL "Do not explicitly specify -std=c++11 if set")
 
 project(CUTLASS VERSION 2.11.0 LANGUAGES CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
@@ -52,15 +53,19 @@ find_package(Doxygen QUIET)
 #
 # CUTLASS 2.x requires C++11
 #
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+if (NOT IMPLICIT_CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 11)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+  set(CMAKE_CXX_EXTENSIONS OFF)
+endif()
 
 if(CUTLASS_NATIVE_CUDA)
   set(CMAKE_CUDA_STANDARD 11)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 else()
-  list(APPEND CUTLASS_CUDA_NVCC_FLAGS --std=c++11)
+  if (NOT IMPLICIT_CMAKE_CXX_STANDARD)
+    list(APPEND CUTLASS_CUDA_NVCC_FLAGS --std=c++11)
+  endif()
 endif()
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
@@ -351,11 +356,21 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
 endif()
 
 function(cutlass_apply_cuda_gencode_flags TARGET)
+  set(options)
+  set(oneValueArgs)
+  set(multiValueArgs SM_ARCHS)
+  cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  if (__SM_ARCHS)
+    set(ARCHS_ENABLED ${__SM_ARCHS})
+  else()
+    set(ARCHS_ENABLED ${CUTLASS_NVCC_ARCHS_ENABLED})
+  endif()
 
   set(NVCC_FLAGS)
   set(CLANG_FLAGS)
   set(__CMAKE_CUDA_ARCHS)
-  foreach(ARCH ${CUTLASS_NVCC_ARCHS_ENABLED})
+  foreach(ARCH ${ARCHS_ENABLED})
     list(APPEND CLANG_FLAGS --cuda-gpu-arch=sm_${ARCH})
     set(CODES)
     if(CUTLASS_NVCC_EMBED_CUBIN)
@@ -369,21 +384,37 @@ function(cutlass_apply_cuda_gencode_flags TARGET)
     list(JOIN CODES "," CODES_STR)
     list(APPEND NVCC_FLAGS -gencode=arch=compute_${ARCH},code=[${CODES_STR}])
   endforeach()
-
-  if (CUDA_COMPILER MATCHES "[Cc]lang")
-    target_compile_options(
-      ${TARGET}
-      PRIVATE
-      $<$<COMPILE_LANGUAGE:CXX>:${CLANG_FLAGS}>
-      )
-  elseif(CMAKE_VERSION GREATER_EQUAL 3.18)
-    set_property(TARGET ${TARGET} PROPERTY CUDA_ARCHITECTURES ${__CMAKE_CUDA_ARCHS})
+ 
+  if (NOT __SM_ARCHS)
+    if (CUDA_COMPILER MATCHES "[Cc]lang")
+      target_compile_options(
+        ${TARGET}
+        PRIVATE
+        $<$<COMPILE_LANGUAGE:CXX>:${CLANG_FLAGS}>
+        )
+    elseif(CMAKE_VERSION GREATER_EQUAL 3.18)
+      set_property(TARGET ${TARGET} PROPERTY CUDA_ARCHITECTURES ${__CMAKE_CUDA_ARCHS})
+    else()
+      target_compile_options(
+        ${TARGET}
+        PRIVATE
+        $<$<COMPILE_LANGUAGE:CUDA>:${NVCC_FLAGS}>
+        )
+    endif()
   else()
-    target_compile_options(
-      ${TARGET}
-      PRIVATE
-      $<$<COMPILE_LANGUAGE:CUDA>:${NVCC_FLAGS}>
-      )
+    list(JOIN CLANG_FLAGS " " CLANG_FLAGS_STR)
+    list(JOIN NVCC_FLAGS " " STR_NVCC_FLAGS)
+    if (CUDA_COMPILER MATCHES "[Cc]lang")
+      if(${TARGET} MATCHES ".*\.cpp")
+        set_source_files_properties(${TARGET} PROPERTIES COMPILE_FLAGS ${CLANG_FLAGS_STR})
+      endif()
+    elseif(CMAKE_VERSION GREATER_EQUAL 3.18)
+      set_source_files_properties(${TARGET} PROPERTIES CUDA_ARCHITECTURES ${STR_NVCC_FLAGS})
+    else()
+      if(${TARGET} MATCHES ".*\.cu")
+        set_source_files_properties(${TARGET} PROPERTIES COMPILE_FLAGS ${STR_NVCC_FLAGS})
+      endif()
+    endif()
   endif()
 
 endfunction()
@@ -463,7 +494,10 @@ set(CUTLASS_TOOLS_UTIL_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/util/includ
 include_directories(${CUTLASS_INCLUDE_DIR})
 
 target_compile_features(CUTLASS INTERFACE cxx_std_11)
-target_compile_definitions(CUTLASS INTERFACE CUTLASS_NAMESPACE=${CUTLASS_NAMESPACE})
+
+if (NOT CUTLASS_NAMESPACE STREQUAL "cutlass")
+  target_compile_definitions(CUTLASS INTERFACE CUTLASS_NAMESPACE=${CUTLASS_NAMESPACE})
+endif()
 
 if (NOT DEFINED CUTLASS_REVISION)
 
@@ -782,15 +816,23 @@ endif()
 
 ################################################################################
 
+include(CMakePackageConfigHelpers)
+
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfigVersion.cmake 
+  COMPATIBILITY AnyNewerVersion)
+
 install(
-  FILES ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NvidiaCutlassConfig.cmake
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/
+  FILES 
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NvidiaCutlassConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfigVersion.cmake 
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass/
   )
 
 install(
   EXPORT NvidiaCutlass
   NAMESPACE nvidia::cutlass::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass/
   FILE NvidiaCutlassTargets.cmake
   )
 
