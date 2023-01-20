@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -54,7 +54,7 @@ namespace arch {
 
 /// Initiates an asynchronous copy from global memory to shared memory.
 ///
-/// LDGSTS
+/// cp.async
 ///
 template <
     /// Size of the access in bytes
@@ -66,7 +66,7 @@ struct cp_async;
 /// Initiates an asynchronous copy from global memory to shared memory. Rather than predicate
 /// the entire transfer, zeros are written to SMEM if the guard predicate is false.
 ///
-/// LDGSTS
+/// cp.async
 ///
 template <
     /// Size of the access in bytes
@@ -78,7 +78,7 @@ struct cp_async_zfill;
 /// Initiates an asynchronous copy from global memory to shared memory. Rather than predicate
 /// the entire transfer, nans (0x7eff) are written to SMEM if the guard predicate is false.
 ///
-/// LDGSTS
+/// cp.async
 ///
 template <
     /// Size of the access in bytes
@@ -90,7 +90,7 @@ struct cp_async_nan;
 /// Either 0 or 1 are written to SMEM based on input element type
 /// Used for diagonal elements of triangular matrix of BLAS3 functions
 ///
-/// STS
+/// st.shared
 ///
 template <
    /// Type of Element

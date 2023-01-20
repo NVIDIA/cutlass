@@ -1,6 +1,6 @@
 ################################################################################
 #
-# Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,9 +32,9 @@
 import numpy as np
 import pycutlass
 from pycutlass import *
+from pycutlass.utils.device import device_cc
 import cutlass
 from bfloat16 import bfloat16
-from pycutlass.utils.device import device_cc
 import sys
 
 import argparse

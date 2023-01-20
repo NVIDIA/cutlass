@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -55,16 +55,18 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
 #if (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
-
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
 #ifndef CUDA_PTX_FP8_CVT_ENABLED
 #define CUDA_PTX_FP8_CVT_ENABLED 1
 #endif
-
 #endif
 #endif
 
+#ifdef __GNUC__
+// Ignore checks on reinterpret-casts that are being used for bitcasts.
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+#endif
 
 namespace cutlass {
 

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -389,16 +389,15 @@ struct ImplicitGemmConvolutionStridedDgrad {
 
     // Construct the semaphore.
     int block_idx = threadblock_tile_idx.m() + threadblock_tile_idx.n() * params.grid_tiled_shape.m();
-
     Semaphore semaphore(params.semaphore + block_idx, thread_idx);
-    
+
     // Compute logical position within grid
     threadblock_tile_idx =
         threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
 
     // If performing a reduction via split-K, fetch the initial synchronization
     if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {
-        
+
       // Fetch the synchronization lock initially but do not block.
       semaphore.fetch();
 
@@ -421,51 +420,51 @@ struct ImplicitGemmConvolutionStridedDgrad {
       start_r, start_s,
       threadblock_offset
     );
-    
-    // Tile iterator reading from source accumulator tensor
-    typename Epilogue::OutputTileIterator iterator_C(
-      params.iterator_C,
-      params.ptr_C,
-      ConvOutputIteratorParameter::extent(params.problem_size),
-      thread_idx,
-      params.stride_h_divmod, params.stride_w_divmod,
-      start_r, start_s,
-      threadblock_offset
-    );
-
 
     // Construct the epilogue
     Epilogue epilogue(
-      shared_storage.epilogue, 
-      thread_idx, 
-      warp_idx, 
+      shared_storage.epilogue,
+      thread_idx,
+      warp_idx,
       lane_idx);
 
-    // Wait on the semaphore - this latency may have been covered by iterator construction
-    if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {
-        
-      // For subsequent threadblocks, the source matrix is held in the 'D' tensor.
-      if (threadblock_tile_idx.k()) {
-        iterator_C = iterator_D;
+    if (output_op.is_source_needed())
+    {
+      // Tile iterator reading from source accumulator tensor
+      typename Epilogue::OutputTileIterator iterator_C(
+        params.iterator_C,
+        params.ptr_C,
+        ConvOutputIteratorParameter::extent(params.problem_size),
+        thread_idx,
+        params.stride_h_divmod, params.stride_w_divmod,
+        start_r, start_s,
+        threadblock_offset);
+
+      // Wait on the semaphore - this latency may have been covered by iterator construction
+      if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {
+
+        // For subsequent threadblocks, the source matrix is held in the 'D' tensor.
+        if (threadblock_tile_idx.k()) {
+          iterator_C = iterator_D;
+        }
+
+        semaphore.wait(threadblock_tile_idx.k());
       }
 
-      semaphore.wait(threadblock_tile_idx.k());
-
+      // Run epilogue with addend source iterator
+      epilogue(output_op, iterator_D, accumulators, iterator_C);
     }
-    // Each split-k-slice writes to a unique tensor location
-    else if (params.split_k_mode == SplitKMode::kParallel) {
-      iterator_D.add_pointer_offset(threadblock_tile_idx.k() * 
-        cutlass::conv::implicit_gemm_tensor_c_size(ConvOperator, params.problem_size));
+    else
+    {
+      // Run epilogue without addend source iterator
+      epilogue(output_op, iterator_D, accumulators);
     }
 
-    // Run efficient epilogue
-    epilogue(output_op, iterator_D, accumulators, iterator_C);
-  
     //
     // Release the semaphore
     //
 
-    if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) { 
+    if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {
 
       int lock = 0;
       if (params.grid_tiled_shape.k() == threadblock_tile_idx.k() + 1) {
@@ -477,10 +476,11 @@ struct ImplicitGemmConvolutionStridedDgrad {
         // Otherwise, the semaphore is incremented
         lock = threadblock_tile_idx.k() + 1;
       }
-      
+
       semaphore.release(lock);
     }
-  } 
+
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

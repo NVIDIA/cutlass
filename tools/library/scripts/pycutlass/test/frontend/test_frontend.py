@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -51,7 +51,6 @@ class Test_Frontend(unittest.TestCase):
 
         # Stages > 2 is supported only for compute capability 80 and beyond
         stages = 4 if cc >= 80 else 2
-
 
         tile_description = TileDescription(
             [128, 128, 8], stages, [2, 4, 1],

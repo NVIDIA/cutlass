@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-  
-  \brief A file contains the binary ops
+
+  \brief Binary operations to be used within the epilogue visitor model.
 */
 
 #pragma once
@@ -44,7 +44,7 @@ namespace cutlass {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-/// Scalar multiplication
+/// Elementwise addition of two arrays
 template <typename T, int N>
 struct VectorAdd {
 

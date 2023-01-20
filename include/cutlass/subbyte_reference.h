@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -294,8 +294,18 @@ public:
 
 template <
   typename Element_,              /// CUTLASS numeric element type.
-  typename Storage_ = uint8_t     /// Underlying storage type. Must be able to hold an integer 
+  typename Storage_ =             /// Underlying storage type. Must be able to hold an integer
                                   ///   number of objects of type Element.
+
+#if defined(__CUDA_ARCH__)        /// Default size depends on width of atomicCas() overloads.
+  #if (__CUDA_ARCH__ >= 700)      ///
+  uint16_t
+  #else
+  uint32_t
+  #endif
+#else
+  uint8_t
+#endif
 >
 class SubbyteReference {
 public:
@@ -387,13 +397,40 @@ public:
   CUTLASS_HOST_DEVICE
   SubbyteReference & set(Element const &x) {
 
-    Storage item = (reinterpret_cast<Storage const &>(x) & kMask);
+    Storage item        = (reinterpret_cast<Storage const &>(x) & kMask);
+    Storage kUpdateMask = Storage(~(kMask << (offset_ * cutlass::sizeof_bits<Element>::value)));
+    Storage new_bits    = Storage(item << (offset_ * cutlass::sizeof_bits<Element>::value));
 
-    Storage kUpdateMask = Storage(~(kMask << (offset_ * sizeof_bits<Element>::value)));
-    *ptr_ = Storage((*ptr_ & kUpdateMask) | Storage(item << (offset_ * sizeof_bits<Element>::value)));
+#if defined(__CUDA_ARCH__)
+
+    //
+    // Homebrew read-modify-write
+    //
+    Storage original;
+    Storage updated;
+
+    do {
+
+      original = (*ptr_);
+
+      updated  = Storage((original & kUpdateMask) | new_bits);
+
+      original = atomicCAS(ptr_, original, updated);
+
+    } while (updated != original);
+
+#else
+
+    Storage original = (*ptr_);
+    Storage updated  = Storage((original & kUpdateMask) | new_bits);
+    *ptr_ = updated;
+
+#endif
 
     return *this;
   }
+
+  ////
 
   /// Unpacks an element from memory
   CUTLASS_HOST_DEVICE

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,12 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-  
-  \brief A file contains the epilogue visitor with CTA row-wise broadcast
 
-  The epilogue rearranges the result of a matrix product through shared memory to match canonical
-  tensor layouts in global memory. Epilogues support conversion and reduction operations.
-                          
+  \brief A generic wrapper around an epilogue visitor operation
 */
 
 #pragma once
