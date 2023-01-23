@@ -918,7 +918,7 @@ public:
       lda(lda), ldb(ldb), ldc(ldc), ldd(ldd), ldr(ldr), ldt(ldt)
     {
       CUTLASS_TRACE_HOST("GemmWithFusedEpilogue::Arguments::Arguments() - problem_size: " << problem_size);
-      CUTLASS_TRACE_HOST("  ptr_Reduction: " << (void *)this->ptr_Reduction);
+      CUTLASS_TRACE_HOST("  ptr_Vector: " << (void *)this->ptr_Vector);
       CUTLASS_TRACE_HOST("  ptr_Tensor: " << (void *)this->ptr_Tensor);
       CUTLASS_TRACE_HOST("  ldr: " << this->ldr);
       CUTLASS_TRACE_HOST("  ldt: " << this->ldt);
@@ -1019,7 +1019,7 @@ public:
       batch_stride_Tensor(args.batch_stride_Tensor)
     {
       CUTLASS_TRACE_HOST("GemmWithFusedEpilogue::Params::Params() - problem_size: " << problem_size);
-      CUTLASS_TRACE_HOST("  ptr_Reduction: " << (void *)this->ptr_Reduction);
+      CUTLASS_TRACE_HOST("  ptr_Vector: " << (void *)this->ptr_Vector);
       CUTLASS_TRACE_HOST("  ptr_Tensor: " << (void *)this->ptr_Tensor);
       CUTLASS_TRACE_HOST("  ldr: " << this->ldr);
       CUTLASS_TRACE_HOST("  ldt: " << args.ldt);
@@ -1222,7 +1222,7 @@ public:
 
     // Broadcast the warp_id computed by lane 0 to ensure dependent code
     // is compiled as warp-uniform.
-    int warp_idx = __shfl_sync(0xffffffff, threadIdx.x / 32, 0);
+    int warp_idx = canonical_warp_idx();
 
     int lane_idx = threadIdx.x % 32;
 

@@ -262,8 +262,8 @@ struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignment
                    EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
                    Operator, SharedMemoryClear, GatherA, GatherB, ScatterD, PermuteDLayout> {
 
-  static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
-             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
+  static_assert((platform::is_same<LayoutC, layout::RowMajor>::value
+             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value),
              "Epilogue in the kernel level must be row major");
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -714,8 +714,8 @@ struct DefaultGemm<
     PermuteDLayout,
     typename platform::enable_if< ! platform::is_same<ArchTag, arch::Sm80>::value >::type > {
 
-  static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
-             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
+  static_assert((platform::is_same<LayoutC, layout::RowMajor>::value
+             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value),
              "Epilogue in the kernel level must be row major");
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -841,8 +841,8 @@ struct DefaultGemm<ElementA,
                    ScatterD,
                    PermuteDLayout> {
 
-  static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
-             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
+  static_assert((platform::is_same<LayoutC, layout::RowMajor>::value
+             || platform::is_same<LayoutC, layout::AffineRankN<2>>::value),
              "Epilogue in the kernel level must be row major");
 
   /// Define the threadblock-scoped matrix multiply-accumulate

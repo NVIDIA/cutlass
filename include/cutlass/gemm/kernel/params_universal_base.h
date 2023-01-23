@@ -189,15 +189,16 @@ struct UniversalParamsBase
     void *workspace,
     cudaStream_t stream = nullptr)
   {
+    semaphore = static_cast<int *>(workspace);
     // Zero-initialize entire workspace
-    if (workspace)
+    if (semaphore)
     {
       size_t workspace_bytes = get_workspace_size();
 
       CUTLASS_TRACE_HOST("  Initialize " << workspace_bytes << " workspace bytes");
 
       cudaError_t result = cudaMemsetAsync(
-        workspace,
+        semaphore,
         0,
         workspace_bytes,
         stream);
@@ -208,7 +209,6 @@ struct UniversalParamsBase
       }
     }
 
-    semaphore = static_cast<int *>(workspace);
     return Status::kSuccess;
   }
 

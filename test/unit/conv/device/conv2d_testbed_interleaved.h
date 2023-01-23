@@ -186,12 +186,48 @@ public:
     tensor_D_reference.sync_device();
   }
 
+  bool sufficient() const {
+    //
+    // Determine SMEM requirements and waive if not satisfied
+    //
+
+    int smem_size = int(sizeof(typename Conv2d::UnderlyingKernel::SharedStorage));
+
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+
+    if (properties.sharedMemPerMultiprocessor < smem_size) {
+      return false;
+    }
+
+    return true;
+  }
+
   /// Executes one test
   bool run(
     cutlass::conv::Conv2dProblemSize const &problem_size,
     cutlass::conv::SplitKMode const &split_k_mode = cutlass::conv::SplitKMode::kSerial,
     ElementCompute alpha = ElementCompute(1),
     ElementCompute beta = ElementCompute(0)) {
+
+    // Waive test if insufficient CUDA device
+    if (!sufficient()) {
+      if (CUTLASS_TEST_UNIT_ENABLE_WARNINGS) {
+        std::cerr << "Test waived due to insufficient CUDA device." << std::endl;
+      }
+      return true;
+    }
 
 #if 0 //display conv2d problem size for debugging
     std::cout << problem_size << std::endl

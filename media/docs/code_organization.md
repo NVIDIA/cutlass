@@ -7,6 +7,7 @@
 This document describes the layout of the CUTLASS repository. The main components are:
 
 * **CUTLASS Template Library** - CUDA Templates for Linear Algebra Subroutines and Solvers (header only)
+* **CuTe Template Library** - CUTLASS's core vocabulary layout type and associated algebra (header only)
 * **CUTLASS Utilities** - Additional templates 
 * **CUTLASS Instance Library** - instantiations of CUTLASS templates covering the design space
 * **CUTLASS Profiler** - CUTLASS Library, Profiler, and Utilities
@@ -29,7 +30,6 @@ CUTLASS Templates are implemented by header files in the following directory str
 
 ```
 include/                     # Top-level include directory. Client applications should target this path.
-
   cutlass/                   # CUDA Templates for Linear Algebra Subroutines and Solvers - headers only
 
     arch/                    # direct exposure of architecture features (including instruction-level GEMMs)
@@ -37,10 +37,11 @@ include/                     # Top-level include directory. Client applications 
     gemm/                    # code specialized for general matrix product computations
       thread/                #   thread-level operators
       warp/                  #   warp-level operators
+      collective/            #   3.x API operators for all threads a tiled mma/copy are built over
       threadblock/           #   CTA-level operators
       kernel/                #   CUDA kernel entry points
       device/                #   launches kernel(s) over a full device
-      *                      # scope-agnostic components and basic vocabular type definitions for GEMM
+      *                      # scope-agnostic components and basic vocabulary type definitions for GEMM
 
     layout/                  # layout definitions for matrices, tensors, and other mathematical objects in memory
       *
@@ -51,7 +52,7 @@ include/                     # Top-level include directory. Client applications 
       threadblock/           #   CTA-level operators
       kernel/                #   CUDA kernel entry points
       device/                #   launches kernel(s) over a full device
-      *                      # scope-agnostic components and basic vocabular type definitions
+      *                      # scope-agnostic components and basic vocabulary type definitions
 
     transform/               # code specialized for layout, type, and domain transformations
       thread/                #   thread-level operators
@@ -64,10 +65,26 @@ include/                     # Top-level include directory. Client applications 
     util/                    # miscellaneous CUTLASS components
       *
     *                        # core vocabulary types and fundamental arithmetic operators
+
+  cute /                     # CuTe Layout, layout algebra, MMA/Copy atoms, tiled MMA/Copy
+    algorithm/               # Definitions of core operations such as copy, gemm, and operations on cute::tuples
+    arch/                    # Bare bones PTX wrapper structs for copy and math instructions
+    atom/                    # Meta-information either link to or built from arch/ operators
+      mma_atom.hpp           # cute::Mma_Atom and cute::TiledMma
+      copy_atom.hpp          # cute::Copy_Atom and cute::TiledCopy
+      *sm*.hpp               # Arch specific meta-information for copy and math operations
+    container/               # Core container types used across CuTe, namely, cute::tuple
+    numeric/                 # CuTe's internal numerics implementation
+    *                        # Core library types such as Shape, Stride, Layout, Tensor, and associated operations
 ```
 
 See [Programming Guidelines](/media/docs/programming_guidelines.md) for further details about
 conventions and design patterns used throughout CUTLASS.
+
+## CuTe
+
+CuTe is a collection of C++ CUDA template abstractions for defining and operating on hierarchically multidimensional layouts of threads and data. CuTe provides `Layout` and `Tensor` objects that compactly packages the type, shape, memory space, and layout of data, while performing the complicated indexing for the user. This lets programmers focus on the logical descriptions of their algorithms while CuTe does the mechanical bookkeeping for them. With these tools, we can quickly design, implement, and modify all dense linear algebra operations. More documentation
+for CuTe can be found in [`/media/docs/cute/`](/media/docs/cute/).
 
 ## Tools
 
@@ -181,9 +198,9 @@ examples/
 
   11_planar_complex_array/   # example demonstrating planar complex kernels with batch-specific problem sizes
 
-  12_gemm_bias_relu/         # example demonstrating GEMM fused with bias and relu
+  12_gemm_bias_relu/         # example demonstrating GEMM fused with bias and relu activation function
 
-  13_fused_two_gemms/        # example demonstrating two GEMms fused in one kernel
+  13_fused_two_gemms/        # example demonstrating two GEMMs fused into one kernel
 ```
 
 ## Media

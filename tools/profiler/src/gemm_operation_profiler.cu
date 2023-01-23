@@ -537,6 +537,13 @@ Status GemmOperationProfiler::initialize_workspace(
 
     gemm_workspace_.Reference->copy_from_device(gemm_workspace_.C->data());
 
+    // NOTE: the leading non-batch strides are duplicated here for 3.0 API kernels
+    gemm_workspace_.arguments.problem_size = {int(problem_.m), int(problem_.n), int(problem_.k)};
+    gemm_workspace_.arguments.batch_count = problem_.batch_count;
+    gemm_workspace_.arguments.lda = problem_.lda;
+    gemm_workspace_.arguments.ldb = problem_.ldb;
+    gemm_workspace_.arguments.ldc = problem_.ldc;
+    gemm_workspace_.arguments.ldd = problem_.ldc;
     gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
     gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
     gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();

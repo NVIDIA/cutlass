@@ -26,7 +26,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-cmake_minimum_required(VERSION 3.12.4 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
 
 if(cutlass_LOADED)
   # If CUTLASS has been previously fetched and loaded, don't do it again.
@@ -39,35 +39,40 @@ endif()
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 set(IMPLICIT_CMAKE_CXX_STANDARD OFF CACHE BOOL "Do not explicitly specify -std=c++11 if set")
 
-project(CUTLASS VERSION 2.11.0 LANGUAGES CXX)
+project(CUTLASS VERSION 3.0.0 LANGUAGES CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
-if (CUDA_VERSION VERSION_LESS 10.2)
-  message(WARNING "CUTLASS ${CUTLASS_VERSION} requires CUDA 10.2 or higher, and strongly recommends CUDA 11.0 or higher.")
-elseif (CUDA_VERSION VERSION_LESS 11.0)
-  message(WARNING "CUTLASS ${CUTLASS_VERSION} support for CUDA ${CUDA_VERSION} is deprecated, please use CUDA 11.0 or higher.")
+if (CUDA_VERSION VERSION_LESS 11.3)
+  message(WARNING "CUTLASS ${CUTLASS_VERSION} requires CUDA 11.4 or higher, and strongly recommends CUDA 11.8 or higher.")
+elseif (CUDA_VERSION VERSION_LESS 11.4)
+  message(WARNING "CUTLASS ${CUTLASS_VERSION} support for CUDA ${CUDA_VERSION} is deprecated, please use CUDA 11.8 or higher.")
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.5)
+  message(FATAL_ERROR "GCC version must be at least 7.5!")
+endif()
+
+if (CUDA_COMPILER MATCHES "[Cc]lang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0)
+  message(FATAL_ERROR "Clang 7.0+ required for GPU compilation")
 endif()
 
 find_package(Doxygen QUIET)
 
 #
-# CUTLASS 2.x requires C++11
+# CUTLASS 3.x requires C++17
 #
-if (NOT IMPLICIT_CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 11)
-  set(CMAKE_CXX_STANDARD_REQUIRED ON)
-  set(CMAKE_CXX_EXTENSIONS OFF)
-endif()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(CUTLASS_NATIVE_CUDA)
-  set(CMAKE_CUDA_STANDARD 11)
+  set(CMAKE_CUDA_STANDARD 17)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS --expt-relaxed-constexpr)
 else()
-  if (NOT IMPLICIT_CMAKE_CXX_STANDARD)
-    list(APPEND CUTLASS_CUDA_NVCC_FLAGS --std=c++11)
-  endif()
+  list(APPEND CUTLASS_CUDA_NVCC_FLAGS --std=c++17)
 endif()
-
+  
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   set(CMAKE_INSTALL_PREFIX install CACHE PATH "Default installation location." FORCE)
 endif()
@@ -107,29 +112,14 @@ if (CUTLASS_ENABLE_TESTS)
 endif()
 
 set(CUTLASS_NVCC_ARCHS_SUPPORTED "")
-if (NOT CUDA_VERSION VERSION_LESS 7.5)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 53)
+if (CUDA_VERSION VERSION_GREATER_EQUAL 11.4 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 70 72 75 80 86 87)
 endif()
-if (NOT CUDA_VERSION VERSION_LESS 8.0)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 60 61)
+if (CUDA_VERSION VERSION_GREATER_EQUAL 11.8 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 89 90)
 endif()
-if (NOT CUDA_VERSION VERSION_LESS 9.0)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 70)
-endif()
-if (NOT CUDA_VERSION VERSION_LESS 9.2)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 72)
-endif()
-if (NOT CUDA_VERSION VERSION_LESS 10.0)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 75)
-endif()
-if (NOT CUDA_VERSION VERSION_LESS 11.0)
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 80)
-endif()
-if (NOT CUDA_VERSION VERSION_LESS 11.1 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 86)
-endif()
-if (NOT CUDA_VERSION VERSION_LESS 11.8 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
-  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 90)
+if (CUDA_VERSION VERSION_GREATER_EQUAL 12.0 AND NOT CUDA_COMPILER MATCHES "[Cc]lang")
+  list(APPEND CUTLASS_NVCC_ARCHS_SUPPORTED 90a)
 endif()
 set(CUTLASS_NVCC_ARCHS ${CUTLASS_NVCC_ARCHS_SUPPORTED} CACHE STRING "The SM architectures requested.")
 set(CUTLASS_NVCC_ARCHS_ENABLED ${CUTLASS_NVCC_ARCHS} CACHE STRING "The SM architectures to build code for.")
@@ -271,6 +261,7 @@ if (CUTLASS_ENABLE_TENSOR_CORE_MMA)
   list(APPEND CUTLASS_CUDA_FLAGS -DCUTLASS_ENABLE_TENSOR_CORE_MMA=1)
 endif()
 
+
 if (NOT MSVC AND CUTLASS_NVCC_KEEP)
   # MSVC flow handles caching already, but for other generators we handle it here.
   set(CUTLASS_NVCC_KEEP_DIR ${CMAKE_CURRENT_BINARY_DIR}/tmp CACHE PATH "Location to store NVCC scratch files")
@@ -285,6 +276,15 @@ if (CUTLASS_ENABLE_F16C AND NOT CMAKE_CROSSCOMPILING)
     list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=-mf16c)
   elseif((CMAKE_CXX_COMPILER_ID MATCHES "MSVC"))
     list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=/arch:AVX2)
+  endif()
+endif()
+
+if (CUTLASS_ENABLE_OPENMP_TESTS)
+  find_package(OpenMP)
+  if(OpenMP_CXX_FOUND)
+    list(APPEND CUTLASS_CUDA_NVCC_FLAGS -Xcompiler=${OpenMP_CXX_FLAGS})
+  else()
+    message(WARNING "CUTLASS_ENABLE_OPENMP_TESTS set but OpenMP not found.")
   endif()
 endif()
 
@@ -313,10 +313,6 @@ if(CUDA_COMPILER MATCHES "[Cc]lang")
     message(FATAL_ERROR "Clang CUDA compilation requires Clang CXX compilation. Currently CMAKE_CXX_COMPILER is ${CMAKE_CXX_COMPILER_ID}" )
   endif()
 
-  if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0)
-    message(FATAL_ERROR "Clang 7.0+ required for GPU compilation")
-  endif()
-
   # There are numerous Clang versions that can work with each CUDA toolkit and the 
   # the checks are not very useful so we are turning them off and using testing to 
   # ensure the various combinations work properly.
@@ -341,6 +337,7 @@ if(CUDA_COMPILER MATCHES "[Cc]lang")
   list(APPEND CUTLASS_CUDA_CLANG_FLAGS -Wl,--disable-new-dtags)
 
   link_libraries(nvidia::cudart)
+  link_libraries(nvidia::cuda_driver)
 endif()
 
 # Support for 128-bit integers if using NVIDIA C++ compiler 
@@ -530,6 +527,8 @@ target_include_directories(
   $<BUILD_INTERFACE:${CUTLASS_INCLUDE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
   $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include>
+  $<BUILD_INTERFACE:${cute_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${cute_SOURCE_DIR}/examples>
   )
 
 install(

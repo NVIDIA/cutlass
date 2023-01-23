@@ -543,7 +543,6 @@ using ${operation_name}_EpilogueVisitor = cutlass::epilogue::threadblock::Epilog
         self.elements_per_access = elements_per_access
         self.element_compute = element_compute
         self.element_output = element_output
-        # TODO: deprecate this
         self.elementwise_functor = elementwise_functor
         pass
     
@@ -554,11 +553,8 @@ using ${operation_name}_EpilogueVisitor = cutlass::epilogue::threadblock::Epilog
         #
         tree = function.epilogue_tree
         self.tree = tree
-        # self.tree.show() # for debug
         function.pass_binary_2_unary(self.tree, self.tree.root)
-        # self.tree.show() # for debug
         function.pass_inject_reduction(self.tree, self.tree.root)
-        # self.tree.show() # for debug
         function.pass_inject_epilogue_op(self.tree,self.tree.root)
 
         visitor = self.tree.get_node(self.tree.root).data.epilogue_node
@@ -575,7 +571,6 @@ using ${operation_name}_EpilogueVisitor = cutlass::epilogue::threadblock::Epilog
                     if input_key == "accum":
                         continue
                     if function.input_args[input_key][0] == "scalar": 
-                        # _kwargs[input_key] = kwargs[input_key]
                         continue
                     # tensor input
                     else:

@@ -35,7 +35,7 @@
     GemmLayernorm example =  GEMM0 with partial reduction fused in epilogue (EpilogueVisitorLayerNorm)
                           +  lightweight full reduction kernel (ApplyFinalReduction)
                           +  GEMM1 with elemenwise operations fused in mainloop (GemmLayernormMainloopFusion)
-                          
+
 */
 
 #pragma once
@@ -77,7 +77,7 @@ template <
   typename ElementLayernormCompute_,
   typename ElementOutput,
   typename ThreadblockShape_,
-  bool IsShiftedVariance_ = false 
+  bool IsShiftedVariance_ = false
 >
 class ApplyFinalReduction {
 public:
@@ -91,7 +91,7 @@ public:
   using Layout = cutlass::layout::RowMajor;
 
   using TensorVariance = TensorRef<ElementVariance, Layout>;
-  using TensorMean = TensorRef<ElementMean, Layout>;  
+  using TensorMean = TensorRef<ElementMean, Layout>;
 
   static bool const kIsShiftedVariance = IsShiftedVariance_;
 
@@ -463,7 +463,7 @@ public:
         for (int rid = 0; rid < kRowIterations; ++rid) {
           int row_step_offset = rid * kDeltaRow;
           int row_offset = thread_offset_row_base + step_offset + row_step_offset;
-          bool is_load = (row_offset < extent_.row());  
+          bool is_load = (row_offset < extent_.row());
           shift_k_frag_[iter_idx * kRowIterations + rid] = load_shift_k_(row_offset, is_load);
         }
 
@@ -504,9 +504,9 @@ public:
     using Minus = cutlass::minus<ElementLayernormCompute>;
     using Exp   = cutlass::fast_exp_op<ElementLayernormCompute>;
 
-    Minus     minus;
-    Mul       mul;
-    Exp       exponential;
+    [[maybe_unused]] Minus minus;
+    [[maybe_unused]] Mul   mul;
+    [[maybe_unused]] Exp   exponential;
 
     LayernormFragment result;
 
@@ -605,7 +605,7 @@ private:
   CUTLASS_DEVICE
   ElementLayernormCompute load_shift_k_(int row_offset, bool is_load) {
     using ConvertShiftK = cutlass::NumericConverter<ElementLayernormCompute, ElementOutput>;
-    ConvertShiftK convert_shift_k;    
+    ConvertShiftK convert_shift_k;
     ElementOutput shift_k_val;
 
     // Computes the address to load shift_k element
@@ -614,7 +614,7 @@ private:
     arch::global_load<ElementOutput, sizeof(ElementOutput)>(shift_k_val, (void *)curr_ptr_shift_k, is_load);
     // Converts data type to return
     ElementLayernormCompute converted_shift_k_val = convert_shift_k(shift_k_val);
-    
+
     return converted_shift_k_val;
   }
 
@@ -689,7 +689,7 @@ public:
   //
   // Type definitions
   //
-  
+
   static bool const kInternalTranspose = cutlass::platform::is_same<LayoutOutput_, cutlass::layout::ColumnMajor>::value;
   static bool const kIsShiftedVariance = IsShiftedVariance_;
 
@@ -704,14 +704,14 @@ public:
   using OperatorClass       = cutlass::arch::OpClassTensorOp;
   using ArchTag             = cutlass::arch::Sm80;
 
-  // These are mandatory layouts and data types 
+  // These are mandatory layouts and data types
   // that are inheritated from pre-defined params
-  
+
   using LayoutSumSqr = LayoutInputScaleBias;
   using LayoutSum = LayoutInputScaleBias;
 
   using ElementMean = ElementInputScaleBias;
-  using ElementVariance = ElementInputScaleBias;  
+  using ElementVariance = ElementInputScaleBias;
 
   ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -720,7 +720,7 @@ public:
   using LayoutInputA1 = LayoutOutput_;
   using LayoutInputB1 = LayoutOutput_;
   using LayoutOutputC0 = LayoutOutput_;
-  using LayoutOutputC1 = LayoutOutput_;  
+  using LayoutOutputC1 = LayoutOutput_;
 
   using ElementInputA0 = ElementInputA0_;
   using ElementInputB0 = ElementInputB0_;
@@ -747,7 +747,7 @@ public:
   static int const kStages1 = Stages1;
 
   using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
-  
+
   ///////////////////////////////////////////////////////////////////////////////////////////////
 
   using MapArguments = cutlass::gemm::kernel::detail::MapArguments<

@@ -33,6 +33,7 @@
 from time import sleep
 import pycutlass
 from pycutlass import *
+import pycutlass.utils.datatypes as datatypes
 import cutlass
 from cuda import cudart
 from cuda import cuda
@@ -52,16 +53,22 @@ def transpose(layout):
         return cutlass.ColumnMajorInterleaved32
 
 
-def getTensorRef(tensor: np.ndarray, problem_size: cutlass.gemm.GemmCoord, operand: str, layout: cutlass.layout):
+def getTensorRef(tensor: np.ndarray, problem_size: cutlass.gemm.GemmCoord, operand: str, layout: cutlass.layout, batch_offset: int = 0):
     ptr = tensor.__array_interface__['data'][0]
     if operand == "a":
         tensor_coord = problem_size.mk()
+        batch_stride = problem_size.m() * problem_size.k()
     elif operand == "b":
         tensor_coord = problem_size.kn()
+        batch_stride = problem_size.k() * problem_size.n()
     elif operand in ["c", "d"]:
         tensor_coord = problem_size.mn()
+        batch_stride = problem_size.m() * problem_size.n()
     else:
-        raise ValueError("unknonw operand: " + operand)
+        raise ValueError("Unknown operand: " + operand)
+
+    elt_size = DataTypeSizeBytes[datatypes.to_cutlass(tensor.dtype)]
+    ptr += batch_offset * batch_stride * elt_size
 
     if layout == cutlass.RowMajor:
         layout = cutlass.RowMajor.packed(tensor_coord)
@@ -96,8 +103,8 @@ def getTensorRef(tensor: np.ndarray, problem_size: cutlass.gemm.GemmCoord, opera
     return getattr(cutlass, ref_name)(ptr, layout)
 
 
-def getTensorView(tensor: np.ndarray, problem_size: cutlass.gemm.GemmCoord, operand: str, layout: str):
-    tensor_ref = getTensorRef(tensor, problem_size, operand, layout)
+def getTensorView(tensor: np.ndarray, problem_size: cutlass.gemm.GemmCoord, operand: str, layout: str, batch_offset: int = 0):
+    tensor_ref = getTensorRef(tensor, problem_size, operand, layout, batch_offset)
 
     if operand == "a":
         tensor_coord = problem_size.mk()
@@ -106,7 +113,7 @@ def getTensorView(tensor: np.ndarray, problem_size: cutlass.gemm.GemmCoord, oper
     elif operand in ["c", "d"]:
         tensor_coord = problem_size.mn()
     else:
-        raise ValueError("unknonw operand: " + operand)
+        raise ValueError("Unknown operand: " + operand)
 
     if layout == cutlass.RowMajor:
         layout_tag = "RowMajor"
@@ -168,7 +175,12 @@ class GemmUniversalLauncher:
         # Compile the operator
         #
 
-        pycutlass.compiler.add_module([operation, self.reduction_operation])
+        op_list = [operation]
+        if operation.arch < 90:
+            # Split K via Python is currently only supported for pre-SM90 kernels
+            op_list.append(self.reduction_operation)
+
+        pycutlass.compiler.add_module(op_list)
 
         self.operation = operation
 
@@ -206,8 +218,10 @@ class GemmUniversalLauncher:
     def print_problem_size(self, p, mode, batch_count):
         if mode == cutlass.gemm.Mode.Gemm:
             mode = "Gemm"
+        elif mode == cutlass.gemm.Mode.Batched:
+            mode = "GemmBatched"
         elif mode == cutlass.gemm.Mode.GemmSplitKParallel:
-            mode = "GemmSplitKParalel"
+            mode = "GemmSplitKParallel"
         problem_size = "problem: %d, %d, %d\n batch_count: %d\n mode: %s" % (
             p.m(), p.n(), p.k(), batch_count, mode)
         print(problem_size)
@@ -251,8 +265,7 @@ class GemmUniversalLauncher:
             tensor_ref_B, reordered_tensor_ref_B, problem_size)
         return reordered_tensor_B
 
-    def host_reference(self, problem_size, tensor_A, tensor_B, tensor_C, alpha, beta):
-        # TODO
+    def host_reference(self, problem_size, batch_count, tensor_A, tensor_B, tensor_C, alpha, beta):
         tensor_D_ref = np.ones_like(tensor_C)
         alpha = self.numpy_type(self.compute_type)(alpha)
         beta = self.numpy_type(self.compute_type)(beta)
@@ -262,42 +275,46 @@ class GemmUniversalLauncher:
         beta = self.compute_type(beta).value()
         init_acc = self.accumulator_type(init_acc).value()
 
-        if self.operation.switched:
-            tensor_ref_A = getTensorRef(
-                tensor_A, problem_size, "a", transpose(self.operation.B.layout))
-            tensor_ref_B = getTensorRef(
-                tensor_B, problem_size, "b", transpose(self.operation.A.layout))
-            tensor_ref_C = getTensorRef(
-                tensor_C, problem_size, "c", transpose(self.operation.C.layout))
-            tensor_ref_D_ref = getTensorRef(
-                tensor_D_ref, problem_size, "d", transpose(self.operation.C.layout))
-        else:
-            tensor_ref_A = getTensorRef(
-                tensor_A, problem_size, "a", self.operation.A.layout)
-            tensor_ref_B = getTensorRef(
-                tensor_B, problem_size, "b", self.operation.B.layout)
-            tensor_ref_C = getTensorRef(
-                tensor_C, problem_size, "c", self.operation.C.layout)
-            tensor_ref_D_ref = getTensorRef(
-                tensor_D_ref, problem_size, "d", self.operation.C.layout)
+        for i in range(batch_count):
+            if self.operation.switched:
+                tensor_ref_A = getTensorRef(
+                    tensor_A, problem_size, "a", transpose(self.operation.B.layout), batch_offset=i)
+                tensor_ref_B = getTensorRef(
+                    tensor_B, problem_size, "b", transpose(self.operation.A.layout), batch_offset=i)
+                tensor_ref_C = getTensorRef(
+                    tensor_C, problem_size, "c", transpose(self.operation.C.layout), batch_offset=i)
+                tensor_ref_D_ref = getTensorRef(
+                    tensor_D_ref, problem_size, "d", transpose(self.operation.C.layout), batch_offset=i)
+            else:
+                tensor_ref_A = getTensorRef(
+                    tensor_A, problem_size, "a", self.operation.A.layout, batch_offset=i)
+                tensor_ref_B = getTensorRef(
+                    tensor_B, problem_size, "b", self.operation.B.layout, batch_offset=i)
+                tensor_ref_C = getTensorRef(
+                    tensor_C, problem_size, "c", self.operation.C.layout, batch_offset=i)
+                tensor_ref_D_ref = getTensorRef(
+                    tensor_D_ref, problem_size, "d", self.operation.C.layout, batch_offset=i)
 
-        if self.math_operation in [MathOperation.multiply_add_saturate]:
-            cutlass.test.gemm.host.gemm_saturate(
-                problem_size, alpha, tensor_ref_A, tensor_ref_B, beta, tensor_ref_C, tensor_ref_D_ref, init_acc)
-        else:
-            cutlass.test.gemm.host.gemm(problem_size, alpha, tensor_ref_A,
-                                        tensor_ref_B, beta, tensor_ref_C, tensor_ref_D_ref, init_acc)
+            if self.math_operation in [MathOperation.multiply_add_saturate]:
+                cutlass.test.gemm.host.gemm_saturate(
+                    problem_size, alpha, tensor_ref_A, tensor_ref_B, beta, tensor_ref_C, tensor_ref_D_ref, init_acc)
+            else:
+                cutlass.test.gemm.host.gemm(problem_size, alpha, tensor_ref_A,
+                                            tensor_ref_B, beta, tensor_ref_C, tensor_ref_D_ref, init_acc)
 
         return tensor_D_ref
 
-    def equal(self, tensor_D, tensor_D_ref, problem_size):
+    def equal(self, tensor_D, tensor_D_ref, problem_size, batch_count):
+        for i in range(batch_count):
+            tensor_view_D = getTensorView(
+                tensor_D, problem_size, "d", self.operation.C.layout, batch_offset=i)
+            tensor_view_D_ref = getTensorView(
+                tensor_D_ref, problem_size, "d", self.operation.C.layout, batch_offset=i)
 
-        tensor_view_D = getTensorView(
-            tensor_D, problem_size, "d", self.operation.C.layout)
-        tensor_view_D_ref = getTensorView(
-            tensor_D_ref, problem_size, "d", self.operation.C.layout)
+            if not cutlass.test.gemm.host.equals(tensor_view_D, tensor_view_D_ref):
+                return False
 
-        return cutlass.test.gemm.host.equals(tensor_view_D, tensor_view_D_ref)
+        return True
 
     def bytes(self, problem_size, batch_count=1, alpha=1.0, beta=0.0):
         m = problem_size.m()
@@ -321,9 +338,8 @@ class GemmUniversalLauncher:
         n = problem_size.n()
         k = problem_size.k()
 
-        flops_ = (m * n * k + m * n) * 2 * batch_count
+        flops_ = (m * n * k) * 2 * batch_count
 
-        # TODO: complex
         return flops_
 
     def run_cutlass_profiler(self, mode, problem_size, batch_count=1, alpha=1.0, beta=0.0):
@@ -368,21 +384,25 @@ class GemmUniversalLauncher:
 
         return runtime
 
-    def run(self, mode, problem_size, batch_count=1, alpha=1.0, beta=0.0):
-
+    def run(self, mode, problem_size, batch_count=1, split_k_slices=1, alpha=1.0, beta=0.0):
         assert get_allocated_size(
         ) == 0, "%d byte of pool memory is not released in previous run" % get_allocated_size()
 
         np.random.seed(self.seed)
 
+        # Assign an actual batch count in cases where we are not running in batched mode.
+        # This is to differentiate between the number of split K slices and the batch count,
+        # which are overloaded within the single `batch_count` variable.
+        true_batch_count = batch_count if mode == cutlass.gemm.Mode.Batched else 1
+
         tensor_A = self.uniform_init(
-            size=(problem_size.m() * problem_size.k(),), dtype=self.dtype_A)
+            size=(problem_size.m() * problem_size.k() * true_batch_count,), dtype=self.dtype_A)
         tensor_B = self.uniform_init(
-            size=(problem_size.n() * problem_size.k(),), dtype=self.dtype_B)
+            size=(problem_size.n() * problem_size.k() * true_batch_count,), dtype=self.dtype_B)
         tensor_C = self.uniform_init(
-            size=(problem_size.m() * problem_size.n(),), dtype=self.dtype_C)
+            size=(problem_size.m() * problem_size.n() * true_batch_count,), dtype=self.dtype_C)
         tensor_D = np.zeros(
-            shape=(problem_size.m() * problem_size.n(),), dtype=self.dtype_D)
+            shape=(problem_size.m() * problem_size.n() * true_batch_count,), dtype=self.dtype_D)
 
         #
         # Launch kernel
@@ -392,14 +412,14 @@ class GemmUniversalLauncher:
             operation=self.operation, problem_size=problem_size,
             A=tensor_A, B=tensor_B, C=tensor_C, D=tensor_D,
             output_op=self.operation.epilogue_type(alpha, beta),
-            gemm_mode=mode, split_k_slices=batch_count
+            gemm_mode=mode, split_k_slices=split_k_slices, batch=batch_count
         )
 
         if mode == cutlass.gemm.Mode.GemmSplitKParallel:
             reduction_arguments = ReductionArguments(
                 self.reduction_operation, problem_size=[
                     problem_size.m(), problem_size.n()],
-                partitions=batch_count,
+                partitions=split_k_slices,
                 workspace=arguments.ptr_D,
                 destination=tensor_D,
                 source=tensor_C,
@@ -419,8 +439,8 @@ class GemmUniversalLauncher:
             else:
                 arguments.sync()
             tensor_D_ref = self.host_reference(
-                problem_size, tensor_A, tensor_B, tensor_C, alpha, beta)
-            passed = self.equal(tensor_D, tensor_D_ref, problem_size)
+                problem_size, true_batch_count, tensor_A, tensor_B, tensor_C, alpha, beta)
+            passed = self.equal(tensor_D, tensor_D_ref, problem_size, true_batch_count)
 
             try:
                 assert passed
@@ -494,7 +514,7 @@ def test_all_gemm(operation: 'GemmOperationUniversal', testcase="universal"):
         if operation.A.layout in [cutlass.ColumnMajorInterleaved32, cutlass.RowMajorInterleaved32]:
             interleavedk = 32
         else:
-            raise ValueError("unknonw layout")
+            raise ValueError("Unknown layout")
 
     if testcase == "interleaved":
         modes = [cutlass.gemm.Mode.Gemm, ]
@@ -515,14 +535,22 @@ def test_all_gemm(operation: 'GemmOperationUniversal', testcase="universal"):
         problem_beta = [0.0]
         batch_counts = [1, ]
     else:  # universal
-        modes = [cutlass.gemm.Mode.Gemm, cutlass.gemm.Mode.GemmSplitKParallel]
+        modes = [cutlass.gemm.Mode.Gemm]
+        batch_counts = [1, 2, 3, 5, 7]
+        if operation.arch < 90:
+            # Split K kernels via Python are currently only supported pre-SM90
+            modes.append(cutlass.gemm.Mode.GemmSplitKParallel)
+
         problem_size_m = [alignment_m, 512 - 3 * alignment_m]
         problem_size_n = [alignment_n, 512 - 2 * alignment_n]
+        if operation.tile_description.stages is None:
+            stages_for_k_calc = 7
+        else:
+            stages_for_k_calc = operation.tile_description.stages
         problem_size_k = [
             alignment_k,
-            threadblock_k * operation.tile_description.stages - alignment_k,
-            threadblock_k * operation.tile_description.stages * 3 - alignment_k]
-        batch_counts = [1, 2, 3, 5, 7]
+            threadblock_k * stages_for_k_calc - alignment_k,
+            threadblock_k * stages_for_k_calc * 3 - alignment_k]
         problem_alpha = [1.0]
         problem_beta = [2.0]
 
@@ -543,8 +571,17 @@ def test_all_gemm(operation: 'GemmOperationUniversal', testcase="universal"):
 
                                 problem_size = cutlass.gemm.GemmCoord(m, n, k)
 
+                                if operation.arch < 90:
+                                    split_k_slices = batch_count
+                                else:
+                                    split_k_slices = 1
+
+                                overridden_mode = mode
+                                if mode == cutlass.gemm.Mode.Gemm and batch_count > 1:
+                                    overridden_mode = cutlass.gemm.Mode.Batched
+
                                 passed = testbed.run(
-                                    mode, problem_size, batch_count, alpha, beta)
+                                    overridden_mode, problem_size, batch_count, split_k_slices, alpha, beta)
 
                                 err, = cudart.cudaDeviceSynchronize()
                                 if err != cuda.CUresult.CUDA_SUCCESS:

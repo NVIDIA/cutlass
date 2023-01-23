@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-
-  \brief Epilogue visitor operation that broadcasts a vector to all columns
+  
+  \brief A file contains the epilogue visitor Op with broadcasting vector to all columns
 */
 
 #pragma once

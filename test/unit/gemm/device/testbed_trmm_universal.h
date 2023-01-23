@@ -66,6 +66,9 @@ namespace device {
 template <typename Trmm>
 struct TestbedTrmmUniversal {
 
+  using ElementA = typename Trmm::ElementA;
+  using ElementB = typename Trmm::ElementB;
+  using ElementC = typename Trmm::ElementC;
   using ElementAccumulator = typename Trmm::ElementAccumulator;
   using ElementCompute = typename Trmm::TrmmKernel::Epilogue::OutputOp::ElementCompute;
 

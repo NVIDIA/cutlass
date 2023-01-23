@@ -29,8 +29,9 @@
  *
  **************************************************************************************************/
 /* \file
-   \brief binding cutlass C++ APIs to python
+   \brief binding CUTLASS C++ APIs to Python
 */
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl_bind.h>
 

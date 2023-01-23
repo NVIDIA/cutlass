@@ -5,33 +5,61 @@ message: >-
   following metadata.
 type: software
 authors:
-  - given-names: Andrew
-    email: akerr@nvidia.com
-    family-names: Kerr
+  - given-names: Vijay
+    family-names: Thakkar
+    email: vithakkar@nvidia.com
+    affiliation: NVIDIA
+  - given-names: Pradeep
+    family-names: Ramani
+    email: prramani@nvidia.com
+    affiliation: NVIDIA
+  - given-names: Cris
+    family-names: Cecka
+    email: ccecka@nvidia.com
+    affiliation: NVIDIA
+  - given-names: Aniket
+    family-names: Shivam
+    email: ashivam@nvidia.com
+    affiliation: NVIDIA
+  - given-names: Honghao
+    family-names: Lu
+    email: honghaol@nvidia.com
+    affiliation: NVIDIA
+  - given-names: Ethan
+    family-names: Yan
+    email: etyan@nvidia.com
+    affiliation: NVIDIA
+  - given-names: Jack
+    family-names: Kosaian
+    email: jkosaian@nvidia.com
+    affiliation: NVIDIA
+  - given-names: Mark
+    family-names: Hoemmen
+    email: mhoemmen@nvidia.com
     affiliation: NVIDIA
   - given-names: Haicheng
     family-names: Wu
-    affiliation: NVIDIA
     email: haichengw@nvidia.com
-  - given-names: Manish
-    family-names: Gupta
-    affiliation: Google
-    email: manigupta@google.com
-  - given-names: Dustyn
-    family-names: Blasig
-    email: dblasig@nvidia.com
     affiliation: NVIDIA
-  - given-names: Pradeep
-    family-names: Ramini
-    email: prramani@nvidia.com
+  - given-names: Andrew
+    family-names: Kerr
+    email: akerr@nvidia.com
+    affiliation: NVIDIA
+  - given-names: Matt
+    family-names: Nicely
+    email: mnicely@nvidia.com
     affiliation: NVIDIA
   - given-names: Duane
     family-names: Merrill
     email: dumerrill@nvidia.com
     affiliation: NVIDIA
-  - given-names: Aniket
-    family-names: Shivam
-    email: ashivam@nvidia.com
+  - given-names: Dustyn
+    family-names: Blasig
+    email: dblasig@nvidia.com
+    affiliation: NVIDIA
+  - given-names: Fengqi
+    family-names: Qiao
+    email: fqiao@nvidia.com
     affiliation: NVIDIA
   - given-names: Piotr
     family-names: Majcher
@@ -49,10 +77,12 @@ authors:
     family-names: Wang
     email: jinw@nvidia.com
     affiliation: NVIDIA
-  - given-names: Matt
-    family-names: Nicely
-    email: mnicely@nvidia.com
-    affiliation: NVIDIA
+  - given-names: Manish
+    family-names: Gupta
+    affiliation: Google
+    email: manigupta@google.com
+
+
 repository-code: 'https://github.com/NVIDIA/cutlass'
 abstract: >-
   CUTLASS is a collection of CUDA C++ template
@@ -71,12 +101,12 @@ abstract: >-
   flexibility simplifies their use as building blocks
   within custom kernels and applications.
 keywords:
-  - 'cutlass, tensor cores, cuda'
+  - 'cutlass, tensor cores, cuda, cute, nvidia, gpu, linear algebra, matrix computations'
 license: BSD-3-Clause
-license-url: https://github.com/NVIDIA/cutlass/blob/v2.11.0/LICENSE.txt
-version: '2.11.0'
-date-released: '2022-11-19'
+license-url: https://github.com/NVIDIA/cutlass/blob/v3.0.0/LICENSE.txt
+version: '3.0.0'
+date-released: '2023-01-23'
 identifiers:
   - type: url
-    value: "https://github.com/NVIDIA/cutlass/tree/v2.11.0"
-    description: The GitHub release URL of tag 2.11.0
+    value: "https://github.com/NVIDIA/cutlass/tree/v3.0.0"
+    description: The GitHub release URL of tag 3.0.0

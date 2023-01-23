@@ -84,6 +84,43 @@ def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
 
   return operations
 
+
+# Generates 3.0 API based GemmUniversal API kernels. Alignment constraits are folded in with layouts
+def CreateGemmUniversal3xOperator(
+    manifest, layouts, tile_descriptions, data_type,
+    complex_transforms=None,
+    epilogue_functor=EpilogueFunctor.LinearCombination,
+    swizzling_functor=SwizzlingFunctor.Identity1):
+
+  if complex_transforms is None:
+    complex_transforms = [(ComplexTransform.none, ComplexTransform.none), ]
+
+  element_a, element_b, element_c, element_epilogue = data_type
+
+  operations = []
+
+  # by default, only generate the largest tile and largest alignment
+  if manifest.kernel_filter == '':
+    tile_descriptions = [tile_descriptions[0],]
+
+  for layout in layouts:
+    for tile_description in tile_descriptions:
+      for complex_transform in complex_transforms:
+        A = TensorDescription(
+            element_a, layout[0][0], layout[0][1], complex_transform[0])
+        B = TensorDescription(
+            element_b, layout[1][0], layout[1][1], complex_transform[1])
+        C = TensorDescription(element_c, layout[2][0], layout[2][1])
+
+        operation = GemmOperation(
+            GemmKind.Universal3x, tile_description.minimum_compute_capability,
+            tile_description, A, B, C, element_epilogue, epilogue_functor, swizzling_functor)
+
+        manifest.append(operation)
+        operations.append(operation)
+
+  return operations
+
 #
 def CreateSparseGemmOperator(manifest, layouts, tile_descriptions, data_type, \
   alignment_constraints, complex_transforms = None, epilogue_functor = EpilogueFunctor.LinearCombination, \
@@ -3960,6 +3997,187 @@ def GenerateSM80(manifest, cuda_version):
 ###################################################################################################
 
 #
+def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
+  if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
+    return
+
+  # layouts for ABC and their alignments.
+  layouts = [
+    [[LayoutType.ColumnMajor, 8], [LayoutType.ColumnMajor, 8], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.ColumnMajor, 8], [LayoutType.RowMajor,    8], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.RowMajor,    8], [LayoutType.ColumnMajor, 8], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.RowMajor,    8], [LayoutType.RowMajor,    8], [LayoutType.ColumnMajor, 1]],
+  ]
+
+  math_instructions = [
+    MathInstruction(
+      [64, 128, 16],
+      DataType.f16, DataType.f16, DataType.f16,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [64, 128, 16],
+      DataType.f16, DataType.f16, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [64, 128, 16],
+      DataType.bf16, DataType.bf16, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+  ]
+
+  min_cc = 90
+  max_cc = 90
+
+  for math_inst in math_instructions:
+    tile_descriptions = [
+      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+    ]
+
+    data_type = [
+      math_inst.element_a,
+      math_inst.element_b,
+      math_inst.element_accumulator,
+      math_inst.element_accumulator,
+    ]
+
+    CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type)
+
+    # for mixed precision kernels, also generate kernels that write output matrix in the A/B format
+    # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
+    if math_inst.element_a != math_inst.element_accumulator:
+      data_type_mixed = [
+        math_inst.element_a,
+        math_inst.element_b,
+        math_inst.element_a,
+        math_inst.element_accumulator,
+      ]
+
+      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed)
+
+
+#
+def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
+  if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
+    return
+
+  # layouts for ABC and their alignments
+  layouts_tf32 = [
+    [[LayoutType.ColumnMajor, 1], [LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.ColumnMajor, 1], [LayoutType.RowMajor,    1], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.RowMajor,    4], [LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.RowMajor,    4], [LayoutType.RowMajor,    1], [LayoutType.ColumnMajor, 1]],
+  ]
+
+  math_inst = MathInstruction(
+      [64, 128, 8],
+      DataType.tf32, DataType.tf32, DataType.f32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add)
+
+  min_cc = 90
+  max_cc = 90
+
+  tile_descriptions = [
+    TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+    TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+    TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+    TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+    TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+    TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+  ]
+
+  data_type_tf32 = [
+    math_inst.element_a,
+    math_inst.element_b,
+    math_inst.element_accumulator,
+    math_inst.element_accumulator,
+  ]
+
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32, tile_descriptions, data_type_tf32)
+
+  # F32 kernel, TN only supported for now
+  layouts_f32 = [layouts_tf32[2]]
+
+  data_type_f32 = [
+    DataType.f32,
+    DataType.f32,
+    math_inst.element_accumulator,
+    DataType.f32,
+  ]
+
+  CreateGemmUniversal3xOperator(manifest, layouts_f32, tile_descriptions, data_type_f32)
+
+
+def GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version):
+  if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
+    return
+  
+  # layouts for ABC and their alignments
+  layouts = [
+    [[LayoutType.RowMajor, 16], [LayoutType.ColumnMajor, 16], [LayoutType.ColumnMajor, 1]],
+  ]
+
+  math_instructions = [
+    MathInstruction(
+      [64, 128, 32],
+      DataType.s8, DataType.s8, DataType.s32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+    MathInstruction(
+      [64, 128, 32],
+      DataType.u8, DataType.u8, DataType.s32,
+      OpcodeClass.TensorOp,
+      MathOperation.multiply_add),
+  ]
+
+  min_cc = 90
+  max_cc = 90
+
+  for math_inst in math_instructions:
+    tile_descriptions = [
+      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+    ]
+
+    data_type = [
+      math_inst.element_a,
+      math_inst.element_b,
+      math_inst.element_accumulator,
+      math_inst.element_accumulator,
+    ]
+
+    CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type)
+
+#
 def GenerateSM90_TensorOp_1684(manifest, cuda_version):
 
   if not CudaToolkitVersionSatisfies(cuda_version, 11, 8):
@@ -3972,11 +4190,10 @@ def GenerateSM90_TensorOp_1684(manifest, cuda_version):
     (LayoutType.RowMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
   ]
 
-  math_inst =                                             \
-    MathInstruction(                                      \
-      [16, 8, 4],                                          \
-      DataType.f64, DataType.f64, DataType.f64,           \
-      OpcodeClass.TensorOp,                               \
+  math_inst = MathInstruction(
+      [16, 8, 4],
+      DataType.f64, DataType.f64, DataType.f64,
+      OpcodeClass.TensorOp,
       MathOperation.multiply_add)
 
   min_cc = 90
@@ -4002,7 +4219,7 @@ def GenerateSM90_TensorOp_1684(manifest, cuda_version):
 
   data_type = [DataType.f64, DataType.f64, DataType.f64, DataType.f64]
 
-  CreateGemmOperator(manifest, layouts, tile_descriptions, \
+  CreateGemmOperator(manifest, layouts, tile_descriptions,
     data_type, alignment_constraints)
 
 #
@@ -4564,11 +4781,12 @@ def GenerateSM90_TensorOp_1684_symm_complex_gaussian(manifest, cuda_version):
 
 #
 def GenerateSM90(manifest, cuda_version):
-
+  GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version)
+  GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version)
+  GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version)
   GenerateSM90_TensorOp_1684(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_complex(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_complex_gaussian(manifest, cuda_version)
-
   GenerateSM90_TensorOp_1684_rank_k(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_rank_k_complex(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_rank_k_complex_gaussian(manifest, cuda_version)

@@ -463,13 +463,14 @@ class Conv2dOperation:
         )
 
         if self.stride_support == StrideSupport.Unity:
-            configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_unity_stride_align${alignment}"
+            configuration_name = "cutlass_sm${arch}_${opcode_class}_${extended_name}_${threadblock}_${layout}_unity_stride_align${alignment}"
         else:
-            configuration_name = "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_align${alignment}"
+            configuration_name = "cutlass_sm${arch}_${opcode_class}_${extended_name}_${threadblock}_${layout}_align${alignment}"
 
         return SubstituteTemplate(
             configuration_name,
             {
+                'arch': str(self.arch),
                 'opcode_class': opcode_class_name,
                 'extended_name': self.extended_name(),
                 'threadblock': threadblock,
@@ -509,7 +510,7 @@ class Conv2dOperation:
         intermediate_type = ''
 
         if self.tile_description.math_instruction.opcode_class == cutlass.OpClass.TensorOp:
-            inst_shape = "%d%d%d" % tuple(
+            inst_shape = "%dx%dx%d" % tuple(
                 self.tile_description.math_instruction.instruction_shape)
             if self.tile_description.math_instruction.element_a != self.A.element and \
                     self.tile_description.math_instruction.element_a != self.accumulator_type():

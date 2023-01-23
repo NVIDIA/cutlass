@@ -29,9 +29,5 @@
 cutlass_test_unit_add_executable(
   cutlass_test_unit_util
   tensor_reduce.cu
-  )
-
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_levels
   cutlass_test_levels.cu
   )

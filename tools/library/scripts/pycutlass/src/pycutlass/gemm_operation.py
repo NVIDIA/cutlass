@@ -36,6 +36,7 @@ import numpy as np
 from typeguard import typechecked
 import cutlass
 from pycutlass import *
+import pycutlass.builder.collective_op_builder as collective_op_builder
 from cuda import cuda
 
 
@@ -56,9 +57,9 @@ def transpose_layout(layout: cutlass.layout):
 
 
 # @typechecked
-class GemmArguments(ArgumentBase):
+class GemmArguments2x(ArgumentBase):
     """
-    Argument wrapper for GEMM. It encodes problem information and 
+    Argument wrapper for GEMM in CUTLASS 2. It encodes problem information and 
     user-provide tensors into the kernel's argument
 
     :param operation: the GEMM operation to take the argument
@@ -148,7 +149,7 @@ class GemmArguments(ArgumentBase):
                 self.batch_count = 1
             self.split_k_slices = self.batch_count
 
-        if gemm_mode in [cutlass.gemm.Mode.Batched, cutlass.gemm.Mode.Array]:    
+        if gemm_mode in [cutlass.gemm.Mode.Batched, cutlass.gemm.Mode.Array]:
             if 'batch' in kwargs.keys():
                 self.batch_count = kwargs['batch']
             else:
@@ -313,6 +314,154 @@ class GemmArguments(ArgumentBase):
         self.device_workspace = device_workspace
         self.launch_config = launch_config
 
+class GemmArguments3x(GemmArguments2x):
+    """
+    Argument wrapper for GEMM in CUTLASS 3. It encodes problem information and 
+    user-provide tensors into the kernel's argument
+
+    :param operation: the GEMM operation to take the argument
+    :type operation: :class:`pycutlass.GemmOperationUniversal` |
+     :class:`pycutlass.GemmOperationGrouped`
+    
+    :param problem_size: GEMM problem size gemm(M, N, K)
+    :type operation: :class:`cutlass.gemm.GemmCoord`
+
+    :param A: tensor A
+    :type A: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param B: tensor B
+    :type B: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param C: tensor C
+    :type C: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param D: tensor D
+    :type D: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param gemm_mode: GEMM mode
+    :type gemm_mode: :class:`cutlass.gemm.Mode`
+
+    :param output_op: output operator, optional
+    :type output_op: :class:`pycutlass.LinearCombinationFunctorArguments`
+    """
+
+    def __init__(
+        self, operation: 'GemmOperation', problem_size: 'cutlass.gemm.GemmCoord',
+        A: 'Tensor', B: 'Tensor', C: 'Tensor', D: 'Tensor',
+        gemm_mode: 'cutlass.gemm.Mode'=cutlass.gemm.Mode.Gemm, **kwargs):
+        if gemm_mode not in [cutlass.gemm.Mode.Gemm, cutlass.gemm.Mode.Batched]:
+            raise Exception("Unsupporged GEMM mode {}.".format(gemm_mode))
+
+        super().__init__(operation, problem_size, A, B, C, D, gemm_mode, **kwargs)
+
+    def get_arguments(self):
+        problem_size_ = GemmCoordBatched_(self.problem_size, self.batch_count)
+
+        if self.batch_count > 1:
+            bsA = self.batched_stride_A
+            bsB = self.batched_stride_B
+            bsC = self.batched_stride_C
+            bsD = self.batched_stride_D
+        else:
+            bsA = 0
+            bsB = 0
+            bsC = 0
+            bsD = 0
+        stride_A = StrideBatched_(self.lda, bsA)
+        stride_B = StrideBatched_(self.ldb, bsB)
+        stride_C = StrideBatched_(self.ldc, bsC)
+        stride_D = StrideBatched_(self.ldd, bsD)
+
+        self.arguments = self.operation.argument_type(
+            self.gemm_mode,
+            problem_size_,
+            int(self.ptr_A),
+            stride_A,
+            int(self.ptr_B),
+            stride_B,
+            int(self.ptr_C),
+            stride_C,
+            int(self.ptr_D),
+            stride_D,
+            self.output_op,
+        )
+
+    def initialize(self):
+        # get the host and evice workspace
+        device_workspace_size = \
+            self.operation.rt_module.get_device_workspace_size(self)
+
+        if device_workspace_size > 0:
+            self.workspace_buffer = device_mem_alloc(device_workspace_size)
+            workspace_ptr = self.workspace_buffer.ptr
+            err, = cuda.cuMemsetD32(
+                workspace_ptr, 0, device_workspace_size // 4)
+        else:
+            workspace_ptr = None
+
+        device_workspace = 0
+        if (workspace_ptr is not None and 
+            self.gemm_mode == cutlass.gemm.Mode.GemmSplitKParallel):
+            # in GEMM splik-K parallel, the D pointer is redirected
+            # to the workspace
+            self.ptr_D = cuda.CUdeviceptr(workspace_ptr)
+        elif (workspace_ptr is not None and 
+            self.gemm_mode == cutlass.gemm.Mode.Gemm):
+            # in GEMM split-K serial
+            device_workspace = workspace_ptr
+
+        self.get_arguments()
+        res_arg = self.operation.rt_module.get_args(
+            ctypes.byref(self.arguments), ctypes.c_void_p(int(device_workspace)))
+        host_workspace = bytearray(res_arg.contents)
+
+        grid = self.operation.rt_module.get_grid_shape(
+            ctypes.byref(self.arguments), ctypes.c_void_p(int(device_workspace)))
+        block = self.operation.rt_module.get_block_shape()
+
+        device_workspace = None
+
+        self.host_workspace = host_workspace
+        self.device_workspace = device_workspace
+        self.launch_config = LaunchConfiguration([grid.x, grid.y, grid.z],
+                                                 [block.x, block.y, block.z],
+                                                 self.operation.rt_module.shared_memory_capacity)
+
+def GemmArguments(operation: 'GemmOperation', problem_size: 'cutlass.gemm.GemmCoord',
+        A: 'Tensor', B: 'Tensor', C: 'Tensor', D: 'Tensor',
+        gemm_mode: 'cutlass.gemm.Mode'=cutlass.gemm.Mode.Gemm, **kwargs):
+    """
+    Argument wrapper for GEMM in CUTLASS 2 or 3. It returns either 2x arguments
+    or 3x arguments depending on the `arch` field specified in `operation`.
+
+    :param operation: the GEMM operation to take the argument
+    :type operation: :class:`pycutlass.GemmOperationUniversal` |
+     :class:`pycutlass.GemmOperationGrouped`
+    
+    :param problem_size: GEMM problem size gemm(M, N, K)
+    :type operation: :class:`cutlass.gemm.GemmCoord`
+
+    :param A: tensor A
+    :type A: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param B: tensor B
+    :type B: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param C: tensor C
+    :type C: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param D: tensor D
+    :type D: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
+
+    :param gemm_mode: GEMM mode
+    :type gemm_mode: :class:`cutlass.gemm.Mode`
+
+    :param output_op: output operator, optional
+    :type output_op: :class:`pycutlass.LinearCombinationFunctorArguments`
+    """
+    ArgClass = GemmArguments3x if operation.api == ApiVersion.v3x else GemmArguments2x
+    return ArgClass(operation, problem_size, A, B, C, D, gemm_mode, **kwargs)
+
 
 class GemmGroupedArguments:
     """
@@ -383,7 +532,7 @@ class GemmGroupedArguments:
         # process the input arguments
         for idx, problem_size in enumerate(problem_sizes):
             M, N, K = problem_size.m(), problem_size.n(), problem_size.k()
-            temp_argument = GemmArguments(
+            temp_argument = GemmArguments2x(
                 operation=operation, 
                 problem_size=cutlass.gemm.GemmCoord(M, N, K), 
                 A=A[idx], B=B[idx], C=C[idx], D=D[idx],
@@ -657,15 +806,163 @@ extern "C" {
             #
             workspace_bytes = 4 * arguments.grid_tiled_shape.x * arguments.grid_tiled_shape.y
 
-        # TODO: get extra workspace size
-        # see https://github.com/NVIDIA/cutlass/blob/master/include/cutlass/gemm/device/gemm_universal_base.h
         return workspace_bytes
+
+
+################################################################################
+# Runtime module for GEMM Universal within CUTLASS 3
+################################################################################
+
+class GemmRTUniversal3x(GemmRTUniversal):
+    """
+    GemmRTUniversal manages the CUTLASS runtime components
+    """
+    KernelTemplate = r'''
+
+using Operator = ${operation_name}${operation_suffix};
+extern "C"
+__global__ __launch_bounds__(Operator::MaxThreadsPerBlock, Operator::MinBlocksPerMultiprocessor)
+void ${operation_name}(__grid_constant__ typename Operator::Params const params) {
+  // Dynamic shared memory base pointer
+  extern __shared__ char smem[];
+
+  // Declare pointer to dynamic shared memory.
+  Operator op;
+  op(params, smem);
+}
+  '''
+    HostTemplate = r'''
+extern "C" {
+  // Get the size of params in bytes
+  int ${operation_name}_get_param_size(){
+    return sizeof(${operation_name}${operation_suffix}::Params);
+  }
+
+  // Get the size of dynamic shared memory in bytes
+  int ${operation_name}_shared_memory_size() {
+    return ${operation_name}${operation_suffix}::SharedStorageSize;
+  }
+
+  using GemmType = ${operation_name}_base;
+
+  // Get the params as byte array
+  char* ${operation_name}_get_params(GemmType::Arguments* argument, int* workspace){
+    GemmType::Params params = GemmType::to_underlying_arguments(*argument, workspace);
+
+    char *bytes = ((char*)(&params));
+    char *output = new char[sizeof(GemmType::Params)];
+    for (unsigned int i = 0; i < sizeof(GemmType::Params); i ++)
+        output[i] = bytes[i];
+
+    return output;
+  }
+
+  // Get the grid shape
+  dim3 ${operation_name}_get_grid_shape(GemmType::Arguments* args, int* workspace) {
+    auto tmp_params = GemmType::to_underlying_arguments(*args, workspace);
+    return GemmType::get_grid_shape(tmp_params);
+  }
+
+  // Get the block shape
+  dim3 ${operation_name}_get_block_shape() {
+    return GemmType::get_block_shape();
+  }
+}
+  '''
+
+    def __init__(self, operation: 'GemmOperation'):
+        super(GemmRTUniversal3x, self).__init__(operation)
+        self.extra_funcs = {
+            'get_grid_shape':  dim3_,
+            'get_block_shape': dim3_
+        }
+        self.emitter = EmitGemmUniversalInstance3x('_type')
+        self.argument_type, self.epilogue_type = get_gemm_arguments_3x(operation.epilogue_functor)
+
+
+class EmitGemmUniversalInstance3x:
+    ''' Responsible for emitting a CUTLASS 3 template definition'''
+
+    def __init__(self, operation_suffix=''):
+        self.operation_suffix = operation_suffix
+        self.includes = [
+            "cutlass/cutlass.h",
+            "cute/tensor.hpp",
+            "cute/atom/mma_atom.hpp",
+            "cutlass/numeric_types.h",
+            "cutlass/gemm/kernel/gemm_universal.hpp",
+            "cutlass/gemm/collective/collective_builder.hpp",
+            "cutlass/epilogue/collective/default_epilogue.hpp",
+            "cutlass/epilogue/thread/linear_combination.h"
+        ]
+        self.gemm_template = """
+using namespace cute;
+
+${collective_op}
+
+using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
+    cutlass::gemm::TagToStrideC_t<${layout_c}>,
+    cutlass::gemm::TagToStrideC_t<${layout_c}>,
+    ${epilogue_functor}
+    >;
+
+// Gemm operator ${operation_name}
+using ${operation_name}_base = cutlass::gemm::kernel::GemmUniversal<
+    Shape<int,int,int,int>,
+    CollectiveOp,
+    EpilogueOp
+>;
+
+// Define named type
+struct ${operation_name}${operation_suffix} : 
+  public ${operation_name}_base { };
+"""
+
+    #
+    def emit(self, operation):
+
+        instance_layout_A, instance_layout_B, instance_layout_C = \
+            (operation.A.layout, operation.B.layout, operation.C.layout)
+
+        # Support built-in epilogue functors or user-defined functions
+        epilogue_functor = operation.epilogue_functor.emit()
+
+        collective_op = collective_op_builder.build(operation)
+
+        values = {
+            'operation_name': operation.procedural_name(),
+            'operation_suffix': self.operation_suffix,
+            'collective_op': collective_op,
+            'element_a': DataTypeTag[operation.A.element],
+            'layout_a': LayoutTag[instance_layout_A],
+            'element_b': DataTypeTag[operation.B.element],
+            'layout_b': LayoutTag[instance_layout_B],
+            'element_c': DataTypeTag[operation.C.element],
+            'layout_c': LayoutTag[instance_layout_C],
+            'epilogue_functor': epilogue_functor,
+            'element_output': DataTypeTag[operation.epilogue_functor.element_output],
+            'element_accumulator': DataTypeTag[operation.accumulator_type()],
+            'element_epilogue': DataTypeTag[operation.epilogue_functor.element_epilogue],
+            'epilogue_vector_length': str(operation.epilogue_functor.epilogue_vector_length),
+            'opcode_class': OpcodeClassTag[operation.tile_description.math_instruction.opcode_class],
+            'arch': "cutlass::arch::Sm%d" % operation.arch,
+            'threadblock_shape_m': str(operation.tile_description.threadblock_shape[0]),
+            'threadblock_shape_n': str(operation.tile_description.threadblock_shape[1]),
+            'threadblock_shape_k': str(operation.tile_description.threadblock_shape[2]),
+            'cluster_shape_m': str(operation.tile_description.cluster_shape[0]),
+            'cluster_shape_n': str(operation.tile_description.cluster_shape[1]),
+            'cluster_shape_k': str(operation.tile_description.cluster_shape[2]),
+            'align_a': str(operation.A.alignment),
+            'align_b': str(operation.B.alignment)
+        }
+
+        values['epilogue_functor'] = operation.epilogue_functor.emit()
+        return SubstituteTemplate(self.gemm_template, values)
 
 
 ###################################################################################################
 # Runtime module for GEMM Grouped
 ###################################################################################################
-
 
 class GemmRTGrouped(GemmRTbase):
     """
@@ -713,7 +1010,7 @@ class GemmRTGrouped(GemmRTbase):
 
     def __init__(self, operation: 'GemmOperation'):
         super(GemmRTGrouped, self).__init__(operation)
-        self.extra_funcs = ['precompute']
+        self.extra_funcs = {'precompute': None}
 
         self.emitter = EmitGemmGroupedInstance('_type')
         self.argument_type, self.epilogue_type = get_gemm_grouped_arguments(operation.epilogue_functor)
@@ -761,7 +1058,7 @@ class GemmOperationBase:
             self, gemm_kind, arch, tile_description: TileDescription,
             A: TensorDescription, B: TensorDescription, C: TensorDescription, 
             epilogue_functor, 
-            swizzling_functor=cutlass.IdentitySwizzle1, **kwargs):
+            swizzling_functor=cutlass.IdentitySwizzle1, api=False, **kwargs):
 
         #: operation kind
         self.operation_kind: OperationKind = OperationKind.Gemm
@@ -772,8 +1069,11 @@ class GemmOperationBase:
         #: gemm kind
         self.gemm_kind: GemmKind = gemm_kind
 
+        self.api = api
+        self.prefix = "3x" if self.api == ApiVersion.v3x else ""
+
         # use deep copy to avoid overwritting the original TensorDescription
-        if C.layout == cutlass.ColumnMajor:
+        if self.api != ApiVersion.v3x and C.layout == cutlass.ColumnMajor:
             #: Operand A
             self.A: TensorDescription = copy.deepcopy(B)
             #: Operand B
@@ -800,7 +1100,6 @@ class GemmOperationBase:
             self.direct_store = kwargs["direct_store"]
         else:
             self.direct_store = False
-        
         if "visitor" in kwargs:
             self.visitor = kwargs["visitor"]
         else:
@@ -872,8 +1171,11 @@ class GemmOperationBase:
             math_op_string = math_operations_map[math_op] if math_op in math_operations_map.keys(
             ) else ''
 
-            inst_shape = "%d%d%d" % tuple(
-                self.tile_description.math_instruction.instruction_shape)
+            if self.tile_description.math_instruction.instruction_shape is not None:
+                inst_shape = "%dx%dx%d" % tuple(
+                    self.tile_description.math_instruction.instruction_shape)
+            else:
+                inst_shape = "Default"
             inst_shape += math_op_string
 
             if self.tile_description.math_instruction.element_a != self.A.element and \
@@ -906,6 +1208,17 @@ class GemmOperationBase:
         return extended_name
 
     #
+    def extended_name_3x(self):
+        '''Generates a string representing the MMA atom. Assumes accumulator type is C type.'''
+        extended_name = "{core_name}_{element_a}_{element_b}_{element_acc}_{element_c}".format(
+            element_a = DataTypeNames[self.A.element],
+            element_b = DataTypeNames[self.B.element],
+            element_acc = DataTypeNames[self.tile_description.math_instruction.element_accumulator],
+            element_c = DataTypeNames[self.C.element],
+            core_name = self.core_name())
+        return extended_name
+
+    #
     def layout_name(self):
         if self.is_complex() or self.is_planar_complex():
             return "%s%s" % (
@@ -916,25 +1229,49 @@ class GemmOperationBase:
             )
         return "%s%s" % (ShortLayoutTypeNames[self.A.layout], ShortLayoutTypeNames[self.B.layout])
 
+    # Generates a short string representing the ABC layout tags (e.g. ntn or tnn)
+    def layout_name_3x(self):
+        if self.is_complex() or self.is_planar_complex():
+            return "{}{}{}".format(
+                ShortComplexLayoutNames[(self.A.layout, self.A.complex_transform)], 
+                ShortComplexLayoutNames[(self.B.layout, self.B.complex_transform)],
+                ShortComplexLayoutNames[(self.C.layout, self.C.complex_transform)])
+        else:
+            return "{}{}{}".format(
+                ShortLayoutTypeNames[self.A.layout],
+                ShortLayoutTypeNames[self.B.layout],
+                ShortLayoutTypeNames[self.C.layout])
+
     #
     def procedural_name(self):
         ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
-        threadblock = self.tile_description.procedural_name()
-
         opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
-
-        alignment = max([self.A.alignment, self.B.alignment, self.C.alignment])
-
-        return SubstituteTemplate(
-            "cutlass_${opcode_class}_${extended_name}_${threadblock}_${layout}_align${alignment}",
-            {
-                'opcode_class': opcode_class_name,
-                'extended_name': self.extended_name(),
-                'threadblock': threadblock,
-                'layout': self.layout_name(),
-                'alignment': "%d" % self.A.alignment,
-            }
-        )
+        if self.api == ApiVersion.v3x and self.arch >= 90:
+            kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}"
+            return kernel_name_template.format(
+                p = self.prefix,
+                ar = self.arch,
+                op = opcode_class_name,
+                ex = self.extended_name_3x(),
+                tbm = self.tile_description.threadblock_shape[0],
+                tbn = self.tile_description.threadblock_shape[1],
+                tbk = self.tile_description.threadblock_shape[2],
+                cm = self.tile_description.cluster_shape[0],
+                cn = self.tile_description.cluster_shape[1],
+                ck = self.tile_description.cluster_shape[2],
+                l = self.tile_description.stages,
+                s = self.layout_name_3x(),
+                al = str(self.A.alignment))
+        else:
+            threadblock = self.tile_description.procedural_name()
+            return "cutlass{p}_sm{ar}_{op}_{ex}_{tb}_{l}_align{a}".format(
+                p = self.prefix,
+                ar = self.arch,
+                op = opcode_class_name,
+                ex = self.extended_name(),
+                tb = threadblock,
+                l = self.layout_name(),
+                a = str(self.A.alignment))
 
     #
     def configuration_name(self):
@@ -945,9 +1282,14 @@ class GemmOperationBase:
 class GemmOperationUniversal(GemmOperationBase):
     def __init__(self, arch, tile_description: TileDescription, A: TensorDescription, B, C,
                  epilogue_functor, swizzling_functor=cutlass.IdentitySwizzle1, **kwargs):
+        api = api_version(arch, tile_description.math_instruction.opcode_class, A.element)
         super(GemmOperationUniversal, self).__init__(GemmKind.Universal, arch, tile_description,
-                                                     A, B, C, epilogue_functor, swizzling_functor, **kwargs)
-        self.rt_module = GemmRTUniversal(self)
+                                                     A, B, C, epilogue_functor, swizzling_functor,
+                                                     api=api, **kwargs)
+        if api == ApiVersion.v3x:
+            self.rt_module = GemmRTUniversal3x(self)
+        else:
+            self.rt_module = GemmRTUniversal(self)
         self.argument_type = self.rt_module.argument_type
         self.epilogue_type = self.rt_module.epilogue_type
 
