@@ -51,7 +51,7 @@ CUTLASS 3.0, as the next major version of the CUTLASS API, brings with it CuTe, 
 - Support for Hopper asynchronous Tensor Memory Accelerator (TMA) instructions and associated transaction barriers through CuTe.
 - New warp-specialized GEMM kernels targeting Hopper TMA + WGMMA for speed-of-light GEMMs.
 - New warp-specialized persistent GEMM kernels targeting Hopper TMA + WGMMA.
-- Support for CUDA Theadblock Cluster and programmatic TMA multicast for greater execution and data locality.
+- Support for CUDA Threadblock Clusters and programmatic TMA multicast for greater execution and data locality.
 - A new way to instantiate default GEMM kernels using `CollectiveBuilder`s that supersede the 2.x `DefaultXConfiguration` types in favour a metaprogramming based kernel generator functionality. See [example 49](/examples/49_hopper_gemm_schedules_with_collective_builder/49_hopper_gemm_schedules_with_collective_builder.cu).
 - Extensions to the CUTLASS library and profiler to support CUTLASS 3.0 Hopper kernels, and a new format
 for kernel procedural names.
