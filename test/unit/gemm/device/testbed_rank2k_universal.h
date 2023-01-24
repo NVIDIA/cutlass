@@ -64,6 +64,9 @@ namespace device {
 template <typename Rank2K>
 struct TestbedRank2KUniversal {
 
+  using ElementA = typename Rank2K::ElementA;
+  using ElementB = typename Rank2K::ElementB;
+  using ElementC = typename Rank2K::ElementC;
   using ElementAccumulator = typename Rank2K::ElementAccumulator;
   using ElementCompute = typename Rank2K::Rank2Kkernel::Epilogue::OutputOp::ElementCompute;
 
@@ -301,7 +304,6 @@ struct TestbedRank2KUniversal {
     if (properties.sharedMemPerBlockOptin < smem_size) {
       return false;
     }
-
     return true;
   }
 

@@ -29,13 +29,15 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 #################################################################################################
-## Test case for Pytorch
+
+"""
+Test cases for frontends
+"""
+
 import pycutlass
 import unittest
 from pycutlass import *
 from pycutlass.utils.device import device_cc
-import torch
-import cupy as cp
 
 
 class Test_Frontend(unittest.TestCase):
@@ -49,9 +51,7 @@ class Test_Frontend(unittest.TestCase):
             cutlass.OpClass.Simt, MathOperation.multiply_add
         )
 
-        # Stages > 2 is supported only for compute capability 80 and beyond
-        stages = 4 if cc >= 80 else 2
-
+        stages = 2
         tile_description = TileDescription(
             [128, 128, 8], stages, [2, 4, 1],
             math_inst
@@ -84,6 +84,11 @@ class Test_Frontend(unittest.TestCase):
 
 
     def test_torch_frontend(self):
+        try:
+            import torch
+        except:
+            self.assertTrue(False, "Unable to import torch")
+
         problem_size = cutlass.gemm.GemmCoord(512, 256, 128)
 
         tensor_A = torch.ceil(torch.empty(size=(problem_size.m(), problem_size.k()), dtype=torch.float32, device="cuda").uniform_(-8.5, 7.5))
@@ -111,6 +116,11 @@ class Test_Frontend(unittest.TestCase):
         self.assertTrue(torch.equal(tensor_D, tensor_D_ref))
     
     def test_cupy_frontend(self):
+        try:
+            import cupy as cp
+        except:
+            self.assertTrue(False, "Unable to import cupy")
+
         cp.cuda.set_allocator(rmm.rmm_cupy_allocator)
 
         problem_size = cutlass.gemm.GemmCoord(512, 256, 128)
@@ -137,7 +147,6 @@ class Test_Frontend(unittest.TestCase):
         arguments.sync()
 
         self.assertTrue(cp.array_equal(tensor_D, tensor_D_ref))
-
 
 
 if __name__ == '__main__':

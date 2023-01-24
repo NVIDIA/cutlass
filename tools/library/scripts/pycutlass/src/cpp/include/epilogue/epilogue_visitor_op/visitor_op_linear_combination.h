@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-
-  \brief Epilogue visitor operation that performs a linear combination of two visitor nodes
+  
+  \brief A file contains the epilogue visitor Op with Linear Combination
 */
 
 #pragma once
@@ -82,7 +82,7 @@ public:
     /// Fragment type of accumulator
     using AccumulatorAccessType = Array<ElementAccumulator, kElementsPerAccess>;
 
-    /// Combination Op TODO: generalize this
+    /// Combination Op
     using CombinationOp = cutlass::plus<VisitAccessType>;
 
     static_assert(kElementsPerAccess==VisitAccessTypeA::kElements, "kElementsPerAccess mismatches with Visitor A");

@@ -35,9 +35,49 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Gets a CUDA device
+cudaDeviceProp GetCudaDevice() {
+
+  cudaError_t err;
+
+  int cudaDeviceId;
+  err = cudaGetDevice(&cudaDeviceId);
+  if (cudaSuccess != err) {
+    std::cerr << "*** Error: Could not detect active GPU device ID"
+              << " [" << cudaGetErrorString(err) << "]" << std::endl;
+    exit(1);
+  }
+
+  cudaDeviceProp deviceProperties;
+  err = cudaGetDeviceProperties(&deviceProperties, cudaDeviceId);
+
+  return deviceProperties;
+}
+
+/// Prints device properties
+std::ostream &operator<<(std::ostream &out, cudaDeviceProp const &deviceProperties) {
+
+  int deviceMajorMinor = deviceProperties.major * 10 + deviceProperties.minor;
+  if (deviceMajorMinor) {
+    int32_t clock_MHz = deviceProperties.clockRate / 1000;
+    out << "GPU(compute_"
+      << deviceMajorMinor << ", "
+      << deviceProperties.multiProcessorCount << " SMs @ " << clock_MHz << " MHz)";
+  }
+  else {
+    out << "No CUDA device.";
+  }
+
+  return out;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Sets flags for Unit test
 void FilterArchitecture() {
   // Default flags can be overwritten by --gtest_filter from commandline
+
+  int const kMaxDevice = 999;
+
   cudaError_t err;
 
   int cudaDeviceId;
@@ -57,7 +97,6 @@ void FilterArchitecture() {
   }
 
   int deviceMajorMinor = deviceProperties.major * 10 + deviceProperties.minor;
-  int const kMaxDevice = 999;
 
   // Defines text filters for each GEMM kernel based on minimum supported compute capability
   struct {
@@ -78,7 +117,7 @@ void FilterArchitecture() {
     { "SM70*",                      70, 75},
     { "SM75*",                      75, kMaxDevice},
     { "SM80*",                      80, kMaxDevice},
-    { "SM90*",                      90, kMaxDevice},
+    { "SM90*",                      90, 90        },
     { 0, 0, false }
   };
 

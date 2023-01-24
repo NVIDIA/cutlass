@@ -47,10 +47,21 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 #if ((__CUDACC_VER_MAJOR__ > 11) || (__CUDACC_VER_MAJOR__ == 11 && __CUDACC_VER_MINOR__ >= 8))
-#define CUTLASS_ARCH_MMA_SM90_SUPPORTED 1
-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
-#define CUTLASS_ARCH_MMA_SM90_ENABLED
+  #define CUTLASS_ARCH_MMA_SM90_F64_MMA_SUPPORTED
+  #if (!defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED))
+    #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+      #define CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED
+    #endif
+  #endif
 #endif
+
+#if (__CUDACC_VER_MAJOR__ >= 12)
+  #define CUTLASS_ARCH_MMA_SM90_SUPPORTED
+  #if (!defined(CUTLASS_ARCH_MMA_SM90_ENABLED))
+    #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900))
+      #define CUTLASS_ARCH_MMA_SM90_ENABLED
+    #endif
+  #endif
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -97,7 +108,7 @@ struct Mma<
   void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
                   FragmentC const &c) const {
 
-#if defined(CUTLASS_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)
 
   double const *A = reinterpret_cast<double const *>(&a);
   double const *B = reinterpret_cast<double const *>(&b);
@@ -105,10 +116,73 @@ struct Mma<
   double const *C = reinterpret_cast<double const *>(&c);
   double *D = reinterpret_cast<double *>(&d);
 
-  asm volatile("mma.sync.aligned.m16n8k4.row.col.f64.f64.f64.f64 {%0, %1, %2, %3}, {%4, %5}, {%6}, {%7, %8, %9, %10};\n"
+  asm volatile("mma.sync.aligned.m16n8k4.row.col.f64.f64.f64.f64.rn {%0, %1, %2, %3}, {%4, %5}, {%6}, {%7, %8, %9, %10};\n"
       : "=d"(D[0]), "=d"(D[1]), "=d"(D[2]), "=d"(D[3])
-      : "d"(A[0]), "d"(A[1]), 
-        "d"(B[0]), 
+      : "d"(A[0]), "d"(A[1]),
+        "d"(B[0]),
+        "d"(C[0]), "d"(C[1]), "d"(C[2]), "d"(C[3]));
+
+#else
+    CUTLASS_UNUSED(d);
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_NOT_IMPLEMENTED();
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+/// Matrix Multiply-Add 16x8x8 fp64
+////////////////////////////////////////////////////////////////////////////////
+
+/// Matrix multiply-add operation: F64 = F64 * F64 + F64
+template <>
+struct Mma<
+  gemm::GemmShape<16,8,8>,
+  32,
+  double,
+  layout::RowMajor,
+  double,
+  layout::ColumnMajor,
+  double,
+  layout::RowMajor,
+  OpMultiplyAdd> {
+
+  using Shape = gemm::GemmShape<16,8,8>;
+
+  using ElementA = double;
+  using LayoutA = layout::RowMajor;
+  using FragmentA = Array<double, 4>;
+
+  using ElementB = double;
+  using LayoutB = layout::ColumnMajor;
+  using FragmentB = Array<double, 2>;
+
+  using ElementC = double;
+  using LayoutC = layout::RowMajor;
+  using FragmentC = Array<double, 4>;
+
+  using Operator = OpMultiplyAdd;
+
+  using ArchTag = arch::Sm90;
+
+  CUTLASS_HOST_DEVICE
+  void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
+                  FragmentC const &c) const {
+
+#if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)
+
+  double const *A = reinterpret_cast<double const *>(&a);
+  double const *B = reinterpret_cast<double const *>(&b);
+
+  double const *C = reinterpret_cast<double const *>(&c);
+  double *D = reinterpret_cast<double *>(&d);
+
+  asm volatile("mma.sync.aligned.m16n8k8.row.col.f64.f64.f64.f64 {%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%10, %11, %12, %13};\n"
+      : "=d"(D[0]), "=d"(d[1]), "=d"(d[2]), "=d"(d[3])
+      : "d"(A[0]), "d"(A[1]), "d"(A[2]), "d"(A[3]),
+        "d"(B[0]), "d"(B[1]),
         "d"(C[0]), "d"(C[1]), "d"(C[2]), "d"(C[3]));
 
 #else
@@ -118,7 +192,65 @@ struct Mma<
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_NOT_IMPLEMENTED();
+#endif
+  }
+};
+
+////////////////////////////////////////////////////////////////////////////////
+/// Matrix Multiply-Add 16x8x16 fp64
+////////////////////////////////////////////////////////////////////////////////
+
+/// Matrix multiply-add operation: F64 = F64 * F64 + F64
+template <>
+struct Mma<
+  gemm::GemmShape<16,8,16>,
+  32,
+  double,
+  layout::RowMajor,
+  double,
+  layout::ColumnMajor,
+  double,
+  layout::RowMajor,
+  OpMultiplyAdd> {
+
+  using Shape = gemm::GemmShape<16,8,16>;
+
+  using ElementA = double;
+  using LayoutA = layout::RowMajor;
+  using FragmentA = Array<double, 8>;
+
+  using ElementB = double;
+  using LayoutB = layout::ColumnMajor;
+  using FragmentB = Array<double, 4>;
+
+  using ElementC = double;
+  using LayoutC = layout::RowMajor;
+  using FragmentC = Array<double, 4>;
+
+  using Operator = OpMultiplyAdd;
+
+  using ArchTag = arch::Sm90;
+
+  CUTLASS_HOST_DEVICE
+  void operator()(FragmentC &d, FragmentA const &a, FragmentB const &b,
+                  FragmentC const &c) const {
     
+#if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)
+
+  double const *A = reinterpret_cast<double const *>(&a);
+  double const *B = reinterpret_cast<double const *>(&b);
+
+  double const *C = reinterpret_cast<double const *>(&c);
+  double *D = reinterpret_cast<double *>(&d);
+
+  asm volatile("mma.sync.aligned.m16n8k16.row.col.f64.f64.f64.f64 {%0, %1, %2, %3}, {%4, %5, %6, %7, %8, %9, %10, %11}, {%12, %13, %14, %15}, {%16, %17, %18, %19};\n"
+      : "=d"(D[0]), "=d"(D[1]), "=d"(D[2]), "=d"(D[3])
+      : "d"(A[0]), "d"(A[2]), "d"(A[2]), "d"(A[3]), "d"(A[4]), "d"(A[5]), "d"(A[6]), "d"(A[7])
+        "d"(B[0]), "d"(B[1]), "d"(B[2]), "d"(B[3]), 
+        "d"(C[0]), "d"(C[1]), "d"(C[2]), "d"(C[3]));
+
+#else
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -129,3 +261,4 @@ struct Mma<
 } // namespace cutlass
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+

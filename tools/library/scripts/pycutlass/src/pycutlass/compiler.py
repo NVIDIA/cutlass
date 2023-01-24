@@ -29,6 +29,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 #################################################################################################
+import pycutlass
 from pycutlass import *
 import cutlass
 from cuda import cuda
@@ -54,11 +55,11 @@ class CompilationOptions:
     '''
 
     #
-    def __init__(self, flags, architectures=[80], include_paths=[]):
+    def __init__(self, flags, arch, include_paths=[]):
         self.includes = []
         self.include_paths = include_paths
         self.flags = flags
-        self.architectures = architectures
+        self.arch = arch
 
     def get_str(self):
         options = ""
@@ -69,13 +70,11 @@ class CompilationOptions:
         for incl in self.include_paths:
             options += ' --include-path=%s' % incl
 
-        arch_list = "-arch="
-        for idx, arch in enumerate(self.architectures):
-            if idx:
-                arch_list += ","
-            arch_list += "sm_%d" % arch
+        arch_flag = " -arch=sm_%d" % self.arch
+        if self.arch == 90:
+            arch_flag += 'a'
+        options += arch_flag
 
-        options += " " + arch_list
         return options
 
     #
@@ -88,13 +87,11 @@ class CompilationOptions:
         for incl in self.include_paths:
             options.append(bytes(str.encode('--include-path=%s' % incl)))
 
-        arch_list = "-arch="
-        for idx, arch in enumerate(self.architectures):
-            if idx:
-                arch_list += ","
-            arch_list += "sm_%d" % arch
+        arch_flag = " -arch=sm_%d" % self.arch
+        if self.arch == 90:
+            arch_flag += 'a'
 
-        options.append(bytes(str.encode(arch_list)))
+        options.append(bytes(str.encode(arch_flag)))
 
         return options
 
@@ -138,12 +135,12 @@ class ArtifactManager:
     def nvrtc(self):
         self.backend = "nvrtc"
         self.default_compile_options = [
-            '-std=c++11', '-default-device',
+            '-std=c++17', '-default-device'
         ]
     def nvcc(self):
         self.backend = "nvcc"
         self.default_compile_options = [
-            '-std=c++11',
+            '-std=c++17', '--expt-relaxed-constexpr', '-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored'
         ]
     def insert_operation(self, op_key, cubin, hostfile, op_name, op_attrs):
         connection = sqlite3.connect("./compiled_cache.db")
@@ -158,7 +155,7 @@ class ArtifactManager:
         connection.commit()
         cursor.close()
 
-    def load_operation(self, op_key):
+    def load_operation(self, op_key, extra_funcs):
         connection = sqlite3.connect("./compiled_cache.db")
         cursor = connection.cursor()
         sqlite_fetch_blob_query = """SELECT * from compiled_operations where op_key = ?"""
@@ -194,12 +191,17 @@ class ArtifactManager:
                 if isinstance(attr, str):
                     func_name = operation_name + '_' + attr
                     func = getattr(host_lib, func_name)
+
+                    # Set the return type of the function
+                    if attr in extra_funcs and extra_funcs[attr] != None:
+                        func.restype = extra_funcs[attr]
+
                     compiled_host_fns[attr] = func
 
             self.compiled_cache_host.insert(key, compiled_host_fns)
         return True
 
-    def emit_compile_(self, operation_list, compilation_options):
+    def emit_compile_(self, operation_list, compilation_options, requires_nvcc_hostlib_compilation):
         """
         Compile a list of kernels and store them into database
         """
@@ -276,6 +278,7 @@ class ArtifactManager:
             err, = nvrtc.nvrtcGetCUBIN(program, cubin_image)
             if err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
                 raise RuntimeError('NVRTC Error: {}'.format(err))
+
         else:  # with nvcc backend
             # emit code
             tempfile.tempdir = "./"
@@ -303,22 +306,34 @@ class ArtifactManager:
             with open(temp_cubin.name, 'rb') as file:
                 cubin_image = file.read()
 
-        # compile the host code
-        options = compilation_options.get()
-        cmd = "echo '%s'|g++ -x c++ -fpermissive -w -fPIC" % source_buffer_host
-        for opt in options:
-            opt = opt.decode("utf-8")
-            if opt not in ['-default-device', '-std=c++11', '-Xcicc', '-Xllc'] and '-arch=sm_' not in opt:
-                if '--include-path=' in opt:
-                    cmd += " " + opt.replace('--include-path=', '-I')
-                else:
-                    cmd += " " + opt
+        # Set up the host-side library code
+        if requires_nvcc_hostlib_compilation:
+            cuda_install_path = os.getenv('CUDA_INSTALL_PATH')
+            assert cuda_install_path is not None, "Environment variable 'CUDA_INSTALL_PATH' is not defined."
+            cmd_template = "echo '%s'|${cuda_install_path}/bin/nvcc -x cu -Xcompiler=\"-fpermissive -w -fPIC\" ${options}" % source_buffer_host
+            cmd = SubstituteTemplate(
+                cmd_template,
+                {
+                    "cuda_install_path": cuda_install_path,
+                    "options": compilation_options.get_str()
+                })
+        else:
+            options = compilation_options.get()
+            cmd = "echo '%s'|g++ -x c++ -fpermissive -w -fPIC" % source_buffer_host
+            filtered_opts = ['-default-device', '-Xcicc', '-Xllc', '--expt-relaxed-constexpr', '-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored']
+            for opt in options:
+                opt = opt.decode("utf-8")
+                if opt not in filtered_opts and '-arch=sm_' not in opt:
+                    if '--include-path=' in opt:
+                        cmd += " " + opt.replace('--include-path=', '-I')
+                    else:
+                        cmd += " " + opt
 
         tempfile.tempdir = "./"
         temp = tempfile.NamedTemporaryFile(
             prefix='host_func', suffix='.so', delete=True)
 
-        cmd += ' - -shared -o %s' % temp.name
+        cmd += ' - -shared -o %s -lcudart -lcuda' % temp.name
         os.system(cmd)
         host_lib = ctypes.CDLL(temp.name)
 
@@ -333,23 +348,25 @@ class ArtifactManager:
             assert cutlass_path is not None, "Environment variable 'CUTLASS_PATH' is not defined."
             cuda_install_path = os.getenv('CUDA_INSTALL_PATH')
             assert cuda_install_path is not None, "Environment variable 'CUDA_INSTALL_PATH' is not defined."
-            architectures = []
-            for operation in operations:
-                if hasattr(operation, "tile_description"):
-                    cc = operation.arch
-                    if cc not in architectures:
-                        architectures.append(cc)
             include_paths = [
                 cuda_install_path + '/include',
                 cutlass_path + '/include',
                 cutlass_path + '/tools/util/include',
                 cutlass_path + '/tools/library/scripts/pycutlass/src/cpp/include'
             ]
+
+            if pycutlass.DEVICE_CC is not None:
+                arch = pycutlass.DEVICE_CC
+            else:
+                # Find the maximum arch tag among the provided operations and compile for that target.
+                # Since we are compiling to .cubin files, only one architecture may be specified.
+                arch = max([op.arch for op in operations])
             compile_options = CompilationOptions(
-                self.default_compile_options, architectures, include_paths)
+                self.default_compile_options, arch, include_paths)
         # save the cubin
         operation_key = []
         operation_list = []
+        requires_nvcc_hostlib_compilation = False
         for operation in operations:
             # step 1: get kernel string as key
             key = operation.rt_module.emit() + operation.procedural_name() + self.backend
@@ -357,7 +374,7 @@ class ArtifactManager:
             compiled_kernel = self.compiled_cache_device.at(key)
 
             if compiled_kernel is None:
-                hit = self.load_operation(key)
+                hit = self.load_operation(key, getattr(operation.rt_module, 'extra_funcs', {}))
                 if hit:
                     compiled_kernel = self.compiled_cache_device.at(key)
                     assert compiled_kernel is not None
@@ -371,9 +388,18 @@ class ArtifactManager:
             else:
                 operation_list.append(operation.rt_module)
                 operation_key.append(key)
+
+            # Creating the Params structures for certain 3.0 kernels currently requires CUDA. For these cases, use NVCC to generate
+            # the PyCUTLASS host-side library. Otherwise, g++ will be used.
+            if isinstance(operation, pycutlass.gemm_operation.GemmOperationUniversal) and operation.api == pycutlass.library.ApiVersion.v3x:
+                if self.backend == "nvrtc":
+                    raise RuntimeError('CUTLASS 3 kernels currently require NVCC for compilation.')
+
+                requires_nvcc_hostlib_compilation = True
+
         if len(operation_list) > 0:
             cubin_image, host_lib, host_file = self.emit_compile_(
-                operation_list, compile_options)
+                operation_list, compile_options, requires_nvcc_hostlib_compilation)
 
             err, module = cuda.cuModuleLoadData(cubin_image)
             if err != cuda.CUresult.CUDA_SUCCESS:
@@ -417,9 +443,11 @@ class ArtifactManager:
                 op_attr.append(param_size)
 
                 if hasattr(operation, "extra_funcs"):
-                    for suffix in operation.extra_funcs:
+                    for suffix, ret_type in operation.extra_funcs.items():
                         func_name = operation.name() + '_' + suffix
                         func = getattr(host_lib, func_name)
+                        if ret_type is not None:
+                            func.restype = ret_type
                         setattr(operation, suffix, func)
                         compiled_host_fns[suffix] = func
                         op_attr.append(suffix)

@@ -184,7 +184,7 @@ class TestbedGrouped:
         arguments.sync()
 
         #
-        # Reference check - TODO: support caching results
+        # Reference check
         #
         alpha = self.compute_type(alpha).value()
         beta = self.compute_type(beta).value()

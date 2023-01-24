@@ -86,6 +86,7 @@ target_link_libraries(
   $<$<BOOL:${CUTLASS_ENABLE_CUBLAS}>:nvidia::cublas>
   $<$<BOOL:${CUTLASS_ENABLE_CUDNN}>:nvidia::cudnn>
   cudart
+  cuda_driver
   )
 
 install(

@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-
-  \brief Epilogue visitor operator performing a binary operation between two visitor nodes
+  
+  \brief A file contains the epilogue visitor Op with Binary op
 */
 
 #pragma once
@@ -84,7 +84,6 @@ public:
     /// Fragment type of accumulator
     using AccumulatorAccessType = Array<ElementAccumulator, kElementsPerAccess>;
 
-    /// Combination Op TODO: generalize this
     using BinaryOp = BinaryOp_<ElementCompute, kElementsPerAccess>;
 
     static_assert(kElementsPerAccess==VisitAccessTypeA::kElements, "kElementsPerAccess mismatches with Visitor A");

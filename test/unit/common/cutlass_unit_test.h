@@ -39,6 +39,17 @@
 
 #include <cstdlib>
 #include <string>
+
+#include <cuda_runtime_api.h>
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Gets a CUDA device
+cudaDeviceProp GetCudaDevice();
+
+/// Prints device properties
+std::ostream &operator<<(std::ostream &out, cudaDeviceProp const &device);
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Sets flags for Unit test
@@ -51,7 +62,6 @@ void FilterArchitecture();
 int CutlassUnitTestProblemCount();
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
 
 // active test macro
 #define CUTLASS_TEST_LEVEL_ACTIVE(LEVEL,NAME_STATIC,NAME_DYNAMIC,...) \
@@ -78,3 +88,15 @@ int CutlassUnitTestProblemCount();
 #if !defined(CUTLASS_TEST_UNIT_ENABLE_WARNINGS)
 #define CUTLASS_TEST_UNIT_ENABLE_WARNINGS false
 #endif
+
+#if (__CUDACC_VER_MAJOR__ >= 12)
+  #define CUDA_12_0_SM90_FEATURES_SUPPORTED true
+#else
+  #define CUDA_12_0_SM90_FEATURES_SUPPORTED false
+#endif
+
+#include <cutlass/cutlass.h>
+#include <cutlass/numeric_types.h>
+#include <cutlass/trace.h>
+
+/////////////////////////////////////////////////////////////////////////////////////////////////

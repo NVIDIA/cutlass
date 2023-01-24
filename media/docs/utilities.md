@@ -2,6 +2,13 @@
 
 [README](/README.md#documentation) > **CUTLASS Utilities**
 
+Note: This document discusses utilities commonly used with code that targets CUTLASS 2.x.
+Although CUTLASS 3.0's primary entry point APIs do not transact in these `cutlass::*` tensor types anymore,
+users can still find them convenient for managing allocations with trivial affine layouts.
+For more advanced host side tensor management, [`cute::Tensor`](/media/docs/cute/03_tensor.md)s
+can be used on either host or device for any memory space and full expressive power of
+[`cute::Layout`](/media/docs/cute/01_layout.md)s.
+
 # CUTLASS Utilities
 
 CUTLASS utilities are additional template classes that facilitate recurring tasks. These are

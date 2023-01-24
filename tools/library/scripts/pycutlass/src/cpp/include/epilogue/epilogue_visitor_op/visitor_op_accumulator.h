@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-
-  \brief Epilogue visitor operation that simply returns the accumulator
+  
+  \brief A file contains the epilogue visitor Op with accumulator
 */
 
 #pragma once

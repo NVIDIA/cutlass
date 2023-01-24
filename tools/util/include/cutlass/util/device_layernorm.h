@@ -456,7 +456,7 @@ void layernorm(cutlass::MatrixCoord tensor_size,
     block.x = 1024;
   }
   // TODO : There should be better configs for different cases, we only use several samples to show how to use here
-  // TODO : using registers to store values locally can reduce the ldgs from global memory and speedup the kernels.
+  // TODO : using registers to store values locally can reduce the loads from global memory and speedup the kernels.
   if ((n % 4 == 0) && (n >= 128) && (n <= 4096)) {
     block.x = (n/4 + 31)/32*32;
     if (std::is_same<T, float>::value) {

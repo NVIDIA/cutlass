@@ -63,6 +63,9 @@ template <typename Gemm>
 struct TestbedComplex : public Testbed<Gemm> {
 
   using Base = Testbed<Gemm>;
+  using ElementA = typename Gemm::ElementA;
+  using ElementB = typename Gemm::ElementB;
+  using ElementC = typename Gemm::ElementC;
   using ElementAccumulator = typename Gemm::ElementAccumulator;
   using ElementCompute = typename Gemm::GemmKernel::Epilogue::OutputOp::ElementCompute;
 
@@ -131,7 +134,7 @@ struct TestbedComplex : public Testbed<Gemm> {
     if (properties.sharedMemPerBlockOptin < smem_size) {
     	return false;
     }
-    
+
     return true;
   }
 

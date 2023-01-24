@@ -45,5 +45,6 @@ target_link_libraries(
   PRIVATE
   cutlass_lib
   cutlass_tools_util_includes
+  cuda
 )
 

@@ -384,7 +384,7 @@ class MmaPipelinedFromSharedMemory : public MmaBaseFromSharedMemory<
   // but not supported as it worsens perf: older gpus < sm80 don't
   // support async tranfers and have to waste registers
   CUTLASS_DEVICE
-  bool set_prologue_done(bool value) {}
+  void set_prologue_done(bool value) {}
   CUTLASS_DEVICE
   static void prologue(
       typename Base::SharedStorage& shared_storage,
@@ -695,7 +695,7 @@ class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
   }
 
   CUTLASS_DEVICE
-  bool set_prologue_done(bool value) {
+  void set_prologue_done(bool value) {
     prologue_done_ = value;
   }
 

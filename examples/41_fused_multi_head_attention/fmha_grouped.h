@@ -180,9 +180,9 @@ public:
 
     /// Default ctor
     CUTLASS_HOST_DEVICE
-    Arguments(): 
+    Arguments():
       problem_count(0),
-      threadblock_count(0), 
+      threadblock_count(0),
       ptr_Q(nullptr),
       ptr_K(nullptr),
       ptr_P(nullptr),
@@ -201,7 +201,7 @@ public:
 
     /// Ctor
     CUTLASS_HOST_DEVICE
-    Arguments(    
+    Arguments(
       GemmCoord *problem_sizes0,
       GemmCoord *problem_sizes1,
       int problem_count,
@@ -219,7 +219,7 @@ public:
       typename LayoutO::Stride::LongIndex *ldo,
       bool causal,
       GemmCoord *host_problem_sizes=nullptr
-    ): 
+    ):
       problem_sizes0(problem_sizes0),
       problem_sizes1(problem_sizes1),
       problem_count(problem_count),
@@ -311,7 +311,7 @@ public:
       ldv(args.ldv),
       ldo(args.ldo),
       causal(args.causal)
-    { 
+    {
 
     }
 
@@ -464,7 +464,7 @@ public:
   void operator()(Params const &params, SharedStorage &shared_storage) {
     auto& m_prime = shared_storage.m_prime;
     auto& s_prime = shared_storage.s_prime;
-    auto& si = shared_storage.after_mm0.si;
+    [[maybe_unused]] auto& si = shared_storage.after_mm0.si;
     auto& mi = shared_storage.mi;
 
     ProblemVisitor problem_visitor(

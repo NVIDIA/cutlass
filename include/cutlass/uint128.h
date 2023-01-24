@@ -54,7 +54,7 @@ namespace cutlass {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Optionally enable GCC's built-in type
-#if (defined(__x86_64) || defined (__aarch64__)) && !defined(__CUDA_ARCH__) && defined(__GNUC__)
+#if defined(__x86_64) && !defined(__CUDA_ARCH__) && defined(__GNUC__)
 #define CUTLASS_UINT128_NATIVE
 #elif defined(_MSC_VER) && defined(_M_AMD64) && !defined(__CUDA_ARCH__)
 #define CUTLASS_INT128_ARITHMETIC
@@ -71,7 +71,7 @@ namespace cutlass {
 struct uint128_t {
 
   /// Size of one part of the uint's storage in bits
-  int const kPartSize = sizeof_bits<uint64_t>::value;
+  static constexpr int kPartSize = sizeof_bits<uint64_t>::value;
 
   struct hilo {
     uint64_t lo;
@@ -158,7 +158,7 @@ struct uint128_t {
   /// Multiply by unsigned 64b integer yielding 128b integer
   CUTLASS_HOST_DEVICE
   uint128_t operator*(uint64_t const &rhs) const {
-    uint128_t y;
+    uint128_t y{};
 #if defined(CUTLASS_UINT128_NATIVE)
     y.native = native * rhs;
 #elif defined(CUTLASS_INT128_ARITHMETIC)

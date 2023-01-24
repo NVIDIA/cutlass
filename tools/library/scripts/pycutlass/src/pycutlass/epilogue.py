@@ -111,6 +111,7 @@ class LinearCombination(EpilogueFunctorBase):
         self.element_output = element_output
         self.element_accumulator = element_accumulator
         self.element_epilogue = element_epilogue
+        self.epilogue_vector_length = epilogue_vector_length
 
         self.template_arguments = [
             DataTypeTag[element_output], str(epilogue_vector_length),

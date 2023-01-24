@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-
-  \brief Unary operations to be used within the epilogue visitor model.
+  
+  \brief A file contains the unary ops
 */
 
 #pragma once

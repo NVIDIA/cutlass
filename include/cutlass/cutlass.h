@@ -72,20 +72,20 @@ CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &)
 
 #include <assert.h>
 
-#if defined(_MSC_VER)
-  #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __FUNCSIG__)
-#else
-  #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __PRETTY_FUNCTION__)
-#endif
+  #if defined(__CUDA_ARCH__)
+    #if defined(_MSC_VER)
+      #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __FUNCSIG__); asm volatile ("brkpt;\n"); }
+    #else
+      #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __PRETTY_FUNCTION__); asm volatile ("brkpt;\n"); }
+    #endif
 
-#else
-
-#if defined(_MSC_VER)
-  #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __FUNCSIG__)
-#else
-  #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __PRETTY_FUNCTION__)
-#endif
-
+  #else
+    #if defined(_MSC_VER)
+      #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __FUNCSIG__)
+    #else
+      #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __PRETTY_FUNCTION__)
+    #endif
+  #endif
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -181,10 +181,11 @@ static char const* cutlassGetStatusString(cutlass::Status status) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static const int NUM_THREADS_PER_WARP = 32;
-static const int NUM_THREADS_PER_HALF_WARP = NUM_THREADS_PER_WARP / 2;
-static const int NUM_THREADS_PER_QUAD = 4;
-static const int NUM_THREADS_PER_QUAD_PAIR = NUM_THREADS_PER_QUAD * 2;
+static const int NumThreadsPerWarp = 32;
+static const int NumThreadsPerWarpGroup = 128;
+static const int NumThreadsPerHalfWarp = NumThreadsPerWarp / 2;
+static const int NumThreadsPerQuad = 4;
+static const int NumThreadsPerQuadPair = NumThreadsPerQuad * 2;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -194,6 +195,28 @@ CUTLASS_HOST_DEVICE bool thread0() {
     return (!threadIdx.x && !threadIdx.y && !threadIdx.z) && (!blockIdx.x && !blockIdx.y && !blockIdx.z);
   #else
     return false;
+  #endif
+}
+
+/// Returns a warp-uniform value indicating the canonical warp index of the calling threads.
+/// Threads within the warp must be converged.
+CUTLASS_DEVICE
+int canonical_warp_idx() { 
+  #if defined(__CUDA_ARCH__)
+    return __shfl_sync(0xffffffff, threadIdx.x / NumThreadsPerWarp, 0);
+  #else
+    return 0;
+  #endif
+}
+
+/// Returns a warp-uniform value indicating the canonical warp group index of the calling threads.
+/// Threads within the warp must be converged.
+CUTLASS_DEVICE
+int canonical_warp_group_idx() {
+  #if defined(__CUDA_ARCH__)
+    return __shfl_sync(0xffffffff, threadIdx.x / NumThreadsPerWarpGroup, 0);
+  #else
+    return 0;
   #endif
 }
 

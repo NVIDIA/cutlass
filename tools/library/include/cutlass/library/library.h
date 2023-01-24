@@ -354,6 +354,9 @@ struct TileDescription {
   /// Minimum compute capability (e.g. 70, 75) of a device eligible to run the operation.
   int maximum_compute_capability;
 
+  /// Describes the shape of a cluster (in blocks)
+  cutlass::gemm::GemmCoord cluster_shape;
+
   //
   // Methods
   //
@@ -364,14 +367,16 @@ struct TileDescription {
     cutlass::gemm::GemmCoord warp_count = cutlass::gemm::GemmCoord(),
     MathInstructionDescription math_instruction = MathInstructionDescription(),
     int minimum_compute_capability = 0,
-    int maximum_compute_capability = 0
+    int maximum_compute_capability = 0,
+    cutlass::gemm::GemmCoord cluster_shape = cutlass::gemm::GemmCoord(1,1,1)
   ):
     threadblock_shape(threadblock_shape), 
     threadblock_stages(threadblock_stages), 
     warp_count(warp_count),
     math_instruction(math_instruction),
     minimum_compute_capability(minimum_compute_capability),
-    maximum_compute_capability(maximum_compute_capability) { }
+    maximum_compute_capability(maximum_compute_capability),
+    cluster_shape(cluster_shape) { }
 
   // Equality operator
   inline
@@ -991,6 +996,9 @@ struct GemmUniversalConfiguration {
 };
 
 struct GemmUniversalArguments {
+  // NOTE: these are replicated for 3.0 interfaces 
+  gemm::GemmCoord problem_size;
+  int batch_count;
 
   void const *A;
   void const *B;
@@ -1000,6 +1008,12 @@ struct GemmUniversalArguments {
   void const *alpha;
   void const *beta;
   ScalarPointerMode pointer_mode;
+
+  // NOTE: these are replicated for 3.0 interfaces
+  int64_t lda;
+  int64_t ldb;
+  int64_t ldc;
+  int64_t ldd;
 
   int64_t batch_stride_A;
   int64_t batch_stride_B;

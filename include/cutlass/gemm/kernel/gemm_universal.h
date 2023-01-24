@@ -42,6 +42,8 @@
 #include "cutlass/matrix_coord.h"
 #include "cutlass/complex.h"
 #include "cutlass/semaphore.h"
+#include "cutlass/gemm/kernel/gemm_universal.hpp"
+
 #include "cutlass/layout/matrix.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/kernel/params_universal_base.h"
@@ -61,7 +63,15 @@ template <
   typename Epilogue_,             ///! Epilogue
   typename ThreadblockSwizzle_    ///! Threadblock swizzling function
 >
-struct GemmUniversal {
+class GemmUniversal<
+  Mma_,
+  Epilogue_,
+  ThreadblockSwizzle_,
+  void,
+  // 3.x kernels use the first template argument to define the ProblemShape tuple
+  // We use this invariant to SFINAE dispatch against either the 2.x API or the 3.x API
+  std::enable_if_t<not cute::is_tuple<Mma_>::value>
+> {
 public:
 
   using Mma = Mma_;
@@ -528,7 +538,7 @@ public:
 
     // Broadcast the warp_id computed by lane 0 to ensure dependent code
     // is compiled as warp-uniform.
-    int warp_idx = __shfl_sync(0xffffffff, threadIdx.x / 32, 0);
+    int warp_idx = canonical_warp_idx();
 
     int lane_idx = threadIdx.x % 32;
 

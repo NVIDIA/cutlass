@@ -265,15 +265,6 @@ class Conv2dLauncher:
         
         flops_total_ = flops_mainloop_ + flops_epilogue_
         
-        # TODO complex-value support
-        # switch (operation_desc.tile_description.math_instruction.math_operation) {
-        # case library::MathOperationID::kMultiplyAddComplex:
-        #     flops_total_ *=4;
-        #     break;
-
-        # default: break;
-        # }
-
         return flops_total_
 
 
@@ -511,9 +502,8 @@ class Conv2dLauncher:
 # (conv_blacklist_sizes)
 ############################################################################################################
 
-def test_all_conv2d(operation: Conv2dOperation, conv_test_sizes = [], interleaved=False):  # TODO: conv_test_sizes and conv_blacklist_sizes
+def test_all_conv2d(operation: Conv2dOperation, conv_test_sizes = [], interleaved=False):
     passed = True
-
     #
     # Testbed object
     #
@@ -529,8 +519,6 @@ def test_all_conv2d(operation: Conv2dOperation, conv_test_sizes = [], interleave
     # Vector of conv2d problem sizes to avoid duplicate runs
     conv_tested_sizes = []
 
-    # TODO: include resnet 50 sizes, user sepecified sizes, and rigorous sizes
-    
     # Flatten 2D problem_vectors into a 1D problem sizes
     problem_sizes = conv_problems.conv2d_default_sizes
     
@@ -539,7 +527,6 @@ def test_all_conv2d(operation: Conv2dOperation, conv_test_sizes = [], interleave
     # Sweep conv2d problem sizes (split-k-mode=kSerial, split-k-slices=1, alpha=1.0, beta=0.0)
     for conv_problem in problem_sizes:
 
-        # TODO: skip blacklist problem sizes
         if conv_problem in conv_tested_sizes:
             continue
             
@@ -585,9 +572,8 @@ def test_all_conv2d(operation: Conv2dOperation, conv_test_sizes = [], interleave
 
         passed = testbed.run(conv_problem)
 
-        # if not passed: return False
-
-        # TODO: If CUTLASS_UNIT_TEST_PROBLEM_COUNT is set reduce the the number of tested problem counts
+        if not passed:
+            return False
 
     if interleaved:
         return True

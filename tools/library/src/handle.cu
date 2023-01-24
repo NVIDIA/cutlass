@@ -622,6 +622,8 @@ Status Handle::gemm_universal(
   char host_workspace[kHostWorkspaceSize];
 
   GemmUniversalArguments arguments{
+    {M, N, K},
+    batch_count,
     ptr_A,
     ptr_B,
     ptr_C,
@@ -629,6 +631,10 @@ Status Handle::gemm_universal(
     alpha,
     beta,
     scalar_pointer_mode_,
+    lda,
+    ldb,
+    ldc,
+    ldd,
     batch_stride_A,
     batch_stride_B,
     batch_stride_C,

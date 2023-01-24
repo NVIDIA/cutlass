@@ -152,9 +152,7 @@ TEST(NumericConversion, f32_to_fe5m2_rn_array) {
   int const kN = 27;
   using Source = float;
   using Destination = cutlass::float_e5m2_t;
-
   test::core::kernel::run_test<Destination, Source, kN>();
-
 }
 
 TEST(NumericConversion, f16_to_fe4m3_rn) {
@@ -250,16 +248,19 @@ TEST(NumericConversion, fe4m3_to_f32_rn) {
   test::core::kernel::run_test<Destination, Source, kN>();
 }
 
-TEST(NumericConversion, fe4m3_to_f32_array) {
-  int const kN = 27;
-  using Source = cutlass::float_e4m3_t;
-  using Destination = float;
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+TEST(NumericConversion, f32x8_to_s8x8_rn) {
+
+  int const kN = 8;
+  using Source = float;
+  using Destination = int8_t;
   test::core::kernel::run_test<Destination, Source, kN>();
 }
 
-TEST(NumericConversion, fe5m2_to_f32_rn) {
-  int const kN = 1;
-  using Source = cutlass::float_e5m2_t;
+TEST(NumericConversion, fe4m3_to_f32_array) {
+  int const kN = 27;
+  using Source = cutlass::float_e4m3_t;
   using Destination = float;
   test::core::kernel::run_test<Destination, Source, kN>();
 }
@@ -325,38 +326,6 @@ TEST(NumericConversion, fe5m2_to_bf16_array) {
   using Source = cutlass::float_e5m2_t;
   using Destination = cutlass::bfloat16_t;
   test::core::kernel::run_test<Destination, Source, kN>();
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-TEST(NumericConversion, f32x8_to_s8x8_rn) {
-
-  int const kN = 8;
-  using Source = float;
-  using Destination = int8_t;
-
-  dim3 grid(1, 1);
-  dim3 block(1, 1);
-
-  cutlass::HostTensor<Destination, cutlass::layout::RowMajor> destination({1, kN});
-  cutlass::HostTensor<Source, cutlass::layout::RowMajor> source({1, kN});
-
-  for (int i = 0; i < kN; ++i) {
-    source.host_data()[i] = float(i);
-  }
-
-  source.sync_device();
-
-  test::core::kernel::convert<Destination, Source, kN><<< grid, block >>>(
-    reinterpret_cast<cutlass::Array<Destination, kN> *>(destination.device_data()),
-    reinterpret_cast<cutlass::Array<Source, kN> const *>(source.device_data())
-  );
-
-  destination.sync_host();
-
-  for (int i = 0; i < kN; ++i) {
-    EXPECT_TRUE(float(destination.host_data()[i]) == source.host_data()[i]);
-  }
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

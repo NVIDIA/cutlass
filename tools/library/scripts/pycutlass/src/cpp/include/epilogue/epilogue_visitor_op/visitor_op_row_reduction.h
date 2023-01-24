@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-
-  \brief Epilogue visitor operation that performs a column-wise reduction within a threadblock
+  
+  \brief A file contains the epilogue visitor Op with reduction over rows in CTA
 */
 
 #pragma once
@@ -69,7 +69,6 @@ public:
 
     static int const kElementsPerAccess = OutputTileIterator::kElementsPerAccess;
 
-    // TODO: generalize the reduction op
     using ReductionOp = cutlass::plus<Array<ElementReductionAccumulator, kElementsPerAccess>>;
     using ReductionOpScalar = cutlass::plus<ElementReductionAccumulator>;
     using ElementOutput = typename OutputTileIterator::Element;

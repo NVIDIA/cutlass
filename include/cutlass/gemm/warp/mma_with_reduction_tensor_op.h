@@ -44,7 +44,7 @@
 #include "cutlass/matrix_shape.h"
 
 #include "cutlass/arch/memory_sm75.h"
-#include "cutlass/arch/mma_sm75.h" 
+#include "cutlass/arch/mma_sm75.h"
 #include "cutlass/arch/mma_sm80.h"
 
 #include "cutlass/gemm/gemm.h"
@@ -120,9 +120,9 @@ public:
   /// Underlying matrix multiply operator (concept: arch::Mma)
   using ArchMmaOperator = typename Policy::Operator;
 
-  /// Indicates math operator 
+  /// Indicates math operator
   using MathOperator = typename ArchMmaOperator::Operator;
-  
+
   /// Architecture tag from underlying instruction
   using ArchTag = typename ArchMmaOperator::ArchTag;
 
@@ -223,9 +223,9 @@ public:
   /// Performs a warp-level matrix multiply-accumulate operation
   CUTLASS_DEVICE
   void operator()(
-    FragmentC &D, 
-    TransformedFragmentA const &A, 
-    TransformedFragmentB const &B, 
+    FragmentC &D,
+    TransformedFragmentA const &A,
+    TransformedFragmentB const &B,
     FragmentC const &C,
     FragmentReduction &gemm_k_reduction
   ) const {
@@ -236,9 +236,9 @@ public:
 
     D = C;
 
-    MmaOperandA const *ptr_A = reinterpret_cast<MmaOperandA const *>(&A);
-    MmaOperandB const *ptr_B = reinterpret_cast<MmaOperandB const *>(&B);
-    MmaOperandC *ptr_D = reinterpret_cast<MmaOperandC *>(&D);
+    [[maybe_unused]] MmaOperandA const *ptr_A = reinterpret_cast<MmaOperandA const *>(&A);
+    [[maybe_unused]] MmaOperandB const *ptr_B = reinterpret_cast<MmaOperandB const *>(&B);
+    [[maybe_unused]] MmaOperandC *ptr_D = reinterpret_cast<MmaOperandC *>(&D);
 
     #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 800)
       assert(0);
@@ -258,7 +258,7 @@ public:
               ptr_D[m + n_serpentine * MmaIterations::kRow]);
 
           if (!kReduceKForA && m == 0) {
-            #if 0 
+            #if 0
             gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4]);
             gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4 + 1]);
             gemm_k_reduction[n_serpentine] += float(B[n_serpentine * 4 + 2]);
@@ -306,12 +306,12 @@ public:
           }
 
           if (kReduceKForA && (n == 0)) {
-            #if 0 
+            #if 0
             gemm_k_reduction[m * 2] += float(A[m * 8]);
             gemm_k_reduction[m * 2] += float(A[m * 8 + 1]);
             gemm_k_reduction[m * 2] += float(A[m * 8 + 4]);
             gemm_k_reduction[m * 2] += float(A[m * 8 + 5]);
-  
+
             gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 2]);
             gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 3]);
             gemm_k_reduction[m * 2 + 1] += float(A[m * 8 + 6]);
@@ -411,9 +411,9 @@ public:
       Array<typename ArchMmaOperator::ElementB, FragmentB::kElements / 2> *
           ptr_dst_B = reinterpret_cast<Array<typename ArchMmaOperator::ElementB,
                                              FragmentB::kElements / 2> *>(&dst_B);
-  
+
       dst_A = convert_A(A);
-  
+
       ptr_dst_B[0] = convert_B(ptr_B[0]);
       ptr_dst_B[1] = convert_B(ptr_B[1]);
 
@@ -429,9 +429,9 @@ public:
       Array<typename ArchMmaOperator::ElementA, FragmentA::kElements / 2> *
           ptr_dst_A = reinterpret_cast<Array<typename ArchMmaOperator::ElementA,
                                              FragmentA::kElements / 2> *>(&dst_A);
-  
+
       dst_B = convert_B(B);
-  
+
       ptr_dst_A[0] = convert_A(ptr_A[0]);
       ptr_dst_A[1] = convert_A(ptr_A[1]);
     #else
