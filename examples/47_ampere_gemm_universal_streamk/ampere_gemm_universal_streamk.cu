@@ -34,7 +34,7 @@
  "classic data-parallel" and "Split-K" decompositions.
 
  For more details regarding the Stream-K method, see "Stream-K: Work-centric Parallel Decomposition
- for Dense Matrix-Matrix Multiplication on the GPU" (https://arxiv.org/abs/2301.03598) 
+ for Dense Matrix-Matrix Multiplication on the GPU" (https://arxiv.org/abs/2301.03598)
 
  Requires NVIDIA Ampere or newer device (SM80+).
 

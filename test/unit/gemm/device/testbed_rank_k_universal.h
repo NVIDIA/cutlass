@@ -63,6 +63,8 @@ namespace device {
 template <typename RankK>
 struct TestbedRank2KUniversal {
 
+  using ElementA = typename RankK::ElementA;
+  using ElementC = typename RankK::ElementC;
   using ElementAccumulator = typename RankK::ElementAccumulator;
   using ElementCompute = typename RankK::RankKkernel::Epilogue::OutputOp::ElementCompute;
 

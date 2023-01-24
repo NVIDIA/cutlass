@@ -2166,7 +2166,7 @@ struct Mma<
           "r"(C[0]), "r"(C[1]), "r"(C[2]), "r"(C[3]));
 
 #else
-
+    
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);

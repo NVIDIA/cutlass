@@ -47,7 +47,7 @@
 
 #include "testbed_rank2k_universal.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -131,4 +131,4 @@ TEST(SM90_Device_Syr2k_f64t_f64n_l_tensor_op_f64, 128x128x16_32x64x16) {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#endif // #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+#endif // #if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)

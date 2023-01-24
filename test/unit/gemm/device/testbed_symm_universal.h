@@ -64,6 +64,9 @@ namespace device {
 template <typename Symm>
 struct TestbedSymmUniversal {
 
+  using ElementA = typename Symm::ElementA;
+  using ElementB = typename Symm::ElementB;
+  using ElementC = typename Symm::ElementC;
   using ElementAccumulator = typename Symm::ElementAccumulator;
   using ElementCompute = typename Symm::SymmKernel::Epilogue::OutputOp::ElementCompute;
 

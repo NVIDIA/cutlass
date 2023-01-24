@@ -4,10 +4,10 @@
 
 # CUTLASS Terminology
 
-`AlignedBuffer<T, N>`: statically sized array type; union-safe, no construction guarantee for elements
+**cute::Layout**: A `cute::Layout` vocabulary type composed of the hierarchical `cute::Shape` and `cute::Stride`
+tuples that is used throughout CUTLASS 3.0 to represent and manipulate thread and data layouts. More details are included in the [CuTe specific tensor type documentation](/media/docs/cute/03_tensor.md).
 
-`Array<T, N>`: container for holding numeric types - handles bit packing for small numeric types (e.g. int4_t, uint4_t, bin1_t)
-  `sizeof(Array<T, N>)` - gives expected value in units of bytes with minimum storage of `1 B`: (sizeof_bits<T>::value * N) / 8
+**cute::Tensor**: A pointer backed by a `cute::Layout` used to represent a tensor. More details are included in the [CuTe specific tensor type documentation](/media/docs/cute/03_tensor.md).
 
 **Capacity**: (scalar) physical number of elements in memory required to store a multidimensional object; expressed as the type's LongIndex type
   - example: the capacity of a column-major matrix is `lda * N`
@@ -27,8 +27,6 @@
 **LongIndex**: signed integer representing offsets in memory; typically wider than Index type
 
 **Numeric Type**: a CUTLASS data type used to represent real-valued quantities; is trivially copyable.
-
-**Operator**: an object performing a computation on matrix or tensor objects. May be further refined by scope within the execution model hierarchy.
 
 **Pitch Linear**: linear memory allocation obtained from a user-defined 2-D size, which specifies the 
 contiguous and strided dimensions of a tile. 
@@ -61,16 +59,26 @@ contiguous and strided dimensions of a tile.
 
 **Tile**: partitions of a tensor that have constant extents and layout known at compile time
 
-**Tile Iterator**: abstraction for accessing and traversing a sequence of tiles in a tensor; CUTLASS specifies 
-  [formal concepts for tile iterators](tile_iterator_concept.md)
-
-**Thread Map**: abstraction for defining how threads are mapped to a given tile.
-
 **Trait**: characteristics of a fully-specialized type, typically used in metaprogramming reflection
 
 **View**: an object containing references to a data structure that it does not own; typically, construction of views is lightweight
 
 **Warp**: a collection of hardware threads executing in lock-step; warp-level operations typically rely on cooperation among the threads within the warp
+
+`AlignedBuffer<T, N>`: statically sized array type; union-safe, no construction guarantee for elements
+
+`Array<T, N>`: container for holding numeric types - handles bit packing for small numeric types (e.g. int4_t, uint4_t, bin1_t)
+  `sizeof(Array<T, N>)` - gives expected value in units of bytes with minimum storage of `1 B`: (sizeof_bits<T>::value * N) / 8
+
+**Operator**: an object performing a computation on matrix or tensor objects. May be further refined by scope within the execution model hierarchy. Deprecated starting CUTLASS 3.0,
+replaced by [MMA and Copy atoms from CuTe](/media/docs/cute/0t_mma_atom.md).
+
+**Tile Iterator**: abstraction for accessing and traversing a sequence of tiles in a tensor; CUTLASS specifies 
+  [formal concepts for tile iterators](tile_iterator_concept.md). Deprecated starting CUTLASS 3.0.
+  Replaced by `cute::Layout` in equivalent usage scenarios to represent data tensors.
+
+**Thread Map**: abstraction for defining how threads are mapped to a given tile. Deprecated starting CUTLASS 3.0.
+  Replaced by `cute::Layout` in equivalent usage scenarios to represent thread tensors.
 
 # Copyright
 

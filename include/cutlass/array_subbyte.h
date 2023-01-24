@@ -370,8 +370,6 @@ public:
 
     CUTLASS_HOST_DEVICE
     reverse_iterator(Storage *ptr, int idx = 0): ptr_(ptr), idx_(idx) { }
-
-    // TODO
   };
 
   /// Bidirectional constant iterator over elements
@@ -390,8 +388,6 @@ public:
 
     CUTLASS_HOST_DEVICE
     const_reverse_iterator(Storage const *ptr, int idx = 0): ptr_(ptr), idx_(idx) { }
-
-    // TODO
   };
 
 private:

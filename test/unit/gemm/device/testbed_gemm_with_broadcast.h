@@ -100,6 +100,8 @@ template <
 >
 struct TestbedGemmWithBroadcast {
 
+  using ElementA = typename Gemm::ElementA;
+  using ElementB = typename Gemm::ElementB;
   using OutputOp = typename Gemm::GemmKernel::Epilogue::OutputOp;
   using ElementC = typename Gemm::ElementC;
   using ElementAccumulator = typename Gemm::ElementAccumulator;

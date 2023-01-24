@@ -13,7 +13,7 @@ The CUTLASS Profiler may be compiled with:
 $ make cutlass_profiler -j
 ```
 
-To limit compilation time, only one tile size (typically 128x128) is instantiated for each data type, 
+To limit compilation time, only one tile size (typically 128x128) and threadblock cluster size (typically 2x1x1) is instantiated for each data type, 
 math instruction, and layout. To instantiate all sizes, set the following environment variable when running CMake from an 
 empty `build/` directory.
 ```bash
@@ -168,8 +168,8 @@ Example:
 The CUTLASS Profiler is capable of executing GEMM and Sparse GEMM problems.
 
 The CUTLASS Profiler can be built with cuBLAS enabled to use as a reference implementation. If CMake detects
-the cuBLASS library available in the system, it is included as a dependency. This may be explicitly overridden
-with CMake flag `CUTLASS_ENABLE_CUBLAS`. 
+the cuBLAS library available in the system, it is included as a dependency. This may be explicitly overridden
+with CMake flag `CUTLASS_ENABLE_CUBLAS`.
 
 ## GEMM Arguments
 
@@ -197,6 +197,9 @@ GEMM
   [int]       --cta_m,--threadblock-shape::m                    Threadblock shape in the M dimension.
   [int]       --cta_n,--threadblock-shape::n                    Threadblock shape in the N dimension.
   [int]       --cta_k,--threadblock-shape::k                    Threadblock shape in the K dimension.
+  [int]       --cluster_m,--cluster-shape-shape::m              Cluster shape in the M dimension.
+  [int]       --cluster_n,--cluster-shape-shape::n              Cluster shape in the N dimension.
+  [int]       --cluster_k,--cluster-shape-shape::k              Cluster shape in the K dimension.
   [int]       --stages,--threadblock-stages                     Number of stages of threadblock-scoped matrix multiply.
   [int]       --warps_m,--warp-count::m                         Number of warps within threadblock along the M dimension.
   [int]       --warps_n,--warp-count::n                         Number of warps within threadblock along the N dimension.
@@ -342,7 +345,50 @@ To faclitate generation of pivot tables and charts, additional columns may be pr
 $ ./tools/profiler/cutlass_profiler --kernels=cutlass_simt_sgemm_128x128_nn            \
                                     --m=3456 --n=4096 --k=8:4096:8 --output=report.csv \
                                     --tags=cutlass:2.2,date:2020-06-08
-```  
+```
+
+## CUTLASS 3.0 GEMM procedural names
+
+CUTLASS 3.0 introduces a new naming convention for GEMMs used by the profiler targeting the NVIDIA
+Hopper architecture and beyond so as to indicate new features of the kernel within the name
+(e.g., the cluster shape).
+
+To best illustrate this naming convention, we will walk through the meaning of each of the components
+in a GEMM kernel used by the profiler:
+```
+cutlass3x_sm90_tensorop_s64x128x16gemm_f16_f16_f32_f32_128x128x64_2x1x1_0_ntn_align8
+```
+
+The components within this name are as follows:
+
+* `cutlass3x`: indicates that the kernel was generated through the CUTLASS 3.0 API
+* `sm90`: indicates that the kernel targets NVIDIA GPUs with compute capability 90
+* `tensorop`: indicates that the kernel makes use of NVIDIA Tensor Cores
+(as opposed to `simt`, which indicates the use of "CUDA cores")
+* `s`: indicates that the Tensor Core instruction being used accumulates in single precision
+(as opposed to `h`, which indicates half precision)
+* `64x128x16gemm`: indicates that the shape of the Tensor Core instruction being used (MxNxK) is 64x128x16
+* `f16_f16_f32_f16`: indicates that the data types for operands A, B, and C are each `f16`
+(half precision) and that accumulation is performed using `f32` (single precision)
+* `128x128x64`: indicates that the thread block shape used in the GEMM (MxNxK) is 128x128x64
+* `2x1x1`: indicates that the cluster shape being used is 2x1x1
+* `0`: indicates that the kernel uses the CollectiveBuilder's automatic stage calculation to determine the
+number of pipeline stages in the kernel. Note that `0` does not mean that no stages are used. A nonzero value indicates that automatic stage calculation is not performed and indicates the number of pipeline stages to be used.
+This 0 is only added to the kernel's procedural name, the profiler will still report the actual stage count
+when printing the kernel argument details (`--stages=N`) and kernel discovery will still support filtering through the `--stages` argument.
+* `ntn`: indicates that the layouts for operands A, B, and C are column major ("n"; non-transposed),
+row major ("t"; transposed), and column major, respectively.
+* `align8`: indicates that the maximum alignment between operands A and B is 8.
+
+Note that in some special cases where the input A/B types do not match that of the MMA
+instruction's, the MMA facing input type is added to the instruction string as well.
+
+```
+cutlass3x_sm90_tensorop_s64x128x8tf32gemm_f32_f32_f32_f32_128x128x32_2x1x1_0_tnn_align4
+```
+
+* `s64x128x8tf32gemm`: indicates that the MMA consumes inputs in `tf32` format, and therefore
+the kernel performs rounding of the `f32` values in global memory while loading them into shared memory.
 
 # Convolution
 

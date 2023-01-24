@@ -46,7 +46,7 @@
 
 #include "testbed_rank_k_universal.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 // HERK operator on CUBLAS_OP_C (row-major + conj) input layouts
@@ -90,4 +90,4 @@ TEST(SM90_Device_Herk_cf64h_cf64n_l_tensor_op_f64, 64x64x16_32x32x16) {
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#endif // #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+#endif // #if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)

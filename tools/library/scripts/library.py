@@ -51,6 +51,8 @@ class DataType(enum.Enum):
   s16 = enum_auto()
   s32 = enum_auto()
   s64 = enum_auto()
+  e4m3 = enum_auto()
+  e5m2 = enum_auto()
   f16 = enum_auto()
   bf16 = enum_auto()
   f32 = enum_auto()
@@ -76,6 +78,8 @@ class DataType(enum.Enum):
 #
 ShortDataTypeNames = {
   DataType.s32: 'i',
+  DataType.e4m3: 'e4m3',
+  DataType.e5m2: 'e5m2',
   DataType.f16: 'h',
   DataType.f32: 's',
   DataType.f64: 'd',
@@ -96,6 +100,8 @@ DataTypeNames = {
   DataType.s16: "s16",
   DataType.s32: "s32",
   DataType.s64: "s64",
+  DataType.e4m3: 'e4m3',
+  DataType.e5m2: 'e5m2',
   DataType.f16: "f16",
   DataType.bf16: "bf16",
   DataType.f32: "f32",
@@ -130,6 +136,8 @@ DataTypeTag = {
   DataType.s16: "int16_t",
   DataType.s32: "int32_t",
   DataType.s64: "int64_t",
+  DataType.e4m3: 'cutlass::float_e4m3_t',
+  DataType.e5m2: 'cutlass::float_e5m2_t',
   DataType.f16: "cutlass::half_t",
   DataType.bf16: "cutlass::bfloat16_t",
   DataType.f32: "float",
@@ -164,6 +172,8 @@ DataTypeSize = {
   DataType.s16: 16,
   DataType.s32: 32,
   DataType.s64: 64,
+  DataType.e4m3: 8,
+  DataType.e5m2: 8,
   DataType.f16: 16,
   DataType.bf16: 16,
   DataType.f32: 32,
@@ -464,13 +474,15 @@ ArchitectureNames = {
   70: 'volta',
   75: 'turing',
   80: 'ampere',
+  89: 'ada',
+  90: 'hopper'
 }
 
 #
 SharedMemPerCC = {
-  70: 96,  #  96KB of SMEM
-  72: 96,  #  96KB of SMEM
-  75: 64,  #  64KB of SMEM
+  70:  96, #  96KB of SMEM
+  72:  96, #  96KB of SMEM
+  75:  64, #  64KB of SMEM
   80: 163, # 163KB of SMEM - 1KB reserved for the driver
   86:  99, #  99KB of SMEM - 1KB reserved for the driver
   87: 163, # 163KB of SMEM - 1KB reserved for the driver
@@ -501,6 +513,7 @@ class GemmKind(enum.Enum):
   Gemm = enum_auto()
   Sparse = enum_auto()
   Universal = enum_auto()
+  Universal3x = enum_auto()
   PlanarComplex = enum_auto()
   PlanarComplexArray = enum_auto()
   Grouped = enum_auto()
@@ -510,6 +523,7 @@ GemmKindNames = {
   GemmKind.Gemm: "gemm",
   GemmKind.Sparse: "spgemm",
   GemmKind.Universal: "gemm",
+  GemmKind.Universal3x: "gemm",
   GemmKind.PlanarComplex: "gemm_planar_complex",
   GemmKind.PlanarComplexArray: "gemm_planar_complex_array",
   GemmKind.Grouped: "gemm_grouped"
@@ -697,16 +711,60 @@ class MathInstruction:
 #
 class TileDescription:
 
-  def __init__(self, threadblock_shape, stages, warp_count, math_instruction, min_compute, max_compute):
+  def __init__(self, threadblock_shape, stages, warp_count, math_instruction, min_compute, max_compute, cluster_shape = [1,1,1]):
     self.threadblock_shape = threadblock_shape
     self.stages = stages
     self.warp_count = warp_count
     self.math_instruction = math_instruction
     self.minimum_compute_capability = min_compute
     self.maximum_compute_capability = max_compute
+    self.cluster_shape = cluster_shape
 
   def procedural_name(self):
-    return "%dx%d_%dx%d" % (self.threadblock_shape[0], self.threadblock_shape[1], self.threadblock_shape[2], self.stages)
+    if self.minimum_compute_capability >= 90:
+      return "{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{s}".format(
+        tbm = self.threadblock_shape[0],
+        tbn = self.threadblock_shape[1],
+        tbk = self.threadblock_shape[2],
+        cm = self.cluster_shape[0],
+        cn = self.cluster_shape[1],
+        ck = self.cluster_shape[2],
+        s = self.stages)
+    else:
+      return "%dx%d_%dx%d" % (self.threadblock_shape[0], self.threadblock_shape[1], self.threadblock_shape[2], self.stages)
+
+#
+class Direct2dConvFixedStrideDilationTileDescription:
+  def __init__(self, threadblock_output_shape, filter_shape, stages, stride, dilation, warp_count, math_instruction, min_compute, max_compute):
+    self.threadblock_shape = [threadblock_output_shape[0]*threadblock_output_shape[1]*threadblock_output_shape[2], threadblock_output_shape[3], filter_shape[0]*filter_shape[1]]
+    self.threadblock_output_shape = threadblock_output_shape
+    self.filter_shape = filter_shape
+    self.stages = stages
+    self.warp_count = warp_count
+    self.stride = stride
+    self.dilation =  dilation
+    self.math_instruction = math_instruction
+    self.minimum_compute_capability = min_compute
+    self.maximum_compute_capability = max_compute
+
+  def procedural_name(self):
+    str_name = "%dx%dx%d_%dx%dx%dx%d_%d_filter%dx%d" % (self.threadblock_shape[0], 
+                                      self.threadblock_shape[1], 
+                                      self.threadblock_shape[2],
+                                      self.threadblock_output_shape[0],
+                                      self.threadblock_output_shape[1],
+                                      self.threadblock_output_shape[2],
+                                      self.threadblock_output_shape[3],
+                                      self.stages, 
+                                      self.filter_shape[0], 
+                                      self.filter_shape[1])
+    # Fixed Strided and dilation
+    if self.stride != [-1, -1] and self.dilation != [-1, -1]:
+      str_name += "_stride%dx%d_dilation%dx%d" % (self.stride[0],
+                                                  self.stride[1],
+                                                  self.dilation[0],
+                                                  self.dilation[1])
+    return str_name
 
 #
 class Direct2dConvFixedStrideDilationTileDescription:

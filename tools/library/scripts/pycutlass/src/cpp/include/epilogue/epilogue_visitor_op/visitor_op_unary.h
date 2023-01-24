@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-
-  \brief Epilogue visitor operator performing a unary operation atop a visitor node
+  
+  \brief A file contains the epilogue visitor Op with Unary operation
 */
 
 #pragma once
@@ -79,7 +79,7 @@ public:
     /// Fragment type of accumulator
     using AccumulatorAccessType = Array<ElementAccumulator, kElementsPerAccess>;
 
-    /// Combination Op TODO: generalize this
+    /// Combination Op
     using UnaryOp = UnaryOp_<ElementCompute, kElementsPerAccess>;
 
     static_assert(kElementsPerAccess==VisitAccessTypeVisitor::kElements, "kElementsPerAccess mismatches with Visitor");

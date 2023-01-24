@@ -204,7 +204,10 @@ class Manifest:
     if self.args:
       self.kernel_filter = self.args.kernels
       self.curr_build_dir = args.curr_build_dir
+
       architectures = args.architectures.split(';') if len(args.architectures) else ['50',]
+      architectures = [x if x != '90a' else '90' for x in architectures]
+
       self.compute_capabilities = [int(x) for x in architectures]
     
       if args.filter_by_cc in ['false', 'False', '0']:
@@ -348,6 +351,8 @@ class Manifest:
 
       self.operations[operation.operation_kind][configuration_name].append(operation)
       self.operation_count += 1
+    else:
+      print("Culled {} from manifest".format(operation.procedural_name()))
   #
 
   #

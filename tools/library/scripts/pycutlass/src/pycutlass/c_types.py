@@ -33,8 +33,6 @@
 import ctypes
 from pycutlass.library import *
 
-# 12B
-
 
 class GemmCoord_(ctypes.Structure):
     _fields_ = [
@@ -48,10 +46,48 @@ class GemmCoord_(ctypes.Structure):
             setattr(self, field_name, getattr(gemm_coord, field_name)())
 
 
+class GemmCoordBatched_(ctypes.Structure):
+    """
+    Wrapper around a GemmCoord that also contains batch count. This is used for encoding
+    batched GEMM inputs to CUTLASS 3 GEMMs.
+    """
+    _fields_ = [
+        ("m", ctypes.c_int),
+        ("n", ctypes.c_int),
+        ("k", ctypes.c_int),
+        ("batch_count", ctypes.c_int)
+    ]
+
+    def __init__(self, gemm_coord, batch_count) -> None:
+        for field_name, _ in self._fields_[:-1]:
+            setattr(self, field_name, getattr(gemm_coord, field_name)())
+        setattr(self, "batch_count", batch_count)
+
+
 class MatrixCoord_(ctypes.Structure):
     _fields_ = [
         ("row", ctypes.c_int),
         ("column", ctypes.c_int)
+    ]
+
+
+class dim3_(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.c_int),
+        ("y", ctypes.c_int),
+        ("z", ctypes.c_int)
+    ]
+
+
+class StrideBatched_(ctypes.Structure):
+    """
+    CUTLASS 3.0 strides for operands contain one static dimension and two variable dimensions. The
+    variable dimensions represent the stride along non-unit-stride dimension of the row/column major
+    layout, and the batch stride. This structure encodes the two variable dimensions.
+    """
+    _fields_ = [
+        ("major_stride", ctypes.c_int64),
+        ("batch_stride", ctypes.c_int64)
     ]
 
 
@@ -61,6 +97,28 @@ dtype2ctype = {
     cutlass.float64: ctypes.c_double,
     cutlass.int32: ctypes.c_int32
 }
+
+
+def get_gemm_arguments_3x(epilogue_functor):
+
+    _EpilogueOutputOpParams = epilogue_functor.epilogue_type
+
+    class _GemmArguments(ctypes.Structure):
+        _fields_ = [
+            ("mode", ctypes.c_int),
+            ("problem_size", GemmCoordBatched_),
+            ("ptr_A", ctypes.c_void_p),
+            ("stride_A", StrideBatched_),
+            ("ptr_B", ctypes.c_void_p),
+            ("stride_B", StrideBatched_),
+            ("ptr_C", ctypes.c_void_p),
+            ("stride_C", StrideBatched_),
+            ("ptr_D", ctypes.c_void_p),
+            ("stride_D", StrideBatched_),
+            ("epilogue", _EpilogueOutputOpParams),
+        ]
+
+    return _GemmArguments, _EpilogueOutputOpParams    
 
 
 def get_gemm_arguments(epilogue_functor):
@@ -103,8 +161,6 @@ def get_gemm_arguments(epilogue_functor):
 # GEMM Grouped
 ###########################################################################################
 
-# include/cutlass/gemm/kernel/gemm_grouped.h
-
 def get_gemm_grouped_arguments(epilogue_functor):
     _EpilogueOutputOpParams = epilogue_functor.epilogue_type
 
@@ -131,12 +187,6 @@ def get_gemm_grouped_arguments(epilogue_functor):
 # Convolution2D
 ############################################################################################
 
-
-# We use the arguments as the interface
-
-
-# include/cutlass/conv/conv2d_problem_size.h
-# 64B
 class Conv2DProblemSize(ctypes.Structure):
     _fields_ = [
         ("N", ctypes.c_int),
@@ -164,8 +214,6 @@ class Conv2DProblemSize(ctypes.Structure):
             setattr(self, field_name, getattr(problem_size, field_name))
 
 
-# include/cutlass/layout/tensor.h
-# 12B
 class Layout4D(ctypes.Structure):
     _fields_ = [
         ("stride", ctypes.c_int * 3)
@@ -175,13 +223,7 @@ class Layout4D(ctypes.Structure):
         stride = tensor_ref.stride()
         setattr(self, "stride", (stride.at(0), stride.at(1), stride.at(2)))
 
-# TODO: Tensor 5-D takes ("stride", ctypes.c_int * 4)
 
-
-# include/cutlass/conv/threadblock/conv2d_dgrad_filter_tile_access_iterator_optimized.h
-# TensorRef is basically cutlass::TensorRef<Element, Layout>;
-# include/cutlass/tensor_ref.h
-# 24B
 class TensorRef_(ctypes.Structure):
     _fields_ = [
         ("ptr", ctypes.c_void_p),
@@ -199,9 +241,6 @@ class TensorRef2D_(ctypes.Structure):
         ("stride", ctypes.c_int)
     ]
 
-
-# include/cutlass/conv/kernel/implicit_gemm_convolution.h
-# split_k_mode: kNone: 0, kSerial: 1, kParallel: 2, kParallelSerial: 3, kInvalid: 4
 
 def get_conv2d_arguments(epilogue_functor):
     _EpilogueOutputOpParams = epilogue_functor.epilogue_type
@@ -223,7 +262,6 @@ def get_conv2d_arguments(epilogue_functor):
 ############################################################################################
 # Reduction
 ############################################################################################
-
 
 def get_reduction_params(epilogue_functor):
     _EpilogueOutputParams = epilogue_functor.epilogue_type

@@ -61,6 +61,7 @@ namespace device {
 
 template <typename Gemm, typename BinaryOp>
 struct GemmWithReductionReference {
+
   using ElementAccumulator = typename Gemm::ElementAccumulator;
   using ElementCompute = typename Gemm::GemmKernel::Epilogue::ElementCompute;
   using ElementC = typename Gemm::ElementC;
@@ -93,6 +94,9 @@ template <
 >
 struct TestbedGemmWithReduction {
 
+  using ElementA = typename Gemm::ElementA;
+  using ElementB = typename Gemm::ElementB;
+  using ElementC = typename Gemm::ElementC;
   using ElementAccumulator = typename Gemm::ElementAccumulator;
   using ElementT = typename Gemm::GemmKernel::Epilogue::ElementTensor;
 

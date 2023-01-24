@@ -31,6 +31,7 @@ from pycutlass.utils import *
 from pycutlass.frontend import *
 from pycutlass.reduction_operation import *
 from pycutlass.compiler import *
+from pycutlass.utils.device import device_cc
 
 # module-wide variables
 
@@ -39,6 +40,12 @@ this = sys.modules[__name__]
 
 # artifact manager
 this.compiler = ArtifactManager()
+
+try:
+    if not hasattr(this, 'DEVICE_CC') or this.DEVICE_CC is None:
+        this.DEVICE_CC = device_cc()
+except:
+    this.DEVICE_CC = None
 
 def get_memory_pool(init_pool_size=0, max_pool_size=2**34):
     this.memory_pool = PoolMemoryManager(

@@ -30,7 +30,7 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief 
+    \brief
 */
 
 #pragma once
@@ -139,8 +139,8 @@ public:
     //
     // Methods
     //
-    
-    Arguments(): 
+
+    Arguments():
       ptr_A(nullptr), ptr_B(nullptr), ptr_C(nullptr), ptr_D(nullptr),
       ptr_gather_A_indices(nullptr),
       ptr_gather_B_indices(nullptr),
@@ -169,8 +169,8 @@ public:
       int const *ptr_scatter_D_indices = nullptr
     ):
       UniversalArgumentsBase(mode, problem_size, batch_count, batch_stride_D),
-      epilogue_visitor(epilogue_visitor), 
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D), 
+      epilogue_visitor(epilogue_visitor),
+      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D),
       batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C),
       stride_a(stride_a), stride_b(stride_b), stride_c(stride_c), stride_d(stride_d),
       ptr_gather_A_indices(ptr_gather_A_indices), ptr_gather_B_indices(ptr_gather_B_indices),
@@ -205,8 +205,8 @@ public:
       int const *ptr_scatter_D_indices = nullptr
     ):
       UniversalArgumentsBase(mode, problem_size, batch_count, batch_stride_D),
-      epilogue_visitor(epilogue_visitor), 
-      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D), 
+      epilogue_visitor(epilogue_visitor),
+      ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D),
       batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C),
       lda(lda), ldb(ldb), ldc(ldc), ldd(ldd),
       ptr_gather_A_indices(ptr_gather_A_indices), ptr_gather_B_indices(ptr_gather_B_indices),
@@ -221,7 +221,7 @@ public:
     /// Returns arguments for the transposed problem
     Arguments transposed_problem() const {
       Arguments args(*this);
-      
+
       std::swap(args.problem_size.m(), args.problem_size.n());
       std::swap(args.ptr_A, args.ptr_B);
       std::swap(args.lda, args.ldb);
@@ -256,7 +256,7 @@ public:
     typename Mma::IteratorB::Params params_B;
     typename EpilogueVisitor::OutputTileIterator::Params params_C;
     typename EpilogueVisitor::OutputTileIterator::Params params_D;
-    
+
     typename EpilogueVisitor::Params epilogue_visitor;
 
     void * ptr_A;
@@ -325,7 +325,7 @@ public:
       batch_stride_C = args.batch_stride_C;
 
       epilogue_visitor = args.epilogue_visitor;
-      
+
       semaphore = static_cast<int *>(workspace);
       CUTLASS_TRACE_HOST("GemmUniversal::Params::update()");
     }
@@ -345,7 +345,7 @@ public:
   //
 
   CUTLASS_DEVICE
-  GemmUniversalwithEpilogueVisitor() { } 
+  GemmUniversalwithEpilogueVisitor() { }
 
   /// Determines whether kernel satisfies alignment
   static Status can_implement(
@@ -455,12 +455,12 @@ public:
     //
     // Fetch pointers based on mode.
     //
-    if (params.mode == GemmUniversalMode::kGemm || 
+    if (params.mode == GemmUniversalMode::kGemm ||
       params.mode == GemmUniversalMode::kGemmSplitKParallel) {
 
       if (threadblock_tile_offset.k() + 1 < params.grid_tiled_shape.k()) {
 
-        problem_size_k = (threadblock_tile_offset.k() + 1) * params.gemm_k_size; 
+        problem_size_k = (threadblock_tile_offset.k() + 1) * params.gemm_k_size;
       }
 
       offset_k = threadblock_tile_offset.k() * params.gemm_k_size;
@@ -529,10 +529,10 @@ public:
 
     // Compute threadblock-scoped matrix multiply-add
     mma(
-      gemm_k_iterations, 
-      accumulators, 
-      iterator_A, 
-      iterator_B, 
+      gemm_k_iterations,
+      accumulators,
+      iterator_A,
+      iterator_B,
       accumulators);
 
     //
@@ -555,30 +555,16 @@ public:
 
     int block_idx = threadblock_tile_offset.m() + threadblock_tile_offset.n() * params.grid_tiled_shape.m();
 
-    ElementC *ptr_C = static_cast<ElementC *>(params.ptr_C); 
+    ElementC *ptr_C = static_cast<ElementC *>(params.ptr_C);
     ElementC *ptr_D = static_cast<ElementC *>(params.ptr_D);
 
     //
     // Fetch pointers based on mode.
     //
-    
+
     // Construct the semaphore.
     Semaphore semaphore(params.semaphore + block_idx, thread_idx);
 
-    // if (params.mode == GemmUniversalMode::kGemm) {
-
-    //   // TODO: fix this order
-    //   // If performing a reduction via split-K, fetch the initial synchronization
-    //   if (params.grid_tiled_shape.k() > 1) {
-        
-    //     // Fetch the synchronization lock initially but do not block.
-    //     semaphore.fetch();
-
-    //     // Indicate which position in a serial reduction the output operator is currently updating
-    //     output_op.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
-    //   }
-    // }
-    
     // Tile iterator loading from source tensor.
 
     EpilogueVisitor epilogue_visitor(
@@ -590,9 +576,6 @@ public:
         params.problem_size.mn()
     );
 
-    // if (params.mode == GemmUniversalMode::kGemmSplitKParallel) {
-    //   ptr_D += threadblock_tile_offset.k() * params.batch_stride_D;
-    // }
     if (params.mode == GemmUniversalMode::kBatched || params.mode == GemmUniversalMode::kArray) {
       epilogue_visitor.set_batch_index(threadblock_tile_offset.k());
     }
@@ -605,25 +588,20 @@ public:
 
     // Wait on the semaphore - this latency may have been covered by iterator construction
     if (params.mode == GemmUniversalMode::kGemm && params.grid_tiled_shape.k() > 1) {
-        
-      // For subsequent threadblocks, the source matrix is held in the 'D' tensor.
-      // TODO: ???
-      // if (threadblock_tile_offset.k()) {
-      //   iterator_C = iterator_D;
-      // }
 
+      // For subsequent threadblocks, the source matrix is held in the 'D' tensor.
       semaphore.wait(threadblock_tile_offset.k());
     }
 
 
     // Execute the epilogue operator to update the destination tensor.
-    epilogue(epilogue_visitor, accumulators); 
-    
+    epilogue(epilogue_visitor, accumulators);
+
     //
     // Release the semaphore
     //
 
-    if (params.mode == GemmUniversalMode::kGemm && params.grid_tiled_shape.k() > 1) { 
+    if (params.mode == GemmUniversalMode::kGemm && params.grid_tiled_shape.k() > 1) {
 
       int lock = 0;
       if (params.grid_tiled_shape.k() == threadblock_tile_offset.k() + 1) {
@@ -635,7 +613,7 @@ public:
         // Otherwise, the semaphore is incremented
         lock = threadblock_tile_offset.k() + 1;
       }
-      
+
       semaphore.release(lock);
     }
   }

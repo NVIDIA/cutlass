@@ -4,12 +4,15 @@
 
 # Functionality
 
+Note : CUTLASS-3 requires users to use CUDA 11.4 or newer, and SM70 or newer, for the target toolkit and architecture, respectively.
+Please refer to the [Compatibility](/README.md#Compatibility) section for more details.
+
 - N - Column Major Matrix
 - T - Row Major matrix
-- {N,T} x {N,T} - All combinations, i.e. NN, NT, TN, TT
+- {N,T} x {N,T} - All combinations, i.e., NN, NT, TN, TT
 - [NHWC](/include/cutlass/layout/tensor.h#L63-206) - 4 dimension tensor used for convolution
 - [NCxHWx](/include/cutlass/layout/tensor.h#L290-395) - Interleaved 4 dimension tensor used for convolution
-- f - float point
+- f - floating point
 - s - signed int
 - b - bit
 - cf - complex float
@@ -22,42 +25,55 @@
 
 ## Device-level GEMM
 
-The following table summarizes device-level GEMM kernels in CUTLASS, organized by opcode class, data type, and layout.
+The following tables summarize device-level GEMM kernels in CUTLASS, organized by opcode class, data type, and layout.
 Hyperlinks to relevant unit tests demonstrate how specific template instances may be defined.
+
+### CUTLASS 3.x Kernels
 
 |**Opcode Class** | **Compute Capability** | **CUDA Toolkit** | **Data Type**                  | **Layouts**            | **Unit Test**    |
 |-----------------|------------------------|------------------|--------------------------------|------------------------|------------------|
-| **Simt**        | 50,60,61,70,75         |  9.2+            | `f32 * f32 + f32 => f32`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/simt_sgemm_nt_sm50.cu)                |
-| **Simt**        | 50,60,61,70,75         |  9.2+            | `f64 * f64 + f64 => f64`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/simt_dgemm_nt_sm50.cu)                |
-| **Simt**        | 60,61,70,75            |  9.2+            | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/simt_hgemm_nt_sm50.cu)                |
-| **Simt**        | 61,70,75               |  9.2+            | `s8 * s8 + s32 => {s32,s8}`    | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/simt_igemm_nt_sm50.cu)              |
-| **WmmaTensorOp**    | 70                 |  9.2+            | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16t_f16t_f16n_wmma_tensor_op_f16_sm70.cu)     |
-| **WmmaTensorOp**    | 70                 |  9.2+            | `f16 * f16 + f32 => {f16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16t_f16t_f16n_wmma_tensor_op_f32_sm70.cu)                |
-| **WmmaTensorOp**    | 75                 |  10.0+           | `s8 * s8 + s32 => {s32, s8}`   | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_s8t_s8n_s8t_wmma_tensor_op_s32_sm72.cu) |
-| **WmmaTensorOp**    | 75                 |  10.0+           | `s4 * s4 + s32 => {s32, s4}`   | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_s4t_s4n_s4t_wmma_tensor_op_s32_sm75.cu)                |
-| **WmmaTensorOp**    | 75                 |  10.0+           | `b1 ^ b1 + s32 => {s32, b1}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_b1t_b1n_b1t_wmma_tensor_op_s32_sm75.cu)                |
-| **TensorOp**        | 70                 |  10.1+           | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_volta_tensor_op_f16_sm70.cu)                |
-| **TensorOp**        | 70                 |  10.1+           | `f16 * f16 + f32 => {f16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_volta_tensor_op_f32_sm70.cu)                |
-| **TensorOp**        | 75                 |  10.2+           | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_tensor_op_f16_sm75.cu) |
-| **TensorOp**        | 75                 |  10.2+           | `f16 * f16 + f32 => {f16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_tensor_op_f32_sm75.cu) |
-| **TensorOp**        | 75                 |  10.2+           | `s8 * s8 + s32 => {s32, s8}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s8t_s8n_s32n_tensor_op_s32_sm75.cu) |
-| **TensorOp**        | 75                 |  10.2+           | `s4 * s4 + s32 => {s32, s4}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s4t_s4n_s32n_tensor_op_s32_sm75.cu) |
-| **TensorOp**        | 75                 |  10.2+           | `b1 ^ b1 + s32 => {s32, b1}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_b1t_b1n_s32n_tensor_op_s32_sm75.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_tensor_op_f16_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `f16 * f16 + f32 => {f16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_tensor_op_f32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `bf16 * bf16 + f32 => {bf16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_bf16n_bf16t_bf16t_tensor_op_f32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `tf32 * tf32 + f32 => f32`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f32n_f32t_f32t_tensor_op_f32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `s8 * s8 + s32 => {s32, s8}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s8t_s8n_s32n_tensor_op_s32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `s4 * s4 + s32 => {s32, s4}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s4t_s4n_s32n_tensor_op_s32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `b1 ^ b1 + s32 => {s32, b1}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_b1t_b1n_s32n_tensor_op_s32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `f64 * f64 + f64 => f64`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f64n_f64t_f64t_tensor_op_f64_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `cf32 * cf32 + cf32 => cf32`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_cf32n_cf32t_cf32t_tensor_op_tf32_f32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `cf64 * cf64 + cf64 => cf64`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu), [Gaussian 3m](/test/unit/gemm/device/gemm_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu) |
-| **SpTensorOp**      | 80                 |  11.1+           | `f16 * f16 + f32 => {f16, f32}`    | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu) |
-| **SpTensorOp**      | 80                 |  11.1+           | `bf16 * bf16 + f32 => {bf16, f32}` | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu) |
-| **SpTensorOp**      | 80                 |  11.1+           | `tf32 * tf32 + f32 => f32`         | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_f32n_f32n_f32t_tensor_op_f32_sparse_sm80.cu) |
-| **SpTensorOp**      | 80                 |  11.1+           | `s8 * s8 + s32 => {s8, s32}`       | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_s8t_s8n_s32t_tensor_op_s32_sparse_sm80.cu) |
-| **SpTensorOp**      | 80                 |  11.1+           | `s4 * s4 + s32 => {s4, s32}`       | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_s4t_s4n_s32t_tensor_op_s32_sparse_sm80.cu) |
+| **TensorOp**        | 90a                 |  12.0+           | `f16 * f16 + { f16, f32 } => { f16, f32 }`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/sm90_gemm_f16_f16_f16_tensor_op_f32_cluster_warpspecialized.cu) |
+| **TensorOp**        | 90a                 |  12.0+           | `bf16 * bf16 + { f16, f32 } => { bf16, f32 }`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/sm90_gemm_bf16_bf16_bf16_tensor_op_f32.cu) |
+| **TensorOp**        | 90a                 |  12.0+           | `{f32, tf32} * {f32, tf32} + f32 => f32`| { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/sm90_gemm_f32_f32_f32_tensor_op_f32.cu) |
+| **TensorOp**        | 90a                 |  12.0+           | `s8 * s8 + s32 => {s32, s8}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/sm90_gemm_s8_s8_s8_tensor_op_s32.cu) |
+ 
+
+### CUTLASS 2.x Kernels
+
+|**Opcode Class** | **Compute Capability** | **CUDA Toolkit** | **Data Type**                  | **Layouts**            | **Unit Test**    |
+|-----------------|------------------------|------------------|--------------------------------|------------------------|------------------|
+| **Simt**        | 50+                    |  11.4+            | `f32 * f32 + f32 => f32`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/simt_sgemm_nt_sm50.cu)                |
+| **Simt**        | 50+                    |  11.4+            | `f64 * f64 + f64 => f64`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/simt_dgemm_nt_sm50.cu)                |
+| **Simt**        | 60+                    |  11.4+            | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/simt_hgemm_nt_sm50.cu)                |
+| **Simt**        | 61+                    |  11.4+            | `s8 * s8 + s32 => {s32,s8}`    | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/simt_igemm_nt_sm50.cu)              |
+| **WmmaTensorOp**    | 70+                |  11.4+            | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16t_f16t_f16n_wmma_tensor_op_f16_sm70.cu)     |
+| **WmmaTensorOp**    | 70+                |  11.4+            | `f16 * f16 + f32 => {f16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16t_f16t_f16n_wmma_tensor_op_f32_sm70.cu)                |
+| **WmmaTensorOp**    | 75+                |  11.4+           | `s8 * s8 + s32 => {s32, s8}`   | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_s8t_s8n_s8t_wmma_tensor_op_s32_sm72.cu) |
+| **WmmaTensorOp**    | 75+                |  11.4+           | `s4 * s4 + s32 => {s32, s4}`   | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_s4t_s4n_s4t_wmma_tensor_op_s32_sm75.cu)                |
+| **WmmaTensorOp**    | 75+                |  11.4+           | `b1 ^ b1 + s32 => {s32, b1}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_b1t_b1n_b1t_wmma_tensor_op_s32_sm75.cu)                |
+| **TensorOp**        | 70+                |  11.4+           | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_volta_tensor_op_f16_sm70.cu)                |
+| **TensorOp**        | 70+                |  11.4+           | `f16 * f16 + f32 => {f16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_volta_tensor_op_f32_sm70.cu)                |
+| **TensorOp**        | 75+                |  11.4+           | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_tensor_op_f16_sm75.cu) |
+| **TensorOp**        | 75+                |  11.4+           | `f16 * f16 + f32 => {f16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_tensor_op_f32_sm75.cu) |
+| **TensorOp**        | 75+                |  11.4+           | `s8 * s8 + s32 => {s32, s8}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s8t_s8n_s32n_tensor_op_s32_sm75.cu) |
+| **TensorOp**        | 75+                |  11.4+           | `s4 * s4 + s32 => {s32, s4}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s4t_s4n_s32n_tensor_op_s32_sm75.cu) |
+| **TensorOp**        | 75+                |  11.4+           | `b1 ^ b1 + s32 => {s32, b1}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_b1t_b1n_s32n_tensor_op_s32_sm75.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `f16 * f16 + f16 => f16`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_tensor_op_f16_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `f16 * f16 + f32 => {f16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f16n_f16t_f16t_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `bf16 * bf16 + f32 => {bf16, f32}`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_bf16n_bf16t_bf16t_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `tf32 * tf32 + f32 => f32`| {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f32n_f32t_f32t_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `s8 * s8 + s32 => {s32, s8}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s8t_s8n_s32n_tensor_op_s32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `s4 * s4 + s32 => {s32, s4}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_s4t_s4n_s32n_tensor_op_s32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `b1 ^ b1 + s32 => {s32, b1}`   | { T } x { N } => {N,T} |  [example](/test/unit/gemm/device/gemm_b1t_b1n_s32n_tensor_op_s32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `f64 * f64 + f64 => f64`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f64n_f64t_f64t_tensor_op_f64_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `cf32 * cf32 + cf32 => cf32`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_cf32n_cf32t_cf32t_tensor_op_tf32_f32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `cf64 * cf64 + cf64 => cf64`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_cf64n_cf64t_cf64t_tensor_op_f64_sm80.cu), [Gaussian 3m](/test/unit/gemm/device/gemm_cf64n_cf64t_cf64t_tensor_op_f64_gaussian_sm80.cu) |
+| **SpTensorOp**      | 80+                |  11.4+           | `f16 * f16 + f32 => {f16, f32}`    | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu) |
+| **SpTensorOp**      | 80+                |  11.4+           | `bf16 * bf16 + f32 => {bf16, f32}` | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_f16n_f16n_f32t_tensor_op_f32_sparse_sm80.cu) |
+| **SpTensorOp**      | 80+                |  11.4+           | `tf32 * tf32 + f32 => f32`         | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_f32n_f32n_f32t_tensor_op_f32_sparse_sm80.cu) |
+| **SpTensorOp**      | 80+                |  11.4+           | `s8 * s8 + s32 => {s8, s32}`       | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_s8t_s8n_s32t_tensor_op_s32_sparse_sm80.cu) |
+| **SpTensorOp**      | 80+                |  11.4+           | `s4 * s4 + s32 => {s4, s32}`       | {N,T} x {N,T} => {N,T} | [example](/test/unit/gemm/device/gemm_s4t_s4n_s32t_tensor_op_s32_sparse_sm80.cu) |
+| **TensorOp**        | 90+                |  11.8+           | `f64 * f64 + f64 => f64`       | {N,T} x {N,T} => {N,T} |  [example](/test/unit/gemm/device/gemm_f64n_f64t_f64t_tensor_op_f64_sm90.cu) |
 
 
 ## Device-level Implicit GEMM convolution
@@ -68,19 +84,19 @@ One can find and/or create equivalent dgrad and wgrad convolutional operators.
 
 |**Opcode Class** | **Compute Capability** | **CUDA Toolkit** | **Data Type**                  | **Layouts**      | **Unit Test**    |
 |-----------------|------------------------|------------------|--------------------------------|------------------|------------------|
-| **Simt**            | 50,60,61,70,75     |  9.2+            | `f32 * f32 + f32 => f32`       | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f32nhwc_f32nhwc_f32nhwc_simt_f32_sm50.cu)                |
-| **Simt**            | 50,60,61,70,75     |  9.2+            | `cf32 * cf32 + cf32 => cf32`   | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm50.cu)                |
-| **TensorOp**        | 70                 |  10.1+           | `f16 * f16 + f32 => {f16, f32}`| NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm70.cu) |
-| **TensorOp**        | 75                 |  10.2+           | `f16 * f16 + f32 => {f16, f32}`| NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm75.cu) |
-| **TensorOp**        | 75                 |  10.2+           | `s8 * s8 + s32 => {s32, s8}`   | NHWC, NCxHWx     |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s8nhwc_s8nhwc_s32nhwc_tensor_op_s32_sm75.cu), [ncxhwx](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s8ncxhwx_s8cxrskx_s8ncxhwx_tensor_op_s32_sm75.cu) |
-| **TensorOp**        | 75                 |  10.2+           | `s4 * s4 + s32 => {s32, s4}`   | NHWC, NCxHWx     |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s4nhwc_s4nhwc_s32nhwc_tensor_op_s32_sm75.cu), [ncxhwx](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s4ncxhwx_s4cxrskx_s4ncxhwx_tensor_op_s32_sm75.cu) |
-| **Simt**            | 80                 |  11.0+           | `f32 * f32 + f32 => f32`       | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f32nhwc_f32nhwc_f32nhwc_simt_f32_sm80.cu)                |
-| **Simt**            | 80                 |  11.0+           | `cf32 * cf32 + cf32 => cf32`   | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm80.cu)                |
-| **TensorOp**        | 80                 |  11.0+           | `f16 * f16 + f32 => {f16, f32}`| NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `f16 * f16 + f16 => f16`       | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `tf32 * tf32 + f32 => f32`     | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_tf32nhwc_tf32nhwc_f32nhwc_tensor_op_f32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `s8 * s8 + s32 => {s32, s8}`   | NHWC, NCxHWx     |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s8nhwc_s8nhwc_s32nhwc_tensor_op_s32_sm80.cu), [ncxhwx](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s8ncxhwx_s8cxrskx_s8ncxhwx_tensor_op_s32_sm80.cu) |
-| **TensorOp**        | 80                 |  11.0+           | `s4 * s4 + s32 => {s32, s4}`   | NHWC, NCxHWx     |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s4nhwc_s4nhwc_s32nhwc_tensor_op_s32_sm80.cu), [ncxhwx](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s4ncxhwx_s4cxrskx_s4ncxhwx_tensor_op_s32_sm80.cu) |
+| **Simt**            | 50+                |  11.4+            | `f32 * f32 + f32 => f32`       | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f32nhwc_f32nhwc_f32nhwc_simt_f32_sm50.cu)                |
+| **Simt**            | 50+                |  11.4+            | `cf32 * cf32 + cf32 => cf32`   | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm50.cu)                |
+| **TensorOp**        | 70+                |  11.4+           | `f16 * f16 + f32 => {f16, f32}`| NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm70.cu) |
+| **TensorOp**        | 75+                |  11.4+           | `f16 * f16 + f32 => {f16, f32}`| NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm75.cu) |
+| **TensorOp**        | 75+                |  11.4+           | `s8 * s8 + s32 => {s32, s8}`   | NHWC, NCxHWx     |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s8nhwc_s8nhwc_s32nhwc_tensor_op_s32_sm75.cu), [ncxhwx](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s8ncxhwx_s8cxrskx_s8ncxhwx_tensor_op_s32_sm75.cu) |
+| **TensorOp**        | 75+                |  11.4+           | `s4 * s4 + s32 => {s32, s4}`   | NHWC, NCxHWx     |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s4nhwc_s4nhwc_s32nhwc_tensor_op_s32_sm75.cu), [ncxhwx](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s4ncxhwx_s4cxrskx_s4ncxhwx_tensor_op_s32_sm75.cu) |
+| **Simt**            | 80+                |  11.4+           | `f32 * f32 + f32 => f32`       | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f32nhwc_f32nhwc_f32nhwc_simt_f32_sm80.cu)                |
+| **Simt**            | 80+                |  11.4+           | `cf32 * cf32 + cf32 => cf32`   | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_cf32nhwc_cf32nhwc_cf32nhwc_simt_f32_sm80.cu)                |
+| **TensorOp**        | 80+                |  11.4+           | `f16 * f16 + f32 => {f16, f32}`| NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `f16 * f16 + f16 => f16`       | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_f16nhwc_f16nhwc_f32nhwc_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `tf32 * tf32 + f32 => f32`     | NHWC             |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_tf32nhwc_tf32nhwc_f32nhwc_tensor_op_f32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `s8 * s8 + s32 => {s32, s8}`   | NHWC, NCxHWx     |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s8nhwc_s8nhwc_s32nhwc_tensor_op_s32_sm80.cu), [ncxhwx](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s8ncxhwx_s8cxrskx_s8ncxhwx_tensor_op_s32_sm80.cu) |
+| **TensorOp**        | 80+                |  11.4+           | `s4 * s4 + s32 => {s32, s4}`   | NHWC, NCxHWx     |  [example](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s4nhwc_s4nhwc_s32nhwc_tensor_op_s32_sm80.cu), [ncxhwx](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s4ncxhwx_s4cxrskx_s4ncxhwx_tensor_op_s32_sm80.cu) |
 
 
 

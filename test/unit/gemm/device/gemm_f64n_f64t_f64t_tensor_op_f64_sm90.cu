@@ -46,7 +46,7 @@
 
 #include "testbed.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -220,4 +220,4 @@ TEST(SM90_Device_Gemm_f64n_f64t_f64t_tensor_op_f64, 128x128x16_32x64x16_16x8x4) 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#endif // if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+#endif // if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)

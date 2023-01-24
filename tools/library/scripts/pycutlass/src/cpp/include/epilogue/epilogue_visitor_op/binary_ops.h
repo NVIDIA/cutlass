@@ -30,8 +30,8 @@
  **************************************************************************************************/
 
 /*! \file
-
-  \brief Binary operations to be used within the epilogue visitor model.
+  
+  \brief A file contains the binary ops
 */
 
 #pragma once
@@ -44,7 +44,7 @@ namespace cutlass {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-/// Elementwise addition of two arrays
+/// Scalar multiplication
 template <typename T, int N>
 struct VectorAdd {
 

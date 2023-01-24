@@ -193,11 +193,40 @@ struct Testbed {
     matrix_C_reference.reset(cutlass::make_Coord(m, n), false);
   }
 
+  /// Returns true if the CUDA device is sufficient to execute the kernel.
+  bool sufficient() const {
+
+    //
+    // Determine SMEM requirements and waive if not satisfied
+    //
+
+    cudaDeviceProp properties;
+    int device_idx;
+    cudaError_t result = cudaGetDevice(&device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDevice() API call failed.");
+    }
+
+    result = cudaGetDeviceProperties(&properties, device_idx);
+
+    if (result != cudaSuccess) {
+      throw std::runtime_error("cudaGetDeviceProperties() failed");
+    }
+
+    return true;
+  }
+
   /// Runs the test
   bool run(
       dim3 grid, dim3 block,
       cutlass::Distribution::Kind init_A = cutlass::Distribution::Uniform,
       cutlass::Distribution::Kind init_B = cutlass::Distribution::Uniform) {
+
+    if (!sufficient()) {
+      return true;
+    }
+
     //
     // initialize device memory
     //
@@ -318,13 +347,18 @@ struct Testbed {
     bool passed = cutlass::reference::host::TensorEquals(
         matrix_C_computed.host_view(), matrix_C_reference.host_view());
 
-    EXPECT_TRUE(passed) 
+    EXPECT_TRUE(passed);
+
+    if (!passed && CUTLASS_TEST_UNIT_ENABLE_WARNINGS) {
+      std::cout
+        << __FILE__ << ":" << __LINE__ << "  "
         << "A:\n" << matrix_A.host_view() << "\n"
         << "B:\n" << matrix_B.host_view() << "\n"
         << "Reference:\n"
         << matrix_C_reference.host_view() << "\n"
         << "Computed:\n"
         << matrix_C_computed.host_view() << "\n";
+    }
 
     EXPECT_GT(cutlass::reference::host::TensorNorm(matrix_C_reference.host_view()), 0);
     EXPECT_GT(cutlass::reference::host::TensorNorm(matrix_C_computed.host_view()), 0);
