@@ -219,13 +219,70 @@ product(IntTuple const& a)
   CUTE_GCC_UNREACHABLE;
 }
 
+// Work-around for some compiler versions (e.g., GCC 8.x)
+// incorrectly not being able to compile certain
+// legal C++ fold expressions inside generic lambdas.
+// Issue is known to exist in GCC 8.4 and GCC 8.5.
+// Work-around should be valid portable CUDA C++.
+#if ! defined(CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND)
+#  if defined(__GNUC__) && __GNUC__ == 8
+#    define CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND 1
+#  endif
+#endif
+
+#if defined(CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND)
+namespace impl {
+
+template<int B, int E>
+struct SubrangeProductImpl {
+  // GCC 8.4 accepts the fold expression here.  If that doesn't work,
+  // the other branch (recursive operator()) is known to build
+  // with GCC 8.4 as well.  The code does not enable recursion by default,
+  // as fold expressions might be easier for compilers to optimize.
+#if 1
+  template<class ... Args>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(Args const&... args) const
+  {
+    return (Int<1>{} * ... * product(args));
+  }
+#else
+  CUTE_HOST_DEVICE constexpr Int<1>
+  operator()() const
+  {
+    return Int<1>{};
+  }
+
+  template<class Head, class ... Tail>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(Head const& head, Tail const&... tail) const
+  {
+    return (*this)(tail...) * product<Head>(head);
+  }
+#endif // 1
+};
+
+} // namespace impl
+
+#endif // defined(CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND)
+
 // Product of a subrange
 template <int B, int E, class Tuple>
 CUTE_HOST_DEVICE constexpr
 auto
 product(Tuple const& a)
 {
+  // Work around some compiler versions that do not accept
+  // the generic lambda in the else branch, by replacing
+  // the lambda with a function object.  The work-around
+  // is legal C++17, but the original code might be easier
+  // for non-broken compilers to optimize, so it remains.
+#if defined(CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND)
+  impl::SubrangeProductImpl<B, E> function_object;
+  return detail::apply(a, function_object, make_range<B, E>{});
+#else
   return detail::apply(a, [](auto const&... v){ return (Int<1>{} * ... * product(v)); }, make_range<B,E>{});
+#endif // defined(CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND)
 }
 
 template <class Tuple>
