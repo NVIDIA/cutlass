@@ -867,7 +867,6 @@ public:
       p.q_strideB = p.q_strideM * options.seq_length;
       p.k_strideB = p.k_strideM * options.seq_length_kv;
       p.v_strideB = p.v_strideM * options.seq_length_kv;
-      std::cout << "stridesQ: " << p.q_strideB << ", " << p.q_strideM << ", " << p.q_strideH << std::endl;
     }
 
     // launch kernel :)
