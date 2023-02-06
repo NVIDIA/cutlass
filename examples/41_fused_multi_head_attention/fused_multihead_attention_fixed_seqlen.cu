@@ -825,12 +825,6 @@ public:
       }
       p.output_ptr = block_O.get();
 
-      // TODO: support arbitrary seq lengths
-      // if (cu_seqlens_q.has_value()) {
-      //   p.cu_seqlens_q_ptr = (int32_t*)cu_seqlens_q->data_ptr();
-      //   p.cu_seqlens_k_ptr = (int32_t*)cu_seqlens_k->data_ptr();
-      // }
-
       p.num_heads = options.head_number;
       p.num_batches = options.batch_size;
       p.head_dim = options.head_size;
