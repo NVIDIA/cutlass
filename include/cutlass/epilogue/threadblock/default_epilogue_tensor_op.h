@@ -136,14 +136,15 @@ struct DefaultIteratorsTensorOp<float, float, 4, ThreadblockShape, WarpShape, In
   static int const kFragmentsPerIteration = 2;
 };
 
-/// Partial specialization for int32_t <= int32_t x 4
+/// Partial specialization for int32_t <= int32_t
 template <
+  int ElementsPerAccess,
   typename ThreadblockShape,
   typename WarpShape,
   typename InstructionShape,
   typename ThreadMap
 >
-struct DefaultIteratorsTensorOp<int32_t, int32_t, 4, ThreadblockShape, WarpShape, InstructionShape, ThreadMap> {
+struct DefaultIteratorsTensorOp<int32_t, int32_t, ElementsPerAccess, ThreadblockShape, WarpShape, InstructionShape, ThreadMap> {
   
   using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOp<
     WarpShape,
@@ -160,14 +161,15 @@ struct DefaultIteratorsTensorOp<int32_t, int32_t, 4, ThreadblockShape, WarpShape
   static int const kFragmentsPerIteration = 1;
 };
 
-/// Partial specialization for float <= int32_t x 4
+/// Partial specialization for float <= int32_t
 template <
+  int ElementsPerAccess,
   typename ThreadblockShape,
   typename WarpShape,
   typename InstructionShape,
   typename ThreadMap
 >
-struct DefaultIteratorsTensorOp<float, int32_t, 4, ThreadblockShape, WarpShape, InstructionShape, ThreadMap> {
+struct DefaultIteratorsTensorOp<float, int32_t, ElementsPerAccess, ThreadblockShape, WarpShape, InstructionShape, ThreadMap> {
 
   using WarpTileIterator = cutlass::epilogue::warp::TileIteratorTensorOp<
     WarpShape,
