@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -29,9 +29,5 @@
 cutlass_test_unit_add_executable(
   cutlass_test_unit_util
   tensor_reduce.cu
-  )
-
-cutlass_test_unit_add_executable(
-  cutlass_test_unit_levels
   cutlass_test_levels.cu
   )

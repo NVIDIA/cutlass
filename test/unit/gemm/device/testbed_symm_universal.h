@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -64,6 +64,9 @@ namespace device {
 template <typename Symm>
 struct TestbedSymmUniversal {
 
+  using ElementA = typename Symm::ElementA;
+  using ElementB = typename Symm::ElementB;
+  using ElementC = typename Symm::ElementC;
   using ElementAccumulator = typename Symm::ElementAccumulator;
   using ElementCompute = typename Symm::SymmKernel::Epilogue::OutputOp::ElementCompute;
 

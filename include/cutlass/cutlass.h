@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,36 +38,10 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifdef CUTLASS_NAMESPACE
-#define cutlass CUTLASS_NAMESPACE
+#define concat_tok(a, b) a ## b
+#define mkcutlassnamespace(pre, ns) concat_tok(pre, ns)
+#define cutlass mkcutlassnamespace(cutlass_, CUTLASS_NAMESPACE)
 #endif
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#define CUTLASS_UNUSED(expr) do { ; } while (&expr != &expr)
-
-#if !defined(__CUDACC_RTC__)
-
-#include <assert.h>
-
-#if defined(_MSC_VER)
-  #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __FUNCSIG__)
-#else
-  #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __PRETTY_FUNCTION__)
-#endif
-
-#else
-
-#if defined(_MSC_VER)
-  #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __FUNCSIG__)
-#else
-  #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __PRETTY_FUNCTION__)
-#endif
-
-#endif
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -81,6 +55,42 @@ namespace cutlass {
 #define CUTLASS_HOST_DEVICE inline
 #define CUTLASS_DEVICE inline
 #endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename T>
+CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &) 
+{ }
+
+#if defined(__GNUC__)
+  #define CUTLASS_UNUSED(expr) __CUTLASS_UNUSED(expr)
+#else
+  #define CUTLASS_UNUSED(expr) do { ; } while (&expr != &expr)
+#endif
+
+#if !defined(__CUDACC_RTC__)
+
+#include <assert.h>
+
+  #if defined(__CUDA_ARCH__)
+    #if defined(_MSC_VER)
+      #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __FUNCSIG__); asm volatile ("brkpt;\n"); }
+    #else
+      #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __PRETTY_FUNCTION__); asm volatile ("brkpt;\n"); }
+    #endif
+
+  #else
+    #if defined(_MSC_VER)
+      #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __FUNCSIG__)
+    #else
+      #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __PRETTY_FUNCTION__)
+    #endif
+  #endif
+#endif
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace cutlass {
 
 /// Status code returned by CUTLASS operations
 enum class Status {
@@ -171,10 +181,11 @@ static char const* cutlassGetStatusString(cutlass::Status status) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-static const int NUM_THREADS_PER_WARP = 32;
-static const int NUM_THREADS_PER_HALF_WARP = NUM_THREADS_PER_WARP / 2;
-static const int NUM_THREADS_PER_QUAD = 4;
-static const int NUM_THREADS_PER_QUAD_PAIR = NUM_THREADS_PER_QUAD * 2;
+static const int NumThreadsPerWarp = 32;
+static const int NumThreadsPerWarpGroup = 128;
+static const int NumThreadsPerHalfWarp = NumThreadsPerWarp / 2;
+static const int NumThreadsPerQuad = 4;
+static const int NumThreadsPerQuadPair = NumThreadsPerQuad * 2;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -184,6 +195,28 @@ CUTLASS_HOST_DEVICE bool thread0() {
     return (!threadIdx.x && !threadIdx.y && !threadIdx.z) && (!blockIdx.x && !blockIdx.y && !blockIdx.z);
   #else
     return false;
+  #endif
+}
+
+/// Returns a warp-uniform value indicating the canonical warp index of the calling threads.
+/// Threads within the warp must be converged.
+CUTLASS_DEVICE
+int canonical_warp_idx() { 
+  #if defined(__CUDA_ARCH__)
+    return __shfl_sync(0xffffffff, threadIdx.x / NumThreadsPerWarp, 0);
+  #else
+    return 0;
+  #endif
+}
+
+/// Returns a warp-uniform value indicating the canonical warp group index of the calling threads.
+/// Threads within the warp must be converged.
+CUTLASS_DEVICE
+int canonical_warp_group_idx() {
+  #if defined(__CUDA_ARCH__)
+    return __shfl_sync(0xffffffff, threadIdx.x / NumThreadsPerWarpGroup, 0);
+  #else
+    return 0;
   #endif
 }
 

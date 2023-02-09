@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,8 +29,9 @@
  *
  **************************************************************************************************/
 /* \file
-   \brief binding cutlass C++ APIs to python
+   \brief binding CUTLASS C++ APIs to Python
 */
+
 #include <pybind11/pybind11.h>
 #include <pybind11/stl_bind.h>
 

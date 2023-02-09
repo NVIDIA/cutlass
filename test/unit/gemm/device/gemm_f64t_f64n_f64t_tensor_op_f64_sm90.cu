@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -46,7 +46,7 @@
 
 #include "testbed.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+#if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -220,4 +220,4 @@ TEST(SM90_Device_Gemm_f64t_f64n_f64t_tensor_op_f64, 128x128x16_32x64x16_16x8x4) 
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#endif // if (CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+#endif // if (CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)

@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -71,7 +71,7 @@ namespace cutlass {
 struct uint128_t {
 
   /// Size of one part of the uint's storage in bits
-  int const kPartSize = sizeof_bits<uint64_t>::value;
+  static constexpr int kPartSize = sizeof_bits<uint64_t>::value;
 
   struct hilo {
     uint64_t lo;
@@ -158,7 +158,7 @@ struct uint128_t {
   /// Multiply by unsigned 64b integer yielding 128b integer
   CUTLASS_HOST_DEVICE
   uint128_t operator*(uint64_t const &rhs) const {
-    uint128_t y;
+    uint128_t y{};
 #if defined(CUTLASS_UINT128_NATIVE)
     y.native = native * rhs;
 #elif defined(CUTLASS_INT128_ARITHMETIC)

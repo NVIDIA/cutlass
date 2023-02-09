@@ -7,63 +7,77 @@
 This is the official list of CUTLASS developers and contributors.
 
 ## DEVELOPERS
-Andrew Kerr 
-Haicheng Wu 
-Manish Gupta
-Dustyn Blasig
-Pradeep Ramani
-Cris Cecka
-Vijay Thakkar
-Aniket Shivam
-Honghao Lu
-Ethan Yan
-Zhaodong Chen
-Jack Kosaian
-Yujia Zhai
-Naila Farooqui
-Piotr Majcher
-Paul Springer
-Jin Wang
-Chinmay Talegaonkar
-Shang Zhang
-Scott Yokim
-Markus Hohnerbach
-Aditya Atluri
-David Tanner
-Manikandan Ananth
+Vijay Thakkar<br />
+Pradeep Ramani<br />
+Cris Cecka<br />
+Aniket Shivam<br />
+Jack Kosaian<br />
+Mark Hoemmen<br />
+Honghao Lu<br />
+Ethan Yan<br />
+Haicheng Wu<br />
+Andrew Kerr<br />
+Dustyn Blasig<br />
+Fengqi Qiao<br />
+Duane Merrill<br />
+Yujia Zhai<br />
+Shang Zhang<br />
+Piotr Majcher<br />
+Paul Springer<br />
+Markus Hohnerbach<br />
+Jin Wang<br />
+Aditya Atluri<br />
+
+## CuTe
+Cris Cecka<br />
+Vijay Thakkar<br />
 
 ## CUTLASS Product Manager
-Matthew Nicely
-  
+Matthew Nicely<br />
+
+## Former CUTLASS Developers
+Manish Gupta<br />
+Naila Farooqui<br />
+David Tanner<br />
+Manikandan Ananth<br />
+Zhaodong Chen<br />
+Chinmay Talegaonkar<br />
+
 ## CONTRIBUTORS
-Timothy Costa
-Julien Demouth
-Brian Fahs
-Michael Goldfarb
-Mostafa Hagog
-Fei Hu
-Alan Kaatz
-Tina Li
-Timmy Liu
-Duane Merrill
-Kevin Siu
-Markus Tavenrath
-John Tran
-Vicki Wang
-Junkai Wu
-Fung Xie
-Albert Xu
-Jack Yang
-Xiuxia Zhang
-Nick Zhao
+Timothy Costa<br />
+Julien Demouth<br />
+Brian Fahs<br />
+Michael Garland<br />
+Michael Goldfarb<br />
+Mostafa Hagog<br />
+Fei Hu<br />
+Alan Kaatz<br />
+Tina Li<br />
+Timmy Liu<br />
+Wei Liu<br />
+Duane Merrill<br />
+Kevin Siu<br />
+Markus Tavenrath<br />
+John Tran<br />
+Vicki Wang<br />
+Junkai Wu<br />
+Fung Xie<br />
+Albert Xu<br />
+Yang Xu<br />
+Jack Yang<br />
+Scott Yokim<br />
+Xiuxia Zhang<br />
+Nick Zhao<br />
 
 ## ACKNOWLEDGEMENTS
 
-Girish Bharambe
-Luke Durant
-Olivier Giroux
-Stephen Jones
-Rishkul Kulkarni
-Bryce Lelbach
-Joel McCormack
-Kyrylo Perelygin
+Girish Bharambe<br />
+Luke Durant<br />
+Carter Edwards<br />
+Olivier Giroux<br />
+Stephen Jones<br />
+Rishkul Kulkarni<br />
+Bryce Lelbach<br />
+Joel McCormack<br />
+Kyrylo Perelygin<br />
+Sean Treichler<br />

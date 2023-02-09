@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -63,6 +63,9 @@ template <typename Gemm>
 struct TestbedComplex : public Testbed<Gemm> {
 
   using Base = Testbed<Gemm>;
+  using ElementA = typename Gemm::ElementA;
+  using ElementB = typename Gemm::ElementB;
+  using ElementC = typename Gemm::ElementC;
   using ElementAccumulator = typename Gemm::ElementAccumulator;
   using ElementCompute = typename Gemm::GemmKernel::Epilogue::OutputOp::ElementCompute;
 
@@ -131,7 +134,7 @@ struct TestbedComplex : public Testbed<Gemm> {
     if (properties.sharedMemPerBlockOptin < smem_size) {
     	return false;
     }
-    
+
     return true;
   }
 

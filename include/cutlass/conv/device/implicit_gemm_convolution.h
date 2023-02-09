@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -161,15 +161,6 @@ public:
     // check for unsupported problem sizes for strided dgrad implementation
     if (kConvolutionalOperator == conv::Operator::kDgrad && 
       kStrideSupport == conv::StrideSupport::kStrided) {
-
-      // Unity stride (1x1) is supported by strided dgrad but disabled for performance 
-      // reasons. For unity stride, use strided dgrad optimized unity stride specialization.
-      // Note that unit tests strided dgrad for unity stride to make sure that strided 
-      // dgrad implemetnation is functionaly sound. 
-      // Strided dgrad implementation also support mixed strides, i.e., (1x2) and (2x1)
-      if(args.problem_size.stride_h == 1 && args.problem_size.stride_w == 1) {
-        return Status::kErrorNotSupported;
-      }
 
       // split-k (serial or parallel) is not supported for strided dgrad
       if(args.problem_size.split_k_slices > 1) {

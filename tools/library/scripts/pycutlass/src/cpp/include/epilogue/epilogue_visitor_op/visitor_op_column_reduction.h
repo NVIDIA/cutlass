@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -68,7 +68,6 @@ public:
 
     static int const kElementsPerAccess = OutputTileIterator::kElementsPerAccess;
 
-    // TODO: generalize the reduction op
     using ReductionOp = cutlass::plus<Array<ElementReductionAccumulator, kElementsPerAccess>>;
     using ReductionOpScalar = cutlass::plus<ElementReductionAccumulator>;
     using ElementOutput = typename OutputTileIterator::Element;

@@ -1,6 +1,6 @@
 #################################################################################################
 #
-# Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -37,11 +37,12 @@ from pycutlass import *
 from pycutlass.test import *
 from pycutlass.utils.device import device_cc
 import unittest
+import xmlrunner
+import argparse
 
 #
 # Create GEMM operation
 #
-
 @unittest.skipIf(device_cc() < 80, "Device compute capability is insufficient for SM80 tests.")
 def TestGemmOperator(gemm_kind, math_inst, layout, alignment, tiling, arch, mixed=False,
     epilogue_functor=None, swizzling_functor=cutlass.IdentitySwizzle1, **kwargs):
@@ -447,7 +448,17 @@ class Test_SM80(unittest.TestCase):
         pass
 
 
+def argumentParser():
+    parser = argparse.ArgumentParser(description="Entrypoint for PyCutlass testing on Ampere architecture.")
+    parser.add_argument("-j", "--junit_path", help="The absolute path to the directory for generating a junit xml report", default="")
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
     pycutlass.get_memory_pool(2**20, 2**34)
     pycutlass.compiler.nvcc()
-    unittest.main()
+    args = argumentParser()
+    if args.junit_path:
+        unittest.main(argv=[''], testRunner=xmlrunner.XMLTestRunner(output=args.junit_path))
+    else:
+        unittest.main(argv=[''])

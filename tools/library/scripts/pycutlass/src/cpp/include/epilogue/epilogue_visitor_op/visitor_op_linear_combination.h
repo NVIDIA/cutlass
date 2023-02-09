@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -82,7 +82,7 @@ public:
     /// Fragment type of accumulator
     using AccumulatorAccessType = Array<ElementAccumulator, kElementsPerAccess>;
 
-    /// Combination Op TODO: generalize this
+    /// Combination Op
     using CombinationOp = cutlass::plus<VisitAccessType>;
 
     static_assert(kElementsPerAccess==VisitAccessTypeA::kElements, "kElementsPerAccess mismatches with Visitor A");

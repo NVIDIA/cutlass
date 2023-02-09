@@ -1,4 +1,4 @@
-# Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -40,7 +40,7 @@ elseif(NOT TARGET cublas)
  
   find_path(
     _CUBLAS_INCLUDE_DIR
-    NAMES cublas.h
+    NAMES cublas_v2.h
     HINTS
       ${CUBLAS_INCLUDE_PATH}
       ENV CUBLAS_INCLUDE_PATH

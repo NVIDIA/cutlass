@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -83,7 +83,6 @@ void bind_identity_swizzle(py::module & m, std::string name) {
             :param problem_size: Implicit gemm problem size conv_operator(NZPQK, NDHWC, KTRSC)
             :type problem_size: :class:`cutlass.gemm.GemmCoord`)
             )pbdoc")
-        // TODO: the returned dim3 is not usable in python
         .def("get_grid_shape", &T::get_grid_shape,
             py::arg("tiled_shape"), 
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")

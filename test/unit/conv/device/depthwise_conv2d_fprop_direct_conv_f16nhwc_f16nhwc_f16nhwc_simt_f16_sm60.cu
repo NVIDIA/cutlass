@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -328,6 +328,7 @@ TEST(
       DepthwiseFpropProblemSizes_filter5x5()));
 }
 
+#if 0
 ////////////////////////////////////////////////////////////////////////////////
 TEST(
     SM60_Device_Depthwise_conv2d_Fprop_Direct_Conv_Optimized_f16nhwc_f16nhwc_f16nhwc_simt_f16,
@@ -424,3 +425,5 @@ TEST(
   EXPECT_TRUE(test::conv::device::TestSpecificDepthwiseDirectConv2d<Direct2dConv>(
       DepthwiseFpropProblemSizes_filter5x37()));
 }
+#endif
+

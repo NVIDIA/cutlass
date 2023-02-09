@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,6 +38,8 @@
     defined in cutlass/tensor_ref.h.
 */
 #pragma once
+
+#include "cute/layout.hpp"
 
 #include "cutlass/cutlass.h"
 #include "cutlass/fast_math.h"
@@ -143,6 +145,15 @@ public:
   LongIndex capacity(MatrixCoord const &extent) const {
     return LongIndex(extent.row()) * LongIndex(stride_[0]);
   }
+
+  CUTLASS_HOST_DEVICE
+  cute::Layout<cute::Shape<int, int>, cute::Stride<int64_t, cute::Int<1> > > 
+  to_cute_layout(MatrixCoord const &extent) const {
+    return cute::Layout<cute::Shape<int, int>, cute::Stride<int64_t, cute::Int<1> > >{
+      {extent[0], extent[1]},
+      {stride(0), cute::Int<1>{}}
+    };
+  }
 };
 
 /// Mapping function for column-major matrices.
@@ -235,6 +246,15 @@ public:
   CUTLASS_HOST_DEVICE
   LongIndex capacity(MatrixCoord const &extent) const {
     return LongIndex(extent.column()) * LongIndex(stride_[0]);
+  }
+
+  CUTLASS_HOST_DEVICE
+  cute::Layout<cute::Shape<int, int>, cute::Stride< cute::Int<1>, int64_t> > 
+  to_cute_layout(MatrixCoord const &extent) const {
+    return cute::Layout<cute::Shape<int, int>, cute::Stride<cute::Int<1>, int64_t> >{
+      {extent[0], extent[1]},
+      {cute::Int<1>{}, stride(0)}
+    };
   }
 };
 

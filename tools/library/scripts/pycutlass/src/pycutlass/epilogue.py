@@ -1,6 +1,6 @@
 ################################################################################
 #
-# Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved
+# Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -111,6 +111,7 @@ class LinearCombination(EpilogueFunctorBase):
         self.element_output = element_output
         self.element_accumulator = element_accumulator
         self.element_epilogue = element_epilogue
+        self.epilogue_vector_length = epilogue_vector_length
 
         self.template_arguments = [
             DataTypeTag[element_output], str(epilogue_vector_length),

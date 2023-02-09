@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -111,7 +111,7 @@ __global__ void GemmPipelined(
     tb_thread_id,
     tb_offset_B);
 
-  int warp_id = __shfl_sync(0xffffffff, threadIdx.x / 32, 0);
+  int warp_id = canonical_warp_idx();
   int lane_id = threadIdx.x % 32;
 
   //
