@@ -57,8 +57,8 @@
 #include "epilogue_thread_apply_logsumexp.h"
 #include "gemm_kernel_utils.h"
 #include "iterators/make_residual_last.h"
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
+#include "iterators/transpose_warp_iterator.h"
+#include "iterators/warp_iterator_from_smem.h"
 
 namespace cutlass {
 namespace gemm {
@@ -560,20 +560,14 @@ template <
     typename Policy1_,
     /// Number of stages,
     int Stages_,
+    int kMaxK_,
     /// Used for partial specialization
     typename Enable = bool>
-class MmaMultistageFromSharedMemory : public MmaBaseFromSharedMemory<
-                                          Shape1_,
-                                          AccumulatorSharedStorage::Shape::kN,
-                                          Policy1_,
-                                          Stages_> {
+class MmaMultistageFromSharedMemory
+    : public MmaBaseFromSharedMemory<Shape1_, kMaxK_, Policy1_, Stages_> {
  public:
   ///< Base class
-  using Base = MmaBaseFromSharedMemory<
-      Shape1_,
-      AccumulatorSharedStorage::Shape::kN,
-      Policy1_,
-      Stages_>;
+  using Base = MmaBaseFromSharedMemory<Shape1_, kMaxK_, Policy1_, Stages_>;
 
   ///< Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape1 = Shape1_;
@@ -1035,16 +1029,39 @@ template <
     typename WarpShape,
     typename InstructionShape,
     typename RegularWarpIterator,
-    typename Policy>
+    typename Policy,
+    typename Enable = void>
 struct DefaultWarpIteratorAFromSharedMemory {};
 
-// TensorOp - Ampere
+// TensorOp - Ampere half
+template <typename RegularWarpIterator, typename Policy>
+struct DefaultWarpIteratorAFromSharedMemory<
+    cutlass::gemm::GemmShape<32, 32, 32>,
+    cutlass::gemm::GemmShape<16, 8, 8>,
+    RegularWarpIterator,
+    Policy,
+    typename platform::enable_if<(
+        sizeof_bits<typename RegularWarpIterator::Element>::value == 16 &&
+        Policy::Operator::Policy::OpDelta::kRow == 1)>::type> {
+  static constexpr auto kWarpSize = 32;
+  using OpDelta = typename Policy::Operator::Policy::OpDelta;
+  using WarpShape = cutlass::MatrixShape<32, 32>;
+
+  using WarpIterator = cutlass::gemm::warp::WarpIteratorFromSmem<
+      cutlass::gemm::Operand::kA,
+      typename RegularWarpIterator::Element>;
+};
+
+// TensorOp - Ampere f32
 template <typename WarpShape, typename RegularWarpIterator, typename Policy>
 struct DefaultWarpIteratorAFromSharedMemory<
     WarpShape,
     cutlass::gemm::GemmShape<16, 8, 8>,
     RegularWarpIterator,
-    Policy> {
+    Policy,
+    typename platform::enable_if<(
+        sizeof_bits<typename RegularWarpIterator::Element>::value != 16 ||
+        Policy::Operator::Policy::OpDelta::kRow != 1)>::type> {
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 8>;
   static constexpr auto kWarpSize = 32;
   using OpDelta = typename Policy::Operator::Policy::OpDelta;
@@ -1099,7 +1116,10 @@ struct DefaultWarpIteratorAFromSharedMemory<
 };
 
 // Converts a "regular" Mma into their counterpart from shared memory
-template <typename Mma_, typename AccumulatorSharedStorage>
+template <
+    typename Mma_,
+    typename AccumulatorSharedStorage,
+    bool kTransposeA = false>
 struct DefaultMmaFromSharedMemory;
 
 // Mma pipelined
@@ -1130,7 +1150,8 @@ template <
     typename TransformA_,
     /// Transformation applied to B operand
     typename TransformB_,
-    typename AccumulatorSharedStorage_>
+    typename AccumulatorSharedStorage_,
+    bool kTransposeA>
 struct DefaultMmaFromSharedMemory<
     MmaPipelined<
         Shape_,
@@ -1143,7 +1164,8 @@ struct DefaultMmaFromSharedMemory<
         Policy_,
         TransformA_,
         TransformB_>,
-    AccumulatorSharedStorage_> {
+    AccumulatorSharedStorage_,
+    kTransposeA> {
   static constexpr int kWarpSize = 32;
   using SmemAccumulatorLayout = cutlass::layout::RowMajor;
 
@@ -1163,6 +1185,7 @@ struct DefaultMmaFromSharedMemory<
   using InstructionShape = typename Policy_::Operator::InstructionShape;
   using ArchMmaOperator = typename Policy_::Operator;
 
+  static constexpr bool kIsTransposedA = false;
   using WarpIteratorA = typename DefaultWarpIteratorAFromSharedMemory<
       WarpShape,
       InstructionShape,
@@ -1214,7 +1237,8 @@ template <
     int Stages,
     /// Use zfill or predicate for out-of-bound cp.async
     SharedMemoryClearOption SharedMemoryClear,
-    typename AccumulatorSharedStorage_>
+    typename AccumulatorSharedStorage_,
+    bool kTransposeA>
 struct DefaultMmaFromSharedMemory<
     MmaMultistage<
         Shape_,
@@ -1229,7 +1253,8 @@ struct DefaultMmaFromSharedMemory<
         Policy_,
         Stages,
         SharedMemoryClear>,
-    AccumulatorSharedStorage_> {
+    AccumulatorSharedStorage_,
+    kTransposeA> {
   static constexpr int kWarpSize = 32;
 
   using RegularMma = MmaMultistage<
@@ -1248,13 +1273,22 @@ struct DefaultMmaFromSharedMemory<
 
   using WarpShape = typename Policy_::Operator::Shape;
   using InstructionShape = typename Policy_::Operator::InstructionShape;
-  using WarpIteratorA = typename DefaultWarpIteratorAFromSharedMemory<
+  using WarpIteratorA_ = typename DefaultWarpIteratorAFromSharedMemory<
       WarpShape,
       InstructionShape,
       typename RegularMma::Operator::IteratorA,
       Policy_>::WarpIterator;
+  using WarpIteratorTranspose = TransposeWarpIterator<WarpIteratorA_>;
+  static constexpr bool kIsTransposedA =
+      WarpIteratorTranspose::kSupportsTranspose && kTransposeA;
+  using WarpIteratorA = typename platform::conditional<
+      kIsTransposedA,
+      typename WarpIteratorTranspose::Iterator,
+      WarpIteratorA_>::type;
 
-  static int constexpr kMaxK = AccumulatorSharedStorage_::Shape::kN;
+  static int constexpr kMaxK = kIsTransposedA
+      ? AccumulatorSharedStorage_::Shape::kM
+      : AccumulatorSharedStorage_::Shape::kN;
   // Reduce the number of stages if we don't need that many
   static int constexpr kStagesMax =
       (kMaxK + int(Shape_::kK) - 1) / int(Shape_::kK);
@@ -1274,7 +1308,8 @@ struct DefaultMmaFromSharedMemory<
           ElementC_,
           LayoutC_,
           Policy_,
-          kStages>;
+          kStages,
+          kMaxK>;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
