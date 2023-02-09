@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -168,6 +168,9 @@ public:
     typename LayoutP::Stride::LongIndex *ldv;
     typename LayoutO::Stride::LongIndex *ldo;
 
+    // Scale
+    ElementAccumulator scale;
+
     // Whether causal masking is to be performed
     bool causal;
 
@@ -193,6 +196,7 @@ public:
       ldk(nullptr),
       ldv(nullptr),
       ldo(nullptr),
+      scale(0),
       causal(false),
       host_problem_sizes(nullptr)
     {
@@ -218,6 +222,7 @@ public:
       typename LayoutV::Stride::LongIndex *ldv,
       typename LayoutO::Stride::LongIndex *ldo,
       bool causal,
+      ElementAccumulator scale,
       GemmCoord *host_problem_sizes=nullptr
     ): 
       problem_sizes0(problem_sizes0),
@@ -235,6 +240,7 @@ public:
       ldv(ldv),
       ldo(ldo),
       causal(causal),
+      scale(scale),
       host_problem_sizes(host_problem_sizes)
     {
 
@@ -273,6 +279,7 @@ public:
     typename LayoutP::Stride::LongIndex *ldv;
     typename LayoutO::Stride::LongIndex *ldo;
 
+    ElementAccumulator scale;
     bool causal;
 
     //
@@ -291,7 +298,8 @@ public:
       ldk(nullptr),
       ldv(nullptr),
       ldo(nullptr),
-      causal(false)
+      causal(false),
+      scale(0)
     { }
 
     CUTLASS_HOST_DEVICE
@@ -310,7 +318,8 @@ public:
       ldk(args.ldk),
       ldv(args.ldv),
       ldo(args.ldo),
-      causal(args.causal)
+      causal(args.causal),
+      scale(args.scale)
     { 
 
     }
@@ -337,6 +346,7 @@ public:
       ldv = args.ldv;
       ldo = args.ldo;
       causal = args.causal;
+      scale = args.scale;
     }
   };
 
@@ -464,7 +474,7 @@ public:
   void operator()(Params const &params, SharedStorage &shared_storage) {
     auto& m_prime = shared_storage.m_prime;
     auto& s_prime = shared_storage.s_prime;
-    auto& si = shared_storage.after_mm0.si;
+    [[maybe_unused]] auto& si = shared_storage.after_mm0.si;
     auto& mi = shared_storage.mi;
 
     ProblemVisitor problem_visitor(
@@ -649,7 +659,7 @@ public:
                           warp_id(),
                           num_keys - iter_key_start,
                           iteratorC_tile_offset,
-                          1.0f / cutlass::fast_sqrt(float(problem_size0.k())));
+                          params.scale);
                     }));
               }));
 

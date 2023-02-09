@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -117,7 +117,7 @@ struct AttentionKernel {
   struct Params {
     // Input tensors
     scalar_t* query_ptr; // [num_queries, num_heads, head_dim]
-    scalar_t* key_ptr; // [num_keys, num_heads, head_dim]
+    scalar_t* key_ptr;   // [num_keys, num_heads, head_dim]
     scalar_t* value_ptr; // [num_keys, num_heads, head_dim_value]
     int32_t* cu_seqlens_q_ptr = nullptr;
     int32_t* cu_seqlens_k_ptr = nullptr;
@@ -472,7 +472,7 @@ struct AttentionKernel {
     SharedStorage& shared_storage = *((SharedStorage*)smem_buffer);
     auto& m_prime = shared_storage.m_prime;
     auto& s_prime = shared_storage.s_prime;
-    auto& si = shared_storage.after_mm0.si;
+    [[maybe_unused]] auto& si = shared_storage.after_mm0.si;
     auto& mi = shared_storage.mi;
 
     static_assert(kQueriesPerBlock < kNumWarpsPerBlock * kWarpSize, "");

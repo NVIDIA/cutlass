@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -510,6 +510,7 @@ private:
     // H = num_heads
     // K = embedding size per head
     int64_t batch_offset_Q, batch_offset_K, batch_offset_V, batch_offset_O;
+
     for (int32_t b = 0; b < options.batch_size; ++b) {
       batch_offset_Q = total_elements_Q;
       batch_offset_K = total_elements_K;
