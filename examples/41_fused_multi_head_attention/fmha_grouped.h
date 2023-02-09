@@ -183,9 +183,9 @@ public:
 
     /// Default ctor
     CUTLASS_HOST_DEVICE
-    Arguments(): 
+    Arguments():
       problem_count(0),
-      threadblock_count(0), 
+      threadblock_count(0),
       ptr_Q(nullptr),
       ptr_K(nullptr),
       ptr_P(nullptr),
@@ -205,7 +205,7 @@ public:
 
     /// Ctor
     CUTLASS_HOST_DEVICE
-    Arguments(    
+    Arguments(
       GemmCoord *problem_sizes0,
       GemmCoord *problem_sizes1,
       int problem_count,
@@ -224,7 +224,7 @@ public:
       bool causal,
       ElementAccumulator scale,
       GemmCoord *host_problem_sizes=nullptr
-    ): 
+    ):
       problem_sizes0(problem_sizes0),
       problem_sizes1(problem_sizes1),
       problem_count(problem_count),
