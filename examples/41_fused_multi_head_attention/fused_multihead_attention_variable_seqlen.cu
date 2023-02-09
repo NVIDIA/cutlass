@@ -921,6 +921,7 @@ public:
       ldv.get(),
       ldo.get(),
       options.causal,
+      options.alpha0,
       options.problem_sizes1.data()
     );
 
