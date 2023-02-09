@@ -415,10 +415,9 @@ public:
 
 /// Partial specialization for int32_t x 8 => int8_t/int4b_t x 8
 template <
-  typename ThreadMap_,      ///< Thread map (conept: OutputTileThreadMap)
-  int OutputSizeBits_
+  typename ThreadMap_
 >
-class SharedLoadIteratorMixed<ThreadMap_, int32_t, 32, OutputSizeBits_, 8, 8> {
+class SharedLoadIteratorMixed<ThreadMap_, int32_t, 32, 8, 8, 8> {
 public:
   using ThreadMap = ThreadMap_;
   using Shape = typename ThreadMap::Shape;
