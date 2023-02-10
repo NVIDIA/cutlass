@@ -59,7 +59,8 @@ template <typename ElementOutput_, typename ElementAccumulator_,
           template <typename T> class ActivationOp_,
           template <typename T> class BinaryOp1_,
           template <typename T> class UnaryOp_,
-          template <typename T> class BinaryOp2_ = detail::NoOp>
+          template <typename T> class BinaryOp2_ = detail::NoOp,
+          typename ElementVector_ = ElementC_>
 class LinearCombinationResidualBlock {
 public:
   static bool const kIsSingleSource = false;
@@ -68,6 +69,7 @@ public:
   using ElementC = ElementC_;
   using ElementAccumulator = ElementAccumulator_;
   using ElementCompute = ElementCompute_;
+  using ElementVector = ElementVector_;
   static int const kElementsPerAccess = ElementsPerAccess;
   static int const kCount = kElementsPerAccess;
 
@@ -179,11 +181,12 @@ template <typename ElementOutput_, typename ElementAccumulator_,
           typename ElementCompute_, typename ElementC_, int ElementsPerAccess,
           template <typename T> class ActivationOp_,
           template <typename T> class BinaryOp1_,
-          template <typename T> class UnaryOp_>
+          template <typename T> class UnaryOp_,
+          typename ElementVector_>
 class LinearCombinationResidualBlock<ElementOutput_, ElementAccumulator_,
           ElementCompute_, ElementC_, ElementsPerAccess,
           ActivationOp_, BinaryOp1_, UnaryOp_,
-          detail::NoOp> {
+          detail::NoOp, ElementVector_> {
 public:
   static bool const kIsSingleSource = true;
 
@@ -191,6 +194,7 @@ public:
   using ElementC = ElementC_;
   using ElementAccumulator = ElementAccumulator_;
   using ElementCompute = ElementCompute_;
+  using ElementVector = ElementVector_;
   static int const kElementsPerAccess = ElementsPerAccess;
   static int const kCount = kElementsPerAccess;
 
