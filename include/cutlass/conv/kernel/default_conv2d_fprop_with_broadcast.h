@@ -107,7 +107,7 @@ struct DefaultConv2dFpropWithBroadcast {
     ImplicitGemmBase::Epilogue::kPartitionsK,
     ElementC,
     typename EpilogueOutputOp::ElementT,
-    typename EpilogueOutputOp::ElementCompute,
+    typename EpilogueOutputOp::ElementVector,
     EpilogueOutputOp,
     ImplicitGemmBase::Epilogue::kElementsPerAccess
   >::Epilogue;

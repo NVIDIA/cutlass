@@ -121,7 +121,7 @@ struct DefaultGemmWithBroadcast {
     GemmBase::Epilogue::kPartitionsK,
     ElementC_,
     typename EpilogueOutputOp::ElementT,
-    typename EpilogueOutputOp::ElementCompute,
+    typename EpilogueOutputOp::ElementVector,
     EpilogueOutputOp,
     GemmBase::Epilogue::kElementsPerAccess
   >::Epilogue;
@@ -221,7 +221,7 @@ struct DefaultGemmWithBroadcast<
     GemmBase::Epilogue::kPartitionsK,
     ElementC_,
     typename EpilogueOutputOp::ElementT,
-    typename EpilogueOutputOp::ElementCompute,
+    typename EpilogueOutputOp::ElementVector,
     EpilogueOutputOp,
     GemmBase::Epilogue::kElementsPerAccess
   >::Epilogue;
