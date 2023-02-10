@@ -120,6 +120,7 @@ public:
   using EpilogueOutputOp = typename Conv2d::EpilogueOutputOp;
   using ElementZ = typename EpilogueOutputOp::ElementZ;
   using ElementT = typename EpilogueOutputOp::ElementT;
+  using ElementVector = typename EpilogueOutputOp::ElementVector;
 
   static cutlass::conv::Operator const kConvolutionalOperator = Conv2d::kConvolutionalOperator;
   static const bool kAddBroadcastFirst = AddBroadcastFirst;
@@ -142,7 +143,7 @@ public:
   cutlass::HostTensor<ElementT, LayoutC> tensor_T_computed;
   cutlass::HostTensor<ElementT, LayoutC> tensor_T_reference;
   cutlass::HostTensor<ElementAccumulator, LayoutC> tensor_Y_reference;
-  cutlass::HostTensor<ElementC, LayoutC> tensor_Broadcast;                 // Input Broadcast
+  cutlass::HostTensor<ElementVector, LayoutC> tensor_Broadcast;            // Input Broadcast
 
 public:
 

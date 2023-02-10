@@ -204,7 +204,8 @@ template <
   typename ElementCompute_,
   typename ElementZ_,
   int ElementsPerAccess,
-  bool StoreT = true
+  bool StoreT = true,
+  typename ElementVector_ = ElementC_
 >
 class LinearCombinationBiasRelu {
 public:
@@ -214,6 +215,7 @@ public:
   using ElementAccumulator = ElementAccumulator_;
   using ElementCompute = ElementCompute_;
   using ElementZ = ElementZ_;
+  using ElementVector = ElementVector_;
 
   using ElementT = uint1b_t;
 
