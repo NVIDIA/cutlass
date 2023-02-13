@@ -67,21 +67,30 @@ template <
     typename SmemIteratorA_,
     /// Cache operation for operand A
     cutlass::arch::CacheOperation::Kind CacheOpA,
-    /// Iterates over tiles of B operand in global memory
+    /// Iterates over tiles of B0 operand in global memory
     //  (concept: ReadableTileIterator | ForwardTileIterator |
     //  MaskedTileIterator)
-    typename IteratorB_,
-    /// Iterates over tiles of B operand in shared memory
+    typename IteratorB0_,
+    /// Iterates over tiles of B0 operand in shared memory
     /// (concept: WriteableTileIterator | RandomAccessTileIterator)
-    typename SmemIteratorB_,
+    typename SmemIteratorB0_,
     /// Cache operation for operand B
     cutlass::arch::CacheOperation::Kind CacheOpB,
+    /// Iterates over tiles of B1 operand in global memory
+    //  (concept: ReadableTileIterator | ForwardTileIterator |
+    //  MaskedTileIterator)
+    typename IteratorB1_,
+    /// Iterates over tiles of B1 operand in shared memory
+    /// (concept: WriteableTileIterator | RandomAccessTileIterator)
+    typename SmemIteratorB1_,
     /// Data type of accumulator matrix
     typename ElementC_,
     /// Data type of accumulator matrix
     typename LayoutC_,
     /// Policy describing tuning details (concept: MmaPolicy)
-    typename Policy_,
+    typename Policy0_,
+    /// B1-specific version of the policy (concept: MmaPolicy)
+    typename Policy1_,
     /// Number of stages,
     int Stages,
     /// Use zfill or predicate for out-of-bound cp.async
@@ -89,25 +98,29 @@ template <
     /// Used for partial specialization
     typename Enable = bool>
 class DualMmaMultistage : 
-  public DualMmaBase<Shape_, Policy_, Stages> {
+  public DualMmaBase<Shape_, Policy0_, Policy1_, Stages> {
 public:
   ///< Base class
-  using Base = DualMmaBase<Shape_, Policy_, Stages>;
+  using Base = DualMmaBase<Shape_, Policy0_, Policy1_, Stages>;
   ///< Size of the Gemm problem - concept: gemm::GemmShape<>
   using Shape = Shape_;
   ///< Iterates over tiles of A operand in global memory
   using IteratorA = IteratorA_;
-  ///< Iterates over tiles of B operand in global memory
-  using IteratorB = IteratorB_;
+  ///< Iterates over tiles of B0 operand in global memory
+  using IteratorB0 = IteratorB0_;
+  ///< Iterates over tiles of B1 operand in global memory
+  using IteratorB1 = IteratorB1_;
   ///< Data type of accumulator matrix
   using ElementC = ElementC_;
   ///< Layout of accumulator matrix
   using LayoutC = LayoutC_;
   ///< Policy describing tuning details
-  using Policy = Policy_;
+  using Policy0 = Policy0_;
+  using Policy1 = Policy1_;
 
   using SmemIteratorA = SmemIteratorA_;
-  using SmemIteratorB = SmemIteratorB_;
+  using SmemIteratorB0 = SmemIteratorB0_;
+  using SmemIteratorB1 = SmemIteratorB1_;
 
   static cutlass::arch::CacheOperation::Kind const kCacheOpA = CacheOpA;
   static cutlass::arch::CacheOperation::Kind const kCacheOpB = CacheOpB;
@@ -117,19 +130,21 @@ public:
   //
 
   /// Fragment of accumulator tile
-  using FragmentC = typename Policy::Operator::FragmentC;
+  using FragmentC = typename Policy0::Operator::FragmentC;
 
   /// Warp-level Mma
-  using Operator = typename Policy::Operator;
+  using Operator0 = typename Policy0::Operator;
+  using Operator1 = typename Policy1::Operator;
 
   /// Minimum architecture is Sm80 to support cp.async
   using ArchTag = arch::Sm80;
   
   /// Complex transform on A operand
-  static ComplexTransform const kTransformA = Operator::kTransformA;
+  static ComplexTransform const kTransformA = Operator0::kTransformA;
 
   /// Complex transform on B operand
-  static ComplexTransform const kTransformB = Operator::kTransformB;
+  static ComplexTransform const kTransformB0 = Operator0::kTransformB;
+  static ComplexTransform const kTransformB1 = Operator1::kTransformB;
 
   /// Internal structure exposed for introspection.
   struct Detail {
@@ -140,7 +155,7 @@ public:
 
     /// Number of cp.async instructions to load one stage of operand B
     static int const AsyncCopyIterationsPerStageB =
-        IteratorB::ThreadMap::Iterations::kCount;
+        IteratorB0::ThreadMap::Iterations::kCount;
 
     /// Number of stages
     static int const kStages = Stages;
@@ -156,10 +171,12 @@ public:
 
  private:
 
-  using WarpLoadedFragmentA = typename Operator::FragmentA;
-  using WarpLoadedFragmentB = typename Operator::FragmentB;
-  using WarpTransformedFragmentA = typename Operator::TransformedFragmentA;
-  using WarpTransformedFragmentB = typename Operator::TransformedFragmentB;
+  using WarpLoadedFragmentA = typename Operator0::FragmentA;
+  using WarpLoadedFragmentB0 = typename Operator0::FragmentB;
+  using WarpLoadedFragmentB1 = typename Operator1::FragmentB;
+  using WarpTransformedFragmentA = typename Operator0::TransformedFragmentA;
+  using WarpTransformedFragmentB0 = typename Operator0::TransformedFragmentB;
+  using WarpTransformedFragmentB1 = typename Operator1::TransformedFragmentB;
 
  private:
 
@@ -171,8 +188,8 @@ public:
   SmemIteratorA smem_iterator_A_;
 
   /// Iterator to write threadblock-scoped tile of B operand to shared memory
-  SmemIteratorB smem_iterator_B0_;
-  SmemIteratorB smem_iterator_B1_;
+  SmemIteratorB0 smem_iterator_B0_;
+  SmemIteratorB1 smem_iterator_B1_;
 
 public:
 
@@ -215,7 +232,7 @@ public:
   }
 
   CUTLASS_DEVICE
-  void copy_tiles_and_advance(IteratorA &iterator_A, IteratorB &iterator_B0, IteratorB &iterator_B1,
+  void copy_tiles_and_advance(IteratorA &iterator_A, IteratorB0 &iterator_B0, IteratorB1 &iterator_B1,
                               int group_start_A = 0, int group_start_B = 0) {
     iterator_A.set_iteration_index(group_start_A *
                                    IteratorA::kAccessesPerVector);
@@ -253,9 +270,9 @@ public:
     }
 
     iterator_B0.set_iteration_index(group_start_B *
-                                   IteratorB::kAccessesPerVector);
+                                   IteratorB0::kAccessesPerVector);
     iterator_B1.set_iteration_index(group_start_B *
-                                   IteratorB::kAccessesPerVector);
+                                   IteratorB1::kAccessesPerVector);
     this->smem_iterator_B0_.set_iteration_index(group_start_B);
     this->smem_iterator_B1_.set_iteration_index(group_start_B);
 
@@ -263,16 +280,16 @@ public:
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupB; ++j) {
       if (group_start_B + j < Detail::AsyncCopyIterationsPerStageB) {
-        typename IteratorB::AccessType *dst_ptr =
-            reinterpret_cast<typename IteratorB::AccessType *>(
+        typename IteratorB0::AccessType *dst_ptr =
+            reinterpret_cast<typename IteratorB0::AccessType *>(
                 this->smem_iterator_B0_.get());
 
-        int const kSrcBytes = sizeof_bits<typename IteratorB::Element>::value *
-                              IteratorB::ThreadMap::kElementsPerAccess /
-                              IteratorB::kAccessesPerVector / 8;
+        int const kSrcBytes = sizeof_bits<typename IteratorB0::Element>::value *
+                              IteratorB0::ThreadMap::kElementsPerAccess /
+                              IteratorB0::kAccessesPerVector / 8;
 
         CUTLASS_PRAGMA_UNROLL
-        for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
+        for (int v = 0; v < IteratorB0::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_B0.get();
 
           if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
@@ -292,16 +309,16 @@ public:
     CUTLASS_PRAGMA_UNROLL
     for (int j = 0; j < Detail::kAccessesPerGroupB; ++j) {
       if (group_start_B + j < Detail::AsyncCopyIterationsPerStageB) {
-        typename IteratorB::AccessType *dst_ptr =
-            reinterpret_cast<typename IteratorB::AccessType *>(
+        typename IteratorB1::AccessType *dst_ptr =
+            reinterpret_cast<typename IteratorB1::AccessType *>(
                 this->smem_iterator_B1_.get());
 
-        int const kSrcBytes = sizeof_bits<typename IteratorB::Element>::value *
-                              IteratorB::ThreadMap::kElementsPerAccess /
-                              IteratorB::kAccessesPerVector / 8;
+        int const kSrcBytes = sizeof_bits<typename IteratorB1::Element>::value *
+                              IteratorB1::ThreadMap::kElementsPerAccess /
+                              IteratorB1::kAccessesPerVector / 8;
 
         CUTLASS_PRAGMA_UNROLL
-        for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
+        for (int v = 0; v < IteratorB1::kAccessesPerVector; ++v) {
           auto gmem_ptr = iterator_B1.get();
 
           if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
@@ -330,8 +347,8 @@ public:
       ///< iterator over A operand in global memory
       IteratorA iterator_A,
       ///< iterator over B operand in global memory
-      IteratorB iterator_B0,
-      IteratorB iterator_B1,
+      IteratorB0 iterator_B0,
+      IteratorB1 iterator_B1,
       ///< initial value of accumulator
       FragmentC const &src_accum0,
       FragmentC const &src_accum1
@@ -386,16 +403,16 @@ public:
       // Async Copy for operand B0
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < Detail::AsyncCopyIterationsPerStageB; ++j) {
-        typename IteratorB::AccessType *dst_ptr =
-            reinterpret_cast<typename IteratorB::AccessType *>(
+        typename IteratorB0::AccessType *dst_ptr =
+            reinterpret_cast<typename IteratorB0::AccessType *>(
                 this->smem_iterator_B0_.get());
 
         CUTLASS_PRAGMA_UNROLL
-        for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
+        for (int v = 0; v < IteratorB0::kAccessesPerVector; ++v) {
           int const kSrcBytes =
-              sizeof_bits<typename IteratorB::Element>::value *
-              IteratorB::ThreadMap::kElementsPerAccess /
-              IteratorB::kAccessesPerVector / 8;
+              sizeof_bits<typename IteratorB0::Element>::value *
+              IteratorB0::ThreadMap::kElementsPerAccess /
+              IteratorB0::kAccessesPerVector / 8;
 
           cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
               dst_ptr + v, iterator_B0.get(), iterator_B0.valid());
@@ -408,16 +425,16 @@ public:
       // Async Copy for operand B1
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < Detail::AsyncCopyIterationsPerStageB; ++j) {
-        typename IteratorB::AccessType *dst_ptr =
-            reinterpret_cast<typename IteratorB::AccessType *>(
+        typename IteratorB1::AccessType *dst_ptr =
+            reinterpret_cast<typename IteratorB1::AccessType *>(
                 this->smem_iterator_B1_.get());
 
         CUTLASS_PRAGMA_UNROLL
-        for (int v = 0; v < IteratorB::kAccessesPerVector; ++v) {
+        for (int v = 0; v < IteratorB1::kAccessesPerVector; ++v) {
           int const kSrcBytes =
-              sizeof_bits<typename IteratorB::Element>::value *
-              IteratorB::ThreadMap::kElementsPerAccess /
-              IteratorB::kAccessesPerVector / 8;
+              sizeof_bits<typename IteratorB1::Element>::value *
+              IteratorB1::ThreadMap::kElementsPerAccess /
+              IteratorB1::kAccessesPerVector / 8;
 
           cutlass::arch::cp_async_zfill<kSrcBytes, kCacheOpB>(
               dst_ptr + v, iterator_B1.get(), iterator_B1.valid());
@@ -473,35 +490,35 @@ public:
         ++last_smem_iterator_A;
       }
 
-      typename IteratorB::AccessType zero_B;
+      typename IteratorB0::AccessType zero_B;
       zero_B.clear();
 
       /// Iterator to write threadblock-scoped tile of B0 operand to shared memory
-      SmemIteratorB last_smem_iterator_B0(this->smem_iterator_B0_);
+      SmemIteratorB0 last_smem_iterator_B0(this->smem_iterator_B0_);
       last_smem_iterator_B0.set_iteration_index(0);
 
-      // Async Copy for operand B
+      // Async Copy for operand B0
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < Detail::AsyncCopyIterationsPerStageB; ++j) {
-
-        typename IteratorB::AccessType *dst_ptr =
-            reinterpret_cast<typename IteratorB::AccessType *>(
+        typename IteratorB0::AccessType *dst_ptr =
+            reinterpret_cast<typename IteratorB0::AccessType *>(
                 last_smem_iterator_B0.get());
 
         *dst_ptr = zero_B;
 
         ++last_smem_iterator_B0;
       }
+
       /// Iterator to write threadblock-scoped tile of B1 operand to shared memory
-      SmemIteratorB last_smem_iterator_B1(this->smem_iterator_B1_);
+      SmemIteratorB1 last_smem_iterator_B1(this->smem_iterator_B1_);
       last_smem_iterator_B1.set_iteration_index(0);
 
-      // Async Copy for operand B
+      // Async Copy for operand B1
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < Detail::AsyncCopyIterationsPerStageB; ++j) {
 
-        typename IteratorB::AccessType *dst_ptr =
-            reinterpret_cast<typename IteratorB::AccessType *>(
+        typename IteratorB1::AccessType *dst_ptr =
+            reinterpret_cast<typename IteratorB1::AccessType *>(
                 last_smem_iterator_B1.get());
 
         *dst_ptr = zero_B;
@@ -517,13 +534,14 @@ public:
     // Pair of fragments used to overlap shared memory loads and math
     // instructions
     WarpLoadedFragmentA warp_loaded_frag_A[2];
-    WarpLoadedFragmentB warp_loaded_frag_B0[2];
-    WarpLoadedFragmentB warp_loaded_frag_B1[2];
+    WarpLoadedFragmentB0 warp_loaded_frag_B0[2];
+    WarpLoadedFragmentB1 warp_loaded_frag_B1[2];
     WarpTransformedFragmentA warp_transformed_frag_A[2];
-    WarpTransformedFragmentB warp_transformed_frag_B0[2];
-    WarpTransformedFragmentB warp_transformed_frag_B1[2];
+    WarpTransformedFragmentB0 warp_transformed_frag_B0[2];
+    WarpTransformedFragmentB1 warp_transformed_frag_B1[2];
 
-    Operator warp_mma;
+    Operator0 warp_mma0;
+    Operator1 warp_mma1;
 
     this->warp_tile_iterator_A_.set_kgroup_index(0);
     this->warp_tile_iterator_B0_.set_kgroup_index(0);
@@ -544,10 +562,10 @@ public:
     int smem_write_stage_idx = Base::kStages - 1;
     int smem_read_stage_idx = 0;
 
-    warp_mma.transform(warp_transformed_frag_A[0], warp_transformed_frag_B0[0],
-                       warp_loaded_frag_A[0], warp_loaded_frag_B0[0]);
-    warp_mma.transform(warp_transformed_frag_A[0], warp_transformed_frag_B1[0],
-                       warp_loaded_frag_A[0], warp_loaded_frag_B1[0]);
+    warp_mma0.transform(warp_transformed_frag_A[0], warp_transformed_frag_B0[0],
+                        warp_loaded_frag_A[0], warp_loaded_frag_B0[0]);
+    warp_mma1.transform(warp_transformed_frag_A[0], warp_transformed_frag_B1[0],
+                        warp_loaded_frag_A[0], warp_loaded_frag_B1[0]);
 
     // tf32x3 kernels use staging accumulation. warp_mma uses a temporary
     // accumulator and this temporary accumulator is added to the final
@@ -556,9 +574,9 @@ public:
 
     FragmentC tmp_accum0, tmp_accum1;
 
-    if (platform::is_same<typename Operator::MathOperator,
+    if (platform::is_same<typename Operator0::MathOperator,
                           arch::OpMultiplyAddFastF32>::value
-      || platform::is_same<typename Operator::MathOperator,
+      || platform::is_same<typename Operator0::MathOperator,
                            arch::OpMultiplyAddComplexFastF32>::value) {
 
       tmp_accum0.clear();
@@ -597,28 +615,28 @@ public:
         ++this->warp_tile_iterator_B1_;
 
         if (warp_mma_k > 0) {
-          warp_mma.transform(warp_transformed_frag_A[warp_mma_k % 2],
-                             warp_transformed_frag_B0[warp_mma_k % 2],
-                             warp_loaded_frag_A[warp_mma_k % 2],
-                             warp_loaded_frag_B0[warp_mma_k % 2]);
-          warp_mma.transform(warp_transformed_frag_A[warp_mma_k % 2],
-                             warp_transformed_frag_B1[warp_mma_k % 2],
-                             warp_loaded_frag_A[warp_mma_k % 2],
-                             warp_loaded_frag_B1[warp_mma_k % 2]);
+          warp_mma0.transform(warp_transformed_frag_A[warp_mma_k % 2],
+                              warp_transformed_frag_B0[warp_mma_k % 2],
+                              warp_loaded_frag_A[warp_mma_k % 2],
+                              warp_loaded_frag_B0[warp_mma_k % 2]);
+          warp_mma1.transform(warp_transformed_frag_A[warp_mma_k % 2],
+                              warp_transformed_frag_B1[warp_mma_k % 2],
+                              warp_loaded_frag_A[warp_mma_k % 2],
+                              warp_loaded_frag_B1[warp_mma_k % 2]);
         }
 
-        if (platform::is_same<typename Operator::MathOperator,
+        if (platform::is_same<typename Operator0::MathOperator,
                               arch::OpMultiplyAddFastF32>::value
-          || platform::is_same<typename Operator::MathOperator,
+          || platform::is_same<typename Operator0::MathOperator,
                                arch::OpMultiplyAddComplexFastF32>::value) {
 
-          warp_mma(
+          warp_mma0(
             tmp_accum0,
             warp_transformed_frag_A[warp_mma_k % 2],
             warp_transformed_frag_B0[warp_mma_k % 2], 
             tmp_accum0
           );
-          warp_mma(
+          warp_mma1(
             tmp_accum1,
             warp_transformed_frag_A[warp_mma_k % 2],
             warp_transformed_frag_B1[warp_mma_k % 2], 
@@ -632,13 +650,13 @@ public:
             tmp_accum1.clear();
           }
         } else {
-          warp_mma(
+          warp_mma0(
             accum0,
             warp_transformed_frag_A[warp_mma_k % 2],
             warp_transformed_frag_B0[warp_mma_k % 2],
             accum0
           );
-          warp_mma(
+          warp_mma1(
             accum1,
             warp_transformed_frag_A[warp_mma_k % 2],
             warp_transformed_frag_B1[warp_mma_k % 2],
@@ -696,14 +714,14 @@ public:
 
           if (smem_read_stage_idx == (Base::kStages - 1)) {
             this->warp_tile_iterator_A_.add_tile_offset(
-                {0, -Base::kStages * Policy::kPartitionsK *
+                {0, -Base::kStages * Policy0::kPartitionsK *
                         Base::kWarpGemmIterations});
             this->warp_tile_iterator_B0_.add_tile_offset(
-                {-Base::kStages * Policy::kPartitionsK *
+                {-Base::kStages * Policy0::kPartitionsK *
                      Base::kWarpGemmIterations,
                  0});
             this->warp_tile_iterator_B1_.add_tile_offset(
-                {-Base::kStages * Policy::kPartitionsK *
+                {-Base::kStages * Policy1::kPartitionsK *
                      Base::kWarpGemmIterations,
                  0});
             smem_read_stage_idx = 0;
@@ -720,22 +738,22 @@ public:
         // Do any conversions feeding the first stage at the end of the loop so
         // we can start right away on mma instructions
         if (warp_mma_k + 1 == Base::kWarpGemmIterations) {
-          warp_mma.transform(warp_transformed_frag_A[(warp_mma_k + 1) % 2],
-                             warp_transformed_frag_B0[(warp_mma_k + 1) % 2],
-                             warp_loaded_frag_A[(warp_mma_k + 1) % 2],
-                             warp_loaded_frag_B0[(warp_mma_k + 1) % 2]);
-          warp_mma.transform(warp_transformed_frag_A[(warp_mma_k + 1) % 2],
-                             warp_transformed_frag_B1[(warp_mma_k + 1) % 2],
-                             warp_loaded_frag_A[(warp_mma_k + 1) % 2],
-                             warp_loaded_frag_B1[(warp_mma_k + 1) % 2]);
+          warp_mma0.transform(warp_transformed_frag_A[(warp_mma_k + 1) % 2],
+                              warp_transformed_frag_B0[(warp_mma_k + 1) % 2],
+                              warp_loaded_frag_A[(warp_mma_k + 1) % 2],
+                              warp_loaded_frag_B0[(warp_mma_k + 1) % 2]);
+          warp_mma1.transform(warp_transformed_frag_A[(warp_mma_k + 1) % 2],
+                              warp_transformed_frag_B1[(warp_mma_k + 1) % 2],
+                              warp_loaded_frag_A[(warp_mma_k + 1) % 2],
+                              warp_loaded_frag_B1[(warp_mma_k + 1) % 2]);
         }
       }
 
     }
 
-    if (platform::is_same<typename Operator::MathOperator,
+    if (platform::is_same<typename Operator0::MathOperator,
                           arch::OpMultiplyAddFastF32>::value
-      || platform::is_same<typename Operator::MathOperator,
+      || platform::is_same<typename Operator0::MathOperator,
                            arch::OpMultiplyAddComplexFastF32>::value) {
       accum0 = plus_accum(accum0, tmp_accum0); 
       accum1 = plus_accum(accum1, tmp_accum1); 
