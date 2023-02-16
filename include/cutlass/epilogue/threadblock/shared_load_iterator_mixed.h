@@ -70,8 +70,9 @@ template <
   int ElementSizeBits_,      ///< Size of accumulator in bits
   int OutputSizeBits_,       ///< Size of output element in bits
   int ElementsPerAccess,     ///< Vector length of output vector
-  int ContiguousLanes        ///< Number of lanes in the warp writing to contiguous elements
+  int ContiguousLanes,       ///< Number of lanes in the warp writing to contiguous elements
                              ///  in the global memory tensor
+  bool EightBitsOutputOrLess = (OutputSizeBits_ <= 8)
 >
 class SharedLoadIteratorMixed;
 
@@ -85,7 +86,7 @@ template <
   typename ThreadMap_,       ///< Thread map (conept: OutputTileThreadMap)
   typename Element_          ///< Accumulator data type
 >
-class SharedLoadIteratorMixed<ThreadMap_, Element_, 32, 16, 8, 8> {
+class SharedLoadIteratorMixed<ThreadMap_, Element_, 32, 16, 8, 8, false> {
 public:
   using ThreadMap = ThreadMap_;
   using Shape = typename ThreadMap::Shape;
@@ -253,7 +254,7 @@ template <
   typename ThreadMap_,      ///< Thread map (conept: OutputTileThreadMap)
   int OutputSizeBits_       ///< Size of output element in bits
 >
-class SharedLoadIteratorMixed<ThreadMap_, int32_t, 32, OutputSizeBits_, 16, 8> {
+class SharedLoadIteratorMixed<ThreadMap_, int32_t, 32, OutputSizeBits_, 16, 8, true> {
 public:
   using ThreadMap = ThreadMap_;
   using Shape = typename ThreadMap::Shape;
@@ -418,7 +419,7 @@ template <
   typename ThreadMap_,      ///< Thread map (conept: OutputTileThreadMap)
   int OutputSizeBits_
 >
-class SharedLoadIteratorMixed<ThreadMap_, int32_t, 32, OutputSizeBits_, 8, 8> {
+class SharedLoadIteratorMixed<ThreadMap_, int32_t, 32, OutputSizeBits_, 8, 8, true> {
 public:
   using ThreadMap = ThreadMap_;
   using Shape = typename ThreadMap::Shape;
