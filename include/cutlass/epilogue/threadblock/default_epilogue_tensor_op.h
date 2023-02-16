@@ -224,8 +224,7 @@ struct DefaultIteratorsTensorOp<
   static int const kFragmentsPerIteration = 2;
 };
 
-
-/// Partial specialization for half <= float x 8 epilogues avoids shared memory bank conflicts.
+/// Partial specialization for half <= int32_t x 8 epilogues avoids shared memory bank conflicts.
 template <
   typename ThreadblockShape,
   typename WarpShape,
@@ -262,7 +261,6 @@ struct DefaultIteratorsTensorOp<
 
   static int const kFragmentsPerIteration = 2;
 };
-
 
 /// Partial specialization for int8/int4b_t <= int32 x 16/8 epilogues avoids shared memory bank conflicts.
 /// Threadblock::kN = 256 still has bank conflicts.
@@ -310,7 +308,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using WarpTileIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
                              WarpTileIteratorNotMixed,
                              WarpTileIteratorMixed>::type;
 
@@ -329,7 +327,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using SharedLoadIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
                              SharedLoadIteratorNotMixed,
                              SharedLoadIteratorMixed>::type;
 
@@ -377,7 +375,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using WarpTileIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
                              WarpTileIteratorNotMixed,
                              WarpTileIteratorMixed>::type;
 
@@ -396,7 +394,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using SharedLoadIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
                              SharedLoadIteratorNotMixed,
                              SharedLoadIteratorMixed>::type;
 
@@ -444,7 +442,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using WarpTileIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
                              WarpTileIteratorNotMixed,
                              WarpTileIteratorMixed>::type;
 
@@ -463,7 +461,7 @@ struct DefaultIteratorsTensorOp<
   >;
 
   using SharedLoadIterator = typename platform::conditional<
-                             (ThreadblockShape::kN == 256),
+                             (ThreadblockShape::kN == 256) || (ThreadblockShape::kN == 128 && ElementsPerAccess == 8),
                              SharedLoadIteratorNotMixed,
                              SharedLoadIteratorMixed>::type;
 
