@@ -293,7 +293,7 @@ mapping of 2.x layout tags to corresponding M-major, N-major, or K-major strides
 | Matrix | CUTLASS 2.x layout | 2.x Shape  | Logical major mode| 3.x Shape/Stride  | Major ordinal |
 | ---    | ---                | ---        | ---               | ---               | ---           |
 | A      | `ColumnMajor`      | M x K      | M major           | M x K x L         | 0 (outer)     |
-| A      | `RowMajor`         | M x K      | K major           | N x K x L         | 1 (inner)     |
+| A      | `RowMajor`         | M x K      | K major           | M x K x L         | 1 (inner)     |
 | B      | `RowMajor`         | K x N      | N major           | N x K x L         | 0 (outer)     |
 | B      | `ColumnMajor`      | K x N      | K major           | N x K x L         | 1 (inner)     |
 | C      | `ColumnMajor`      | M x N      | M major           | M x N x L         | 0 (outer)     |
