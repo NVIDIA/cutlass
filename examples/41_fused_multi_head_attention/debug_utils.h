@@ -50,9 +50,14 @@
 #if 1
 #define PRINT_WARP_ID 0
 #define PRINT_LANE_ID 0
-#define PRINT_T0_L0(msg, ...)                                         \
+#define PRINT_B0_T0(msg, ...)                                         \
   if (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&        \
       threadIdx.x == PRINT_LANE_ID && threadIdx.y == PRINT_WARP_ID && \
+      threadIdx.z == 0) {                                             \
+    printf(msg "\n", ##__VA_ARGS__);                                  \
+  }
+#define PRINT_T0(msg, ...)                                            \
+  if (threadIdx.x == PRINT_LANE_ID && threadIdx.y == PRINT_WARP_ID && \
       threadIdx.z == 0) {                                             \
     printf(msg "\n", ##__VA_ARGS__);                                  \
   }
@@ -84,7 +89,7 @@
     }                                                                         \
   }
 #else
-#define PRINT_T0_L0
+#define PRINT_B0_T0
 #define PRINT_TX_LX
 #endif
 
@@ -193,3 +198,37 @@ constexpr __string_view __get_type_name() {
       int(ps.m()),                              \
       int(ps.n()),                              \
       int(ps.k()))
+
+template <typename LambdaIterator, typename LaneOffsetT, typename AccumT>
+CUTLASS_DEVICE void print_warp_accum(
+    AccumT accum,
+    LaneOffsetT lane_offset,
+    int32_t num_rows,
+    int32_t num_cols) {
+  bool is_main = blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&
+      threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0;
+  for (int row = 0; row < num_rows; ++row) {
+    for (int col = 0; col < num_cols; ++col) {
+      if (col % 32 == 0) {
+        if (is_main) {
+          printf("\nmat[%3d, %3d:%3d]", row, col, col + 32);
+        }
+        __syncthreads();
+      }
+      LambdaIterator::iterateRows(
+          lane_offset,
+          [&](int accum_m) {},
+          [&](int accum_m, int accum_n, int idx) {
+            if (row == accum_m && col == accum_n &&
+                (blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0)) {
+              printf(" %6.1f", float(accum[idx]));
+            }
+          },
+          [&](int accum_m) {});
+      __syncthreads();
+    }
+    if (is_main) {
+      printf("\n");
+    }
+  }
+}

@@ -40,7 +40,7 @@
    faster) (2) We support to transpose the operand (eg read `A.transpose()` when
    the shared memory holds `A`)
 
-    This is only implemented for the specific shapes.
+    This is only implemented for the specific shapes that are interesting for us
 */
 #pragma once
 

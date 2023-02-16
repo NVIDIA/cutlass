@@ -856,7 +856,9 @@ public:
       p.head_dim_value = options.head_size_v;
       p.num_queries = options.seq_length;
       p.num_keys = options.seq_length_kv;
-      p.causal = options.causal;
+      if (options.causal) {
+        p.custom_mask_type = Attention::CausalFromTopLeft;
+      }
 
       // All tensors are in BMHK shapes
       p.q_strideH = options.head_size;
@@ -868,6 +870,7 @@ public:
       p.q_strideB = p.q_strideM * options.seq_length;
       p.k_strideB = p.k_strideM * options.seq_length_kv;
       p.v_strideB = p.v_strideM * options.seq_length_kv;
+      p.o_strideM = p.head_dim_value * p.num_heads;
     }
 
     // launch kernel :)
@@ -1005,7 +1008,9 @@ int run_attention(Options& options) {
     true,                 // Memory is aligned
     kQueriesPerBlock,
     kKeysPerBlock,
-    kSingleValueIteration
+    kSingleValueIteration,
+    false,                // Supports dropout
+    false                 // Supports bias
   >;
 
   //
