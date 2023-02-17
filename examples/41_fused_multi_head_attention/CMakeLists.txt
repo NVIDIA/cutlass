@@ -37,8 +37,14 @@ cutlass_example_add_executable(
   fused_multihead_attention_variable_seqlen.cu
   )
 
+cutlass_example_add_executable(
+  41_fmha_backward
+  fmha_backward.cu
+  )
+
 
 add_custom_target(41_fused_multi_head_attention
 DEPENDS 41_fused_multi_head_attention_fixed_seqlen
         41_fused_multi_head_attention_variable_seqlen
+        41_fmha_backward
 )
