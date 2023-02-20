@@ -637,13 +637,6 @@ struct ThreadblockSwizzleStreamK {
   // Device-side interface
   //
 
-  /// Proves to the compiler that val is warp-uniform
-  CUTLASS_DEVICE
-  int uniform(int val) const
-  {
-    return __shfl_sync(0xffffffff, val, 0);
-  }
-
   /// Obtains number of threadblocks per GEMM
   CUTLASS_DEVICE
   int device_num_blocks() const
@@ -656,7 +649,7 @@ struct ThreadblockSwizzleStreamK {
   int get_sk_tile_idx(int iter) const
   {
     int tile_idx = div_mod_iters_per_tile.div(iter);
-    return uniform(tile_idx);
+    return tile_idx;
   }
 
   /// Obtains the batch index
@@ -734,7 +727,7 @@ struct ThreadblockSwizzleStreamK {
       block_idx = (region * sk_blocks_per_region()) + block_in_region;
     }
 
-    return uniform(block_idx);
+    return block_idx;
   }
 
 
