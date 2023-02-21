@@ -129,7 +129,7 @@ constexpr __string_view __get_type_name() {
 
 // Print a given array
 #define PRINT_ACCUM8_T0_L0_START(name, accum, start)  \
-  PRINT_T0_L0(                                        \
+  PRINT_B0_T0(                                        \
       "%s[%d:%d] - {%f, %f, %f, %f, %f, %f, %f, %f}", \
       name,                                           \
       int(start),                                     \
@@ -146,7 +146,7 @@ constexpr __string_view __get_type_name() {
 #define PRINT_FRAG_T0_L0(name, frag)                          \
   {                                                           \
     auto typeStr = __get_type_name<decltype(frag)>();         \
-    PRINT_T0_L0("printing %s (%s)", name, typeStr.data);      \
+    PRINT_B0_T0("printing %s (%s)", name, typeStr.data);      \
     for (int _start = 0; _start < frag.size(); _start += 8) { \
       PRINT_ACCUM8_T0_L0_START("  ", frag, _start);           \
     }                                                         \
@@ -155,7 +155,7 @@ constexpr __string_view __get_type_name() {
   }
 #define PRINT_ARRAY_T0_L0_INCR(name, array, length, incr)   \
   {                                                         \
-    PRINT_T0_L0("printing %s (len=%d)", name, int(length)); \
+    PRINT_B0_T0("printing %s (len=%d)", name, int(length)); \
     for (int _start = 0; _start < length; _start += incr) { \
       PRINT_ACCUM8_T0_L0_START("  ", array, _start);        \
     }                                                       \
@@ -165,7 +165,7 @@ constexpr __string_view __get_type_name() {
 
 // Print a 4x4 matrix
 #define PRINT_TENSOR4x4_T0_L0_START(name, ref, start_x, start_y)                                           \
-  PRINT_T0_L0(                                                                                             \
+  PRINT_B0_T0(                                                                                             \
       "%s[%d:%d, %d:%d]:\n    %f, %f, %f, %f\n    %f, %f, %f, %f\n    %f, %f, %f, %f\n    %f, %f, %f, %f", \
       name,                                                                                                \
       int(start_x),                                                                                        \
@@ -192,7 +192,7 @@ constexpr __string_view __get_type_name() {
   PRINT_TENSOR4x4_T0_L0_START(name, ref, 0, 0)
 
 #define PRINT_PROBLEM_SIZE(name, ps)            \
-  PRINT_T0_L0(                                  \
+  PRINT_B0_T0(                                  \
       "%s.problem_size: {.m=%d, .n=%d, .k=%d}", \
       name,                                     \
       int(ps.m()),                              \
