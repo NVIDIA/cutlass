@@ -342,7 +342,7 @@ public:
     // which are not assigned tiles still need to perform the work of iterating through
     // problem sizes to determine that they have no work to do. This competes for cycles
     // with those threadblocks that are assigned tiles to compute.
-    return min(total_tiles, occupancy_based_block_count);
+    return std::min(total_tiles, occupancy_based_block_count);
   }
 
 
