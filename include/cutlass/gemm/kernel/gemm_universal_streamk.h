@@ -1068,7 +1068,6 @@ protected:
       block_iters_remaining = block_iter_end - block_iter_begin;
 
       tile_idx = params.block_mapping.get_sk_tile_idx(block_iter_end - 1);
-
       init_sk_tile_work(tile_work, tile_idx, block_iter_begin, block_iter_begin + block_iters_remaining);
     }
     else
@@ -1083,19 +1082,24 @@ protected:
       return;
     }
 
-    // Perform this block's share of work for this tile
-    process_tile(
-      tile_work,
-      block_idx,
-      dp_start_block_idx,
-      block_iter_begin);
-
-    block_iters_remaining -= tile_work.k_iters_remaining;
-
     // Iteration-processing loop body
     CUTLASS_PRAGMA_NO_UNROLL
-    while (block_iters_remaining != 0)
+    while (true)
     {
+      // Perform this block's share of work for this tile
+      process_tile(
+        tile_work,
+        block_idx,
+        dp_start_block_idx,
+        block_iter_begin);
+
+      block_iters_remaining -= tile_work.k_iters_remaining;
+
+      if (block_iters_remaining == 0)
+      {
+        break;
+      }
+
       // Continue to next tile
       __syncthreads();
 
@@ -1111,15 +1115,6 @@ protected:
         tile_idx--;
         init_sk_tile_work(tile_work, tile_idx, block_iter_begin, block_iter_begin + block_iters_remaining);
       }
-
-      // Perform this block's share of work for this tile
-      process_tile(
-        tile_work,
-        block_idx,
-        dp_start_block_idx,
-        block_iter_begin);
-
-      block_iters_remaining -= tile_work.k_iters_remaining;
     }
 
   }
