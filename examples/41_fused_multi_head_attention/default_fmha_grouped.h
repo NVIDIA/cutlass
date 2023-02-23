@@ -50,9 +50,8 @@
 
 #include "fmha_grouped.h"
 #include "gemm_kernel_utils.h"
-#include "find_default_mma.h"
-#include "attention_scaling_coefs_updater.h"
-#include "mma_from_smem.h"
+#include "gemm/find_default_mma.h"
+#include "gemm/mma_from_smem.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -154,10 +153,10 @@ struct DefaultFMHAGrouped {
     using IteratorA = typename DefaultMma::IteratorA;
     using IteratorB = typename DefaultMma::IteratorB;
     using Mma = typename DefaultMma::ThreadblockMma;
-    using ScalingCoefsUpdater = typename DefaultAttentionScalingCoefsUpdater<
+    using AccumLambdaIterator = typename DefaultMmaAccumLambdaIterator<
         typename Mma::Operator::IteratorC,
         ElementAccumulator,
-        kWarpSize>::Updater;
+        kWarpSize>::Iterator;
 
     static_assert(MmaCore::WarpCount::kCount == kNumWarpsPerBlock, "");
 
@@ -240,7 +239,8 @@ struct DefaultFMHAGrouped {
     using DefaultMmaFromSmem =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
-            typename MM0::AccumulatorSharedStorage>;
+            typename MM0::AccumulatorSharedStorage,
+            false>; // kScaleOperandA
 
     using Mma = typename DefaultMmaFromSmem::Mma;
     using IteratorB = typename Mma::IteratorB;
