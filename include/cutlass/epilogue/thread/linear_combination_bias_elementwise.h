@@ -62,7 +62,8 @@ template <
   int ElementsPerAccess,
   typename ElementwiseOp_ = Identity<ElementCompute_>,
   typename BinaryOp_ = plus<ElementCompute_>,
-  typename ElementVector_ = ElementC_
+  typename ElementVector_ = ElementC_,
+  bool StoreT_ = true
 >
 class LinearCombinationBiasElementwise {
 public:
@@ -97,7 +98,7 @@ public:
   static bool const kStoreZ = true;
 
   /// If true, the 'T' tensor is stored
-  static bool const kStoreT = true;
+  static bool const kStoreT = StoreT_;
 
   /// Host-constructable parameters structure
   struct Params {
