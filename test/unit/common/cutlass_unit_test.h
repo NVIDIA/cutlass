@@ -30,7 +30,7 @@
  **************************************************************************************************/
 
 #pragma once
-#pragma warning (disable : 4068 ) /* disable unknown pragma warnings for vistual studio */
+#pragma warning (disable : 4068 ) /* disable unknown pragma warnings for visual studio */
 
 #pragma nv_diag_suppress boolean_controlling_expr_is_constant
 #include <gtest/gtest.h>
