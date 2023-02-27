@@ -133,4 +133,4 @@ struct BlockForEach {
 
 } // namespace device
 } // namespace reference
-} // namesace cutlass
+} // namespace cutlass

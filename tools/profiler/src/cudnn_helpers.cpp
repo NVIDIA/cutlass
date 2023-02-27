@@ -68,7 +68,7 @@ Disposition get_cutlass_disposition(cudnnStatus_t cudnn_status) {
   return Disposition::kFailed;
 }
 
-/// Checks cudnnStatus_t converts to cutlas status and returns if Status::kSuccess o.w. throws exception
+/// Checks cudnnStatus_t converts to cutlass status and returns if Status::kSuccess o.w. throws exception
 Status checkCudnnErr(cudnnStatus_t cudnn_status) {
   Status cutlass_status = get_cutlass_status(cudnn_status);
   if(cutlass_status != Status::kSuccess) {
@@ -243,7 +243,7 @@ Status cudnn_satisfies(
   }
 
   ////////////////////////  Convolution output dimensions p and q ///////////////////////
-  // Cutlass convolutions support arbitrary output dimensions and not constriant by    //
+  // Cutlass convolutions support arbitrary output dimensions and not constrained by   //
   // input, filter, padding, striding, dilation sizes.                                 //
   // cuDNN sets the output dimensions (p, q) using following equations:                //
   //                                                                                   //
@@ -373,7 +373,7 @@ Status cudnn_satisfies(
   }
 
   ////////////////////////  Convolution output dimensions p and q ///////////////////////
-  // Cutlass convolutions support arbitrary output dimensions and not constriant by    //
+  // Cutlass convolutions support arbitrary output dimensions and not constrained by   //
   // input, filter, padding, striding, dilation sizes.                                 //
   // cuDNN sets the output dimensions (p, q) using following equations:                //
   //                                                                                   //

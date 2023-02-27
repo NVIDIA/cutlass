@@ -87,7 +87,7 @@ public:
     using BinaryOp = BinaryOp_<ElementCompute, kElementsPerAccess>;
 
     static_assert(kElementsPerAccess==VisitAccessTypeA::kElements, "kElementsPerAccess mismatches with Visitor A");
-    static_assert(kElementsPerAccess==VisitAccessTypeB::kElements, "kElementsPerAccess misnatches with Visitor B");
+    static_assert(kElementsPerAccess==VisitAccessTypeB::kElements, "kElementsPerAccess mismatches with Visitor B");
 
     /// SMEM buffer class required in the epilogue visitor
     struct SharedStorage {

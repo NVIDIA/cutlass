@@ -77,7 +77,7 @@ namespace threadblock {
 //  D = dr + j di = (ar*br - ai*bi) + j (ar*bi + ai*br) 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 template <
-  /// Epilouge Shape
+  /// Epilogue Shape
   typename Shape_,
   /// Warp-level mma operator
   typename WarpMmaTensorOp_,

@@ -83,7 +83,7 @@ struct TensorReductionAffineContiguousParams {
   uint64_t outer_count;                          /// Number of elements in outer index space
 
   ElementOutput * destination;                  /// Pointer to output tensor of rank kReducedRank
-  ElementSource const * source;                 /// Poitner to source pointer of rank kRank
+  ElementSource const * source;                 /// Pointer to source pointer of rank kRank
   ReductionOp reduction_op;                     /// Reduction operator
   ElementCompute reduction_identity;            /// Identity element used by reduction operator
   ElementCompute *device_workspace;             /// Pointer to device workspace for inter-CTA reductions

@@ -45,7 +45,7 @@ class gen_verify:
         self.user_header_file = ""
         for header in user_header_file: 
             self.user_header_file += "#include \"" + header + "\"\n"
-        self.seperate_cutlass = gen_basic.gen_volta_turing_fuse_act_impl(fuse_gemm_info, gen_class_name, user_header_file, output_dir)
+        self.separate_cutlass = gen_basic.gen_volta_turing_fuse_act_impl(fuse_gemm_info, gen_class_name, user_header_file, output_dir)
         self.gen_params()
         self.output_dir = output_dir
 
@@ -53,14 +53,14 @@ class gen_verify:
     def gen_code(self):
         code = ""
         code += self.user_header_file
-        code += self.seperate_cutlass.gen_using(False)  #False -> Turing, True -> Volta
+        code += self.separate_cutlass.gen_using(False)  #False -> Turing, True -> Volta
 
         code_body = ""
         for i in range(self.b2b_num):
             code_body += "    " + helper.var_idx("Gemm", i) + helper.var_idx(" gemm_op_", i) + ";\n"
             code_body += "    " + helper.var_idx("gemm_op_", i) + helper.var_idx(".initialize(Arguments_", i) + ", nullptr);\n"
 
-        code_body += self.seperate_cutlass.gen_run()
+        code_body += self.separate_cutlass.gen_run()
 
         code += ir.gen_func(self.name, self.params, code_body)
         helper.write_2_headfile("cutlass_verify.h", self.output_dir, code)
@@ -87,6 +87,6 @@ class gen_verify:
 
     def gen_initialize():
         code = ""
-        initialize_code = self.seperate_cutlass.gen_initialize()
+        initialize_code = self.separate_cutlass.gen_initialize()
 
         code = ir.gen_func("initialize", [[]])

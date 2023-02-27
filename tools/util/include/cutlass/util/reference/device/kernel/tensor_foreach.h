@@ -72,7 +72,7 @@ struct TensorForEachHelper {
 template <typename Func, int Rank>
 struct TensorForEachHelper<Func, Rank, 0> {
 
-  /// Constructor for fastest chaning rank
+  /// Constructor for fastest changing rank
   __inline__ __device__
   TensorForEachHelper(Func &func, Coord<Rank> const &size, Coord<Rank> &coord, int64_t index) {
 

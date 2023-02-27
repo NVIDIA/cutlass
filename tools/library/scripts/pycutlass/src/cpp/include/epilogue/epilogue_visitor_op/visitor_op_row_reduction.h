@@ -56,7 +56,7 @@ template <
     typename ElementReduction_,             ///< Data type of the output reduction in device memory
     typename ElementReductionAccumulator_ , ///< Data type to accumulate reduction in smem and register
     typename OutputTileIterator_,           ///< Tile Iterator type
-    typename Visitor_                       ///< preceeding visitor op
+    typename Visitor_                       ///< preceding visitor op
 >
 class VisitorOpRowReduction {
 public:
@@ -82,7 +82,7 @@ public:
     /// Fragment type of accumulator
     using AccumulatorAccessType = Array<ElementAccumulator, kElementsPerAccess>;
 
-    /// Fragment type of redcution
+    /// Fragment type of reduction
     using ReductionAccumulatorAccessType = Array<ElementReductionAccumulator, kElementsPerAccess>;
 
     /// Thread map used by output tile iterators

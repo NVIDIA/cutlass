@@ -105,7 +105,7 @@ public:
     /// Total number of flops computed
     int64_t flops(library::ConvDescription const &operation_desc) const;
 
-    /// Infers output size from theinput size, padding, stride, and dilation
+    /// Infers output size from the input size, padding, stride, and dilation
     void set_default_output_size() {
       z = ((d + pad_d - t * dilation_d) / stride_d) + 1;
       p = ((h + pad_h - r * dilation_h) / stride_h) + 1;
@@ -190,7 +190,7 @@ public:
       }
     }
 
-    // Returns leading dimenstion for equivalent gemm matrix A
+    // Returns leading dimension for equivalent gemm matrix A
     int64_t eq_gemm_lda(library::ConvKind const &conv_kind) const {
 
       switch (conv_kind) {
@@ -201,7 +201,7 @@ public:
       }
     }
 
-    // Returns leading dimenstion for equivalent gemm matrix B
+    // Returns leading dimension for equivalent gemm matrix B
     int64_t eq_gemm_ldb(library::ConvKind const &conv_kind) const {
 
       switch (conv_kind) {
@@ -212,7 +212,7 @@ public:
       }
     }
 
-    // Returns leading dimenstion for equivalent gemm matrix C
+    // Returns leading dimension for equivalent gemm matrix C
     int64_t eq_gemm_ldc(library::ConvKind const &conv_kind) const {
 
       switch (conv_kind) {
@@ -389,7 +389,7 @@ protected:
     void *host_workspace,
     void *device_workspace);
   
-  /// Initialize reduction problem dimenstions and library::Operation
+  /// Initialize reduction problem dimensions and library::Operation
   bool initialize_reduction_configuration_(
     Options const &options,  
     PerformanceReport &report,

@@ -248,7 +248,7 @@ struct Gemm<ElementA, LayoutA, ElementB, LayoutB, ElementC, LayoutC, ScalarType,
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Parital specialization for XOR-popc
+/// Partial specialization for XOR-popc
 template <typename ElementA, typename LayoutA, typename ElementB,
           typename LayoutB, typename ElementC, typename LayoutC,
           typename ScalarType, typename AccumulatorType>

@@ -14,7 +14,7 @@ var searchData=
   ['semaphore',['Semaphore',['../classcutlass_1_1Semaphore.html',1,'cutlass']]],
   ['semaphore',['Semaphore',['../classcutlass_1_1Semaphore.html#a2ce4cd07fe773efa429f726cfbd98070',1,'cutlass::Semaphore::Semaphore()'],['../structcutlass_1_1gemm_1_1kernel_1_1Gemm_1_1Params.html#adec6d0c6d74e7f456196f453e302fbbb',1,'cutlass::gemm::kernel::Gemm::Params::semaphore()']]],
   ['semaphore_2eh',['semaphore.h',['../semaphore_8h.html',1,'']]],
-  ['seperate_5fstring',['seperate_string',['../structcutlass_1_1CommandLine.html#a5f86e4b2bd8c44b739c83530d77c5590',1,'cutlass::CommandLine']]],
+  ['separate_5fstring',['separate_string',['../structcutlass_1_1CommandLine.html#a5f86e4b2bd8c44b739c83530d77c5590',1,'cutlass::CommandLine']]],
   ['sequential',['sequential',['../structcutlass_1_1Distribution.html#ab86d975567ef141ff82067b1f41cd3ee',1,'cutlass::Distribution::sequential()'],['../structcutlass_1_1Distribution.html#a499f4023e0d42356ce71d38cc32bf92aa39d3cf55e90573c8d1dfb483cfb410dc',1,'cutlass::Distribution::Sequential()']]],
   ['set',['set',['../classcutlass_1_1PredicateVector_1_1Iterator.html#aadfd039b5622098c9e46706a27122575',1,'cutlass::PredicateVector::Iterator::set()'],['../structcutlass_1_1PredicateVector.html#a062fa8a8df725ef08ced2ffcca8336af',1,'cutlass::PredicateVector::set()'],['../classcutlass_1_1SubbyteReference.html#a6473e57520d8ee7afbd95c1e1641e05a',1,'cutlass::SubbyteReference::set()']]],
   ['set_5fgaussian',['set_gaussian',['../structcutlass_1_1Distribution.html#ad594b5ec1d577e8ef03d4d808a8220b1',1,'cutlass::Distribution']]],
