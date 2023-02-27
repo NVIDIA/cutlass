@@ -867,7 +867,7 @@ struct PitchLinear2DThreadTileStripminedThreadMap <Shape_, Threads, cutlass::lay
   }
 };
 
-/// Thread Mapping a 2D threadtiled mapping as a tranposed Pitchlinear2DThreadTile mapping
+/// Thread Mapping a 2D threadtiled mapping as a transposed Pitchlinear2DThreadTile mapping
 template <typename ThreadMap_>
 struct TransposePitchLinearThreadMap2DThreadTile {
     /// Underlying ThreadMap
