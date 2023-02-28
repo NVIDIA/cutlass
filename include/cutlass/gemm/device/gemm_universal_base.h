@@ -302,7 +302,7 @@ public:
   /// Initializes GEMM state from arguments and workspace memory
   Status initialize(
     Arguments const &args,
-    void *workspace,
+    void *workspace = nullptr,
     cudaStream_t stream = nullptr)
   {
     CUTLASS_TRACE_HOST("GemmUniversalBase::initialize() - workspace "
