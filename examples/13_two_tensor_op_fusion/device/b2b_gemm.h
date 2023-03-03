@@ -196,6 +196,7 @@ class B2bGemm {
     // Data members
     //
 
+    GemmUniversalMode mode;
     GemmCoord problem_size_0;
     GemmCoord problem_size_1;
     TensorRef<ElementA const, LayoutA> ref_A0;
@@ -206,6 +207,11 @@ class B2bGemm {
     TensorRef<ElementB const, LayoutB> ref_B1;
     TensorRef<ElementC const, LayoutC> ref_C1;
     TensorRef<ElementC, LayoutC> ref_D1;
+    int64_t batch_stride_A0;
+    int64_t batch_stride_B0;
+    int64_t batch_stride_B1;
+    int64_t batch_stride_C1;
+    int64_t batch_stride_D1;
     typename EpilogueOutputOp0::Params epilogue0;
     typename EpilogueOutputOp1::Params epilogue1;
     int split_k_slices;
@@ -216,13 +222,14 @@ class B2bGemm {
 
     /// Default ctor
     CUTLASS_HOST_DEVICE
-    Arguments(): problem_size_0(0, 0, 0), problem_size_1(0, 0, 0), split_k_slices(1) {
+    Arguments(): mode(GemmUniversalMode::kGemm), problem_size_0(0, 0, 0), problem_size_1(0, 0, 0), split_k_slices(1) {
 
     }
 
-    /// Constructs an Arguments structure 
+    /// Constructs an Arguments structure
     CUTLASS_HOST_DEVICE
     Arguments(
+      GemmUniversalMode mode,
       GemmCoord problem_size_0_,
       GemmCoord problem_size_1_,
       TensorRef<ElementA const, LayoutA> ref_A0_,
@@ -233,12 +240,18 @@ class B2bGemm {
       TensorRef<ElementB const, LayoutB> ref_B1_,
       TensorRef<ElementC const, LayoutC> ref_C1_,
       TensorRef<ElementC, LayoutC> ref_D1_,
-      typename EpilogueOutputOp0::Params epilogue0_ = 
+      int64_t batch_stride_A0 = 1,
+      int64_t batch_stride_B0 = 1,
+      int64_t batch_stride_B1 = 1,
+      int64_t batch_stride_C1 = 1,
+      int64_t batch_stride_D1 = 1,
+      typename EpilogueOutputOp0::Params epilogue0_ =
         typename EpilogueOutputOp0::Params(),
-      typename EpilogueOutputOp1::Params epilogue1_ = 
+      typename EpilogueOutputOp1::Params epilogue1_ =
         typename EpilogueOutputOp1::Params(),
       int split_k_slices_ = 1
     ):
+      mode(GemmUniversalMode::kGemm),
       problem_size_0(problem_size_0_),
       problem_size_1(problem_size_1_),
       ref_A0(ref_A0_),
@@ -249,6 +262,11 @@ class B2bGemm {
       ref_B1(ref_B1_),
       ref_C1(ref_C1_),
       ref_D1(ref_D1_),
+      batch_stride_A0(batch_stride_A0),
+      batch_stride_B0(batch_stride_B0),
+      batch_stride_B1(batch_stride_B1),
+      batch_stride_C1(batch_stride_C1),
+      batch_stride_D1(batch_stride_D1),
       epilogue0(epilogue0_),
       epilogue1(epilogue1_),
       split_k_slices(split_k_slices_) {
@@ -295,12 +313,12 @@ public:
   static size_t get_workspace_size(Arguments const &args) {
 
     size_t bytes = 0;
-      
+
     // Determine grid shape
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size_0, 
+      args.problem_size_0,
       {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
       args.split_k_slices);
 
@@ -320,11 +338,11 @@ public:
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
-      args.problem_size_0, 
+      args.problem_size_0,
       {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
       args.split_k_slices);
 //    cutlass::gemm::GemmCoord grid_shape_1 = threadblock_swizzle.get_tiled_shape(
-//      args.problem_size_1, 
+//      args.problem_size_1,
 //      {ThreadblockShape1::kM, ThreadblockShape1::kN, ThreadblockShape1::kK},
 //      args.split_k_slices);
 
@@ -335,7 +353,7 @@ public:
         }
 
         size_t bytes = get_workspace_size(args);
-      
+
         cudaError_t result = cudaMemsetAsync(workspace, 0, bytes, stream);
 
         if (result != cudaSuccess) {
@@ -352,6 +370,7 @@ public:
 
     // Initialize the Params structure
     params_ = typename B2bGemmKernel::Params{
+      args.mode,
       args.problem_size_0,
       args.problem_size_1,
       grid_shape,
@@ -365,6 +384,11 @@ public:
       args.ref_D1,
       args.epilogue0,
       args.epilogue1,
+      args.batch_stride_A0,
+      args.batch_stride_B0,
+      args.batch_stride_B1,
+      args.batch_stride_C1,
+      args.batch_stride_D1,
       static_cast<int *>(workspace),
     };
 
@@ -373,8 +397,8 @@ public:
 
   /// Lightweight update given a subset of arguments
   Status update(Arguments const &args, void *workspace = nullptr) {
-    
-    if (kSplitKSerial && args.split_k_slices > 1) {  
+
+    if (kSplitKSerial && args.split_k_slices > 1) {
       if (!workspace) {
         return Status::kErrorWorkspaceNull;
       }
@@ -430,12 +454,12 @@ public:
 
   /// Runs the kernel using initialized state.
   Status operator()(
-    Arguments const &args, 
-    void *workspace = nullptr, 
+    Arguments const &args,
+    void *workspace = nullptr,
     cudaStream_t stream = nullptr) {
-    
+
     Status status = initialize(args, workspace, stream);
-    
+
     if (status == Status::kSuccess) {
       status = run(stream);
     }

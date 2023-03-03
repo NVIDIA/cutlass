@@ -152,7 +152,7 @@ bool run_fused_gemm_s8_sm80_rf_res() {
   using WarpShape1 = cutlass::gemm::GemmShape<16, 128, 64>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;
 
-  using EpilogueOutputOp0 = 
+  using EpilogueOutputOp0 =
     cutlass::epilogue::thread::LinearCombinationRelu<
       ElementOutput,
       8 * InstructionShape::kN / 32,
@@ -161,7 +161,7 @@ bool run_fused_gemm_s8_sm80_rf_res() {
       cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >;
 
-  using EpilogueOutputOp1 = 
+  using EpilogueOutputOp1 =
     cutlass::epilogue::thread::LinearCombinationRelu<
       ElementOutput,
       64 / cutlass::sizeof_bits<ElementOutput>::value,
@@ -201,7 +201,15 @@ bool run_fused_gemm_s8_sm80_rf_res() {
   B2bInterleavedFusedGemmRun<B2bGemm, 32> fusedGemm;
 
   std::cout << "Running Fused back-to-back INT8 NT interleaved GEMMs with RF residency...\n";
-  bool passed = fusedGemm.run(gemm_s8_sm80_problem_size_0, gemm_s8_sm80_problem_size_1, alpha0, beta0, alpha1, beta1);
+  bool passed = fusedGemm.run(
+    gemm_s8_sm80_problem_size_0,
+    gemm_s8_sm80_problem_size_1,
+    alpha0,
+    beta0,
+    alpha1,
+    beta1,
+    cutlass::gemm::GemmUniversalMode::kBatched
+  );
   if(passed)
     std::cout << "Pass\n";
   else

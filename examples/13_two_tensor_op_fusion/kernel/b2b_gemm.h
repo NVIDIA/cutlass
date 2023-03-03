@@ -49,7 +49,7 @@ namespace kernel {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
-  typename B2bMma_,               ///! Threadblock-scoped matrix multiply-accumulate 
+  typename B2bMma_,               ///! Threadblock-scoped matrix multiply-accumulate
   typename Epilogue_,             ///! Epilogue
   typename ThreadblockSwizzle_,   ///! Threadblock swizzling function
   bool SplitKSerial               ///! If true, code supporting split-K via serial reduction is enabled.
@@ -63,12 +63,22 @@ struct B2bGemm {
   using ThreadblockSwizzle = ThreadblockSwizzle_;
   static bool const kSplitKSerial = SplitKSerial;
 
+  using ElementA0 = typename B2bMma::IteratorA0::Element;
+  using LayoutA0 = typename B2bMma::IteratorA0::Layout;
+  using ElementB0 = typename B2bMma::IteratorB0::Element;
+  using LayoutB0 = typename B2bMma::IteratorB0::Layout;
+  using ElementB1 = typename B2bMma::IteratorB1::Element;
+  using LayoutB1 = typename B2bMma::IteratorB1::Layout;
+  using ElementC = typename Epilogue::OutputTileIterator::Element;
+  using LayoutC = typename Epilogue::OutputTileIterator::Layout;
+
   /// Warp count (concept: GemmShape)
   using WarpCount0 = typename B2bMma::WarpCount0;
   static int const kThreadCount = 32 * WarpCount0::kCount;
 
   /// Parameters structure
   struct Params {
+    cutlass::gemm::GemmUniversalMode mode;
     cutlass::gemm::GemmCoord problem_size_0;
     cutlass::gemm::GemmCoord problem_size_1;
     cutlass::gemm::GemmCoord grid_tiled_shape;
@@ -89,6 +99,11 @@ struct B2bGemm {
     typename Epilogue::OutputTileIterator::TensorRef ref_D1;
     typename OutputOp0::Params output_op_0;
     typename OutputOp1::Params output_op_1;
+    int64_t batch_stride_A0;
+    int64_t batch_stride_B0;
+    int64_t batch_stride_B1;
+    int64_t batch_stride_C1;
+    int64_t batch_stride_D1;
     int *semaphore;
     int gemm_k_iterations_0;
     int gemm_k_size_0;
@@ -100,11 +115,12 @@ struct B2bGemm {
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): swizzle_log_tile(0), semaphore(0), gemm_k_iterations_0(0), gemm_k_size_0(0),
+    Params(): mode(GemmUniversalMode::kGemm), swizzle_log_tile(0), semaphore(0), gemm_k_iterations_0(0), gemm_k_size_0(0),
         gemm_k_iterations_1(0), gemm_k_size_1(0) { }
 
     CUTLASS_HOST_DEVICE
     Params(
+      cutlass::gemm::GemmUniversalMode mode,
       cutlass::gemm::GemmCoord const & problem_size_0,
       cutlass::gemm::GemmCoord const & problem_size_1,
       cutlass::gemm::GemmCoord const & grid_tiled_shape,
@@ -118,8 +134,14 @@ struct B2bGemm {
       typename Epilogue::OutputTileIterator::TensorRef ref_D1,
       typename OutputOp0::Params output_op_0 = typename OutputOp0::Params(),
       typename OutputOp1::Params output_op_1 = typename OutputOp1::Params(),
+      int64_t batch_stride_A0 = 1,
+      int64_t batch_stride_B0 = 1,
+      int64_t batch_stride_B1 = 1,
+      int64_t batch_stride_C1 = 1,
+      int64_t batch_stride_D1 = 1,
       int *workspace = nullptr
     ):
+      mode(GemmUniversalMode::kGemm),
       problem_size_0(problem_size_0),
       problem_size_1(problem_size_1),
       grid_tiled_shape(grid_tiled_shape),
@@ -139,7 +161,13 @@ struct B2bGemm {
       params_D1(ref_D1.layout()),
       ref_D1(ref_D1),
       output_op_0(output_op_0),
-      output_op_1(output_op_1) {
+      output_op_1(output_op_1),
+      batch_stride_A0(batch_stride_A0),
+      batch_stride_B0(batch_stride_B0),
+      batch_stride_B1(batch_stride_B1),
+      batch_stride_C1(batch_stride_C1),
+      batch_stride_D1(batch_stride_D1)
+      {
 
       int total_gemm_k_iterations_0 = (problem_size_0.k() + B2bMma::Shape0::kK - 1) / B2bMma::Shape0::kK;
       int gemm_k_iterations_0 = (total_gemm_k_iterations_0 + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
@@ -163,7 +191,7 @@ struct B2bGemm {
   //
 
   CUTLASS_HOST_DEVICE
-  B2bGemm() { } 
+  B2bGemm() { }
 
   /// Determines whether kernel satisfies alignment
     static Status can_implement(
@@ -223,7 +251,7 @@ struct B2bGemm {
 
     if(problem_size_0.n() > B2bMma::Shape0::kN)
       return Status::kErrorInvalidProblem;
-    
+
     if(problem_size_1.n() > B2bMma::Shape1::kN)
       return Status::kErrorInvalidProblem;
 
@@ -247,38 +275,59 @@ struct B2bGemm {
       return;
     }
 
+    ElementA0 *ptr_A0 = static_cast<ElementA0 *>(params.ref_A0.data());
+    ElementB0 *ptr_B0 = static_cast<ElementB0 *>(params.ref_B0.data());
+    ElementB1 *ptr_B1 = static_cast<ElementB1 *>(params.ref_B1.data());
+
+    int offset_k_0 = 0;
+    int offset_k_1 = 0;
+
+    int problem_size_k_0 = params.problem_size_0.k();
+    int problem_size_k_1 = params.problem_size_1.k();
+
+    if (params.mode == GemmUniversalMode::kGemm) {
+
+      // Problem size is a function of threadblock index in the K dimension
+      problem_size_k_0 = min(
+        problem_size_k_0,
+        (threadblock_tile_offset.k() + 1) * params.gemm_k_size_0);
+
+      // Problem size is a function of threadblock index in the K dimension
+      problem_size_k_1 = min(
+        problem_size_k_1,
+        (threadblock_tile_offset.k() + 1) * params.gemm_k_size_1);
+
+      offset_k_0 = threadblock_tile_offset.k() * params.gemm_k_size_0;
+      offset_k_1 = threadblock_tile_offset.k() * params.gemm_k_size_1;
+    }
+
+    else if (params.mode == GemmUniversalMode::kBatched) {
+      ptr_A0 += threadblock_tile_offset.k() * params.batch_stride_A0;
+      ptr_B0 += threadblock_tile_offset.k() * params.batch_stride_B0;
+      ptr_B1 += threadblock_tile_offset.k() * params.batch_stride_B1;
+    }
+
     // Compute initial location in logical coordinates
     cutlass::MatrixCoord tb_offset_A0{
       threadblock_tile_offset.m() * B2bMma::Shape0::kM,
-      threadblock_tile_offset.k() * params.gemm_k_size_0,
+      offset_k_0,
     };
 
     cutlass::MatrixCoord tb_offset_B0{
-      threadblock_tile_offset.k() * params.gemm_k_size_0,
+      offset_k_0,
       threadblock_tile_offset.n() * B2bMma::Shape0::kN
     };
 
     cutlass::MatrixCoord tb_offset_B1{
-      threadblock_tile_offset.k() * params.gemm_k_size_1,
+      offset_k_1,
       threadblock_tile_offset.n() * B2bMma::Shape1::kN
     };
-
-    // Problem size is a function of threadblock index in the K dimension
-    int problem_size_k_0 = min(
-      params.problem_size_0.k(), 
-      (threadblock_tile_offset.k() + 1) * params.gemm_k_size_0);
 
     // Compute threadblock-scoped matrix multiply-add
     int gemm_k_iterations_0 = (problem_size_k_0 - tb_offset_A0.column() + B2bMma::Shape0::kK - 1) / B2bMma::Shape0::kK;
 
-    // Problem size is a function of threadblock index in the K dimension
-    int problem_size_k_1 = min(
-      params.problem_size_1.k(), 
-      (threadblock_tile_offset.k() + 1) * params.gemm_k_size_1);
-
     // Compute threadblock-scoped matrix multiply-add
-//    int gemm_k_iterations_1 = (problem_size_k_1 - tb_offset_B1.row() + B2bMma::Shape1::kK - 1) / B2bMma::Shape1::kK;
-
+    // int gemm_k_iterations_1 = (problem_size_k_1 - tb_offset_B1.row() + B2bMma::Shape1::kK - 1) / B2bMma::Shape1::kK;
 
     // Compute position within threadblock
     int thread_idx = threadIdx.x;
@@ -286,21 +335,24 @@ struct B2bGemm {
     // Construct iterators to A and B operands
     typename B2bMma::IteratorA0 iterator_A0(
       params.params_A0,
-      params.ref_A0.data(),
+      // params.ref_A0.data(),
+      ptr_A0,
       {params.problem_size_0.m(), problem_size_k_0},
       thread_idx,
       tb_offset_A0);
 
     typename B2bMma::IteratorB0 iterator_B0(
       params.params_B0,
-      params.ref_B0.data(),
+      // params.ref_B0.data(),
+      ptr_B0,
       {problem_size_k_0, params.problem_size_0.n()},
       thread_idx,
       tb_offset_B0);
 
     typename B2bMma::IteratorB1 iterator_B1(
       params.params_B1,
-      params.ref_B1.data(),
+      // params.ref_B1.data(),
+      ptr_B1,
       {problem_size_k_1, params.problem_size_1.n()},
       thread_idx,
       tb_offset_B1);
@@ -376,23 +428,33 @@ struct B2bGemm {
 
     int block_idx = threadblock_tile_offset.m() + threadblock_tile_offset.n() * params.grid_tiled_shape.m();
 
+    ElementC *ptr_C1 = static_cast<ElementC *>(params.ref_C1.data());
+    ElementC *ptr_D1 = static_cast<ElementC *>(params.ref_D1.data());
+
     // Construct the semaphore.
     Semaphore semaphore(params.semaphore + block_idx, thread_idx);
 
-    // If performing a reduction via split-K, fetch the initial synchronization
-    if (kSplitKSerial && params.grid_tiled_shape.k() > 1) {
-      
-      // Fetch the synchronization lock initially but do not block.
-      semaphore.fetch();
+    if (params.mode == GemmUniversalMode::kGemm) {
+      // If performing a reduction via split-K, fetch the initial synchronization
+      if (kSplitKSerial && params.grid_tiled_shape.k() > 1) {
 
-      // Indicate which position in a serial reduction the output operator is currently updating
-      output_op_1.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
+        // Fetch the synchronization lock initially but do not block.
+        semaphore.fetch();
+
+        // Indicate which position in a serial reduction the output operator is currently updating
+        output_op_1.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
+      }
+    }
+
+    else if (params.mode == GemmUniversalMode::kBatched) {
+      ptr_C1 += threadblock_tile_offset.k() * params.batch_stride_C1;
+      ptr_D1 += threadblock_tile_offset.k() * params.batch_stride_D1;
     }
 
     // Tile iterator loading from source tensor.
     typename Epilogue::OutputTileIterator iterator_C1(
       params.params_C1,
-      params.ref_C1.data(),
+      ptr_C1,
       params.problem_size_1.mn(),
       thread_idx,
       threadblock_offset
@@ -401,21 +463,21 @@ struct B2bGemm {
     // Tile iterator writing to destination tensor.
     typename Epilogue::OutputTileIterator iterator_D1(
       params.params_D1,
-      params.ref_D1.data(),
+      ptr_D1,
       params.problem_size_1.mn(),
       thread_idx,
       threadblock_offset
     );
 
     Epilogue epilogue(
-      shared_storage.epilogue, 
-      thread_idx, 
-      warp_idx, 
+      shared_storage.epilogue,
+      thread_idx,
+      warp_idx,
       lane_idx);
 
     // Wait on the semaphore - this latency may have been covered by iterator construction
     if (kSplitKSerial && params.grid_tiled_shape.k() > 1) {
-        
+
       // For subsequent threadblocks, the source matrix is held in the 'D' tensor.
       if (threadblock_tile_offset.k()) {
         iterator_C1 = iterator_D1;
@@ -427,14 +489,14 @@ struct B2bGemm {
     }
 
     // Execute the epilogue operator to update the destination tensor.
-    epilogue(output_op_1, iterator_D1, accumulators, iterator_C1); 
-    
+    epilogue(output_op_1, iterator_D1, accumulators, iterator_C1);
+
     //
     // Release the semaphore
     //
 
     if (kSplitKSerial && params.grid_tiled_shape.k() > 1) {
-      
+
       int lock = 0;
       if (params.grid_tiled_shape.k() == threadblock_tile_offset.k() + 1) {
 
@@ -457,4 +519,3 @@ struct B2bGemm {
 } // namespace kernel
 } // namespace gemm
 } // namespace cutlass
-
