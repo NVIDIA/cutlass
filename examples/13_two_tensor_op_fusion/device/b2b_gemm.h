@@ -222,7 +222,7 @@ class B2bGemm {
 
     /// Default ctor
     CUTLASS_HOST_DEVICE
-    Arguments(): mode(GemmUniversalMode::kGemm), problem_size_0(0, 0, 0), problem_size_1(0, 0, 0), split_k_slices(1) {
+    Arguments(): mode(mode), problem_size_0(0, 0, 0), problem_size_1(0, 0, 0), split_k_slices(1) {
 
     }
 
@@ -251,7 +251,7 @@ class B2bGemm {
         typename EpilogueOutputOp1::Params(),
       int split_k_slices_ = 1
     ):
-      mode(GemmUniversalMode::kGemm),
+      mode(mode),
       problem_size_0(problem_size_0_),
       problem_size_1(problem_size_1_),
       ref_A0(ref_A0_),

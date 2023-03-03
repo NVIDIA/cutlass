@@ -115,7 +115,7 @@ struct B2bGemm {
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): mode(GemmUniversalMode::kGemm), swizzle_log_tile(0), semaphore(0), gemm_k_iterations_0(0), gemm_k_size_0(0),
+    Params(): mode(mode), swizzle_log_tile(0), semaphore(0), gemm_k_iterations_0(0), gemm_k_size_0(0),
         gemm_k_iterations_1(0), gemm_k_size_1(0) { }
 
     CUTLASS_HOST_DEVICE
@@ -141,7 +141,7 @@ struct B2bGemm {
       int64_t batch_stride_D1 = 1,
       int *workspace = nullptr
     ):
-      mode(GemmUniversalMode::kGemm),
+      mode(mode),
       problem_size_0(problem_size_0),
       problem_size_1(problem_size_1),
       grid_tiled_shape(grid_tiled_shape),
