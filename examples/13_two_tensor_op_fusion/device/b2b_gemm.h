@@ -119,7 +119,6 @@ template <
     int AlignmentB =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
                                  ElementC_, ElementAccumulator_>::kAlignmentB,
-    /// If true, kernel supports split-K with serial reduction
     bool SplitKSerial = false,
     /// Operation performed by GEMM
     typename Operator_ = typename DefaultGemmConfiguration<
@@ -214,7 +213,7 @@ class B2bGemm {
     int64_t batch_stride_D1;
     typename EpilogueOutputOp0::Params epilogue0;
     typename EpilogueOutputOp1::Params epilogue1;
-    int split_k_slices;
+    int batch_count;
 
     //
     // Methods
@@ -222,7 +221,7 @@ class B2bGemm {
 
     /// Default ctor
     CUTLASS_HOST_DEVICE
-    Arguments(): mode(mode), problem_size_0(0, 0, 0), problem_size_1(0, 0, 0), split_k_slices(1) {
+    Arguments(): mode(mode), problem_size_0(0, 0, 0), problem_size_1(0, 0, 0), batch_count(1) {
 
     }
 
@@ -240,16 +239,16 @@ class B2bGemm {
       TensorRef<ElementB const, LayoutB> ref_B1_,
       TensorRef<ElementC const, LayoutC> ref_C1_,
       TensorRef<ElementC, LayoutC> ref_D1_,
-      int64_t batch_stride_A0 = 1,
-      int64_t batch_stride_B0 = 1,
-      int64_t batch_stride_B1 = 1,
-      int64_t batch_stride_C1 = 1,
-      int64_t batch_stride_D1 = 1,
+      int64_t batch_stride_A0,
+      int64_t batch_stride_B0,
+      int64_t batch_stride_B1,
+      int64_t batch_stride_C1,
+      int64_t batch_stride_D1,
       typename EpilogueOutputOp0::Params epilogue0_ =
         typename EpilogueOutputOp0::Params(),
       typename EpilogueOutputOp1::Params epilogue1_ =
         typename EpilogueOutputOp1::Params(),
-      int split_k_slices_ = 1
+      int batch_count = 1
     ):
       mode(mode),
       problem_size_0(problem_size_0_),
@@ -269,7 +268,7 @@ class B2bGemm {
       batch_stride_D1(batch_stride_D1),
       epilogue0(epilogue0_),
       epilogue1(epilogue1_),
-      split_k_slices(split_k_slices_) {
+      batch_count(batch_count) {
 
     }
   };
@@ -286,10 +285,6 @@ public:
 
   /// Determines whether the GEMM can execute the given problem.
   static Status can_implement(Arguments const &args) {
-
-    if (!kSplitKSerial && args.split_k_slices > 1) {
-      return Status::kErrorInvalidProblem;
-    }
 
     Status status = B2bGemmKernel::can_implement(
       args.problem_size_0,
@@ -320,9 +315,9 @@ public:
     cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
       args.problem_size_0,
       {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
-      args.split_k_slices);
+      args.batch_count);
 
-    if (kSplitKSerial && args.split_k_slices > 1) {
+    if (args.mode == GemmUniversalMode::kGemm && args.batch_count > 1) {
 
 
       bytes += sizeof(int) * size_t(tiled_shape.m()) * size_t(tiled_shape.n());
@@ -340,14 +335,14 @@ public:
     cutlass::gemm::GemmCoord grid_shape = threadblock_swizzle.get_tiled_shape(
       args.problem_size_0,
       {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
-      args.split_k_slices);
+      args.batch_count);
 //    cutlass::gemm::GemmCoord grid_shape_1 = threadblock_swizzle.get_tiled_shape(
 //      args.problem_size_1,
 //      {ThreadblockShape1::kM, ThreadblockShape1::kN, ThreadblockShape1::kK},
 //      args.split_k_slices);
 
-    if (kSplitKSerial) {
-      if (args.split_k_slices > 1) {
+    if (args.mode == GemmUniversalMode::kGemm) {
+      if (args.batch_count > 1) {
         if (!workspace) {
           return Status::kErrorWorkspaceNull;
         }
@@ -359,12 +354,6 @@ public:
         if (result != cudaSuccess) {
           return Status::kErrorInternal;
         }
-      }
-    }
-    else {
-
-      if (args.split_k_slices > 1) {
-        return Status::kErrorInvalidProblem;
       }
     }
 
@@ -382,13 +371,13 @@ public:
       args.ref_B1.non_const_ref(),
       args.ref_C1.non_const_ref(),
       args.ref_D1,
-      args.epilogue0,
-      args.epilogue1,
       args.batch_stride_A0,
       args.batch_stride_B0,
       args.batch_stride_B1,
       args.batch_stride_C1,
       args.batch_stride_D1,
+      args.epilogue0,
+      args.epilogue1,
       static_cast<int *>(workspace),
     };
 
@@ -398,7 +387,7 @@ public:
   /// Lightweight update given a subset of arguments
   Status update(Arguments const &args, void *workspace = nullptr) {
 
-    if (kSplitKSerial && args.split_k_slices > 1) {
+    if (args.mode == GemmUniversalMode::kGemm && args.batch_count > 1) {
       if (!workspace) {
         return Status::kErrorWorkspaceNull;
       }

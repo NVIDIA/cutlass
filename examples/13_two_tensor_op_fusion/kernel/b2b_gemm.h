@@ -52,7 +52,7 @@ template <
   typename B2bMma_,               ///! Threadblock-scoped matrix multiply-accumulate
   typename Epilogue_,             ///! Epilogue
   typename ThreadblockSwizzle_,   ///! Threadblock swizzling function
-  bool SplitKSerial               ///! If true, code supporting split-K via serial reduction is enabled.
+  bool SplitKSerial
 >
 struct B2bGemm {
 
@@ -61,7 +61,6 @@ struct B2bGemm {
   using OutputOp0 = typename B2bMma::OutputOp;
   using OutputOp1 = typename Epilogue::OutputOp;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
-  static bool const kSplitKSerial = SplitKSerial;
 
   using ElementA0 = typename B2bMma::IteratorA0::Element;
   using LayoutA0 = typename B2bMma::IteratorA0::Layout;
@@ -132,13 +131,13 @@ struct B2bGemm {
       typename B2bMma::IteratorB1::TensorRef ref_B1,
       typename Epilogue::OutputTileIterator::TensorRef ref_C1,
       typename Epilogue::OutputTileIterator::TensorRef ref_D1,
+      int64_t batch_stride_A0,
+      int64_t batch_stride_B0,
+      int64_t batch_stride_B1,
+      int64_t batch_stride_C1,
+      int64_t batch_stride_D1,
       typename OutputOp0::Params output_op_0 = typename OutputOp0::Params(),
       typename OutputOp1::Params output_op_1 = typename OutputOp1::Params(),
-      int64_t batch_stride_A0 = 1,
-      int64_t batch_stride_B0 = 1,
-      int64_t batch_stride_B1 = 1,
-      int64_t batch_stride_C1 = 1,
-      int64_t batch_stride_D1 = 1,
       int *workspace = nullptr
     ):
       mode(mode),
@@ -160,13 +159,13 @@ struct B2bGemm {
       ref_C1(ref_C1),
       params_D1(ref_D1.layout()),
       ref_D1(ref_D1),
-      output_op_0(output_op_0),
-      output_op_1(output_op_1),
       batch_stride_A0(batch_stride_A0),
       batch_stride_B0(batch_stride_B0),
       batch_stride_B1(batch_stride_B1),
       batch_stride_C1(batch_stride_C1),
-      batch_stride_D1(batch_stride_D1)
+      batch_stride_D1(batch_stride_D1),
+      output_op_0(output_op_0),
+      output_op_1(output_op_1)
       {
 
       int total_gemm_k_iterations_0 = (problem_size_0.k() + B2bMma::Shape0::kK - 1) / B2bMma::Shape0::kK;
@@ -401,11 +400,9 @@ struct B2bGemm {
     src_accum.clear();
     accumulators.clear();
 
-    if (!kSplitKSerial || gemm_k_iterations_0 > 0) {
       // Compute threadblock-scoped matrix multiply-add
-      b2bMma(gemm_k_iterations_0, accumulators, iterator_A0, iterator_B0,
-        iterator_Scale0, iterator_Bias0, iterator_B1, src_accum, output_op_0);
-    }
+    b2bMma(gemm_k_iterations_0, accumulators, iterator_A0, iterator_B0,
+      iterator_Scale0, iterator_Bias0, iterator_B1, src_accum, output_op_0);
 
     //
     // Epilogue
@@ -436,7 +433,7 @@ struct B2bGemm {
 
     if (params.mode == GemmUniversalMode::kGemm) {
       // If performing a reduction via split-K, fetch the initial synchronization
-      if (kSplitKSerial && params.grid_tiled_shape.k() > 1) {
+      if (params.grid_tiled_shape.k() > 1) {
 
         // Fetch the synchronization lock initially but do not block.
         semaphore.fetch();
@@ -476,7 +473,7 @@ struct B2bGemm {
       lane_idx);
 
     // Wait on the semaphore - this latency may have been covered by iterator construction
-    if (kSplitKSerial && params.grid_tiled_shape.k() > 1) {
+    if (params.mode == GemmUniversalMode::kGemm && params.grid_tiled_shape.k() > 1) {
 
       // For subsequent threadblocks, the source matrix is held in the 'D' tensor.
       if (threadblock_tile_offset.k()) {
@@ -495,7 +492,7 @@ struct B2bGemm {
     // Release the semaphore
     //
 
-    if (kSplitKSerial && params.grid_tiled_shape.k() > 1) {
+    if (params.mode == GemmUniversalMode::kGemm && params.grid_tiled_shape.k() > 1) {
 
       int lock = 0;
       if (params.grid_tiled_shape.k() == threadblock_tile_offset.k() + 1) {

@@ -460,11 +460,12 @@ struct B2bFusedGemmRun
     ElementCompute alpha1 = ElementCompute(1),
     ElementCompute beta1 = ElementCompute(0),
     cutlass::gemm::GemmUniversalMode mode = cutlass::gemm::GemmUniversalMode::kGemm,
-    int64_t batch_stride_A0 = 1,
-    int64_t batch_stride_B0 = 1,
-    int64_t batch_stride_B1 = 1,
-    int64_t batch_stride_C1 = 1,
-    int64_t batch_stride_D1 = 1,
+    int batch_count = 1,
+    int64_t batch_stride_A0 = 0,
+    int64_t batch_stride_B0 = 0,
+    int64_t batch_stride_B1 = 0,
+    int64_t batch_stride_C1 = 0,
+    int64_t batch_stride_D1 = 0,
     bool relu = true,
     int warm_ups = 1,
     int runs = 100) {
@@ -578,6 +579,7 @@ struct B2bFusedGemmRun
       batch_stride_D1,
       {alpha0, beta0},
       {alpha1, beta1},
+      batch_count,
     };
 
     B2bGemm b2b_gemm_op;
