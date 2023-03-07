@@ -43,10 +43,11 @@
 #include "cutlass/conv/conv3d_problem_size.h"
 #include "cutlass/gemm/threadblock/index_remat.h"
 
+#ifndef __CUDA_ARCH__
 #include <iostream>
 #include "cutlass/core_io.h"
 #include "cutlass/trace.h"
-
+#endif
 
 
 
