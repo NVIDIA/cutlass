@@ -51,8 +51,7 @@ namespace kernel {
 template <
   typename B2bMma_,               ///! Threadblock-scoped matrix multiply-accumulate
   typename Epilogue_,             ///! Epilogue
-  typename ThreadblockSwizzle_,   ///! Threadblock swizzling function
-  bool SplitKSerial
+  typename ThreadblockSwizzle_   ///! Threadblock swizzling function
 >
 struct B2bGemm {
 

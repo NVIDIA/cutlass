@@ -460,6 +460,10 @@ struct B2bFusedGemmRun
     ElementCompute alpha1 = ElementCompute(1),
     ElementCompute beta1 = ElementCompute(0),
     cutlass::gemm::GemmUniversalMode mode = cutlass::gemm::GemmUniversalMode::kGemm,
+
+    // batch_count is used as split-k when mode is kGemm according
+    // to the GemmUniversal interface
+
     int batch_count = 1,
     int64_t batch_stride_A0 = 0,
     int64_t batch_stride_B0 = 0,

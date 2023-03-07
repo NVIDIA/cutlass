@@ -119,7 +119,6 @@ template <
     int AlignmentB =
         DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
                                  ElementC_, ElementAccumulator_>::kAlignmentB,
-    bool SplitKSerial = false,
     /// Operation performed by GEMM
     typename Operator_ = typename DefaultGemmConfiguration<
         OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
@@ -153,7 +152,6 @@ class B2bGemm {
   static int const kAlignmentA = AlignmentA;
   static int const kAlignmentB = AlignmentB;
   static int const kAlignmentC = EpilogueOutputOp1::kCount;
-  static bool const kSplitKSerial = SplitKSerial;
   static ComplexTransform const kTransformA = ComplexTransform::kNone;
   static ComplexTransform const kTransformB = ComplexTransform::kNone;
 
@@ -183,7 +181,6 @@ class B2bGemm {
     EpilogueOutputOp1,
     ThreadblockSwizzle,
     kStages,
-    kSplitKSerial,
     Operator,
     SmemAccumulator
   >::B2bGemmKernel;
@@ -228,7 +225,7 @@ class B2bGemm {
     /// Constructs an Arguments structure
     CUTLASS_HOST_DEVICE
     Arguments(
-      GemmUniversalMode mode,
+      GemmUniversalMode mode_,
       GemmCoord problem_size_0_,
       GemmCoord problem_size_1_,
       TensorRef<ElementA const, LayoutA> ref_A0_,
@@ -239,18 +236,18 @@ class B2bGemm {
       TensorRef<ElementB const, LayoutB> ref_B1_,
       TensorRef<ElementC const, LayoutC> ref_C1_,
       TensorRef<ElementC, LayoutC> ref_D1_,
-      int64_t batch_stride_A0,
-      int64_t batch_stride_B0,
-      int64_t batch_stride_B1,
-      int64_t batch_stride_C1,
-      int64_t batch_stride_D1,
+      int64_t batch_stride_A0_,
+      int64_t batch_stride_B0_,
+      int64_t batch_stride_B1_,
+      int64_t batch_stride_C1_,
+      int64_t batch_stride_D1_,
       typename EpilogueOutputOp0::Params epilogue0_ =
         typename EpilogueOutputOp0::Params(),
       typename EpilogueOutputOp1::Params epilogue1_ =
         typename EpilogueOutputOp1::Params(),
-      int batch_count = 1
+      int batch_count_ = 1
     ):
-      mode(mode),
+      mode(mode_),
       problem_size_0(problem_size_0_),
       problem_size_1(problem_size_1_),
       ref_A0(ref_A0_),
@@ -261,14 +258,14 @@ class B2bGemm {
       ref_B1(ref_B1_),
       ref_C1(ref_C1_),
       ref_D1(ref_D1_),
-      batch_stride_A0(batch_stride_A0),
-      batch_stride_B0(batch_stride_B0),
-      batch_stride_B1(batch_stride_B1),
-      batch_stride_C1(batch_stride_C1),
-      batch_stride_D1(batch_stride_D1),
+      batch_stride_A0(batch_stride_A0_),
+      batch_stride_B0(batch_stride_B0_),
+      batch_stride_B1(batch_stride_B1_),
+      batch_stride_C1(batch_stride_C1_),
+      batch_stride_D1(batch_stride_D1_),
       epilogue0(epilogue0_),
       epilogue1(epilogue1_),
-      batch_count(batch_count) {
+      batch_count(batch_count_) {
 
     }
   };
