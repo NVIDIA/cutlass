@@ -60,7 +60,7 @@ This computation may be mapped to the elements of a matrix product as follows.
 C = gemm(A, B)
 ```
 where
-- A is a row-major matrix of extent _NHW_-by-_RSC_ containing activations
+- A is a row-major matrix of extent _NPQ_-by-_RSC_ containing activations
 - B is a column-major matrix of extent _RSC_-by-_K_ containing filters
 - C is a row-major matrix of extent _NPQ_-by-_K_ containing the output
 
