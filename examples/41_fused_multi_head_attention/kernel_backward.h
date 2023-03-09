@@ -304,16 +304,16 @@ struct AttentionBackwardKernel {
     int64_t delta_strideH;
     int32_t num_batches;
 
-    int64_t gO_strideB;
-    int64_t gQ_strideB;
-    int64_t gK_strideB;
-    int64_t gV_strideB;
-    int64_t gB_strideB;
-    int64_t gO_strideH;
-    int64_t gQ_strideH;
-    int64_t gK_strideH;
-    int64_t gV_strideH;
-    int64_t gB_strideH;
+    int64_t gO_strideB = 0;
+    int64_t gQ_strideB = 0;
+    int64_t gK_strideB = 0;
+    int64_t gV_strideB = 0;
+    int64_t gB_strideB = 0;
+    int64_t gO_strideH = 0;
+    int64_t gQ_strideH = 0;
+    int64_t gK_strideH = 0;
+    int64_t gV_strideH = 0;
+    int64_t gB_strideH = 0;
 
     CUTLASS_DEVICE bool advance_to_block() {
       int64_t batch_id = blockIdx.z;
@@ -642,7 +642,7 @@ struct AttentionBackwardKernel {
     using OutputTileIterator =
         typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
             typename DefaultEpilogue::OutputTileIterator>::Iterator;
-    using AccumTileGmem = GmemTile<typename Mma::FragmentC, int(kNumThreads)>;
+    using AccumTileGmem = GmemTile<typename Mma::FragmentC, (int)kNumThreads>;
   };
 
   struct MatmulDOIVJ {
@@ -752,7 +752,7 @@ struct AttentionBackwardKernel {
     using OutputTileIterator =
         typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
             typename DefaultEpilogue::OutputTileIterator>::Iterator;
-    using AccumTileGmem = GmemTile<typename Mma::FragmentC, int(kNumThreads)>;
+    using AccumTileGmem = GmemTile<typename Mma::FragmentC, (int)kNumThreads>;
   };
   struct MatmulGradK {
     // grad_k <- tmp.transpose(-2, -1) @ q_i
@@ -807,7 +807,7 @@ struct AttentionBackwardKernel {
     using OutputTileIterator =
         typename cutlass::epilogue::threadblock::MakePrefetchableIterator<
             typename DefaultEpilogue::OutputTileIterator>::Iterator;
-    using AccumTileGmem = GmemTile<typename Mma::FragmentC, int(kNumThreads)>;
+    using AccumTileGmem = GmemTile<typename Mma::FragmentC, (int)kNumThreads>;
   };
 
   // shared storage for keeping Zij matrix. not needed if we aren't using
@@ -1115,20 +1115,54 @@ struct AttentionBackwardKernel {
     XFORMERS_CHECK(p.lse_strideH % 8 == 0, "LSE is not correctly aligned");
     XFORMERS_CHECK(p.lse_strideB % 8 == 0, "LSE is not correctly aligned");
     XFORMERS_CHECK(
-        p.q_strideH % kMinimumAlignment == 0, "query is not correctly aligned");
+        p.num_heads <= 1 || p.q_strideH % kMinimumAlignment == 0,
+        "query is not correctly aligned (strideH)");
     XFORMERS_CHECK(
-        p.k_strideH % kMinimumAlignment == 0, "key is not correctly aligned");
+        p.num_heads <= 1 || p.k_strideH % kMinimumAlignment == 0,
+        "key is not correctly aligned (strideH)");
     XFORMERS_CHECK(
-        p.v_strideH % kMinimumAlignment == 0, "value is not correctly aligned");
+        p.num_heads <= 1 || p.v_strideH % kMinimumAlignment == 0,
+        "value is not correctly aligned (strideH)");
     XFORMERS_CHECK(
-        p.bias_strideB % kMinimumAlignment == 0,
-        "attn_bias is not correctly aligned");
+        p.num_batches <= 1 || p.q_strideB % kMinimumAlignment == 0,
+        "query is not correctly aligned (strideB)");
     XFORMERS_CHECK(
-        p.bias_strideH % kMinimumAlignment == 0,
-        "attn_bias is not correctly aligned");
+        p.num_batches <= 1 || p.k_strideB % kMinimumAlignment == 0,
+        "key is not correctly aligned (strideB)");
     XFORMERS_CHECK(
-        p.bias_strideM % kMinimumAlignment == 0,
-        "attn_bias is not correctly aligned");
+        p.num_batches <= 1 || p.v_strideB % kMinimumAlignment == 0,
+        "value is not correctly aligned (strideB)");
+    XFORMERS_CHECK(
+        p.q_strideM % kMinimumAlignment == 0,
+        "query is not correctly aligned (strideM)");
+    XFORMERS_CHECK(
+        p.k_strideM % kMinimumAlignment == 0,
+        "key is not correctly aligned (strideM)");
+    XFORMERS_CHECK(
+        p.v_strideM % kMinimumAlignment == 0,
+        "value is not correctly aligned (strideM)");
+    if (p.bias_ptr) {
+      XFORMERS_CHECK(
+          p.num_batches <= 1 || p.bias_strideB % kMinimumAlignment == 0,
+          "attn_bias is not correctly aligned (strideB)");
+      XFORMERS_CHECK(
+          p.num_heads <= 1 || p.bias_strideH % kMinimumAlignment == 0,
+          "attn_bias is not correctly aligned (strideH)");
+      XFORMERS_CHECK(
+          p.bias_strideM % kMinimumAlignment == 0,
+          "attn_bias is not correctly aligned (strideM)");
+    }
+    if (p.grad_bias_ptr) {
+      XFORMERS_CHECK(
+          p.num_batches <= 1 || p.gB_strideB % kMinimumAlignment == 0,
+          "attn_bias.grad is not correctly aligned (strideB)");
+      XFORMERS_CHECK(
+          p.num_heads <= 1 || p.gB_strideH % kMinimumAlignment == 0,
+          "attn_bias.grad is not correctly aligned (strideH)");
+      XFORMERS_CHECK(
+          p.gB_strideM % kMinimumAlignment == 0,
+          "attn_bias.grad is not correctly aligned (strideM)");
+    }
     XFORMERS_CHECK(
         !(p.cu_seqlens_q_ptr && p.bias_ptr),
         "CuSeqlen + bias not implemented yet");
