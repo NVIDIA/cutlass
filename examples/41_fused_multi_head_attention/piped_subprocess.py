@@ -14,6 +14,12 @@ TORCH_DTYPE_NAME = {
 }
 NAME_TORCH_DTYPE = {v: k for k, v in TORCH_DTYPE_NAME.items()}
 
+def _tensor_from_storage(tensor: torch.Tensor, dtype) -> torch.Tensor:
+    # PyTorch >= 2.0
+    if hasattr(tensor, 'untyped_storage'):
+        return torch.tensor([], dtype=dtype).set_(tensor.untyped_storage())
+    return torch.tensor([], dtype=dtype).set_(tensor.storage().untyped())
+
 class PipedSubprocess:
     def __init__(self, binary: str) -> None:
         self.binary = binary
@@ -38,7 +44,7 @@ class PipedSubprocess:
 
     def writeTensor(self, tensor: torch.Tensor, name: str, stride_names: List[str]) -> None:
         print(f"Py ->C++: {TORCH_DTYPE_NAME[tensor.dtype]}:{name}")
-        tensor_u8 = torch.tensor([], dtype=torch.uint8).set_(tensor.untyped_storage())
+        tensor_u8 = _tensor_from_storage(tensor, torch.uint8)
         self.write("tensor_begin", f"{TORCH_DTYPE_NAME[tensor.dtype]}:{name}", tensor_u8.shape[0])
         filename = self.temp_filename(f"{name}.tensor")
         assert tensor.storage_offset() == 0
@@ -69,7 +75,7 @@ class PipedSubprocess:
             tensor_u8 = torch.frombuffer(np.array(data), dtype=torch.uint8, count=u8len)
         self.readExpect("tensor_end")
         
-        tensor = torch.tensor([], dtype=dtype).set_(tensor_u8.untyped_storage())
+        tensor = _tensor_from_storage(tensor_u8, dtype)
         strides = []
         for sn in stride_name:
             self.readExpect(sn)
