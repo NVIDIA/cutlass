@@ -830,8 +830,6 @@ struct AttentionBackwardKernel {
           typename MatmulQK::AccumulatorSharedStorage::Layout,
           typename cutlass::MatrixShape<0, 0>>>::type;
 
-  // See https://fburl.com/gsheet/l5bltspl
-  // for an illustration of how smem is used
   struct SharedStoragePrologue {
     struct {
       cutlass::Array<accum_t, kBlockSizeI> di; // (do_i * o_i).sum(-1)
