@@ -100,6 +100,7 @@ execute_process(
     --kernels "${CUTLASS_LIBRARY_KERNELS}"
     --ignore-kernels "${CUTLASS_LIBRARY_IGNORE_KERNELS}"
     --cuda-version "${CUTLASS_GENERATOR_CUDA_COMPILER_VERSION}"
+    --log-level DEBUG
   RESULT_VARIABLE cutlass_lib_INSTANCE_GENERATION_RESULT
   OUTPUT_VARIABLE cutlass_lib_INSTANCE_GENERATION_OUTPUT
   OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/library_instance_generation.log
