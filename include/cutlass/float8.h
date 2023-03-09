@@ -399,7 +399,7 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
 
         return *reinterpret_cast<float_e4m3_t *>(&tmp);
     #else
-        return bitcast(Base::convert_float_to_fp8(float(flt)));
+        return bitcast(Base::convert_float_to_fp8(__half2float(flt)));
     #endif
     }
 
@@ -413,7 +413,7 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
 
         return reinterpret_cast<half2 const &>(packed).x;
     #else
-        return half(Base::convert_fp8_to_float(x.storage));
+        return __float2half(Base::convert_fp8_to_float(x.storage));
     #endif
     }
 
@@ -425,7 +425,7 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
         uint32_t packed;
         asm volatile("cvt.rn.f16x2.e4m3x2 %0, %1;\n" : "=r"(packed) : "h"(bits));
 
-        return float(reinterpret_cast<half2 const &>(packed).x);
+        return __half2float(reinterpret_cast<half2 const &>(packed).x);
     #else
         return Base::convert_fp8_to_float(x.storage);
     #endif
@@ -609,7 +609,7 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
 
         return *reinterpret_cast<float_e5m2_t *>(&tmp);
     #else
-        return bitcast(Base::convert_float_to_fp8(float(flt)));
+        return bitcast(Base::convert_float_to_fp8(__half2float(flt)));
     #endif
     }
 
@@ -623,7 +623,7 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
 
         return reinterpret_cast<half2 const &>(packed).x;
     #else
-        return half(Base::convert_fp8_to_float(x.storage));
+        return __float2half(Base::convert_fp8_to_float(x.storage));
     #endif
     }
 
@@ -635,7 +635,7 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
         uint32_t packed;
         asm volatile("cvt.rn.f16x2.e5m2x2 %0, %1;\n" : "=r"(packed) : "h"(bits));
 
-        return float(reinterpret_cast<half2 const &>(packed).x);
+        return __half2float(reinterpret_cast<half2 const &>(packed).x);
     #else
         return Base::convert_fp8_to_float(x.storage);
     #endif

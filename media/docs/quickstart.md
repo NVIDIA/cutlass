@@ -587,7 +587,7 @@ To instantiate all operations supporting all tile sizes, data types, and alignme
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS='70;75;80' -DCUTLASS_LIBRARY_KERNELS=all
 ```
-The above command line generates about seven thousand kernels targetting NVIDIA Ampere, Turing, and Volta architectures. 
+The above command line generates about twenty thousand kernels targetting NVIDIA Ampere, Turing, and Volta architectures. 
 Compiling thousands of kernels for three different architectures is time consuming. Additionaly, this would also result 
 in a large binary size and on some platforms linker to fail on building the library.
 
