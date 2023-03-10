@@ -587,7 +587,8 @@ To instantiate all operations supporting all tile sizes, data types, and alignme
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS='70;75;80' -DCUTLASS_LIBRARY_KERNELS=all
 ```
-The above command line generates about twenty thousand kernels targetting NVIDIA Ampere, Turing, and Volta architectures. 
+
+The above command line generates about twenty thousand kernels targeting NVIDIA Ampere, Turing, and Volta architectures. 
 Compiling thousands of kernels for three different architectures is time consuming. Additionaly, this would also result 
 in a large binary size and on some platforms linker to fail on building the library.
 
@@ -641,13 +642,13 @@ $ cmake .. -DCUTLASS_NVCC_ARCHS='80' -DCUTLASS_LIBRARY_KERNELS=s16816fprop,s1681
 $ cmake .. -DCUTLASS_NVCC_ARCHS='50;60;61;70;75;80' -DCUTLASS_LIBRARY_KERNELS=sfprop
 ```
 
-**Example.** All forward propagation (fprop) convolution kernels with FP32 accumulation and FP16 input targetting NVIDIA Ampere's 16816 Tensor Core operation
+**Example.** All forward propagation (fprop) convolution kernels with FP32 accumulation and FP16 input targeting NVIDIA Ampere's 16816 Tensor Core operation
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS='80' -DCUTLASS_LIBRARY_KERNELS=s16816fprop_*_f16
 ```
 
 **Example.** All backward weight gradient (wgrad) convolution kernels with FP32 accumulation, FP16 input, and optimized global memory iterator 
-targetting NVIDIA Ampere, Turing, and Volta Tensor Core operations
+targeting NVIDIA Ampere, Turing, and Volta Tensor Core operations
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS='70;75;80' -DCUTLASS_LIBRARY_KERNELS=tensorop*s*wgrad_optimized_f16
 ```

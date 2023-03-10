@@ -718,7 +718,7 @@ make_tma_copy(CopyOp,
               << "\nswizzle        " << smem_swizzle
               << "\nl2Promotion    " << tma_l2Promotion
               << "\noobFill        " << tma_oobFill << std::endl;
-    std::cerr << "Error: Failed to intialize the TMA descriptor " << result << std::endl;
+    std::cerr << "Error: Failed to initialize the TMA descriptor " << result << std::endl;
     assert(false);
   }
 #endif // (__CUDACC_VER_MAJOR__ >= 12)

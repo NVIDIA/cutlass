@@ -284,7 +284,7 @@ struct ScalarArgument : public KernelArgument {
   // Data members
   //
 
-  /// Set of posible values
+  /// Set of possible values
   ValueCollection values;
 
   //
@@ -540,7 +540,7 @@ struct IntegerArgument : public KernelArgument {
   // Data members
   //
 
-  /// Set of posible values
+  /// Set of possible values
   RangeCollection ranges;
 
   //

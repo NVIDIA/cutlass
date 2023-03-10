@@ -325,7 +325,7 @@ public:
 };
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Parital specialization for column-major output exchange operand.
+/// Partial specialization for column-major output exchange operand.
 template <
     /// Element type for A matrix operand
     typename ElementA_,

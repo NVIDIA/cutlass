@@ -69,7 +69,7 @@ struct TensorForEachHelper<Func, Rank, 0> {
   /// Index of the active rank
   static int const kActiveRank = Rank - 1;
 
-  /// Constructor for fastest chaning rank
+  /// Constructor for fastest changing rank
   TensorForEachHelper(
     Func &func,
     Coord<Rank> const &extent,

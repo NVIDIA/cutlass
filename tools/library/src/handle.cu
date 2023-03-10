@@ -908,13 +908,13 @@ Status Handle::gemm_planar_complex_array(
   NumericTypeID element_C,                  /// Data type of C and D matrix
 
   void const * const * ptr_C_real,          /// Pointer to array containing pointers to real part of C matrices
-  void const * const * ptr_C_imag,          /// Pointer to array containing poitners to imaginary part of C matrices
+  void const * const * ptr_C_imag,          /// Pointer to array containing pointers to imaginary part of C matrices
 
   int64_t ldc_real,                             /// Leading dimension of real part of C matrix
   int64_t ldc_imag,                             /// Leading dimension of imaginary part of C matrix
 
   void * const * ptr_D_real,                /// Pointer to array containing pointers to real part of D matrices
-  void * const * ptr_D_imag,                /// Pointer to array containing poitners to imaginary part of D matrices
+  void * const * ptr_D_imag,                /// Pointer to array containing pointers to imaginary part of D matrices
 
   int64_t ldd_real,                             /// Leading dimension of real part of D matrix
   int64_t ldd_imag                              /// Leading dimension of imaginary part of D matrix

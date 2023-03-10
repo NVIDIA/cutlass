@@ -358,7 +358,7 @@ public:
               << operator_args.problem_size << std::endl
               << "  split_k_mode: "
               << (operator_args.split_k_mode == cutlass::conv::SplitKMode::kSerial ? "serial" : "parallel") << std::endl
-              << "  epilouge (alpha, beta): "
+              << "  epilogue (alpha, beta): "
               << operator_args.output_op.alpha << ", " 
               << operator_args.output_op.beta << std::endl
               << "  ref_A (ptr, {stride}): " 
@@ -610,7 +610,7 @@ public:
               << operator_args.problem_size << std::endl
               << "  split_k_mode: "
               << (operator_args.split_k_mode == cutlass::conv::SplitKMode::kSerial ? "serial" : "parallel") << std::endl
-              << "  epilouge (alpha, beta): "
+              << "  epilogue (alpha, beta): "
               << operator_args.output_op.alpha << ", " 
               << operator_args.output_op.beta << std::endl
               << "  ref_A (ptr, {stride}): " 

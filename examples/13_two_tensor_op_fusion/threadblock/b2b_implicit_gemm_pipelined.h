@@ -321,7 +321,7 @@ public:
     int smem_write_stage_idx = 1;
 
     // Issue loads during the first warp-level matrix multiply-add *AFTER* issuing 
-    // shared memory loads (which have the tighest latency requirement).
+    // shared memory loads (which have the tightest latency requirement).
 
     //
     // Mainloop
@@ -461,7 +461,7 @@ public:
     int gemm_k_iterations_1 = FragmentIteratorA1::Policy::kIterations / Base::kWarpGemmIterations1;
 
     // Issue loads during the first warp-level matrix multiply-add *AFTER* issuing 
-    // shared memory loads (which have the tighest latency requirement).
+    // shared memory loads (which have the tightest latency requirement).
 
     //
     // Mainloop

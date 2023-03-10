@@ -97,7 +97,7 @@ def cluster_shape_to_tma(dim):
 
 def make_cpasync_gmem_tiled_copy(thread_count, element, alignment, gmma_layout, dim_mn, dim_k):
     """
-    Returns a `make_tiled_copy` call for a given configuraiton
+    Returns a `make_tiled_copy` call for a given configuration
 
     :param thread_count: number of threads in the threadblock
     :type thread_count: int
@@ -296,7 +296,7 @@ def common_values(op, stage_count, transform_A, transform_B):
 
 def build_gmma_tma(op):
     """
-    Builds a collective operation declaration targetting TMA GMMA kernels
+    Builds a collective operation declaration targeting TMA GMMA kernels
 
     :param op: GEMM operation for which to build a collective operation
     :type op: pycutlass.GemmOperation
@@ -335,7 +335,7 @@ def build_gmma_tma(op):
 
 def build_gmma_cpasync(op):
     """
-    Builds a collective operation declaration targetting cp.async GMMA kernels
+    Builds a collective operation declaration targeting cp.async GMMA kernels
 
     :param op: GEMM operation for which to build a collective operation
     :type op: pycutlass.GemmOperation
@@ -377,7 +377,7 @@ def build_gmma_cpasync(op):
 
 def build(operation):
     """
-    Builds a collective operation declaration targetting cp.async or TMA for GMMA kernels
+    Builds a collective operation declaration targeting cp.async or TMA for GMMA kernels
 
     :param operation: GEMM operation for which to build a collective operation
     :type operation: pycutlass.GemmOperation

@@ -62,7 +62,7 @@ struct GpuTimer {
   /// Records a stop event in the stream and synchronizes on the stream
   void stop_and_wait(cudaStream_t stream = nullptr);
 
-  /// Returns the duration in miliseconds
+  /// Returns the duration in milliseconds
   double duration(int iterations = 1) const;
 };
 

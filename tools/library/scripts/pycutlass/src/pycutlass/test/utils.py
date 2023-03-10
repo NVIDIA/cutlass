@@ -63,7 +63,7 @@ def get_name(layouts, alignments, element_output,
     Generates a procedural name for a test case.
 
     :param layouts: indexable container of layouts of A, B, and C operands
-    :param alignments: indexable container of alingments of A, B, and C operands
+    :param alignments: indexable container of alignments of A, B, and C operands
     :param element_output: data type of the output element
     :param element_accumulator: data type used in accumulation
     :param element_epilogue: data type used in computing the epilogue

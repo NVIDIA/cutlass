@@ -198,7 +198,7 @@ private:
   /// A thread's starting column
   Index thread_start_column_;
 
-  /// Initial thread ouput location
+  /// Initial thread output location
   int thread_start_n_, thread_start_p_, thread_start_q_;
 
   /// Current threadblock tile index

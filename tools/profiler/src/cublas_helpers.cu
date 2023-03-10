@@ -57,7 +57,7 @@ Status get_cutlass_status(cublasStatus_t cublas) {
   return Status::kErrorInternal;
 }
 
-/// Converts a cuBLASS status to cutlass::profiler::Disposition
+/// Converts a cuBLAS status to cutlass::profiler::Disposition
 Disposition get_cutlass_disposition(cublasStatus_t cublas_status) {
 
   if (cublas_status == CUBLAS_STATUS_INVALID_VALUE) {

@@ -89,7 +89,7 @@ def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
   return operations
 
 
-# Generates 3.0 API based GemmUniversal API kernels. Alignment constraits are folded in with layouts
+# Generates 3.0 API based GemmUniversal API kernels. Alignment constraints are folded in with layouts
 def CreateGemmUniversal3xOperator(
     manifest, layouts, tile_descriptions, data_type,
     complex_transforms=None,
@@ -4831,7 +4831,7 @@ if __name__ == "__main__":
   parser.add_argument("--architectures", default='53;60;61;70;75;80', help="Target compute architectures")
   parser.add_argument("--kernels", default='', help='Comma delimited list to filter kernels by name.')
   parser.add_argument("--ignore-kernels", default='', help='Comma delimited list of kernels to exclude from build.')
-  parser.add_argument("--filter-by-cc", default='True', type=str, help='If enabled, kernels whose comupte capability range is not satisfied by the build target are excluded.')
+  parser.add_argument("--filter-by-cc", default='True', type=str, help='If enabled, kernels whose compute capability range is not satisfied by the build target are excluded.')
   parser.add_argument("--cuda-version", default="11.0.0", help="Semantic version string of CUDA Toolkit")
   parser.add_argument('--kernel-filter-file',   type=str, default=None, required=False, help='Full path of filter file')
   parser.add_argument('--selected-kernel-list',   type=str, default=None, required=False,

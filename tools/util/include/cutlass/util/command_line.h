@@ -188,7 +188,7 @@ struct CommandLine {
       for (int i = 0; i < keys.size(); ++i) {
         if (keys[i] == string(arg_name)) {
           string val_string(values[i]);
-          seperate_string(val_string, vals, sep);
+          separate_string(val_string, vals, sep);
         }
       }
     }
@@ -225,7 +225,7 @@ struct CommandLine {
       range != ranges.end(); ++range) {
 
       std::vector<std::string> range_vals;
-      seperate_string(*range, range_vals, sep);
+      separate_string(*range, range_vals, sep);
       vals.push_back(range_vals);
     }
   }
@@ -283,7 +283,7 @@ struct CommandLine {
   }
 
   template <typename value_t>
-  static void seperate_string(std::string const& str,
+  static void separate_string(std::string const& str,
                               std::vector<value_t>& vals,
                               char sep = ',') {
     std::istringstream str_stream(str);

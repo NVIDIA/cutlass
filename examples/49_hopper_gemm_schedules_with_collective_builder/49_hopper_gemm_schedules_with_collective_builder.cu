@@ -33,7 +33,7 @@
     \brief Hopper GEMM example leveraging collective operation builders.
 
     This example showcases the use of CUTLASS's CollectiveBuilder to easily construct performant kernels
-    targetting the NVIDIA Hopper architecture.
+    targeting the NVIDIA Hopper architecture.
 
     Background and motivation
     -------------------------
@@ -45,7 +45,7 @@
     However, DefaultGemmConfigurations leave multiple opportunities for improvement, which are addressed
     in CUTLASS 3:
       (1) DefaultGemmConfigurations do not allow one to use a more-performant set of parameters without
-          specifying every parameter. For example, the DefaultGemmConfigurations for GEMMs targetting
+          specifying every parameter. For example, the DefaultGemmConfigurations for GEMMs targeting
           Ampere specify that three pipeline stages should be used regardless of the sizes of operands.
           If one wished to increase this value, one would also need to specify all other template parameters.
           This leaves a gap between a high-level ease-of-use interface and a lower-level detailed interface.
@@ -55,7 +55,7 @@
 
     Alongside these opportunities for improvement, the Hopper architecture offers new features that increase
     the number of valid configurations of a kernel. In addition to the many template parameters already available
-    in CUTLASS 2 kernels, CUTLASS 3 kernels targetting Hopper also have various scheduling modes to select from that control:
+    in CUTLASS 2 kernels, CUTLASS 3 kernels targeting Hopper also have various scheduling modes to select from that control:
       (1) how data is to be loaded (e.g., using the Hopper TMA feature or Ampere cp.async)
       (2) how work is to be divided among warps in a thread block (e.g., whether to use "warp specialization")
       (3) whether persistent thread blocks should be used
@@ -64,13 +64,13 @@
     Introduction to the CollectiveBuilder
     -------------------------------------
     CUTLASS 3 introduces the CollectiveBuilder to further ease the process of selecting template parameters
-    for kernels targetting Hopper. Similar to the DefaultGemmConfigurations used in CUTLASS 2, the CollectiveBuilder
+    for kernels targeting Hopper. Similar to the DefaultGemmConfigurations used in CUTLASS 2, the CollectiveBuilder
     takes in a small set of template parameters (e.g., the data types of operands A and B). It then automatically
     determines the data loading strategy to use depending on whether the Hopper TMA feature can be used with the provided
     parameters. If one does not indicate a particular scheduling policy or stage count to use (by using `Auto` template
     parameters), the CollectiveBuilder will also automatically select these.
 
-    Unlike DefaultGemmConfigurations a parital specialization of the CollectiveBuilder is not needed for many
+    Unlike DefaultGemmConfigurations a partial specialization of the CollectiveBuilder is not needed for many
     configurations of operand types. Instead the CollectiveBuilder "builds" a configuration based on generic
     properties of the specified operands, layouts, and other parameters. For example, when the stage count
     is set to `Auto`, the CollectiveBuilder may automatically calculate the maximum number of stages that
@@ -90,7 +90,7 @@
     Details of this example
     -----------------------
     This example walks through the use of the CollectiveBuilder with various schedules and stage counts specified.
-    This example also illustrates how CUTLASS 3 GEMMs targetting Hopper automatically support batched GEMMs by simply
+    This example also illustrates how CUTLASS 3 GEMMs targeting Hopper automatically support batched GEMMs by simply
     extending the problem size with an additional tensor rank.
 
     Example usage:
@@ -162,7 +162,7 @@ struct Options {
 
     out << "49_hopper_gemm_schedules_with_collective_builder\n\n"
       << "  This example showcases the use of CUTLASS's collective operation builders to easily construct\n"
-      << "  performant kernels targetting NVIDIA's Hopper architecture.\n\n"
+      << "  performant kernels targeting NVIDIA's Hopper architecture.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
       << "  --m=<int>                   Sets the M extent of the GEMM\n"

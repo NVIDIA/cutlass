@@ -109,9 +109,9 @@ __global__ void nhwc_padding_channel_3To4_kernel(const int32_t n,
   shm[threadIdx.x] = tidx >= max_input_element ? zero_io : input[tidx];  
   __syncthreads();
   
-  const int ouput_offset = blockIdx.x * 256;
-  const int lower_bound = max_output_element < ouput_offset + 256 ? max_output_element : ouput_offset + 256;
-  for (int i = ouput_offset + threadidx, j = threadidx ; i < lower_bound ; i+=192, j+=192)
+  const int output_offset = blockIdx.x * 256;
+  const int lower_bound = max_output_element < output_offset + 256 ? max_output_element : output_offset + 256;
+  for (int i = output_offset + threadidx, j = threadidx ; i < lower_bound ; i+=192, j+=192)
   {
     const Telement* shm_element = (const Telement*)shm + j*3*element_in_Tio/4;
     Telement array[element_in_Tio];
@@ -140,9 +140,9 @@ __global__ void nhwc_padding_channel_3To8_kernel(const int32_t n,
   shm[threadIdx.x] = tidx >= max_input_element ? zero_io : input[tidx];  
   __syncthreads();
   
-  const int ouput_offset = blockIdx.x * 512;
-  const int lower_bound = max_output_element < ouput_offset + 512 ? max_output_element : ouput_offset + 512;
-  for (int i = ouput_offset + threadidx, j = threadidx ; i < lower_bound ; i+=192, j+=192)
+  const int output_offset = blockIdx.x * 512;
+  const int lower_bound = max_output_element < output_offset + 512 ? max_output_element : output_offset + 512;
+  for (int i = output_offset + threadidx, j = threadidx ; i < lower_bound ; i+=192, j+=192)
   {
     const Telement* shm_element = (const Telement*)shm + (element_in_Tio == 4 ? j/2 : j)*3;
     Telement array[element_in_Tio];
