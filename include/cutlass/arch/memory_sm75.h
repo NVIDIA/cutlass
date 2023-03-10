@@ -53,6 +53,10 @@ template <
 inline __device__ void ldsm(Array<unsigned, MatrixCount> & D, void const* ptr);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Determine the appropriate way to target PTX's "ldmatrix" instruction.
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// CUTLASS helper to get SMEM pointer
 inline __device__ unsigned cutlass_get_smem_pointer(void *ptr) {
@@ -71,9 +75,9 @@ inline __device__ void ldsm<layout::RowMajor, 1>(
     Array<unsigned, 1> & D,
     void const* ptr) {
 
-  #if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
-    unsigned addr = cute::cast_smem_ptr_to_uint(ptr);
+    unsigned addr = cutlass_get_smem_pointer(ptr);
 
     int x;
     asm volatile ("ldmatrix.sync.aligned.x1.m8n8.shared.b16 {%0}, [%1];" : "=r"(x) : "r"(addr));
@@ -95,9 +99,9 @@ inline __device__ void ldsm<layout::RowMajor, 2>(
     Array<unsigned, 2> & D,
     void const* ptr) {
 
-  #if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
-    unsigned addr = cute::cast_smem_ptr_to_uint(ptr);
+    unsigned addr = cutlass_get_smem_pointer(ptr);
 
     int x, y;
     asm volatile ("ldmatrix.sync.aligned.x2.m8n8.shared.b16 {%0, %1}, [%2];" : "=r"(x), "=r"(y) : "r"(addr));
@@ -119,9 +123,9 @@ inline __device__ void ldsm<layout::RowMajor, 4>(
     Array<unsigned, 4> & D,
     void const* ptr) {
 
-  #if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
-    unsigned addr = cute::cast_smem_ptr_to_uint(ptr);
+    unsigned addr = cutlass_get_smem_pointer(ptr);
 
     int x, y, z, w;
     asm volatile ("ldmatrix.sync.aligned.x4.m8n8.shared.b16 {%0, %1, %2, %3}, [%4];" : "=r"(x), "=r"(y), "=r"(z), "=r"(w) : "r"(addr));
@@ -147,7 +151,7 @@ inline __device__ void ldsm<layout::ColumnMajor, 1>(
     Array<unsigned, 1> & D,
     void const* ptr) {
 
-  #if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
     unsigned addr = cutlass_get_smem_pointer(ptr);
 
@@ -171,7 +175,7 @@ inline __device__ void ldsm<layout::ColumnMajor, 2>(
     Array<unsigned, 2> & D,
     void const* ptr) {
 
-  #if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
     unsigned addr = cutlass_get_smem_pointer(ptr);
 
@@ -195,7 +199,7 @@ inline __device__ void ldsm<layout::ColumnMajor, 4>(
     Array<unsigned, 4> & D,
     void const* ptr) {
 
-  #if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
     unsigned addr = cutlass_get_smem_pointer(ptr);
 

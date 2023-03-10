@@ -43,15 +43,21 @@
   #define CUTE_ARCH_CLANG_SUPPORTS_LDSM_SM75 (__clang_major__ >= 15)
 #endif
 
-#ifdef __CUDACC__
+#if defined(__NVCC__) || defined(__CUDACC_RTC__)
   // ldmatrix PTX instruction added in CUDA 10.2+
   #define CUTE_ARCH_NVCC_SUPPORTS_LDSM_SM75 ((__CUDACC_VER_MAJOR__  == 10 && __CUDACC_VER_MINOR__ >= 2) || __CUDACC_VER_MAJOR__ >= 11)
 #endif
 
-#define CUTE_ARCH_LDSM_SM75_SUPPORTED (CUTE_ARCH_NVCC_SUPPORTS_LDSM_SM75 || CUTE_ARCH_CLANG_SUPPORTS_LDSM_SM75)
+#if ! defined(CUTE_ARCH_LDSM_SM75_SUPPORTED)
+  #define CUTE_ARCH_LDSM_SM75_SUPPORTED (CUTE_ARCH_NVCC_SUPPORTS_LDSM_SM75 || CUTE_ARCH_CLANG_SUPPORTS_LDSM_SM75)
+#endif
 
-#if CUTE_ARCH_LDSM_SM75_SUPPORTED && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 750
-  #define CUTE_ARCH_LDSM_SM75_ENABLED
+#if ! defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+  #define CUTE_ARCH_LDSM_SM75_ENABLED (CUTE_ARCH_LDSM_SM75_SUPPORTED)
+#endif
+
+#if (CUTE_ARCH_LDSM_SM75_ENABLED) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 750
+  #define CUTE_ARCH_LDSM_SM75_ACTIVATED 1
 #endif
 
 namespace cute
@@ -66,13 +72,13 @@ struct SM75_U32x1_LDSM_N
   copy(uint128_t const& smem_src,
        uint32_t& dst)
   {
-#if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+#if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_src);
     asm volatile ("ldmatrix.sync.aligned.x1.m8n8.shared.b16 {%0}, [%1];\n"
         : "=r"(dst)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ENABLED.");
+    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };
@@ -86,13 +92,13 @@ struct SM75_U32x2_LDSM_N
   copy(uint128_t const& smem_src,
        uint32_t& dst0, uint32_t& dst1)
   {
-#if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+#if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_src);
     asm volatile ("ldmatrix.sync.aligned.x2.m8n8.shared.b16 {%0, %1}, [%2];\n"
         : "=r"(dst0), "=r"(dst1)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ENABLED.");
+    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };
@@ -106,13 +112,13 @@ struct SM75_U32x4_LDSM_N
   copy(uint128_t const& smem_src,
        uint32_t& dst0, uint32_t& dst1, uint32_t& dst2, uint32_t& dst3)
   {
-#if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+#if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_src);
     asm volatile ("ldmatrix.sync.aligned.x4.m8n8.shared.b16 {%0, %1, %2, %3}, [%4];\n"
         : "=r"(dst0), "=r"(dst1), "=r"(dst2), "=r"(dst3)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ENABLED.");
+    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };
@@ -126,13 +132,13 @@ struct SM75_U16x2_LDSM_T
   copy(uint128_t const& smem_src,
        uint32_t& dst)
   {
-#if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+#if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_src);
     asm volatile ("ldmatrix.sync.aligned.x1.trans.m8n8.shared.b16 {%0}, [%1];\n"
         : "=r"(dst)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ENABLED.");
+    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };
@@ -146,13 +152,13 @@ struct SM75_U16x4_LDSM_T
   copy(uint128_t const& smem_src,
        uint32_t& dst0, uint32_t& dst1)
   {
-#if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+#if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_src);
     asm volatile ("ldmatrix.sync.aligned.x2.trans.m8n8.shared.b16 {%0, %1}, [%2];\n"
         : "=r"(dst0), "=r"(dst1)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ENABLED.");
+    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };
@@ -166,13 +172,13 @@ struct SM75_U16x8_LDSM_T
   copy(uint128_t const& smem_src,
        uint32_t& dst0, uint32_t& dst1, uint32_t& dst2, uint32_t& dst3)
   {
-#if defined(CUTE_ARCH_LDSM_SM75_ENABLED)
+#if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_src);
     asm volatile ("ldmatrix.sync.aligned.x4.trans.m8n8.shared.b16 {%0, %1, %2, %3}, [%4];\n"
         : "=r"(dst0), "=r"(dst1), "=r"(dst2), "=r"(dst3)
         :  "r"(smem_int_ptr));
 #else
-    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ENABLED.");
+    CUTE_RUNTIME_ASSERT("Trying to use ldmatrix without CUTE_ARCH_LDSM_SM75_ACTIVATED.");
 #endif
   }
 };

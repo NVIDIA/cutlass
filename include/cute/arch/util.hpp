@@ -47,12 +47,12 @@
   #endif
 #endif
 
-#ifdef __CUDACC__
+#if defined(__NVCC__) || defined(__CUDACC_RTC__)
   // __cvta_generic_to_shared added in CUDA 11+
-  #define CUTE_NVCC_SUPPORTS_CVTA_GENERIC_TO_SHARED (__CUDACC_VER_MAJOR__ >= 11)
+  #define CUTE_NVCC_SUPPORTS_CVTA_GENERIC_TO_SHARED (defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 11))
 
   // __nvvm_get_smem_pointer added in CUDA 10.2
-  #define CUTE_NVCC_SUPPORTS_NVVM_GET_SMEM_POINTER (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2)
+  #define CUTE_NVCC_SUPPORTS_NVVM_GET_SMEM_POINTER (defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2))
 #endif
 
 #define CUTE_CVTA_GENERIC_TO_SHARED_SUPPORTED (CUTE_NVCC_SUPPORTS_CVTA_GENERIC_TO_SHARED || CUTE_CLANG_SUPPORTS_CVTA_GENERIC_TO_SHARED)
