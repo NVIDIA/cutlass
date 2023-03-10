@@ -186,10 +186,10 @@ private:
   /// Extent of the matrix tile in rows
   Index extent_row_;
 
-  /// Starting Dx h and w dimenstion for strided dgrad mapping
+  /// Starting Dx h and w dimension for strided dgrad mapping
   int start_h_, start_w_;
 
-  /// Effective Dy P and Q dimenstions for strided dgrad mapping
+  /// Effective Dy P and Q dimensions for strided dgrad mapping
   int p_, q_;
 
   /// A thread's starting row position (assuming steady-state predicates have been computed)

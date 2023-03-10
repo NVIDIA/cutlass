@@ -74,7 +74,7 @@ template <
 >
 struct ConvReferenceDispatcher;
 
-/// Dispatcher for Conv2d (partially specialied for kConvDim == 2)
+/// Dispatcher for Conv2d (partially specialized for kConvDim == 2)
 template <
   Provider kProvider,
   conv::Operator kConvolutionalOperator,

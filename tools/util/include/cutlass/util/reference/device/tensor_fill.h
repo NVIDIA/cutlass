@@ -1308,7 +1308,7 @@ void TensorFill(
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Fills a tensor's digonal with 1 and 0 everywhere else.
+/// Fills a tensor's diagonal with 1 and 0 everywhere else.
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function

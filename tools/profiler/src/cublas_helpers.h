@@ -54,7 +54,7 @@ namespace profiler {
 /// Converts a cuBLAS status to cutlass::Status
 Status get_cutlass_status(cublasStatus_t cublas);
 
-/// Converts a cuBLASS status to cutlass::profiler::Disposition
+/// Converts a cuBLAS status to cutlass::profiler::Disposition
 Disposition get_cutlass_disposition(cublasStatus_t cublas_status);
 
 /// Maps a CUTLASS tensor layout to a cuBLAS transpose operation
@@ -87,7 +87,7 @@ Status cublas_satisfies(library::SymmDescription const &desc);
 
 /// This is a helper class to create cublasHandle_t automatically on CublasCreate object creation and 
 /// to destroy cublasHandle_t on CublasCreate object destruction. 
-/// Additionaly, it provides implicit cast from CublasCreate's object to cublasHandle_t's object
+/// Additionally, it provides implicit cast from CublasCreate's object to cublasHandle_t's object
 class CublasCreate {
 private:
 	cublasHandle_t handle;
@@ -196,7 +196,7 @@ struct cublasGemmExDispatcher {
   library::GemmUniversalConfiguration configuration;
   library::GemmUniversalArguments arguments;
 
-  // cublass-specific data structures to fill cublas API call arguments
+  // cublas-specific data structures to fill cublas API call arguments
   cublasOperation_t trans_A;
   cublasOperation_t trans_B;
   cudaDataType_t data_type_A;
@@ -237,7 +237,7 @@ struct cublasRankKDispatcher {
   library::RankKConfiguration configuration;
   library::RankKArguments arguments;
 
-  // cublass-specific data structures to fill cublas API call arguments
+  // cublas-specific data structures to fill cublas API call arguments
   cublasOperation_t trans_A;
   cublasFillMode_t uplo;
   cudaDataType_t data_type_A;
@@ -277,7 +277,7 @@ struct cublasTrmmDispatcher {
   library::TrmmConfiguration configuration;
   library::TrmmArguments arguments;
 
-  // cublass-specific data structures to fill cublas API call arguments
+  // cublas-specific data structures to fill cublas API call arguments
   cublasOperation_t trans_A;
   cublasSideMode_t side;
   cublasFillMode_t uplo;
@@ -318,7 +318,7 @@ struct cublasSymmDispatcher {
   library::SymmConfiguration configuration;
   library::SymmArguments arguments;
 
-  // cublass-specific data structures to fill cublas API call arguments
+  // cublas-specific data structures to fill cublas API call arguments
   cublasSideMode_t side;
   cublasFillMode_t uplo;
   cudaDataType_t data_type_A;

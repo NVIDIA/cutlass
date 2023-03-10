@@ -42,7 +42,7 @@ namespace py = pybind11;
 void bind_conv_problem_size(py::module &m) {
     //
     // Conv2d Problem Size: 
-    // include/cutlass/conv/conv2d_problem_sizd.h
+    // include/cutlass/conv/conv2d_problem_size.h
     //
     py::class_<cutlass::conv::Conv2dProblemSize>(m, "Conv2dProblemSize")
          // constructors

@@ -353,7 +353,7 @@ public:
     std::cout << "SymmOperation::OperatorArguments" << std::endl
               << "  problem_size:" << std::endl 
               << operator_args.problem_size << std::endl
-              << "  epilouge (alpha, beta): "
+              << "  epilogue (alpha, beta): "
               << operator_args.epilogue.alpha << ", " 
               << operator_args.epilogue.beta << std::endl
               << "  ref_A (ptr, {stride}): " 

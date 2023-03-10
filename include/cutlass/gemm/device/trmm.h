@@ -563,7 +563,7 @@ For the mainloop and trmm kernel, `A` and `B` points to left-side and right-side
    call GEMM mainloop for with RowMajor efficient-epilogue
 ********************************************************************************************************/
 
-/// Parital specialization for column-major output exchanges problem size and operand.
+/// Partial specialization for column-major output exchanges problem size and operand.
 template <
     /// Element type for A matrix operand
     typename ElementA_,

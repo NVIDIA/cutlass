@@ -42,7 +42,7 @@ from pycutlass.test.gemm_testbed import test_all_gemm
 from pycutlass.utils.device import device_cc
 
 
-# Partial specialziation for naming tests
+# Partial specialization for naming tests
 name_fn = partial(get_name, element_a=cutlass.float16, element_b=cutlass.float16, arch=90)
 
 
@@ -54,7 +54,7 @@ def add_test(cls, layouts, alignments, element_output, element_accumulator, elem
     :param cls: class to which the generated method will be added
     :type cls: type
     :param layouts: indexable container of layouts of A, B, and C operands
-    :param alignments: indexable container of alingments of A, B, and C operands
+    :param alignments: indexable container of alignments of A, B, and C operands
     :param element_output: data type of the output element
     :param element_accumulator: data type used in accumulation
     :param element_epilogue: data type used in computing the epilogue

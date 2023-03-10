@@ -1173,7 +1173,7 @@ int main(int argc, char const **args) {
 
   // Determine kernel configuration based on head size.
   // If head size is less than or equal to 64, each block operates over 64 queries and
-  // 64 keys, and parital results can be stored in the register file.
+  // 64 keys, and partial results can be stored in the register file.
   // If head size is greater than 64, each block operates over 32 queries and 128 keys,
   // and partial results are stored in shared memory.
   if (options.head_size_v > 64) {

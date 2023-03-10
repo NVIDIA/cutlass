@@ -189,7 +189,7 @@ public:
       }
     }
 
-    // Returns leading dimenstion for equivalent gemm matrix A
+    // Returns leading dimension for equivalent gemm matrix A
     int64_t eq_gemm_lda(library::ConvKind const &conv_kind) const {
 
       switch (conv_kind) {
@@ -200,7 +200,7 @@ public:
       }
     }
 
-    // Returns leading dimenstion for equivalent gemm matrix B
+    // Returns leading dimension for equivalent gemm matrix B
     int64_t eq_gemm_ldb(library::ConvKind const &conv_kind) const {
 
       switch (conv_kind) {
@@ -211,7 +211,7 @@ public:
       }
     }
 
-    // Returns leading dimenstion for equivalent gemm matrix C
+    // Returns leading dimension for equivalent gemm matrix C
     int64_t eq_gemm_ldc(library::ConvKind const &conv_kind) const {
 
       switch (conv_kind) {
@@ -436,7 +436,7 @@ protected:
     void *device_workspace);
  
  
-  /// Initialize reduction problem dimenstions and library::Operation
+  /// Initialize reduction problem dimensions and library::Operation
   bool initialize_reduction_configuration_(
     Options const &options,  
     PerformanceReport &report,

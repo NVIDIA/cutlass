@@ -518,7 +518,7 @@ struct GemmDescription : public OperationDescription {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Desciprion for structured sparse GEMMs.
+/// Description for structured sparse GEMMs.
 struct SparseGemmDescription : public GemmDescription {
 
   /// Description structure for structured sparse GEMM
@@ -1160,7 +1160,7 @@ struct GemmGroupedArguments {
 // OperationKind: kSparseGemm
 //
 
-/// Computes GEMM assumine one of the inputs has 2:4 structured sparsity.
+/// Computes GEMM assuming one of the inputs has 2:4 structured sparsity.
 struct SparseGemmConfiguration {
 
   GemmUniversalMode mode;
@@ -1187,7 +1187,7 @@ struct SparseGemmArguments {
   void const *B;                    /// pointer to B matrix
   void const *C;                    /// pointer to C matrix
   void *D;                          /// pointer to D matrix
-  void const *E;                    /// pointer to E matric (metadata)
+  void const *E;                    /// pointer to E matrix (metadata)
 
   void const *alpha;                /// pointer to alpha scalar
   void const *beta;                 /// pointer to beta scalar
@@ -1465,7 +1465,7 @@ struct ConvArguments {
   /// pointer to implicit gemm matrix C
   void const *C;
 
-  /// pointer to implicit gemm desitination matrix D
+  /// pointer to implicit gemm destination matrix D
   void *D;
 
   /// Host or device pointer to alpha scalar
@@ -1487,16 +1487,16 @@ struct ConvArguments {
 //
 struct ReductionConfiguration {
 
-  /// Redcution problem size
+  /// Reduction problem size
   MatrixCoord problem_size;
 
   /// Number of partitions to reduce
   int partitions;
 
-  /// Number of lements between each partition
+  /// Number of elements between each partition
   int64_t partition_stride;
 
-  /// leading dimension of 'w'orksace operand
+  /// leading dimension of 'w'orkspace operand
   int64_t ldw; 
 
   /// leading dimension of 's'ource operand

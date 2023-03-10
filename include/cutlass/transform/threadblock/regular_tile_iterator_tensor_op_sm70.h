@@ -1079,7 +1079,7 @@ class RegularTileIterator<
   //
 
   /// The crosswised elements will be stored in a line.
-  /// line_size is size of crosswised dimention plus padding.
+  /// line_size is size of crosswised dimension plus padding.
   /// in units of AccessType
   Index line_size;
 

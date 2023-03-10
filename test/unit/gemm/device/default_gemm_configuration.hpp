@@ -638,7 +638,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
     GmemTiledCopyB, SmemLayoutAtomB, SmemCopyAtomB, cute::identity   // B
   >;
 
-  // Epilouge
+  // Epilogue
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,

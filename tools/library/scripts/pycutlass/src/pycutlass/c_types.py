@@ -150,7 +150,7 @@ def get_gemm_arguments(epilogue_functor):
             ("ldc", ctypes.c_longlong),
             ("ldd", ctypes.c_longlong),
             ("ptr_gather_A_indices", ctypes.c_void_p),
-            ("ptr_gether_B_indices", ctypes.c_void_p),
+            ("ptr_gather_B_indices", ctypes.c_void_p),
             ("ptr_scatter_D_indices", ctypes.c_void_p)
         ]
 

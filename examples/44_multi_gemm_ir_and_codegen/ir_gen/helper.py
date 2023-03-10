@@ -83,23 +83,23 @@ def list_2_string(input_list, ):
     return rtn_string
 
 
-def get_epilouge_info(layer_info):
+def get_epilogue_info(layer_info):
     return layer_info['epilogue']
 
 def get_epilogue_tp(layer_info):
-    epilogue_info = get_epilouge_info(layer_info)
+    epilogue_info = get_epilogue_info(layer_info)
     return epilogue_info['tp']
 
 def get_epilogue_add_bias_or_not(layer_info):
-    epilogue_info = get_epilouge_info(layer_info)
+    epilogue_info = get_epilogue_info(layer_info)
     return epilogue_info['bias']['addbias']
 
 def get_epilogue_add_bias_tp(layer_info):
-    epilogue_info = get_epilouge_info(layer_info)
+    epilogue_info = get_epilogue_info(layer_info)
     return epilogue_info['bias']['bias_tp']
 
 def get_epilogue_args(layer_info):
-    epilogue_info = get_epilouge_info(layer_info)
+    epilogue_info = get_epilogue_info(layer_info)
     return epilogue_info['args']
 
 def get_epilogue_bias_shape(layer_info):

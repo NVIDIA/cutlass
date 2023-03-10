@@ -67,7 +67,7 @@ static int get_strided_dgrad_tile_m(
   // CUTLASS strided dgrad performance for stride > filter, i.e., stride={2x2} and filter={1x1})
   //
   // * Optimization * 
-  // Only launch CTAs in M dimenstion which contribute to a row in Dx output
+  // Only launch CTAs in M dimension which contribute to a row in Dx output
   // 
   // 
   // * Constraints *
@@ -107,7 +107,7 @@ struct StridedDgradHorizontalThreadblockSwizzle :
     // compute number of tiles in m dimension
     int tile_m = get_strided_dgrad_tile_m(problem_size, tile_size.m());
 
-    // compute number of tiles in n dimenstion 
+    // compute number of tiles in n dimension
     int tile_n = (implicit_gemm_problem_size.n() + tile_size.n() - 1) / tile_size.n();
 
     return gemm::GemmCoord(
@@ -148,7 +148,7 @@ struct StridedDgradIdentityThreadblockSwizzle :
     // compute number of tiles in m dimension
     int tile_m = get_strided_dgrad_tile_m(problem_size, tile_size.m());
 
-    // compute number of tiles in n dimenstion 
+    // compute number of tiles in n dimension
     int tile_n = (implicit_gemm_problem_size.n() + tile_size.n() - 1) / tile_size.n();
 
     return gemm::GemmCoord(

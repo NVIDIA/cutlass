@@ -489,7 +489,7 @@ def test_all_gemm(operation: 'GemmOperationUniversal', testcase="universal"):
     else:
         alignment = 128 // minimum_operand_element_size
 
-    # int8_t gemm alignment constrainst
+    # int8_t gemm alignment constraints
     if opcode_class == cutlass.OpClass.Simt and operation.A.element == cutlass.int8 and operation.A.layout == cutlass.ColumnMajor:
         alignment_m = 4
     else:
