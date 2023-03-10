@@ -60,6 +60,7 @@ template <typename ElementOutput_, typename ElementAccumulator_,
           template <typename T> class BinaryOp1_,
           template <typename T> class UnaryOp_,
           template <typename T> class BinaryOp2_ = detail::NoOp,
+          bool StoreT_ = false,
           typename ElementVector_ = ElementC_>
 class LinearCombinationResidualBlock {
 public:
@@ -90,7 +91,7 @@ public:
 
   static bool const kIsHeavy = true;
   static bool const kStoreZ = true;
-  static bool const kStoreT = false;
+  static bool const kStoreT = StoreT_;
 
   /// Host-constructable parameters structure
   struct Params {
@@ -182,11 +183,12 @@ template <typename ElementOutput_, typename ElementAccumulator_,
           template <typename T> class ActivationOp_,
           template <typename T> class BinaryOp1_,
           template <typename T> class UnaryOp_,
+          bool StoreT_,
           typename ElementVector_>
 class LinearCombinationResidualBlock<ElementOutput_, ElementAccumulator_,
           ElementCompute_, ElementC_, ElementsPerAccess,
           ActivationOp_, BinaryOp1_, UnaryOp_,
-          detail::NoOp, ElementVector_> {
+          detail::NoOp, StoreT_, ElementVector_> {
 public:
   static bool const kIsSingleSource = true;
 
@@ -214,7 +216,7 @@ public:
 
   static bool const kIsHeavy = true;
   static bool const kStoreZ = true;
-  static bool const kStoreT = false;
+  static bool const kStoreT = StoreT_;
 
   /// Host-constructable parameters structure
   struct Params {
