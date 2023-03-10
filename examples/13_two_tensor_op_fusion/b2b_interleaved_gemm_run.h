@@ -43,6 +43,7 @@
 #include "cutlass/util/reference/host/tensor_norm.h"
 #include "cutlass/util/host_reorder.h"
 #include "cutlass/util/reference/device/gemm.h"
+#include "cutlass/util/reference/device/gemm_complex.h"
 #include "cutlass/util/reference/device/tensor_relu.h"
 
 #include "reference/device/tensor_scale_bias.h"
@@ -482,8 +483,10 @@ struct B2bInterleavedFusedGemmRun
     // to the GemmUniversal interface
 
     int batch_count = 1,
+
     int64_t batch_stride_A0 = 0,
     int64_t batch_stride_B0 = 0,
+    int64_t batch_stride_C0 = 0,
     int64_t batch_stride_B1 = 0,
     int64_t batch_stride_C1 = 0,
     int64_t batch_stride_D1 = 0,
@@ -495,21 +498,27 @@ struct B2bInterleavedFusedGemmRun
     // Allocate the GEMM workspace
     //
 
+    cutlass::gemm::GemmCoord CoordA0(problem_size_0.m(), problem_size_0.n(), batch_count * problem_size_0.k());
+    cutlass::gemm::GemmCoord CoordB0(problem_size_0.m(), problem_size_0.n(), batch_count * problem_size_0.k());
+    cutlass::gemm::GemmCoord CoordC0(problem_size_0.m(), batch_count * problem_size_0.n(), problem_size_0.k());
+    cutlass::gemm::GemmCoord CoordB1(problem_size_1.m(), problem_size_1.n(), batch_count * problem_size_1.k());
+    cutlass::gemm::GemmCoord CoordC1(problem_size_1.m(), batch_count * problem_size_1.n(), problem_size_1.k());
+
     cutlass::HostTensor<
       typename B2bGemm::ElementA,
-      typename B2bGemm::LayoutA> tensor_A0(problem_size_0.mk());
+      typename B2bGemm::LayoutA> tensor_A0(CoordA0.mk());
 
     cutlass::HostTensor<
       typename B2bGemm::ElementB,
-      typename B2bGemm::LayoutB> tensor_B0(problem_size_0.kn());
+      typename B2bGemm::LayoutB> tensor_B0(CoordB0.kn());
 
     cutlass::HostTensor<
       typename B2bGemm::ElementB,
-      typename B2bGemm::LayoutB> tensor_B0_reordered(problem_size_0.kn());
+      typename B2bGemm::LayoutB> tensor_B0_reordered(CoordB0.kn());
 
     cutlass::HostTensor<
       typename B2bGemm::ElementC,
-      typename B2bGemm::LayoutC> tensor_C0(problem_size_0.mn());
+      typename B2bGemm::LayoutC> tensor_C0(CoordC0.mn());
 
     cutlass::HostTensor<
       typename B2bGemm::ElementScaleBias,
@@ -523,24 +532,28 @@ struct B2bInterleavedFusedGemmRun
       typename B2bGemm::LayoutScaleBias> tensor_Bias0({1, problem_size_0.n()});
 
     cutlass::HostTensor<
+      typename B2bGemm::ElementScaleBias,
+      typename B2bGemm::LayoutScaleBias> tensor_Bias0_batched({1, batch_count * problem_size_0.n()});
+
+    cutlass::HostTensor<
       ElementAccumulator,
-      typename B2bGemm::LayoutC> reference_Z0(problem_size_0.mn());
+      typename B2bGemm::LayoutC> reference_Z0(CoordC0.mn());
 
     cutlass::HostTensor<
       typename B2bGemm::ElementC,
-      typename B2bGemm::LayoutC> reference_D0(problem_size_0.mn());
+      typename B2bGemm::LayoutC> reference_D0(CoordC0.mn());
 
     cutlass::HostTensor<
       typename B2bGemm::ElementB,
-      typename B2bGemm::LayoutB> tensor_B1(problem_size_1.kn());
+      typename B2bGemm::LayoutB> tensor_B1(CoordB1.kn());
 
     cutlass::HostTensor<
       typename B2bGemm::ElementB,
-      typename B2bGemm::LayoutB> tensor_B1_reordered(problem_size_1.kn());
+      typename B2bGemm::LayoutB> tensor_B1_reordered(CoordB1.kn());
 
     cutlass::HostTensor<
       typename B2bGemm::ElementC,
-      typename B2bGemm::LayoutC> tensor_C1(problem_size_1.mn());
+      typename B2bGemm::LayoutC> tensor_C1(CoordC1.mn());
 
     cutlass::HostTensor<
       typename B2bGemm::ElementC,
@@ -548,11 +561,11 @@ struct B2bInterleavedFusedGemmRun
 
     cutlass::HostTensor<
       typename B2bGemm::ElementC,
-      typename B2bGemm::LayoutC> tensor_D1(problem_size_1.mn());
+      typename B2bGemm::LayoutC> tensor_D1(CoordC1.mn());
 
     cutlass::HostTensor<
       typename B2bGemm::ElementC,
-      typename B2bGemm::LayoutC> reference_D1(problem_size_1.mn());
+      typename B2bGemm::LayoutC> reference_D1(CoordC1.mn());
 
 
     CHECK_TRUE(initialize_tensor(tensor_A0.host_view(), init_A, seed + 2019));
@@ -567,9 +580,9 @@ struct B2bInterleavedFusedGemmRun
 
     //Reorder B0
     cutlass::reorder_column<16>(
-        tensor_B0_reordered.host_ref(), tensor_B0.host_ref(), problem_size_0);
+        tensor_B0_reordered.host_ref(), tensor_B0.host_ref(), CoordB0);
     cutlass::reorder_column<InterleavedK_>(
-        tensor_B1_reordered.host_ref(), tensor_B1.host_ref(), problem_size_1);
+        tensor_B1_reordered.host_ref(), tensor_B1.host_ref(), CoordB1);
 
     cutlass::reference::host::TensorFill(
       tensor_D1.host_view());
@@ -577,6 +590,13 @@ struct B2bInterleavedFusedGemmRun
       reference_D0.host_view());
     cutlass::reference::host::TensorFill(
       reference_D1.host_view());
+
+
+    for (int batch_idx = 0; batch_idx < batch_count; ++batch_idx) {
+      for (int i = 0; i < problem_size_0.n(); ++i) {
+        tensor_Bias0_batched.host_view().at({0, i + (batch_idx * problem_size_0.n())}) = tensor_Bias0.host_view().at({0, i});
+      }
+    }
 
     tensor_A0.sync_device();
     tensor_B0.sync_device();
@@ -592,6 +612,7 @@ struct B2bInterleavedFusedGemmRun
     tensor_D1.sync_device();
     reference_D0.sync_device();
     reference_D1.sync_device();
+    tensor_Bias0_batched.sync_device();
 
     //
     // Initialize the GEMM operator
@@ -669,56 +690,68 @@ struct B2bInterleavedFusedGemmRun
     // Verify
     //
 
-    cutlass::reference::device::Gemm<
-        typename B2bGemm::ElementA, typename B2bGemm::LayoutA,
-        typename B2bGemm::ElementB, typename B2bGemm::LayoutB,
-        ElementAccumulator, typename B2bGemm::LayoutC,
-        ElementAccumulator, ElementAccumulator>
-        reference_gemm_0;
-
-    cutlass::reference::device::Gemm<
-        typename B2bGemm::ElementA, typename B2bGemm::LayoutA,
-        typename B2bGemm::ElementB, typename B2bGemm::LayoutB,
-        typename B2bGemm::ElementC, typename B2bGemm::LayoutC, ElementCompute,
-        ElementAccumulator, typename B2bGemm::Operator>
-        reference_gemm_1;
-
-    reference_gemm_0(
+    cutlass::reference::device::GemmComplex<
+      typename B2bGemm::ElementA, typename B2bGemm::LayoutA,
+      typename B2bGemm::ElementB, typename B2bGemm::LayoutB,
+      ElementAccumulator, typename B2bGemm::LayoutC,
+      ElementAccumulator, ElementAccumulator
+    >(
       problem_size_0,
       ElementAccumulator(1), //intermediate alpha=1
       tensor_A0.device_ref(),
+      cutlass::ComplexTransform::kNone,
       tensor_B0.device_ref(),
+      cutlass::ComplexTransform::kNone,
       ElementAccumulator(0), //beta = 0
       reference_Z0.device_ref(),
       reference_Z0.device_ref(),
-      ElementAccumulator(0)
+      ElementAccumulator(0),
+      int(batch_count),
+      batch_stride_A0,
+      batch_stride_B0,
+      batch_stride_C0,
+      batch_stride_C0
     );
 
     cutlass::reference::device::TensorScaleBiasGemm<
       ElementAccumulator, typename B2bGemm::ElementC, typename B2bGemm::LayoutC,
       ElementCompute, typename B2bGemm::LayoutScaleBias
     > (
-      problem_size_0,
+      CoordC0,
       reference_Z0.device_ref(),
       reference_D0.device_ref(),
       alpha0,
       tensor_Scale0.device_ref(),
-      tensor_Bias0.device_ref()
+      tensor_Bias0_batched.device_ref()
     );
 
     if(relu) {
        cutlass::reference::device::TensorReLu(reference_D0.device_view());
     }
 
-    reference_gemm_1(
+    cutlass::reference::device::GemmComplex<
+      typename B2bGemm::ElementA, typename B2bGemm::LayoutA,
+      typename B2bGemm::ElementB, typename B2bGemm::LayoutB,
+      typename B2bGemm::ElementC, typename B2bGemm::LayoutC,
+      ElementCompute, ElementAccumulator
+    >(
       problem_size_1,
-      alpha1,
+      alpha1, //intermediate alpha=1
       reference_D0.device_ref(),
+      cutlass::ComplexTransform::kNone,
       tensor_B1.device_ref(),
-      beta1,
+      cutlass::ComplexTransform::kNone,
+      beta1, //beta = 0
       {tensor_Bias1.device_data(), typename B2bGemm::LayoutC::Stride(0)},
-      reference_D1.device_ref()
+      reference_D1.device_ref(),
+      ElementAccumulator(0),
+      int(batch_count),
+      batch_stride_C0,
+      batch_stride_B1,
+      batch_stride_C1,
+      batch_stride_D1
     );
+
     if(relu) {
        cutlass::reference::device::TensorReLu(reference_D1.device_view());
     }

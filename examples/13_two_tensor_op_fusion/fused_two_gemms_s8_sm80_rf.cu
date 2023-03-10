@@ -217,6 +217,11 @@ bool run_fused_gemm_s8_sm80_rf_res() {
 }
 
 bool run_fused_gemm_s8_sm80_rf_res_batch() {
+
+
+  cutlass::gemm::GemmCoord gemm_s8_sm80_problem_size_0(256, 64, 128);
+  cutlass::gemm::GemmCoord gemm_s8_sm80_problem_size_1(256, 128, 64);
+
   using ElementOutput = int8_t;
   using ElementAccumulator = int32_t;
   using ElementCompute = float;
@@ -230,6 +235,7 @@ bool run_fused_gemm_s8_sm80_rf_res_batch() {
   using ThreadblockShape0 = cutlass::gemm::GemmShape<64, 64, 64>;
   using WarpShape0 = cutlass::gemm::GemmShape<16, 64, 64>;
   using ThreadblockShape1 = cutlass::gemm::GemmShape<64, 128, 64>;
+
   using WarpShape1 = cutlass::gemm::GemmShape<16, 128, 64>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;
 
@@ -280,6 +286,14 @@ bool run_fused_gemm_s8_sm80_rf_res_batch() {
 
   B2bInterleavedFusedGemmRun<B2bGemm, 32> fusedGemm;
 
+  int batch_count = 2;
+  int64_t batch_stride_A0 = gemm_s8_sm80_problem_size_0.m() * gemm_s8_sm80_problem_size_0.k();
+  int64_t batch_stride_B0 = gemm_s8_sm80_problem_size_1.k() * gemm_s8_sm80_problem_size_1.n();
+  int64_t batch_stride_C0 = gemm_s8_sm80_problem_size_0.m() * gemm_s8_sm80_problem_size_0.n();
+  int64_t batch_stride_B1 = gemm_s8_sm80_problem_size_1.k() * gemm_s8_sm80_problem_size_1.n();
+  int64_t batch_stride_C1 = 0;
+  int64_t batch_stride_D1 = gemm_s8_sm80_problem_size_1.m() * gemm_s8_sm80_problem_size_1.n();
+
   std::cout << "Running Fused back-to-back INT8 NT interleaved Batched GEMMs with RF residency...\n";
   bool passed = fusedGemm.run(
     gemm_s8_sm80_problem_size_0,
@@ -289,7 +303,13 @@ bool run_fused_gemm_s8_sm80_rf_res_batch() {
     alpha1,
     beta1,
     cutlass::gemm::GemmUniversalMode::kBatched,
-    16
+    batch_count,
+    batch_stride_A0,
+    batch_stride_B0,
+    batch_stride_C0,
+    batch_stride_B1,
+    batch_stride_C1,
+    batch_stride_D1
   );
   if(passed)
     std::cout << "Pass\n";
