@@ -62,8 +62,8 @@ template <
   int ElementsPerAccess,
   typename ElementwiseOp_ = Identity<ElementCompute_>,
   typename BinaryOp_ = plus<ElementCompute_>,
-  typename ElementVector_ = ElementC_,
-  bool StoreT_ = true
+  bool StoreT_ = true,
+  typename ElementVector_ = ElementC_
 >
 class LinearCombinationBiasElementwise {
 public:
