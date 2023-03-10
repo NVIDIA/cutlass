@@ -8,6 +8,7 @@ import enum
 import os.path
 import shutil
 import argparse
+import logging
 
 from library import *
 from manifest import *
@@ -4838,7 +4839,29 @@ if __name__ == "__main__":
   parser.add_argument("--interface-dir", default=None, required=False, help="Interface header to kernels")
   parser.add_argument("--disable-full-archs-compilation", action="store_true", required=False, help="Disable compilation for every archs in --architectures")
 
+  def numeric_log_level(log_level: str) -> int:
+    """
+    Converts the string identifier of the log level into the numeric identifier used
+    in setting the log level
+
+    :param x: string representation of log level (e.g., 'INFO', 'DEBUG')
+    :type x: str
+
+    :return: numeric representation of log level
+    :rtype: int
+    """
+    numeric_level = getattr(logging, log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+      raise ValueError(f'Invalid log level: {log_level}')
+    return numeric_level
+
+  parser.add_argument("--log-level", default='info', type=numeric_log_level, required=False,
+                      help='Logging level to be used by the generator script')
+
   args = parser.parse_args()
+
+  # Set the logging level based on the user-provided `--log-level` command-line option
+  logging.basicConfig(level=args.log_level)
 
   manifest = Manifest(args)
 
@@ -4849,6 +4872,7 @@ if __name__ == "__main__":
   GenerateSM75(manifest, args.cuda_version)
   GenerateSM80(manifest, args.cuda_version)
   GenerateSM90(manifest, args.cuda_version)
+
   if 'library' in args.generator_target.split(','):
     manifest.emit(GeneratorTarget.Library)
 

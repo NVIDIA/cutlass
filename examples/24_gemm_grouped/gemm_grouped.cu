@@ -1487,8 +1487,8 @@ int main(int argc, char const **args) {
 
   // Gemm operator cutlass_tensorop_f16_s16816gemm_f16_128x128_32x4_nt_align8
   using GemmBatched = cutlass::gemm::device::GemmUniversal<
-    cutlass::half_t, LayoutA,
-    cutlass::half_t, LayoutB,
+    ElementA, LayoutA,
+    ElementB, LayoutB,
     ElementOutput,   LayoutC,
     ElementAccumulator,
     cutlass::arch::OpClassTensorOp,
@@ -1510,11 +1510,11 @@ int main(int argc, char const **args) {
   // for scheduling mode. This will be used as the template for all scheduling
   // modes executed.
   using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmGrouped<
-    cutlass::half_t, 
+    ElementA,
     LayoutA,
     cutlass::ComplexTransform::kNone,
     8,
-    cutlass::half_t,
+    ElementB,
     LayoutB,
     cutlass::ComplexTransform::kNone,
     8,
