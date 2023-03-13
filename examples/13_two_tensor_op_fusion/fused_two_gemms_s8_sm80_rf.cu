@@ -291,8 +291,10 @@ bool run_fused_gemm_s8_sm80_rf_res_batch() {
   int64_t batch_stride_B0 = gemm_s8_sm80_problem_size_1.k() * gemm_s8_sm80_problem_size_1.n();
   int64_t batch_stride_C0 = gemm_s8_sm80_problem_size_0.m() * gemm_s8_sm80_problem_size_0.n();
   int64_t batch_stride_B1 = gemm_s8_sm80_problem_size_1.k() * gemm_s8_sm80_problem_size_1.n();
-  int64_t batch_stride_C1 = 0;
+  int64_t batch_stride_C1 = gemm_s8_sm80_problem_size_1.n();
   int64_t batch_stride_D1 = gemm_s8_sm80_problem_size_1.m() * gemm_s8_sm80_problem_size_1.n();
+  int64_t batch_stride_Bias0 = gemm_s8_sm80_problem_size_0.n();
+  int64_t batch_stride_Scale0 = 0;
 
   std::cout << "Running Fused back-to-back INT8 NT interleaved Batched GEMMs with RF residency...\n";
   bool passed = fusedGemm.run(
@@ -309,7 +311,9 @@ bool run_fused_gemm_s8_sm80_rf_res_batch() {
     batch_stride_C0,
     batch_stride_B1,
     batch_stride_C1,
-    batch_stride_D1
+    batch_stride_D1,
+    batch_stride_Bias0,
+    batch_stride_Scale0
   );
   if(passed)
     std::cout << "Pass\n";

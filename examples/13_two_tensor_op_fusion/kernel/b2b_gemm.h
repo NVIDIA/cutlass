@@ -70,6 +70,8 @@ struct B2bGemm {
   using ElementC = typename Epilogue::OutputTileIterator::Element;
   using LayoutC = typename Epilogue::OutputTileIterator::Layout;
 
+  using ScaleBiasData = typename B2bMma::IteratorAccumulatorScaleBias::Element;
+
   /// Warp count (concept: GemmShape)
   using WarpCount0 = typename B2bMma::WarpCount0;
   static int const kThreadCount = 32 * WarpCount0::kCount;
@@ -102,6 +104,8 @@ struct B2bGemm {
     int64_t batch_stride_B1;
     int64_t batch_stride_C1;
     int64_t batch_stride_D1;
+    int64_t batch_stride_Bias0;
+    int64_t batch_stride_Scale0;
     int *semaphore;
     int gemm_k_iterations_0;
     int gemm_k_size_0;
@@ -135,6 +139,8 @@ struct B2bGemm {
       int64_t batch_stride_B1,
       int64_t batch_stride_C1,
       int64_t batch_stride_D1,
+      int64_t batch_stride_Bias0,
+      int64_t batch_stride_Scale0,
       typename OutputOp0::Params output_op_0 = typename OutputOp0::Params(),
       typename OutputOp1::Params output_op_1 = typename OutputOp1::Params(),
       int *workspace = nullptr
@@ -163,6 +169,8 @@ struct B2bGemm {
       batch_stride_B1(batch_stride_B1),
       batch_stride_C1(batch_stride_C1),
       batch_stride_D1(batch_stride_D1),
+      batch_stride_Bias0(batch_stride_Bias0),
+      batch_stride_Scale0(batch_stride_Scale0),
       output_op_0(output_op_0),
       output_op_1(output_op_1)
       {
@@ -277,6 +285,9 @@ struct B2bGemm {
     ElementB0 *ptr_B0 = static_cast<ElementB0 *>(params.ref_B0.data());
     ElementB1 *ptr_B1 = static_cast<ElementB1 *>(params.ref_B1.data());
 
+    ScaleBiasData *ptr_Bias0 = static_cast<ScaleBiasData *>(params.ref_Bias0.data());
+    ScaleBiasData *ptr_Scale0 = static_cast<ScaleBiasData *>(params.ref_Scale0.data());
+
     int offset_k_0 = 0;
     int offset_k_1 = 0;
 
@@ -303,6 +314,8 @@ struct B2bGemm {
       ptr_A0 += threadblock_tile_offset.k() * params.batch_stride_A0;
       ptr_B0 += threadblock_tile_offset.k() * params.batch_stride_B0;
       ptr_B1 += threadblock_tile_offset.k() * params.batch_stride_B1;
+      ptr_Bias0 += threadblock_tile_offset.k() * params.batch_stride_Bias0;
+      ptr_Scale0 += threadblock_tile_offset.k() * params.batch_stride_Scale0;
     }
 
     // Compute initial location in logical coordinates
@@ -333,7 +346,6 @@ struct B2bGemm {
     // Construct iterators to A and B operands
     typename B2bMma::IteratorA0 iterator_A0(
       params.params_A0,
-      // params.ref_A0.data(),
       ptr_A0,
       {params.problem_size_0.m(), problem_size_k_0},
       thread_idx,
@@ -341,7 +353,6 @@ struct B2bGemm {
 
     typename B2bMma::IteratorB0 iterator_B0(
       params.params_B0,
-      // params.ref_B0.data(),
       ptr_B0,
       {problem_size_k_0, params.problem_size_0.n()},
       thread_idx,
@@ -349,7 +360,6 @@ struct B2bGemm {
 
     typename B2bMma::IteratorB1 iterator_B1(
       params.params_B1,
-      // params.ref_B1.data(),
       ptr_B1,
       {problem_size_k_1, params.problem_size_1.n()},
       thread_idx,
@@ -363,7 +373,7 @@ struct B2bGemm {
 
     // Construct iterators to accumulator scale/bias vector
     typename B2bMma::IteratorAccumulatorScaleBias iterator_Scale0(
-      params.ref_Scale0.data(),
+      ptr_Scale0,
       {1, params.problem_size_0.n()},
       thread_idx,
       warp_idx,
@@ -373,7 +383,7 @@ struct B2bGemm {
     );
 
     typename B2bMma::IteratorAccumulatorScaleBias iterator_Bias0(
-      params.ref_Bias0.data(),
+      ptr_Bias0,
       {1, params.problem_size_0.n()},
       thread_idx,
       warp_idx,

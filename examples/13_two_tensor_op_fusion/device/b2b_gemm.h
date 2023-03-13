@@ -208,6 +208,8 @@ class B2bGemm {
     int64_t batch_stride_B1;
     int64_t batch_stride_C1;
     int64_t batch_stride_D1;
+    int64_t batch_stride_Bias0;
+    int64_t batch_stride_Scale0;
     typename EpilogueOutputOp0::Params epilogue0;
     typename EpilogueOutputOp1::Params epilogue1;
     int batch_count;
@@ -241,6 +243,8 @@ class B2bGemm {
       int64_t batch_stride_B1_,
       int64_t batch_stride_C1_,
       int64_t batch_stride_D1_,
+      int64_t batch_stride_Bias0_,
+      int64_t batch_stride_Scale0_,
       typename EpilogueOutputOp0::Params epilogue0_ =
         typename EpilogueOutputOp0::Params(),
       typename EpilogueOutputOp1::Params epilogue1_ =
@@ -263,6 +267,8 @@ class B2bGemm {
       batch_stride_B1(batch_stride_B1_),
       batch_stride_C1(batch_stride_C1_),
       batch_stride_D1(batch_stride_D1_),
+      batch_stride_Bias0(batch_stride_Bias0_),
+      batch_stride_Scale0(batch_stride_Scale0_),
       epilogue0(epilogue0_),
       epilogue1(epilogue1_),
       batch_count(batch_count_) {
@@ -373,6 +379,8 @@ public:
       args.batch_stride_B1,
       args.batch_stride_C1,
       args.batch_stride_D1,
+      args.batch_stride_Bias0,
+      args.batch_stride_Scale0,
       args.epilogue0,
       args.epilogue1,
       static_cast<int *>(workspace),
