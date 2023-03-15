@@ -453,7 +453,7 @@ struct DefaultDepthwiseDirect2dConvFprop <
   StrideShape,
   DilationShape,
   AlignmentA,
-  AlignmentB,
+  AlignmentB
 > {
 
 
