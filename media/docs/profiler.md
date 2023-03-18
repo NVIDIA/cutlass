@@ -181,7 +181,8 @@ $ ./tools/profiler/cutlass_profiler --operation=gemm --help
 
 GEMM
 
-  [enum]      --Gemm_kind                                       Variant of GEMM (e.g. gemm, batched, ...)
+  [enum]      --gemm_kind                                       Variant of GEMM (gemm, batched, array, universal, planar_complex, planar_complex_array)
+  [enum]      --split_k_mode                                    Variant of split K mode(serial, parallel)
   [int]       --m,--problem-size::m                             M dimension of the GEMM problem space
   [int]       --n,--problem-size::n                             N dimension of the GEMM problem space
   [int]       --k,--problem-size::k                             K dimension of the GEMM problem space
@@ -190,58 +191,58 @@ GEMM
   [tensor]    --C                                               Tensor storing the C operand
   [scalar]    --alpha,--epilogue::alpha                         Epilogue scalar alpha
   [scalar]    --beta,--epilogue::beta                           Epilogue scalar beta
-  [int]       --split_k_slices                                  Number of partitions of K dimension
-  [int]       --batch_count                                     Number of GEMMs computed in one batch
-  [enum]      --op_class,--opcode-class                         Class of math instruction (SIMT or TensorOp).
-  [enum]      --accum,--accumulator-type                        Math instruction accumulator data type.
-  [int]       --cta_m,--threadblock-shape::m                    Threadblock shape in the M dimension.
-  [int]       --cta_n,--threadblock-shape::n                    Threadblock shape in the N dimension.
-  [int]       --cta_k,--threadblock-shape::k                    Threadblock shape in the K dimension.
-  [int]       --cluster_m,--cluster-shape-shape::m              Cluster shape in the M dimension.
-  [int]       --cluster_n,--cluster-shape-shape::n              Cluster shape in the N dimension.
-  [int]       --cluster_k,--cluster-shape-shape::k              Cluster shape in the K dimension.
-  [int]       --stages,--threadblock-stages                     Number of stages of threadblock-scoped matrix multiply.
-  [int]       --warps_m,--warp-count::m                         Number of warps within threadblock along the M dimension.
-  [int]       --warps_n,--warp-count::n                         Number of warps within threadblock along the N dimension.
-  [int]       --warps_k,--warp-count::k                         Number of warps within threadblock along the K dimension.
-  [int]       --inst_m,--instruction-shape::m                   Math instruction shape in the M dimension.
-  [int]       --inst_n,--instruction-shape::n                   Math instruction shape in the N dimension.
-  [int]       --inst_k,--instruction-shape::k                   Math instruction shape in the K dimension.
-  [int]       --min_cc,--minimum-compute-capability             Minimum device compute capability.
-  [int]       --max_cc,--maximum-compute-capability             Maximum device compute capability.
+  [int]       --split_k_slices,--split-k-slices                 Number of partitions of K dimension
+  [int]       --batch_count,--batch-count                       Number of GEMMs computed in one batch
+  [enum]      --op_class,--opcode-class                         Class of math instruction (simt, tensorop, wmmatensorop, wmma)
+  [enum]      --accum,--accumulator-type                        Math instruction accumulator data type
+  [int]       --cta_m,--threadblock-shape::m                    Threadblock shape in the M dimension
+  [int]       --cta_n,--threadblock-shape::n                    Threadblock shape in the N dimension
+  [int]       --cta_k,--threadblock-shape::k                    Threadblock shape in the K dimension
+  [int]       --cluster_m,--cluster-shape::m                    Cluster shape in the M dimension
+  [int]       --cluster_n,--cluster-shape::n                    Cluster shape in the N dimension
+  [int]       --cluster_k,--cluster-shape::k                    Cluster shape in the K dimension
+  [int]       --stages,--threadblock-stages                     Number of stages of threadblock-scoped matrix multiply
+  [int]       --warps_m,--warp-count::m                         Number of warps within threadblock along the M dimension
+  [int]       --warps_n,--warp-count::n                         Number of warps within threadblock along the N dimension
+  [int]       --warps_k,--warp-count::k                         Number of warps within threadblock along the K dimension
+  [int]       --inst_m,--instruction-shape::m                   Math instruction shape in the M dimension
+  [int]       --inst_n,--instruction-shape::n                   Math instruction shape in the N dimension
+  [int]       --inst_k,--instruction-shape::k                   Math instruction shape in the K dimension
+  [int]       --min_cc,--minimum-compute-capability             Minimum device compute capability
+  [int]       --max_cc,--maximum-compute-capability             Maximum device compute capability
 
 Examples:
 
 Profile a particular problem size:
-  $ ./tools/profiler/cutlass_profiler --operation=Gemm --m=1024 --n=1024 --k=128
+  $ cutlass_profiler --operation=Gemm --m=1024 --n=1024 --k=128
 
 Schmoo over problem size and beta:
-  $ ./tools/profiler/cutlass_profiler --operation=Gemm --m=1024:4096:256 --n=1024:4096:256 --k=128:8192:128 --beta=0,1,2
+  $ cutlass_profiler --operation=Gemm --m=1024:4096:256 --n=1024:4096:256 --k=128:8192:128 --beta=0,1,2.5
 
 Schmoo over accumulator types:
-  $ ./tools/profiler/cutlass_profiler --operation=Gemm --accumulator-type=f16,f32
+  $ cutlass_profiler --operation=Gemm --accumulator-type=f16,f32
 
-Run when A is f16 with column-major and B is any datatype with row-major 
-(For column major, use column, col, or n. For row major use, row or t):
+Run when A is f16 with column-major and B is any datatype with row-major (For column major, use column, col, or n. For row major use, row or t):
+  $ cutlass_profiler --operation=Gemm --A=f16:column --B=*:row
 
-  $ ./tools/profiler/cutlass_profiler --operation=Gemm --A=f16:column --B=*:row
+Profile a particular problem size with split K and parallel reduction:
+  $ cutlass_profiler --operation=Gemm --split_k_mode=parallel --split_k_slices=2 --m=1024 --n=1024 --k=128
 
 Using various input value distribution:
-  $ ./tools/profiler/cutlass_profiler --operation=Gemm --dist=uniform,min:0,max:3
-  $ ./tools/profiler/cutlass_profiler --operation=Gemm --dist=gaussian,mean:0,stddev:3
-  $ ./tools/profiler/cutlass_profiler --operation=Gemm --dist=sequential,start:0,delta:1
+  $ cutlass_profiler --operation=Gemm --dist=uniform,min:0,max:3
+  $ cutlass_profiler --operation=Gemm --dist=gaussian,mean:0,stddev:3
+  $ cutlass_profiler --operation=Gemm --dist=sequential,start:0,delta:1
 
-Run a kernel with cta tile size of 256x128x32 and save workspace if results are incorrect 
-(note that --cta-tile::k=32 is default cta-tile size):
- $ ./tools/profiler/cutlass_profiler --operation=Gemm --cta_m=256 --cta_n=128  --cta_k=32 --save-workspace=incorrect
+Run a kernel with cta tile size of 256x128x32 and save workspace if results are incorrect (note that --cta-tile::k=32 is default cta-tile size):
+ $ cutlass_profiler --operation=Gemm --cta_m=256 --cta_n=128  --cta_k=32 --save-workspace=incorrect
 
 Test your changes to gemm kernels with a quick functional test and save results in functional-test.csv:
- $ ./tools/profiler/cutlass_profiler  --operation=Gemm \
+ $ cutlass_profiler  --operation=Gemm \
    --m=8,56,120,136,256,264,512,520,1024,1032,4096,8192,16384 \
    --n=8,56,120,136,256,264,512,520,1024,1032,4096,8192,16384 \
    --k=8,16,32,64,128,256,288,384,504,512,520 \
    --beta=0,1,2 --profiling-iterations=1 \
-   --output=functional-test.csv
+   --providers=cutlass --output=functional-test.csv
 ```
 
 ## Example CUDA Core GEMM Operation
@@ -423,6 +424,7 @@ Conv2d
   [int]       --s,--filter_s                                    Filter S dimension of the Conv2d problem space
   [int]       --p,--output_p                                    Output P dimension of the Conv2d problem space
   [int]       --q,--output_q                                    Output Q dimension of the Conv2d problem space
+  [int]       --g,--groups                                      Number of convolution groups
   [int]       --pad_h                                           Padding in H direction
   [int]       --pad_w                                           Padding in W direction
   [int]       --stride_h                                        Stride in H direction
@@ -444,6 +446,9 @@ Conv2d
   [int]       --cta_m,--threadblock-shape::m                    Threadblock shape in the M dimension
   [int]       --cta_n,--threadblock-shape::n                    Threadblock shape in the N dimension
   [int]       --cta_k,--threadblock-shape::k                    Threadblock shape in the K dimension
+  [int]       --cluster_m,--cluster-shape::m                    Cluster shape in the M dimension
+  [int]       --cluster_n,--cluster-shape::n                    Cluster shape in the N dimension
+  [int]       --cluster_k,--cluster-shape::k                    Cluster shape in the K dimension
   [int]       --stages,--threadblock-stages                     Number of stages of threadblock-scoped matrix multiply
   [int]       --warps_m,--warp-count::m                         Number of warps within threadblock along the M dimension
   [int]       --warps_n,--warp-count::n                         Number of warps within threadblock along the N dimension
@@ -457,12 +462,7 @@ Conv2d
 Examples:
 
 Profile a particular convolution (specify all the convolution parameters):
-
- $ cutlass_profiler --operation=Conv2d --Activation=f16:nhwc   \
-  --Filter=f16:nhwc --Output=f16 --accumulator-type=f32        \
-  --n=32 --h=14 --w=14 --c=8 --k=64 --r=3 --s=3                \
-  --pad_h=1 --pad_w=1                                          \
-  --stride::h=1 --stride::w=1 --dilation::h=1 --dilation::w=1
+ $ cutlass_profiler --operation=Conv2d --Activation=f16:nhwc --Filter=f16:nhwc --Output=f16 --accumulator-type=f32 --n=32 --h=14 --w=14 --c=8 --k=64 --r=3 --s=3 --pad_h=1 --pad_w=1 --stride_h=1 --stride_w=1 --dilation_h=1 --dilation_w=1
 
 ```
 
