@@ -323,8 +323,7 @@ public:
   }
 
 
-  /// Lightweight update given a subset of arguments.  Problem geometry is assumed to
-  /// remain the same.
+  /// Lightweight update given a subset of arguments.
   Status update(Arguments const &args)
   {
     CUTLASS_TRACE_HOST("GemmUniversalBase()::update()");

@@ -304,8 +304,7 @@ public:
       ptr_D_imag(args.ptr_D_imag)
     {}
 
-    /// Lightweight update given a subset of arguments.  Problem geometry is assumed
-    /// to remain the same.
+    /// Lightweight update given a subset of arguments.
     void update(Arguments const &args)
     {
       ptr_M = args.ptr_M;
