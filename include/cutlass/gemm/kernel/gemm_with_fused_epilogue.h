@@ -310,8 +310,7 @@ public:
       CUTLASS_TRACE_HOST("  ldt: " << args.ldt);
     }
 
-    /// Lightweight update given a subset of arguments.  Problem geometry is assumed
-    /// to remain the same.
+    /// Lightweight update given a subset of arguments.
     CUTLASS_HOST_DEVICE
     void update(Arguments const &args)
     {
@@ -324,6 +323,14 @@ public:
       ptr_Vector = args.ptr_Vector;
       ldr = args.ldr;
       ptr_Tensor = args.ptr_Tensor;
+
+      batch_stride_A = args.batch_stride_A;
+      batch_stride_B = args.batch_stride_B;
+      batch_stride_C1 = args.batch_stride_C1;
+      batch_stride_C2 = args.batch_stride_C2;
+      batch_stride_Vector = args.batch_stride_Vector;
+      batch_stride_Tensor = args.batch_stride_Tensor;
+      this->batch_stride_D = args.batch_stride_D;
 
       output_op = args.epilogue;
 
@@ -1025,8 +1032,7 @@ public:
       CUTLASS_TRACE_HOST("  ldt: " << args.ldt);
     }
 
-    /// Lightweight update given a subset of arguments.  Problem geometry is assumed
-    /// to remain the same.
+    /// Lightweight update given a subset of arguments.
     CUTLASS_HOST_DEVICE
     void update(Arguments const &args)
     {
@@ -1038,6 +1044,13 @@ public:
       ptr_Vector = args.ptr_Vector;
       ldr = args.ldr;
       ptr_Tensor = args.ptr_Tensor;
+
+      batch_stride_A = args.batch_stride_A;
+      batch_stride_B = args.batch_stride_B;
+      batch_stride_C = args.batch_stride_C;
+      batch_stride_Vector = args.batch_stride_Vector;
+      batch_stride_Tensor = args.batch_stride_Tensor;
+      this->batch_stride_D = args.batch_stride_D;
 
       output_op = args.epilogue;
 
