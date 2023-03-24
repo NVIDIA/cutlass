@@ -40,6 +40,7 @@
 #include "cutlass/cutlass.h"
 
 #include "cutlass/gemm/kernel/gemm_with_fused_epilogue.h"
+#include "cutlass/gemm/kernel/gemm_streamk_with_fused_epilogue.h"
 #include "cutlass/gemm/kernel/default_gemm_universal.h"
 
 #include "cutlass/epilogue/threadblock/default_epilogue_with_broadcast.h"
@@ -126,12 +127,26 @@ struct DefaultGemmWithBroadcast {
     GemmBase::Epilogue::kElementsPerAccess
   >::Epilogue;
 
-  // Compose the GEMM kernel
-  using GemmKernel = GemmWithFusedEpilogue<
-    typename GemmBase::Mma,
-    Epilogue,
-    ThreadblockSwizzle
-  >;
+  /// Fused epilogue kernel without StreamkFeature member type
+  template <class SwizzleT, class Enable = void>
+  class SelectBase :
+    public GemmWithFusedEpilogue<
+      typename GemmBase::Mma,
+      Epilogue,
+      SwizzleT>
+  {};
+
+  /// Fused epilogue kernel with StreamkFeature member type
+  template <class SwizzleT>
+  class SelectBase<SwizzleT, typename SwizzleT::StreamkFeature> :
+    public GemmStreamkWithFusedEpilogue<
+      typename GemmBase::Mma,
+      Epilogue,
+      SwizzleT>
+  {};
+
+  /// Select kernel by ThreadblockSwizzle's support for StreamkFeature
+  using GemmKernel = SelectBase<ThreadblockSwizzle>;
 };
 
 
