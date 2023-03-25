@@ -63,6 +63,15 @@ template <
 >
 struct GemmStreamkWithFusedEpilogue;
 
+// GemmStreamkWithFusedEpilogue with multiple sources
+// TODO: Implement
+template <
+  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
+  typename Epilogue_,             ///! Epilogue
+  typename ThreadblockSwizzle_    ///! Threadblock swizzling function
+>
+struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, false>;
+
 // GemmStreamkWithFusedEpilogue with one source
 template <
   typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
@@ -261,6 +270,7 @@ public:
     int64_t batch_stride_A;
     int64_t batch_stride_B;
     int64_t batch_stride_C;
+    int64_t batch_stride_D;
     int64_t batch_stride_Vector;
     int64_t batch_stride_Tensor;
 
@@ -341,6 +351,7 @@ public:
       batch_stride_A(args.batch_stride_A),
       batch_stride_B(args.batch_stride_B),
       batch_stride_C(args.batch_stride_C),
+      batch_stride_D(args.batch_stride_D),
       batch_stride_Vector(args.batch_stride_Vector),
       batch_stride_Tensor(args.batch_stride_Tensor),
       barrier_workspace(nullptr),
@@ -1170,8 +1181,8 @@ public:
     Params const &params,
     SharedStorage &shared_storage)
   {
-    GemmStreamkWithFusedEpilogue op;
-    op(params, shared_storage);
+    GemmStreamkWithFusedEpilogue op(params, shared_storage);
+    op();
   }
 
 

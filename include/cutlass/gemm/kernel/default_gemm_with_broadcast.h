@@ -116,16 +116,36 @@ struct DefaultGemmWithBroadcast {
   >::GemmKernel;
 
   // Replace epilogue
-  using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueWithBroadcastTensorOp<
-    typename GemmBase::Epilogue::Shape,
-    typename GemmBase::Epilogue::WarpMmaOperator,
-    GemmBase::Epilogue::kPartitionsK,
-    ElementC_,
-    typename EpilogueOutputOp::ElementT,
-    typename EpilogueOutputOp::ElementVector,
-    EpilogueOutputOp,
-    GemmBase::Epilogue::kElementsPerAccess
-  >::Epilogue;
+  /// Fused epilogue kernel without StreamkFeature member type
+  template <class SwizzleT, class Enable = void>
+  class SelectEpilogue :
+    public cutlass::epilogue::threadblock::DefaultEpilogueWithBroadcastTensorOp<
+      typename GemmBase::Epilogue::Shape,
+      typename GemmBase::Epilogue::WarpMmaOperator,
+      GemmBase::Epilogue::kPartitionsK,
+      ElementC_,
+      typename EpilogueOutputOp::ElementT,
+      typename EpilogueOutputOp::ElementVector,
+      EpilogueOutputOp,
+      GemmBase::Epilogue::kElementsPerAccess>
+  {};
+
+  /// Fused epilogue kernel with StreamkFeature member type
+  template <class SwizzleT>
+  class SelectEpilogue<SwizzleT, typename SwizzleT::StreamkFeature> :
+    public cutlass::epilogue::threadblock::DefaultStreamkEpilogueWithBroadcastTensorOp<
+      typename GemmBase::Epilogue::Shape,
+      typename GemmBase::Epilogue::WarpMmaOperator,
+      GemmBase::Epilogue::kPartitionsK,
+      ElementC_,
+      typename EpilogueOutputOp::ElementT,
+      typename EpilogueOutputOp::ElementVector,
+      EpilogueOutputOp,
+      GemmBase::Epilogue::kElementsPerAccess>
+  {};
+
+  /// Select epilogue by ThreadblockSwizzle's support for StreamkFeature
+  using Epilogue = SelectEpilogue<ThreadblockSwizzle>::Epilogue;
 
   /// Fused epilogue kernel without StreamkFeature member type
   template <class SwizzleT, class Enable = void>
