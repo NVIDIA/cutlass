@@ -104,7 +104,7 @@ struct BaseGroupedProblemVisitor {
 
   };
 
-  Params const &params;
+  Params params;
   int32_t tile_idx;
   int32_t problem_tile_start;
   int32_t problem_idx;

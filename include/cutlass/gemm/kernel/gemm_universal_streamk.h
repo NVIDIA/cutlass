@@ -527,7 +527,7 @@ protected:
   //
 
   /// GEMM problem parameters
-  Params const &params;
+  Params params;
 
   /// Shared storage reference
   SharedStorage &shared_storage;
