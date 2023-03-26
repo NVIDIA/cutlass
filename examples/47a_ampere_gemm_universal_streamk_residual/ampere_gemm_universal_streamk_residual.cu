@@ -73,6 +73,7 @@
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/device/gemm.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
+#include "cutlass/util/reference/host/tensor_foreach.h"
 #include "cutlass/util/reference/host/tensor_copy.h"
 #include "cutlass/util/reference/host/tensor_fill.h"
 #include "cutlass/util/tensor_view_io.h"
@@ -366,6 +367,75 @@ typename DeviceGemmStreamK::Arguments args_from_options(
 }
 
 
+/// Tensor MSE function
+//// Useful when we expect outputs to approximately match, but 
+//// not exactly.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorMSEFunc {
+
+  //
+  // Data members
+  //
+
+  cutlass::TensorView<Element, Layout> lhs;
+  cutlass::TensorView<Element, Layout> rhs;
+  double err;
+  double cnt;
+
+  /// Ctor
+  TensorMSEFunc(): err(0), cnt(0) { }
+
+  /// Ctor
+  TensorMSEFunc(
+    cutlass::TensorView<Element, Layout> const &lhs_,
+    cutlass::TensorView<Element, Layout> const &rhs_
+  ) :
+    lhs(lhs_), rhs(rhs_), err(0), cnt(0) { }
+
+  /// Visits a coordinate
+  void operator()(cutlass::Coord<Layout::kRank> const &coord) {
+
+    Element lhs_ = lhs.at(coord);
+    Element rhs_ = rhs.at(coord);
+    
+    cnt += double(1.0);
+    double diff = double(lhs_) - double(rhs_);
+    err += double(diff * diff);
+  }
+
+  double get_err() const {
+    if (cnt == double(0.0))
+      return double(0.0);
+    return err / cnt;
+  }
+};
+
+/// Mean squared error
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+double TensorMSE(
+  cutlass::TensorView<Element, Layout> const &lhs, 
+  cutlass::TensorView<Element, Layout> const &rhs) {
+
+  // Extents must be identical
+  if (lhs.extent() != rhs.extent()) {
+    return double(-1);
+  }
+
+  TensorMSEFunc<Element, Layout> func(lhs, rhs);
+  cutlass::reference::host::TensorForEach(
+    lhs.extent(),
+    func
+  );
+
+  return func.get_err();
+}
+
+
+
 /// Executes reference kernel (split-K)
 void run_ref(Options &options)
 {
@@ -450,7 +520,11 @@ Result run(std::string description, Options &options)
     options.tensor_d.host_view(),
     options.tensor_ref_d.host_view());
 
-  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+  double err = TensorMSE(
+    options.tensor_d.host_view(),
+    options.tensor_ref_d.host_view());
+
+  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << " - MSE: " << err << std::endl;
 
   // Run profiling loop
   if (options.iterations > 0)
