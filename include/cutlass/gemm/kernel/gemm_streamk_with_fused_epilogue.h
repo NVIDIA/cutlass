@@ -246,7 +246,7 @@ public:
 
 
   /// Parameters structure
-  struct Params
+  struct Params : UniversalArgumentsBase
   {
   public:
 
@@ -333,7 +333,6 @@ public:
       int device_sms,         /// Number of SMs on the device
       int sm_occupancy)       /// Kernel SM occupancy (in thread blocks)
     :
-      ParamsBase(args, device_sms, sm_occupancy),
       params_A(args.lda),
       params_B(args.ldb),
       params_C(args.ldc),
@@ -364,7 +363,7 @@ public:
 
       // Initialize the block mapping structure
       block_mapping = ThreadblockSwizzle(
-        typename ThreadblockSwizzle::template KernelTraits<GemmUniversalStreamk>(),
+        typename ThreadblockSwizzle::template KernelTraits<GemmStreamkWithFusedEpilogue>(),
         args.mode,
         args.problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},

@@ -128,6 +128,7 @@ foreach(EXAMPLE
   45_dual_gemm
   46_depthwise_simt_conv2dfprop
   47_ampere_gemm_universal_streamk
+  47a_ampere_gemm_universal_streamk_residual
   48_hopper_warp_specialized_gemm
   49_hopper_gemm_schedules_with_collective_builder
   50_hopper_gemm_with_epilogue_swizzle
