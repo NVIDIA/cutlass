@@ -127,13 +127,23 @@ using EpilogueOp = cutlass::epilogue::thread::LinearCombinationResidualBlock<
     ElementCompute,                       // Element type from internal accumulation
     ElementC,                             // Element type for C/D/T/Z matrix operands
     AlignmentC,                           // Memory access granularity of C and D matrix in units of elements
-    cutlass::epilogue::thread::Sigmoid,   // Activation
+    cutlass::epilogue::thread::Identity,  // Activation
     cutlass::plus,                        // Binary operation 1
     cutlass::epilogue::thread::Identity   // Unary operation
     >;
 
+// Reference device GEMM implementation type
+using DeviceGemmReference = cutlass::reference::device::Gemm<
+  ElementA,
+  LayoutA,
+  ElementB,
+  LayoutB,
+  ElementC,
+  LayoutC,
+  ElementAccumulator,
+  ElementAccumulator>;
+
 // Classic data-parallel device GEMM implementation type
-// It also serves as our reference
 using DeviceGemmBasic = cutlass::gemm::device::GemmUniversalWithBroadcast<
     ElementA, LayoutA,
     ElementB, LayoutB,
@@ -434,49 +444,6 @@ double TensorMSE(
   return func.get_err();
 }
 
-
-
-/// Executes reference kernel (split-K)
-void run_ref(Options &options)
-{
-  // Display test description
-  std::cout << std::endl << "Running reference kernel." << std::endl;
-
-  // Zero-initialize test output matrix D
-  cutlass::reference::host::TensorFill(options.tensor_ref_d.host_view());
-  options.tensor_ref_d.sync_device();
-
-  // Instantiate CUTLASS kernel depending on templates
-  DeviceGemmBasic device_gemm;
-
-  // Create a structure of gemm kernel arguments suitable for invoking an instance of DeviceGemmT
-  auto arguments = args_from_options(device_gemm, options, 
-      options.tensor_a, options.tensor_b, options.tensor_c, options.tensor_ref_d, 
-      options.tensor_z, options.tensor_t);
-
-  // Using the arguments, query for extra workspace required for matrix multiplication computation
-  size_t workspace_size = DeviceGemmBasic::get_workspace_size(arguments);
-
-  // Allocate workspace memory
-  cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
-
-  // Check the problem size is supported or not
-  CUTLASS_CHECK(device_gemm.can_implement(arguments));
-
-  // Initialize CUTLASS kernel with arguments and workspace pointer
-  CUTLASS_CHECK(device_gemm.initialize(arguments, workspace.get()));
-
-  // Correctness / Warmup iteration
-  CUTLASS_CHECK(device_gemm());
-
-  // Wait for kernels to finish
-  CUDA_CHECK(cudaDeviceSynchronize());
-
-  // Copy output data from reference kernel to host for comparison
-  options.tensor_ref_d.sync_host();
-}
-
-
 /// Execute a given example GEMM computation
 template <typename DeviceGemmT>
 Result run(std::string description, Options &options)
@@ -545,6 +512,7 @@ Result run(std::string description, Options &options)
     std::cout << "  GFLOPs: " << result.gflops << std::endl;
   }
 
+  // TODO: uncomment when results match
   //if (!result.passed) {
   //  exit(-1);
   //}
@@ -618,7 +586,7 @@ int main(int argc, const char **argv)
       1,
       ElementA(2),
       ElementA(-2),
-      0);
+      8);
 
   // Fill matrix B on host with uniform-random data [4, -4]
   cutlass::reference::host::TensorFillRandomUniform(
@@ -626,7 +594,7 @@ int main(int argc, const char **argv)
       1,
       ElementB(2),
       ElementB(-2),
-      0);
+      8);
 
   // Fill matrix C on host with uniform-random data [4, -4]
   cutlass::reference::host::TensorFillRandomUniform(
@@ -634,7 +602,7 @@ int main(int argc, const char **argv)
       1,
       ElementC(2),
       ElementC(-2),
-      0);
+      8);
 
   // Fill matrix Z on host with uniform-random data [4, -4]
   cutlass::reference::host::TensorFillRandomUniform(
@@ -642,7 +610,7 @@ int main(int argc, const char **argv)
       1,
       ElementC(2),
       ElementC(-2),
-      0);
+      8);
 
   // Fill matrix T on host with uniform-random data [4, -4]
   cutlass::reference::host::TensorFillRandomUniform(
@@ -650,7 +618,7 @@ int main(int argc, const char **argv)
       1,
       ElementC(2),
       ElementC(-2),
-      0);
+      8);
 
 
   //
@@ -664,8 +632,37 @@ int main(int argc, const char **argv)
   options.tensor_z.sync_device();
   options.tensor_t.sync_device();
 
-  // Launch reference kernel
-  run_ref(options);
+  // Zero-initialize reference output matrix D
+  cutlass::reference::host::TensorFill(options.tensor_ref_d.host_view());
+  options.tensor_ref_d.sync_device();
+
+  // Create instantiation for device reference gemm kernel
+  DeviceGemmReference gemm_reference;
+
+  // Launch device reference gemm kernel
+  gemm_reference(
+    options.problem_size,
+    ElementAccumulator(options.alpha),
+    options.tensor_a.device_ref(),
+    options.tensor_b.device_ref(),
+    ElementAccumulator(options.beta),
+    options.tensor_c.device_ref(),
+    options.tensor_ref_d.device_ref());
+
+  // Wait for kernels to finish
+  CUDA_CHECK(cudaDeviceSynchronize());
+
+  // Copy output data from reference kernel to host for comparison
+  options.tensor_ref_d.sync_host();
+
+  // TODO: move over to reference? 
+  // TODO: move to device?
+  for (int idx=0; idx < options.problem_size.mn().product(); ++idx) {
+      ElementC* ptr_D = (ElementC*)(options.tensor_ref_d.host_view().ref().data());
+      ElementC* ptr_Z = (ElementC*)(options.tensor_z.host_view().ref().data());
+      ElementC* ptr_T = (ElementC*)(options.tensor_t.host_view().ref().data());
+      ptr_D[idx] = (ptr_D[idx] + ptr_Z[idx]) + ptr_T[idx];
+  }
 
   //
   // Evaluate CUTLASS kernels
