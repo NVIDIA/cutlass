@@ -72,6 +72,7 @@
 #include "cutlass/util/command_line.h"
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/device/gemm.h"
+#include "cutlass/util/reference/host/error_metrics.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
 #include "cutlass/util/reference/host/tensor_foreach.h"
 #include "cutlass/util/reference/host/tensor_copy.h"
@@ -213,16 +214,18 @@ struct Options
   float                     beta;
   int                       split_k_factor;
   int                       avail_sms;
-  bool                      reference_check;
   int                       iterations;
+  // TODO: remove these two: \/ \/ \/
+  bool                      disable_broadcast;
+  bool                      disable_residual;
 
   cutlass::HostTensor<ElementA, LayoutA> tensor_a;
   cutlass::HostTensor<ElementB, LayoutB> tensor_b;
   cutlass::HostTensor<ElementC, LayoutC> tensor_c;
   cutlass::HostTensor<ElementC, LayoutC> tensor_d;
   cutlass::HostTensor<ElementC, LayoutC> tensor_ref_d;
-  cutlass::HostTensor<ElementC, LayoutC> tensor_z;
-  cutlass::HostTensor<ElementC, LayoutC> tensor_t;
+  cutlass::HostTensor<ElementC, LayoutC> tensor_Vector;
+  cutlass::HostTensor<ElementC, LayoutC> tensor_Tensor;
 
   Options(std::string command_name) :
     command_name(command_name),
@@ -232,7 +235,8 @@ struct Options
     beta(0.0f),
     split_k_factor(1),
     avail_sms(-1),              // Number of device SMs to use is unlimited
-    reference_check(true),
+    disable_broadcast(false),   // TODO: remove
+    disable_residual(false),    // TODO: remove
     iterations(10000)
   {}
 
@@ -256,6 +260,9 @@ struct Options
     cmd.get_cmd_line_argument("beta", beta);
     cmd.get_cmd_line_argument("split", split_k_factor);
     cmd.get_cmd_line_argument("iterations", iterations);
+    // TODO: Remove these two: \/ \/ \/
+    disable_broadcast = cmd.check_cmd_line_flag("disable-broadcast");
+    disable_residual  = cmd.check_cmd_line_flag("disable-residual");
   }
 
   /// Prints the usage statement.
@@ -273,6 +280,8 @@ struct Options
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n\n"
       << "  --split=<int>               Split-K factor to emulate\n\n"
+      << "  --disable-broadcast         If specified, fills broadcast vector with zeros.\n\n" // TODO: remove
+      << "  --disable-residual          If specified, fills residual tensor with zeros.\n\n"  // TODO: remove
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out
@@ -303,8 +312,8 @@ typename DeviceGemmBasic::Arguments args_from_options(
     cutlass::HostTensor<ElementB, LayoutB> &tensor_b,
     cutlass::HostTensor<ElementC, LayoutC> &tensor_c,
     cutlass::HostTensor<ElementC, LayoutC> &tensor_d,
-    cutlass::HostTensor<ElementC, LayoutC> &tensor_z,
-    cutlass::HostTensor<ElementC, LayoutC> &tensor_t
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_Vector,
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_Tensor
     )
 {
   return typename DeviceGemmBasic::Arguments(
@@ -319,8 +328,8 @@ typename DeviceGemmBasic::Arguments args_from_options(
     tensor_b.device_data(),                   // ptr_B
     tensor_c.device_data(),                   // ptr_C
     tensor_d.device_data(),                   // ptr_D
-    tensor_z.device_data(),                   // ptr_Vector
-    tensor_t.device_data(),                   // ptr_Tensor
+    tensor_Vector.device_data(),              // ptr_Vector
+    tensor_Tensor.device_data(),              // ptr_Tensor
     options.problem_size.mk().product(),      // batch_stride_A
     options.problem_size.nk().product(),      // batch_stride_B
     options.problem_size.mn().product(),      // batch_stride_C
@@ -331,8 +340,8 @@ typename DeviceGemmBasic::Arguments args_from_options(
     tensor_b.layout().stride(0),              // stride_b
     tensor_c.layout().stride(0),              // stride_c
     tensor_d.layout().stride(0),              // stride_d
-    tensor_z.layout().stride(0),              // stride_Vector
-    tensor_t.layout().stride(0));             // stride_Tensor
+    tensor_Vector.layout().stride(0),         // stride_Vector
+    tensor_Tensor.layout().stride(0));        // stride_Tensor
 }
 
 /// Populates a DeviceGemmStreamK::Arguments structure from the given commandline options
@@ -343,8 +352,8 @@ typename DeviceGemmStreamK::Arguments args_from_options(
     cutlass::HostTensor<ElementB, LayoutB> &tensor_b,
     cutlass::HostTensor<ElementC, LayoutC> &tensor_c,
     cutlass::HostTensor<ElementC, LayoutC> &tensor_d,
-    cutlass::HostTensor<ElementC, LayoutC> &tensor_z,
-    cutlass::HostTensor<ElementC, LayoutC> &tensor_t
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_Vector,
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_Tensor
     )
 {
   return typename DeviceGemmStreamK::Arguments(
@@ -359,8 +368,8 @@ typename DeviceGemmStreamK::Arguments args_from_options(
     tensor_b.device_data(),                   // ptr_B
     tensor_c.device_data(),                   // ptr_C
     tensor_d.device_data(),                   // ptr_D
-    tensor_z.device_data(),                   // ptr_Vector
-    tensor_t.device_data(),                   // ptr_Tensor
+    tensor_Vector.device_data(),              // ptr_Vector
+    tensor_Tensor.device_data(),              // ptr_Tensor
     options.problem_size.mk().product(),      // batch_stride_A
     options.problem_size.nk().product(),      // batch_stride_B
     options.problem_size.mn().product(),      // batch_stride_C
@@ -371,77 +380,9 @@ typename DeviceGemmStreamK::Arguments args_from_options(
     tensor_b.layout().stride(0),              // stride_b
     tensor_c.layout().stride(0),              // stride_c
     tensor_d.layout().stride(0),              // stride_d
-    tensor_z.layout().stride(0),              // stride_Vector
-    tensor_t.layout().stride(0),              // stride_Tensor
+    tensor_Vector.layout().stride(0),         // stride_Vector
+    tensor_Tensor.layout().stride(0),         // stride_Tensor
     options.avail_sms);                       // avail_sms
-}
-
-
-/// Tensor MSE function
-//// Useful when we expect outputs to approximately match, but 
-//// not exactly.
-template <
-  typename Element,               ///< Element type
-  typename Layout>                ///< Layout function
-struct TensorMSEFunc {
-
-  //
-  // Data members
-  //
-
-  cutlass::TensorView<Element, Layout> lhs;
-  cutlass::TensorView<Element, Layout> rhs;
-  double err;
-  double cnt;
-
-  /// Ctor
-  TensorMSEFunc(): err(0), cnt(0) { }
-
-  /// Ctor
-  TensorMSEFunc(
-    cutlass::TensorView<Element, Layout> const &lhs_,
-    cutlass::TensorView<Element, Layout> const &rhs_
-  ) :
-    lhs(lhs_), rhs(rhs_), err(0), cnt(0) { }
-
-  /// Visits a coordinate
-  void operator()(cutlass::Coord<Layout::kRank> const &coord) {
-
-    Element lhs_ = lhs.at(coord);
-    Element rhs_ = rhs.at(coord);
-    
-    cnt += double(1.0);
-    double diff = double(lhs_) - double(rhs_);
-    err += double(diff * diff);
-  }
-
-  double get_err() const {
-    if (cnt == double(0.0))
-      return double(0.0);
-    return err / cnt;
-  }
-};
-
-/// Mean squared error
-template <
-  typename Element,               ///< Element type
-  typename Layout>                ///< Layout function
-double TensorMSE(
-  cutlass::TensorView<Element, Layout> const &lhs, 
-  cutlass::TensorView<Element, Layout> const &rhs) {
-
-  // Extents must be identical
-  if (lhs.extent() != rhs.extent()) {
-    return double(-1);
-  }
-
-  TensorMSEFunc<Element, Layout> func(lhs, rhs);
-  cutlass::reference::host::TensorForEach(
-    lhs.extent(),
-    func
-  );
-
-  return func.get_err();
 }
 
 /// Execute a given example GEMM computation
@@ -461,7 +402,7 @@ Result run(std::string description, Options &options)
   // Create a structure of gemm kernel arguments suitable for invoking an instance of DeviceGemmT
   auto arguments = args_from_options(device_gemm, options, 
       options.tensor_a, options.tensor_b, options.tensor_c, options.tensor_d, 
-      options.tensor_z, options.tensor_t);
+      options.tensor_Vector, options.tensor_Tensor);
 
   // Using the arguments, query for extra workspace required for matrix multiplication computation
   size_t workspace_size = DeviceGemmT::get_workspace_size(arguments);
@@ -487,11 +428,11 @@ Result run(std::string description, Options &options)
     options.tensor_d.host_view(),
     options.tensor_ref_d.host_view());
 
-  double err = TensorMSE(
+  double err = cutlass::reference::host::TensorRelativeErrorMetric(
     options.tensor_d.host_view(),
     options.tensor_ref_d.host_view());
 
-  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << " - MSE: " << err << std::endl;
+  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << " \t Relative error: " << err << std::endl;
 
   // Run profiling loop
   if (options.iterations > 0)
@@ -572,54 +513,73 @@ int main(int argc, const char **argv)
   //
 
   // Initialize tensors using CUTLASS helper functions
-  options.tensor_a.resize(options.problem_size.mk());       // <- Create matrix A with dimensions M x K
-  options.tensor_b.resize(options.problem_size.kn());       // <- Create matrix B with dimensions K x N
-  options.tensor_c.resize(options.problem_size.mn());       // <- Create matrix C with dimensions M x N
-  options.tensor_d.resize(options.problem_size.mn());       // <- Create matrix D with dimensions M x N used to store output from CUTLASS kernel
-  options.tensor_ref_d.resize(options.problem_size.mn());   // <- Create matrix D with dimensions M x N used to store output from reference kernel
-  options.tensor_z.resize(options.problem_size.mn());       // <- Create residual matrix Z with dimensions M x N
-  options.tensor_t.resize(options.problem_size.mn());       // <- Create residual matrix T with dimensions M x N
+  options.tensor_a.resize(options.problem_size.mk());           // <- Create matrix A with dimensions M x K
+  options.tensor_b.resize(options.problem_size.kn());           // <- Create matrix B with dimensions K x N
+  options.tensor_c.resize(options.problem_size.mn());           // <- Create matrix C with dimensions M x N
+  options.tensor_d.resize(options.problem_size.mn());           // <- Create matrix D with dimensions M x N used to store output from CUTLASS kernel
+  options.tensor_ref_d.resize(options.problem_size.mn());       // <- Create matrix D with dimensions M x N used to store output from reference kernel
+  options.tensor_Vector.resize({1, options.problem_size.n()});  // <- Create broadcast vector with dimensions N x 1
+  options.tensor_Tensor.resize(options.problem_size.mn());      // <- Create residual matrix with dimensions M x N
 
-  // Fill matrix A on host with uniform-random data [4, -4]
+  // Fill matrix A on host with uniform-random data [-4, 4]
   cutlass::reference::host::TensorFillRandomUniform(
       options.tensor_a.host_view(),
       1,
       ElementA(2),
       ElementA(-2),
-      8);
+      0);
 
-  // Fill matrix B on host with uniform-random data [4, -4]
+  // Fill matrix B on host with uniform-random data [-4, 4]
   cutlass::reference::host::TensorFillRandomUniform(
       options.tensor_b.host_view(),
       1,
       ElementB(2),
       ElementB(-2),
-      8);
+      0);
 
-  // Fill matrix C on host with uniform-random data [4, -4]
+  // Fill matrix C on host with uniform-random data [-4, 4]
   cutlass::reference::host::TensorFillRandomUniform(
       options.tensor_c.host_view(),
       1,
       ElementC(2),
       ElementC(-2),
-      8);
+      0);
 
-  // Fill matrix Z on host with uniform-random data [4, -4]
-  cutlass::reference::host::TensorFillRandomUniform(
-      options.tensor_z.host_view(),
-      1,
-      ElementC(2),
-      ElementC(-2),
-      8);
+  // TODO: remove when done
+  if (options.disable_broadcast) {
+    // Fill broadcast vector on host with zeros to test validity
+    std::cout << "Disabling broadcast" << std::endl;
+    cutlass::reference::host::TensorFill(
+        options.tensor_Vector.host_view(),
+        ElementC(0.0));
+  }
+  else {
+    // Fill broadcast vector on host with uniform-random data [-4, 4]
+    cutlass::reference::host::TensorFillRandomUniform(
+        options.tensor_Vector.host_view(),
+        1,
+        ElementC(2),
+        ElementC(-2),
+        0);
+  }
 
-  // Fill matrix T on host with uniform-random data [4, -4]
-  cutlass::reference::host::TensorFillRandomUniform(
-      options.tensor_t.host_view(),
-      1,
-      ElementC(2),
-      ElementC(-2),
-      8);
-
+  // TODO: remove when done
+  if (options.disable_residual) {
+    // Fill matrix T on host with zeros to test validity
+    std::cout << "Disabling residual" << std::endl;
+    cutlass::reference::host::TensorFill(
+        options.tensor_Tensor.host_view(),
+        ElementC(0.0));
+  }
+  else {
+    // Fill matrix T on host with uniform-random data [-4, 4]
+    cutlass::reference::host::TensorFillRandomUniform(
+        options.tensor_Tensor.host_view(),
+        1,
+        ElementC(2),
+        ElementC(-2),
+        0);
+  }
 
   //
   // Compute reference output
@@ -629,8 +589,8 @@ int main(int argc, const char **argv)
   options.tensor_a.sync_device();
   options.tensor_b.sync_device();
   options.tensor_c.sync_device();
-  options.tensor_z.sync_device();
-  options.tensor_t.sync_device();
+  options.tensor_Vector.sync_device();
+  options.tensor_Tensor.sync_device();
 
   // Zero-initialize reference output matrix D
   cutlass::reference::host::TensorFill(options.tensor_ref_d.host_view());
@@ -657,12 +617,22 @@ int main(int argc, const char **argv)
 
   // TODO: move over to reference? 
   // TODO: move to device?
-  for (int idx=0; idx < options.problem_size.mn().product(); ++idx) {
-      ElementC* ptr_D = (ElementC*)(options.tensor_ref_d.host_view().ref().data());
-      ElementC* ptr_Z = (ElementC*)(options.tensor_z.host_view().ref().data());
-      ElementC* ptr_T = (ElementC*)(options.tensor_t.host_view().ref().data());
-      ptr_D[idx] = (ptr_D[idx] + ptr_Z[idx]) + ptr_T[idx];
+  ElementC* ptr_d = (ElementC*)(options.tensor_ref_d.host_view().ref().data());
+  ElementC* ptr_v = (ElementC*)(options.tensor_Vector.host_view().ref().data());
+  ElementC* ptr_t = (ElementC*)(options.tensor_Tensor.host_view().ref().data());
+  // Vector broadcast on host
+  for (int i=0; i < options.problem_size.m(); ++i) {
+    for (int j=0; j < options.problem_size.n(); ++j) {
+      ptr_d[i * options.tensor_ref_d.stride(0) + j] += ptr_v[j];
+    }
   }
+  // Residual add on host
+  for (int idx=0; idx < options.problem_size.mn().product(); ++idx) {
+    ptr_d[idx] += ptr_t[idx];
+  }
+
+  // Sync device copy with host
+  options.tensor_ref_d.sync_device();
 
   //
   // Evaluate CUTLASS kernels
