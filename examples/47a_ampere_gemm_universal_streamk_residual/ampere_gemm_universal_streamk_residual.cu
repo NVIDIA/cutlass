@@ -521,7 +521,7 @@ int main(int argc, const char **argv)
   options.tensor_Vector.resize({1, options.problem_size.n()});  // <- Create broadcast vector with dimensions N x 1
   options.tensor_Tensor.resize(options.problem_size.mn());      // <- Create residual matrix with dimensions M x N
 
-  // Fill matrix A on host with uniform-random data [-4, 4]
+  // Fill matrix A on host with uniform-random data [-2, 2]
   cutlass::reference::host::TensorFillRandomUniform(
       options.tensor_a.host_view(),
       1,
@@ -529,7 +529,7 @@ int main(int argc, const char **argv)
       ElementA(-2),
       0);
 
-  // Fill matrix B on host with uniform-random data [-4, 4]
+  // Fill matrix B on host with uniform-random data [-2, 2]
   cutlass::reference::host::TensorFillRandomUniform(
       options.tensor_b.host_view(),
       1,
@@ -537,7 +537,7 @@ int main(int argc, const char **argv)
       ElementB(-2),
       0);
 
-  // Fill matrix C on host with uniform-random data [-4, 4]
+  // Fill matrix C on host with uniform-random data [-2, 2]
   cutlass::reference::host::TensorFillRandomUniform(
       options.tensor_c.host_view(),
       1,
@@ -554,7 +554,7 @@ int main(int argc, const char **argv)
         ElementC(0.0));
   }
   else {
-    // Fill broadcast vector on host with uniform-random data [-4, 4]
+    // Fill broadcast vector on host with uniform-random data [-2, 2]
     cutlass::reference::host::TensorFillRandomUniform(
         options.tensor_Vector.host_view(),
         1,
@@ -572,7 +572,7 @@ int main(int argc, const char **argv)
         ElementC(0.0));
   }
   else {
-    // Fill matrix T on host with uniform-random data [-4, 4]
+    // Fill matrix T on host with uniform-random data [-2, 2]
     cutlass::reference::host::TensorFillRandomUniform(
         options.tensor_Tensor.host_view(),
         1,
