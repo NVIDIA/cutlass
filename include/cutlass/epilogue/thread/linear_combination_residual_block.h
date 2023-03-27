@@ -47,7 +47,7 @@ namespace thread {
 
 namespace detail {
 
-/// Dummy class used to designate that the second binary operator in the epilogue is unsued
+/// Dummy class used to designate that the second binary operator in the epilogue is unused
 template <typename T>
 class NoOp {};
 
