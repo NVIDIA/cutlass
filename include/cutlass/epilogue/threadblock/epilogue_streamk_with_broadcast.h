@@ -458,14 +458,14 @@ public:
     // Reduce peer accumulator fragments into one fragment
     AccumulatorFragment accum_fragment;
     BaseStreamK::reduce(accum_fragment, peer_idx_begin, peer_idx_end, reduce_fragment_idx, element_workspace);
-    
-    BroadcastFragment broadcast_fragment;
-    load_broadcast_fragment_(broadcast_fragment, broadcast_ptr, problem_size, threadblock_offset);
 
     // Store fragment to shared memory
     this->warp_tile_iterator_.store(accum_fragment);
 
     __syncthreads();
+    
+    BroadcastFragment broadcast_fragment;
+    load_broadcast_fragment_(broadcast_fragment, broadcast_ptr, problem_size, threadblock_offset);
 
     // Initialize/load source-fragment data
     typename OutputTileIterator::Fragment source_fragment;
@@ -501,7 +501,7 @@ public:
     typename OutputTileIterator::Fragment frag_Z;
     typename TensorTileIterator::Fragment frag_T;
 
-    if (output_op.is_source_needed()) {
+    if (!output_op.is_source_needed()) {
       apply_output_operator_source_not_needed_(
         frag_Z,
         frag_T,
