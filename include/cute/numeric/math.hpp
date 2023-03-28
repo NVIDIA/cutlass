@@ -296,7 +296,7 @@ signum(T const& x) {
 }
 
 template <class T,
-          __CUTE_REQUIRES(not std::is_unsigned<T>::value)>
+          __CUTE_REQUIRES(!std::is_unsigned<T>::value)>
 CUTE_HOST_DEVICE constexpr
 int
 signum(T const& x) {
