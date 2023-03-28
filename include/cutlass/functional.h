@@ -89,7 +89,7 @@ struct multiplies {
   }
 };
 
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 530
 /// Partial specializations needed when __CUDA_NO_HALF2_OPERATORS__ is set
 template<>
 struct plus<__half2> {
