@@ -889,6 +889,11 @@ protected:
         thread_idx,
         threadblock_item_begin);
 
+    // Move to appropriate location for this output tile
+    if (ptr_Vector) {
+      ptr_Vector += threadblock_item_begin.column();
+    }
+
     // Execute the epilogue operator to update the destination tensor.
     epilogue(
         EpilogueOutputOp(params.output_op),
