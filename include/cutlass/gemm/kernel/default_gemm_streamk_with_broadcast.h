@@ -31,7 +31,10 @@
 
 /*! \file
   \brief 
-    Defines a Stream-K GEMM with Reduction based on an existing UniversalGemm kernel.
+    Defines a Stream-K GEMM that can broadcast a bias vector in the epilogue.
+    Similar structure to DefaultGemmWithBroadcast, but uses its own epilogue 
+    (DefaultStreamkEpilogueWithBroadcastTensorOp) and its own GEMM kernel 
+    (GemmStreamkWithFusedEpilogue).
 
 */
 

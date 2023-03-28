@@ -601,12 +601,10 @@ int main(int argc, const char **argv)
     /// alpha * a * b + v + beta * c                            ==
     /// (alpha * a * b + beta * c) + v                          ==
     /// GEMM(a, b, c) + v
-    ElementC* ptr_ref_d = (ElementC*)(options.tensor_ref_d.host_view().ref().data());
-    ElementC* ptr_v     = (ElementC*)(options.tensor_Vector.host_view().ref().data());
     // Vector broadcast on host
     for (int i=0; i < options.problem_size.m(); ++i) {
       for (int j=0; j < options.problem_size.n(); ++j) {
-        ptr_ref_d[i * options.tensor_ref_d.stride(0) + j] += ptr_v[j];
+        options.tensor_ref_d.host_view().ref().at({i, j}) += options.tensor_Vector.host_view().ref().at({0, j});
       }
     }
 

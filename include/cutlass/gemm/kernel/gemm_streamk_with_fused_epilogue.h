@@ -29,7 +29,8 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Stream-K Gemm kernel with fused reduction operation.
+    \brief Stream-K Gemm kernel compatible with fused epilogues 
+    that broadcast a bias vector over the MMA output.
 */
 
 #pragma once
@@ -55,31 +56,32 @@ namespace kernel {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+//template <
+//  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
+//  typename Epilogue_,             ///! Epilogue
+//  typename ThreadblockSwizzle_,   ///! Threadblock swizzling function
+//  bool IsSingleSource = Epilogue_::kIsSingleSource
+//>
+//struct GemmStreamkWithFusedEpilogue;
+
+// GemmStreamkWithFusedEpilogue with one source
+//template <
+//  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
+//  typename Epilogue_,             ///! Epilogue
+//  typename ThreadblockSwizzle_    ///! Threadblock swizzling function
+//>
+//struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, true> {
+
 template <
   typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
   typename Epilogue_,             ///! Epilogue
   typename ThreadblockSwizzle_,   ///! Threadblock swizzling function
-  bool IsSingleSource = Epilogue_::kIsSingleSource
+  bool IsSingleSource = false
 >
-struct GemmStreamkWithFusedEpilogue;
-
-// GemmStreamkWithFusedEpilogue with multiple sources
-// TODO: Implement
-template <
-  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
-  typename Epilogue_,             ///! Epilogue
-  typename ThreadblockSwizzle_    ///! Threadblock swizzling function
->
-struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, false>;
-
-// GemmStreamkWithFusedEpilogue with one source
-template <
-  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
-  typename Epilogue_,             ///! Epilogue
-  typename ThreadblockSwizzle_    ///! Threadblock swizzling function
->
-struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, true> {
+struct GemmStreamkWithFusedEpilogue {
 public:
+
+  static_assert(!IsSingleSource, "GemmStreamkWithFusedEpilogue only supports single source at the moment.");
 
   using Mma = Mma_;
   using Epilogue = Epilogue_;
@@ -882,7 +884,6 @@ protected:
     // Additional tensor to load from
     typename Epilogue::TensorTileIterator tensor_iterator(
         params.params_Tensor,
-        // Only the --first-- (not final like GemmWithFusedEpilogue) block outputs Tensor
         ptr_Tensor,
         params.block_mapping.problem_size.mn(),
         thread_idx,
@@ -891,7 +892,6 @@ protected:
     // Execute the epilogue operator to update the destination tensor.
     epilogue(
         EpilogueOutputOp(params.output_op),
-        // Only the --first-- (not final like GemmWithFusedEpilogue) block outputs Vector
         ptr_Vector,
         iterator_D,
         accumulator_tile,
@@ -962,7 +962,6 @@ protected:
     // Additional tensor to load from
     typename Epilogue::TensorTileIterator tensor_iterator(
         params.params_Tensor,
-        // Only the --first-- (not final like GemmWithFusedEpilogue) block outputs Tensor
         ptr_Tensor,
         params.block_mapping.problem_size.mn(),
         thread_idx,
@@ -975,7 +974,6 @@ protected:
         reduce_fragment_idx,
         params.partials_workspace,
         EpilogueOutputOp(params.output_op),
-        // Only the --first-- (not final like GemmWithFusedEpilogue) block outputs Vector
         ptr_Vector,
         iterator_D,
         iterator_C,
