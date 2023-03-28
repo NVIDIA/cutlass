@@ -215,7 +215,7 @@ struct Options
   int                       split_k_factor;
   int                       avail_sms;
   int                       iterations;
-  bool                      disable_broadcast;
+  // bool                      disable_broadcast; // TODO: remove
   bool                      small_int;
 
   cutlass::HostTensor<ElementA, LayoutA> tensor_a;
@@ -234,7 +234,7 @@ struct Options
     beta(1.0f),
     split_k_factor(1),
     avail_sms(-1),              // Number of device SMs to use is unlimited
-    disable_broadcast(false),
+    // disable_broadcast(false), // TODO: remove
     small_int(false),
     iterations(10000)
   {}
@@ -259,7 +259,7 @@ struct Options
     cmd.get_cmd_line_argument("beta", beta);
     cmd.get_cmd_line_argument("split", split_k_factor);
     cmd.get_cmd_line_argument("iterations", iterations);
-    disable_broadcast = cmd.check_cmd_line_flag("disable-broadcast");
+    // disable_broadcast = cmd.check_cmd_line_flag("disable-broadcast"); // TODO: remove
     small_int = cmd.check_cmd_line_flag("small-int");
   }
 
@@ -278,7 +278,7 @@ struct Options
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n\n"
       << "  --split=<int>               Split-K factor to emulate\n\n"
-      << "  --disable-broadcast         If specified, fills broadcast vector with zeros.\n\n"
+      // << "  --disable-broadcast         If specified, fills broadcast vector with zeros.\n\n" // TODO: remove
       << "  --small-int                 If specified, initializes with small ints instead of floats.\n\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
@@ -338,7 +338,7 @@ typename DeviceGemmBasic::Arguments args_from_options(
     tensor_b.layout().stride(0),              // stride_b
     tensor_c.layout().stride(0),              // stride_c
     tensor_d.layout().stride(0),              // stride_d
-    tensor_Vector.layout().stride(0),         // stride_Vector
+    /*tensor_Vector.layout().stride(0)*/0,    // stride_Vector
     /*tensor_Tensor.layout().stride(0)*/0);   // stride_Tensor
 }
 
@@ -378,7 +378,7 @@ typename DeviceGemmStreamK::Arguments args_from_options(
     tensor_b.layout().stride(0),              // stride_b
     tensor_c.layout().stride(0),              // stride_c
     tensor_d.layout().stride(0),              // stride_d
-    tensor_Vector.layout().stride(0),         // stride_Vector
+    /*tensor_Vector.layout().stride(0)*/0,    // stride_Vector
     /*tensor_Tensor.layout().stride(0)*/0,    // stride_Tensor
     options.avail_sms);                       // avail_sms
 }
@@ -542,22 +542,22 @@ int main(int argc, const char **argv)
       ElementC(2),
       ElementC(-2), _init_bits);
 
-  // TODO: remove when done
-  if (options.disable_broadcast) {
-    // Fill broadcast vector on host with zeros to test validity
-    std::cout << "Disabling broadcast" << std::endl;
-    cutlass::reference::host::TensorFill(
-        options.tensor_Vector.host_view(),
-        ElementC(0.0));
-  }
-  else {
-    // Fill broadcast vector on host with uniform-random data [-2, 2]
-    cutlass::reference::host::TensorFillRandomUniform(
-        options.tensor_Vector.host_view(),
-        1,
-        ElementC(2),
-        ElementC(-2), _init_bits);
-  }
+  //// TODO: remove when done
+  //if (options.disable_broadcast) {
+  //  // Fill broadcast vector on host with zeros to test validity
+  //  std::cout << "Disabling broadcast" << std::endl;
+  //  cutlass::reference::host::TensorFill(
+  //      options.tensor_Vector.host_view(),
+  //      ElementC(0.0));
+  //}
+  //else {
+  // Fill broadcast vector on host with uniform-random data [-2, 2]
+  cutlass::reference::host::TensorFillRandomUniform(
+      options.tensor_Vector.host_view(),
+      1,
+      ElementC(2),
+      ElementC(-2), _init_bits);
+  //}
 
   //
   // Compute reference output
@@ -593,24 +593,24 @@ int main(int argc, const char **argv)
   // Copy output data from reference kernel to host for comparison
   options.tensor_ref_d.sync_host();
 
-  if (!options.disable_broadcast) {
-    // Add broadcast vector (without multiplier)
-    // This is only possible because BinaryOp is addition, and UnaryOps are identity.
-    // This makes the addition of broadcast vector commutable.
-    /// identity(plus(identity(alpha * (a * b) + v), beta * c)) ==
-    /// alpha * a * b + v + beta * c                            ==
-    /// (alpha * a * b + beta * c) + v                          ==
-    /// GEMM(a, b, c) + v
-    // Vector broadcast on host
-    for (int i=0; i < options.problem_size.m(); ++i) {
-      for (int j=0; j < options.problem_size.n(); ++j) {
-        options.tensor_ref_d.host_view().ref().at({i, j}) += options.tensor_Vector.host_view().ref().at({0, j});
-      }
+  // if (!options.disable_broadcast) {
+  // Add broadcast vector (without multiplier)
+  // This is only possible because BinaryOp is addition, and UnaryOps are identity.
+  // This makes the addition of broadcast vector commutable.
+  /// identity(plus(identity(alpha * (a * b) + v), beta * c)) ==
+  /// alpha * a * b + v + beta * c                            ==
+  /// (alpha * a * b + beta * c) + v                          ==
+  /// GEMM(a, b, c) + v
+  // Vector broadcast on host
+  for (int i=0; i < options.problem_size.m(); ++i) {
+    for (int j=0; j < options.problem_size.n(); ++j) {
+      options.tensor_ref_d.host_view().ref().at({i, j}) += options.tensor_Vector.host_view().ref().at({0, j});
     }
-
-    // Sync back with device just in case
-    options.tensor_ref_d.sync_device();
   }
+
+  // Sync back with device just in case
+  options.tensor_ref_d.sync_device();
+  // }
 
   //
   // Evaluate CUTLASS kernels
