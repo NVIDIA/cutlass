@@ -37,8 +37,7 @@
 #include "cutlass/coord.h"
 #include "cutlass/layout/matrix.h"
 #include "cute/layout.hpp"
-#include "cute/arch/copy_sm90.hpp"
-
+#include "cute/arch/copy_sm90_tma.hpp"
 namespace cutlass {
 namespace gemm {
 
@@ -426,7 +425,9 @@ enum class SharedMemoryClearOption {
 // For each cutlass::layout, provides its corresponding cute stride types, 64b by default
 
 template <class L>
-struct TagToStrideA {};
+struct TagToStrideA {
+  using type = L;
+};
 
 // Maps to modes [M, K, L]
 template <>
@@ -443,7 +444,9 @@ struct TagToStrideA<layout::ColumnMajor> {
 };
 
 template <class L>
-struct TagToStrideB {};
+struct TagToStrideB {
+  using type = L;
+};
 
 // Maps to modes [N, K, L]
 template <>
@@ -479,13 +482,19 @@ using TagToStrideC_t = typename TagToStrideC<LayoutTag>::type;
 
 namespace detail {
 
+template<class Stride>
+constexpr bool
+is_mn_major() {
+  // Account for stride types with and without batch mode and batch modes with static zero stride
+  return cute::is_constant<1, decltype(cute::size<0,0>(Stride{}))>::value;
+}
+
 // Note : This method can be used for deducing the Layout Tag of A, C, D Matrices
 template<class StrideAC>
 constexpr
 auto
 stride_to_layout_tag_A() {
-  // Account for stride types with and without batch mode and batch modes with static zero stride
-  if constexpr (cute::size<0>(StrideAC{}) == 1) { // M major
+  if constexpr (is_mn_major<StrideAC>()) { // M major
     return layout::ColumnMajor{};
   }
   else { // K major
@@ -499,8 +508,7 @@ template<class StrideB>
 constexpr
 auto
 stride_to_layout_tag_B() {
-  // Account for stride types with and without batch mode and batch modes with static zero stride
-  if constexpr (cute::size<0>(StrideB{}) == 1) { // N major
+  if constexpr (is_mn_major<StrideB>()) { // N major
     return layout::RowMajor{};
   }
   else { // K major
@@ -515,12 +523,12 @@ template <class GmemTiledCopy, class Element>
 constexpr int
 get_alignment_count_from_gmem_tiled_copy() {
   // For TMA tiled copies, we know the alignment has to be 128 bits
-  if constexpr (std::is_base_of_v<cute::SM90_TMA_LOAD,           GmemTiledCopy> ||
-                std::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST, GmemTiledCopy>) {
+  if constexpr (   std::is_base_of_v<cute::SM90_TMA_LOAD,                GmemTiledCopy>
+                || std::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,      GmemTiledCopy>
+                ) {
     return 128 / sizeof_bits<Element>::value;
   }
-  else
-  {
+  else {
     // For non-TMA tiled copies, TiledCopy holds the alignment count directly in its TiledShape_MN
     return GmemTiledCopy::NumValSrc;
   }
@@ -550,6 +558,37 @@ using StrideToLayoutTagB_t = typename StrideToLayoutTagB<S>::type;
 
 template<class S>
 using StrideToLayoutTagC_t = typename StrideToLayoutTagC<S>::type;
+
+template<class Stride>
+constexpr
+bool
+is_k_major() {
+  return ! is_mn_major<Stride>();
+}
+
+template<class LayoutA>
+constexpr bool
+is_mn_major_A() {
+  return is_mn_major<TagToStrideA_t<LayoutA>>();
+}
+
+template<class LayoutB>
+constexpr bool
+is_mn_major_B() {
+  return is_mn_major<TagToStrideB_t<LayoutB>>();
+}
+
+template<class LayoutA>
+constexpr bool
+is_k_major_A() {
+  return is_k_major<TagToStrideA_t<LayoutA>>();
+}
+
+template<class LayoutB>
+constexpr bool
+is_k_major_B() {
+  return is_k_major<TagToStrideB_t<LayoutB>>();
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
