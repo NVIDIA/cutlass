@@ -61,7 +61,7 @@ template <class ElementA, class LayoutA>
 constexpr cute::GMMA::Major
 tag_to_gmma_major_A() {
   // MN major mode is only valid for non-TF32 and non-int MMAs
-  if constexpr (std::is_same_v<LayoutA, cutlass::layout::ColumnMajor> &&
+  if constexpr (cutlass::gemm::detail::is_mn_major_A<LayoutA>() &&
                 not std::is_same_v<ElementA, tfloat32_t> &&
                 not std::is_same_v<ElementA, int8_t> &&
                 not std::is_same_v<ElementA, uint8_t>) {
@@ -77,7 +77,7 @@ template <class ElementB, class LayoutB>
 constexpr cute::GMMA::Major
 tag_to_gmma_major_B() {
   // MN major mode is only valid for non-TF32 and non-int MMAs
-  if constexpr (std::is_same_v<LayoutB, cutlass::layout::RowMajor> &&
+  if constexpr (cutlass::gemm::detail::is_mn_major_B<LayoutB>() &&
                 not std::is_same_v<ElementB, tfloat32_t> &&
                 not std::is_same_v<ElementB, int8_t> &&
                 not std::is_same_v<ElementB, uint8_t>) {
@@ -113,7 +113,7 @@ make_cp_async_gmem_tiled_copy() {
 
   // Maximize the number of threads along the gmem major mode to promote coalesced reads
   // While making sure our thread layout tiles the threadblock tile evenly
-  if constexpr (cute::size<1>(StrideType{}) == 1) {
+  if constexpr (cutlass::gemm::detail::is_k_major<StrideType>()) {
     // K major thread layout for K major gmem
     constexpr int threads_major = TileSizeK   / Alignment;
     constexpr int threads_minor = ThreadCount / threads_major;
@@ -126,7 +126,7 @@ make_cp_async_gmem_tiled_copy() {
              Stride<Int<threads_major>,                _1>>{},
       Layout<Shape<_1,Int<Alignment>>>{});
   }
-  else if constexpr (cute::size<0>(StrideType{}) == 1) {
+  else if constexpr (cutlass::gemm::detail::is_mn_major<StrideType>()) {
     // MN major thread layout for MN major gmem
     constexpr int threads_major = TileSizeMN  / Alignment;
     constexpr int threads_minor = ThreadCount / threads_major;
@@ -257,7 +257,8 @@ struct CollectiveBuilder<
       not std::is_same_v<KernelScheduleType, KernelMultistage>              &&
       // dispatch TN tf32 and int8 kernels only to TMA builder
       ((sizeof(ElementA) == 2 && sizeof(ElementB) == 2)                     ||
-       (std::is_same_v<GmemLayoutA, layout::RowMajor> && std::is_same_v<GmemLayoutB, layout::ColumnMajor>))>
+       (cutlass::gemm::detail::is_k_major_A<GmemLayoutA>()                  &&
+        cutlass::gemm::detail::is_k_major_B<GmemLayoutB>()))>
 > {
   static_assert(is_static<TileShape_MNK>::value);
   static_assert(is_static<ClusterShape_MNK>::value);
@@ -346,7 +347,8 @@ struct CollectiveBuilder<
       ((sizeof(ElementB) * AlignmentB) % detail::tma_alignment_bytes != 0)  ||
       // dispatch non-TN tf32 and int8 kernels only to cp_async builder
       ((sizeof(ElementA) != 2 || sizeof(ElementB) != 2)                     &&
-       (not std::is_same_v<GmemLayoutA, layout::RowMajor> || not std::is_same_v<GmemLayoutB, layout::ColumnMajor>))>
+       (not cutlass::gemm::detail::is_k_major_A<GmemLayoutA>()              ||
+        not cutlass::gemm::detail::is_k_major_B<GmemLayoutB>()))>
 > {
   static_assert(is_static<TileShape_MNK>::value);
   static_assert(is_static<ClusterShape_MNK>::value);

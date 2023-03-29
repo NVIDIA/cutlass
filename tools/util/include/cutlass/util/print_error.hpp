@@ -60,7 +60,7 @@ struct matrix_inf_norm_result {
 // and thus are best passed by reference or const reference.
 template <typename EngineType, typename LayoutType>
 matrix_inf_norm_result
-matrix_inf_norm(const cute::Tensor<EngineType, LayoutType>& host_matrix)
+matrix_inf_norm(cute::Tensor<EngineType, LayoutType> const& host_matrix)
 {
   using std::abs;
   using error_type = decltype(std::declval<matrix_inf_norm_result>().inf_norm);
@@ -68,17 +68,14 @@ matrix_inf_norm(const cute::Tensor<EngineType, LayoutType>& host_matrix)
   error_type inf_norm = 0.0;
   bool found_nan = false;
 
-  const auto shape = host_matrix.shape();
-  using index_type = std::decay_t<decltype(cute::get<0>(shape))>;
   // Computing the infinity norm requires that we be able
   // to treat the input as a matrix, with rows and columns.
-  static_assert(std::is_integral_v<index_type>);
-  const index_type num_rows = cute::get<0>(shape);
-  const index_type num_cols = cute::get<1>(shape);
+  const int64_t num_rows = cute::size<0>(host_matrix);
+  const int64_t num_cols = cute::size<1>(host_matrix);
 
-  for(index_type i = 0; i < num_rows; ++i) {
+  for(int64_t i = 0; i < num_rows; ++i) {
     error_type row_abs_sum = 0.0;
-    for(index_type j = 0; j < num_cols; ++j) {
+    for(int64_t j = 0; j < num_cols; ++j) {
       row_abs_sum += abs(host_matrix(i, j));
     }
     if(std::isnan(row_abs_sum)) {
@@ -94,39 +91,27 @@ matrix_inf_norm(const cute::Tensor<EngineType, LayoutType>& host_matrix)
 // Infinity norm of (X - Y).
 template <typename EngineType, typename LayoutType>
 matrix_inf_norm_result
-matrix_diff_inf_norm(const cute::Tensor<EngineType, LayoutType>& X,
-                     const cute::Tensor<EngineType, LayoutType>& Y)
+matrix_diff_inf_norm(cute::Tensor<EngineType, LayoutType> const& X,
+                     cute::Tensor<EngineType, LayoutType> const& Y)
 {
   using std::abs;
   using error_type = decltype(std::declval<matrix_inf_norm_result>().inf_norm);
 
-  const auto X_shape = X.shape();
-  const auto Y_shape = Y.shape();
+  assert(cute::size<0>(X) == cute::size<0>(Y));
+  assert(cute::size<1>(X) == cute::size<1>(Y));
 
-  using index_type = std::decay_t<decltype(cute::get<0>(X_shape))>;
   // Computing the infinity norm requires that we be able
   // to treat the input as a matrix, with rows and columns.
-  static_assert(std::is_integral_v<index_type>);
-  const index_type num_rows = cute::get<0>(X_shape);
-  const index_type num_cols = cute::get<1>(X_shape);
-
-  assert(num_rows == cute::get<0>(Y_shape));
-  assert(num_cols == cute::get<1>(Y_shape));
-
-  auto matrix_ij = [&](const auto& A, std::size_t i, std::size_t j) {
-    return A(i, j); 
-  };
-  auto diff_ij = [&](std::size_t i, std::size_t j) {
-    return matrix_ij(X, i, j) - matrix_ij(Y, i, j);
-  };
+  const int64_t num_rows = cute::size<0>(X);
+  const int64_t num_cols = cute::size<1>(X);
 
   error_type inf_norm = 0.0;
   bool found_nan = false;
 
-  for(index_type i = 0; i < num_rows; ++i) {
+  for(int64_t i = 0; i < num_rows; ++i) {
     error_type row_abs_sum = 0.0;
-    for(index_type j = 0; j < num_cols; ++j) {
-      row_abs_sum += abs(diff_ij(i, j));
+    for(int64_t j = 0; j < num_cols; ++j) {
+      row_abs_sum += abs(X(i,j) - Y(i,j));
     }
     if(std::isnan(row_abs_sum)) {
       found_nan = true;
@@ -140,22 +125,22 @@ matrix_diff_inf_norm(const cute::Tensor<EngineType, LayoutType>& X,
 
 template <typename EngineType_A, typename LayoutType_A,
           typename EngineType_B, typename LayoutType_B,
-          typename EngineType_C_computed, typename LayoutType_C_computed,
-          typename EngineType_C_expected, typename LayoutType_C_expected>
+          typename EngineType_C, typename LayoutType_C,
+          typename EngineType_C_ref, typename LayoutType_C_ref>
 void
 print_matrix_multiply_mollified_relative_error(
-  const char A_value_type_name[],
-  const cute::Tensor<EngineType_A, LayoutType_A>& A,
-  const char B_value_type_name[],
-  const cute::Tensor<EngineType_B, LayoutType_B>& B,
-  const char C_value_type_name[],
-  const cute::Tensor<EngineType_C_computed, LayoutType_C_computed>& C_computed,
-  const cute::Tensor<EngineType_C_expected, LayoutType_C_expected>& C_expected)
+  char const A_value_type_name[],
+  cute::Tensor<EngineType_A, LayoutType_A> const& A,
+  char const B_value_type_name[],
+  cute::Tensor<EngineType_B, LayoutType_B> const& B,
+  char const C_value_type_name[],
+  cute::Tensor<EngineType_C, LayoutType_C> const& C,
+  cute::Tensor<EngineType_C_ref, LayoutType_C_ref> const& C_ref)
 {
   const auto [A_norm, A_has_nan] = matrix_inf_norm(A);
   const auto [B_norm, B_has_nan] = matrix_inf_norm(B);
-  const auto [C_norm, C_has_nan] = matrix_inf_norm(C_expected);
-  const auto [diff_norm, diff_has_nan] = matrix_diff_inf_norm(C_computed, C_expected);
+  const auto [C_norm, C_has_nan] = matrix_inf_norm(C_ref);
+  const auto [diff_norm, diff_has_nan] = matrix_diff_inf_norm(C, C_ref);
 
   const auto A_norm_times_B_norm = A_norm * B_norm;
   const auto relative_error = A_norm_times_B_norm == 0.0 ?
@@ -164,18 +149,19 @@ print_matrix_multiply_mollified_relative_error(
   // For expected error bounds, please refer to the LAPACK Users' Guide,
   // in particular https://netlib.org/lapack/lug/node108.html .
   // Printing the infinity norm of C is a way to check
-  // that both the function being tested (C_computed)
-  // and the reference implementation (C_expected)
+  // that both the function being tested (C)
+  // and the reference implementation (C_ref)
   // don't just do nothing (or fill with zeros).
   using std::cout;
-  cout << "Value type of A: " << A_value_type_name << '\n'
+  using cute::shape;
+  cout << "Matrix A: " << shape<0>(A) << "x" << shape<1>(A) << " of " << A_value_type_name << '\n'
+       << "Matrix B: " << shape<0>(B) << "x" << shape<1>(B) << " of " << B_value_type_name << '\n'
+       << "Matrix C: " << shape<0>(C) << "x" << shape<1>(C) << " of " << C_value_type_name << '\n'
        << std::scientific
        << "Infinity norm of A: " << A_norm << '\n'
-       << "Value type of B: " << B_value_type_name << '\n'
        << "Infinity norm of B: " << B_norm << '\n'
-       << "Value type of C: " << C_value_type_name << '\n'
-       << "Infinity norm of C_expected: " << C_norm << '\n'
-       << "Infinity norm of (C_computed - C_expected): " << diff_norm << '\n';
+       << "Infinity norm of C: " << C_norm << '\n'
+       << "Infinity norm of (C - C_ref): " << diff_norm << '\n';
 
   if(A_norm_times_B_norm == 0.0) {
     cout << "Mollified relative error: " << relative_error << '\n';
@@ -183,11 +169,12 @@ print_matrix_multiply_mollified_relative_error(
     cout << "Relative error: " << relative_error << '\n';
   }
 
-  cout << "Did we encounter NaN in A? " << (A_has_nan ? "yes" : "no") << '\n' 
-       << "Did we encounter NaN in B? " << (B_has_nan ? "yes" : "no") << '\n'
-       << "Did we encounter NaN in C_expected? " << (C_has_nan ? "yes" : "no") << '\n'
-       << "Did we encounter NaN in (C_computed - C_expected)? "
-       << (diff_has_nan ? "yes" : "no") << '\n';
+  if (A_has_nan || B_has_nan || C_has_nan || diff_has_nan) {
+    cout << "Did we encounter NaN in A? " << (A_has_nan ? "yes" : "no") << '\n' 
+         << "Did we encounter NaN in B? " << (B_has_nan ? "yes" : "no") << '\n'
+         << "Did we encounter NaN in C? " << (C_has_nan ? "yes" : "no") << '\n'
+         << "Did we encounter NaN in (C - C_ref)? " << (diff_has_nan ? "yes" : "no") << '\n';
+  }
 }
 
 template <typename EngineType, typename LayoutType>
@@ -233,3 +220,70 @@ auto host_matrix_to_const_cute_tensor(CutlassHostTensorType& X)
   auto X_data_const = const_cast<std::add_const_t< decltype(X_data)> >(X_data);
   return cute::make_tensor(X_data_const, layout);
 };
+
+
+template <typename T1, typename T2>
+double
+print_relative_error(
+    std::size_t n,
+    T1 const& data,
+    T2 const& reference,
+    bool print_verbose = false,
+    bool print_error = true) {
+  using std::abs; using std::sqrt;
+
+  // Use either double or complex<double> for error computation
+  using value_type = cute::remove_cvref_t<decltype(reference[0])>;
+  using error_type = std::conditional_t<cute::is_complex<value_type>::value,
+                                        cute::complex<double>,
+                                        double>;
+
+  if (print_verbose) {
+    std::cout << "Idx:\t"<< "Val\t" << "RefVal\t" << "RelError" << std::endl;
+  }
+
+  double eps = 1e-200;
+
+  double tot_error_sq = 0;
+  double tot_norm_sq = 0;
+  double tot_ind_rel_err = 0;
+  double max_ind_rel_err = 0;
+  for (std::size_t i = 0; i < n; ++i)
+  {
+    error_type val = data[i];
+    error_type ref = reference[i];
+
+    double aref = abs(ref);
+    double diff = abs(ref - val);
+    double rel_error = diff / (aref + eps);
+
+    // Individual relative error
+    tot_ind_rel_err += rel_error;
+
+    // Maximum relative error
+    max_ind_rel_err  = std::max(max_ind_rel_err, rel_error);
+
+    // Total relative error
+    tot_error_sq += diff * diff;
+    tot_norm_sq  += aref * aref;
+
+    if (print_verbose) {
+      std::cout << i << ":\t" << val << "\t" << ref << "\t" << rel_error << std::endl;
+    }
+  }
+
+  printf("Vector reference  norm: [%.5e]\n", sqrt(tot_norm_sq));
+
+  double tot_rel_err = sqrt(tot_error_sq/(tot_norm_sq+eps));
+  if (print_error)
+    printf("Vector  relative error: [%.5e]\n", tot_rel_err);
+
+  double ave_rel_err = tot_ind_rel_err / double(n);
+  if (print_error)
+    printf("Average relative error: [%.5e]\n", ave_rel_err);
+
+  if (print_error)
+    printf("Maximum relative error: [%.5e]\n", max_ind_rel_err);
+
+  return tot_rel_err;
+}

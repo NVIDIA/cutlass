@@ -762,7 +762,17 @@ make_tma_copy(CopyOp,
   print("layout_tv     :  "); print(layout_tv); print("\n");
 #endif
 
-  return TiledCopy<Copy_Atom<Traits,T>, decltype(layout_tv), decltype(cta_tile)>{tma_desc, gmem_stride_bases};
+  // If CTA_Tile and SLayout are incompatible, product_each makes sure
+  // that the TiledCopy generates consistent accesses.
+  auto cta_tile_tiled = [&]() {
+    if constexpr (compatible(shape(CTA_Tile{}), shape(SLayout{}))) {
+      return cta_tile;
+    } else {
+      return product_each(cta_tile);
+    }
+  }();
+
+  return TiledCopy<Copy_Atom<Traits,T>, decltype(layout_tv), decltype(cta_tile_tiled)>{tma_desc, gmem_stride_bases};
 }
 
 // Explicit defaulting
