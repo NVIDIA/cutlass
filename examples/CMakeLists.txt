@@ -131,6 +131,7 @@ foreach(EXAMPLE
   48_hopper_warp_specialized_gemm
   49_hopper_gemm_schedules_with_collective_builder
   50_hopper_gemm_with_epilogue_swizzle
+  51_hopper_gett
   )
 
   add_subdirectory(${EXAMPLE})
