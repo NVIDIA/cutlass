@@ -62,7 +62,6 @@ GemmOperationProfiler::GemmOperationProfiler(Options const &options):
     library::OperationKind::kGemm,
     {
       {ArgumentTypeID::kEnumerated, {"gemm_kind"}, "Variant of GEMM (gemm, batched, array, universal, planar_complex, planar_complex_array)"},
-      {ArgumentTypeID::kEnumerated, {"split_k_mode"}, "Variant of split K mode(serial, parallel)"},
       {ArgumentTypeID::kInteger, {"m", "problem-size::m"}, "M dimension of the GEMM problem space"},
       {ArgumentTypeID::kInteger, {"n", "problem-size::n"}, "N dimension of the GEMM problem space"},
       {ArgumentTypeID::kInteger, {"k", "problem-size::k"}, "K dimension of the GEMM problem space"},
@@ -71,6 +70,7 @@ GemmOperationProfiler::GemmOperationProfiler(Options const &options):
       {ArgumentTypeID::kTensor, {"C"}, "Tensor storing the C operand"},
       {ArgumentTypeID::kScalar, {"alpha", "epilogue::alpha"}, "Epilogue scalar alpha"},
       {ArgumentTypeID::kScalar, {"beta", "epilogue::beta"}, "Epilogue scalar beta"},
+      {ArgumentTypeID::kEnumerated, {"split_k_mode", "split-k-mode"}, "Variant of split K mode(serial, parallel)"},
       {ArgumentTypeID::kInteger, {"split_k_slices", "split-k-slices"}, "Number of partitions of K dimension"},
       {ArgumentTypeID::kInteger, {"batch_count", "batch-count"}, "Number of GEMMs computed in one batch"},
     },
@@ -298,8 +298,6 @@ void GemmOperationProfiler::GemmProblem::initialize_result(
 
   set_argument(result, "gemm_kind", problem_space, library::to_string(operation_desc.gemm_kind));
 
-  set_argument(result, "split_k_mode", problem_space, library::to_string(split_k_mode));
-
   set_argument(result, "A", problem_space,
     std::string(library::to_string(operation_desc.A.element)) + ":" + library::to_string(operation_desc.A.layout));
 
@@ -313,6 +311,7 @@ void GemmOperationProfiler::GemmProblem::initialize_result(
   set_argument(result, "n", problem_space, n);
   set_argument(result, "k", problem_space, k);
 
+  set_argument(result, "split_k_mode", problem_space, library::to_string(split_k_mode));
   set_argument(result, "split_k_slices", problem_space, split_k_slices);
   set_argument(result, "batch_count", problem_space, batch_count);
 
