@@ -36,6 +36,7 @@
 
 #include "cutlass/array.h"
 #include "cutlass/layout/matrix.h"
+#include "cute/arch/copy_sm75.hpp"
 #include "cute/arch/util.hpp"
 
 namespace cutlass {
@@ -57,17 +58,6 @@ inline __device__ void ldsm(Array<unsigned, MatrixCount> & D, void const* ptr);
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2) || (__CUDACC_VER_MAJOR__ >= 11)
-
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 750)
-#define CUDA_LDMATRIX_ACTIVATED 1
-#endif
-
-#define CUDA_LDMATRIX_SUPPORTED 1
-#endif
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
 /// CUTLASS helper to get SMEM pointer
 inline __device__ unsigned cutlass_get_smem_pointer(void *ptr) {
   return cute::cast_smem_ptr_to_uint(ptr);
@@ -85,7 +75,7 @@ inline __device__ void ldsm<layout::RowMajor, 1>(
     Array<unsigned, 1> & D,
     void const* ptr) {
 
-  #if defined(CUDA_LDMATRIX_ACTIVATED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
     unsigned addr = cutlass_get_smem_pointer(ptr);
 
@@ -109,7 +99,7 @@ inline __device__ void ldsm<layout::RowMajor, 2>(
     Array<unsigned, 2> & D,
     void const* ptr) {
 
-  #if defined(CUDA_LDMATRIX_ACTIVATED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
     unsigned addr = cutlass_get_smem_pointer(ptr);
 
@@ -133,7 +123,7 @@ inline __device__ void ldsm<layout::RowMajor, 4>(
     Array<unsigned, 4> & D,
     void const* ptr) {
 
-  #if defined(CUDA_LDMATRIX_ACTIVATED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
     unsigned addr = cutlass_get_smem_pointer(ptr);
 
@@ -161,7 +151,7 @@ inline __device__ void ldsm<layout::ColumnMajor, 1>(
     Array<unsigned, 1> & D,
     void const* ptr) {
 
-  #if CUDA_LDMATRIX_ACTIVATED
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
     unsigned addr = cutlass_get_smem_pointer(ptr);
 
@@ -185,7 +175,7 @@ inline __device__ void ldsm<layout::ColumnMajor, 2>(
     Array<unsigned, 2> & D,
     void const* ptr) {
 
-  #if defined(CUDA_LDMATRIX_ACTIVATED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
     unsigned addr = cutlass_get_smem_pointer(ptr);
 
@@ -209,7 +199,7 @@ inline __device__ void ldsm<layout::ColumnMajor, 4>(
     Array<unsigned, 4> & D,
     void const* ptr) {
 
-  #if defined(CUDA_LDMATRIX_ACTIVATED)
+  #if defined(CUTE_ARCH_LDSM_SM75_ACTIVATED)
 
     unsigned addr = cutlass_get_smem_pointer(ptr);
 
