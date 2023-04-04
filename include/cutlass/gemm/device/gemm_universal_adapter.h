@@ -385,7 +385,7 @@ public:
 
   /// Overload that allows a user to re-launch the same kernel without updating internal params struct.
   Status
-  operator()(cudaStream_t stream = nullptr) const {
+  operator()(cudaStream_t stream = nullptr) {
     return run(params_, stream);
   }
 };
