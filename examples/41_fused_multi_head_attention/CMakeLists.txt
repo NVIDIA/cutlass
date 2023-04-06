@@ -38,13 +38,19 @@ cutlass_example_add_executable(
   )
 
 cutlass_example_add_executable(
-  41_fmha_backward
-  fmha_backward.cu
+  41_fused_multi_head_attention_backward
+  fused_multi_head_attention_backward.cu
+  DISABLE_TESTS ON
   )
 
 
 add_custom_target(41_fused_multi_head_attention
 DEPENDS 41_fused_multi_head_attention_fixed_seqlen
         41_fused_multi_head_attention_variable_seqlen
-        41_fmha_backward
+        41_fused_multi_head_attention_backward
+)
+
+add_test(
+  NAME ctest_examples_41_fmha_backward_python
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/fmha_backward_test.py $<TARGET_FILE:41_fused_multi_head_attention_backward>
 )

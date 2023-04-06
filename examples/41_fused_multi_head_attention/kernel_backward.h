@@ -193,7 +193,7 @@ template <
     // use dropout if enabled
     bool kApplyDropout_,
     // when doing a GEMM, preload the next one (uses more shmem)
-    bool kPreloadMmas_,
+    bool kPreload_,
     // block dimensions
     int kBlockSizeI_,
     int kBlockSizeJ_,
@@ -214,7 +214,7 @@ struct AttentionBackwardKernel {
   using ArchTag = ArchTag_;
   static constexpr bool kIsAligned = kIsAligned_;
   static constexpr bool kApplyDropout = kApplyDropout_;
-  static constexpr bool kPreloadMmas = kPreloadMmas_;
+  static constexpr bool kPreload = kPreload_;
   static constexpr int kBlockSizeI = kBlockSizeI_;
   static constexpr int kBlockSizeJ = kBlockSizeJ_;
   static constexpr int kMaxK = kMaxK_;
@@ -473,14 +473,14 @@ struct AttentionBackwardKernel {
   static constexpr bool kIsHalf = cutlass::sizeof_bits<scalar_t>::value <= 16;
   static constexpr bool kOutputInRF = kIsHalf && kMaxK <= kBlockSizeI;
   static_assert(
-      !kPreloadMmas ||
+      !kPreload ||
           (kIsHalf && ArchTag::kMinComputeCapability >= 80 && kOutputInRF),
       "preload MMA not supported");
-  static constexpr bool kPrologueQK = kPreloadMmas;
-  static constexpr bool kPrologueGV = kPreloadMmas;
-  static constexpr bool kPrologueDOV = kPreloadMmas;
-  static constexpr bool kPrologueGQ = kPreloadMmas;
-  static constexpr bool kPrologueGK = kPreloadMmas;
+  static constexpr bool kPrologueQK = kPreload;
+  static constexpr bool kPrologueGV = kPreload;
+  static constexpr bool kPrologueDOV = kPreload;
+  static constexpr bool kPrologueGQ = kPreload;
+  static constexpr bool kPrologueGK = kPreload;
 
   static constexpr int64_t kNumWarpsPerBlock =
       (kBlockSizeI * kBlockSizeJ) / (32 * 32);
@@ -686,7 +686,7 @@ struct AttentionBackwardKernel {
         // multiple preloads, dropout Zij tile, and 3 stages push us over shared
         // memory capacity on A100. set a ceiling on number of stages to save
         // shared memory if dropout is in use.
-        kPreloadMmas && kApplyDropout && (kBlockSizeI * kBlockSizeJ > 64 * 64)
+        kPreload && kApplyDropout && (kBlockSizeI * kBlockSizeJ > 64 * 64)
             ? cutlass::const_min(2, DefaultConfig::kStages)
             : DefaultConfig::kStages, // Stages
         false, // SplitKSerial
@@ -792,7 +792,7 @@ struct AttentionBackwardKernel {
             typename DefaultGemm::Mma,
             typename MatmulDOIVJ::AccumulatorSharedStorage,
             false, // kScaleOperandA
-            kPreloadMmas>; // kTransposeA
+            kPreload>; // kTransposeA
     using DefaultMmaFromSmem = typename cutlass::platform::conditional<
         DefaultMmaFromSmemT::kIsTransposedA,
         DefaultMmaFromSmemT,
@@ -837,7 +837,7 @@ struct AttentionBackwardKernel {
     } persistent;
     union {
       struct {
-        // p1 - after Q.K / dV / dO.V
+        // part1 - after Q.K / dV / dO.V
         union {
           // 1. efficient load of bias tile Bij, which is then applied to Pij
           typename MatmulQK::BiasLoader::SmemTile bias;
@@ -867,13 +867,13 @@ struct AttentionBackwardKernel {
         // 3. prologue for dPij_dropped
         // 8. used in dPij_dropped = dOi @ Vj.T
         typename MatmulDOIVJ::Mma::SharedStorage mm_doivj;
-      } p1;
+      } part1;
 
       struct {
-        // p2 - dQ
+        // part2 - dQ
         union {
           typename MatmulQK::AccumulatorSharedStorage
-              tmpT_shared_storage; // (from p1)
+              tmpT_shared_storage; // (from part1)
           typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         };
         typename MatmulGradK::Mma::SharedStorage mm_gradK; // (preload)
@@ -884,13 +884,13 @@ struct AttentionBackwardKernel {
           typename MatmulGradQ::DefaultEpilogue::SharedStorage gradQ_epilogue;
         };
 
-      } p2;
+      } part2;
 
       struct {
-        // p3 - after last iteration on dQ's epilogue / dK
+        // part3 - after last iteration on dQ's epilogue / dK
         union {
           typename MatmulQK::AccumulatorSharedStorage
-              tmpT_shared_storage; // (from p1)
+              tmpT_shared_storage; // (from part1)
           typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         };
         typename MatmulGradK::Mma::SharedStorage mm_gradK; // (preload)
@@ -898,10 +898,10 @@ struct AttentionBackwardKernel {
             gradQ_epilogue_lastIter;
 
         typename MatmulGradK::DefaultEpilogue::SharedStorage gradK_epilogue;
-      } p3;
+      } part3;
 
       struct {
-        // p4 - after last iteration on dK's epilogue / preload next K.Q_t
+        // part4 - after last iteration on dK's epilogue / preload next K.Q_t
         typename MatmulQK::Mma::SharedStorageB mm_qk_q;
 
         // If we reach end of current key, dump RF->gmem with "final" epilogues
@@ -909,7 +909,7 @@ struct AttentionBackwardKernel {
             gradK_epilogue_final;
         typename MatmulGradV::DefaultEpilogue::SharedStorage
             gradV_epilogue_final;
-      } p4;
+      } part4;
     };
     static void print_size() {
       // Field size
@@ -918,26 +918,26 @@ struct AttentionBackwardKernel {
       printf("Total smem: %d bytes\n", int(sizeof(SharedStoragePrologue)));
       printf("  persistent: %db\n", FSZ(persistent));
       printf("    mm_qk_k: %db\n", FSZ(persistent.mm_qk_k));
-      printf("  p1: %db\n", FSZ(p1));
-      printf("    bias: %db\n", FSZ(p1.bias));
-      printf("    attn_shared_storage: %db\n", FSZ(p1.attn_shared_storage));
-      printf("    zij: %db\n", FSZ(p1.zij));
-      printf("    mm_gradV: %db\n", FSZ(p1.mm_gradV));
-      printf("    gradV_epilogue: %db\n", FSZ(p1.gradV_epilogue));
-      printf("    mm_doivj: %db\n", FSZ(p1.mm_doivj));
-      printf("  p2: %db\n", FSZ(p2));
-      printf("    tmpT_shared_storage: %db\n", FSZ(p2.tmpT_shared_storage));
-      printf("    tmp_shared_storage: %db\n", FSZ(p2.tmp_shared_storage));
-      printf("    mm_gradK: %db\n", FSZ(p2.mm_gradK));
-      printf("    mm_gradQ: %db\n", FSZ(p2.mm_gradQ));
-      printf("    gradB_epilogue: %db\n", FSZ(p2.gradB_epilogue));
-      printf("    gradQ_epilogue: %db\n", FSZ(p2.gradQ_epilogue));
-      printf("  p3: %db\n", FSZ(p3));
-      printf("    tmpT_shared_storage: %db\n", FSZ(p3.tmpT_shared_storage));
-      printf("  p4: %db\n", FSZ(p4));
-      printf("    mm_qk_q: %db\n", FSZ(p4.mm_qk_q));
-      printf("    gradK_epilogue_final: %db\n", FSZ(p4.gradK_epilogue_final));
-      printf("    gradV_epilogue_final: %db\n", FSZ(p4.gradV_epilogue_final));
+      printf("  part1: %db\n", FSZ(part1));
+      printf("    bias: %db\n", FSZ(part1.bias));
+      printf("    attn_shared_storage: %db\n", FSZ(part1.attn_shared_storage));
+      printf("    zij: %db\n", FSZ(part1.zij));
+      printf("    mm_gradV: %db\n", FSZ(part1.mm_gradV));
+      printf("    gradV_epilogue: %db\n", FSZ(part1.gradV_epilogue));
+      printf("    mm_doivj: %db\n", FSZ(part1.mm_doivj));
+      printf("  part2: %db\n", FSZ(part2));
+      printf("    tmpT_shared_storage: %db\n", FSZ(part2.tmpT_shared_storage));
+      printf("    tmp_shared_storage: %db\n", FSZ(part2.tmp_shared_storage));
+      printf("    mm_gradK: %db\n", FSZ(part2.mm_gradK));
+      printf("    mm_gradQ: %db\n", FSZ(part2.mm_gradQ));
+      printf("    gradB_epilogue: %db\n", FSZ(part2.gradB_epilogue));
+      printf("    gradQ_epilogue: %db\n", FSZ(part2.gradQ_epilogue));
+      printf("  part3: %db\n", FSZ(part3));
+      printf("    tmpT_shared_storage: %db\n", FSZ(part3.tmpT_shared_storage));
+      printf("  part4: %db\n", FSZ(part4));
+      printf("    mm_qk_q: %db\n", FSZ(part4.mm_qk_q));
+      printf("    gradK_epilogue_final: %db\n", FSZ(part4.gradK_epilogue_final));
+      printf("    gradV_epilogue_final: %db\n", FSZ(part4.gradV_epilogue_final));
     }
 // ===========================================
 #define FIELD(INSIDE_STRUCT, FIELDNAME) \
@@ -947,23 +947,23 @@ struct AttentionBackwardKernel {
 
     FIELD(persistent, di)
     FIELD(persistent, mm_qk_k)
-    FIELD(p1, bias)
-    FIELD(p1, attn_shared_storage)
-    FIELD(p1, zij)
-    FIELD(p1, mm_gradV)
-    FIELD(p1, gradV_epilogue)
-    FIELD(p1, mm_doivj)
-    FIELD(p2, mm_gradK)
-    FIELD(p2, mm_gradQ)
-    FIELD(p2, gradB_epilogue)
-    FIELD(p2, gradQ_epilogue)
-    FIELD(p2, tmp_shared_storage)
-    FIELD(p3, tmpT_shared_storage)
-    FIELD(p3, gradQ_epilogue_lastIter)
-    FIELD(p3, gradK_epilogue)
-    FIELD(p4, mm_qk_q)
-    FIELD(p4, gradK_epilogue_final)
-    FIELD(p4, gradV_epilogue_final)
+    FIELD(part1, bias)
+    FIELD(part1, attn_shared_storage)
+    FIELD(part1, zij)
+    FIELD(part1, mm_gradV)
+    FIELD(part1, gradV_epilogue)
+    FIELD(part1, mm_doivj)
+    FIELD(part2, mm_gradK)
+    FIELD(part2, mm_gradQ)
+    FIELD(part2, gradB_epilogue)
+    FIELD(part2, gradQ_epilogue)
+    FIELD(part2, tmp_shared_storage)
+    FIELD(part3, tmpT_shared_storage)
+    FIELD(part3, gradQ_epilogue_lastIter)
+    FIELD(part3, gradK_epilogue)
+    FIELD(part4, mm_qk_q)
+    FIELD(part4, gradK_epilogue_final)
+    FIELD(part4, gradV_epilogue_final)
   };
 
   struct SharedStorageNoPrologue {
@@ -972,13 +972,13 @@ struct AttentionBackwardKernel {
     } persistent;
     union {
       struct {
-        // p1 - Q.K matmul
+        // part1 - Q.K matmul
         typename MatmulQK::Mma::SharedStorageA mm_qk_k;
         typename MatmulQK::Mma::SharedStorageB mm_qk_q;
-      } p1;
+      } part1;
 
       struct {
-        // p2 - compute gradV
+        // part2 - compute gradV
         union {
           // 1. efficient load of bias tile Bij, which is then applied to Pij
           typename MatmulQK::BiasLoader::SmemTile bias;
@@ -998,17 +998,17 @@ struct AttentionBackwardKernel {
           typename MatmulGradV::Mma::SharedStorage mm_gradV;
           typename MatmulGradV::DefaultEpilogue::SharedStorage gradV_epilogue;
         };
-      } p2;
+      } part2;
 
       struct {
-        // p3 - DO.V matmul
+        // part3 - DO.V matmul
         union {
           // first compute dPij = (dOi @ Vj.T) * Zij
           // and dSij = Pij * (dPij - Di)
           struct {
-            // (from p2) - Pij for computing dSij = Pij * (dPij - Di)
+            // (from part2) - Pij for computing dSij = Pij * (dPij - Di)
             typename MatmulQK::AccumulatorSharedStorage attn_shared_storage;
-            // (from p2) - Zij for computing dPij = dPij_dropped * Zij
+            // (from part2) - Zij for computing dPij = dPij_dropped * Zij
             ZijSharedStorage zij;
             // matmul to compute dOiVj
             typename MatmulDOIVJ::Mma::SharedStorage mm_doivj;
@@ -1016,12 +1016,12 @@ struct AttentionBackwardKernel {
           // then store dB = dSij to global memory
           typename MatmulDOIVJ::BiasGradEpilogue::SharedStorage gradB_epilogue;
         };
-      } p3;
+      } part3;
 
       struct {
-        // p4 - compute gradQ
+        // part4 - compute gradQ
         typename MatmulQK::AccumulatorSharedStorage
-            tmpT_shared_storage; // (from p2)
+            tmpT_shared_storage; // (from part2)
         typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         union {
           typename MatmulGradQ::Mma::SharedStorage mm_gradQ;
@@ -1029,37 +1029,37 @@ struct AttentionBackwardKernel {
           typename MatmulGradQ::DefaultEpilogue::SharedStorage
               gradQ_epilogue_lastIter;
         };
-      } p4;
+      } part4;
 
       struct {
-        // p5 - compute gradK
+        // part5 - compute gradK
         typename MatmulQK::AccumulatorSharedStorage
-            tmpT_shared_storage; // (from p2)
+            tmpT_shared_storage; // (from part2)
         typename MatmulDOIVJ::AccumulatorSharedStorage tmp_shared_storage;
         union {
           typename MatmulGradK::Mma::SharedStorage mm_gradK;
           typename MatmulGradK::DefaultEpilogue::SharedStorage gradK_epilogue;
         };
-      } p5;
+      } part5;
 
       struct {
-        // p6 - store RF accumulated into gmem
+        // part6 - store RF accumulated into gmem
         typename MatmulGradK::DefaultEpilogue::SharedStorage
             gradK_epilogue_final;
         typename MatmulGradV::DefaultEpilogue::SharedStorage
             gradV_epilogue_final;
-      } p6;
+      } part6;
     };
     static void print_size() {
 #define FIELD_SIZEOF(f) int((sizeof(((SharedStorageNoPrologue*)0)->f)))
       printf("Total smem: %d bytes\n", int(sizeof(SharedStorageNoPrologue)));
       printf("  persistent: %db\n", FIELD_SIZEOF(persistent));
-      printf("  p1: %db\n", FIELD_SIZEOF(p1));
-      printf("  p2: %db\n", FIELD_SIZEOF(p2));
-      printf("  p3: %db\n", FIELD_SIZEOF(p3));
-      printf("  p4: %db\n", FIELD_SIZEOF(p4));
-      printf("  p5: %db\n", FIELD_SIZEOF(p5));
-      printf("  p6: %db\n", FIELD_SIZEOF(p6));
+      printf("  part1: %db\n", FIELD_SIZEOF(part1));
+      printf("  part2: %db\n", FIELD_SIZEOF(part2));
+      printf("  part3: %db\n", FIELD_SIZEOF(part3));
+      printf("  part4: %db\n", FIELD_SIZEOF(part4));
+      printf("  part5: %db\n", FIELD_SIZEOF(part5));
+      printf("  part6: %db\n", FIELD_SIZEOF(part6));
     }
 // ===========================================
 #define FIELD(INSIDE_STRUCT, FIELDNAME) \
@@ -1068,28 +1068,28 @@ struct AttentionBackwardKernel {
   }
 
     FIELD(persistent, di)
-    FIELD(p1, mm_qk_k)
-    FIELD(p1, mm_qk_q)
-    FIELD(p2, bias)
-    FIELD(p2, attn_shared_storage)
-    FIELD(p2, zij)
-    FIELD(p2, mm_gradV)
-    FIELD(p2, gradV_epilogue)
-    FIELD(p3, mm_doivj)
-    FIELD(p3, gradB_epilogue)
-    FIELD(p4, tmpT_shared_storage)
-    FIELD(p4, tmp_shared_storage)
-    FIELD(p4, mm_gradQ)
-    FIELD(p4, gradQ_epilogue)
-    FIELD(p4, gradQ_epilogue_lastIter)
-    FIELD(p5, mm_gradK)
-    FIELD(p5, gradK_epilogue)
-    FIELD(p6, gradK_epilogue_final)
-    FIELD(p6, gradV_epilogue_final)
+    FIELD(part1, mm_qk_k)
+    FIELD(part1, mm_qk_q)
+    FIELD(part2, bias)
+    FIELD(part2, attn_shared_storage)
+    FIELD(part2, zij)
+    FIELD(part2, mm_gradV)
+    FIELD(part2, gradV_epilogue)
+    FIELD(part3, mm_doivj)
+    FIELD(part3, gradB_epilogue)
+    FIELD(part4, tmpT_shared_storage)
+    FIELD(part4, tmp_shared_storage)
+    FIELD(part4, mm_gradQ)
+    FIELD(part4, gradQ_epilogue)
+    FIELD(part4, gradQ_epilogue_lastIter)
+    FIELD(part5, mm_gradK)
+    FIELD(part5, gradK_epilogue)
+    FIELD(part6, gradK_epilogue_final)
+    FIELD(part6, gradV_epilogue_final)
   };
 
   using SharedStorage = typename cutlass::platform::conditional<
-      kPreloadMmas,
+      kPreload,
       SharedStoragePrologue,
       SharedStorageNoPrologue>::type;
 

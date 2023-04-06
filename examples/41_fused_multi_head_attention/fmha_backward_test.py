@@ -1,8 +1,14 @@
+import argparse
 import torch
 import sys
 import os
 from piped_subprocess import PipedSubprocess, TORCH_DTYPE_NAME
 import math
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("example_exe", type=str, help="Path to the 41_fused_multi_head_attention_backward executable")
+args = parser.parse_args()
 
 torch.manual_seed(0)
 dtype = torch.float16
@@ -25,18 +31,7 @@ RTOL = {
 
 assert not (causal and Mq < Mkv), "causal only supports seqlenK <= seqlenQ"
 
-# Check that we can find the fMHA C++ binary
-build_dir = os.environ.get("CUTLASS_BUILD_DIR")
-if build_dir is None:
-    print("""You need to specify CUTLASS build directory through the environment variable "CUTLASS_BUILD_DIR".
-For instance:
-$ CUTLASS_BUILD_DIR=../../build python fmha_backward_test.py
-""")
-    sys.exit(1)
-
-fmha_bw_binary = os.path.abspath(
-    os.path.join(build_dir, "examples", "41_fused_multi_head_attention", "41_fmha_backward")
-)
+fmha_bw_binary = args.example_exe
 if not os.path.isfile(fmha_bw_binary):
     print(f"""No such file: `{fmha_bw_binary}`\nDid you forget to run "make 41_fused_multi_head_attention"?""")
     sys.exit(1)

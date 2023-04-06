@@ -57,15 +57,15 @@ struct DefaultKernel {
     static constexpr int kBlockSizeI = kSupports64x128 && kMaxK > 64 ? 128 : 64;
     static constexpr bool kIsHalf = cutlass::sizeof_bits<Element>::value <= 16;
     static constexpr bool kOutputInRF = kIsHalf && kMaxK <= kBlockSizeI;
-    static constexpr bool kPreloadMmas = kIsHalf && ArchTag::kMinComputeCapability >= 80 && kOutputInRF;
-    static constexpr int kBlockSizeJ = kPreloadMmas && kMaxK > 64 ? 128 : 64;
+    static constexpr bool kPreload = kIsHalf && ArchTag::kMinComputeCapability >= 80 && kOutputInRF;
+    static constexpr int kBlockSizeJ = kPreload && kMaxK > 64 ? 128 : 64;
 
     using Kernel = AttentionBackwardKernel<
         Arch,
         Element,
         true,        // kIsAligned_
         false,       // kApplyDropout_
-        kPreloadMmas,// kPreloadMmas_
+        kPreload,// kPreload_
         kBlockSizeI, // kBlockSizeI_,
         kBlockSizeJ, // kBlockSizeJ_,
         kMaxK        // kMaxK
