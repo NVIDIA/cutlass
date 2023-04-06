@@ -1443,6 +1443,20 @@ def GenerateSM75_TensorOp_8816_TN(manifest, cuda_version):
       TileDescription([ 64, 128, 64], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 64], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 64], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 256, 32, 64], 2, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 128, 32, 64], 2, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 32, 64], 2, [2, 1, 1], math_inst, min_cc, max_cc),
+
+      TileDescription([256, 128, 32], 2, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 32], 2, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 32], 2, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 32], 2, [4, 1, 1], math_inst, min_cc, max_cc),      
+      TileDescription([ 64, 128, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  64, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 128, 32, 32], 2, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 32, 32], 2, [2, 1, 1], math_inst, min_cc, max_cc),
     ]
 
     data_type = [
