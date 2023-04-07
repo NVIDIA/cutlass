@@ -115,10 +115,10 @@
     std::cerr << #PTR " is not correctly aligned\n"; \
     return false;                                    \
   }
-#define XFORMERS_CHECK(COND, ERR)   \
-  if (!(COND)) {                    \
-    std::cerr << #COND " failed\n"; \
-    return false;                   \
+#define XFORMERS_CHECK(COND, ERR)                       \
+  if (!(COND)) {                                        \
+    std::cerr << "'" #COND "' failed: " << ERR << "\n"; \
+    return false;                                       \
   }
 #endif
 

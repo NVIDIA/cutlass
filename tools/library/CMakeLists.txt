@@ -30,6 +30,11 @@ include(GNUInstallDirs)
 
 find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
 
+# Set Python3_EXECUTABLE to be visible from global scope.
+# In CMake 3.24, this could be supported by adding the GLOBAL field
+# to find_package above (https://cmake.org/cmake/help/latest/command/find_package.html#id7)
+set(Python3_EXECUTABLE ${Python3_EXECUTABLE} CACHE INTERNAL "Path to python3 executable")
+
 add_library(cutlass_library_includes INTERFACE)
 add_library(nvidia::cutlass::library::includes ALIAS cutlass_library_includes)
 set_target_properties(cutlass_library_includes PROPERTIES EXPORT_NAME library::includes)

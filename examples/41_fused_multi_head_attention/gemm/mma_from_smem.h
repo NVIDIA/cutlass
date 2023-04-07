@@ -264,9 +264,8 @@ class NoOpWarpIteratorScale {
   // in pipelined+multistage MMA implementations we keep an array of fragments.
   // if we aren't using scaling we don't want to waste registers on fragments
   // of scale elements, so ideally this would be sized 0.
-  // using size 1 is kind of a hack to get around arrays of zero-sized objects
-  // not being allowed. the compiler is probably smart enough to wipe it out
-  // anyways.
+  // Since arrays of zero-sized objects are not allowed, using size as 1.
+  // The compiler will most likely wipe it out anyways.
   using Fragment = cutlass::Array<char, 1>;
 
   CUTLASS_HOST_DEVICE
