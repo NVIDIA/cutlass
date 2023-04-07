@@ -573,27 +573,33 @@ struct AttentionKernel {
     if (kSupportsBias) {
       CHECK_ALIGNED_PTR(p.attn_bias_ptr, kAlignmentQ);
       XFORMERS_CHECK(
-          p.bias_strideB % kAlignmentQ == 0,
-          "attn_bias is not correctly aligned");
+          p.num_batches <= 1 || p.bias_strideB % kAlignmentQ == 0,
+          "attn_bias is not correctly aligned (strideB)");
       XFORMERS_CHECK(
-          p.bias_strideH % kAlignmentQ == 0,
-          "attn_bias is not correctly aligned");
+          p.num_heads <= 1 || p.bias_strideH % kAlignmentQ == 0,
+          "attn_bias is not correctly aligned (strideH)");
       XFORMERS_CHECK(
           p.bias_strideM % kAlignmentQ == 0,
           "attn_bias is not correctly aligned");
     }
     XFORMERS_CHECK(
-        p.q_strideM % kAlignmentQ == 0, "query is not correctly aligned");
+        p.q_strideM % kAlignmentQ == 0,
+        "query is not correctly aligned (strideM)");
     XFORMERS_CHECK(
-        p.k_strideM % kAlignmentK == 0, "key is not correctly aligned");
+        p.k_strideM % kAlignmentK == 0,
+        "key is not correctly aligned (strideM)");
     XFORMERS_CHECK(
-        p.v_strideM % kAlignmentV == 0, "value is not correctly aligned");
+        p.v_strideM % kAlignmentV == 0,
+        "value is not correctly aligned (strideM)");
     XFORMERS_CHECK(
-        p.q_strideH % kAlignmentQ == 0, "query is not correctly aligned");
+        p.num_heads <= 1 || p.q_strideH % kAlignmentQ == 0,
+        "query is not correctly aligned (strideH)");
     XFORMERS_CHECK(
-        p.k_strideH % kAlignmentK == 0, "key is not correctly aligned");
+        p.num_heads <= 1 || p.k_strideH % kAlignmentK == 0,
+        "key is not correctly aligned (strideH)");
     XFORMERS_CHECK(
-        p.v_strideH % kAlignmentV == 0, "value is not correctly aligned");
+        p.num_heads <= 1 || p.v_strideH % kAlignmentV == 0,
+        "value is not correctly aligned (strideH)");
     XFORMERS_CHECK(
         p.causal_diagonal_ptr == nullptr || p.custom_mask_type != NoCustomMask,
         "`causal_diagonal_ptr` is only useful when `custom_mask_type` is causal");
