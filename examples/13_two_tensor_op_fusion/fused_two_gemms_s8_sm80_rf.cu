@@ -208,6 +208,7 @@ bool run_fused_gemm_s8_sm80_rf_res() {
     alpha1,
     beta1
   );
+
   if(passed)
     std::cout << "Pass\n";
   else
@@ -315,6 +316,7 @@ bool run_fused_gemm_s8_sm80_rf_res_batch() {
     batch_stride_Bias0,
     batch_stride_Scale0
   );
+
   if(passed)
     std::cout << "Pass\n";
   else
@@ -322,7 +324,6 @@ bool run_fused_gemm_s8_sm80_rf_res_batch() {
 
   return passed;
 }
-
 
 int main() {
 
@@ -333,9 +334,6 @@ int main() {
   };
 
   return testRun(80, funcs, "gemm int8 RF residency");
-
-
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////

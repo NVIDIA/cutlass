@@ -139,7 +139,6 @@ struct DefaultB2bGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignm
   using B2bGemmKernel = kernel::B2bGemm<B2bMma, Epilogue, ThreadblockSwizzle>;
 };
 
-
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for Turing Architecture

@@ -466,7 +466,6 @@ struct B2bFusedGemmRun
     // to the GemmUniversal interface
 
     int batch_count = 1,
-
     int64_t batch_stride_A0 = 0,
     int64_t batch_stride_B0 = 0,
     int64_t batch_stride_C0 = 0,
@@ -506,7 +505,7 @@ struct B2bFusedGemmRun
       typename B2bGemm::LayoutScaleBias> tensor_Scale0;
 
     if(alpha0 == ElementCompute(0)) //per-channel scale
-        tensor_Scale0.resize({1,  batch_count * problem_size_0.n()});
+        tensor_Scale0.resize({1, batch_count * problem_size_0.n()});
 
     cutlass::HostTensor<
       typename B2bGemm::ElementScaleBias,
@@ -655,6 +654,7 @@ struct B2bFusedGemmRun
       ElementAccumulator, typename B2bGemm::LayoutC,
       ElementAccumulator, ElementAccumulator
     >(
+
       problem_size_0,
       ElementAccumulator(1), //intermediate alpha=1
       tensor_A0.device_ref(),
@@ -719,6 +719,7 @@ struct B2bFusedGemmRun
     if(relu) {
        cutlass::reference::device::TensorReLu(reference_D1.device_view());
     }
+
     cudaDeviceSynchronize();
     reference_D0.sync_host();
     reference_D1.sync_host();

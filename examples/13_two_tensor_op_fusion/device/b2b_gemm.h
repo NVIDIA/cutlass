@@ -320,12 +320,6 @@ public:
       {ThreadblockShape0::kM, ThreadblockShape0::kN, ThreadblockShape0::kK},
       args.batch_count);
 
-    if (args.mode == GemmUniversalMode::kGemm && args.batch_count > 1) {
-
-
-      bytes += sizeof(int) * size_t(tiled_shape.m()) * size_t(tiled_shape.n());
-    }
-
     return bytes;
   }
 
@@ -342,23 +336,7 @@ public:
 //    cutlass::gemm::GemmCoord grid_shape_1 = threadblock_swizzle.get_tiled_shape(
 //      args.problem_size_1,
 //      {ThreadblockShape1::kM, ThreadblockShape1::kN, ThreadblockShape1::kK},
-//      args.split_k_slices);
-
-    if (args.mode == GemmUniversalMode::kGemm) {
-      if (args.batch_count > 1) {
-        if (!workspace) {
-          return Status::kErrorWorkspaceNull;
-        }
-
-        size_t bytes = get_workspace_size(args);
-
-        cudaError_t result = cudaMemsetAsync(workspace, 0, bytes, stream);
-
-        if (result != cudaSuccess) {
-          return Status::kErrorInternal;
-        }
-      }
-    }
+//      args.batch_count);
 
     // Initialize the Params structure
     params_ = typename B2bGemmKernel::Params{
@@ -391,12 +369,6 @@ public:
 
   /// Lightweight update given a subset of arguments
   Status update(Arguments const &args, void *workspace = nullptr) {
-
-    if (args.mode == GemmUniversalMode::kGemm && args.batch_count > 1) {
-      if (!workspace) {
-        return Status::kErrorWorkspaceNull;
-      }
-    }
 
     params_.ref_A0.reset(args.ref_A0.non_const_ref().data());
     params_.ref_B0.reset(args.ref_B0.non_const_ref().data());

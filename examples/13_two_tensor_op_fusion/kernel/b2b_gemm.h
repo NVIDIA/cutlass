@@ -51,7 +51,7 @@ namespace kernel {
 template <
   typename B2bMma_,               ///! Threadblock-scoped matrix multiply-accumulate
   typename Epilogue_,             ///! Epilogue
-  typename ThreadblockSwizzle_   ///! Threadblock swizzling function
+  typename ThreadblockSwizzle_    ///! Threadblock swizzling function
 >
 struct B2bGemm {
 
@@ -172,8 +172,7 @@ struct B2bGemm {
       batch_stride_Bias0(batch_stride_Bias0),
       batch_stride_Scale0(batch_stride_Scale0),
       output_op_0(output_op_0),
-      output_op_1(output_op_1)
-      {
+      output_op_1(output_op_1) {
 
       int total_gemm_k_iterations_0 = (problem_size_0.k() + B2bMma::Shape0::kK - 1) / B2bMma::Shape0::kK;
       int gemm_k_iterations_0 = (total_gemm_k_iterations_0 + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
@@ -340,6 +339,7 @@ struct B2bGemm {
     // Compute threadblock-scoped matrix multiply-add
     // int gemm_k_iterations_1 = (problem_size_k_1 - tb_offset_B1.row() + B2bMma::Shape1::kK - 1) / B2bMma::Shape1::kK;
 
+
     // Compute position within threadblock
     int thread_idx = threadIdx.x;
 
@@ -364,7 +364,6 @@ struct B2bGemm {
       {problem_size_k_1, params.problem_size_1.n()},
       thread_idx,
       tb_offset_B1);
-
 
     // Broadcast the warp_id computed by lane 0 to ensure dependent code
     // is compiled as warp-uniform.
@@ -409,7 +408,7 @@ struct B2bGemm {
     src_accum.clear();
     accumulators.clear();
 
-      // Compute threadblock-scoped matrix multiply-add
+    // Compute threadblock-scoped matrix multiply-add
     b2bMma(gemm_k_iterations_0, accumulators, iterator_A0, iterator_B0,
       iterator_Scale0, iterator_Bias0, iterator_B1, src_accum, output_op_0);
 
@@ -442,8 +441,8 @@ struct B2bGemm {
 
     if (params.mode == GemmUniversalMode::kGemm) {
       // If performing a reduction via split-K, fetch the initial synchronization
-      if (params.grid_tiled_shape.k() > 1) {
 
+      if (params.grid_tiled_shape.k() > 1) {
         // Fetch the synchronization lock initially but do not block.
         semaphore.fetch();
 
@@ -451,7 +450,6 @@ struct B2bGemm {
         output_op_1.set_k_partition(threadblock_tile_offset.k(), params.grid_tiled_shape.k());
       }
     }
-
     else if (params.mode == GemmUniversalMode::kBatched) {
       ptr_C1 += threadblock_tile_offset.k() * params.batch_stride_C1;
       ptr_D1 += threadblock_tile_offset.k() * params.batch_stride_D1;

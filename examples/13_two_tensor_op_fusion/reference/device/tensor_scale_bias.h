@@ -99,7 +99,6 @@ __global__ void TensorScaleBiasGemm(
   }
 }
 
-
 template <
   typename TensorRefIn,                   ///< Input TensorRef Type
   typename TensorRefOut,                  ///< Output TensorRef Type
@@ -163,8 +162,6 @@ __global__ void TensorScaleBiasGemmBatched(
     tensor_bias.add_pointer_offset(batch_stride_tensor_bias * gridDim.z);
   }
 }
-
-
 
 template <
   typename TensorRefIn,                   ///< Input TensorRef Type
@@ -339,7 +336,6 @@ void TensorScaleBiasGemmBatched(
     batch_stride_tensor_bias
   );
 }
-
 
 /// Apply scale and bias on a tensor
 template <

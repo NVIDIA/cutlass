@@ -195,7 +195,6 @@ struct B2bInterleavedNonFusedGemmRun
       typename Gemm1::ElementC,
       typename Gemm1::LayoutC> reference_D1(problem_size_1.mn());
 
-
     CHECK_TRUE(initialize_tensor(tensor_A0.host_view(), init_A, seed + 2019));
     CHECK_TRUE(initialize_tensor(tensor_B0.host_view(), init_B, seed + 2018));
     CHECK_TRUE(initialize_tensor(tensor_C0.host_view(), init_C, seed + 2017));
@@ -527,7 +526,7 @@ struct B2bInterleavedFusedGemmRun
       typename B2bGemm::LayoutScaleBias> tensor_Scale0;
 
     if(alpha0 == ElementCompute(0)) //per-channel scale
-        tensor_Scale0.resize({1,  batch_count * problem_size_0.n()});
+        tensor_Scale0.resize({1, batch_count * problem_size_0.n()});
 
     cutlass::HostTensor<
       typename B2bGemm::ElementScaleBias,
@@ -753,6 +752,7 @@ struct B2bInterleavedFusedGemmRun
     if(relu) {
        cutlass::reference::device::TensorReLu(reference_D1.device_view());
     }
+
     cudaDeviceSynchronize();
     reference_D0.sync_host();
     reference_D1.sync_host();
