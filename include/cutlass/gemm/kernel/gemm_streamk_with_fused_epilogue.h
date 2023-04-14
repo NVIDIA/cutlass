@@ -910,7 +910,7 @@ protected:
 
     // Move to appropriate location for this output tile
     if (ptr_Vector) {
-      ptr_Vector += threadblock_item_begin.column();
+      ptr_Vector += threadblock_item_begin.column() + tile_work.tiled_coord.m() * params.ldr;
     }
 
     // Execute the epilogue operator to update the destination tensor.
@@ -1003,7 +1003,7 @@ protected:
 
     // Move to appropriate location for this output tile
     if (ptr_Vector) {
-      ptr_Vector += threadblock_item_begin.column();
+      ptr_Vector += threadblock_item_begin.column() + tiled_coord.m() * params.ldr;
     }
 
     // Execute the epilogue operator to update the destination tensor.
@@ -2066,7 +2066,7 @@ protected:
 
     // Move to appropriate location for this output tile
     if (ptr_Vector) {
-      ptr_Vector += threadblock_item_begin.column();
+      ptr_Vector += threadblock_item_begin.column() + tile_work.tiled_coord.m() * params.ldr;
     }
 
     // Execute the epilogue operator to update the destination tensor.
@@ -2149,7 +2149,7 @@ protected:
 
     // Move to appropriate location for this output tile
     if (ptr_Vector) {
-      ptr_Vector += threadblock_item_begin.column();
+      ptr_Vector += threadblock_item_begin.column() + tiled_coord.m() * params.ldr;
     }
 
     // Execute the epilogue operator to update the destination tensor.
