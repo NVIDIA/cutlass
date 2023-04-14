@@ -54,9 +54,9 @@
 
      cutlass/build$ cmake .. -DCUTLASS_NVCC_ARCHS=80
 
-     cutlass/build$ make 47a_ampere_gemm_universal_streamk_residual
+     cutlass/build$ make 47_ampere_gemm_universal_streamk_broadcast
 
-     cutlass/build$ ./examples/47a_ampere_gemm_universal_streamk_residual/47a_ampere_gemm_universal_streamk_residual
+     cutlass/build$ ./examples/47_ampere_gemm_universal_streamk/47_ampere_gemm_universal_streamk_broadcast
 
  - Reset clocks when done:
 
@@ -220,7 +220,7 @@ struct Options
   int                       split_k_factor;
   int                       avail_sms;
   int                       iterations;
-  bool                      small_int;
+  bool                      real;
 
   cutlass::HostTensor<ElementA, LayoutA> tensor_a;
   cutlass::HostTensor<ElementB, LayoutB> tensor_b;
@@ -239,7 +239,7 @@ struct Options
     beta(1.0f),
     split_k_factor(1),
     avail_sms(-1),              // Number of device SMs to use is unlimited
-    small_int(false),
+    real(false),
     iterations(10000)
   {}
 
@@ -263,7 +263,7 @@ struct Options
     cmd.get_cmd_line_argument("beta", beta);
     cmd.get_cmd_line_argument("split", split_k_factor);
     cmd.get_cmd_line_argument("iterations", iterations);
-    small_int = cmd.check_cmd_line_flag("small-int");
+    real = cmd.check_cmd_line_flag("real");
   }
 
   /// Prints the usage statement.
@@ -281,7 +281,7 @@ struct Options
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n\n"
       << "  --split=<int>               Split-K factor to emulate\n\n"
-      << "  --small-int                 If specified, initializes with small ints instead of floats.\n\n"
+      << "  --real                      If specified, initializes with real values instead of whole numbers. Errors are to be expected.\n\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out
@@ -375,7 +375,7 @@ typename DeviceGemmStreamK::Arguments args_from_options(
     tensor_c2.device_data(),                  // ptr_C2
     tensor_d.device_data(),                   // ptr_D
     tensor_Vector.device_data(),              // ptr_Vector
-    /* tensor_Tensor.device_data(), */nullptr,// ptr_Tensor
+    /* tensor_Tensor.device_data(), */nullptr,// ptr_Tensor    // We're not storing Tensor
     options.problem_size.mk().product(),      // batch_stride_A
     options.problem_size.nk().product(),      // batch_stride_B
     options.problem_size.mn().product(),      // batch_stride_C1
@@ -388,8 +388,8 @@ typename DeviceGemmStreamK::Arguments args_from_options(
     tensor_c1.layout().stride(0),             // stride_c1
     tensor_c2.layout().stride(0),             // stride_c2
     tensor_d.layout().stride(0),              // stride_d
-    /*tensor_Vector.layout().stride(0)*/0,    // stride_Vector
-    /*tensor_Tensor.layout().stride(0)*/0,    // stride_Tensor
+    /*tensor_Vector.layout().stride(0)*/0,    // stride_Vector // Vector stride is always 0
+    /*tensor_Tensor.layout().stride(0)*/0,    // stride_Tensor // We're not storing Tensor
     options.avail_sms);                       // avail_sms
 }
 
@@ -496,7 +496,7 @@ int main(int argc, const char **argv)
   }
 
   // Parse commandline options
-  Options options("ampere_streamk_residual_gemm");
+  Options options("ampere_streamk_broadcast_gemm");
   options.parse(argc, argv);
 
   if (options.help) {
@@ -530,7 +530,7 @@ int main(int argc, const char **argv)
   options.tensor_Vector.resize({1, options.problem_size.n()});  // <- Create broadcast vector with dimensions N x 1
   // options.tensor_Tensor.resize(options.problem_size.mn());   // <- Create T matrix with dimensions M x N
 
-  int _init_bits = options.small_int ? 0 : -1;
+  int _init_bits = options.real ? -1 : 0;
 
   // Fill matrix A on host with uniform-random data [-2, 2]
   cutlass::reference::host::TensorFillRandomUniform(
