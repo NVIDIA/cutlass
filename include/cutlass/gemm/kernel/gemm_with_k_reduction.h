@@ -295,8 +295,7 @@ public:
       return workspace_bytes;
     }
 
-    /// Lightweight update given a subset of arguments.  Problem geometry is assumed
-    /// to remain the same.
+    /// Lightweight update given a subset of arguments.
     void update(Arguments const &args)
     {
       ptr_A = const_cast<void *>(args.ptr_A);
@@ -304,6 +303,12 @@ public:
       ptr_C = const_cast<void *>(args.ptr_C);
       ptr_D = args.ptr_D;
       ptr_gemm_k_reduction = args.ptr_gemm_k_reduction;
+
+      batch_stride_A = args.batch_stride_A;
+      batch_stride_B = args.batch_stride_B;
+      batch_stride_C = args.batch_stride_C;
+      batch_stride_gemm_k_reduction = args.batch_stride_gemm_k_reduction;
+      this->batch_stride_D = args.batch_stride_D;
 
       output_op = args.epilogue;
 

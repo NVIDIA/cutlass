@@ -320,8 +320,7 @@ public:
       ptr_scatter_D_indices(const_cast<int *>(args.ptr_scatter_D_indices))
     {}
 
-    /// Lightweight update given a subset of arguments.  Problem geometry is assumed
-    /// to remain the same.
+    /// Lightweight update given a subset of arguments.
     void update(Arguments const &args)
     {
       CUTLASS_TRACE_HOST("GemmUniversal::Params::update()");
@@ -331,6 +330,11 @@ public:
       ptr_B = const_cast<void *>(args.ptr_B);
       ptr_C = const_cast<void *>(args.ptr_C);
       ptr_D = args.ptr_D;
+
+      batch_stride_A = args.batch_stride_A;
+      batch_stride_B = args.batch_stride_B;
+      batch_stride_C = args.batch_stride_C;
+      this->batch_stride_D = args.batch_stride_D;
 
       ptr_gather_A_indices = const_cast<int *>(args.ptr_gather_A_indices);
       ptr_gather_B_indices = const_cast<int *>(args.ptr_gather_B_indices);

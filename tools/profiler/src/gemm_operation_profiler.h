@@ -66,9 +66,8 @@ public:
 
   /// Problem structure obtained from problem space
   struct GemmProblem {
-
+    
     cutlass::library::GemmUniversalMode mode; 
-    cutlass::library::SplitKMode split_k_mode;
     int64_t m;
     int64_t n;
     int64_t k;
@@ -77,6 +76,8 @@ public:
     int64_t ldc;
     std::vector<uint8_t> alpha;
     std::vector<uint8_t> beta;
+
+    cutlass::library::SplitKMode split_k_mode;
     int split_k_slices;
     int batch_count;
 

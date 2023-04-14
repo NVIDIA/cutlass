@@ -347,7 +347,7 @@ creating GEMM-B tile in shared memory.
 The improvements covered by optimized iterators are: 
 - (a) Precomputing kernel-invariant pointer deltas on the host 
 - (b) Computing cta-invariant mask predicates on device-side iterator ctors
-- (c) Use of [fast divmod](/include/cutlass/fast_math.h) to map GEMM dimenstions to convolution tensors. 
+- (c) Use of [fast divmod](/include/cutlass/fast_math.h) to map GEMM dimensions to convolution tensors. 
 For example, _optimized_ activation iterator uses fast divmod to map GEMM _M_ to NPQ 
 for activation iterator
 

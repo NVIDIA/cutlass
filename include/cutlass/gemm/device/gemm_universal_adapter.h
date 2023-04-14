@@ -385,7 +385,7 @@ public:
 
   /// Overload that allows a user to re-launch the same kernel without updating internal params struct.
   Status
-  operator()(cudaStream_t stream = nullptr) const {
+  operator()(cudaStream_t stream = nullptr) {
     return run(params_, stream);
   }
 };
@@ -508,8 +508,7 @@ public:
     return underlying_operator_.initialize(to_underlying_arguments(args), workspace, stream);
   }
 
-  /// Lightweight update given a subset of arguments.  Problem geometry is assumed to
-  /// remain the same.
+  /// Lightweight update given a subset of arguments.
   Status update(Arguments const &args) {
 
     return underlying_operator_.update(to_underlying_arguments(args));

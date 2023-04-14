@@ -51,9 +51,9 @@ void bind_opcode(py::module &m) {
         .value("Simt", cutlass::OpcodeClass::kSimt, 
             R"pbdoc(Tag classifying math operators as thread-level operations)pbdoc")
         .value("TensorOp", cutlass::OpcodeClass::kTensorOp, 
-            R"pbdoc(Tag classifing operators as Tensor Core operations)pbdoc")
+            R"pbdoc(Tag classifying operators as Tensor Core operations)pbdoc")
         .value("WmmaTensorOp", cutlass::OpcodeClass::kWmmaTensorOp, 
-            R"pbdoc(Tag classifing operators as WMMA Tensor Core operations)pbdoc")
+            R"pbdoc(Tag classifying operators as WMMA Tensor Core operations)pbdoc")
         .value("SparseTensorOp", cutlass::OpcodeClass::kSparseTensorOp, 
-            R"pbdoc(Tag classifing operators as sparseTensor Core operations)pbdoc");
+            R"pbdoc(Tag classifying operators as sparseTensor Core operations)pbdoc");
 }

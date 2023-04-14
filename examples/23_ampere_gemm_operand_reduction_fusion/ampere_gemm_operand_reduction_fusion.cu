@@ -36,7 +36,7 @@ computing GEMM.  So the output also contains either a Mx1 or 1XN vector.  It onl
 core instructions.
 
 Most of the reduction is done in gemm/warp level, see gemm/warp/mma_with_reduction_tensor_op.h
-A few bit of reduction is done in the epilouge before storing the vector, see
+A few bit of reduction is done in the epilogue before storing the vector, see
 epilogue/threadblock/epilogue_gemm_k_reduction.h 
 */
 

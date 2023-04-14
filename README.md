@@ -311,7 +311,9 @@ $ make cutlass_profiler -j16
 
 By default, only one tile size is instantiated for each data type, math instruction, and layout.
 To instantiate all, set the following environment variable when running CMake from an empty `build/` directory.
-Beware, this results in *thousands* of kernels and long build times.
+Beware, this results in *tens of thousands* of kernels and long build times. 
+This would also result in a large binary size and on some platforms linker to fail on building the library.
+Therefore, it's highly recommended to generate only a subset of kernels as demonstrated in the sub-section below.
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS=90a -DCUTLASS_LIBRARY_KERNELS=all
 ...
@@ -326,7 +328,7 @@ or a subset of kernels for NVIDIA Ampere and Turing architecture:
 
 ### Building a subset Tensor Core GEMM kernels
 
-To compile a subset of Tensor Core GEMM kernels with FP32 accumulation and FP16 input targetting NVIDIA Ampere and Turing architecture, 
+To compile a subset of Tensor Core GEMM kernels with FP32 accumulation and FP16 input targeting NVIDIA Ampere and Turing architecture, 
 use the below cmake command line:
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_tensorop_s*gemm_f16_*_nt_align8
@@ -374,7 +376,7 @@ reference_device: Passed
 
 ### Building one CUDA Core GEMM kernel
 
-To compile one SGEMM kernel targetting NVIDIA Ampere and Turing architecture, use the below cmake command line:
+To compile one SGEMM kernel targeting NVIDIA Ampere and Turing architecture, use the below cmake command line:
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_simt_sgemm_128x128_8x2_nn_align1
 ...
@@ -416,7 +418,7 @@ $ ./tools/profiler/cutlass_profiler --kernels=sgemm --m=3456 --n=4096 --k=4096
 ### Building a subset of Tensor Core Convolution kernels
 
 To compile a subset of Tensor core convolution kernels implementing forward propagation (fprop) with FP32 accumulation 
-and FP16 input targetting NVIDIA Ampere and Turing architecture, use the below cmake command line:
+and FP16 input targeting NVIDIA Ampere and Turing architecture, use the below cmake command line:
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_tensorop_s*fprop_optimized_f16
 ...
@@ -464,7 +466,7 @@ reference_device: Passed
 ### Building one Convolution CUDA kernel
 
 To compile and run one CUDA Core convolution kernel implementing forward propagation (fprop) with F32 accumulation 
-and FP32 input targetting NVIDIA Ampere and Turing architecture, use the below cmake command line:
+and FP32 input targeting NVIDIA Ampere and Turing architecture, use the below cmake command line:
 ```bash
 $ cmake .. -DCUTLASS_NVCC_ARCHS='75;80' -DCUTLASS_LIBRARY_KERNELS=cutlass_simt_sfprop_optimized_128x128_8x2_nhwc
 ...

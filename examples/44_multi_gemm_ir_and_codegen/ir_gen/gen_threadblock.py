@@ -86,14 +86,14 @@ class gen_default_b2b_mma:
                                                 "OperatorClass", str(stage), "Operator")
         return gen_code
 
-    def gen_using_FusedAddBiasEpilouge(self):
+    def gen_using_FusedAddBiasEpilogue(self):
         gen_code = ""
         for i in range(self.b2b_num - 1):
-            code_using = helper.var_idx("using FusedAddBiasEpilouge", i)
-            epilouge_name = "typename cutlass::epilogue::threadblock::DefaultFusedBiasActEpilogueTensorOp"
+            code_using = helper.var_idx("using FusedAddBiasEpilogue", i)
+            epilogue_name = "typename cutlass::epilogue::threadblock::DefaultFusedBiasActEpilogueTensorOp"
             template_args = helper.var_idx("<ThreadblockShape", i) + helper.var_idx(",typename MmaCore", i) + helper.var_idx("::MmaPolicy::Operator, 1, EpilogueOutputOp", i) + ", 2>::Epilogue"
 
-            gen_code += code_using + " = " + epilouge_name + template_args + ";\n"
+            gen_code += code_using + " = " + epilogue_name + template_args + ";\n"
 
         return gen_code        
         
@@ -161,12 +161,12 @@ class gen_default_b2b_mma:
         MmaPipelined_param_list += "ElementAccumulator0, layout::RowMajor, "
 
         for i in range(self.b2b_num - 1):
-            epilouge_name = "EpilogueOutputOp" + str(i)
-            MmaPipelined_param_list += epilouge_name + ", "
+            epilogue_name = "EpilogueOutputOp" + str(i)
+            MmaPipelined_param_list += epilogue_name + ", "
 
         for i in range(self.b2b_num - 1):
-            epilouge_name = "FusedAddBiasEpilouge" + str(i)
-            MmaPipelined_param_list += epilouge_name + ", "
+            epilogue_name = "FusedAddBiasEpilogue" + str(i)
+            MmaPipelined_param_list += epilogue_name + ", "
 
         for i in range(self.b2b_num):
             MmaPolicy = "typename MmaCore" + str(i) + "::MmaPolicy"
@@ -198,7 +198,7 @@ class gen_default_b2b_mma:
         mmacore_codebody = self.gen_using_MmaCore(2)
         iterator_codebody = self.gen_using_Iterator()
         fragment_iterator_codebody = self.gen_fragment_iterator()
-        epilogue_iterator_codebody = self.gen_using_FusedAddBiasEpilouge()
+        epilogue_iterator_codebody = self.gen_using_FusedAddBiasEpilogue()
         threadBlockMma = self.gen_threadblockmma()
         specialized_code = mmacore_codebody + iterator_codebody + fragment_iterator_codebody + epilogue_iterator_codebody + threadBlockMma
 
@@ -352,7 +352,7 @@ class gen_b2b_mme_pipelined:
     }\n\
 \n\
     // Issue loads during the first warp-level matrix multiply-add *AFTER* issuing \n\
-    // shared memory loads (which have the tighest latency requirement).\n\
+    // shared memory loads (which have the tightest latency requirement).\n\
 \n\
     //\n\
     // Mainloop\n\
@@ -459,7 +459,7 @@ class gen_b2b_mme_pipelined:
     }\n\
 \n\
     // Issue loads during the first warp-level matrix multiply-add *AFTER* issuing \n\
-    // shared memory loads (which have the tighest latency requirement).\n\
+    // shared memory loads (which have the tightest latency requirement).\n\
     iterator_A.load(tb_frag_A);\n\
 \n\
     //\n\
@@ -490,7 +490,7 @@ class gen_b2b_mme_pipelined:
           __syncthreads();\n\
 \n\
           // Issue loads during the first warp-level matrix multiply-add *AFTER* issuing \n\
-          // shared memory loads (which have the tighest latency requirement).\n\
+          // shared memory loads (which have the tightest latency requirement).\n\
           iterator_A.load(tb_frag_A);\n\
           \n\
           ++this->smem_iterator_B0_;\n\
@@ -549,12 +549,12 @@ class gen_b2b_mme_pipelined:
                 code = "// " + str(id + 1) + " Gemm" 
                 code += "    /// Iterator to load a warp-scoped tile of A1 operand from intermediate accumulator tile\n"
                 
-                code += "    " + helper.var_idx("FragmentC", id - 1) + helper.var_idx(" after_epilouge_accu", id - 1) + ";\n"
+                code += "    " + helper.var_idx("FragmentC", id - 1) + helper.var_idx(" after_epilogue_accu", id - 1) + ";\n"
                 code += "    " + helper.var_idx("epilogue_", id - 1) + helper.var_idx("(output_op_", id - 1) + helper.var_idx(", accum", id - 1) \
-                               + helper.var_idx(", after_epilouge_accu", id - 1) + helper.var_idx(", iterator_C", id - 1) +");\n"
+                               + helper.var_idx(", after_epilogue_accu", id - 1) + helper.var_idx(", iterator_C", id - 1) +");\n"
                 
                 #    FragmentIteratorA1 warp_tile_iterator_A1_(accum0); 
-                code += "    " + helper.var_idx("FragmentIteratorA", id) + helper.var_idx(" warp_tile_iterator_A", id) +"_(" + helper.var_idx("after_epilouge_accu", id - 1) + ");\n"
+                code += "    " + helper.var_idx("FragmentIteratorA", id) + helper.var_idx(" warp_tile_iterator_A", id) +"_(" + helper.var_idx("after_epilogue_accu", id - 1) + ");\n"
                 #    FragmentB1 tb_frag_B1;
                 code += "    " +  helper.var_idx("FragmentB", id) + " " + helper.var_idx("tb_frag_B", id) + ";\n"
                 #    tb_frag_B1.clear();
@@ -990,7 +990,7 @@ class gen_threadblock:
 
 
         self.gen_b2b_mma_base = gen_b2b_mma_base(template_param, gen_class_name, b2b_num, cutlass_deps_root, project_root)
-        self.gen_b2b_mma_piplined = gen_b2b_mme_pipelined(template_param, gen_class_name, b2b_num, cutlass_deps_root, project_root)
+        self.gen_b2b_mma_pipelined = gen_b2b_mme_pipelined(template_param, gen_class_name, b2b_num, cutlass_deps_root, project_root)
         self.gen_default_b2b_mma = gen_default_b2b_mma(template_param, gen_class_name, b2b_num, cutlass_deps_root, project_root)
 
 
@@ -1001,7 +1001,7 @@ class gen_threadblock:
 
         with open(self.file_dir + "b2b_mma_base.h", "w+") as f:
             f.write(base_code)        
-        pipeline_code = self.gen_b2b_mma_piplined.gen_code(first_use_1stage = first_use_1stage)
+        pipeline_code = self.gen_b2b_mma_pipelined.gen_code(first_use_1stage = first_use_1stage)
         print("[INFO]: Gen kernel code [b2b_mma_pipelined.h]output Dir: is ", self.file_dir)
 
         with open(self.file_dir + "b2b_mma_pipelined.h", "w+") as f:

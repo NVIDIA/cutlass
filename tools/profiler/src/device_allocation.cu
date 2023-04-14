@@ -442,12 +442,12 @@ int DeviceAllocation::batch_count() const {
   return batch_count_;
 }
 
-/// Gets the stride (in units of elements) beteween items
+/// Gets the stride (in units of elements) between items
 int64_t DeviceAllocation::batch_stride() const {
   return batch_stride_;
 }
 
-/// Gets the stride (in units of bytes) beteween items
+/// Gets the stride (in units of bytes) between items
 int64_t DeviceAllocation::batch_stride_bytes() const {
   return bytes(type_, batch_stride_);
 }

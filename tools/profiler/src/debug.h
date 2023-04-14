@@ -39,7 +39,7 @@
 //#define report(x) { std::cout << "\033[31m" << __FILE__ << ":" << __LINE__ << "  " << x << "\033[0m" << std::endl; }
 //#define report(x) {}
 
-// Enable/Disble Profiler debug prints
+// Enable/Disable Profiler debug prints
 //#define DEBUG_PROFILER 
 
 //RED    31m   // profiler prints debug messages in red

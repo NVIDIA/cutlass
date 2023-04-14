@@ -718,7 +718,7 @@ make_tma_copy(CopyOp,
               << "\nswizzle        " << smem_swizzle
               << "\nl2Promotion    " << tma_l2Promotion
               << "\noobFill        " << tma_oobFill << std::endl;
-    std::cerr << "Error: Failed to intialize the TMA descriptor " << result << std::endl;
+    std::cerr << "Error: Failed to initialize the TMA descriptor " << result << std::endl;
     assert(false);
   }
 #endif // (__CUDACC_VER_MAJOR__ >= 12)
@@ -762,7 +762,17 @@ make_tma_copy(CopyOp,
   print("layout_tv     :  "); print(layout_tv); print("\n");
 #endif
 
-  return TiledCopy<Copy_Atom<Traits,T>, decltype(layout_tv), decltype(cta_tile)>{tma_desc, gmem_stride_bases};
+  // If CTA_Tile and SLayout are incompatible, product_each makes sure
+  // that the TiledCopy generates consistent accesses.
+  auto cta_tile_tiled = [&]() {
+    if constexpr (compatible(shape(CTA_Tile{}), shape(SLayout{}))) {
+      return cta_tile;
+    } else {
+      return product_each(cta_tile);
+    }
+  }();
+
+  return TiledCopy<Copy_Atom<Traits,T>, decltype(layout_tv), decltype(cta_tile_tiled)>{tma_desc, gmem_stride_bases};
 }
 
 // Explicit defaulting

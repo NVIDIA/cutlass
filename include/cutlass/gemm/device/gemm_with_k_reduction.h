@@ -211,7 +211,7 @@ class GemmWithKReduction :
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Parital specialization for column-major output exchanges problem size and operand.
+/// Partial specialization for column-major output exchanges problem size and operand.
 template <
     /// Element type for A matrix operand
     typename ElementA_,

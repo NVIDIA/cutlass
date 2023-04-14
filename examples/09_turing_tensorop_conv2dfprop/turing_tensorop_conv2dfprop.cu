@@ -76,7 +76,7 @@ Now that we setup the properties of data, we have to setup properties of computa
 Second, we create template variables of tile sizes for thread-block, warp and mma-op to 128x128x128,
 64x64x128, 8x8x32 (MxNxK) respectively. When passed to instantiate CUTLASS Implicit GEMM kernel, it
 internally deduces the amount of threads needed per thread-block, amount of shared memory, storing
-data in bank-conflict free manner, and ton of other variables required to compose, intialize and
+data in bank-conflict free manner, and ton of other variables required to compose, initialize and
 launch a high performance Implicit GEMM kernel. This is the beauty of CUTLASS, it relieves developer
 from understanding and coding complicated hardware optimizations which can easily go wrong.
 
@@ -108,7 +108,7 @@ is done which threadblock launched on an SM, CUDA SM architecture of GPU you wan
 These are all put together to create a template variable which describes CUTLASS Implicit GEMM
 kernel using cutlass::conv::device::ImplicitGemm template.
 
-The next step is to intialize physical data, instantiate and initialize CUTLASS kernel and run it.
+The next step is to initialize physical data, instantiate and initialize CUTLASS kernel and run it.
 We use CUTLASS utilities to initialize, fill, compare tensors as they are simple and doesn't come
 in the way of learning CUTLASS.
 
@@ -117,7 +117,7 @@ kernel which takes problem size (N = 1, H = 64, W = 64, C = 128), filter size (K
 R = 3, S = 3, C = 128 ), padding, strides, dilation, tensors, alpha, beta and the
 important one, split k-dimension factor. Along with that, we query CUTLASS if any scratch-space
 memory required by the kernel we instantiated. If yes, we create it and pass it along with other
-arguments created to intialize CUTLASS kernel then, the kernel is launched.
+arguments created to initialize CUTLASS kernel then, the kernel is launched.
 
 In this example, we later on launch a reference convolution kernel (from CUTLASS utilities) to
 compare if the output from CUTLASS kernel is same as the reference implicit GEMM kernel.

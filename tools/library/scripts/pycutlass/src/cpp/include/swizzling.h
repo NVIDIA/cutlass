@@ -88,7 +88,7 @@ void bind_identity_swizzle(py::module & m, std::string name) {
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")
         .def("tag", [](const T & swizzle){
             return demangle(typeid(T).name());
-        }, R"pbdoc(Returns the c++ name of the swizzling for code emittion)pbdoc");
+        }, R"pbdoc(Returns the c++ name of the swizzling for code emission)pbdoc");
 }
 
 template<typename T>
@@ -109,7 +109,7 @@ void bind_swizzle(py::module & m, std::string name, std::string doc) {
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")
         .def("tag", [](const T & swizzle){
             return demangle(typeid(T).name());
-        }, R"pbdoc(Returns the c++ name of the swizzling for code emittion)pbdoc");
+        }, R"pbdoc(Returns the c++ name of the swizzling for code emission)pbdoc");
 }
 
 template<typename T>
@@ -132,7 +132,7 @@ void bind_dgrad_swizzle(py::module & m, std::string name) {
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")
         .def("tag", [](const T & swizzle){
             return demangle(typeid(T).name());
-        }, R"pbdoc(Returns the c++ name of the swizzling for code emittion)pbdoc");
+        }, R"pbdoc(Returns the c++ name of the swizzling for code emission)pbdoc");
 }
 
 void bind_threadblock_swizzle(py::module &m) {

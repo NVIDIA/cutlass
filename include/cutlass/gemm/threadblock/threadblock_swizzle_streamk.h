@@ -43,10 +43,11 @@
 #include "cutlass/conv/conv3d_problem_size.h"
 #include "cutlass/gemm/threadblock/index_remat.h"
 
+#if !defined(__CUDACC_RTC__)
 #include <iostream>
 #include "cutlass/core_io.h"
 #include "cutlass/trace.h"
-
+#endif
 
 
 

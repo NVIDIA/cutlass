@@ -8,6 +8,7 @@ import enum
 import os.path
 import shutil
 import argparse
+import logging
 
 from library import *
 from manifest import *
@@ -88,7 +89,7 @@ def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
   return operations
 
 
-# Generates 3.0 API based GemmUniversal API kernels. Alignment constraits are folded in with layouts
+# Generates 3.0 API based GemmUniversal API kernels. Alignment constraints are folded in with layouts
 def CreateGemmUniversal3xOperator(
     manifest, layouts, tile_descriptions, data_type,
     complex_transforms=None,
@@ -1442,6 +1443,20 @@ def GenerateSM75_TensorOp_8816_TN(manifest, cuda_version):
       TileDescription([ 64, 128, 64], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 64], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 64], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 256, 32, 64], 2, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 128, 32, 64], 2, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 32, 64], 2, [2, 1, 1], math_inst, min_cc, max_cc),
+
+      TileDescription([256, 128, 32], 2, [4, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 256, 32], 2, [2, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 256, 32], 2, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  64, 32], 2, [4, 1, 1], math_inst, min_cc, max_cc),      
+      TileDescription([ 64, 128, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  64, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  64, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 128, 32, 32], 2, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64, 32, 32], 2, [2, 1, 1], math_inst, min_cc, max_cc),
     ]
 
     data_type = [
@@ -4830,7 +4845,7 @@ if __name__ == "__main__":
   parser.add_argument("--architectures", default='53;60;61;70;75;80', help="Target compute architectures")
   parser.add_argument("--kernels", default='', help='Comma delimited list to filter kernels by name.')
   parser.add_argument("--ignore-kernels", default='', help='Comma delimited list of kernels to exclude from build.')
-  parser.add_argument("--filter-by-cc", default='True', type=str, help='If enabled, kernels whose comupte capability range is not satisfied by the build target are excluded.')
+  parser.add_argument("--filter-by-cc", default='True', type=str, help='If enabled, kernels whose compute capability range is not satisfied by the build target are excluded.')
   parser.add_argument("--cuda-version", default="11.0.0", help="Semantic version string of CUDA Toolkit")
   parser.add_argument('--kernel-filter-file',   type=str, default=None, required=False, help='Full path of filter file')
   parser.add_argument('--selected-kernel-list',   type=str, default=None, required=False,
@@ -4838,7 +4853,29 @@ if __name__ == "__main__":
   parser.add_argument("--interface-dir", default=None, required=False, help="Interface header to kernels")
   parser.add_argument("--disable-full-archs-compilation", action="store_true", required=False, help="Disable compilation for every archs in --architectures")
 
+  def numeric_log_level(log_level: str) -> int:
+    """
+    Converts the string identifier of the log level into the numeric identifier used
+    in setting the log level
+
+    :param x: string representation of log level (e.g., 'INFO', 'DEBUG')
+    :type x: str
+
+    :return: numeric representation of log level
+    :rtype: int
+    """
+    numeric_level = getattr(logging, log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+      raise ValueError(f'Invalid log level: {log_level}')
+    return numeric_level
+
+  parser.add_argument("--log-level", default='info', type=numeric_log_level, required=False,
+                      help='Logging level to be used by the generator script')
+
   args = parser.parse_args()
+
+  # Set the logging level based on the user-provided `--log-level` command-line option
+  logging.basicConfig(level=args.log_level)
 
   manifest = Manifest(args)
 
@@ -4849,6 +4886,7 @@ if __name__ == "__main__":
   GenerateSM75(manifest, args.cuda_version)
   GenerateSM80(manifest, args.cuda_version)
   GenerateSM90(manifest, args.cuda_version)
+
   if 'library' in args.generator_target.split(','):
     manifest.emit(GeneratorTarget.Library)
 

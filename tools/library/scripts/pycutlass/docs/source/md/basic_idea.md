@@ -10,7 +10,7 @@ PyCUTLASS handles the following things when launch the CUTLASS kernels
 
 ## Memory management
 
-PyCUTLASS uses [RMM](https://github.com/rapidsai/rmm) to manage device memory. At the begining of the program, call
+PyCUTLASS uses [RMM](https://github.com/rapidsai/rmm) to manage device memory. At the beginning of the program, call
 ```python
 pycutlass.get_memory_pool({init_pool_size_in_bytes}, {max_pool_size_in_bytes})
 ```
@@ -41,7 +41,7 @@ The `{instruction_shape}` and `{opclass}` defines the instruction size and type.
 |Opclass                   | element_a/element_b | element_acc     | instruction_shape | math_operation            |
 | --                       | --                  | --              | --                | --                        |
 | cutlass.OpClass.TensorOp | cutlass.float64     | cutlass.float64 | [8, 8, 4]         | MathOperation.multiply_add|
-|                          | cutass.float32 cutlass.tfloat32, cutlass.float16 cutlass.bfloat16 | cutlass.float32 | [16, 8, 8] | MathOperation.multiply_add MathOperation.multiply_add_fast_f32 MathOperation.multiply_add_fast_f16 MathOperation.multiply_add_fast_bf16 |
+|                          | cutlass.float32 cutlass.tfloat32, cutlass.float16 cutlass.bfloat16 | cutlass.float32 | [16, 8, 8] | MathOperation.multiply_add MathOperation.multiply_add_fast_f32 MathOperation.multiply_add_fast_f16 MathOperation.multiply_add_fast_bf16 |
 |        | cutlass.float16 | cutlass.float16/cutlass.float32|[16, 8, 16]| MathOperation.multiply_add |
 |        | cutlass.bfloat_16 | cutlass.float32 | [16, 8, 16]|MathOperation.multiply_add |
 |        | cutlass.int8 | cutlass.int32 | [16, 8, 32] | MathOperation.multiply_add_saturate|
@@ -178,7 +178,7 @@ import pycutlass
 
 pycutlass.compiler.add_module([operation,])
 ```
-Several operations can be compiled togather. The `nvcc` at `$CUDA_INSTALL_PATH/bin` is used by default as the compiler backend. But you can also switch to [CUDA Python](https://nvidia.github.io/cuda-python/overview.html)'s `nvrtc` with 
+Several operations can be compiled together. The `nvcc` at `$CUDA_INSTALL_PATH/bin` is used by default as the compiler backend. But you can also switch to [CUDA Python](https://nvidia.github.io/cuda-python/overview.html)'s `nvrtc` with 
 ```python
 pycutlass.compiler.nvrtc()
 ```
@@ -249,7 +249,7 @@ arguments = Conv2dArguments(
 * `split_k_mode`: currently we support `cutlass.conv.SplitKMode.Serial` and `cutlass.conv.SplitKMode.Parallel`.
 * `split_k_slice`: number of split-k slices
 
-For ordianry conv2d, just use `cutlass.conv.SplitKMode.Serial` with `split_k_slice=1`.
+For ordinary conv2d, just use `cutlass.conv.SplitKMode.Serial` with `split_k_slice=1`.
 
 ### Getting output_op
 The way to create output_op is listed below

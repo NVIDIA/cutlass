@@ -108,7 +108,7 @@ class ReductionArguments:
         if layout == cutlass.RowMajor:
             return TensorRef2D_(int(device_ptr), extent[1])
         else:
-            raise ValueError("unknonwn layout type")
+            raise ValueError("unknown layout type")
 
     def get_arguments(self):
         ref_workspace = ReductionArguments.get_tensor_ref(
@@ -320,7 +320,7 @@ class ReductionOperation:
 
     #
     def procedural_name(self):
-        ''' The full procedural name indicates architeture, extended name, tile size'''
+        ''' The full procedural name indicates architecture, extended name, tile size'''
         return self.configuration_name()
 
     def run(self, arguments: ReductionArguments) -> cuda.CUresult:

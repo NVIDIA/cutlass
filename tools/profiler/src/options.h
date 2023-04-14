@@ -231,7 +231,7 @@ public:
     std::vector<std::pair<std::string, std::string>> pivot_tags;
 
     /// If true, reports status of all kernels including those that were
-    /// not run for the given argumetns
+    /// not run for the given arguments
     bool report_not_run;
 
     /// Prints human-readable text to stdout. If false, nothing is written to stdout

@@ -278,7 +278,7 @@ class GemmArguments2x(ArgumentBase):
         # get launch configuration
         launch_config = self.operation.rt_module.plan(self)
 
-        # get the host and evice workspace
+        # get the host and device workspace
         device_workspace_size = \
             self.operation.rt_module.get_device_workspace_size(self)
 
@@ -293,7 +293,7 @@ class GemmArguments2x(ArgumentBase):
         device_workspace = 0
         if (workspace_ptr is not None and 
             self.gemm_mode == cutlass.gemm.Mode.GemmSplitKParallel):
-            # in GEMM splik-K parallel, the D pointer is redirected
+            # in GEMM split-K parallel, the D pointer is redirected
             # to the workspace
             self.ptr_D = cuda.CUdeviceptr(workspace_ptr)
         elif (workspace_ptr is not None and 
@@ -350,7 +350,7 @@ class GemmArguments3x(GemmArguments2x):
         A: 'Tensor', B: 'Tensor', C: 'Tensor', D: 'Tensor',
         gemm_mode: 'cutlass.gemm.Mode'=cutlass.gemm.Mode.Gemm, **kwargs):
         if gemm_mode not in [cutlass.gemm.Mode.Gemm, cutlass.gemm.Mode.Batched]:
-            raise Exception("Unsupporged GEMM mode {}.".format(gemm_mode))
+            raise Exception("Unsupported GEMM mode {}.".format(gemm_mode))
 
         super().__init__(operation, problem_size, A, B, C, D, gemm_mode, **kwargs)
 
@@ -387,7 +387,7 @@ class GemmArguments3x(GemmArguments2x):
         )
 
     def initialize(self):
-        # get the host and evice workspace
+        # get the host and device workspace
         device_workspace_size = \
             self.operation.rt_module.get_device_workspace_size(self)
 
@@ -402,7 +402,7 @@ class GemmArguments3x(GemmArguments2x):
         device_workspace = 0
         if (workspace_ptr is not None and 
             self.gemm_mode == cutlass.gemm.Mode.GemmSplitKParallel):
-            # in GEMM splik-K parallel, the D pointer is redirected
+            # in GEMM split-K parallel, the D pointer is redirected
             # to the workspace
             self.ptr_D = cuda.CUdeviceptr(workspace_ptr)
         elif (workspace_ptr is not None and 
@@ -610,7 +610,7 @@ class GemmGroupedArguments:
         # get launch configuration
         launch_config = self.operation.rt_module.plan(self)
 
-        # get the host and evice workspace
+        # get the host and device workspace
         device_workspace_size = \
             self.operation.rt_module.get_device_workspace_size(self)
 
@@ -1072,7 +1072,7 @@ class GemmOperationBase:
         self.api = api
         self.prefix = "3x" if self.api == ApiVersion.v3x else ""
 
-        # use deep copy to avoid overwritting the original TensorDescription
+        # use deep copy to avoid overwriting the original TensorDescription
         if self.api != ApiVersion.v3x and C.layout == cutlass.ColumnMajor:
             #: Operand A
             self.A: TensorDescription = copy.deepcopy(B)
@@ -1300,7 +1300,7 @@ class GemmOperationGrouped(GemmOperationBase):
         super(GemmOperationGrouped, self).__init__(GemmKind.Grouped, arch, tile_description,
                                                    A, B, C, epilogue_functor, swizzling_functor, **kwargs)
         assert "precompute_mode" in kwargs.keys(
-        ), "missing keyword arguement 'precompute_mode'."
+        ), "missing keyword argument 'precompute_mode'."
         self.precompute_mode = kwargs["precompute_mode"]
         self.rt_module = GemmRTGrouped(self)
         self.argument_type = self.rt_module.argument_type

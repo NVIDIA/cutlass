@@ -204,7 +204,7 @@ template <
   typename ElementCompute_,
   typename ElementZ_,
   int ElementsPerAccess,
-  bool StoreT = true,
+  bool StoreT_ = true,
   typename ElementVector_ = ElementC_
 >
 class LinearCombinationBiasRelu {
@@ -238,7 +238,7 @@ public:
   static bool const kStoreZ = true;
 
   /// If true, the 'T' tensor is stored
-  static bool const kStoreT = StoreT;
+  static bool const kStoreT = StoreT_;
 
   /// Host-constructable parameters structure
   struct Params {

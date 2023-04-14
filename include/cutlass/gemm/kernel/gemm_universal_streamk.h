@@ -454,8 +454,7 @@ public:
     }
 
 
-    /// Lightweight update given a subset of arguments.  Problem geometry is assumed
-    /// to remain the same.
+    /// Lightweight update given a subset of arguments.
     void update(Arguments const &args)
     {
       CUTLASS_TRACE_HOST("GemmUniversalStreamK::Params::update()");
@@ -528,7 +527,7 @@ protected:
   //
 
   /// GEMM problem parameters
-  Params const &params;
+  Params params;
 
   /// Shared storage reference
   SharedStorage &shared_storage;

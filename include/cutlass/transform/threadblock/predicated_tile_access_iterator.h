@@ -399,7 +399,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
   bool is_residue_tile_;
 
   /// Below is used when Gather is turned on.  We need to record strided_offset
-  /// and contiguous_offset seperated to compute the offset by using
+  /// and contiguous_offset separated to compute the offset by using
   ///
   /// offset = contiguous_offset + indices[strided_offset]
   ///

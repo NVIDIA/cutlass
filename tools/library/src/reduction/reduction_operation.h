@@ -266,7 +266,7 @@ public:
               << operator_args.partitions << std::endl 
               << "  partition_stride: " 
               << operator_args.partition_stride << std::endl
-              << "  epilouge (alpha, beta): " 
+              << "  epilogue (alpha, beta): "
               << operator_args.output.alpha << ", " 
               << operator_args.output.beta << std::endl
               << "  workspace (ptr, stride): "

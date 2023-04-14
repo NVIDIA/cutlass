@@ -52,7 +52,7 @@ void bind_gemm(py::module &m) {
         .value("Array", cutlass::gemm::GemmUniversalMode::kArray)
         .value("Invalid", cutlass::gemm::GemmUniversalMode::kInvalid);
     
-    /// GemmCoord is a structure that specifies a location within the coordiate space of a GEMM problem
+    /// GemmCoord is a structure that specifies a location within the coordinate space of a GEMM problem
     py::class_<cutlass::gemm::GemmCoord>(m, "GemmCoord")
         .def(py::init<int, int, int>())
         .def("m", py::overload_cast<>(&cutlass::gemm::GemmCoord::m))

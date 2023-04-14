@@ -138,7 +138,7 @@ struct DefaultGemmWithReduction {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Parital specialization: ArchTag = cutlass::arch::Sm70
+/// Partial specialization: ArchTag = cutlass::arch::Sm70
 ///
 ///
 template <

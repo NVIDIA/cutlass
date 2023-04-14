@@ -83,7 +83,7 @@ The tiling size of above operations can also be customized.
 ### Using Docker
 We recommend using one of our provided Docker images for using PyCUTLASS.
 
-**To run CUTLASS 3 GEMM kernels targetting the NVIDIA Hopper architecture via PyCUTLASS,** you can use an included [Dockerfile](docker/Dockerfile-cuda12.0) based on the NGC CUDA 12.0 container:
+**To run CUTLASS 3 GEMM kernels targeting the NVIDIA Hopper architecture via PyCUTLASS,** you can use an included [Dockerfile](docker/Dockerfile-cuda12.0) based on the NGC CUDA 12.0 container:
 ```shell
 docker build -t pycutlass-cuda12.0:latest -f docker/Dockerfile-cuda12.0 .
 docker run --gpus all -it --rm pycutlass-cuda12.0:latest
@@ -91,7 +91,7 @@ docker run --gpus all -it --rm pycutlass-cuda12.0:latest
 Note that this Docker container does not include CuPy or PyTorch, and, thus, will not be able to run PyCUTLASS examples that
 leverage these packages.
 
-**To run CUTLASS 2.x kernels targetting pre-SM90 architectures via PyCUTLASS,** you can use an included [Dockerfile](docker/Dockerfile-cuda11.8-pytorch) based on an NGC PyTorch container:
+**To run CUTLASS 2.x kernels targeting pre-SM90 architectures via PyCUTLASS,** you can use an included [Dockerfile](docker/Dockerfile-cuda11.8-pytorch) based on an NGC PyTorch container:
 ```shell
 docker build -t pycutlass-cuda11.8-pytorch:latest -f docker/Dockerfile-cuda11.8-pytorch .
 docker run --gpus all -it --rm pycutlass-cuda11.8-pytorch:latest

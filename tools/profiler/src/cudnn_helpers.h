@@ -55,7 +55,7 @@ Status get_cutlass_status(cudnnStatus_t cudnn_status);
 /// Converts a cuDNN status to cutlass::profiler::Disposition
 Disposition get_cutlass_disposition(cudnnStatus_t cudnn_status);
 
-/// Checks cudnnStatus_t converts to cutlas status and returns if Status::kSuccess o.w. throws exception
+/// Checks cudnnStatus_t converts to cutlass status and returns if Status::kSuccess o.w. throws exception
 Status checkCudnnErr(cudnnStatus_t cudnn_status);
 
 /// Maps a CUTLASS conv mode to a cuDNN conv mode enumeration
@@ -82,7 +82,7 @@ float cast_cudnn_compute_type_to_float(library::NumericTypeID type, void const *
 
 /// This is a helper class to create cudnnHandle_t automatically on CudnnCreate object creation and 
 /// to destroy cudnnHandle_t on CudnnCreate object destruction. 
-/// Additionaly, it provides implicit cast from CudnnCreate's object to cudnnHandle_t's object
+/// Additionally, it provides implicit cast from CudnnCreate's object to cudnnHandle_t's object
 class CudnnCreate {
 private:
 	cudnnHandle_t handle;
@@ -162,7 +162,7 @@ struct cudnnConvDispatcher {
   // Methods
   //
 
-  // TODO: unify ctor cudnnConvDispatcher for conv2d and conv3d by unifying Conv2dConfigration
+  // TODO: unify ctor cudnnConvDispatcher for conv2d and conv3d by unifying Conv2dConfiguration
   
   // ctor for conv2d 
   cudnnConvDispatcher( 
@@ -496,7 +496,7 @@ struct cudnnConvDispatcher {
     workspace = cutlass::device_memory::allocation<char>(workspace_size_in_bytes);
   }
 
-  /// Executes Conv2d operater from cudnn library
+  /// Executes Conv2d operator from cudnn library
   cudnnStatus_t operator()(cudnnHandle_t handle) {
 
     switch (conv_kind) {
@@ -552,7 +552,7 @@ struct cudnnConvDispatcher {
     }
   }
 
-  // Returns Actviation Tensor
+  // Returns Activation Tensor
   void const * activation() const {
     switch(conv_kind) {
       case library::ConvKind::kFprop : return arguments.A;

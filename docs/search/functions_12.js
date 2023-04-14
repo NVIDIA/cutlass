@@ -3,7 +3,7 @@ var searchData=
   ['scalar_5fop',['scalar_op',['../structcutlass_1_1minimum_3_01Array_3_01T_00_01N_01_4_01_4.html#a4b42227184cb7c796460062c46a84b57',1,'cutlass::minimum&lt; Array&lt; T, N &gt; &gt;']]],
   ['scalario',['ScalarIO',['../structcutlass_1_1ScalarIO.html#ad4166575521254088bf6c6300c351714',1,'cutlass::ScalarIO::ScalarIO()'],['../structcutlass_1_1ScalarIO.html#a5227e1e9ed24326ad4f8dc94d186186f',1,'cutlass::ScalarIO::ScalarIO(T value)']]],
   ['semaphore',['Semaphore',['../classcutlass_1_1Semaphore.html#a2ce4cd07fe773efa429f726cfbd98070',1,'cutlass::Semaphore']]],
-  ['seperate_5fstring',['seperate_string',['../structcutlass_1_1CommandLine.html#a5f86e4b2bd8c44b739c83530d77c5590',1,'cutlass::CommandLine']]],
+  ['separate_5fstring',['separate_string',['../structcutlass_1_1CommandLine.html#a5f86e4b2bd8c44b739c83530d77c5590',1,'cutlass::CommandLine']]],
   ['set',['set',['../classcutlass_1_1PredicateVector_1_1Iterator.html#aadfd039b5622098c9e46706a27122575',1,'cutlass::PredicateVector::Iterator::set()'],['../structcutlass_1_1PredicateVector.html#a062fa8a8df725ef08ced2ffcca8336af',1,'cutlass::PredicateVector::set()'],['../classcutlass_1_1SubbyteReference.html#a6473e57520d8ee7afbd95c1e1641e05a',1,'cutlass::SubbyteReference::set()']]],
   ['set_5fgaussian',['set_gaussian',['../structcutlass_1_1Distribution.html#ad594b5ec1d577e8ef03d4d808a8220b1',1,'cutlass::Distribution']]],
   ['set_5fidentity',['set_identity',['../structcutlass_1_1Distribution.html#aad2cf02af3d520544d89843cc4295858',1,'cutlass::Distribution']]],

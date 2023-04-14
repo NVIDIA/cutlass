@@ -212,7 +212,7 @@ public:
 
     if (kAccessesPerVector > 1) {
       // This code section is only to support non-128b alignment
-      // Multiple access to support non-128b alignment in contiguous dimenstion
+      // Multiple access to support non-128b alignment in contiguous dimension
       int wrap_c;
       params_.c_divmod(wrap_c, c, c + iteration_vector_ * AccessType::kElements);
 

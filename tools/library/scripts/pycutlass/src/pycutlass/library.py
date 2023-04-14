@@ -713,7 +713,7 @@ class TileDescription:
         """
         :param threadblock_shape: shape of a threadblock tyle
         :type threadblock_shape: list or tuple
-        :param stages: number of pipline stages in the operation. For SM90 kernels, this can be set to `None` and the maximum
+        :param stages: number of pipeline stages in the operation. For SM90 kernels, this can be set to `None` and the maximum
                        number of stages that can be supported for an operation on a given architecture will be computed at a later time
         :type stages: int or None
         :param warp_count: number of warps in each [M, N, K] dimension of a threadblock tile
