@@ -60,11 +60,11 @@ struct has_elem : false_type {};
 template <class Elem>
 struct has_elem<Elem, Elem> : true_type {};
 template <class Tuple, class Elem>
-struct has_elem<Tuple, Elem, std::enable_if_t<is_tuple<Tuple>::value> >
+struct has_elem<Tuple, Elem, enable_if_t<is_tuple<Tuple>::value> >
     : has_elem<Tuple, Elem, tuple_seq<Tuple> > {};
 template <class Tuple, class Elem, int... Is>
 struct has_elem<Tuple, Elem, seq<Is...>>
-    : disjunction<has_elem<std::tuple_element_t<Is, Tuple>, Elem>...> {};
+    : disjunction<has_elem<tuple_element_t<Is, Tuple>, Elem>...> {};
 
 // Tuple trait for detecting static member element
 template <class Tuple, class Elem, class Enable = void>
@@ -72,11 +72,11 @@ struct all_elem : false_type {};
 template <class Elem>
 struct all_elem<Elem, Elem> : true_type {};
 template <class Tuple, class Elem>
-struct all_elem<Tuple, Elem, std::enable_if_t<is_tuple<Tuple>::value> >
+struct all_elem<Tuple, Elem, enable_if_t<is_tuple<Tuple>::value> >
     : all_elem<Tuple, Elem, tuple_seq<Tuple> > {};
 template <class Tuple, class Elem, int... Is>
 struct all_elem<Tuple, Elem, seq<Is...>>
-    : conjunction<all_elem<std::tuple_element_t<Is, Tuple>, Elem>...> {};
+    : conjunction<all_elem<tuple_element_t<Is, Tuple>, Elem>...> {};
 
 // Tuple trait for detecting Underscore member
 template <class Tuple>
@@ -141,8 +141,10 @@ CUTE_HOST_DEVICE void print(Underscore const&) {
   printf("_");
 }
 
+#if !defined(__CUDACC_RTC__)
 CUTE_HOST std::ostream& operator<<(std::ostream& os, Underscore const&) {
   return os << "_";
 }
+#endif
 
 } // end namespace cute

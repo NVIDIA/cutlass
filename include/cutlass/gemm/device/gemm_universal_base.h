@@ -36,7 +36,11 @@
 
 #pragma once
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/limits>
+#else
 #include <limits>
+#endif
 
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"

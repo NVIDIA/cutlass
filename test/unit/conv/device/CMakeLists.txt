@@ -243,3 +243,4 @@ if (CUTLASS_NVCC_MAX_ARCH GREATER_EQUAL 75)
   endif()
 
 endif()
+

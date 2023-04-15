@@ -99,8 +99,12 @@ namespace cute
 
 // A dummy function that uses compilation failure to print a type
 template <class T>
-CUTE_HOST_DEVICE
-void
+CUTE_HOST_DEVICE void
+print_type() {
+  static_assert(sizeof(T) < 0, "Printing type T.");
+}
+template <class T>
+CUTE_HOST_DEVICE void
 print_type(T&&) {
   static_assert(sizeof(T) < 0, "Printing type T.");
 }
@@ -115,11 +119,21 @@ print_type(T&&) {
 
 CUTE_HOST_DEVICE
 bool
+block(int bid)
+{
+#if defined(__CUDA_ARCH__)
+  return blockIdx.x + blockIdx.y*gridDim.x + blockIdx.z*gridDim.x*gridDim.y == bid;
+#else
+  return true;
+#endif
+}
+
+CUTE_HOST_DEVICE
+bool
 thread(int tid, int bid)
 {
 #if defined(__CUDA_ARCH__)
-  return (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y == tid)
-      && ( blockIdx.x +  blockIdx.y* gridDim.x +  blockIdx.z* gridDim.x* gridDim.y == bid);
+  return (threadIdx.x + threadIdx.y*blockDim.x + threadIdx.z*blockDim.x*blockDim.y == tid) && block(bid);
 #else
   return true;
 #endif
@@ -129,7 +143,7 @@ CUTE_HOST_DEVICE
 bool
 thread(int tid)
 {
-  return thread(tid, 0);
+  return thread(tid,0);
 }
 
 CUTE_HOST_DEVICE
@@ -143,11 +157,7 @@ CUTE_HOST_DEVICE
 bool
 block0()
 {
-#if defined(__CUDA_ARCH__)
-  return !(blockIdx.x | blockIdx.y | blockIdx.z);
-#else
-  return true;
-#endif
+  return block(0);
 }
 
 }  // end namespace cute

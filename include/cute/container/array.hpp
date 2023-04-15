@@ -30,20 +30,20 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cstddef>
-#include <utility>
-
 #include <cute/config.hpp>
+
+#include <cute/numeric/integral_constant.hpp>
+#include <cute/util/type_traits.hpp>
 
 namespace cute
 {
 
-template <class T, std::size_t N>
+template <class T, size_t N>
 struct array
 {
   using value_type = T;
-  using size_type = std::size_t;
-  using difference_type = std::ptrdiff_t;
+  using size_type = size_t;
+  using difference_type = ptrdiff_t;
   using reference = value_type&;
   using const_reference = const value_type&;
   using pointer = value_type*;
@@ -184,7 +184,7 @@ struct array
   CUTE_HOST_DEVICE constexpr
   void swap(array& other)
   {
-    using std::swap;
+    using CUTE_STL_NAMESPACE::swap;
     for (size_type i = 0; i < size(); ++i) {
       swap((*this)[i], other[i]);
     }
@@ -194,11 +194,11 @@ struct array
 };
 
 
-template<class T, std::size_t N>
+template <class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 bool operator==(array<T,N> const& lhs, array<T,N> const& rhs)
 {
-  for (std::size_t i = 0; i < N; ++i) {
+  for (size_t i = 0; i < N; ++i) {
     if (lhs[i] != rhs[i]) {
       return false;
     }
@@ -206,21 +206,21 @@ bool operator==(array<T,N> const& lhs, array<T,N> const& rhs)
   return true;
 }
 
-template <typename T, std::size_t N>
+template <class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 void clear(array<T,N>& a)
 {
   a.fill(T(0));
 }
 
-template <typename T, std::size_t N>
+template <typename T, size_t N>
 CUTE_HOST_DEVICE constexpr
 void fill(array<T,N>& a, T const& value)
 {
   a.fill(value);
 }
 
-template<class T, std::size_t N>
+template <class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 void swap(array<T,N>& a, array<T,N>& b)
 {
@@ -234,12 +234,16 @@ void swap(array<T,N>& a, array<T,N>& b)
 // Specialize tuple-related functionality for cute::array
 //
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/tuple>
+#else
 #include <tuple>
+#endif
 
 namespace cute
 {
 
-template<std::size_t I, class T, std::size_t N>
+template <size_t I, class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 T& get(array<T,N>& a)
 {
@@ -247,15 +251,15 @@ T& get(array<T,N>& a)
   return a[I];
 }
 
-template<std::size_t I, class T, std::size_t N>
+template <size_t I, class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 T const& get(array<T,N> const& a)
 {
-  static_assert(I < N, "Index out of range");       
+  static_assert(I < N, "Index out of range");
   return a[I];
 }
 
-template<std::size_t I, class T, std::size_t N>
+template <size_t I, class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 T&& get(array<T,N>&& a)
 {
@@ -265,18 +269,66 @@ T&& get(array<T,N>&& a)
 
 } // end namespace cute
 
-namespace std
+namespace CUTE_STL_NAMESPACE
 {
 
-template <class T, std::size_t N>
+template <class T, size_t N>
 struct tuple_size<cute::array<T,N>>
-    : std::integral_constant<std::size_t, N>
+    : cute::integral_constant<size_t, N>
 {};
 
-template <std::size_t I, class T, std::size_t N>
+template <size_t I, class T, size_t N>
 struct tuple_element<I, cute::array<T,N>>
 {
   using type = T;
 };
 
-} // end std
+template <class T, size_t N>
+struct tuple_size<const cute::array<T,N>>
+    : cute::integral_constant<size_t, N>
+{};
+
+template <size_t I, class T, size_t N>
+struct tuple_element<I, const cute::array<T,N>>
+{
+  using type = T;
+};
+
+} // end namespace CUTE_STL_NAMESPACE
+
+#ifdef CUTE_STL_NAMESPACE_IS_CUDA_STD
+namespace std
+{
+
+#if defined(__CUDACC_RTC__)
+template <class... _Tp>
+struct tuple_size;
+
+template<size_t _Ip, class... _Tp>
+struct tuple_element;
+#endif
+
+template <class T, size_t N>
+struct tuple_size<cute::array<T,N>>
+    : cute::integral_constant<size_t, N>
+{};
+
+template <size_t I, class T, size_t N>
+struct tuple_element<I, cute::array<T,N>>
+{
+  using type = T;
+};
+
+template <class T, size_t N>
+struct tuple_size<const cute::array<T,N>>
+    : cute::integral_constant<size_t, N>
+{};
+
+template <size_t I, class T, size_t N>
+struct tuple_element<I, const cute::array<T,N>>
+{
+  using type = T;
+};
+
+} // end namepsace std
+#endif // CUTE_STL_NAMESPACE_IS_CUDA_STD

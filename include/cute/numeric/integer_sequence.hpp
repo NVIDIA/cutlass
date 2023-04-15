@@ -30,33 +30,45 @@
  **************************************************************************************************/
 #pragma once
 
-#include <utility>  // std::integer_sequence
-
 #include <cute/config.hpp>
+#include <cute/util/type_traits.hpp>
+#include <cute/numeric/integral_constant.hpp>
 
 namespace cute
 {
 
-using std::integer_sequence;
-using std::make_integer_sequence;
+using CUTE_STL_NAMESPACE::integer_sequence;
+using CUTE_STL_NAMESPACE::make_integer_sequence;
 
 namespace detail {
 
 template <class T, class S, T Begin>
-struct make_integer_range_impl;
+struct range_impl;
 
 template <class T, T... N, T Begin>
-struct make_integer_range_impl<T, integer_sequence<T, N...>, Begin> {
+struct range_impl<T, integer_sequence<T, N...>, Begin> {
   using type = integer_sequence<T, N+Begin...>;
+};
+
+template <class S>
+struct reverse_impl;
+
+template <class T, T... N>
+struct reverse_impl<integer_sequence<T, N...>> {
+  using type = integer_sequence<T, sizeof...(N)-1-N...>;
 };
 
 } // end namespace detail
 
 template <class T, T Begin, T End>
-using make_integer_range = typename detail::make_integer_range_impl<
+using make_integer_range = typename detail::range_impl<
     T,
     make_integer_sequence<T, (End-Begin > 0) ? (End-Begin) : 0>,
     Begin>::type;
+
+template <class T, T N>
+using make_integer_sequence_reverse = typename detail::reverse_impl<
+    make_integer_sequence<T, N>>::type;
 
 //
 // Common aliases
@@ -70,19 +82,25 @@ using int_sequence = integer_sequence<int, Ints...>;
 template <int N>
 using make_int_sequence = make_integer_sequence<int, N>;
 
+template <int N>
+using make_int_rsequence = make_integer_sequence_reverse<int, N>;
+
 template <int Begin, int End>
 using make_int_range = make_integer_range<int, Begin, End>;
 
 // index_sequence
 
-template <std::size_t... Ints>
-using index_sequence = integer_sequence<std::size_t, Ints...>;
+template <size_t... Ints>
+using index_sequence = integer_sequence<size_t, Ints...>;
 
-template <std::size_t N>
-using make_index_sequence = make_integer_sequence<std::size_t, N>;
+template <size_t N>
+using make_index_sequence = make_integer_sequence<size_t, N>;
 
-template <std::size_t Begin, std::size_t End>
-using make_index_range = make_integer_range<std::size_t, Begin, End>;
+template <size_t N>
+using make_index_rsequence = make_integer_sequence_reverse<size_t, N>;
+
+template <size_t Begin, size_t End>
+using make_index_range = make_integer_range<size_t, Begin, End>;
 
 //
 // Shortcuts
@@ -94,46 +112,40 @@ using seq = int_sequence<Ints...>;
 template <int N>
 using make_seq = make_int_sequence<N>;
 
+template <int N>
+using make_rseq = make_int_rsequence<N>;
+
 template <int Min, int Max>
 using make_range = make_int_range<Min, Max>;
 
 template <class Tuple>
-using tuple_seq = make_seq<std::tuple_size<std::remove_reference_t<Tuple>>::value>;
+using tuple_seq = make_seq<tuple_size<remove_cvref_t<Tuple>>::value>;
 
-} // end namespace cute
-
+template <class Tuple>
+using tuple_rseq = make_rseq<tuple_size<remove_cvref_t<Tuple>>::value>;
 
 //
-// Specialize tuple-related functionality for cute::integer_sequence
+// Specialize cute::tuple-traits for std::integer_sequence
 //
 
-#include <tuple>
-#include <cute/numeric/integral_constant.hpp>
+template <class T, T... Ints>
+struct tuple_size<integer_sequence<T, Ints...>>
+    : cute::integral_constant<size_t, sizeof...(Ints)>
+{};
 
-namespace cute
+template <size_t I, class T, T... Is>
+struct tuple_element<I, integer_sequence<T, Is...>>
 {
+  constexpr static T idx[sizeof...(Is)] = {Is...};
+  using type = cute::integral_constant<T, idx[I]>;
+};
 
-template <std::size_t I, class T, T... Ints>
+template <size_t I, class T, T... Ints>
 CUTE_HOST_DEVICE constexpr
-std::tuple_element_t<I, integer_sequence<T, Ints...>>
+tuple_element_t<I, integer_sequence<T, Ints...>>
 get(integer_sequence<T, Ints...>) {
   static_assert(I < sizeof...(Ints), "Index out of range");
   return {};
 }
 
 } // end namespace cute
-
-namespace std
-{
-
-template <class T, T... Ints>
-struct tuple_size<cute::integer_sequence<T, Ints...>>
-    : std::integral_constant<std::size_t, sizeof...(Ints)>
-{};
-
-template <std::size_t I, class T, T... Ints>
-struct tuple_element<I, cute::integer_sequence<T, Ints...>>
-    : std::tuple_element<I, std::tuple<cute::integral_constant<T,Ints>...>>
-{};
-
-} // end namespace std

@@ -35,7 +35,7 @@
     data to describe strides between elements.
 
     Permute layout functions must implement all members in the interface of NoPermute<> defined in this file. Address offset
-    computation lies in operator() with private member variables  {col_permute_, row_permute_ and stride_permute_} as new addresses after permute op.
+    computation lies in operator() with private member variables  {col_permute_, row_permute_ and stride_} as new addresses after permute op.
 */
 #pragma once
 #if defined(__CUDACC_RTC__)
@@ -53,42 +53,65 @@
 namespace cutlass {
 namespace layout {
 
-class NoPermute {
+// template<PermuteTag, typename Layout, bool Inverse>
+// struct PermuteSelect {
+//   // Try to give a reasonable error message to the user
+//   static_assert(!platform::is_same<Permute, Permute>::value, // aka always_false<T>
+//                 "You've tried to use a layout permutation for which the implementation is not availble. "
+//                 "In order to provide an implementation for a particular combination of matrix layout "
+//                 "and direction (direct/inverse), please specialize PermuteSelect trait.");
+// };
+
+// Base template for defining specializations of permutation inverses
+template<typename Permute>
+struct InversePermute
+{
+  // Try to give a reasonable error message to the user
+  static_assert(!platform::is_same<Permute, Permute>::value, // aka always_false<T>
+                "To apply permutation to a GEMM input operand (A or B), an inverse permutation for the desired "
+                "permute class must be defined and enabled by specializing cutlass::layout::InversePermute trait.");
+};
+
+class PermuteBase {
 public:
   /// Index type used for coordinates
   using Index = int32_t;
 
   /// Long index type used for offsets
   using LongIndex = int64_t;
+};
 
-private:
-  //
-  // Data members
-  //
-
-  MatrixCoord extent_;
-
-  Index stride_unit_; //  sizeof(AccessType) / kElementsPerAccess in epilogue's predicated_tile_iterator
-
-  Index stride_permute_;
-
+class NoPermute : public PermuteBase {
 public:
   //
   // Methods
   //
 
-  /// Constructor
+  /// Constructor from matrix extent
   CUTLASS_HOST_DEVICE
-  NoPermute() { }
+  NoPermute(MatrixCoord extent, Index stride) { };
 
-  /// Constructor
+  /// Constructor from pitch-linear extent
   CUTLASS_HOST_DEVICE
-  NoPermute(MatrixCoord extent, Index stride_init): extent_(extent) { }
+  NoPermute(PitchLinearCoord extent, Index stride) { };
 
-  /// Computes the address offset after Permute Op in Bytes
+  /// Computes the offset after Permute Op in logical elements
   CUTLASS_HOST_DEVICE
-  LongIndex operator()(MatrixCoord offset_init) { return 0; }
+  LongIndex operator()(MatrixCoord coord) const { return 0; } // not correct but should never be called
+
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const { return 0; } // not correct but should never be called
 };
+
+template<>
+struct InversePermute<NoPermute> {
+  using type = NoPermute;
+};
+
+/// Helper trait to detect if permute operation is a noop
+template<typename Permute>
+bool constexpr is_trivial_permute = platform::is_same<Permute, cutlass::layout::NoPermute>::value;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -96,25 +119,22 @@ public:
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Permute layout function for 4-D permuted tensors with output matrix (dimension as [M, N]) reshaped
-/// as [M/D1, D1, D2, N/D2]. Then perform permute([0, 2, 1, 3]) on the corresponding output tensor.
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//  Tensor4DPermute0213
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Permute layout function for 4-D permuted tensors with matrix (dimensions [M, N]) reshaped
+/// as [M/D1, D1, D2, N/D2]. Then perform permute([0, 2, 1, 3]) on the corresponding tensor.
 template <int D1, int D2>
-class Tensor4DPermute0213 {
-public:
-  /// Index type used for coordinates
-  using Index = int32_t;
-
-  /// Long index type used for offsets
-  using LongIndex = int64_t;
-
+class Tensor4DPermute0213RowMajor : public PermuteBase {
 private:
   //
   // Data members
   //
 
-  MatrixCoord extent_;
+  Index D3_;
 
-  Index stride_permute_;
+  Index stride_;
   
 public:
   //
@@ -123,74 +143,73 @@ public:
 
   /// Constructor
   CUTLASS_HOST_DEVICE
-  Tensor4DPermute0213() { }
+  Tensor4DPermute0213RowMajor(MatrixCoord extent, Index stride) {
+
+    assert(extent.row() % D1 == 0);
+    assert(extent.column() % D2 == 0);
+
+    D3_ = extent.column() / D2;
+
+    stride_ = stride * D1 / D2;
+  }
 
   /// Constructor
   CUTLASS_HOST_DEVICE
-  Tensor4DPermute0213(MatrixCoord extent, Index stride_init): extent_(extent) {
-
-    /// Update stride_permute with stride_init
-    stride_permute_ = stride_init / D2 * D1; // stride in Elements
-
-  }
+  Tensor4DPermute0213RowMajor(PitchLinearCoord extent, Index stride)
+  : Tensor4DPermute0213RowMajor(MatrixCoord(extent.strided(), extent.contiguous()), stride) {}
   
-  /// Computes the address offset after Permute Op in Bytes
+  /// Computes the offset after Permute Op in logical elements
   CUTLASS_HOST_DEVICE
-  LongIndex operator()(MatrixCoord offset_init) {
-    // Permute as torch.permute(X1, [0, 2, 1, 3]) -> 4D Tensor indices as [i,j,k,l], the dimension of X
-    // is [D0, D1, D2, D3], after permutation the dim of X1 is [D0, D2, D1, D3].
-    assert(extent_.row() % D1 == 0);
-    assert(extent_.column() % D2 == 0);
+  LongIndex operator()(MatrixCoord coord) const {
 
-    int D3 = extent_.column() / D2;
+    // [i,j,k,l] -> [i,k,j,l]
+    Index l = coord.column() % D3_;
+    Index k = coord.column() / D3_;
+    Index j = coord.row() % D1;
+    Index i = coord.row() / D1;
 
-    Index col_init = offset_init.column();
-    Index row_init = offset_init.row();
+    MatrixCoord permuted{k + i * D2, l + j * D3_};
 
-    int l = col_init % D3;
-    int k = col_init / D3;
-    int j = row_init % D1;
-    int i = row_init / D1;
-
-    // After the Permute Op
-    Index col_permute = l + j * D3;
-    Index row_permute = k + i * D2;
-
-    return LongIndex(row_permute) * LongIndex(stride_permute_) + LongIndex(col_permute);
+    return LongIndex(permuted.row()) * LongIndex(stride_) + LongIndex(permuted.column());
   }
 
-  /// Return D1
+  /// Computes the offset after Permute Op in logical elements
   CUTLASS_HOST_DEVICE
-  Index d1() const {
-    return D1;
-  }
-
-  /// Return D2
-  CUTLASS_HOST_DEVICE
-  Index d2() const {
-    return D2;
+  LongIndex operator()(PitchLinearCoord coord) const { 
+    return operator()(MatrixCoord(coord.strided(), coord.contiguous()));
   }
 };
 
-/// Permute layout function for 4-D permuted tensors for BMM with BMM output tensor (dimension as [B, M, N]) reshaped
-/// as [B/D1, D1, M, N]. Then perform permute([0, 2, 1, 3]) on the corresponding whole BMM output tensor.
-template <int D1>
-class Tensor4DPermuteBMM0213 {
+// Inverse for Tensor4DPermute0213 can be implemented by simply swapping D1 and D2
+template <int D1, int D2>
+class Tensor4DPermute0213RowMajorInverse : public Tensor4DPermute0213RowMajor<D2, D1> {
 public:
-  /// Index type used for coordinates
-  using Index = int32_t;
+  using Base = Tensor4DPermute0213RowMajor<D2, D1>;
+  using Base::Base;
+};
 
-  /// Long index type used for offsets
-  using LongIndex = int64_t;
+template<int D1, int D2>
+struct InversePermute<Tensor4DPermute0213RowMajor<D1, D2>> {
+  using type = Tensor4DPermute0213RowMajorInverse<D1, D2>;
+};
 
+template<int D1, int D2>
+struct InversePermute<Tensor4DPermute0213RowMajorInverse<D1, D2>> {
+  using type = Tensor4DPermute0213RowMajor<D1, D2>;
+};
+
+/// Permute layout function for 4-D permuted tensors with matrix (dimensions [M, N]) reshaped
+/// as [M/D1, D1, D2, N/D2]. Then perform permute([0, 2, 1, 3]) on the corresponding tensor.
+template <int D1, int D2>
+class Tensor4DPermute0213ColumnMajor : public PermuteBase {
 private:
   //
   // Data members
   //
 
-  MatrixCoord extent_;
+  Index D0_;
 
-  Index stride_permute_;
+  Index stride_;
   
 public:
   //
@@ -199,70 +218,139 @@ public:
 
   /// Constructor
   CUTLASS_HOST_DEVICE
-  Tensor4DPermuteBMM0213() { }
+  Tensor4DPermute0213ColumnMajor(MatrixCoord extent, Index stride) {
+
+    assert(extent.row() % D1 == 0);
+    assert(extent.column() % D2 == 0);
+
+    D0_ = extent.row() / D1;
+
+    stride_ = stride * D2 / D1;
+  }
 
   /// Constructor
   CUTLASS_HOST_DEVICE
-  Tensor4DPermuteBMM0213(MatrixCoord extent, Index stride_init): extent_(extent) {
-
-    /// Update stride_permute with stride_init
-    stride_permute_ = stride_init * D1; // stride in Elements 
-
-  }
+  Tensor4DPermute0213ColumnMajor(PitchLinearCoord extent, Index stride)
+  : Tensor4DPermute0213ColumnMajor(MatrixCoord(extent.contiguous(), extent.strided()), stride) {}
   
-  /// Computes the address offset after Permute Op in Bytes
+  /// Computes the offset after Permute Op in logical elements
   CUTLASS_HOST_DEVICE
-  LongIndex operator()(MatrixCoord offset_init) {
+  LongIndex operator()(MatrixCoord coord) const {
+
+    // [i,j,k,l] -> [i,k,j,l]
+    Index l = coord.column() / D2;
+    Index k = coord.column() % D2;
+    Index j = coord.row() / D0_;
+    Index i = coord.row() % D0_;
+
+    MatrixCoord permuted{i + k * D0_, j + l * D1};
+
+    return LongIndex(permuted.row()) + LongIndex(permuted.column()) * LongIndex(stride_);
+  }
+
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const { 
+    return operator()(MatrixCoord(coord.contiguous(), coord.strided()));
+  }
+};
+
+// Inverse for Tensor4DPermute0213 can be implemented by simply swapping D1 and D2
+template <int D1, int D2>
+class Tensor4DPermute0213ColumnMajorInverse : public Tensor4DPermute0213ColumnMajor<D2, D1> {
+public:
+  using Base = Tensor4DPermute0213ColumnMajor<D2, D1>;
+  using Base::Base;
+};
+
+template<int D1, int D2>
+struct InversePermute<Tensor4DPermute0213ColumnMajor<D1, D2>> {
+  using type = Tensor4DPermute0213ColumnMajorInverse<D1, D2>;
+};
+
+template<int D1, int D2>
+struct InversePermute<Tensor4DPermute0213ColumnMajorInverse<D1, D2>> {
+  using type = Tensor4DPermute0213ColumnMajor<D1, D2>;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//  Tensor4DPermuteBMM0213
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Permute layout function for 4-D permuted tensors for BMM with BMM tensor (dimensions [B, M, N]) reshaped
+/// as [B/D1, D1, M, N]. Then perform permute([0, 2, 1, 3]) on the corresponding whole BMM tensor.
+template <int D1>
+class Tensor4DPermuteBMM0213RowMajor : public PermuteBase {
+private:
+  //
+  // Data members
+  //
+
+  Index D3_;
+
+  Index stride_;
+
+  Index batch_stride_;
+  
+public:
+  //
+  // Methods
+  //
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor4DPermuteBMM0213RowMajor(MatrixCoord extent, Index stride) {
+
+    Index D2 = extent.row();
+    D3_ = extent.column();
+
+    stride_ = stride * D1;
+    batch_stride_ = D2 * stride_;
+  }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor4DPermuteBMM0213RowMajor(PitchLinearCoord extent, Index stride)
+  : Tensor4DPermuteBMM0213RowMajor(MatrixCoord(extent.strided(), extent.contiguous()), stride) {}
+  
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(MatrixCoord coord) const {
 
     // The batch index for BMM
     Index BMM_batch_idx = blockIdx.z;
     
-    // Permute as torch.permute(X1, [0, 2, 1, 3]) -> 4D Tensor indices as [i,j,k,l], the dimension of X 
-    // is [D0, D1, D2, D3], after permutation the dim of X1 is [D0, D2, D1, D3].
-    int D2 = extent_.row();
-    int D3 = extent_.column();
+    // [i,j,k,l] -> [i,k,j,l]
+    Index l = coord.column();
+    Index k = coord.row();
+    Index j = BMM_batch_idx % D1;
+    Index i = BMM_batch_idx / D1;
 
-    Index col_init = offset_init.column();
-    Index row_init = offset_init.row();
+    Index pbatch = i;
+    MatrixCoord pcoord{k, l + j * D3_};
 
-    int l = col_init;
-    int k = row_init;
-    int j = BMM_batch_idx % D1;
-    int i = BMM_batch_idx / D1;
-
-    // After the Permute Op
-    Index col_permute = l + j * D3;
-    Index row_permute = k + i * D2;
-
-    return LongIndex(row_permute) * LongIndex(stride_permute_) + LongIndex(col_permute);
+    return pbatch * LongIndex(batch_stride_) + pcoord.row() * LongIndex(stride_) + pcoord.column();
   }
 
-  /// Return D1
+  /// Computes the offset after Permute Op in logical elements
   CUTLASS_HOST_DEVICE
-  Index d1() const {
-    return D1;
+  LongIndex operator()(PitchLinearCoord coord) const { 
+    return operator()(MatrixCoord(coord.strided(), coord.contiguous()));
   }
 };
 
-/// Permute layout function for 5-D permuted tensors with output matrix (dimension as [M, N]) reshaped
-/// as [M/T1, T1, T2, T3, N/T2/T3]. Then perform permute([2, 0, 3, 1, 4]) on the corresponding output tensor.
-template <int T1, int T2, int T3>
-class Tensor5DPermute20314 {
-public:
-  /// Index type used for coordinates
-  using Index = int32_t;
-
-  /// Long index type used for offsets
-  using LongIndex = int64_t;
-
+template <int D1>
+class Tensor4DPermuteBMM0213RowMajorInverse : public PermuteBase {
 private:
   //
   // Data members
   //
 
-  MatrixCoord extent_;
+  Index D3_;
 
-  Index stride_permute_;
+  Index stride_;
+
+  Index batch_stride_;
   
 public:
   //
@@ -271,41 +359,468 @@ public:
 
   /// Constructor
   CUTLASS_HOST_DEVICE
-  Tensor5DPermute20314() { }
+  Tensor4DPermuteBMM0213RowMajorInverse(MatrixCoord extent, Index stride) {
+
+    assert(extent.column() % D1 == 0);
+
+    Index D2 = extent.row();
+    D3_ = extent.column() / D1;
+
+    stride_ = stride / D1;
+
+    batch_stride_ = D2 * stride_;
+  }
 
   /// Constructor
   CUTLASS_HOST_DEVICE
-  Tensor5DPermute20314(MatrixCoord extent, Index stride_init): extent_(extent) {
-
-    /// Update stride_permute with stride_init
-    stride_permute_ = stride_init / T2 * T1; // stride in Elements 
-
-  }
+  Tensor4DPermuteBMM0213RowMajorInverse(PitchLinearCoord extent, Index stride)
+  : Tensor4DPermuteBMM0213RowMajorInverse(MatrixCoord(extent.strided(), extent.contiguous()), stride) {}
   
-  /// Computes the address offset after Permute Op in Bytes
+  /// Computes the offset after Permute Op in logical elements
   CUTLASS_HOST_DEVICE
-  LongIndex operator()(MatrixCoord offset_init) {
+  LongIndex operator()(MatrixCoord coord) const {
+
+    // The batch index for BMM
+    Index BMM_batch_idx = blockIdx.z;
+    
+    // TODO: semantics of the original Tensor4DPermuteBMM0213 are unclear.
+    // The following assumes grouping [(D0)->batch, (D2)->row, (D1,D3)->col]
+    Index l = coord.column() % D3_;
+    Index j = coord.column() / D3_;
+    Index k = coord.row();
+    Index i = BMM_batch_idx;
+
+    // compute original [batch, row, col] index
+    Index pbatch = j + i * D1;
+    MatrixCoord pcoord{k, l};
+
+    return pbatch * LongIndex(batch_stride_) + pcoord.row() * LongIndex(stride_) + pcoord.column();
+  }
+
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const { 
+    return operator()(MatrixCoord(coord.strided(), coord.contiguous()));
+  }
+};
+
+template<int D1>
+struct InversePermute<Tensor4DPermuteBMM0213RowMajor<D1>> {
+  using type = Tensor4DPermuteBMM0213RowMajorInverse<D1>;
+};
+
+template<int D1>
+struct InversePermute<Tensor4DPermuteBMM0213RowMajorInverse<D1>> {
+  using type = Tensor4DPermuteBMM0213RowMajor<D1>;
+};
+
+/// Permute layout function for 4-D permuted tensors for BMM with BMM tensor (dimensions [B, M, N]) reshaped
+/// as [B/D1, D1, M, N]. Then perform permute([0, 3, 2, 1]) on the corresponding whole BMM tensor.
+template <int D1>
+class Tensor4DPermuteBMM0321ColumnMajor : public PermuteBase {
+private:
+  //
+  // Data members
+  //
+
+  Index D2_;
+
+  Index stride_;
+
+  Index batch_stride_;
+  
+public:
+  //
+  // Methods
+  //
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor4DPermuteBMM0321ColumnMajor(MatrixCoord extent, Index stride) {
+
+    D2_ = extent.row();
+    Index D3 = extent.column();
+
+    stride_ = stride * D1;
+    batch_stride_ = stride_ * D3;
+  }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor4DPermuteBMM0321ColumnMajor(PitchLinearCoord extent, Index stride)
+  : Tensor4DPermuteBMM0321ColumnMajor(MatrixCoord(extent.contiguous(), extent.strided()), stride) {}
+  
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(MatrixCoord coord) const {
+
+    Index BMM_batch_idx = blockIdx.z;
+    
+    // [i,j,k,l] -> [i,k,j,l]
+    Index l = coord.column();
+    Index k = coord.row();
+    Index j = BMM_batch_idx % D1;
+    Index i = BMM_batch_idx / D1;
+
+    Index pbatch = i;
+    MatrixCoord pcoord{k + j * D2_, l};
+
+    return pbatch * LongIndex(batch_stride_) + pcoord.row() + pcoord.column() * LongIndex(stride_);
+  }
+
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const { 
+    return operator()(MatrixCoord(coord.contiguous(), coord.strided()));
+  }
+};
+
+template <int D1>
+class Tensor4DPermuteBMM0321ColumnMajorInverse : public PermuteBase {
+private:
+  //
+  // Data members
+  //
+
+  Index D2_;
+
+  Index stride_;
+
+  Index batch_stride_;
+  
+public:
+  //
+  // Methods
+  //
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor4DPermuteBMM0321ColumnMajorInverse(MatrixCoord extent, Index stride) {
+
+    assert(extent.row() % D1 == 0);
+
+    D2_ = extent.row() / D1;
+    Index D3 = extent.column();
+
+    stride_ = stride / D1;
+    batch_stride_ = stride_ * D3;
+  }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor4DPermuteBMM0321ColumnMajorInverse(PitchLinearCoord extent, Index stride)
+  : Tensor4DPermuteBMM0321ColumnMajorInverse(MatrixCoord(extent.contiguous(), extent.strided()), stride) {}
+  
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(MatrixCoord coord) const {
+
+    Index BMM_batch_idx = blockIdx.z;
+    
+    // The following assumes grouping [(D0)->batch, (D1,D2)->row, (D3)->col]
+    Index l = coord.column();
+    Index k = coord.row() % D2_;
+    Index j = coord.row() / D2_;
+    Index i = BMM_batch_idx;
+
+    Index pbatch = i * D1 + j;
+    MatrixCoord pcoord{k, l};
+
+    return pbatch * LongIndex(batch_stride_) + pcoord.row() + pcoord.column() * LongIndex(stride_);
+  }
+
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const { 
+    return operator()(MatrixCoord(coord.contiguous(), coord.strided()));
+  }
+};
+
+template<int D1>
+struct InversePermute<Tensor4DPermuteBMM0321ColumnMajor<D1>> {
+  using type = Tensor4DPermuteBMM0321ColumnMajorInverse<D1>;
+};
+
+template<int D1>
+struct InversePermute<Tensor4DPermuteBMM0321ColumnMajorInverse<D1>> {
+  using type = Tensor4DPermuteBMM0321ColumnMajor<D1>;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//  Tensor5DPermute20314
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Permute layout function for 5-D permuted tensors with output matrix (dimension as [M, N]) reshaped
+/// as [M/T1, T1, T2, T3, N/T2/T3]. Then perform permute([2, 0, 3, 1, 4]) on the corresponding output tensor.
+template <int T1, int T2, int T3>
+class Tensor5DPermute20314RowMajor : public PermuteBase {
+private:
+  //
+  // Data members
+  //
+
+  Index T0_;
+
+  Index T4_;
+
+  Index stride_;
+  
+public:
+  //
+  // Methods
+  //
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor5DPermute20314RowMajor(MatrixCoord extent, Index stride) {
+
+    assert(extent.row() % T1 == 0);
+    assert(extent.column() % (T2 * T3) == 0);
+
+    T0_ = extent.row() / T1;
+    T4_ = extent.column() / (T2 * T3);
+
+    /// Update stride_permute with stride
+    stride_ = stride / T2 * T1; // stride in Elements
+  }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor5DPermute20314RowMajor(PitchLinearCoord extent, Index stride)
+  : Tensor5DPermute20314RowMajor(MatrixCoord(extent.strided(), extent.contiguous()), stride) {}
+  
+  
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(MatrixCoord coord) const {
 
     // Permute as torch.permute(X1, [2, 0, 3, 1, 4]) -> 5D Tensor indices as [i,j,k,l,m], the dimension of X 
     // is [T0, T1, T2, T3, T4], after permutation the dim of X1 is [T2, T0, T3, T1, T4].
-    int T0 = extent_.row() / T1;
-    int T4 = extent_.column() / T2 / T3;
 
-    Index col_init = offset_init.column();
-    Index row_init = offset_init.row();
+    Index m = coord.column() % T4_;
+    Index l = (coord.column() / T4_) % T3;
+    Index k = (coord.column() / T4_) / T3;
+    Index j = coord.row() % T1;
+    Index i = coord.row() / T1;
 
-    int m = col_init % T4;
-    int l = int(col_init / T4) % T3;
-    int k = int(col_init / T4) / T3;
-    int j = row_init % T1;
-    int i = row_init / T1;
+    MatrixCoord permuted{i + k * T0_, m + j * T4_ + l * T1 * T4_};
 
-    // After the Permute Op
-    Index col_permute = m + j * T4 + l * T1 * T4;
-    Index row_permute = i + k * T0;
-
-    return LongIndex(row_permute) * LongIndex(stride_permute_) + LongIndex(col_permute);
+    return LongIndex(permuted.row()) * LongIndex(stride_) + LongIndex(permuted.column());
   }
+
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const { 
+    return operator()(MatrixCoord(coord.strided(), coord.contiguous()));
+  }
+};
+
+/// Inverse for Tensor5DPermute20314 (could also be given a proper name, e.g. Tensor5DPermute13024).
+template <int T1, int T2, int T3>
+class Tensor5DPermute20314RowMajorInverse : public PermuteBase {
+private:
+  //
+  // Data members
+  //
+
+  Index T0_;
+
+  Index T4_;
+
+  // Permuted stride in units of elements
+  Index stride_;
+  
+public:
+  //
+  // Methods
+  //
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor5DPermute20314RowMajorInverse(MatrixCoord extent, Index stride) {
+
+    assert(extent.row() % T2 == 0);
+    assert(extent.column() % (T1 * T3) == 0);
+
+    T0_ = extent.row() / T2;
+    T4_ = extent.column() / (T1 * T3);
+
+    stride_ = stride / T1 * T2;
+  }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor5DPermute20314RowMajorInverse(PitchLinearCoord extent, Index stride)
+  : Tensor5DPermute20314RowMajorInverse(MatrixCoord(extent.strided(), extent.contiguous()), stride) {}
+
+  /// Computes the offset after the inverse of permute operation in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(MatrixCoord coord) const {
+
+    Index m = coord.column() % T4_;
+    Index j = (coord.column() / T4_) % T1;
+    Index l = (coord.column() / T4_) / T1;
+    Index i = coord.row() % T0_;
+    Index k = coord.row() / T0_;
+
+    MatrixCoord permuted{j + i * T1, m + l * T4_ + k * T3 * T4_};
+
+    return LongIndex(permuted.row()) * LongIndex(stride_) + LongIndex(permuted.column());
+  }
+
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const { 
+    return operator()(MatrixCoord(coord.strided(), coord.contiguous()));
+  }
+};
+
+template<int T1, int T2, int T3>
+struct InversePermute<Tensor5DPermute20314RowMajor<T1, T2, T3>> {
+  using type = Tensor5DPermute20314RowMajorInverse<T1, T2, T3>;
+};
+
+template<int T1, int T2, int T3>
+struct InversePermute<Tensor5DPermute20314RowMajorInverse<T1, T2, T3>> {
+  using type = Tensor5DPermute20314RowMajor<T1, T2, T3>;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Tensor5DPermute02413
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Permute layout function for 5-D permuted tensors with matrix (dimensions [M, N]) reshaped
+/// as [M/T1, T1, T2, T3, N/T2/T3]. Then perform permute([0, 2, 4, 1, 3]) on the corresponding tensor.
+template <int T1, int T2, int T3>
+class Tensor5DPermute02413ColumnMajor : public PermuteBase {
+private:
+  //
+  // Data members
+  //
+
+  Index T0_;
+
+  Index T4_;
+
+  Index stride_;
+  
+public:
+  //
+  // Methods
+  //
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor5DPermute02413ColumnMajor(MatrixCoord extent, Index stride) {
+
+    assert(extent.row() % T1 == 0);
+    assert(extent.column() % (T2 * T3) == 0);
+
+    T0_ = extent.row() / T1;
+    T4_ = extent.column() / (T2 * T3);
+
+    /// Update stride_permute with stride
+    stride_ = stride / T1 * T2; // stride in Elements
+  }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor5DPermute02413ColumnMajor(PitchLinearCoord extent, Index stride)
+  : Tensor5DPermute02413ColumnMajor(MatrixCoord(extent.contiguous(), extent.strided()), stride) {}
+  
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(MatrixCoord coord) const {
+
+    // Permute as torch.permute(X1, [2, 0, 3, 1, 4]) -> 5D Tensor indices as [i,j,k,l,m], the dimension of X 
+    // is [T0, T1, T2, T3, T4], after permutation the dim of X1 is [T0, T2, T4, T1, T3].
+
+    Index m = (coord.column() / T2) / T3;
+    Index l = (coord.column() / T2) % T3;
+    Index k = coord.column() % T2;
+    Index j = coord.row() / T0_;
+    Index i = coord.row() % T0_;
+
+    MatrixCoord permuted{i + k * T0_, m + j * T4_ + l * T4_ * T1};
+
+    return LongIndex(permuted.row()) + LongIndex(permuted.column()) * LongIndex(stride_);
+  }
+
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const { 
+    return operator()(MatrixCoord(coord.contiguous(), coord.strided()));
+  }
+};
+
+/// Inverse for Tensor5DPermute02413ColumnMajor
+template <int T1, int T2, int T3>
+class Tensor5DPermute02413ColumnMajorInverse : public PermuteBase {
+private:
+  //
+  // Data members
+  //
+
+  Index T0_;
+
+  Index T4_;
+
+  // Permuted stride in units of elements
+  Index stride_;
+  
+public:
+  //
+  // Methods
+  //
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor5DPermute02413ColumnMajorInverse(MatrixCoord extent, Index stride) {
+
+    assert(extent.row() % T2 == 0);
+    assert(extent.column() % (T1 * T3) == 0);
+
+    T0_ = extent.row() / T2;
+    T4_ = extent.column() / (T1 * T3);
+
+    stride_ = stride / T2 * T1;
+  }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  Tensor5DPermute02413ColumnMajorInverse(PitchLinearCoord extent, Index stride)
+  : Tensor5DPermute02413ColumnMajorInverse(MatrixCoord(extent.contiguous(), extent.strided()), stride) {}
+
+  /// Computes the offset after the inverse of permute operation in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(MatrixCoord coord) const {
+
+    Index m = coord.column() % T4_;
+    Index j = (coord.column() / T4_) % T1;
+    Index l = (coord.column() / T4_) / T1;
+    Index i = coord.row() % T0_;
+    Index k = coord.row() / T0_;
+
+    MatrixCoord permuted{i + j * T0_, k + l * T2 + m * T2 * T3};
+
+    return LongIndex(permuted.row()) + LongIndex(permuted.column()) * LongIndex(stride_);
+  }
+
+  /// Computes the offset after Permute Op in logical elements
+  CUTLASS_HOST_DEVICE
+  LongIndex operator()(PitchLinearCoord coord) const { 
+    return operator()(MatrixCoord(coord.contiguous(), coord.strided()));
+  }
+};
+
+template<int T1, int T2, int T3>
+struct InversePermute<Tensor5DPermute02413ColumnMajor<T1, T2, T3>> {
+  using type = Tensor5DPermute02413ColumnMajorInverse<T1, T2, T3>;
+};
+
+template<int T1, int T2, int T3>
+struct InversePermute<Tensor5DPermute02413ColumnMajorInverse<T1, T2, T3>> {
+  using type = Tensor5DPermute02413ColumnMajor<T1, T2, T3>;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

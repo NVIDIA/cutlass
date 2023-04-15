@@ -31,13 +31,17 @@
 
 #pragma once
 
+#if !defined(__CUDACC_RTC__)
+#include <cinttypes>
+#endif
+
 #include <cute/config.hpp>
 
 #include <cute/arch/mma.hpp>
 
 // Config
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && defined(__CUDA_ARCH_FEAT_SM90_ALL))
-#    define CUTE_ARCH_MMA_SM90_ENABLED
+#    define CUTE_ARCH_MMA_SM90A_ENABLED
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -68,6 +72,7 @@ CUTE_HOST_DEVICE char const* to_string(LayoutType const& t) {
   return nullptr;
 }
 
+#if !defined(__CUDACC_RTC__)
 // Output operator for all enums in this namespace
 CUTE_HOST std::ostream& operator<<(std::ostream& os, LayoutType const& t) {
   char const* s = to_string(t);
@@ -78,6 +83,7 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, LayoutType const& t) {
   }
   return os;
 }
+#endif // !defined(__CUDACC_RTC__)
 
 } // end namespace GMMA
 
@@ -115,12 +121,14 @@ union GmmaDescriptor
   // Printer
   CUTE_HOST_DEVICE friend void print(GmmaDescriptor const& t)
   {
-    printf("GmmaDescriptor: 0x%016lx\n",    t.desc_);
+    #if !defined(__CUDACC_RTC__)
+    printf("GmmaDescriptor: 0x%016" PRIx64 "\n",    t.desc_);
     printf("  start_addr :  0x%04x\n",      t.start_address_);
     printf("  leading_off:  0x%04x (%d)\n", t.leading_byte_offset_, t.leading_byte_offset_);
     printf("  stride_off :  0x%04x (%d)\n", t.stride_byte_offset_, t.stride_byte_offset_);
     printf("  base_offset:  0x%01x\n",      t.base_offset_);
     printf("  layout_type:  0x%01x (%s)\n", t.layout_type_, to_string(static_cast<GMMA::LayoutType>(t.layout_type_)));
+    #endif
   }
 };
 

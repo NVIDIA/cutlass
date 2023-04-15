@@ -181,8 +181,7 @@ $ ./tools/profiler/cutlass_profiler --operation=gemm --help
 
 GEMM
 
-  [enum]      --gemm_kind                                       Variant of GEMM (gemm, batched, array, universal, planar_complex, planar_complex_array)
-  [enum]      --split_k_mode                                    Variant of split K mode(serial, parallel)
+  [enum]      --gemm_kind                                       Variant of GEMM (e.g. universal, gemm, planar_complex, planar_complex_array)
   [int]       --m,--problem-size::m                             M dimension of the GEMM problem space
   [int]       --n,--problem-size::n                             N dimension of the GEMM problem space
   [int]       --k,--problem-size::k                             K dimension of the GEMM problem space
@@ -191,9 +190,10 @@ GEMM
   [tensor]    --C                                               Tensor storing the C operand
   [scalar]    --alpha,--epilogue::alpha                         Epilogue scalar alpha
   [scalar]    --beta,--epilogue::beta                           Epilogue scalar beta
+  [enum]      --split_k_mode,--split-k-mode                     Variant of split K mode(serial, parallel)
   [int]       --split_k_slices,--split-k-slices                 Number of partitions of K dimension
   [int]       --batch_count,--batch-count                       Number of GEMMs computed in one batch
-  [enum]      --op_class,--opcode-class                         Class of math instruction (simt, tensorop, wmmatensorop, wmma)
+  [enum]      --op_class,--opcode-class                         Class of math instruction (simt, tensorop, wmmatensorop, wmma).
   [enum]      --accum,--accumulator-type                        Math instruction accumulator data type
   [int]       --cta_m,--threadblock-shape::m                    Threadblock shape in the M dimension
   [int]       --cta_n,--threadblock-shape::n                    Threadblock shape in the N dimension
@@ -224,9 +224,6 @@ Schmoo over accumulator types:
 
 Run when A is f16 with column-major and B is any datatype with row-major (For column major, use column, col, or n. For row major use, row or t):
   $ cutlass_profiler --operation=Gemm --A=f16:column --B=*:row
-
-Profile a particular problem size with split K and parallel reduction:
-  $ cutlass_profiler --operation=Gemm --split_k_mode=parallel --split_k_slices=2 --m=1024 --n=1024 --k=128
 
 Using various input value distribution:
   $ cutlass_profiler --operation=Gemm --dist=uniform,min:0,max:3

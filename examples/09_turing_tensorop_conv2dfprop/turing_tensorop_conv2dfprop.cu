@@ -555,6 +555,7 @@ Result profile_convolution(Options const &options) {
       LayoutOutput,
       ElementComputeEpilogue,
       ElementAccumulator,
+      ElementOutput,
       cutlass::NumericConverterClamp<ElementOutput, ElementComputeEpilogue>
     >(
       problem_size,

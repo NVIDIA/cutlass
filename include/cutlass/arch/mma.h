@@ -76,6 +76,12 @@ struct OpMultiplyAddFastF32 {};
 //  Perform 3xTF32 or 4xTF32 for every complex<F32> output element
 struct OpMultiplyAddComplexFastF32 {};
 
+/// Helper for determining whether staged accumulation should be used for a given operator
+template <typename Operator>
+struct UseStagedAccumulation {
+  static bool const value = platform::is_same<Operator, OpMultiplyAddFastF32>::value ||
+                            platform::is_same<Operator, OpMultiplyAddComplexFastF32>::value;
+};
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Tag indicating the complex multiply-add operation

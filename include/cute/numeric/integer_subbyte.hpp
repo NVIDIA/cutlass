@@ -53,7 +53,7 @@ struct integer_subbyte
   static_assert(Bits <= 8*sizeof(Storage), "Require a subbyte of bits in integer_subbyte");
 
   /// External type
-  using xint_t = typename std::conditional<Signed, int, unsigned>::type;
+  using xint_t = typename conditional<Signed, int, unsigned>::type;
 
   /// Bitmask for truncation from larger integers
   static constexpr Storage bits_mask_ = Storage((1 << Bits) - 1);
@@ -166,7 +166,7 @@ using bin1_t = bool;
 
 #include <limits>
 
-namespace std {
+namespace CUTE_STL_NAMESPACE {
 
 template <>
 struct numeric_limits<cute::uint1b_t> {
@@ -230,4 +230,4 @@ struct numeric_limits<cute::uint4b_t> {
 
 }  // namespace std
 
-#endif
+#endif // !defined(__CUDACC_RTC__)

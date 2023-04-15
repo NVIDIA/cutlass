@@ -157,10 +157,7 @@ public:
     // accuracy, where each mainloop iteration first accumulates into a temporary
     // set of freshly-cleared accumulators, which are subsequently added to the
     // final accumulator set.
-    static bool const kStagedAccumulation =
-      platform::is_same<typename Operator::MathOperator, arch::OpMultiplyAddFastF32>::value ||
-      platform::is_same<typename Operator::MathOperator, arch::OpMultiplyAddComplexFastF32>::value;
-
+    static bool const kStagedAccumulation = arch::UseStagedAccumulation<typename Operator::MathOperator>::value;
   };
 
  private:

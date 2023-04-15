@@ -36,7 +36,7 @@
 #include <cute/arch/mma.hpp>
 
 // Config
-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && defined(__CUDA_ARCH_FEAT_SM90_ALL))
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
 #    define CUTE_ARCH_MMA_SM90_ENABLED
 #endif
 
@@ -342,7 +342,7 @@ struct SM90_16x8x16_C64C64C64C64_TN
 namespace cute {
 namespace GMMA {
 
-template<
+template <
   class ElementA,
   class ElementB,
   class ElementC,
@@ -362,9 +362,9 @@ ss_op_selector()
   auto Tile_N = size<1>(TileShape_MNK{});
 
   // FP16 accumulator
-  if constexpr (std::is_same_v<ElementC, half_t>) {
-    static_assert(std::is_same_v<ElementA, half_t>, "Element types for AB must be half if ElementC is half.");
-    static_assert(std::is_same_v<ElementB, half_t>, "Element types for AB must be half if ElementC is half.");
+  if constexpr (is_same_v<ElementC, half_t>) {
+    static_assert(is_same_v<ElementA, half_t>, "Element types for AB must be half if ElementC is half.");
+    static_assert(is_same_v<ElementB, half_t>, "Element types for AB must be half if ElementC is half.");
     static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
 
     // Dispatch against the Tile N mode size
@@ -398,11 +398,11 @@ ss_op_selector()
   }
 
   // FP32 accumulator
-  else if constexpr (std::is_same_v<ElementC, float>) {
+  else if constexpr (is_same_v<ElementC, float>) {
 
     // FP16 inputs
-    if constexpr (std::is_same_v<ElementA, half_t>) {
-      static_assert(std::is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
+    if constexpr (is_same_v<ElementA, half_t>) {
+      static_assert(is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
       static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
       if constexpr (Tile_N % 256 == 0) {
         return SM90_64x256x16_F32F16F16_SS<MajorA, MajorB, Args...>{};
@@ -434,8 +434,8 @@ ss_op_selector()
     }
 
     // BF16 inputs
-    else if constexpr (std::is_same_v<ElementA, bfloat16_t>) {
-      static_assert(std::is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
+    else if constexpr (is_same_v<ElementA, bfloat16_t>) {
+      static_assert(is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
       static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
 
       if constexpr (Tile_N % 256 == 0) {
@@ -468,8 +468,8 @@ ss_op_selector()
     }
 
     // TF32 inputs
-    else if constexpr (std::is_same_v<ElementA, tfloat32_t>) {
-      static_assert(std::is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
+    else if constexpr (is_same_v<ElementA, tfloat32_t>) {
+      static_assert(is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
       static_assert(MajorA == GMMA::Major::K, "MajorA must be GMMA::Major::K for this config.");
       static_assert(MajorB == GMMA::Major::K, "MajorB must be GMMA::Major::K for this config.");
       static_assert(size<2>(TileShape_MNK{}) % 8 == 0, "Tile_K must be a multiple of 8.");
@@ -508,36 +508,36 @@ ss_op_selector()
   }
 
   // S32 accumulator
-  else if constexpr (std::is_same_v<ElementC, int32_t>) {
+  else if constexpr (is_same_v<ElementC, int32_t>) {
     static_assert(MajorA == GMMA::Major::K, "MajorA must be GMMA::Major::K for this config.");
     static_assert(MajorB == GMMA::Major::K, "MajorB must be GMMA::Major::K for this config.");
     static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
 
     // ElementA == int8_t && ElementB == int8_t
-    if constexpr (std::is_same_v<ElementA, int8_t> && std::is_same_v<ElementB, int8_t>) {
+    if constexpr (is_same_v<ElementA, int8_t> && is_same_v<ElementB, int8_t>) {
       if constexpr (Tile_N % 256 == 0) {
-        return SM90_64x256x32_S32S8S8_SS_TN<Args...>{};
+        return SM90_64x256x32_S32S8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 192 == 0) {
-        return SM90_64x192x32_S32S8S8_SS_TN<Args...>{};
+        return SM90_64x192x32_S32S8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 128 == 0) {
-        return SM90_64x128x32_S32S8S8_SS_TN<Args...>{};
+        return SM90_64x128x32_S32S8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 96 == 0) {
-        return SM90_64x96x32_S32S8S8_SS_TN<Args...>{};
+        return SM90_64x96x32_S32S8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 64 == 0) {
-        return SM90_64x64x32_S32S8S8_SS_TN<Args...>{};
+        return SM90_64x64x32_S32S8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 32 == 0) {
-        return SM90_64x32x32_S32S8S8_SS_TN<Args...>{};
+        return SM90_64x32x32_S32S8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 16 == 0) {
-        return SM90_64x16x32_S32S8S8_SS_TN<Args...>{};
+        return SM90_64x16x32_S32S8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 8 == 0) {
-        return SM90_64x8x32_S32S8S8_SS_TN<Args...>{};
+        return SM90_64x8x32_S32S8S8_SS_TN{};
       }
       else {
         static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
@@ -545,32 +545,32 @@ ss_op_selector()
     }
 
     // ElementA == int8_t && ElementB == uint8_t
-    else if constexpr (std::is_same_v<ElementA, int8_t> && std::is_same_v<ElementB, uint8_t>) {
+    else if constexpr (is_same_v<ElementA, int8_t> && is_same_v<ElementB, uint8_t>) {
       static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
 
       if constexpr (Tile_N % 256 == 0) {
-        return SM90_64x256x32_S32S8U8_SS_TN<Args...>{};
+        return SM90_64x256x32_S32S8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 192 == 0) {
-        return SM90_64x192x32_S32S8U8_SS_TN<Args...>{};
+        return SM90_64x192x32_S32S8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 128 == 0) {
-        return SM90_64x128x32_S32S8U8_SS_TN<Args...>{};
+        return SM90_64x128x32_S32S8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 96 == 0) {
-        return SM90_64x96x32_S32S8U8_SS_TN<Args...>{};
+        return SM90_64x96x32_S32S8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 64 == 0) {
-        return SM90_64x64x32_S32S8U8_SS_TN<Args...>{};
+        return SM90_64x64x32_S32S8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 32 == 0) {
-        return SM90_64x32x32_S32S8U8_SS_TN<Args...>{};
+        return SM90_64x32x32_S32S8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 16 == 0) {
-        return SM90_64x16x32_S32S8U8_SS_TN<Args...>{};
+        return SM90_64x16x32_S32S8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 8 == 0) {
-        return SM90_64x8x32_S32S8U8_SS_TN<Args...>{};
+        return SM90_64x8x32_S32S8U8_SS_TN{};
       }
       else {
         static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
@@ -578,32 +578,32 @@ ss_op_selector()
     }
 
     // ElementA == uint8_t && ElementB == int8_t
-    else if constexpr (std::is_same_v<ElementA, uint8_t> && std::is_same_v<ElementB, int8_t>) {
+    else if constexpr (is_same_v<ElementA, uint8_t> && is_same_v<ElementB, int8_t>) {
       static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
 
       if constexpr (Tile_N % 256 == 0) {
-        return SM90_64x256x32_S32U8S8_SS_TN<Args...>{};
+        return SM90_64x256x32_S32U8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 192 == 0) {
-        return SM90_64x192x32_S32U8S8_SS_TN<Args...>{};
+        return SM90_64x192x32_S32U8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 128 == 0) {
-        return SM90_64x128x32_S32U8S8_SS_TN<Args...>{};
+        return SM90_64x128x32_S32U8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 96 == 0) {
-        return SM90_64x96x32_S32U8S8_SS_TN<Args...>{};
+        return SM90_64x96x32_S32U8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 64 == 0) {
-        return SM90_64x64x32_S32U8S8_SS_TN<Args...>{};
+        return SM90_64x64x32_S32U8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 32 == 0) {
-        return SM90_64x32x32_S32U8S8_SS_TN<Args...>{};
+        return SM90_64x32x32_S32U8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 16 == 0) {
-        return SM90_64x16x32_S32U8S8_SS_TN<Args...>{};
+        return SM90_64x16x32_S32U8S8_SS_TN{};
       }
       else if constexpr (Tile_N % 8 == 0) {
-        return SM90_64x8x32_S32U8S8_SS_TN<Args...>{};
+        return SM90_64x8x32_S32U8S8_SS_TN{};
       }
       else {
         static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
@@ -611,32 +611,32 @@ ss_op_selector()
     }
 
     // ElementA == uint8_t && ElementB == uint8_t
-    else if constexpr (std::is_same_v<ElementA, uint8_t> && std::is_same_v<ElementB, uint8_t>) {
+    else if constexpr (is_same_v<ElementA, uint8_t> && is_same_v<ElementB, uint8_t>) {
       static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
 
       if constexpr (Tile_N % 256 == 0) {
-        return SM90_64x256x32_S32U8U8_SS_TN<Args...>{};
+        return SM90_64x256x32_S32U8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 192 == 0) {
-        return SM90_64x192x32_S32U8U8_SS_TN<Args...>{};
+        return SM90_64x192x32_S32U8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 128 == 0) {
-        return SM90_64x128x32_S32U8U8_SS_TN<Args...>{};
+        return SM90_64x128x32_S32U8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 96 == 0) {
-        return SM90_64x96x32_S32U8U8_SS_TN<Args...>{};
+        return SM90_64x96x32_S32U8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 64 == 0) {
-        return SM90_64x64x32_S32U8U8_SS_TN<Args...>{};
+        return SM90_64x64x32_S32U8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 32 == 0) {
-        return SM90_64x32x32_S32U8U8_SS_TN<Args...>{};
+        return SM90_64x32x32_S32U8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 16 == 0) {
-        return SM90_64x16x32_S32U8U8_SS_TN<Args...>{};
+        return SM90_64x16x32_S32U8U8_SS_TN{};
       }
       else if constexpr (Tile_N % 8 == 0) {
-        return SM90_64x8x32_S32U8U8_SS_TN<Args...>{};
+        return SM90_64x8x32_S32U8U8_SS_TN{};
       }
       else {
         static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
@@ -650,7 +650,7 @@ ss_op_selector()
   }
 }
 
-template<
+template <
   class ElementA,
   class ElementB,
   class ElementC,
@@ -671,9 +671,9 @@ rs_op_selector()
   auto Tile_N = size<1>(TileShape_MNK{});
 
   // FP16 accumulator
-  if constexpr (std::is_same_v<ElementC, half_t>) {
-    static_assert(std::is_same_v<ElementA, half_t>, "Element types for AB must be half if ElementC is half.");
-    static_assert(std::is_same_v<ElementB, half_t>, "Element types for AB must be half if ElementC is half.");
+  if constexpr (is_same_v<ElementC, half_t>) {
+    static_assert(is_same_v<ElementA, half_t>, "Element types for AB must be half if ElementC is half.");
+    static_assert(is_same_v<ElementB, half_t>, "Element types for AB must be half if ElementC is half.");
     static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
 
     // Dispatch against the Tile N mode size
@@ -707,12 +707,12 @@ rs_op_selector()
   }
 
   // FP32 accumulator
-  else if constexpr (std::is_same_v<ElementC, float>) {
-    static_assert(std::is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
+  else if constexpr (is_same_v<ElementC, float>) {
+    static_assert(is_same_v<ElementA, ElementB>, "ElementA and ElementB must be the same type for this config.");
     static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
 
     // FP16 inputs
-    if constexpr (std::is_same_v<ElementA, half_t>) {
+    if constexpr (is_same_v<ElementA, half_t>) {
       if constexpr (Tile_N % 256 == 0) {
         return SM90_64x256x16_F32F16F16_RS<MajorA, MajorB, Args...>{};
       }
@@ -743,7 +743,7 @@ rs_op_selector()
     }
 
     // BF16 inputs
-    else if constexpr (std::is_same_v<ElementA, bfloat16_t>) {
+    else if constexpr (is_same_v<ElementA, bfloat16_t>) {
       static_assert(size<2>(TileShape_MNK{}) % 16 == 0, "Tile_K must be a multiple of 16.");
 
       if constexpr (Tile_N % 256 == 0) {
@@ -776,7 +776,7 @@ rs_op_selector()
     }
 
     // TF32 inputs
-    else if constexpr (std::is_same_v<ElementA, tfloat32_t>) {
+    else if constexpr (is_same_v<ElementA, tfloat32_t>) {
       static_assert(MajorB == GMMA::Major::K, "MajorB must be GMMA::Major::K for this config.");
       static_assert(size<2>(TileShape_MNK{}) % 8 == 0, "Tile_K must be a multiple of 8.");
 
@@ -815,35 +815,35 @@ rs_op_selector()
   }
 
   // S32 accumulator
-  else if constexpr (std::is_same_v<ElementC, int32_t>) {
+  else if constexpr (is_same_v<ElementC, int32_t>) {
     static_assert(MajorB == GMMA::Major::K, "MajorB must be GMMA::Major::K for this config.");
     static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
 
     // ElementA == int8_t && ElementB == int8_t
-    if constexpr (std::is_same_v<ElementA, int8_t> && std::is_same_v<ElementB, int8_t>) {
+    if constexpr (is_same_v<ElementA, int8_t> && is_same_v<ElementB, int8_t>) {
       if constexpr (Tile_N % 256 == 0) {
-        return SM90_64x256x32_S32S8S8_RS_TN<Args...>{};
+        return SM90_64x256x32_S32S8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 192 == 0) {
-        return SM90_64x192x32_S32S8S8_RS_TN<Args...>{};
+        return SM90_64x192x32_S32S8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 128 == 0) {
-        return SM90_64x128x32_S32S8S8_RS_TN<Args...>{};
+        return SM90_64x128x32_S32S8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 96 == 0) {
-        return SM90_64x96x32_S32S8S8_RS_TN<Args...>{};
+        return SM90_64x96x32_S32S8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 64 == 0) {
-        return SM90_64x64x32_S32S8S8_RS_TN<Args...>{};
+        return SM90_64x64x32_S32S8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 32 == 0) {
-        return SM90_64x32x32_S32S8S8_RS_TN<Args...>{};
+        return SM90_64x32x32_S32S8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 16 == 0) {
-        return SM90_64x16x32_S32S8S8_RS_TN<Args...>{};
+        return SM90_64x16x32_S32S8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 8 == 0) {
-        return SM90_64x8x32_S32S8S8_RS_TN<Args...>{};
+        return SM90_64x8x32_S32S8S8_RS_TN{};
       }
       else {
         static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
@@ -851,32 +851,32 @@ rs_op_selector()
     }
 
     // ElementA == int8_t && ElementB == uint8_t
-    else if constexpr (std::is_same_v<ElementA, int8_t> && std::is_same_v<ElementB, uint8_t>) {
+    else if constexpr (is_same_v<ElementA, int8_t> && is_same_v<ElementB, uint8_t>) {
       static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
 
       if constexpr (Tile_N % 256 == 0) {
-        return SM90_64x256x32_S32S8U8_RS_TN<Args...>{};
+        return SM90_64x256x32_S32S8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 192 == 0) {
-        return SM90_64x192x32_S32S8U8_RS_TN<Args...>{};
+        return SM90_64x192x32_S32S8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 128 == 0) {
-        return SM90_64x128x32_S32S8U8_RS_TN<Args...>{};
+        return SM90_64x128x32_S32S8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 96 == 0) {
-        return SM90_64x96x32_S32S8U8_RS_TN<Args...>{};
+        return SM90_64x96x32_S32S8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 64 == 0) {
-        return SM90_64x64x32_S32S8U8_RS_TN<Args...>{};
+        return SM90_64x64x32_S32S8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 32 == 0) {
-        return SM90_64x32x32_S32S8U8_RS_TN<Args...>{};
+        return SM90_64x32x32_S32S8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 16 == 0) {
-        return SM90_64x16x32_S32S8U8_RS_TN<Args...>{};
+        return SM90_64x16x32_S32S8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 8 == 0) {
-        return SM90_64x8x32_S32S8U8_RS_TN<Args...>{};
+        return SM90_64x8x32_S32S8U8_RS_TN{};
       }
       else {
         static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
@@ -884,32 +884,32 @@ rs_op_selector()
     }
 
     // ElementA == uint8_t && ElementB == int8_t
-    else if constexpr (std::is_same_v<ElementA, uint8_t> && std::is_same_v<ElementB, int8_t>) {
+    else if constexpr (is_same_v<ElementA, uint8_t> && is_same_v<ElementB, int8_t>) {
       static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
 
       if constexpr (Tile_N % 256 == 0) {
-        return SM90_64x256x32_S32U8S8_RS_TN<Args...>{};
+        return SM90_64x256x32_S32U8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 192 == 0) {
-        return SM90_64x192x32_S32U8S8_RS_TN<Args...>{};
+        return SM90_64x192x32_S32U8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 128 == 0) {
-        return SM90_64x128x32_S32U8S8_RS_TN<Args...>{};
+        return SM90_64x128x32_S32U8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 96 == 0) {
-        return SM90_64x96x32_S32U8S8_RS_TN<Args...>{};
+        return SM90_64x96x32_S32U8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 64 == 0) {
-        return SM90_64x64x32_S32U8S8_RS_TN<Args...>{};
+        return SM90_64x64x32_S32U8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 32 == 0) {
-        return SM90_64x32x32_S32U8S8_RS_TN<Args...>{};
+        return SM90_64x32x32_S32U8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 16 == 0) {
-        return SM90_64x16x32_S32U8S8_RS_TN<Args...>{};
+        return SM90_64x16x32_S32U8S8_RS_TN{};
       }
       else if constexpr (Tile_N % 8 == 0) {
-        return SM90_64x8x32_S32U8S8_RS_TN<Args...>{};
+        return SM90_64x8x32_S32U8S8_RS_TN{};
       }
       else {
         static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");
@@ -917,32 +917,32 @@ rs_op_selector()
     }
 
     // ElementA == uint8_t && ElementB == uint8_t
-    else if constexpr (std::is_same_v<ElementA, uint8_t> && std::is_same_v<ElementB, uint8_t>) {
+    else if constexpr (is_same_v<ElementA, uint8_t> && is_same_v<ElementB, uint8_t>) {
       static_assert(size<2>(TileShape_MNK{}) % 32 == 0, "Tile_K must be a multiple of 32.");
 
       if constexpr (Tile_N % 256 == 0) {
-        return SM90_64x256x32_S32U8U8_RS_TN<Args...>{};
+        return SM90_64x256x32_S32U8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 192 == 0) {
-        return SM90_64x192x32_S32U8U8_RS_TN<Args...>{};
+        return SM90_64x192x32_S32U8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 128 == 0) {
-        return SM90_64x128x32_S32U8U8_RS_TN<Args...>{};
+        return SM90_64x128x32_S32U8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 96 == 0) {
-        return SM90_64x96x32_S32U8U8_RS_TN<Args...>{};
+        return SM90_64x96x32_S32U8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 64 == 0) {
-        return SM90_64x64x32_S32U8U8_RS_TN<Args...>{};
+        return SM90_64x64x32_S32U8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 32 == 0) {
-        return SM90_64x32x32_S32U8U8_RS_TN<Args...>{};
+        return SM90_64x32x32_S32U8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 16 == 0) {
-        return SM90_64x16x32_S32U8U8_RS_TN<Args...>{};
+        return SM90_64x16x32_S32U8U8_RS_TN{};
       }
       else if constexpr (Tile_N % 8 == 0) {
-        return SM90_64x8x32_S32U8U8_RS_TN<Args...>{};
+        return SM90_64x8x32_S32U8U8_RS_TN{};
       }
       else {
         static_assert(Tile_N % 8 == 0, "Tile_N must be a multiple of 8.");

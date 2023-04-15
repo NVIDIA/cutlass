@@ -35,6 +35,8 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/epilogue/collective/detail.hpp"
 
 #include "cute/tensor.hpp"
 #include "cute/numeric/int.hpp"
@@ -52,13 +54,16 @@ namespace collective {
 template <
   class StrideC_,
   class StrideD_,
-  class ThreadEpilogueOp_
+  class ThreadEpilogueOp_,
+  class EpilogueSchedule_
 >
 class DefaultEpilogue {
 public:
   //
   // Type Aliases
   //
+  using EpilogueSchedule = EpilogueSchedule_;
+  
   // derived types of output thread level operator
   using ThreadEpilogueOp = ThreadEpilogueOp_;
   using ElementOutput = typename ThreadEpilogueOp::ElementOutput;
@@ -78,28 +83,40 @@ public:
 
   struct SharedStorage { };
 
-  // Params of epilogue::collective contain the epilogue::thread params
-  struct Params {
+  // Host side epilgoue arguments
+  struct Arguments {
+    typename ThreadEpilogueOp::Params thread{};
     ElementC const* ptr_C = nullptr;
     StrideC dC{};
     ElementD* ptr_D = nullptr;
     StrideD dD{};
-    typename ThreadEpilogueOp::Params thread_params{};
   };
+
+  // Device side epilogue params
+  using Params = Arguments;
 
   //
   // Methods
   //
 
-  template <class Args>
+  template <class ProblemShape>
   static constexpr Params
-  to_underlying_arguments(Args const& args, void* workspace) {
-    (void) workspace;
-    return {args.epilogue_params};
+  to_underlying_arguments(
+      [[maybe_unused]] ProblemShape const& _,
+      Arguments const& args,
+      [[maybe_unused]] void* workspace) {
+    return args;
   }
 
   CUTLASS_HOST_DEVICE
-  DefaultEpilogue(Params const& params_) : params(params_) { }
+  DefaultEpilogue(Params const& params_)
+      : params(params_), epilogue_op(params_.thread) { }
+
+  CUTLASS_DEVICE
+  bool
+  is_source_needed() {
+    return epilogue_op.is_source_needed();
+  }
 
   template<
     class ProblemShapeMNKL,
@@ -118,7 +135,7 @@ public:
       TiledMma tiled_mma,
       ResidueMNK residue_mnk,
       int thread_idx,
-      char* smem_buf)
+      [[maybe_unused]] char* smem_buf)
   {
     using namespace cute;
     using X = Underscore;
@@ -128,17 +145,17 @@ public:
     static_assert(rank(BlockShapeMNK{}) == 3, "BlockShapeMNK must be rank 3");
     static_assert(rank(BlockCoordMNKL{}) == 4, "BlockCoordMNKL must be rank 3");
 
-    (void) smem_buf;
-    ThreadEpilogueOp epilogue_op{params.thread_params};
-
     // Separate out problem shape for convenience
     auto M = get<0>(problem_shape_mnkl);
     auto N = get<1>(problem_shape_mnkl);
     auto L = get<3>(problem_shape_mnkl);
 
+    auto stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC);
+    auto stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD);
+
     // Represent the full output tensor
-    Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), params.dC);                // (m,n,l)
-    Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N,L), params.dD);                // (m,n,l)
+    Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), stride_c);                 // (m,n,l)
+    Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N,L), stride_d);                 // (m,n,l)
     Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
     Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
 
@@ -184,6 +201,7 @@ public:
 
 private:
   Params params;
+  ThreadEpilogueOp epilogue_op;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

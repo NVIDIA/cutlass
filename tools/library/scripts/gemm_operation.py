@@ -23,7 +23,8 @@ from library import *
 class GemmOperation:
   #
   def __init__(self, gemm_kind, arch, tile_description, A, B, C, element_epilogue, \
-      epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity8):
+      epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity8, D = None, 
+      kernel_schedule = KernelScheduleType.ScheduleAuto, epilogue_schedule = EpilogueScheduleType.ScheduleAuto):
 
     self.prefix = "3x" if gemm_kind == GemmKind.Universal3x else ""
     self.operation_kind = OperationKind.Gemm
@@ -33,6 +34,15 @@ class GemmOperation:
     self.A = A
     self.B = B
     self.C = C
+    self.D = D 
+    if self.D == None:
+      self.D = self.C
+
+    if gemm_kind != GemmKind.Universal3x:
+      assert(kernel_schedule == KernelScheduleType.ScheduleAuto)
+      assert(epilogue_schedule == EpilogueScheduleType.ScheduleAuto)
+    self.kernel_schedule = kernel_schedule
+    self.epilogue_schedule = epilogue_schedule
     self.element_epilogue = element_epilogue
     self.epilogue_functor = epilogue_functor
     self.swizzling_functor = swizzling_functor
@@ -122,11 +132,12 @@ class GemmOperation:
 
   def extended_name_3x(self):
     '''Generates a string representing the MMA atom. Assumes accumulator type is C type.'''
-    extended_name = "{core_name}_{element_a}_{element_b}_{element_acc}_{element_c}".format(
+    extended_name = "{core_name}_{element_a}_{element_b}_{element_acc}_{element_c}_{element_d}".format(
       element_a = DataTypeNames[self.A.element],
       element_b = DataTypeNames[self.B.element],
       element_acc = DataTypeNames[self.tile_description.math_instruction.element_accumulator],
       element_c = DataTypeNames[self.C.element],
+      element_d = DataTypeNames[self.D.element],
       core_name = self.core_name())
     return extended_name
 
@@ -152,12 +163,20 @@ class GemmOperation:
         ShortLayoutTypeNames[self.B.layout],
         ShortLayoutTypeNames[self.C.layout])
 
+  # Generates a short string representing underlying kernel schedule type
+  def kernel_schedule_name_3x(self):
+    return KernelScheduleSuffixes[self.kernel_schedule]
+
+  # Generates a short string representing underlying epilogue schedule type
+  def epilogue_schedule_name_3x(self):
+    return EpilogueScheduleSuffixes[self.epilogue_schedule]
+
   # Generates the full kernel function name
   def procedural_name(self):
     ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
     if self.arch >= 90:
-      kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}"
+      kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{k}{e}"
       return kernel_name_template.format(
           p = self.prefix,
           ar = self.arch,
@@ -171,7 +190,9 @@ class GemmOperation:
           ck = self.tile_description.cluster_shape[2],
           l = self.tile_description.stages,
           s = self.layout_name_3x(),
-          al = str(max(self.A.alignment, self.B.alignment)))
+          al = str(max(self.A.alignment, self.B.alignment)),
+          k = self.kernel_schedule_name_3x(),
+          e = self.epilogue_schedule_name_3x())
     else:
       threadblock = self.tile_description.procedural_name()
       return "cutlass{p}_{op}_{ex}_{tb}_{l}_align{a}".format(
@@ -604,8 +625,7 @@ class EmitGemmUniversal3xInstance:
       "cutlass/numeric_types.h",
       "cutlass/gemm/kernel/gemm_universal.hpp",
       "cutlass/gemm/collective/collective_builder.hpp",
-      "cutlass/epilogue/collective/default_epilogue.hpp",
-      "cutlass/epilogue/thread/linear_combination.h",
+      "cutlass/epilogue/collective/collective_builder.hpp",
     ]
     self.builtin_epilogue_functor_template = """
     ${epilogue_functor}<
@@ -617,6 +637,18 @@ class EmitGemmUniversal3xInstance:
 """
     self.gemm_template = """
 
+using ${operation_name}_epilogue =
+  typename cutlass::epilogue::collective::CollectiveBuilder<
+    ${arch}, ${opcode_class},
+    cute::Shape<cute::_${threadblock_shape_m}, cute::_${threadblock_shape_n}, cute::_${threadblock_shape_k}>,
+    cute::Shape<cute::_${cluster_m},cute::_${cluster_n},cute::_${cluster_k}>,
+    cutlass::epilogue::collective::EpilogueTileAuto,
+    ${element_accumulator}, ${element_epilogue},
+    ${element_c}, ${layout_c}, ${align_c},
+    ${element_d}, ${layout_d}, ${align_d},
+    ${epilogue_schedule}
+  >::CollectiveOp;
+
 using ${operation_name}_mainloop =
   typename cutlass::gemm::collective::CollectiveBuilder<
     ${arch}, ${opcode_class},
@@ -625,17 +657,10 @@ using ${operation_name}_mainloop =
     ${element_accumulator},
     cute::Shape<cute::_${threadblock_shape_m}, cute::_${threadblock_shape_n}, cute::_${threadblock_shape_k}>,
     cute::Shape<cute::_${cluster_m},cute::_${cluster_n},cute::_${cluster_k}>,
-    cutlass::gemm::collective::StageCountAuto,
-    cutlass::gemm::collective::KernelScheduleAuto
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      sizeof(typename ${operation_name}_epilogue::SharedStorage)>,
+  ${kernel_schedule}
   >::CollectiveOp;
-
-using ${operation_name}_epilogue =
-  cutlass::epilogue::collective::DefaultEpilogue<
-    cutlass::gemm::TagToStrideC_t<${layout_c}>,
-    cutlass::gemm::TagToStrideC_t<${layout_c}>,
-    cutlass::epilogue::thread::LinearCombination<
-      ${element_c}, ${epilogue_vector_length}, ${element_accumulator}, ${element_epilogue}>
-  >;
 
 // Gemm operator ${operation_name}
 using ${operation_name}_base = cutlass::gemm::kernel::GemmUniversal<
@@ -670,8 +695,8 @@ ${compile_guard_end}
       stage_count_string = "cutlass::gemm::collective::StageCountAuto"
     warp_shape = [threadblock_shape[idx] // warp_count[idx] for idx in range(3)]
 
-    instance_layout_A, instance_layout_B, instance_layout_C = \
-      (operation.A.layout, operation.B.layout, operation.C.layout)
+    instance_layout_A, instance_layout_B, instance_layout_C , instance_layout_D = \
+      (operation.A.layout, operation.B.layout, operation.C.layout, operation.D.layout)
 
     # 3.0 profiler integration only supports trivial epilogues for now
     epilogue_vector_length = 1
@@ -697,6 +722,8 @@ ${compile_guard_end}
       'layout_b': LayoutTag[instance_layout_B],
       'element_c': DataTypeTag[operation.C.element],
       'layout_c': LayoutTag[instance_layout_C],
+      'element_d': DataTypeTag[operation.D.element],
+      'layout_d': LayoutTag[instance_layout_D],
       'element_accumulator': DataTypeTag[operation.accumulator_type()],
       'opcode_class': OpcodeClassTag[operation.tile_description.math_instruction.opcode_class],
       'arch': "cutlass::arch::Sm%d" % operation.arch,
@@ -712,10 +739,14 @@ ${compile_guard_end}
       'instruction_shape_m': str(operation.tile_description.math_instruction.instruction_shape[0]),
       'instruction_shape_n': str(operation.tile_description.math_instruction.instruction_shape[1]),
       'instruction_shape_k': str(operation.tile_description.math_instruction.instruction_shape[2]),
+      'kernel_schedule' : str(KernelScheduleTag[operation.kernel_schedule]),
+      'epilogue_schedule' : str(EpilogueScheduleTag[operation.epilogue_schedule]),
       'epilogue_functor': epilogue_functor,
       'stages': stage_count_string,
       'align_a': str(operation.A.alignment),
       'align_b': str(operation.B.alignment),
+      'align_c': str(operation.C.alignment),
+      'align_d': str(operation.C.alignment),
       'transform_a': ComplexTransformTag[operation.A.complex_transform],
       'transform_b': ComplexTransformTag[operation.B.complex_transform],
       'math_operation': MathOperationTag[operation.tile_description.math_instruction.math_operation],

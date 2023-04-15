@@ -43,6 +43,7 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
+#include "cutlass/epilogue/collective/collective_builder.hpp"
 #include "cutlass/gemm/collective/collective_builder.hpp"
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/thread/linear_combination.h"
@@ -74,15 +75,20 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::KernelMultistage
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 8,
+      cutlass::half_t, LayoutC, 8,
+      cutlass::epilogue::NoSmemWarpSpecialized
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -104,15 +110,20 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 4,
+      cutlass::half_t, LayoutC, 4,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -135,15 +146,20 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 2,
+      cutlass::half_t, LayoutC, 2,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -169,15 +185,20 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::KernelMultistage
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 8,
+      cutlass::half_t, LayoutC, 8,
+      cutlass::epilogue::NoSmemWarpSpecialized
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -201,15 +222,20 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 4,
+      cutlass::half_t, LayoutC, 4,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -233,15 +259,20 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 2,
+      cutlass::half_t, LayoutC, 2,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -267,15 +298,20 @@ TEST(SM90_Device_Gemm_f16n_f16t_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::KernelMultistage
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 8,
+      cutlass::half_t, LayoutC, 8,
+      cutlass::epilogue::NoSmemWarpSpecialized
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -299,15 +335,20 @@ TEST(SM90_Device_Gemm_f16n_f16t_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 4,
+      cutlass::half_t, LayoutC, 4,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -331,15 +372,20 @@ TEST(SM90_Device_Gemm_f16n_f16t_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 2,
+      cutlass::half_t, LayoutC, 2,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -365,15 +411,20 @@ TEST(SM90_Device_Gemm_f16n_f16n_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::KernelMultistage
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 8,
+      cutlass::half_t, LayoutC, 8,
+      cutlass::epilogue::NoSmemWarpSpecialized
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -397,15 +448,20 @@ TEST(SM90_Device_Gemm_f16n_f16n_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 4,
+      cutlass::half_t, LayoutC, 4,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
@@ -429,15 +485,20 @@ TEST(SM90_Device_Gemm_f16n_f16n_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
-  using EpilogueOp = cutlass::epilogue::collective::DefaultEpilogue<
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::gemm::TagToStrideC_t<LayoutC>,
-      cutlass::epilogue::thread::LinearCombination<cutlass::half_t, 1, float, float>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_64>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      cutlass::half_t, LayoutC, 2,
+      cutlass::half_t, LayoutC, 2,
+      cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
       Shape<int,int,int,int>,
       CollectiveOp,
-      EpilogueOp
+      CollectiveEpilogue
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;

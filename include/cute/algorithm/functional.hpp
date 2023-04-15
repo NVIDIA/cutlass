@@ -30,9 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <utility>
-
 #include <cute/config.hpp>
+
+#include <cute/util/type_traits.hpp>
 
 /** C++14 <functional> extensions */
 

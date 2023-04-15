@@ -69,7 +69,7 @@ namespace cute
 template <class T, class Swizzle>
 struct smem_ptr_swizzle
 {
-  static_assert(std::is_empty<Swizzle>::value, "Swizzle can't have state.");
+  static_assert(is_empty<Swizzle>::value, "Swizzle can't have state.");
 
   CUTE_HOST_DEVICE constexpr
   T* get() const
@@ -86,7 +86,7 @@ struct smem_ptr_swizzle
   CUTE_HOST_DEVICE constexpr static
   T* apply_swizzle(T* ptr)
   {
-    return reinterpret_cast<T*>(Swizzle::apply(reinterpret_cast<std::uintptr_t>(ptr)));
+    return reinterpret_cast<T*>(Swizzle::apply(reinterpret_cast<uintptr_t>(ptr)));
   }
 
   CUTE_HOST_DEVICE constexpr
@@ -200,7 +200,7 @@ recast(smem_ptr_swizzle<T const,Swizzle> const& ptr)
 }
 
 //
-// Conversion with swizzle_layout 
+// Conversion with swizzle_layout
 //
 
 template <class T, class Swizzle, int B, class Layout>
@@ -273,10 +273,12 @@ CUTE_HOST_DEVICE void print(smem_ptr_swizzle<T,Swizzle<B,M,S>> const& ptr)
   printf("smem_ptr_S<%d,%d,%d>_%db(%p)", B, M, S, int(8*sizeof(T)), ptr.get());
 }
 
+#if !defined(__CUDACC_RTC__)
 template <class T, int B, int M, int S>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, smem_ptr_swizzle<T,Swizzle<B,M,S>> const&)
 {
   return os << "smem_ptr_S<" << B << "," << M << "," << S << ">_" << int(8*sizeof(T)) << "b";
 }
+#endif
 
 } // end namespace cute

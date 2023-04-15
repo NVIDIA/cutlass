@@ -32,7 +32,7 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
-#include "cutlass/pipeline.hpp"
+#include "cutlass/pipeline/pipeline.hpp"
 #include "cute/arch/cluster_sm90.hpp"
 #include "cutlass/arch/reg_reconfig.h"
 
@@ -120,8 +120,8 @@ struct CollectiveMma<
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{})));
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 1 or more.");
-  static_assert(std::is_base_of<cute::GMMA::gmma_descriptor_iterator, typename TiledMma::FrgTypeA>::value &&
-                std::is_base_of<cute::GMMA::gmma_descriptor_iterator, typename TiledMma::FrgTypeB>::value,
+  static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
+                cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeB>::value,
                 "MMA atom must source both A and B operand from smem_desc for this mainloop.");
 
   struct SharedStorage
@@ -130,12 +130,14 @@ struct CollectiveMma<
     cute::array_aligned<ElementB, cute::cosize_v<SmemLayoutB>> smem_b;
   };
 
-  struct Params {
+  struct Arguments {
     ElementA const* ptr_A;
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
   };
+
+  using Params = Arguments;
 
   //
   // Methods
@@ -143,11 +145,11 @@ struct CollectiveMma<
 
   CollectiveMma() = default;
 
-  template <class Args>
+  template <class ProblemShape>
   static constexpr Params
-  to_underlying_arguments(Args const& args, void* workspace) {
+  to_underlying_arguments(ProblemShape const& _, Arguments const& args, void* workspace) {
     (void) workspace;
-    return {args.ptr_A, args.dA, args.ptr_B, args.dB};
+    return args;
   }
 
   /// Perform a collective-scoped matrix multiply-accumulate
@@ -180,13 +182,13 @@ struct CollectiveMma<
     static_assert(rank(SmemLayoutAtomB{}) == 2, "SmemLayoutAtom must be rank 2.");
     static_assert(rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
     static_assert(rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
-    static_assert(std::is_same<TransformA, cute::identity>::value,
+    static_assert(cute::is_same<TransformA, cute::identity>::value,
       "SM90 warpgroup MMA must specify transforms through MMA_Atom.");
-    static_assert(std::is_same<TransformB, cute::identity>::value,
+    static_assert(cute::is_same<TransformB, cute::identity>::value,
       "SM90 warpgroup MMA must specify transforms through MMA_Atom.");
-    static_assert(std::is_same<SmemCopyAtomA, void>::value,
+    static_assert(cute::is_same<SmemCopyAtomA, void>::value,
       "SM90 GMMA mainloops cannot have a non-void copy atom for smem sourced instructions.");
-    static_assert(std::is_same<SmemCopyAtomA, void>::value,
+    static_assert(cute::is_same<SmemCopyAtomA, void>::value,
       "SM90 GMMA mainloops cannot have a non-void copy atom for smem sourced instructions.");
 
     SharedStorage& storage = *reinterpret_cast<SharedStorage*>(smem_buf);
@@ -353,8 +355,8 @@ struct CollectiveMma<
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{})));
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 1 or more.");
-  static_assert(std::is_base_of<cute::GMMA::gmma_descriptor_iterator, typename TiledMma::FrgTypeA>::value &&
-                std::is_base_of<cute::GMMA::gmma_descriptor_iterator, typename TiledMma::FrgTypeB>::value,
+  static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
+                cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeB>::value,
                 "MMA atom must source both A and B operand from smem_desc for this mainloop.");
 
   struct SharedStorage
@@ -363,12 +365,14 @@ struct CollectiveMma<
     cute::array_aligned<ElementB, cute::cosize_v<SmemLayoutB>> smem_b;
   };
 
-  struct Params {
+  struct Arguments {
     ElementA const* ptr_A;
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
   };
+
+  using Params = Arguments;
 
   //
   // Methods
@@ -376,11 +380,11 @@ struct CollectiveMma<
 
   CollectiveMma() = default;
 
-  template <class Args>
+  template <class ProblemShape>
   static constexpr Params
-  to_underlying_arguments(Args const& args, void* workspace) {
+  to_underlying_arguments(ProblemShape const& _, Arguments const& args, void* workspace) {
     (void) workspace;
-    return {args.ptr_A, args.dA, args.ptr_B, args.dB};
+    return args;
   }
 
   /// Perform a collective-scoped matrix multiply-accumulate
@@ -413,13 +417,13 @@ struct CollectiveMma<
     static_assert(rank(SmemLayoutAtomB{}) == 2, "SmemLayoutAtom must be rank 2.");
     static_assert(rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
     static_assert(rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
-    static_assert(std::is_same<TransformA, cute::identity>::value,
+    static_assert(cute::is_same<TransformA, cute::identity>::value,
       "SM90 warpgroup MMA must specify transforms through MMA_Atom.");
-    static_assert(std::is_same<TransformB, cute::identity>::value,
+    static_assert(cute::is_same<TransformB, cute::identity>::value,
       "SM90 warpgroup MMA must specify transforms through MMA_Atom.");
-    static_assert(std::is_same<SmemCopyAtomA, void>::value,
+    static_assert(cute::is_same<SmemCopyAtomA, void>::value,
       "SM90 GMMA mainloops cannot have a non-void copy atom for smem sourced instructions.");
-    static_assert(std::is_same<SmemCopyAtomA, void>::value,
+    static_assert(cute::is_same<SmemCopyAtomA, void>::value,
       "SM90 GMMA mainloops cannot have a non-void copy atom for smem sourced instructions.");
 
     SharedStorage& storage = *reinterpret_cast<SharedStorage*>(smem_buf);

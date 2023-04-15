@@ -46,10 +46,12 @@ namespace cute
 // Signed integers
 //
 
-using int8_t  = std::int8_t;
-using int16_t = std::int16_t;
-using int32_t = std::int32_t;
-using int64_t = std::int64_t;
+using int2_t  = cute::int2b_t;
+using int4_t  = cute::int4b_t;
+using int8_t  = CUTE_STL_NAMESPACE::int8_t;
+using int16_t = CUTE_STL_NAMESPACE::int16_t;
+using int32_t = CUTE_STL_NAMESPACE::int32_t;
+using int64_t = CUTE_STL_NAMESPACE::int64_t;
 
 template <int N> struct int_bit;
 template <> struct int_bit<  2>  { using type = cute::int2b_t; };
@@ -72,10 +74,14 @@ using int_byte_t = typename int_byte<N>::type;
 // Unsigned integers
 //
 
-using uint8_t  = std::uint8_t;
-using uint16_t = std::uint16_t;
-using uint32_t = std::uint32_t;
-using uint64_t = std::uint64_t;
+using uint1_t   = cute::uint1b_t;
+using uint2_t   = cute::uint2b_t;
+using uint4_t   = cute::uint4b_t;
+using uint8_t   = CUTE_STL_NAMESPACE::uint8_t;
+using uint16_t  = CUTE_STL_NAMESPACE::uint16_t;
+using uint32_t  = CUTE_STL_NAMESPACE::uint32_t;
+using uint64_t  = CUTE_STL_NAMESPACE::uint64_t;
+using uint128_t = cute::uint128_t;
 
 template <int N> struct uint_bit;
 template <> struct uint_bit<  1> { using type = cute::uint1b_t; };
@@ -102,7 +108,7 @@ using uint_byte_t = typename uint_byte<N>::type;
 
 template <class T>
 struct sizeof_bytes {
-  static constexpr std::size_t value = sizeof(T);
+  static constexpr size_t value = sizeof(T);
 };
 template <class T>
 static constexpr int sizeof_bytes_v = sizeof_bytes<T>::value;
@@ -113,15 +119,15 @@ static constexpr int sizeof_bytes_v = sizeof_bytes<T>::value;
 
 template <class T>
 struct sizeof_bits {
-  static constexpr std::size_t value = sizeof(T) * 8;
+  static constexpr size_t value = sizeof(T) * 8;
 };
 template <>
 struct sizeof_bits<bool> {
-  static constexpr std::size_t value = 1;
+  static constexpr size_t value = 1;
 };
 template <int Bits, bool Signed>
 struct sizeof_bits<integer_subbyte<Bits,Signed>> {
-  static constexpr std::size_t value = Bits;
+  static constexpr size_t value = Bits;
 };
 template <class T>
 static constexpr int sizeof_bits_v = sizeof_bits<T>::value;

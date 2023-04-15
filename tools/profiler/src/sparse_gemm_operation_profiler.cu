@@ -56,7 +56,7 @@ SparseGemmOperationProfiler::SparseGemmOperationProfiler(Options const &options)
     options,
     library::OperationKind::kSparseGemm,
     {
-  	  {ArgumentTypeID::kEnumerated, {"gemm_kind"}, "Variant of GEMM (e.g. gemm, planar complex, batched, ...)"},
+  	  {ArgumentTypeID::kEnumerated, {"gemm_kind"}, "Variant of GEMM (e.g. sparse, ...)"},
   	  {ArgumentTypeID::kInteger, {"m", "problem-size::m"}, "M dimension of the GEMM problem space"},
     	{ArgumentTypeID::kInteger, {"n", "problem-size::n"}, "N dimension of the GEMM problem space"},
 	    {ArgumentTypeID::kInteger, {"k", "problem-size::k"}, "K dimension of the GEMM problem space"},
@@ -348,14 +348,16 @@ Status SparseGemmOperationProfiler::initialize_workspace(
     static_cast<library::SparseGemmDescription const &>(operation->description());
 
   if (options.execution_mode != ExecutionMode::kDryRun) {
-
+    int seed_shift = 0;
     gemm_workspace_.A = device_context.allocate_tensor(
       options,
       "A",
       operation_desc.A.element,
       operation_desc.A.layout,
       {int(problem_.m), int(problem_.k) / int(problem_.sparse)},
-      {int(problem_.lda)}
+      {int(problem_.lda)},
+      1, // batch_count
+      seed_shift++
     );
 
     gemm_workspace_.B = device_context.allocate_tensor(
@@ -364,7 +366,9 @@ Status SparseGemmOperationProfiler::initialize_workspace(
       operation_desc.B.element,
       operation_desc.B.layout,
       {int(problem_.k), int(problem_.n)},
-      {int(problem_.ldb)}
+      {int(problem_.ldb)},
+      1, // batch_count
+      seed_shift++
     );
 
     gemm_workspace_.C = device_context.allocate_tensor(
@@ -373,7 +377,9 @@ Status SparseGemmOperationProfiler::initialize_workspace(
       operation_desc.C.element,
       operation_desc.C.layout,
       {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldc)}
+      {int(problem_.ldc)},
+      1, // batch_count
+      seed_shift++
     );
 
     gemm_workspace_.Computed = device_context.allocate_tensor(
@@ -391,7 +397,9 @@ Status SparseGemmOperationProfiler::initialize_workspace(
       operation_desc.E.layout,
       operation_desc.A.element,
       {int(problem_.m), int(problem_.k) / int(problem_.sparse) / int(problem_.elements_per_128b)},
-      {int(problem_.lde)}
+      {int(problem_.lde)},
+      1, // batch_count
+      seed_shift++
     );
 
     gemm_workspace_.Reference = device_context.allocate_tensor(

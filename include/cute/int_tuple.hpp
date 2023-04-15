@@ -54,7 +54,7 @@ make_int_tuple(Ts const&... t)
 
 /** if rank(int) == 1, then get<0>(int) should work too
  */
-template <std::size_t I, class T, __CUTE_REQUIRES(is_integral<remove_cvref_t<T>>::value)>
+template <size_t I, class T, __CUTE_REQUIRES(is_integral<remove_cvref_t<T>>::value)>
 CUTE_HOST_DEVICE constexpr
 decltype(auto)
 get(T&& t) noexcept
@@ -65,7 +65,7 @@ get(T&& t) noexcept
 
 /** Custom recursive get for anything that implements get<I>(.)
  */
-template <std::size_t I0, std::size_t I1, std::size_t... Is, class Tuple>
+template <size_t I0, size_t I1, size_t... Is, class Tuple>
 CUTE_HOST_DEVICE constexpr
 decltype(auto)
 get(Tuple&& t) noexcept
@@ -96,7 +96,7 @@ rank(IntTuple const& t)
 }
 
 template <class IntTuple>
-using rank_t = decltype(rank(std::declval<IntTuple>()));
+using rank_t = decltype(rank(declval<IntTuple>()));
 
 template <class IntTuple>
 static constexpr int rank_v = rank_t<IntTuple>::value;
@@ -196,7 +196,7 @@ depth(IntTuple const& t)
 }
 
 template <class Tuple>
-using depth_t = decltype(depth(std::declval<Tuple>()));
+using depth_t = decltype(depth(declval<Tuple>()));
 
 template <class Tuple>
 static constexpr int depth_v = depth_t<Tuple>::value;
@@ -217,72 +217,6 @@ product(IntTuple const& a)
   }
 
   CUTE_GCC_UNREACHABLE;
-}
-
-// Work-around for some compiler versions (e.g., GCC 8.x)
-// incorrectly not being able to compile certain
-// legal C++ fold expressions inside generic lambdas.
-// Issue is known to exist in GCC 8.4 and GCC 8.5.
-// Work-around should be valid portable CUDA C++.
-#if ! defined(CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND)
-#  if defined(__GNUC__) && __GNUC__ == 8
-#    define CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND 1
-#  endif
-#endif
-
-#if defined(CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND)
-namespace impl {
-
-template<int B, int E>
-struct SubrangeProductImpl {
-  // GCC 8.4 accepts the fold expression here.  If that doesn't work,
-  // the other branch (recursive operator()) is known to build
-  // with GCC 8.4 as well.  The code does not enable recursion by default,
-  // as fold expressions might be easier for compilers to optimize.
-#if 1
-  template<class ... Args>
-  CUTE_HOST_DEVICE constexpr auto
-  operator()(Args const&... args) const
-  {
-    return (Int<1>{} * ... * product(args));
-  }
-#else
-  CUTE_HOST_DEVICE constexpr Int<1>
-  operator()() const
-  {
-    return Int<1>{};
-  }
-
-  template<class Head, class ... Tail>
-  CUTE_HOST_DEVICE constexpr auto
-  operator()(Head const& head, Tail const&... tail) const
-  {
-    return (*this)(tail...) * product<Head>(head);
-  }
-#endif // 1
-};
-
-} // namespace impl
-
-#endif // defined(CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND)
-
-// Product of a subrange
-template <int B, int E, class Tuple>
-CUTE_HOST_DEVICE constexpr
-auto
-product(Tuple const& a)
-{
-  // Work around some compiler versions that do not accept
-  // the generic lambda in the else branch, by replacing
-  // the lambda with a function object.  The work-around
-  // is legal C++17, but the original code might be easier
-  // for non-broken compilers to optimize, so it remains.
-#if defined(CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND)
-  impl::SubrangeProductImpl<B, E> function_object;
-  return detail::apply(a, function_object, make_range<B, E>{});
-#else
-  return detail::apply(a, [](auto const&... v){ return (Int<1>{} * ... * product(v)); }, make_range<B,E>{});
-#endif // defined(CUTE_FOLD_GENERIC_LAMBDA_WORKAROUND)
 }
 
 template <class Tuple>
@@ -309,7 +243,7 @@ size(IntTuple const& a)
 }
 
 template <class IntTuple>
-static constexpr int size_v = decltype(size(std::declval<IntTuple>()))::value;
+static constexpr int size_v = decltype(size(declval<IntTuple>()))::value;
 
 //
 // sum
@@ -380,10 +314,10 @@ shape_div(IntTupleA const& a, IntTupleB const& b)
     if constexpr (is_tuple<IntTupleB>::value) {  // tuple tuple
       static_assert(tuple_size<IntTupleA>::value == tuple_size<IntTupleB>::value, "Mismatched ranks");
       return transform(a, b, [](auto const& x, auto const& y) { return shape_div(x,y); });
-    } else {                                     // tuple int
-      auto const [result, rest] = fold(a, make_tuple(make_tuple(), b),
+    } else {                                    // tuple int
+      auto const [result, rest] = fold(a, cute::make_tuple(cute::make_tuple(), b),
         [] (auto const& init, auto const& ai) {
-          return make_tuple(append(get<0>(init), shape_div(ai, get<1>(init))), shape_div(get<1>(init), ai));
+          return cute::make_tuple(append(get<0>(init), shape_div(ai, get<1>(init))), shape_div(get<1>(init), ai));
         });
       return result;
     }
@@ -436,12 +370,40 @@ CUTE_HOST_DEVICE constexpr
 auto
 congruent(IntTupleA const& a, IntTupleB const& b)
 {
-  return bool_constant<std::is_same<decltype(repeat_like(shape(a),_0{})),
+  return bool_constant<is_same<decltype(repeat_like(shape(a),_0{})),
                                     decltype(repeat_like(shape(b),_0{}))>::value>{};
 }
 
 template <class A, class B>
-using is_congruent = decltype(congruent(std::declval<A>(), std::declval<B>()));
+using is_congruent = decltype(congruent(declval<A>(), declval<B>()));
+
+/** Test if two IntTuple have the similar profiles up to Shape A (hierarchical rank division)
+ */
+template <class IntTupleA, class IntTupleB>
+CUTE_HOST_DEVICE constexpr
+auto
+weakly_congruent(IntTupleA const& a, IntTupleB const& b)
+{
+  if constexpr (is_tuple<IntTupleA>::value && is_tuple<IntTupleB>::value) {
+    if constexpr (tuple_size<IntTupleA>::value != tuple_size<IntTupleB>::value) {
+      return false_type{};
+    } else {
+      return transform_apply(a, b, [](auto const& x, auto const& y) { return weakly_congruent(x,y); },
+                                   [](auto const&... z) { return (true_type{} && ... && z); });
+    }
+  } else if constexpr (is_integral<IntTupleA>::value) {
+    return true_type{};
+  } else if constexpr (is_integral<IntTupleB>::value) {
+    return false_type{};
+  } else {
+    return weakly_congruent(shape(a), shape(b));
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+template <class A, class B>
+using is_weakly_congruent = decltype(weakly_congruent(declval<A>(), declval<B>()));
 
 /** Test if Shape B is compatible with Shape A:
  * Any coordinate into A can also be used as a coordinate into B
@@ -471,7 +433,36 @@ compatible(IntTupleA const& a, IntTupleB const& b)
 }
 
 template <class A, class B>
-using is_compatible = decltype(compatible(std::declval<A>(), std::declval<B>()));
+using is_compatible = decltype(compatible(declval<A>(), declval<B>()));
+
+/** Test if Shape B is weakly compatible with Shape A:
+ * Shape B divides Shape A at some level of refinement
+ */
+template <class IntTupleA, class IntTupleB>
+CUTE_HOST_DEVICE constexpr
+auto
+weakly_compatible(IntTupleA const& a, IntTupleB const& b)
+{
+  if constexpr (is_tuple<IntTupleA>::value && is_tuple<IntTupleB>::value) {
+    if constexpr (tuple_size<IntTupleA>::value != tuple_size<IntTupleB>::value) {
+      return false_type{};
+    } else {
+      return transform_apply(a, b, [](auto const& x, auto const& y) { return weakly_compatible(x,y); },
+                                   [](auto const&... z) { return (true_type{} && ... && z); });
+    }
+  } else if constexpr (is_integral<IntTupleA>::value) {
+    return a % size(b) == Int<0>{};
+  } else if constexpr (is_integral<IntTupleB>::value) {
+    return false_type{};
+  } else {
+    return weakly_compatible(shape(a), shape(b));
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+template <class A, class B>
+using is_weakly_compatible = decltype(weakly_compatible(declval<A>(), declval<B>()));
 
 /** Replace the elements of Tuple B that are paired with an Int<0> with an Int<1>
  */
@@ -565,13 +556,13 @@ Tuple
 make_int_tuple_from(Ts const&... ts)
 {
   Tuple result = Tuple{};
-  fill_int_tuple_from(result, make_tuple(ts...));
+  fill_int_tuple_from(result, cute::make_tuple(ts...));
   return result;
 }
 
 /** Convert a tuple to a flat homogeneous array of type T
  * \code
- *   auto tup = make_tuple(Int<1>{}, make_tuple(6,3,Int<3>{}),4,Int<2>{});
+ *   auto tup = cute::make_tuple(Int<1>{}, cute::make_tuple(6,3,Int<3>{}),4,Int<2>{});
  *   cute::array<uint64_t,6> result = to_array<uint64_t>(tup);   // [1,6,3,3,4,2]
  * \endcode
  */
@@ -625,7 +616,7 @@ elem_less(IntTupleA const& a, IntTupleB const& b);
 
 namespace detail {
 
-template <std::size_t I, class TupleA, class TupleB>
+template <size_t I, class TupleA, class TupleB>
 CUTE_HOST_DEVICE constexpr
 auto
 lex_less_impl(TupleA const& a, TupleB const& b)
@@ -641,7 +632,7 @@ lex_less_impl(TupleA const& a, TupleB const& b)
   CUTE_GCC_UNREACHABLE;
 }
 
-template <std::size_t I, class TupleA, class TupleB>
+template <size_t I, class TupleA, class TupleB>
 CUTE_HOST_DEVICE constexpr
 auto
 colex_less_impl(TupleA const& a, TupleB const& b)
@@ -651,15 +642,15 @@ colex_less_impl(TupleA const& a, TupleB const& b)
   } else if constexpr (I == tuple_size<TupleA>::value) {
     return cute::true_type{};     // Terminal: TupleA is exhausted, TupleB is not exhausted
   } else {
-    constexpr std::size_t A = tuple_size<TupleA>::value - 1 - I;
-    constexpr std::size_t B = tuple_size<TupleB>::value - 1 - I;
+    constexpr size_t A = tuple_size<TupleA>::value - 1 - I;
+    constexpr size_t B = tuple_size<TupleB>::value - 1 - I;
     return colex_less(get<A>(a), get<B>(b)) || (get<A>(a) == get<B>(b) && colex_less_impl<I+1>(a,b));
   }
 
   CUTE_GCC_UNREACHABLE;
 }
 
-template <std::size_t I, class TupleA, class TupleB>
+template <size_t I, class TupleA, class TupleB>
 CUTE_HOST_DEVICE constexpr
 auto
 elem_less_impl(TupleA const& a, TupleB const& b)

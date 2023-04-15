@@ -55,7 +55,7 @@ Status get_cutlass_status(cudnnStatus_t cudnn_status);
 /// Converts a cuDNN status to cutlass::profiler::Disposition
 Disposition get_cutlass_disposition(cudnnStatus_t cudnn_status);
 
-/// Checks cudnnStatus_t converts to cutlass status and returns if Status::kSuccess o.w. throws exception
+/// Checks cudnnStatus_t converts to cutlas status and returns if Status::kSuccess o.w. throws exception
 Status checkCudnnErr(cudnnStatus_t cudnn_status);
 
 /// Maps a CUTLASS conv mode to a cuDNN conv mode enumeration

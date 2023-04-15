@@ -114,7 +114,7 @@ struct DefaultGemmWithBroadcast {
     Operator
   >::GemmKernel;
 
-  // Replace epilogue
+  // Define epilogue
   using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueWithBroadcastTensorOp<
     typename GemmBase::Epilogue::Shape,
     typename GemmBase::Epilogue::WarpMmaOperator,
@@ -214,7 +214,7 @@ struct DefaultGemmWithBroadcast<
     Operator
   >::GemmKernel;
 
-  // Replace epilogue
+  // Define epilogue
   using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueWithBroadcastVoltaTensorOp<
     typename GemmBase::Epilogue::Shape,
     typename GemmBase::Epilogue::WarpMmaOperator,

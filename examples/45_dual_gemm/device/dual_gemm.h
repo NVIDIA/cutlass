@@ -159,7 +159,7 @@ class DualGemm {
   using Mma0 = typename cutlass::gemm::threadblock::DefaultMma<
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB0, kAlignmentB,
       ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, ArchTag,
-      ThreadblockShape, WarpShape, 
+      ThreadblockShape, WarpShape,
       InstructionShape, Stages, Operator>::ThreadblockMma;
   using Mma1 = typename cutlass::gemm::threadblock::DefaultMma<
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB1, kAlignmentB,
@@ -348,7 +348,7 @@ public:
       ThreadblockSwizzle threadblock_swizzle;
 
       cutlass::gemm::GemmCoord tiled_shape = threadblock_swizzle.get_tiled_shape(
-        args.problem_size, 
+        args.problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
         args.split_k_slices);
 

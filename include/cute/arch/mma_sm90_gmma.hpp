@@ -35,7 +35,7 @@
 
 // Config
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && defined(__CUDA_ARCH_FEAT_SM90_ALL))
-#  define CUTE_ARCH_MMA_SM90_ENABLED
+#  define CUTE_ARCH_MMA_SM90A_ENABLED
 #endif
 
 namespace cute {
@@ -47,10 +47,10 @@ CUTE_HOST_DEVICE
 void
 warpgroup_arrive()
 {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
   asm volatile ("wgmma.fence.sync.aligned;\n" ::: "memory");
 #else
-  CUTE_RUNTIME_ASSERT("Attempting to use wgmma.fence without CUTE_ARCH_MMA_SM90_ENABLED");
+  CUTE_RUNTIME_ASSERT("Attempting to use wgmma.fence without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
 }
 
@@ -60,10 +60,10 @@ void
 warpgroup_wait()
 {
   static_assert(N >= 0 && N <= 7, "_warpgroup.wait {N}; must be in range [0, 7]");
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
   asm volatile("wgmma.wait_group.sync.aligned %0;\n" :: "n"(N) : "memory");
 #else
-  CUTE_RUNTIME_ASSERT("Attempting to use wgmma.wait_group<N> without CUTE_ARCH_MMA_SM90_ENABLED");
+  CUTE_RUNTIME_ASSERT("Attempting to use wgmma.wait_group<N> without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
 }
 
@@ -72,23 +72,30 @@ CUTE_HOST_DEVICE
 void
 warpgroup_commit_batch()
 {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
   asm volatile("wgmma.commit_group.sync.aligned;\n" ::: "memory");
 #else
-  CUTE_RUNTIME_ASSERT("Attempting to use wgmma.commit_group without CUTE_ARCH_MMA_SM90_ENABLED");
+  CUTE_RUNTIME_ASSERT("Attempting to use wgmma.commit_group without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
 }
 
 CUTE_HOST_DEVICE
 void
 warpgroup_fence_operand(uint32_t& reg) {
+  // MSVC emits a build error for 'asm volatile'
+  // even if it only occurs in a __device__ function.
+  // This prevents the error.
+#if defined(__CUDA_ARCH__)
   asm volatile("" : "+r"(reg) :: "memory");
+#endif
 }
 
 CUTE_HOST_DEVICE
 void
 warpgroup_fence_operand(float& reg) {
+#if defined(__CUDA_ARCH__)
   asm volatile("" : "+f"(reg) :: "memory");
+#endif
 }
 
 namespace GMMA {
@@ -115,10 +122,9 @@ enum class ScaleIn {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -132,21 +138,26 @@ struct SM90_64x8x16_F16F16F16_SS
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1)
+      uint32_t      & d0, uint32_t      & d1,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %4, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k16.f16.f16.f16 "
       "{%0, %1},"
       " %2,"
       " %3,"
-      " %4, %5, %6, %7, %8;\n"
+      " p,  %5, %6, %7, %8;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -154,10 +165,9 @@ struct SM90_64x8x16_F16F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -174,21 +184,26 @@ struct SM90_64x8x16_F16F16F16_RS
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1)
+      uint32_t      & d0, uint32_t      & d1,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %7, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k16.f16.f16.f16 "
       "{%0,  %1},"
       "{%2,  %3,  %4,  %5},"
       " %6,"
-      " %7,  %8,  %9,  %10;\n"
+      " p,   %8,  %9,  %10;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -196,10 +211,9 @@ struct SM90_64x8x16_F16F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -213,21 +227,26 @@ struct SM90_64x16x16_F16F16F16_SS
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6,  %7,  %8,  %9,  %10;\n"
+      " p,   %7,  %8,  %9,  %10;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -235,10 +254,9 @@ struct SM90_64x16x16_F16F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -255,21 +273,26 @@ struct SM90_64x16x16_F16F16F16_RS
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9,  %10, %11, %12;\n"
+      " p,   %10, %11, %12;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -277,10 +300,9 @@ struct SM90_64x16x16_F16F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -295,22 +317,27 @@ struct SM90_64x32x16_F16F16F16_SS
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10, %11, %12, %13, %14;\n"
+      " p,   %11, %12, %13, %14;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -318,10 +345,9 @@ struct SM90_64x32x16_F16F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -339,22 +365,27 @@ struct SM90_64x32x16_F16F16F16_RS
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13, %14, %15, %16;\n"
+      " p,   %14, %15, %16;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -362,10 +393,9 @@ struct SM90_64x32x16_F16F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -382,25 +412,30 @@ struct SM90_64x64x16_F16F16F16_SS
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18, %19, %20, %21, %22;\n"
+      " p,   %19, %20, %21, %22;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -408,10 +443,9 @@ struct SM90_64x64x16_F16F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -431,25 +465,30 @@ struct SM90_64x64x16_F16F16F16_RS
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21, %22, %23, %24;\n"
+      " p,   %22, %23, %24;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -457,10 +496,9 @@ struct SM90_64x64x16_F16F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -479,17 +517,22 @@ struct SM90_64x96x16_F16F16F16_SS
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
       uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
-      uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23)
+      uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %26, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
       " %16, %17, %18, %19, %20, %21, %22, %23},"
       " %24,"
       " %25,"
-      " %26, %27, %28, %29, %30;\n"
+      " p,   %27, %28, %29, %30;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -498,9 +541,9 @@ struct SM90_64x96x16_F16F16F16_SS
         "+r"(d20), "+r"(d21), "+r"(d22), "+r"(d23)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -508,10 +551,9 @@ struct SM90_64x96x16_F16F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -533,17 +575,22 @@ struct SM90_64x96x16_F16F16F16_RS
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
       uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
-      uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23)
+      uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %29, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
       " %16, %17, %18, %19, %20, %21, %22, %23},"
       "{%24, %25, %26, %27},"
       " %28,"
-      " %29, %30, %31, %32;\n"
+      " p,   %30, %31, %32;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -552,9 +599,9 @@ struct SM90_64x96x16_F16F16F16_RS
         "+r"(d20), "+r"(d21), "+r"(d22), "+r"(d23)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -562,10 +609,9 @@ struct SM90_64x96x16_F16F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -586,10 +632,14 @@ struct SM90_64x128x16_F16F16F16_SS
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -597,7 +647,8 @@ struct SM90_64x128x16_F16F16F16_SS
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34, %35, %36, %37, %38;\n"
+      " p,   %35, %36, %37, %38;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -608,9 +659,9 @@ struct SM90_64x128x16_F16F16F16_SS
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -618,10 +669,9 @@ struct SM90_64x128x16_F16F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -645,10 +695,14 @@ struct SM90_64x128x16_F16F16F16_RS
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -656,7 +710,8 @@ struct SM90_64x128x16_F16F16F16_RS
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37, %38, %39, %40;\n"
+      " p,   %38, %39, %40;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -667,9 +722,9 @@ struct SM90_64x128x16_F16F16F16_RS
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -677,10 +732,9 @@ struct SM90_64x128x16_F16F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -705,10 +759,14 @@ struct SM90_64x192x16_F16F16F16_SS
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k16.f16.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -718,7 +776,8 @@ struct SM90_64x192x16_F16F16F16_SS
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50, %51, %52, %53, %54;\n"
+      " p,   %51, %52, %53, %54;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -733,9 +792,9 @@ struct SM90_64x192x16_F16F16F16_SS
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -743,10 +802,9 @@ struct SM90_64x192x16_F16F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -774,10 +832,14 @@ struct SM90_64x192x16_F16F16F16_RS
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k16.f16.f16.f16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -787,7 +849,8 @@ struct SM90_64x192x16_F16F16F16_RS
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53,  %54,  %55,  %56;\n"
+      " p,    %54,  %55,  %56;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -802,9 +865,9 @@ struct SM90_64x192x16_F16F16F16_RS
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -812,10 +875,9 @@ struct SM90_64x192x16_F16F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -844,10 +906,14 @@ struct SM90_64x256x16_F16F16F16_SS
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k16.f16.f16.f16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -859,7 +925,8 @@ struct SM90_64x256x16_F16F16F16_SS
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66,  %67,  %68,  %69,  %70;\n"
+      " p,    %67,  %68,  %69,  %70;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -878,9 +945,9 @@ struct SM90_64x256x16_F16F16F16_SS
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -888,10 +955,9 @@ struct SM90_64x256x16_F16F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x16 F16+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -923,10 +989,14 @@ struct SM90_64x256x16_F16F16F16_RS
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k16.f16.f16.f16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -938,7 +1008,8 @@ struct SM90_64x256x16_F16F16F16_RS
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69,  %70,  %71,  %72;\n"
+      " p,    %70,  %71,  %72;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -957,9 +1028,9 @@ struct SM90_64x256x16_F16F16F16_RS
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F16F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -967,10 +1038,9 @@ struct SM90_64x256x16_F16F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -984,21 +1054,26 @@ struct SM90_64x8x16_F32F16F16_SS
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      float         & d0, float         & d1, float         & d2, float         & d3)
+      float         & d0, float         & d1, float         & d2, float         & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k16.f32.f16.f16 "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6,  %7,  %8,  %9,  %10;\n"
+      " p,   %7,  %8,  %9,  %10;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1006,10 +1081,9 @@ struct SM90_64x8x16_F32F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1026,21 +1100,26 @@ struct SM90_64x8x16_F32F16F16_RS
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      float         & d0, float         & d1, float         & d2, float         & d3)
+      float         & d0, float         & d1, float         & d2, float         & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k16.f32.f16.f16 "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9,  %10, %11, %12;\n"
+      " p,   %10, %11, %12;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1048,10 +1127,9 @@ struct SM90_64x8x16_F32F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1066,22 +1144,27 @@ struct SM90_64x16x16_F32F16F16_SS
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       float         & d0, float         & d1, float         & d2, float         & d3,
-      float         & d4, float         & d5, float         & d6, float         & d7)
+      float         & d4, float         & d5, float         & d6, float         & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k16.f32.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10, %11, %12, %13, %14;\n"
+      " p,   %11, %12, %13, %14;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3),
         "+f"(d4), "+f"(d5), "+f"(d6), "+f"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1089,10 +1172,9 @@ struct SM90_64x16x16_F32F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1110,22 +1192,27 @@ struct SM90_64x16x16_F32F16F16_RS
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       float         & d0, float         & d1, float         & d2, float         & d3,
-      float         & d4, float         & d5, float         & d6, float         & d7)
+      float         & d4, float         & d5, float         & d6, float         & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k16.f32.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13, %14, %15, %16;\n"
+      " p,   %14, %15, %16;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3),
         "+f"(d4), "+f"(d5), "+f"(d6), "+f"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1133,10 +1220,9 @@ struct SM90_64x16x16_F32F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1153,25 +1239,30 @@ struct SM90_64x32x16_F32F16F16_SS
       float         & d00, float         & d01, float         & d02, float         & d03,
       float         & d04, float         & d05, float         & d06, float         & d07,
       float         & d08, float         & d09, float         & d10, float         & d11,
-      float         & d12, float         & d13, float         & d14, float         & d15)
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k16.f32.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18, %19, %20, %21, %22;\n"
+      " p,   %19, %20, %21, %22;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
         "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1179,10 +1270,9 @@ struct SM90_64x32x16_F32F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1202,25 +1292,30 @@ struct SM90_64x32x16_F32F16F16_RS
       float         & d00, float         & d01, float         & d02, float         & d03,
       float         & d04, float         & d05, float         & d06, float         & d07,
       float         & d08, float         & d09, float         & d10, float         & d11,
-      float         & d12, float         & d13, float         & d14, float         & d15)
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k16.f32.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21, %22, %23, %24;\n"
+      " p,   %22, %23, %24;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
         "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1228,10 +1323,9 @@ struct SM90_64x32x16_F32F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1252,10 +1346,14 @@ struct SM90_64x64x16_F32F16F16_SS
       float         & d16, float         & d17, float         & d18, float         & d19,
       float         & d20, float         & d21, float         & d22, float         & d23,
       float         & d24, float         & d25, float         & d26, float         & d27,
-      float         & d28, float         & d29, float         & d30, float         & d31)
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k16.f32.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -1263,7 +1361,8 @@ struct SM90_64x64x16_F32F16F16_SS
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34, %35, %36, %37, %38;\n"
+      " p,   %35, %36, %37, %38;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -1274,9 +1373,9 @@ struct SM90_64x64x16_F32F16F16_SS
         "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1284,10 +1383,9 @@ struct SM90_64x64x16_F32F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1311,10 +1409,14 @@ struct SM90_64x64x16_F32F16F16_RS
       float         & d16, float         & d17, float         & d18, float         & d19,
       float         & d20, float         & d21, float         & d22, float         & d23,
       float         & d24, float         & d25, float         & d26, float         & d27,
-      float         & d28, float         & d29, float         & d30, float         & d31)
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k16.f32.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -1322,7 +1424,8 @@ struct SM90_64x64x16_F32F16F16_RS
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37, %38, %39, %40;\n"
+      " p,   %38, %39, %40;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -1333,9 +1436,9 @@ struct SM90_64x64x16_F32F16F16_RS
         "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1343,10 +1446,9 @@ struct SM90_64x64x16_F32F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1371,10 +1473,14 @@ struct SM90_64x96x16_F32F16F16_SS
       float         & d32, float         & d33, float         & d34, float         & d35,
       float         & d36, float         & d37, float         & d38, float         & d39,
       float         & d40, float         & d41, float         & d42, float         & d43,
-      float         & d44, float         & d45, float         & d46, float         & d47)
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k16.f32.f16.f16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -1384,7 +1490,8 @@ struct SM90_64x96x16_F32F16F16_SS
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50, %51, %52, %53, %54;\n"
+      " p,   %51, %52, %53, %54;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -1399,9 +1506,9 @@ struct SM90_64x96x16_F32F16F16_SS
         "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1409,10 +1516,9 @@ struct SM90_64x96x16_F32F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1440,10 +1546,14 @@ struct SM90_64x96x16_F32F16F16_RS
       float         & d32, float         & d33, float         & d34, float         & d35,
       float         & d36, float         & d37, float         & d38, float         & d39,
       float         & d40, float         & d41, float         & d42, float         & d43,
-      float         & d44, float         & d45, float         & d46, float         & d47)
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k16.f32.f16.f16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -1453,7 +1563,8 @@ struct SM90_64x96x16_F32F16F16_RS
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53,  %54,  %55,  %56;\n"
+      " p,    %54,  %55,  %56;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -1468,9 +1579,9 @@ struct SM90_64x96x16_F32F16F16_RS
         "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1478,10 +1589,9 @@ struct SM90_64x96x16_F32F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1510,10 +1620,14 @@ struct SM90_64x128x16_F32F16F16_SS
       float         & d48, float         & d49, float         & d50, float         & d51,
       float         & d52, float         & d53, float         & d54, float         & d55,
       float         & d56, float         & d57, float         & d58, float         & d59,
-      float         & d60, float         & d61, float         & d62, float         & d63)
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k16.f32.f16.f16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -1525,7 +1639,8 @@ struct SM90_64x128x16_F32F16F16_SS
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66,  %67,  %68,  %69,  %70;\n"
+      " p,    %67,  %68,  %69,  %70;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -1544,9 +1659,9 @@ struct SM90_64x128x16_F32F16F16_SS
         "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1554,10 +1669,9 @@ struct SM90_64x128x16_F32F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1589,10 +1703,14 @@ struct SM90_64x128x16_F32F16F16_RS
       float         & d48, float         & d49, float         & d50, float         & d51,
       float         & d52, float         & d53, float         & d54, float         & d55,
       float         & d56, float         & d57, float         & d58, float         & d59,
-      float         & d60, float         & d61, float         & d62, float         & d63)
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k16.f32.f16.f16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -1604,7 +1722,8 @@ struct SM90_64x128x16_F32F16F16_RS
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69,  %70,  %71,  %72;\n"
+      " p,    %70,  %71,  %72;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -1623,9 +1742,9 @@ struct SM90_64x128x16_F32F16F16_RS
         "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1633,10 +1752,9 @@ struct SM90_64x128x16_F32F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1673,10 +1791,14 @@ struct SM90_64x192x16_F32F16F16_SS
       float         & d80, float         & d81, float         & d82, float         & d83,
       float         & d84, float         & d85, float         & d86, float         & d87,
       float         & d88, float         & d89, float         & d90, float         & d91,
-      float         & d92, float         & d93, float         & d94, float         & d95)
+      float         & d92, float         & d93, float         & d94, float         & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k16.f32.f16.f16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -1692,7 +1814,8 @@ struct SM90_64x192x16_F32F16F16_SS
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98,  %99,  %100, %101, %102;\n"
+      " p,    %99,  %100, %101, %102;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -1719,9 +1842,9 @@ struct SM90_64x192x16_F32F16F16_SS
         "+f"(d92), "+f"(d93), "+f"(d94), "+f"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1729,10 +1852,9 @@ struct SM90_64x192x16_F32F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1772,10 +1894,14 @@ struct SM90_64x192x16_F32F16F16_RS
       float         & d80, float         & d81, float         & d82, float         & d83,
       float         & d84, float         & d85, float         & d86, float         & d87,
       float         & d88, float         & d89, float         & d90, float         & d91,
-      float         & d92, float         & d93, float         & d94, float         & d95)
+      float         & d92, float         & d93, float         & d94, float         & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k16.f32.f16.f16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -1791,7 +1917,8 @@ struct SM90_64x192x16_F32F16F16_RS
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101, %102, %103, %104;\n"
+      " p,    %102, %103, %104;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -1818,9 +1945,9 @@ struct SM90_64x192x16_F32F16F16_RS
         "+f"(d92), "+f"(d93), "+f"(d94), "+f"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1828,10 +1955,9 @@ struct SM90_64x192x16_F32F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1876,10 +2002,14 @@ struct SM90_64x256x16_F32F16F16_SS
       float         & d112, float         & d113, float         & d114, float         & d115,
       float         & d116, float         & d117, float         & d118, float         & d119,
       float         & d120, float         & d121, float         & d122, float         & d123,
-      float         & d124, float         & d125, float         & d126, float         & d127)
+      float         & d124, float         & d125, float         & d126, float         & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k16.f32.f16.f16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -1899,7 +2029,8 @@ struct SM90_64x256x16_F32F16F16_SS
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130, %131, %132, %133, %134;\n"
+      " p,    %131, %132, %133, %134;\n"
+    "}\n"
       : "+f"(d000), "+f"(d001), "+f"(d002), "+f"(d003),
         "+f"(d004), "+f"(d005), "+f"(d006), "+f"(d007),
         "+f"(d008), "+f"(d009), "+f"(d010), "+f"(d011),
@@ -1934,9 +2065,9 @@ struct SM90_64x256x16_F32F16F16_SS
         "+f"(d124), "+f"(d125), "+f"(d126), "+f"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -1944,10 +2075,9 @@ struct SM90_64x256x16_F32F16F16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x16 F32+=F16*F16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -1995,10 +2125,14 @@ struct SM90_64x256x16_F32F16F16_RS
       float         & d112, float         & d113, float         & d114, float         & d115,
       float         & d116, float         & d117, float         & d118, float         & d119,
       float         & d120, float         & d121, float         & d122, float         & d123,
-      float         & d124, float         & d125, float         & d126, float         & d127)
+      float         & d124, float         & d125, float         & d126, float         & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k16.f32.f16.f16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -2018,7 +2152,8 @@ struct SM90_64x256x16_F32F16F16_RS
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133, %134, %135, %136;\n"
+      " p,    %134, %135, %136;\n"
+    "}\n"
       : "+f"(d000), "+f"(d001), "+f"(d002), "+f"(d003),
         "+f"(d004), "+f"(d005), "+f"(d006), "+f"(d007),
         "+f"(d008), "+f"(d009), "+f"(d010), "+f"(d011),
@@ -2053,9 +2188,9 @@ struct SM90_64x256x16_F32F16F16_RS
         "+f"(d124), "+f"(d125), "+f"(d126), "+f"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32F16F16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2063,10 +2198,9 @@ struct SM90_64x256x16_F32F16F16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2080,21 +2214,26 @@ struct SM90_64x8x16_F32BF16BF16_SS
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      float         & d0, float         & d1, float         & d2, float         & d3)
+      float         & d0, float         & d1, float         & d2, float         & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k16.f32.bf16.bf16 "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6,  %7,  %8,  %9,  %10;\n"
+      " p,   %7,  %8,  %9,  %10;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2102,10 +2241,9 @@ struct SM90_64x8x16_F32BF16BF16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2122,21 +2260,26 @@ struct SM90_64x8x16_F32BF16BF16_RS
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      float         & d0, float         & d1, float         & d2, float         & d3)
+      float         & d0, float         & d1, float         & d2, float         & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k16.f32.bf16.bf16 "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9,  %10, %11, %12;\n"
+      " p,   %10, %11, %12;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2144,10 +2287,9 @@ struct SM90_64x8x16_F32BF16BF16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2162,22 +2304,27 @@ struct SM90_64x16x16_F32BF16BF16_SS
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       float         & d0, float         & d1, float         & d2, float         & d3,
-      float         & d4, float         & d5, float         & d6, float         & d7)
+      float         & d4, float         & d5, float         & d6, float         & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k16.f32.bf16.bf16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10, %11, %12, %13, %14;\n"
+      " p,   %11, %12, %13, %14;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3),
         "+f"(d4), "+f"(d5), "+f"(d6), "+f"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2185,10 +2332,9 @@ struct SM90_64x16x16_F32BF16BF16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2206,22 +2352,27 @@ struct SM90_64x16x16_F32BF16BF16_RS
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       float         & d0, float         & d1, float         & d2, float         & d3,
-      float         & d4, float         & d5, float         & d6, float         & d7)
+      float         & d4, float         & d5, float         & d6, float         & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k16.f32.bf16.bf16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13, %14, %15, %16;\n"
+      " p,   %14, %15, %16;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3),
         "+f"(d4), "+f"(d5), "+f"(d6), "+f"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2229,10 +2380,9 @@ struct SM90_64x16x16_F32BF16BF16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2249,25 +2399,30 @@ struct SM90_64x32x16_F32BF16BF16_SS
       float         & d00, float         & d01, float         & d02, float         & d03,
       float         & d04, float         & d05, float         & d06, float         & d07,
       float         & d08, float         & d09, float         & d10, float         & d11,
-      float         & d12, float         & d13, float         & d14, float         & d15)
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k16.f32.bf16.bf16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18, %19, %20, %21, %22;\n"
+      " p,   %19, %20, %21, %22;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
         "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2275,10 +2430,9 @@ struct SM90_64x32x16_F32BF16BF16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2298,25 +2452,30 @@ struct SM90_64x32x16_F32BF16BF16_RS
       float         & d00, float         & d01, float         & d02, float         & d03,
       float         & d04, float         & d05, float         & d06, float         & d07,
       float         & d08, float         & d09, float         & d10, float         & d11,
-      float         & d12, float         & d13, float         & d14, float         & d15)
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k16.f32.bf16.bf16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21, %22, %23, %24;\n"
+      " p,   %22, %23, %24;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
         "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2324,10 +2483,9 @@ struct SM90_64x32x16_F32BF16BF16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2348,10 +2506,14 @@ struct SM90_64x64x16_F32BF16BF16_SS
       float         & d16, float         & d17, float         & d18, float         & d19,
       float         & d20, float         & d21, float         & d22, float         & d23,
       float         & d24, float         & d25, float         & d26, float         & d27,
-      float         & d28, float         & d29, float         & d30, float         & d31)
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k16.f32.bf16.bf16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -2359,7 +2521,8 @@ struct SM90_64x64x16_F32BF16BF16_SS
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34, %35, %36, %37, %38;\n"
+      " p,   %35, %36, %37, %38;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -2370,9 +2533,9 @@ struct SM90_64x64x16_F32BF16BF16_SS
         "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2380,10 +2543,9 @@ struct SM90_64x64x16_F32BF16BF16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2407,10 +2569,14 @@ struct SM90_64x64x16_F32BF16BF16_RS
       float         & d16, float         & d17, float         & d18, float         & d19,
       float         & d20, float         & d21, float         & d22, float         & d23,
       float         & d24, float         & d25, float         & d26, float         & d27,
-      float         & d28, float         & d29, float         & d30, float         & d31)
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k16.f32.bf16.bf16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -2418,7 +2584,8 @@ struct SM90_64x64x16_F32BF16BF16_RS
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37, %38, %39, %40;\n"
+      " p,   %38, %39, %40;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -2429,9 +2596,9 @@ struct SM90_64x64x16_F32BF16BF16_RS
         "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2439,10 +2606,9 @@ struct SM90_64x64x16_F32BF16BF16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2467,10 +2633,14 @@ struct SM90_64x96x16_F32BF16BF16_SS
       float         & d32, float         & d33, float         & d34, float         & d35,
       float         & d36, float         & d37, float         & d38, float         & d39,
       float         & d40, float         & d41, float         & d42, float         & d43,
-      float         & d44, float         & d45, float         & d46, float         & d47)
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k16.f32.bf16.bf16 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -2480,7 +2650,8 @@ struct SM90_64x96x16_F32BF16BF16_SS
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50, %51, %52, %53, %54;\n"
+      " p,   %51, %52, %53, %54;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -2495,9 +2666,9 @@ struct SM90_64x96x16_F32BF16BF16_SS
         "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2505,10 +2676,9 @@ struct SM90_64x96x16_F32BF16BF16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2536,10 +2706,14 @@ struct SM90_64x96x16_F32BF16BF16_RS
       float         & d32, float         & d33, float         & d34, float         & d35,
       float         & d36, float         & d37, float         & d38, float         & d39,
       float         & d40, float         & d41, float         & d42, float         & d43,
-      float         & d44, float         & d45, float         & d46, float         & d47)
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k16.f32.bf16.bf16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -2549,7 +2723,8 @@ struct SM90_64x96x16_F32BF16BF16_RS
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53,  %54,  %55,  %56;\n"
+      " p,    %54,  %55,  %56;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -2564,9 +2739,9 @@ struct SM90_64x96x16_F32BF16BF16_RS
         "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2574,10 +2749,9 @@ struct SM90_64x96x16_F32BF16BF16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2606,10 +2780,14 @@ struct SM90_64x128x16_F32BF16BF16_SS
       float         & d48, float         & d49, float         & d50, float         & d51,
       float         & d52, float         & d53, float         & d54, float         & d55,
       float         & d56, float         & d57, float         & d58, float         & d59,
-      float         & d60, float         & d61, float         & d62, float         & d63)
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k16.f32.bf16.bf16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -2621,7 +2799,8 @@ struct SM90_64x128x16_F32BF16BF16_SS
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66,  %67,  %68,  %69,  %70;\n"
+      " p,    %67,  %68,  %69,  %70;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -2640,9 +2819,9 @@ struct SM90_64x128x16_F32BF16BF16_SS
         "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2650,10 +2829,9 @@ struct SM90_64x128x16_F32BF16BF16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2685,10 +2863,14 @@ struct SM90_64x128x16_F32BF16BF16_RS
       float         & d48, float         & d49, float         & d50, float         & d51,
       float         & d52, float         & d53, float         & d54, float         & d55,
       float         & d56, float         & d57, float         & d58, float         & d59,
-      float         & d60, float         & d61, float         & d62, float         & d63)
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k16.f32.bf16.bf16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -2700,7 +2882,8 @@ struct SM90_64x128x16_F32BF16BF16_RS
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69,  %70,  %71,  %72;\n"
+      " p,    %70,  %71,  %72;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -2719,9 +2902,9 @@ struct SM90_64x128x16_F32BF16BF16_RS
         "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2729,10 +2912,9 @@ struct SM90_64x128x16_F32BF16BF16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2769,10 +2951,14 @@ struct SM90_64x192x16_F32BF16BF16_SS
       float         & d80, float         & d81, float         & d82, float         & d83,
       float         & d84, float         & d85, float         & d86, float         & d87,
       float         & d88, float         & d89, float         & d90, float         & d91,
-      float         & d92, float         & d93, float         & d94, float         & d95)
+      float         & d92, float         & d93, float         & d94, float         & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k16.f32.bf16.bf16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -2788,7 +2974,8 @@ struct SM90_64x192x16_F32BF16BF16_SS
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98,  %99,  %100, %101, %102;\n"
+      " p,    %99,  %100, %101, %102;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -2815,9 +3002,9 @@ struct SM90_64x192x16_F32BF16BF16_SS
         "+f"(d92), "+f"(d93), "+f"(d94), "+f"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2825,10 +3012,9 @@ struct SM90_64x192x16_F32BF16BF16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2868,10 +3054,14 @@ struct SM90_64x192x16_F32BF16BF16_RS
       float         & d80, float         & d81, float         & d82, float         & d83,
       float         & d84, float         & d85, float         & d86, float         & d87,
       float         & d88, float         & d89, float         & d90, float         & d91,
-      float         & d92, float         & d93, float         & d94, float         & d95)
+      float         & d92, float         & d93, float         & d94, float         & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k16.f32.bf16.bf16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -2887,7 +3077,8 @@ struct SM90_64x192x16_F32BF16BF16_RS
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101, %102, %103, %104;\n"
+      " p,    %102, %103, %104;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -2914,9 +3105,9 @@ struct SM90_64x192x16_F32BF16BF16_RS
         "+f"(d92), "+f"(d93), "+f"(d94), "+f"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -2924,10 +3115,9 @@ struct SM90_64x192x16_F32BF16BF16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -2972,10 +3162,14 @@ struct SM90_64x256x16_F32BF16BF16_SS
       float         & d112, float         & d113, float         & d114, float         & d115,
       float         & d116, float         & d117, float         & d118, float         & d119,
       float         & d120, float         & d121, float         & d122, float         & d123,
-      float         & d124, float         & d125, float         & d126, float         & d127)
+      float         & d124, float         & d125, float         & d126, float         & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k16.f32.bf16.bf16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -2995,7 +3189,8 @@ struct SM90_64x256x16_F32BF16BF16_SS
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130, %131, %132, %133, %134;\n"
+      " p,    %131, %132, %133, %134;\n"
+    "}\n"
       : "+f"(d000), "+f"(d001), "+f"(d002), "+f"(d003),
         "+f"(d004), "+f"(d005), "+f"(d006), "+f"(d007),
         "+f"(d008), "+f"(d009), "+f"(d010), "+f"(d011),
@@ -3030,9 +3225,9 @@ struct SM90_64x256x16_F32BF16BF16_SS
         "+f"(d124), "+f"(d125), "+f"(d126), "+f"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32BF16BF16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3040,10 +3235,9 @@ struct SM90_64x256x16_F32BF16BF16_SS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x16 F32+=BF16*BF16
-template<
+template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3091,10 +3285,14 @@ struct SM90_64x256x16_F32BF16BF16_RS
       float         & d112, float         & d113, float         & d114, float         & d115,
       float         & d116, float         & d117, float         & d118, float         & d119,
       float         & d120, float         & d121, float         & d122, float         & d123,
-      float         & d124, float         & d125, float         & d126, float         & d127)
+      float         & d124, float         & d125, float         & d126, float         & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k16.f32.bf16.bf16 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -3114,7 +3312,8 @@ struct SM90_64x256x16_F32BF16BF16_RS
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133, %134, %135, %136;\n"
+      " p,    %134, %135, %136;\n"
+    "}\n"
       : "+f"(d000), "+f"(d001), "+f"(d002), "+f"(d003),
         "+f"(d004), "+f"(d005), "+f"(d006), "+f"(d007),
         "+f"(d008), "+f"(d009), "+f"(d010), "+f"(d011),
@@ -3149,9 +3348,9 @@ struct SM90_64x256x16_F32BF16BF16_RS
         "+f"(d124), "+f"(d125), "+f"(d126), "+f"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x16_F32BF16BF16_RS without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3159,8 +3358,7 @@ struct SM90_64x256x16_F32BF16BF16_RS
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3174,21 +3372,26 @@ struct SM90_64x8x8_F32TF32TF32_SS_TN
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      float         & d0, float         & d1, float         & d2, float         & d3)
+      float         & d0, float         & d1, float         & d2, float         & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k8.f32.tf32.tf32 "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6,  %7,  %8;\n"
+      " p,   %7,  %8;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3196,8 +3399,7 @@ struct SM90_64x8x8_F32TF32TF32_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x8x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3211,21 +3413,26 @@ struct SM90_64x8x8_F32TF32TF32_RS_TN
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      float         & d0, float         & d1, float         & d2, float         & d3)
+      float         & d0, float         & d1, float         & d2, float         & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k8.f32.tf32.tf32 "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9,  %10, %11;\n"
+      " p,   %10, %11;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3233,8 +3440,7 @@ struct SM90_64x8x8_F32TF32TF32_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3249,22 +3455,27 @@ struct SM90_64x16x8_F32TF32TF32_SS_TN
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       float         & d0, float         & d1, float         & d2, float         & d3,
-      float         & d4, float         & d5, float         & d6, float         & d7)
+      float         & d4, float         & d5, float         & d6, float         & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k8.f32.tf32.tf32 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10, %11, %12;\n"
+      " p,   %11, %12;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3),
         "+f"(d4), "+f"(d5), "+f"(d6), "+f"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3272,8 +3483,7 @@ struct SM90_64x16x8_F32TF32TF32_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x16x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3288,22 +3498,27 @@ struct SM90_64x16x8_F32TF32TF32_RS_TN
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       float         & d0, float         & d1, float         & d2, float         & d3,
-      float         & d4, float         & d5, float         & d6, float         & d7)
+      float         & d4, float         & d5, float         & d6, float         & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k8.f32.tf32.tf32 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13, %14, %15;\n"
+      " p,   %14, %15;\n"
+    "}\n"
       : "+f"(d0), "+f"(d1), "+f"(d2), "+f"(d3),
         "+f"(d4), "+f"(d5), "+f"(d6), "+f"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3311,8 +3526,7 @@ struct SM90_64x16x8_F32TF32TF32_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3329,25 +3543,30 @@ struct SM90_64x32x8_F32TF32TF32_SS_TN
       float         & d00, float         & d01, float         & d02, float         & d03,
       float         & d04, float         & d05, float         & d06, float         & d07,
       float         & d08, float         & d09, float         & d10, float         & d11,
-      float         & d12, float         & d13, float         & d14, float         & d15)
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k8.f32.tf32.tf32 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18, %19, %20;\n"
+      " p,   %19, %20;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
         "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3355,8 +3574,7 @@ struct SM90_64x32x8_F32TF32TF32_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x32x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3373,25 +3591,30 @@ struct SM90_64x32x8_F32TF32TF32_RS_TN
       float         & d00, float         & d01, float         & d02, float         & d03,
       float         & d04, float         & d05, float         & d06, float         & d07,
       float         & d08, float         & d09, float         & d10, float         & d11,
-      float         & d12, float         & d13, float         & d14, float         & d15)
+      float         & d12, float         & d13, float         & d14, float         & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k8.f32.tf32.tf32 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21, %22, %23;\n"
+      " p,   %22, %23;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
         "+f"(d12), "+f"(d13), "+f"(d14), "+f"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3399,8 +3622,7 @@ struct SM90_64x32x8_F32TF32TF32_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3421,10 +3643,14 @@ struct SM90_64x64x8_F32TF32TF32_SS_TN
       float         & d16, float         & d17, float         & d18, float         & d19,
       float         & d20, float         & d21, float         & d22, float         & d23,
       float         & d24, float         & d25, float         & d26, float         & d27,
-      float         & d28, float         & d29, float         & d30, float         & d31)
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k8.f32.tf32.tf32 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -3432,7 +3658,8 @@ struct SM90_64x64x8_F32TF32TF32_SS_TN
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34, %35, %36;\n"
+      " p,   %35, %36;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -3443,9 +3670,9 @@ struct SM90_64x64x8_F32TF32TF32_SS_TN
         "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3453,8 +3680,7 @@ struct SM90_64x64x8_F32TF32TF32_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x64x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3475,10 +3701,14 @@ struct SM90_64x64x8_F32TF32TF32_RS_TN
       float         & d16, float         & d17, float         & d18, float         & d19,
       float         & d20, float         & d21, float         & d22, float         & d23,
       float         & d24, float         & d25, float         & d26, float         & d27,
-      float         & d28, float         & d29, float         & d30, float         & d31)
+      float         & d28, float         & d29, float         & d30, float         & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k8.f32.tf32.tf32 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -3486,7 +3716,8 @@ struct SM90_64x64x8_F32TF32TF32_RS_TN
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37, %38, %39;\n"
+      " p,   %38, %39;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -3497,9 +3728,9 @@ struct SM90_64x64x8_F32TF32TF32_RS_TN
         "+f"(d28), "+f"(d29), "+f"(d30), "+f"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3507,8 +3738,7 @@ struct SM90_64x64x8_F32TF32TF32_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3533,10 +3763,14 @@ struct SM90_64x96x8_F32TF32TF32_SS_TN
       float         & d32, float         & d33, float         & d34, float         & d35,
       float         & d36, float         & d37, float         & d38, float         & d39,
       float         & d40, float         & d41, float         & d42, float         & d43,
-      float         & d44, float         & d45, float         & d46, float         & d47)
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k8.f32.tf32.tf32 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -3546,7 +3780,8 @@ struct SM90_64x96x8_F32TF32TF32_SS_TN
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50, %51, %52;\n"
+      " p,   %51, %52;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -3561,9 +3796,9 @@ struct SM90_64x96x8_F32TF32TF32_SS_TN
         "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3571,8 +3806,7 @@ struct SM90_64x96x8_F32TF32TF32_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x96x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3597,10 +3831,14 @@ struct SM90_64x96x8_F32TF32TF32_RS_TN
       float         & d32, float         & d33, float         & d34, float         & d35,
       float         & d36, float         & d37, float         & d38, float         & d39,
       float         & d40, float         & d41, float         & d42, float         & d43,
-      float         & d44, float         & d45, float         & d46, float         & d47)
+      float         & d44, float         & d45, float         & d46, float         & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k8.f32.tf32.tf32 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -3610,7 +3848,8 @@ struct SM90_64x96x8_F32TF32TF32_RS_TN
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53,  %54,  %55;\n"
+      " p,    %54,  %55;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -3625,9 +3864,9 @@ struct SM90_64x96x8_F32TF32TF32_RS_TN
         "+f"(d44), "+f"(d45), "+f"(d46), "+f"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3635,8 +3874,7 @@ struct SM90_64x96x8_F32TF32TF32_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3665,10 +3903,14 @@ struct SM90_64x128x8_F32TF32TF32_SS_TN
       float         & d48, float         & d49, float         & d50, float         & d51,
       float         & d52, float         & d53, float         & d54, float         & d55,
       float         & d56, float         & d57, float         & d58, float         & d59,
-      float         & d60, float         & d61, float         & d62, float         & d63)
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k8.f32.tf32.tf32 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -3680,7 +3922,8 @@ struct SM90_64x128x8_F32TF32TF32_SS_TN
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66,  %67,  %68;\n"
+      " p,    %67,  %68;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -3699,9 +3942,9 @@ struct SM90_64x128x8_F32TF32TF32_SS_TN
         "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3709,8 +3952,7 @@ struct SM90_64x128x8_F32TF32TF32_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x128x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3739,10 +3981,14 @@ struct SM90_64x128x8_F32TF32TF32_RS_TN
       float         & d48, float         & d49, float         & d50, float         & d51,
       float         & d52, float         & d53, float         & d54, float         & d55,
       float         & d56, float         & d57, float         & d58, float         & d59,
-      float         & d60, float         & d61, float         & d62, float         & d63)
+      float         & d60, float         & d61, float         & d62, float         & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k8.f32.tf32.tf32 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -3754,7 +4000,8 @@ struct SM90_64x128x8_F32TF32TF32_RS_TN
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69,  %70,  %71;\n"
+      " p,    %70,  %71;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -3773,9 +4020,9 @@ struct SM90_64x128x8_F32TF32TF32_RS_TN
         "+f"(d60), "+f"(d61), "+f"(d62), "+f"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3783,8 +4030,7 @@ struct SM90_64x128x8_F32TF32TF32_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3821,10 +4067,14 @@ struct SM90_64x192x8_F32TF32TF32_SS_TN
       float         & d80, float         & d81, float         & d82, float         & d83,
       float         & d84, float         & d85, float         & d86, float         & d87,
       float         & d88, float         & d89, float         & d90, float         & d91,
-      float         & d92, float         & d93, float         & d94, float         & d95)
+      float         & d92, float         & d93, float         & d94, float         & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k8.f32.tf32.tf32 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -3840,7 +4090,8 @@ struct SM90_64x192x8_F32TF32TF32_SS_TN
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98,  %99,  %100;\n"
+      " p,    %99,  %100;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -3867,9 +4118,9 @@ struct SM90_64x192x8_F32TF32TF32_SS_TN
         "+f"(d92), "+f"(d93), "+f"(d94), "+f"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3877,8 +4128,7 @@ struct SM90_64x192x8_F32TF32TF32_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x192x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -3915,10 +4165,14 @@ struct SM90_64x192x8_F32TF32TF32_RS_TN
       float         & d80, float         & d81, float         & d82, float         & d83,
       float         & d84, float         & d85, float         & d86, float         & d87,
       float         & d88, float         & d89, float         & d90, float         & d91,
-      float         & d92, float         & d93, float         & d94, float         & d95)
+      float         & d92, float         & d93, float         & d94, float         & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k8.f32.tf32.tf32 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -3934,7 +4188,8 @@ struct SM90_64x192x8_F32TF32TF32_RS_TN
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101, %102, %103;\n"
+      " p,    %102, %103;\n"
+    "}\n"
       : "+f"(d00), "+f"(d01), "+f"(d02), "+f"(d03),
         "+f"(d04), "+f"(d05), "+f"(d06), "+f"(d07),
         "+f"(d08), "+f"(d09), "+f"(d10), "+f"(d11),
@@ -3961,9 +4216,9 @@ struct SM90_64x192x8_F32TF32TF32_RS_TN
         "+f"(d92), "+f"(d93), "+f"(d94), "+f"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -3971,8 +4226,7 @@ struct SM90_64x192x8_F32TF32TF32_RS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -4017,10 +4271,14 @@ struct SM90_64x256x8_F32TF32TF32_SS_TN
       float         & d112, float         & d113, float         & d114, float         & d115,
       float         & d116, float         & d117, float         & d118, float         & d119,
       float         & d120, float         & d121, float         & d122, float         & d123,
-      float         & d124, float         & d125, float         & d126, float         & d127)
+      float         & d124, float         & d125, float         & d126, float         & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k8.f32.tf32.tf32 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -4040,7 +4298,8 @@ struct SM90_64x256x8_F32TF32TF32_SS_TN
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130, %131, %132;\n"
+      " p,    %131, %132;\n"
+    "}\n"
       : "+f"(d000), "+f"(d001), "+f"(d002), "+f"(d003),
         "+f"(d004), "+f"(d005), "+f"(d006), "+f"(d007),
         "+f"(d008), "+f"(d009), "+f"(d010), "+f"(d011),
@@ -4075,9 +4334,9 @@ struct SM90_64x256x8_F32TF32TF32_SS_TN
         "+f"(d124), "+f"(d125), "+f"(d126), "+f"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x8_F32TF32TF32_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
@@ -4085,8 +4344,7 @@ struct SM90_64x256x8_F32TF32TF32_SS_TN
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // GMMA 64x256x8 TN F32+=TF32*TF32
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One,
+template <
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
   GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
 >
@@ -4131,10 +4389,14 @@ struct SM90_64x256x8_F32TF32TF32_RS_TN
       float         & d112, float         & d113, float         & d114, float         & d115,
       float         & d116, float         & d117, float         & d118, float         & d119,
       float         & d120, float         & d121, float         & d122, float         & d123,
-      float         & d124, float         & d125, float         & d126, float         & d127)
+      float         & d124, float         & d125, float         & d126, float         & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k8.f32.tf32.tf32 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -4154,7 +4416,8 @@ struct SM90_64x256x8_F32TF32TF32_RS_TN
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133, %134, %135;\n"
+      " p,    %134, %135;\n"
+    "}\n"
       : "+f"(d000), "+f"(d001), "+f"(d002), "+f"(d003),
         "+f"(d004), "+f"(d005), "+f"(d006), "+f"(d007),
         "+f"(d008), "+f"(d009), "+f"(d010), "+f"(d011),
@@ -4189,19 +4452,16 @@ struct SM90_64x256x8_F32TF32TF32_RS_TN
         "+f"(d124), "+f"(d125), "+f"(d126), "+f"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
+         "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x8_F32TF32TF32_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=S8*S8
 struct SM90_64x8x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
@@ -4212,31 +4472,33 @@ struct SM90_64x8x32_S32S8S8_SS_TN
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.s8.s8 "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=S8*S8
 struct SM90_64x8x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -4247,31 +4509,33 @@ struct SM90_64x8x32_S32S8S8_SS_TN_SATURATE
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.s8.s8.satfinite "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=S8*S8
 struct SM90_64x16x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
@@ -4283,32 +4547,34 @@ struct SM90_64x16x32_S32S8S8_SS_TN
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.s8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=S8*S8
 struct SM90_64x16x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -4320,32 +4586,34 @@ struct SM90_64x16x32_S32S8S8_SS_TN_SATURATE
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.s8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=S8*S8
 struct SM90_64x32x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
@@ -4359,35 +4627,37 @@ struct SM90_64x32x32_S32S8S8_SS_TN
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.s8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=S8*S8
 struct SM90_64x32x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -4401,35 +4671,37 @@ struct SM90_64x32x32_S32S8S8_SS_TN_SATURATE
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.s8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=S8*S8
 struct SM90_64x64x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
@@ -4447,10 +4719,14 @@ struct SM90_64x64x32_S32S8S8_SS_TN
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.s8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -4458,7 +4734,8 @@ struct SM90_64x64x32_S32S8S8_SS_TN
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -4469,19 +4746,16 @@ struct SM90_64x64x32_S32S8S8_SS_TN
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=S8*S8
 struct SM90_64x64x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -4499,10 +4773,14 @@ struct SM90_64x64x32_S32S8S8_SS_TN_SATURATE
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.s8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -4510,7 +4788,8 @@ struct SM90_64x64x32_S32S8S8_SS_TN_SATURATE
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -4521,19 +4800,16 @@ struct SM90_64x64x32_S32S8S8_SS_TN_SATURATE
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=S8*S8
 struct SM90_64x96x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
@@ -4555,10 +4831,14 @@ struct SM90_64x96x32_S32S8S8_SS_TN
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.s8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -4568,7 +4848,8 @@ struct SM90_64x96x32_S32S8S8_SS_TN
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -4583,19 +4864,16 @@ struct SM90_64x96x32_S32S8S8_SS_TN
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=S8*S8
 struct SM90_64x96x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -4617,10 +4895,14 @@ struct SM90_64x96x32_S32S8S8_SS_TN_SATURATE
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.s8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -4630,7 +4912,8 @@ struct SM90_64x96x32_S32S8S8_SS_TN_SATURATE
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -4645,19 +4928,16 @@ struct SM90_64x96x32_S32S8S8_SS_TN_SATURATE
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=S8*S8
 struct SM90_64x128x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
@@ -4683,10 +4963,14 @@ struct SM90_64x128x32_S32S8S8_SS_TN
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.s8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -4698,7 +4982,8 @@ struct SM90_64x128x32_S32S8S8_SS_TN
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -4717,19 +5002,16 @@ struct SM90_64x128x32_S32S8S8_SS_TN
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=S8*S8
 struct SM90_64x128x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -4755,10 +5037,14 @@ struct SM90_64x128x32_S32S8S8_SS_TN_SATURATE
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.s8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -4770,7 +5056,8 @@ struct SM90_64x128x32_S32S8S8_SS_TN_SATURATE
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -4789,19 +5076,16 @@ struct SM90_64x128x32_S32S8S8_SS_TN_SATURATE
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=S8*S8
 struct SM90_64x192x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
@@ -4835,10 +5119,14 @@ struct SM90_64x192x32_S32S8S8_SS_TN
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.s8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -4854,7 +5142,8 @@ struct SM90_64x192x32_S32S8S8_SS_TN
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -4881,19 +5170,16 @@ struct SM90_64x192x32_S32S8S8_SS_TN
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=S8*S8
 struct SM90_64x192x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -4927,10 +5213,14 @@ struct SM90_64x192x32_S32S8S8_SS_TN_SATURATE
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.s8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -4946,7 +5236,8 @@ struct SM90_64x192x32_S32S8S8_SS_TN_SATURATE
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -4973,19 +5264,16 @@ struct SM90_64x192x32_S32S8S8_SS_TN_SATURATE
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=S8*S8
 struct SM90_64x256x32_S32S8S8_SS_TN
 {
   using DRegisters = void;
@@ -5027,10 +5315,14 @@ struct SM90_64x256x32_S32S8S8_SS_TN
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.s8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -5050,7 +5342,8 @@ struct SM90_64x256x32_S32S8S8_SS_TN
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -5085,19 +5378,16 @@ struct SM90_64x256x32_S32S8S8_SS_TN
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=S8*S8
 struct SM90_64x256x32_S32S8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -5139,10 +5429,14 @@ struct SM90_64x256x32_S32S8S8_SS_TN_SATURATE
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.s8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -5162,7 +5456,8 @@ struct SM90_64x256x32_S32S8S8_SS_TN_SATURATE
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -5197,19 +5492,16 @@ struct SM90_64x256x32_S32S8S8_SS_TN_SATURATE
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=S8*S8
 struct SM90_64x8x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
@@ -5220,31 +5512,33 @@ struct SM90_64x8x32_S32S8S8_RS_TN
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.s8.s8 "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=S8*S8
 struct SM90_64x8x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -5255,31 +5549,33 @@ struct SM90_64x8x32_S32S8S8_RS_TN_SATURATE
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.s8.s8.satfinite "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=S8*S8
 struct SM90_64x16x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
@@ -5291,32 +5587,34 @@ struct SM90_64x16x32_S32S8S8_RS_TN
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.s8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=S8*S8
 struct SM90_64x16x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -5328,32 +5626,34 @@ struct SM90_64x16x32_S32S8S8_RS_TN_SATURATE
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.s8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=S8*S8
 struct SM90_64x32x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
@@ -5367,35 +5667,37 @@ struct SM90_64x32x32_S32S8S8_RS_TN
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.s8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=S8*S8
 struct SM90_64x32x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -5409,35 +5711,37 @@ struct SM90_64x32x32_S32S8S8_RS_TN_SATURATE
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.s8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=S8*S8
 struct SM90_64x64x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
@@ -5455,10 +5759,14 @@ struct SM90_64x64x32_S32S8S8_RS_TN
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.s8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -5466,7 +5774,8 @@ struct SM90_64x64x32_S32S8S8_RS_TN
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -5477,19 +5786,16 @@ struct SM90_64x64x32_S32S8S8_RS_TN
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=S8*S8
 struct SM90_64x64x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -5507,10 +5813,14 @@ struct SM90_64x64x32_S32S8S8_RS_TN_SATURATE
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.s8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -5518,7 +5828,8 @@ struct SM90_64x64x32_S32S8S8_RS_TN_SATURATE
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -5529,19 +5840,16 @@ struct SM90_64x64x32_S32S8S8_RS_TN_SATURATE
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=S8*S8
 struct SM90_64x96x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
@@ -5563,10 +5871,14 @@ struct SM90_64x96x32_S32S8S8_RS_TN
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.s8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -5576,7 +5888,8 @@ struct SM90_64x96x32_S32S8S8_RS_TN
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -5591,19 +5904,16 @@ struct SM90_64x96x32_S32S8S8_RS_TN
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=S8*S8
 struct SM90_64x96x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -5625,10 +5935,14 @@ struct SM90_64x96x32_S32S8S8_RS_TN_SATURATE
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.s8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -5638,7 +5952,8 @@ struct SM90_64x96x32_S32S8S8_RS_TN_SATURATE
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -5653,19 +5968,16 @@ struct SM90_64x96x32_S32S8S8_RS_TN_SATURATE
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=S8*S8
 struct SM90_64x128x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
@@ -5691,10 +6003,14 @@ struct SM90_64x128x32_S32S8S8_RS_TN
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.s8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -5706,7 +6022,8 @@ struct SM90_64x128x32_S32S8S8_RS_TN
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -5725,19 +6042,16 @@ struct SM90_64x128x32_S32S8S8_RS_TN
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=S8*S8
 struct SM90_64x128x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -5763,10 +6077,14 @@ struct SM90_64x128x32_S32S8S8_RS_TN_SATURATE
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.s8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -5778,7 +6096,8 @@ struct SM90_64x128x32_S32S8S8_RS_TN_SATURATE
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -5797,19 +6116,16 @@ struct SM90_64x128x32_S32S8S8_RS_TN_SATURATE
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=S8*S8
 struct SM90_64x192x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
@@ -5843,10 +6159,14 @@ struct SM90_64x192x32_S32S8S8_RS_TN
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.s8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -5862,7 +6182,8 @@ struct SM90_64x192x32_S32S8S8_RS_TN
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -5889,19 +6210,16 @@ struct SM90_64x192x32_S32S8S8_RS_TN
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=S8*S8
 struct SM90_64x192x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -5935,10 +6253,14 @@ struct SM90_64x192x32_S32S8S8_RS_TN_SATURATE
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.s8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -5954,7 +6276,8 @@ struct SM90_64x192x32_S32S8S8_RS_TN_SATURATE
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -5981,19 +6304,16 @@ struct SM90_64x192x32_S32S8S8_RS_TN_SATURATE
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=S8*S8
 struct SM90_64x256x32_S32S8S8_RS_TN
 {
   using DRegisters = void;
@@ -6035,10 +6355,14 @@ struct SM90_64x256x32_S32S8S8_RS_TN
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.s8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -6058,7 +6382,8 @@ struct SM90_64x256x32_S32S8S8_RS_TN
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -6093,19 +6418,16 @@ struct SM90_64x256x32_S32S8S8_RS_TN
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=S8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=S8*S8
 struct SM90_64x256x32_S32S8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -6147,10 +6469,14 @@ struct SM90_64x256x32_S32S8S8_RS_TN_SATURATE
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.s8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -6170,7 +6496,8 @@ struct SM90_64x256x32_S32S8S8_RS_TN_SATURATE
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -6205,19 +6532,16 @@ struct SM90_64x256x32_S32S8S8_RS_TN_SATURATE
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=S8*U8
 struct SM90_64x8x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
@@ -6228,31 +6552,33 @@ struct SM90_64x8x32_S32S8U8_SS_TN
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.s8.u8 "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=S8*U8
 struct SM90_64x8x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -6263,31 +6589,33 @@ struct SM90_64x8x32_S32S8U8_SS_TN_SATURATE
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.s8.u8.satfinite "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=S8*U8
 struct SM90_64x16x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
@@ -6299,32 +6627,34 @@ struct SM90_64x16x32_S32S8U8_SS_TN
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.s8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=S8*U8
 struct SM90_64x16x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -6336,32 +6666,34 @@ struct SM90_64x16x32_S32S8U8_SS_TN_SATURATE
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.s8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=S8*U8
 struct SM90_64x32x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
@@ -6375,35 +6707,37 @@ struct SM90_64x32x32_S32S8U8_SS_TN
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.s8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=S8*U8
 struct SM90_64x32x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -6417,35 +6751,37 @@ struct SM90_64x32x32_S32S8U8_SS_TN_SATURATE
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.s8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=S8*U8
 struct SM90_64x64x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
@@ -6463,10 +6799,14 @@ struct SM90_64x64x32_S32S8U8_SS_TN
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.s8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -6474,7 +6814,8 @@ struct SM90_64x64x32_S32S8U8_SS_TN
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -6485,19 +6826,16 @@ struct SM90_64x64x32_S32S8U8_SS_TN
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=S8*U8
 struct SM90_64x64x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -6515,10 +6853,14 @@ struct SM90_64x64x32_S32S8U8_SS_TN_SATURATE
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.s8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -6526,7 +6868,8 @@ struct SM90_64x64x32_S32S8U8_SS_TN_SATURATE
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -6537,19 +6880,16 @@ struct SM90_64x64x32_S32S8U8_SS_TN_SATURATE
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=S8*U8
 struct SM90_64x96x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
@@ -6571,10 +6911,14 @@ struct SM90_64x96x32_S32S8U8_SS_TN
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.s8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -6584,7 +6928,8 @@ struct SM90_64x96x32_S32S8U8_SS_TN
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -6599,19 +6944,16 @@ struct SM90_64x96x32_S32S8U8_SS_TN
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=S8*U8
 struct SM90_64x96x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -6633,10 +6975,14 @@ struct SM90_64x96x32_S32S8U8_SS_TN_SATURATE
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.s8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -6646,7 +6992,8 @@ struct SM90_64x96x32_S32S8U8_SS_TN_SATURATE
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -6661,19 +7008,16 @@ struct SM90_64x96x32_S32S8U8_SS_TN_SATURATE
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=S8*U8
 struct SM90_64x128x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
@@ -6699,10 +7043,14 @@ struct SM90_64x128x32_S32S8U8_SS_TN
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.s8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -6714,7 +7062,8 @@ struct SM90_64x128x32_S32S8U8_SS_TN
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -6733,19 +7082,16 @@ struct SM90_64x128x32_S32S8U8_SS_TN
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=S8*U8
 struct SM90_64x128x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -6771,10 +7117,14 @@ struct SM90_64x128x32_S32S8U8_SS_TN_SATURATE
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.s8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -6786,7 +7136,8 @@ struct SM90_64x128x32_S32S8U8_SS_TN_SATURATE
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -6805,19 +7156,16 @@ struct SM90_64x128x32_S32S8U8_SS_TN_SATURATE
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=S8*U8
 struct SM90_64x192x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
@@ -6851,10 +7199,14 @@ struct SM90_64x192x32_S32S8U8_SS_TN
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.s8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -6870,7 +7222,8 @@ struct SM90_64x192x32_S32S8U8_SS_TN
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -6897,19 +7250,16 @@ struct SM90_64x192x32_S32S8U8_SS_TN
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=S8*U8
 struct SM90_64x192x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -6943,10 +7293,14 @@ struct SM90_64x192x32_S32S8U8_SS_TN_SATURATE
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.s8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -6962,7 +7316,8 @@ struct SM90_64x192x32_S32S8U8_SS_TN_SATURATE
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -6989,19 +7344,16 @@ struct SM90_64x192x32_S32S8U8_SS_TN_SATURATE
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=S8*U8
 struct SM90_64x256x32_S32S8U8_SS_TN
 {
   using DRegisters = void;
@@ -7043,10 +7395,14 @@ struct SM90_64x256x32_S32S8U8_SS_TN
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.s8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -7066,7 +7422,8 @@ struct SM90_64x256x32_S32S8U8_SS_TN
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -7101,19 +7458,16 @@ struct SM90_64x256x32_S32S8U8_SS_TN
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=S8*U8
 struct SM90_64x256x32_S32S8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -7155,10 +7509,14 @@ struct SM90_64x256x32_S32S8U8_SS_TN_SATURATE
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.s8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -7178,7 +7536,8 @@ struct SM90_64x256x32_S32S8U8_SS_TN_SATURATE
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -7213,19 +7572,16 @@ struct SM90_64x256x32_S32S8U8_SS_TN_SATURATE
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=S8*U8
 struct SM90_64x8x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
@@ -7236,31 +7592,33 @@ struct SM90_64x8x32_S32S8U8_RS_TN
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.s8.u8 "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=S8*U8
 struct SM90_64x8x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -7271,31 +7629,33 @@ struct SM90_64x8x32_S32S8U8_RS_TN_SATURATE
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.s8.u8.satfinite "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=S8*U8
 struct SM90_64x16x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
@@ -7307,32 +7667,34 @@ struct SM90_64x16x32_S32S8U8_RS_TN
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.s8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=S8*U8
 struct SM90_64x16x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -7344,32 +7706,34 @@ struct SM90_64x16x32_S32S8U8_RS_TN_SATURATE
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.s8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=S8*U8
 struct SM90_64x32x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
@@ -7383,35 +7747,37 @@ struct SM90_64x32x32_S32S8U8_RS_TN
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.s8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=S8*U8
 struct SM90_64x32x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -7425,35 +7791,37 @@ struct SM90_64x32x32_S32S8U8_RS_TN_SATURATE
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.s8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=S8*U8
 struct SM90_64x64x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
@@ -7471,10 +7839,14 @@ struct SM90_64x64x32_S32S8U8_RS_TN
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.s8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -7482,7 +7854,8 @@ struct SM90_64x64x32_S32S8U8_RS_TN
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -7493,19 +7866,16 @@ struct SM90_64x64x32_S32S8U8_RS_TN
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=S8*U8
 struct SM90_64x64x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -7523,10 +7893,14 @@ struct SM90_64x64x32_S32S8U8_RS_TN_SATURATE
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.s8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -7534,7 +7908,8 @@ struct SM90_64x64x32_S32S8U8_RS_TN_SATURATE
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -7545,19 +7920,16 @@ struct SM90_64x64x32_S32S8U8_RS_TN_SATURATE
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=S8*U8
 struct SM90_64x96x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
@@ -7579,10 +7951,14 @@ struct SM90_64x96x32_S32S8U8_RS_TN
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.s8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -7592,7 +7968,8 @@ struct SM90_64x96x32_S32S8U8_RS_TN
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -7607,19 +7984,16 @@ struct SM90_64x96x32_S32S8U8_RS_TN
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=S8*U8
 struct SM90_64x96x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -7641,10 +8015,14 @@ struct SM90_64x96x32_S32S8U8_RS_TN_SATURATE
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.s8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -7654,7 +8032,8 @@ struct SM90_64x96x32_S32S8U8_RS_TN_SATURATE
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -7669,19 +8048,16 @@ struct SM90_64x96x32_S32S8U8_RS_TN_SATURATE
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=S8*U8
 struct SM90_64x128x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
@@ -7707,10 +8083,14 @@ struct SM90_64x128x32_S32S8U8_RS_TN
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.s8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -7722,7 +8102,8 @@ struct SM90_64x128x32_S32S8U8_RS_TN
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -7741,19 +8122,16 @@ struct SM90_64x128x32_S32S8U8_RS_TN
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=S8*U8
 struct SM90_64x128x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -7779,10 +8157,14 @@ struct SM90_64x128x32_S32S8U8_RS_TN_SATURATE
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.s8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -7794,7 +8176,8 @@ struct SM90_64x128x32_S32S8U8_RS_TN_SATURATE
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -7813,19 +8196,16 @@ struct SM90_64x128x32_S32S8U8_RS_TN_SATURATE
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=S8*U8
 struct SM90_64x192x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
@@ -7859,10 +8239,14 @@ struct SM90_64x192x32_S32S8U8_RS_TN
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.s8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -7878,7 +8262,8 @@ struct SM90_64x192x32_S32S8U8_RS_TN
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -7905,19 +8290,16 @@ struct SM90_64x192x32_S32S8U8_RS_TN
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=S8*U8
 struct SM90_64x192x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -7951,10 +8333,14 @@ struct SM90_64x192x32_S32S8U8_RS_TN_SATURATE
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.s8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -7970,7 +8356,8 @@ struct SM90_64x192x32_S32S8U8_RS_TN_SATURATE
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -7997,19 +8384,16 @@ struct SM90_64x192x32_S32S8U8_RS_TN_SATURATE
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=S8*U8
 struct SM90_64x256x32_S32S8U8_RS_TN
 {
   using DRegisters = void;
@@ -8051,10 +8435,14 @@ struct SM90_64x256x32_S32S8U8_RS_TN
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.s8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -8074,7 +8462,8 @@ struct SM90_64x256x32_S32S8U8_RS_TN
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -8109,19 +8498,16 @@ struct SM90_64x256x32_S32S8U8_RS_TN
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=S8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=S8*U8
 struct SM90_64x256x32_S32S8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -8163,10 +8549,14 @@ struct SM90_64x256x32_S32S8U8_RS_TN_SATURATE
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.s8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -8186,7 +8576,8 @@ struct SM90_64x256x32_S32S8U8_RS_TN_SATURATE
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -8221,19 +8612,16 @@ struct SM90_64x256x32_S32S8U8_RS_TN_SATURATE
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32S8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=U8*S8
 struct SM90_64x8x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
@@ -8244,31 +8632,33 @@ struct SM90_64x8x32_S32U8S8_SS_TN
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.u8.s8 "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=U8*S8
 struct SM90_64x8x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -8279,31 +8669,33 @@ struct SM90_64x8x32_S32U8S8_SS_TN_SATURATE
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.u8.s8.satfinite "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=U8*S8
 struct SM90_64x16x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
@@ -8315,32 +8707,34 @@ struct SM90_64x16x32_S32U8S8_SS_TN
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.u8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=U8*S8
 struct SM90_64x16x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -8352,32 +8746,34 @@ struct SM90_64x16x32_S32U8S8_SS_TN_SATURATE
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.u8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=U8*S8
 struct SM90_64x32x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
@@ -8391,35 +8787,37 @@ struct SM90_64x32x32_S32U8S8_SS_TN
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.u8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=U8*S8
 struct SM90_64x32x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -8433,35 +8831,37 @@ struct SM90_64x32x32_S32U8S8_SS_TN_SATURATE
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.u8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=U8*S8
 struct SM90_64x64x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
@@ -8479,10 +8879,14 @@ struct SM90_64x64x32_S32U8S8_SS_TN
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.u8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -8490,7 +8894,8 @@ struct SM90_64x64x32_S32U8S8_SS_TN
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -8501,19 +8906,16 @@ struct SM90_64x64x32_S32U8S8_SS_TN
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=U8*S8
 struct SM90_64x64x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -8531,10 +8933,14 @@ struct SM90_64x64x32_S32U8S8_SS_TN_SATURATE
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.u8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -8542,7 +8948,8 @@ struct SM90_64x64x32_S32U8S8_SS_TN_SATURATE
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -8553,19 +8960,16 @@ struct SM90_64x64x32_S32U8S8_SS_TN_SATURATE
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=U8*S8
 struct SM90_64x96x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
@@ -8587,10 +8991,14 @@ struct SM90_64x96x32_S32U8S8_SS_TN
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.u8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -8600,7 +9008,8 @@ struct SM90_64x96x32_S32U8S8_SS_TN
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -8615,19 +9024,16 @@ struct SM90_64x96x32_S32U8S8_SS_TN
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=U8*S8
 struct SM90_64x96x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -8649,10 +9055,14 @@ struct SM90_64x96x32_S32U8S8_SS_TN_SATURATE
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.u8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -8662,7 +9072,8 @@ struct SM90_64x96x32_S32U8S8_SS_TN_SATURATE
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -8677,19 +9088,16 @@ struct SM90_64x96x32_S32U8S8_SS_TN_SATURATE
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=U8*S8
 struct SM90_64x128x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
@@ -8715,10 +9123,14 @@ struct SM90_64x128x32_S32U8S8_SS_TN
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.u8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -8730,7 +9142,8 @@ struct SM90_64x128x32_S32U8S8_SS_TN
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -8749,19 +9162,16 @@ struct SM90_64x128x32_S32U8S8_SS_TN
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=U8*S8
 struct SM90_64x128x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -8787,10 +9197,14 @@ struct SM90_64x128x32_S32U8S8_SS_TN_SATURATE
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.u8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -8802,7 +9216,8 @@ struct SM90_64x128x32_S32U8S8_SS_TN_SATURATE
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -8821,19 +9236,16 @@ struct SM90_64x128x32_S32U8S8_SS_TN_SATURATE
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=U8*S8
 struct SM90_64x192x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
@@ -8867,10 +9279,14 @@ struct SM90_64x192x32_S32U8S8_SS_TN
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.u8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -8886,7 +9302,8 @@ struct SM90_64x192x32_S32U8S8_SS_TN
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -8913,19 +9330,16 @@ struct SM90_64x192x32_S32U8S8_SS_TN
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=U8*S8
 struct SM90_64x192x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -8959,10 +9373,14 @@ struct SM90_64x192x32_S32U8S8_SS_TN_SATURATE
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.u8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -8978,7 +9396,8 @@ struct SM90_64x192x32_S32U8S8_SS_TN_SATURATE
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -9005,19 +9424,16 @@ struct SM90_64x192x32_S32U8S8_SS_TN_SATURATE
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=U8*S8
 struct SM90_64x256x32_S32U8S8_SS_TN
 {
   using DRegisters = void;
@@ -9059,10 +9475,14 @@ struct SM90_64x256x32_S32U8S8_SS_TN
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.u8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -9082,7 +9502,8 @@ struct SM90_64x256x32_S32U8S8_SS_TN
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -9117,19 +9538,16 @@ struct SM90_64x256x32_S32U8S8_SS_TN
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=U8*S8
 struct SM90_64x256x32_S32U8S8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -9171,10 +9589,14 @@ struct SM90_64x256x32_S32U8S8_SS_TN_SATURATE
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.u8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -9194,7 +9616,8 @@ struct SM90_64x256x32_S32U8S8_SS_TN_SATURATE
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -9229,19 +9652,16 @@ struct SM90_64x256x32_S32U8S8_SS_TN_SATURATE
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=U8*S8
 struct SM90_64x8x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
@@ -9252,31 +9672,33 @@ struct SM90_64x8x32_S32U8S8_RS_TN
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.u8.s8 "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=U8*S8
 struct SM90_64x8x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -9287,31 +9709,33 @@ struct SM90_64x8x32_S32U8S8_RS_TN_SATURATE
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.u8.s8.satfinite "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=U8*S8
 struct SM90_64x16x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
@@ -9323,32 +9747,34 @@ struct SM90_64x16x32_S32U8S8_RS_TN
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.u8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=U8*S8
 struct SM90_64x16x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -9360,32 +9786,34 @@ struct SM90_64x16x32_S32U8S8_RS_TN_SATURATE
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.u8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=U8*S8
 struct SM90_64x32x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
@@ -9399,35 +9827,37 @@ struct SM90_64x32x32_S32U8S8_RS_TN
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.u8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=U8*S8
 struct SM90_64x32x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -9441,35 +9871,37 @@ struct SM90_64x32x32_S32U8S8_RS_TN_SATURATE
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.u8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=U8*S8
 struct SM90_64x64x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
@@ -9487,10 +9919,14 @@ struct SM90_64x64x32_S32U8S8_RS_TN
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.u8.s8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -9498,7 +9934,8 @@ struct SM90_64x64x32_S32U8S8_RS_TN
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -9509,19 +9946,16 @@ struct SM90_64x64x32_S32U8S8_RS_TN
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=U8*S8
 struct SM90_64x64x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -9539,10 +9973,14 @@ struct SM90_64x64x32_S32U8S8_RS_TN_SATURATE
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.u8.s8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -9550,7 +9988,8 @@ struct SM90_64x64x32_S32U8S8_RS_TN_SATURATE
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -9561,19 +10000,16 @@ struct SM90_64x64x32_S32U8S8_RS_TN_SATURATE
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=U8*S8
 struct SM90_64x96x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
@@ -9595,10 +10031,14 @@ struct SM90_64x96x32_S32U8S8_RS_TN
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.u8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -9608,7 +10048,8 @@ struct SM90_64x96x32_S32U8S8_RS_TN
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -9623,19 +10064,16 @@ struct SM90_64x96x32_S32U8S8_RS_TN
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=U8*S8
 struct SM90_64x96x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -9657,10 +10095,14 @@ struct SM90_64x96x32_S32U8S8_RS_TN_SATURATE
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.u8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -9670,7 +10112,8 @@ struct SM90_64x96x32_S32U8S8_RS_TN_SATURATE
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -9685,19 +10128,16 @@ struct SM90_64x96x32_S32U8S8_RS_TN_SATURATE
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=U8*S8
 struct SM90_64x128x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
@@ -9723,10 +10163,14 @@ struct SM90_64x128x32_S32U8S8_RS_TN
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.u8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -9738,7 +10182,8 @@ struct SM90_64x128x32_S32U8S8_RS_TN
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -9757,19 +10202,16 @@ struct SM90_64x128x32_S32U8S8_RS_TN
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=U8*S8
 struct SM90_64x128x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -9795,10 +10237,14 @@ struct SM90_64x128x32_S32U8S8_RS_TN_SATURATE
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.u8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -9810,7 +10256,8 @@ struct SM90_64x128x32_S32U8S8_RS_TN_SATURATE
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -9829,19 +10276,16 @@ struct SM90_64x128x32_S32U8S8_RS_TN_SATURATE
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=U8*S8
 struct SM90_64x192x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
@@ -9875,10 +10319,14 @@ struct SM90_64x192x32_S32U8S8_RS_TN
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.u8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -9894,7 +10342,8 @@ struct SM90_64x192x32_S32U8S8_RS_TN
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -9921,19 +10370,16 @@ struct SM90_64x192x32_S32U8S8_RS_TN
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=U8*S8
 struct SM90_64x192x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -9967,10 +10413,14 @@ struct SM90_64x192x32_S32U8S8_RS_TN_SATURATE
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.u8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -9986,7 +10436,8 @@ struct SM90_64x192x32_S32U8S8_RS_TN_SATURATE
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -10013,19 +10464,16 @@ struct SM90_64x192x32_S32U8S8_RS_TN_SATURATE
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=U8*S8
 struct SM90_64x256x32_S32U8S8_RS_TN
 {
   using DRegisters = void;
@@ -10067,10 +10515,14 @@ struct SM90_64x256x32_S32U8S8_RS_TN
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.u8.s8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -10090,7 +10542,8 @@ struct SM90_64x256x32_S32U8S8_RS_TN
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -10125,19 +10578,16 @@ struct SM90_64x256x32_S32U8S8_RS_TN
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=U8*S8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=U8*S8
 struct SM90_64x256x32_S32U8S8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -10179,10 +10629,14 @@ struct SM90_64x256x32_S32U8S8_RS_TN_SATURATE
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.u8.s8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -10202,7 +10656,8 @@ struct SM90_64x256x32_S32U8S8_RS_TN_SATURATE
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -10237,19 +10692,16 @@ struct SM90_64x256x32_S32U8S8_RS_TN_SATURATE
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8S8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=U8*U8
 struct SM90_64x8x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
@@ -10260,31 +10712,33 @@ struct SM90_64x8x32_S32U8U8_SS_TN
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.u8.u8 "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=U8*U8
 struct SM90_64x8x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -10295,31 +10749,33 @@ struct SM90_64x8x32_S32U8U8_SS_TN_SATURATE
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %6, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.u8.u8.satfinite "
       "{%0,  %1,  %2,  %3},"
       " %4,"
       " %5,"
-      " %6;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=U8*U8
 struct SM90_64x16x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
@@ -10331,32 +10787,34 @@ struct SM90_64x16x32_S32U8U8_SS_TN
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.u8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=U8*U8
 struct SM90_64x16x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -10368,32 +10826,34 @@ struct SM90_64x16x32_S32U8U8_SS_TN_SATURATE
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %10, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.u8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       " %8,"
       " %9,"
-      " %10;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=U8*U8
 struct SM90_64x32x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
@@ -10407,35 +10867,37 @@ struct SM90_64x32x32_S32U8U8_SS_TN
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.u8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=U8*U8
 struct SM90_64x32x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -10449,35 +10911,37 @@ struct SM90_64x32x32_S32U8U8_SS_TN_SATURATE
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %18, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.u8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       " %16,"
       " %17,"
-      " %18;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=U8*U8
 struct SM90_64x64x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
@@ -10495,10 +10959,14 @@ struct SM90_64x64x32_S32U8U8_SS_TN
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.u8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -10506,7 +10974,8 @@ struct SM90_64x64x32_S32U8U8_SS_TN
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -10517,19 +10986,16 @@ struct SM90_64x64x32_S32U8U8_SS_TN
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=U8*U8
 struct SM90_64x64x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -10547,10 +11013,14 @@ struct SM90_64x64x32_S32U8U8_SS_TN_SATURATE
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %34, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.u8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -10558,7 +11028,8 @@ struct SM90_64x64x32_S32U8U8_SS_TN_SATURATE
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       " %32,"
       " %33,"
-      " %34;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -10569,19 +11040,16 @@ struct SM90_64x64x32_S32U8U8_SS_TN_SATURATE
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=U8*U8
 struct SM90_64x96x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
@@ -10603,10 +11071,14 @@ struct SM90_64x96x32_S32U8U8_SS_TN
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.u8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -10616,7 +11088,8 @@ struct SM90_64x96x32_S32U8U8_SS_TN
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -10631,19 +11104,16 @@ struct SM90_64x96x32_S32U8U8_SS_TN
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=U8*U8
 struct SM90_64x96x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -10665,10 +11135,14 @@ struct SM90_64x96x32_S32U8U8_SS_TN_SATURATE
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %50, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.u8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -10678,7 +11152,8 @@ struct SM90_64x96x32_S32U8U8_SS_TN_SATURATE
       " %40, %41, %42, %43, %44, %45, %46, %47},"
       " %48,"
       " %49,"
-      " %50;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -10693,19 +11168,16 @@ struct SM90_64x96x32_S32U8U8_SS_TN_SATURATE
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=U8*U8
 struct SM90_64x128x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
@@ -10731,10 +11203,14 @@ struct SM90_64x128x32_S32U8U8_SS_TN
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.u8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -10746,7 +11222,8 @@ struct SM90_64x128x32_S32U8U8_SS_TN
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -10765,19 +11242,16 @@ struct SM90_64x128x32_S32U8U8_SS_TN
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=U8*U8
 struct SM90_64x128x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -10803,10 +11277,14 @@ struct SM90_64x128x32_S32U8U8_SS_TN_SATURATE
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %66, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.u8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -10818,7 +11296,8 @@ struct SM90_64x128x32_S32U8U8_SS_TN_SATURATE
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       " %64,"
       " %65,"
-      " %66;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -10837,19 +11316,16 @@ struct SM90_64x128x32_S32U8U8_SS_TN_SATURATE
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=U8*U8
 struct SM90_64x192x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
@@ -10883,10 +11359,14 @@ struct SM90_64x192x32_S32U8U8_SS_TN
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.u8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -10902,7 +11382,8 @@ struct SM90_64x192x32_S32U8U8_SS_TN
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -10929,19 +11410,16 @@ struct SM90_64x192x32_S32U8U8_SS_TN
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=U8*U8
 struct SM90_64x192x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -10975,10 +11453,14 @@ struct SM90_64x192x32_S32U8U8_SS_TN_SATURATE
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %98, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.u8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -10994,7 +11476,8 @@ struct SM90_64x192x32_S32U8U8_SS_TN_SATURATE
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       " %96,"
       " %97,"
-      " %98;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -11021,19 +11504,16 @@ struct SM90_64x192x32_S32U8U8_SS_TN_SATURATE
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=U8*U8
 struct SM90_64x256x32_S32U8U8_SS_TN
 {
   using DRegisters = void;
@@ -11075,10 +11555,14 @@ struct SM90_64x256x32_S32U8U8_SS_TN
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.u8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -11098,7 +11582,8 @@ struct SM90_64x256x32_S32U8U8_SS_TN
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -11133,19 +11618,16 @@ struct SM90_64x256x32_S32U8U8_SS_TN
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_SS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=U8*U8
 struct SM90_64x256x32_S32U8U8_SS_TN_SATURATE
 {
   using DRegisters = void;
@@ -11187,10 +11669,14 @@ struct SM90_64x256x32_S32U8U8_SS_TN_SATURATE
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %130, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.u8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -11210,7 +11696,8 @@ struct SM90_64x256x32_S32U8U8_SS_TN_SATURATE
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       " %128,"
       " %129,"
-      " %130;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -11245,19 +11732,16 @@ struct SM90_64x256x32_S32U8U8_SS_TN_SATURATE
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "l"(desc_a),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_SS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=U8*U8
 struct SM90_64x8x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
@@ -11268,31 +11752,33 @@ struct SM90_64x8x32_S32U8U8_RS_TN
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.u8.u8 "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x8x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x8x32 TN S32+=U8*U8
 struct SM90_64x8x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -11303,31 +11789,33 @@ struct SM90_64x8x32_S32U8U8_RS_TN_SATURATE
   CUTE_HOST_DEVICE static void
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
-      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3)
+      uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %9, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n8k32.s32.u8.u8.satfinite "
       "{%0,  %1,  %2,  %3},"
       "{%4,  %5,  %6,  %7},"
       " %8,"
-      " %9;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x8x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=U8*U8
 struct SM90_64x16x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
@@ -11339,32 +11827,34 @@ struct SM90_64x16x32_S32U8U8_RS_TN
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.u8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x16x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x16x32 TN S32+=U8*U8
 struct SM90_64x16x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -11376,32 +11866,34 @@ struct SM90_64x16x32_S32U8U8_RS_TN_SATURATE
   fma(uint32_t const& a0, uint32_t const& a1, uint32_t const& a2, uint32_t const& a3,
       uint64_t const& desc_b,
       uint32_t      & d0, uint32_t      & d1, uint32_t      & d2, uint32_t      & d3,
-      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7)
+      uint32_t      & d4, uint32_t      & d5, uint32_t      & d6, uint32_t      & d7,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %13, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n16k32.s32.u8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7},"
       "{%8,  %9,  %10, %11},"
       " %12,"
-      " %13;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d0), "+r"(d1), "+r"(d2), "+r"(d3),
         "+r"(d4), "+r"(d5), "+r"(d6), "+r"(d7)
       :  "r"(a0),  "r"(a1),  "r"(a2),  "r"(a3),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x16x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=U8*U8
 struct SM90_64x32x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
@@ -11415,35 +11907,37 @@ struct SM90_64x32x32_S32U8U8_RS_TN
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.u8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x32x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x32x32 TN S32+=U8*U8
 struct SM90_64x32x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -11457,35 +11951,37 @@ struct SM90_64x32x32_S32U8U8_RS_TN_SATURATE
       uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
       uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
       uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
-      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15)
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %21, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n32k32.s32.u8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
       "{%16, %17, %18, %19},"
       " %20,"
-      " %21;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x32x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=U8*U8
 struct SM90_64x64x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
@@ -11503,10 +11999,14 @@ struct SM90_64x64x32_S32U8U8_RS_TN
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.u8.u8 "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -11514,7 +12014,8 @@ struct SM90_64x64x32_S32U8U8_RS_TN
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -11525,19 +12026,16 @@ struct SM90_64x64x32_S32U8U8_RS_TN
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x64x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x64x32 TN S32+=U8*U8
 struct SM90_64x64x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -11555,10 +12053,14 @@ struct SM90_64x64x32_S32U8U8_RS_TN_SATURATE
       uint32_t      & d16, uint32_t      & d17, uint32_t      & d18, uint32_t      & d19,
       uint32_t      & d20, uint32_t      & d21, uint32_t      & d22, uint32_t      & d23,
       uint32_t      & d24, uint32_t      & d25, uint32_t      & d26, uint32_t      & d27,
-      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31)
+      uint32_t      & d28, uint32_t      & d29, uint32_t      & d30, uint32_t      & d31,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %37, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n64k32.s32.u8.u8.satfinite "
       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
       " %8,  %9,  %10, %11, %12, %13, %14, %15, "
@@ -11566,7 +12068,8 @@ struct SM90_64x64x32_S32U8U8_RS_TN_SATURATE
       " %24, %25, %26, %27, %28, %29, %30, %31},"
       "{%32, %33, %34, %35},"
       " %36,"
-      " %37;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -11577,19 +12080,16 @@ struct SM90_64x64x32_S32U8U8_RS_TN_SATURATE
         "+r"(d28), "+r"(d29), "+r"(d30), "+r"(d31)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x64x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=U8*U8
 struct SM90_64x96x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
@@ -11611,10 +12111,14 @@ struct SM90_64x96x32_S32U8U8_RS_TN
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.u8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -11624,7 +12128,8 @@ struct SM90_64x96x32_S32U8U8_RS_TN
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -11639,19 +12144,16 @@ struct SM90_64x96x32_S32U8U8_RS_TN
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x96x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x96x32 TN S32+=U8*U8
 struct SM90_64x96x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -11673,10 +12175,14 @@ struct SM90_64x96x32_S32U8U8_RS_TN_SATURATE
       uint32_t      & d32, uint32_t      & d33, uint32_t      & d34, uint32_t      & d35,
       uint32_t      & d36, uint32_t      & d37, uint32_t      & d38, uint32_t      & d39,
       uint32_t      & d40, uint32_t      & d41, uint32_t      & d42, uint32_t      & d43,
-      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47)
+      uint32_t      & d44, uint32_t      & d45, uint32_t      & d46, uint32_t      & d47,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %53, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n96k32.s32.u8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -11686,7 +12192,8 @@ struct SM90_64x96x32_S32U8U8_RS_TN_SATURATE
       " %40,  %41,  %42,  %43,  %44,  %45,  %46,  %47},"
       "{%48,  %49,  %50,  %51},"
       " %52,"
-      " %53;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -11701,19 +12208,16 @@ struct SM90_64x96x32_S32U8U8_RS_TN_SATURATE
         "+r"(d44), "+r"(d45), "+r"(d46), "+r"(d47)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x96x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=U8*U8
 struct SM90_64x128x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
@@ -11739,10 +12243,14 @@ struct SM90_64x128x32_S32U8U8_RS_TN
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.u8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -11754,7 +12262,8 @@ struct SM90_64x128x32_S32U8U8_RS_TN
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -11773,19 +12282,16 @@ struct SM90_64x128x32_S32U8U8_RS_TN
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x128x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x128x32 TN S32+=U8*U8
 struct SM90_64x128x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -11811,10 +12317,14 @@ struct SM90_64x128x32_S32U8U8_RS_TN_SATURATE
       uint32_t      & d48, uint32_t      & d49, uint32_t      & d50, uint32_t      & d51,
       uint32_t      & d52, uint32_t      & d53, uint32_t      & d54, uint32_t      & d55,
       uint32_t      & d56, uint32_t      & d57, uint32_t      & d58, uint32_t      & d59,
-      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63)
+      uint32_t      & d60, uint32_t      & d61, uint32_t      & d62, uint32_t      & d63,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %69, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n128k32.s32.u8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -11826,7 +12336,8 @@ struct SM90_64x128x32_S32U8U8_RS_TN_SATURATE
       " %56,  %57,  %58,  %59,  %60,  %61,  %62,  %63},"
       "{%64,  %65,  %66,  %67},"
       " %68,"
-      " %69;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -11845,19 +12356,16 @@ struct SM90_64x128x32_S32U8U8_RS_TN_SATURATE
         "+r"(d60), "+r"(d61), "+r"(d62), "+r"(d63)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x128x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=U8*U8
 struct SM90_64x192x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
@@ -11891,10 +12399,14 @@ struct SM90_64x192x32_S32U8U8_RS_TN
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.u8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -11910,7 +12422,8 @@ struct SM90_64x192x32_S32U8U8_RS_TN
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -11937,19 +12450,16 @@ struct SM90_64x192x32_S32U8U8_RS_TN
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x192x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x192x32 TN S32+=U8*U8
 struct SM90_64x192x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -11983,10 +12493,14 @@ struct SM90_64x192x32_S32U8U8_RS_TN_SATURATE
       uint32_t      & d80, uint32_t      & d81, uint32_t      & d82, uint32_t      & d83,
       uint32_t      & d84, uint32_t      & d85, uint32_t      & d86, uint32_t      & d87,
       uint32_t      & d88, uint32_t      & d89, uint32_t      & d90, uint32_t      & d91,
-      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95)
+      uint32_t      & d92, uint32_t      & d93, uint32_t      & d94, uint32_t      & d95,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %101, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n192k32.s32.u8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -12002,7 +12516,8 @@ struct SM90_64x192x32_S32U8U8_RS_TN_SATURATE
       " %88,  %89,  %90,  %91,  %92,  %93,  %94,  %95},"
       "{%96,  %97,  %98,  %99},"
       " %100,"
-      " %101;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
@@ -12029,19 +12544,16 @@ struct SM90_64x192x32_S32U8U8_RS_TN_SATURATE
         "+r"(d92), "+r"(d93), "+r"(d94), "+r"(d95)
       :  "r"(a00),  "r"(a01),  "r"(a02),  "r"(a03),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x192x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=U8*U8
 struct SM90_64x256x32_S32U8U8_RS_TN
 {
   using DRegisters = void;
@@ -12083,10 +12595,14 @@ struct SM90_64x256x32_S32U8U8_RS_TN
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.u8.u8 "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -12106,7 +12622,8 @@ struct SM90_64x256x32_S32U8U8_RS_TN
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -12141,19 +12658,16 @@ struct SM90_64x256x32_S32U8U8_RS_TN
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_RS_TN without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MMA 64x256x32 TN S32+=U8*U8
-template<
-  GMMA::ScaleOut scaleD = GMMA::ScaleOut::One
->
+// GMMA 64x256x32 TN S32+=U8*U8
 struct SM90_64x256x32_S32U8U8_RS_TN_SATURATE
 {
   using DRegisters = void;
@@ -12195,10 +12709,14 @@ struct SM90_64x256x32_S32U8U8_RS_TN_SATURATE
       uint32_t      & d112, uint32_t      & d113, uint32_t      & d114, uint32_t      & d115,
       uint32_t      & d116, uint32_t      & d117, uint32_t      & d118, uint32_t      & d119,
       uint32_t      & d120, uint32_t      & d121, uint32_t      & d122, uint32_t      & d123,
-      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127)
+      uint32_t      & d124, uint32_t      & d125, uint32_t      & d126, uint32_t      & d127,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
     asm volatile(
+    "{\n"
+      ".reg .pred p;\n"
+      "setp.ne.b32 p, %133, 0;\n"
       "wgmma.mma_async.sync.aligned.m64n256k32.s32.u8.u8.satfinite "
       "{%0,   %1,   %2,   %3,   %4,   %5,   %6,   %7,   "
       " %8,   %9,   %10,  %11,  %12,  %13,  %14,  %15,  "
@@ -12218,7 +12736,8 @@ struct SM90_64x256x32_S32U8U8_RS_TN_SATURATE
       " %120, %121, %122, %123, %124, %125, %126, %127},"
       "{%128, %129, %130, %131},"
       " %132,"
-      " %133;\n"
+      " p;\n"
+    "}\n"
       : "+r"(d000), "+r"(d001), "+r"(d002), "+r"(d003),
         "+r"(d004), "+r"(d005), "+r"(d006), "+r"(d007),
         "+r"(d008), "+r"(d009), "+r"(d010), "+r"(d011),
@@ -12253,9 +12772,9 @@ struct SM90_64x256x32_S32U8U8_RS_TN_SATURATE
         "+r"(d124), "+r"(d125), "+r"(d126), "+r"(d127)
       :  "r"(a000),  "r"(a001),  "r"(a002),  "r"(a003),
          "l"(desc_b),
-         "n"(int32_t(scaleD)));
+         "r"(int32_t(scale_D)));
 #else
-    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90_ENABLED");
+    CUTE_RUNTIME_ASSERT("Attempting to use SM90_64x256x32_S32U8U8_RS_TN_SATURATE without CUTE_ARCH_MMA_SM90A_ENABLED");
 #endif
   }
 };

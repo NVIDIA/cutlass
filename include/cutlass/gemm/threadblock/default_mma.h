@@ -40,6 +40,7 @@
 #include "cutlass/arch/wmma.h"
 
 #include "cutlass/layout/matrix.h"
+#include "cutlass/layout/permute.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 #include "cutlass/transform/threadblock/predicated_tile_iterator_2dthreadtile.h"
 
@@ -100,7 +101,11 @@ template <
     /// Gather operand A by using an index array
     bool GatherA = false,
     /// Gather operand B by using an index array
-    bool GatherB = false
+    bool GatherB = false,
+    /// Permute operand A
+    typename PermuteALayout = layout::NoPermute,
+    /// Permute operand B
+    typename PermuteBLayout = layout::NoPermute
     >
 struct DefaultMma;
 
@@ -137,13 +142,17 @@ template <
     /// Gather operand A by using an index array
     bool GatherA,
     /// Gather operand B by using an index array
-    bool GatherB
+    bool GatherB,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
     >
 struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
                   kAlignmentB, ElementAccumulator, LayoutC,
                   arch::OpClassSimt, ArchTag, ThreadblockShape, WarpShape,
                   InstructionShape, 2, Operator, false, SharedMemoryClearOption::kNone,
-                  GatherA, GatherB> {
+                  GatherA, GatherB, PermuteALayout, PermuteBLayout> {
 
   static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
@@ -159,13 +168,15 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using IteratorA =
       cutlass::transform::threadblock::PredicatedTileIterator<
           cutlass::MatrixShape<MmaCore::Shape::kM, MmaCore::Shape::kK>,
-          ElementA, LayoutA, 1, typename MmaCore::IteratorThreadMapA, kAlignmentA, GatherA>;
+          ElementA, LayoutA, 1, typename MmaCore::IteratorThreadMapA, kAlignmentA,
+          GatherA, PermuteALayout>;
 
   // Define iterators over tiles from the B operand
   using IteratorB =
       cutlass::transform::threadblock::PredicatedTileIterator<
           cutlass::MatrixShape<MmaCore::Shape::kK, MmaCore::Shape::kN>,
-          ElementB, LayoutB, 0, typename MmaCore::IteratorThreadMapB, kAlignmentB, GatherB>;
+          ElementB, LayoutB, 0, typename MmaCore::IteratorThreadMapB, kAlignmentB,
+          GatherB, PermuteBLayout>;
 
   // Define the threadblock-scoped pipelined matrix multiply
   using ThreadblockMma = cutlass::gemm::threadblock::MmaPipelined<
@@ -207,13 +218,17 @@ template <
     /// Gather operand A by using an index array
     bool GatherA,
     /// Gather operand B by using an index array
-    bool GatherB
+    bool GatherB,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
     >
 struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
                   kAlignmentB, ElementAccumulator, layout::RowMajor,
                   arch::OpClassTensorOp, ArchTag, ThreadblockShape, WarpShape,
                   InstructionShape, 2, Operator, false, SharedMemoryClear,
-                  GatherA, GatherB> {
+                  GatherA, GatherB, PermuteALayout, PermuteBLayout> {
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
@@ -225,14 +240,14 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
       cutlass::transform::threadblock::PredicatedTileIterator<
           cutlass::MatrixShape<MmaCore::Shape::kM, MmaCore::Shape::kK>,
           ElementA, LayoutA, 1, typename MmaCore::IteratorThreadMapA, kAlignmentA,
-          GatherA>;
+          GatherA, PermuteALayout>;
 
   // Define iterators over tiles from the B operand
   using IteratorB =
       cutlass::transform::threadblock::PredicatedTileIterator<
           cutlass::MatrixShape<MmaCore::Shape::kK, MmaCore::Shape::kN>,
           ElementB, LayoutB, 0, typename MmaCore::IteratorThreadMapB, kAlignmentB,
-          GatherB>;
+          GatherB, PermuteBLayout>;
 
   // Define the threadblock-scoped pipelined matrix multiply
   using ThreadblockMma = cutlass::gemm::threadblock::MmaPipelined<
@@ -265,13 +280,17 @@ template <
     /// Gather operand A by using an index array
     bool GatherA,
     /// Gather operand B by using an index array
-    bool GatherB
+    bool GatherB,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
     >
 struct DefaultMma<float, LayoutA, kAlignmentA, float, LayoutB,
                   kAlignmentB, float, layout::RowMajor,
                   arch::OpClassTensorOp, ArchTag, ThreadblockShape, WarpShape,
                   InstructionShape, 2, Operator, false, SharedMemoryClearOption::kNone,
-                  GatherA, GatherB> {
+                  GatherA, GatherB, PermuteALayout, PermuteBLayout> {
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, float, LayoutA, float,
@@ -282,13 +301,15 @@ struct DefaultMma<float, LayoutA, kAlignmentA, float, LayoutB,
   using IteratorA =
       cutlass::transform::threadblock::PredicatedTileIterator<
           cutlass::MatrixShape<MmaCore::Shape::kM, MmaCore::Shape::kK>,
-          float, LayoutA, 1, typename MmaCore::IteratorThreadMapA, kAlignmentA, GatherA>;
+          float, LayoutA, 1, typename MmaCore::IteratorThreadMapA, kAlignmentA,
+          GatherA, PermuteALayout>;
 
   // Define iterators over tiles from the B operand
   using IteratorB =
       cutlass::transform::threadblock::PredicatedTileIterator<
           cutlass::MatrixShape<MmaCore::Shape::kK, MmaCore::Shape::kN>,
-          float, LayoutB, 0, typename MmaCore::IteratorThreadMapB, kAlignmentB, GatherB>;
+          float, LayoutB, 0, typename MmaCore::IteratorThreadMapB, kAlignmentB,
+          GatherB, PermuteBLayout>;
 
   // Define the threadblock-scoped pipelined matrix multiply
   using ThreadblockMma = cutlass::gemm::threadblock::MmaPipelined<
@@ -333,7 +354,8 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
                   kAlignmentB, ElementAccumulator,
                   layout::ColumnMajorInterleaved<InterleavedK>, OperatorClass,
                   ArchTag, ThreadblockShape, WarpShape, InstructionShape, 2,
-                  Operator, true, SharedMemoryClearOption::kNone, false, false> {
+                  Operator, true, SharedMemoryClearOption::kNone, false, false,
+                  layout::NoPermute, layout::NoPermute> {
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
@@ -400,13 +422,17 @@ template <
     /// Gather operand A by using an index array
     bool GatherA,
     /// Gather operand B by using an index array
-    bool GatherB
+    bool GatherB,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
     >
 struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
                   kAlignmentB, ElementAccumulator, LayoutC,
                   arch::OpClassSimt, ArchTag, ThreadblockShape, WarpShape,
                   InstructionShape, Stages, Operator, false, SharedMemoryClearOption::kNone,
-                  GatherA, GatherB> {
+                  GatherA, GatherB, PermuteALayout, PermuteBLayout> {
 
   static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
@@ -424,7 +450,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using IteratorA =
       cutlass::transform::threadblock::PredicatedTileAccessIterator<
           cutlass::MatrixShape<ThreadblockShape::kM, ThreadblockShape::kK>,
-          ElementA, LayoutA, 1, ThreadMapA, AccessTypeA, GatherA>;
+          ElementA, LayoutA, 1, ThreadMapA, AccessTypeA, GatherA, PermuteALayout>;
 
   // Define iterators over tiles from the B operand
   using ThreadMapB = typename MmaCore::IteratorThreadMapB;
@@ -432,7 +458,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using IteratorB =
       cutlass::transform::threadblock::PredicatedTileAccessIterator<
           cutlass::MatrixShape<ThreadblockShape::kK, ThreadblockShape::kN>,
-          ElementB, LayoutB, 0, ThreadMapB, AccessTypeB, GatherB>;
+          ElementB, LayoutB, 0, ThreadMapB, AccessTypeB, GatherB, PermuteBLayout>;
 
   // Define the threadblock-scoped multistage matrix multiply
   using ThreadblockMma = cutlass::gemm::threadblock::MmaMultistage<
@@ -479,13 +505,17 @@ template <
     /// Gather operand A by using an index array
     bool GatherA,
     /// Gather operand B by using an index array
-    bool GatherB
+    bool GatherB,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
     >
 struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
                   kAlignmentB, ElementAccumulator, LayoutC,
                   arch::OpClassTensorOp, ArchTag, ThreadblockShape, WarpShape,
                   InstructionShape, Stages, Operator, false, SharedMemoryClear,
-                  GatherA, GatherB> {
+                  GatherA, GatherB, PermuteALayout, PermuteBLayout> {
 
   static_assert(platform::is_same<LayoutC, layout::RowMajor>::value
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value,
@@ -513,7 +543,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using IteratorA =
       cutlass::transform::threadblock::PredicatedTileAccessIterator<
           cutlass::MatrixShape<ThreadblockShape::kM, ThreadblockShape::kK>,
-          ElementA, LayoutA, 1, ThreadMapA, AccessTypeA, GatherA>;
+          ElementA, LayoutA, 1, ThreadMapA, AccessTypeA, GatherA, PermuteALayout>;
 
   // Define iterators over tiles from the B operand
   using ThreadMapB = typename MmaCore::IteratorThreadMapB;
@@ -521,7 +551,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
   using IteratorB =
       cutlass::transform::threadblock::PredicatedTileAccessIterator<
           cutlass::MatrixShape<ThreadblockShape::kK, ThreadblockShape::kN>,
-          ElementB, LayoutB, 0, ThreadMapB, AccessTypeB, GatherB>;
+          ElementB, LayoutB, 0, ThreadMapB, AccessTypeB, GatherB, PermuteBLayout>;
 
   // Define the threadblock-scoped multistage matrix multiply
   using ThreadblockMma = cutlass::gemm::threadblock::MmaMultistage<
@@ -569,7 +599,8 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
                   kAlignmentB, ElementAccumulator,
                   layout::ColumnMajorInterleaved<InterleavedK>, OperatorClass,
                   ArchTag, ThreadblockShape, WarpShape, InstructionShape,
-                  Stages, Operator, true, SharedMemoryClearOption::kNone, false, false> {
+                  Stages, Operator, true, SharedMemoryClearOption::kNone, 
+                  false, false, layout::NoPermute, layout::NoPermute> {
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
@@ -626,7 +657,8 @@ template <
 struct DefaultMma<int8_t, LayoutA, kAlignmentA, int8_t, LayoutB, kAlignmentB,
                   ElementAccumulator, layout::RowMajor, arch::OpClassSimt,
                   ArchTag, ThreadblockShape, WarpShape, GemmShape<1, 1, 4>, 2,
-                  Operator, false, SharedMemoryClearOption::kNone, false, false> {
+                  Operator, false, SharedMemoryClearOption::kNone,
+                  false, false, layout::NoPermute, layout::NoPermute> {
   using InstructionShape = GemmShape<1, 1, 4>;
   using ElementA = int8_t;
   using ElementB = int8_t;
@@ -695,7 +727,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
                   kAlignmentB, ElementAccumulator, LayoutC,
                   arch::OpClassWmmaTensorOp, ArchTag, ThreadblockShape, WarpShape,
                   InstructionShape, 2, Operator, false, SharedMemoryClearOption::kNone,
-                  false, false> {
+                  false, false, layout::NoPermute, layout::NoPermute> {
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,
@@ -755,7 +787,7 @@ struct DefaultMma<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB,
                   kAlignmentB, ElementAccumulator, LayoutC,
                   arch::OpClassWmmaTensorOp, ArchTag, ThreadblockShape, WarpShape,
                   InstructionShape, 1, Operator, false, SharedMemoryClearOption::kNone,
-                  false, false> {
+                  false, false, layout::NoPermute, layout::NoPermute> {
   // Define the MmaCore components
   using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
       ThreadblockShape, WarpShape, InstructionShape, ElementA, LayoutA,

@@ -114,6 +114,10 @@ template <
     bool ScatterD = false,
     /// Permute result D
     typename PermuteDLayout = layout::NoPermute,
+    /// Permute operand A
+    typename PermuteALayout_ = layout::NoPermute,
+    /// Permute operand B
+    typename PermuteBLayout_ = layout::NoPermute,
     ///
     typename Enable = void
     >
@@ -170,7 +174,11 @@ template <
     /// Scatter result D by using an index array
     bool ScatterD,
     /// Permute result D
-    typename PermuteDLayout
+    typename PermuteDLayout,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
 >
 struct DefaultGemmUniversal<
   ElementA,
@@ -198,6 +206,8 @@ struct DefaultGemmUniversal<
   GatherB,
   ScatterD,
   PermuteDLayout,
+  PermuteALayout,
+  PermuteBLayout,
   typename platform::enable_if< ! cutlass::is_complex<ElementAccumulator>::value>::type
 > {
 
@@ -225,7 +235,9 @@ struct DefaultGemmUniversal<
     GatherA,
     GatherB,
     ScatterD,
-    PermuteDLayout
+    PermuteDLayout,
+    PermuteALayout,
+    PermuteBLayout
   >::GemmKernel;
 
   /// Universal kernel without StreamkFeature member type
@@ -325,6 +337,8 @@ struct DefaultGemmUniversal<
   false,
   false,
   false,
+  layout::NoPermute,
+  layout::NoPermute,
   layout::NoPermute,
   typename platform::enable_if<cutlass::is_complex<ElementAccumulator>::value>::type
 > {

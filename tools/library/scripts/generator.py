@@ -92,6 +92,7 @@ def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
 # Generates 3.0 API based GemmUniversal API kernels. Alignment constraints are folded in with layouts
 def CreateGemmUniversal3xOperator(
     manifest, layouts, tile_descriptions, data_type,
+    schedules = [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto]],
     complex_transforms=None,
     epilogue_functor=EpilogueFunctor.LinearCombination,
     swizzling_functor=SwizzlingFunctor.Identity1):
@@ -99,7 +100,12 @@ def CreateGemmUniversal3xOperator(
   if complex_transforms is None:
     complex_transforms = [(ComplexTransform.none, ComplexTransform.none), ]
 
-  element_a, element_b, element_c, element_epilogue = data_type
+  element_a        = data_type["a_type"]
+  element_b        = data_type["b_type"]
+  element_c        = data_type["c_type"]
+  element_d        = data_type["d_type"]
+  element_acc      = data_type["acc_type"]
+  element_epilogue = data_type.get("epi_type", element_acc)
 
   operations = []
 
@@ -110,18 +116,22 @@ def CreateGemmUniversal3xOperator(
   for layout in layouts:
     for tile_description in tile_descriptions:
       for complex_transform in complex_transforms:
-        A = TensorDescription(
-            element_a, layout[0][0], layout[0][1], complex_transform[0])
-        B = TensorDescription(
-            element_b, layout[1][0], layout[1][1], complex_transform[1])
-        C = TensorDescription(element_c, layout[2][0], layout[2][1])
+        for kernel_schedule, epilogue_schedule in schedules:
+          A = TensorDescription(
+              element_a, layout[0][0], layout[0][1], complex_transform[0])
+          B = TensorDescription(
+              element_b, layout[1][0], layout[1][1], complex_transform[1])
 
-        operation = GemmOperation(
-            GemmKind.Universal3x, tile_description.minimum_compute_capability,
-            tile_description, A, B, C, element_epilogue, epilogue_functor, swizzling_functor)
+          C = TensorDescription(element_c, layout[2][0], layout[2][1])
+          D = TensorDescription(element_d, layout[2][0], layout[2][1])
 
-        manifest.append(operation)
-        operations.append(operation)
+          operation = GemmOperation(
+              GemmKind.Universal3x, tile_description.minimum_compute_capability,
+              tile_description, A, B, C, element_epilogue, epilogue_functor, swizzling_functor, D,
+              kernel_schedule, epilogue_schedule)
+
+          manifest.append(operation)
+          operations.append(operation)
 
   return operations
 
@@ -136,7 +146,7 @@ def CreateSparseGemmOperator(manifest, layouts, tile_descriptions, data_type, \
   element_a, element_b, element_c, element_epilogue = data_type
 
   gemm_kinds = [GemmKind.Sparse]
-  
+
   operations = []
 
   # by default, only generate the largest tile and largest alignment
@@ -148,9 +158,9 @@ def CreateSparseGemmOperator(manifest, layouts, tile_descriptions, data_type, \
     for tile_description in tile_descriptions:
       for alignment in alignment_constraints:
         for complex_transform in complex_transforms:
-  
+
             alignment_c = min(8, alignment)
- 
+
             A = TensorDescription(element_a, layout[0], alignment, complex_transform[0])
             B = TensorDescription(element_b, layout[1], alignment, complex_transform[1])
             C = TensorDescription(element_c, layout[2], alignment_c)
@@ -173,12 +183,12 @@ def CreateGemmPlanarComplexOperator(manifest, layouts, tile_descriptions, data_t
   element_a, element_b, element_c, element_epilogue = data_type
 
   gemm_kinds = [GemmKind.PlanarComplex, GemmKind.PlanarComplexArray]
-  
+
   # by default, only generate the largest tile and largest alignment
   if manifest.kernel_filter == '':
     tile_descriptions = [tile_descriptions[0],]
     alignment_constraints = [alignment_constraints[0],]
-  
+
   for gemm_kind in gemm_kinds:
     for layout in layouts:
       for tile_description in tile_descriptions:
@@ -238,7 +248,7 @@ def CreateRankKOperator(manifest, layouts, fill_modes, tile_descriptions, data_t
   swizzling_functor = SwizzlingFunctor.Identity8):
 
   element_a, element_c, element_epilogue = data_type
-  
+
   operations = []
 
   # by default, only generate the largest tile and largest alignment
@@ -250,7 +260,7 @@ def CreateRankKOperator(manifest, layouts, fill_modes, tile_descriptions, data_t
     for fill_mode in fill_modes:
       for tile_description in tile_descriptions:
         for alignment in alignment_constraints:
-          
+
           # SERK supported layouts (RowMajor, ColumnMajor) with no conjugation
           complex_transform = ComplexTransform.none
 
@@ -259,7 +269,7 @@ def CreateRankKOperator(manifest, layouts, fill_modes, tile_descriptions, data_t
             complex_transform = ComplexTransform.conj
 
           alignment_c = 1 # Alignment only applies to A in SYRK
-   
+
           A = TensorDescription(element_a, layout[0], alignment, complex_transform)
           C = SymmetricTensorDescription(element_c, layout[1], fill_mode, alignment_c)
 
@@ -269,7 +279,7 @@ def CreateRankKOperator(manifest, layouts, fill_modes, tile_descriptions, data_t
 
           manifest.append(new_operation)
           operations.append(new_operation)
-          
+
           # Rank-2K update
           new_operation = Rank2KOperation(RankKKind.Universal, tile_description.minimum_compute_capability, \
             tile_description, A, C, element_epilogue, epilogue_functor, swizzling_functor, blas_mode)
@@ -288,7 +298,7 @@ def CreateTrmmOperator(manifest, layouts, side_modes, fill_modes, diag_types, ti
     complex_transforms = [(ComplexTransform.none),]
 
   element_a, element_b, element_c, element_epilogue = data_type
-  
+
   operations = []
 
   # by default, only generate the largest tile and largest alignment
@@ -303,9 +313,9 @@ def CreateTrmmOperator(manifest, layouts, side_modes, fill_modes, diag_types, ti
           for tile_description in tile_descriptions:
             for alignment in alignment_constraints:
               for complex_transform in complex_transforms:
-        
+
                   alignment_c = min(8, alignment)
-       
+
                   A = TriangularTensorDescription(element_a, layout[0], side_mode, fill_mode, diag_type,
                                                   alignment, complex_transform)
                   B = TensorDescription(element_b, layout[1], alignment)
@@ -325,7 +335,7 @@ def CreateSymmOperator(manifest, layouts, side_modes, fill_modes, tile_descripti
   swizzling_functor = SwizzlingFunctor.Identity8):
 
   element_a, element_b, element_c, element_epilogue = data_type
-  
+
   operations = []
 
   # by default, only generate the largest tile and largest alignment
@@ -338,13 +348,13 @@ def CreateSymmOperator(manifest, layouts, side_modes, fill_modes, tile_descripti
       for fill_mode in fill_modes:
         for tile_description in tile_descriptions:
           for alignment in alignment_constraints:
-            
+
             # SYMM supported layouts (RowMajor, ColumnMajor) with no conjugation
             complex_transform = ComplexTransform.none
 
             alignment_a = 1 # No vectorized access for the triangular matrix
             alignment_c = min(8, alignment)
-       
+
             A = SymmetricTensorDescription(element_a, layout[0], fill_mode, alignment_a, complex_transform, side_mode)
             # tensor A and B have same data type and layout
             B = TensorDescription(element_b, layout[0], alignment)
@@ -356,7 +366,7 @@ def CreateSymmOperator(manifest, layouts, side_modes, fill_modes, tile_descripti
 
             manifest.append(new_operation)
             operations.append(new_operation)
-            
+
             # SYMM/HEMM update
             new_operation = SymmOperation(SymmKind.Universal, tile_description.minimum_compute_capability, \
               tile_description, A, B, C, element_epilogue, epilogue_functor, swizzling_functor, blas_mode)
@@ -382,11 +392,11 @@ def CreateSymmOperator(manifest, layouts, side_modes, fill_modes, tile_descripti
 def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignment_constraints, \
   conv_kinds = [ConvKind.Fprop, ConvKind.Dgrad, ConvKind.Wgrad], \
   epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity4):
-  
+
   element_a, element_b, element_c, element_epilogue = data_type
-  
+
   # one exceptional case
-  
+
   # iterator algorithm (analytic and optimized)
   iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
 
@@ -406,14 +416,14 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
       A = TensorDescription(element_a, layout[0], alignment)
       B = TensorDescription(element_b, layout[1], alignment)
       C = TensorDescription(element_c, layout[2], alignment_c)
-      
+
       swizzling_functor_ = swizzling_functor
-  
+
       #
       # Conv2d Fprop
       #
       if ConvKind.Fprop in conv_kinds:
-  
+
         # Strided support for Analytic and Optimized Fprop
         for iterator_algorithm in iterator_algorithms:
           new_operations = [
@@ -437,51 +447,51 @@ def CreateConv2dOperator(manifest, layout, tile_descriptions, data_type, alignme
           for new_operation in new_operations:
             manifest.append(new_operation)
             operations.append(new_operation)
-  
+
       #
       # Conv2d Dgrad
       #
       if ConvKind.Dgrad in conv_kinds:
-  
+
         # Unity stride for Analytic and Optimized Dgrad
         for iterator_algorithm in iterator_algorithms:
           new_operation = Conv2dOperation(ConvKind.Dgrad, iterator_algorithm, tile.minimum_compute_capability, tile,\
             A, B, C, element_epilogue, StrideSupport.Unity, epilogue_functor, swizzling_functor_)
-  
+
           manifest.append(new_operation)
           operations.append(new_operation)
-  
+
         # Strided support for Analytic Dgrad
         # strided dgrad uses a special threadblock swizzle
-        # note that SwizzlingFunctor.StridedDgradHorizontal might be 
+        # note that SwizzlingFunctor.StridedDgradHorizontal might be
         # better for problem sizes with large activation channel count
         swizzling_functor_strided_dgrad_ = SwizzlingFunctor.StridedDgradIdentity1
-  
+
         if IteratorAlgorithm.Analytic in iterator_algorithms:
           new_operation = Conv2dOperation(ConvKind.Dgrad, IteratorAlgorithm.Analytic, tile.minimum_compute_capability, tile,\
             A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_strided_dgrad_)
-  
+
           manifest.append(new_operation)
           operations.append(new_operation)
-        
+
         # Strided support for Optimized Dgrad
         if IteratorAlgorithm.Optimized in iterator_algorithms:
           new_operation = Conv2dOperation(ConvKind.Dgrad, IteratorAlgorithm.Optimized, tile.minimum_compute_capability, tile,\
             A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_strided_dgrad_)
-  
+
           manifest.append(new_operation)
           operations.append(new_operation)
-  
+
       #
       # Conv2d Wgrad
       #
       if ConvKind.Wgrad in conv_kinds:
-       
+
         # Strided support for Analytic and Optimized Wgrad
         for iterator_algorithm in iterator_algorithms:
           new_operation = Conv2dOperation(ConvKind.Wgrad, iterator_algorithm, tile.minimum_compute_capability, tile,\
             A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor, swizzling_functor_)
-  
+
           manifest.append(new_operation)
           operations.append(new_operation)
 
@@ -582,12 +592,12 @@ def CreateConv2dFewChannelsOperator(manifest, layout, tile_descriptions, data_ty
 # Convolution for 3D operations
 def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignment, \
   conv_kinds = [ConvKind.Fprop, ConvKind.Dgrad, ConvKind.Wgrad], epilogue_functor = EpilogueFunctor.LinearCombination):
-  
+
   element_a, element_b, element_c, element_epilogue = data_type
-  
+
   # one exceptional case
   alignment_c = min(8, alignment)
-  
+
   # iterator algorithm (analytic and optimized)
   iterator_algorithms = [IteratorAlgorithm.Analytic, IteratorAlgorithm.Optimized]
 
@@ -603,7 +613,7 @@ def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignme
     A = TensorDescription(element_a, layout, alignment)
     B = TensorDescription(element_b, layout, alignment)
     C = TensorDescription(element_c, layout, alignment_c)
-    
+
     #
     # Conv3d Fprop
     #
@@ -618,7 +628,7 @@ def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignme
     # Conv3d Wgrad
     #
     if ConvKind.Wgrad in conv_kinds:
-     
+
       # Strided support for Analytic and Optimized Wgrad
       for iterator_algorithm in iterator_algorithms:
         new_operation = Conv3dOperation(ConvKind.Wgrad, iterator_algorithm, tile.minimum_compute_capability, tile,\
@@ -628,11 +638,11 @@ def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignme
 
   # All tile sizes for Conv3dDgrad
   for tile in tile_descriptions:
-    
+
     A = TensorDescription(element_a, layout, alignment)
     B = TensorDescription(element_b, layout, alignment)
     C = TensorDescription(element_c, layout, alignment_c)
-    
+
     #
     # Conv3d Dgrad
     #
@@ -640,15 +650,15 @@ def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignme
       # Unity stride for Optimized Dgrad
       new_operation = Conv3dOperation(ConvKind.Dgrad, IteratorAlgorithm.Optimized, tile.minimum_compute_capability, tile,\
         A, B, C, element_epilogue, StrideSupport.Unity, epilogue_functor)
-      
+
       manifest.append(new_operation)
       operations.append(new_operation)
-      
-      # Strided support for Analytic Dgrad 
-      # Conv3dDgrad has a naive strided support which does not cut down redundant MMAs   
+
+      # Strided support for Analytic Dgrad
+      # Conv3dDgrad has a naive strided support which does not cut down redundant MMAs
       new_operation = Conv3dOperation(ConvKind.Dgrad, IteratorAlgorithm.Analytic, tile.minimum_compute_capability, tile,\
         A, B, C, element_epilogue, StrideSupport.Strided, epilogue_functor)
-      
+
       manifest.append(new_operation)
       operations.append(new_operation)
 
@@ -658,9 +668,9 @@ def CreateConv3dOperator(manifest, layout, tile_descriptions, data_type, alignme
 def CreateDepthwiseConv2dOperator(manifest, layout, tile_descriptions, data_type, alignment_constraints, \
   conv_kinds = [ConvKind.Fprop, ConvKind.Dgrad, ConvKind.Wgrad], \
   epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity4):
-  
+
   element_a, element_b, element_c, element_epilogue = data_type
-  
+
   # iterator algorithm (FixedStrideDilation, Optimized)
   iterator_algorithms = [IteratorAlgorithm.FixedStrideDilation, IteratorAlgorithm.Optimized]
 
@@ -679,11 +689,11 @@ def CreateDepthwiseConv2dOperator(manifest, layout, tile_descriptions, data_type
       A = TensorDescription(element_a, layout[0], alignment)
       B = TensorDescription(element_b, layout[1], alignment)
       C = TensorDescription(element_c, layout[2], alignment_c)
-      
+
       swizzling_functor_ = swizzling_functor
 
       if ConvKind.Fprop in conv_kinds:
-  
+
         # Strided support for Optimized and FixedStridedDilation Depthwise Conv
         for iterator_algorithm in iterator_algorithms:
           stride_support = StrideSupport.Strided
@@ -694,16 +704,16 @@ def CreateDepthwiseConv2dOperator(manifest, layout, tile_descriptions, data_type
 
           if iterator_algorithm == IteratorAlgorithm.Optimized:
               if tile.stride != [-1, -1] or tile.dilation != [-1,-1]:
-                continue 
-          new_operation = Conv2dOperation(ConvKind.Fprop, 
-                                          iterator_algorithm, 
-                                          tile.minimum_compute_capability, 
+                continue
+          new_operation = Conv2dOperation(ConvKind.Fprop,
+                                          iterator_algorithm,
+                                          tile.minimum_compute_capability,
                                           tile,
-                                          A, B, C, 
-                                          element_epilogue, 
-                                          stride_support, 
-                                          epilogue_functor, 
-                                          swizzling_functor_, 
+                                          A, B, C,
+                                          element_epilogue,
+                                          stride_support,
+                                          epilogue_functor,
+                                          swizzling_functor_,
                                           group_mode=GroupMode.Depthwise)
 
           manifest.append(new_operation)
@@ -757,7 +767,7 @@ def GenerateSM50_Simt(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
@@ -805,7 +815,7 @@ def GenerateSM50_Simt_complex(manifest, cuda_version):
       DataType.cf32,
     ]
 
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
@@ -861,7 +871,7 @@ def GenerateSM60_Simt(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 #
@@ -874,7 +884,7 @@ def GenerateSM60_Simt_DepthwiseConv2d(manifest, cuda_version):
       OpcodeClass.Simt,                               \
       MathOperation.multiply_add),
   ]
-  
+
   min_cc = 60
   max_cc = 1024
 
@@ -904,18 +914,18 @@ def GenerateSM60_Simt_DepthwiseConv2d(manifest, cuda_version):
   for math_inst in math_instructions:
     for stride, dilation in product(strides, dilations):
       tile_descriptions.extend([
-        # filter3x3               ThreadBlock_output, filter, stage, warp 
+        # filter3x3               ThreadBlock_output, filter, stage, warp
         Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g32], filter_3x3, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
         Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g64], filter_3x3, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
         Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g16], filter_3x3, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
 
         Direct2dConvFixedStrideDilationTileDescription(npq_1x10x10+[g64], filter_3x3, 2, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
-        
+
         Direct2dConvFixedStrideDilationTileDescription(npq_1x4x4+[g32], filter_3x3, 4, stride, dilation, [4, 1, 1],  math_inst, min_cc, max_cc),
         Direct2dConvFixedStrideDilationTileDescription(npq_1x4x4+[g64], filter_3x3, 4,  stride, dilation,[4, 1, 1], math_inst, min_cc, max_cc),
         Direct2dConvFixedStrideDilationTileDescription(npq_1x4x4+[g16], filter_3x3, 4, stride, dilation, [4, 1, 1],  math_inst, min_cc, max_cc),
 
-        # filter5x5               ThreadBlock_output, filter, stage, warp 
+        # filter5x5               ThreadBlock_output, filter, stage, warp
         Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g32], filter_5x5, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
         Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g64], filter_5x5, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
         Direct2dConvFixedStrideDilationTileDescription(npq_1x8x8+[g16], filter_5x5, 3, stride, dilation,[4, 1, 1],math_inst, min_cc, max_cc),
@@ -990,7 +1000,7 @@ def GenerateSM61_Simt(manifest, cuda_version):
       math_inst.element_a,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
@@ -1054,7 +1064,7 @@ def GenerateSM70_TensorOp_884(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
@@ -1073,7 +1083,7 @@ def GenerateSM70_TensorOp_884(manifest, cuda_version):
 
       CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints)
-    
+
       CreateConv2dOperator(manifest, conv_layout, tile_descriptions, data_type_mixed, alignment_constraints)
 
 #
@@ -1125,7 +1135,7 @@ def GenerateSM70_PlanarComplexTensorOp_884(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmPlanarComplexOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints, complex_transforms)
 
@@ -1141,7 +1151,7 @@ def GenerateSM70_PlanarComplexTensorOp_884(manifest, cuda_version):
 
       CreateGemmPlanarComplexOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, complex_transforms)
-    
+
 
 #
 def GenerateSM70_WmmaTensorOp_161616(manifest, cuda_version):
@@ -1185,7 +1195,7 @@ def GenerateSM70_WmmaTensorOp_161616(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
@@ -1308,7 +1318,7 @@ def GenerateSM75_TensorOp_1688(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
@@ -1387,7 +1397,7 @@ def GenerateSM75_PlanarComplexTensorOp_1688(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmPlanarComplexOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints, complex_transforms)
 
@@ -1439,24 +1449,25 @@ def GenerateSM75_TensorOp_8816_TN(manifest, cuda_version):
       TileDescription([128, 256, 64], 2, [2, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 64], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 256, 64], 2, [1, 4, 1], math_inst, min_cc, max_cc),
-      TileDescription([256,  64, 64], 2, [4, 1, 1], math_inst, min_cc, max_cc),      
+      TileDescription([256,  64, 64], 2, [4, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 64], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 64], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 64], 2, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 256, 32, 64], 2, [4, 1, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 128, 32, 64], 2, [2, 1, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 64, 32, 64], 2, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([256,  32, 64], 2, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 32, 256, 64], 2, [1, 4, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  32, 64], 2, [4, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  32, 64], 2, [2, 1, 1], math_inst, min_cc, max_cc),
 
       TileDescription([256, 128, 32], 2, [4, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 256, 32], 2, [2, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 256, 32], 2, [1, 4, 1], math_inst, min_cc, max_cc),
-      TileDescription([256,  64, 32], 2, [4, 1, 1], math_inst, min_cc, max_cc),      
+      TileDescription([256,  64, 32], 2, [4, 1, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 32], 2, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 128, 32, 32], 2, [2, 1, 1], math_inst, min_cc, max_cc),
-      TileDescription([ 64, 32, 32], 2, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128,  32, 32], 2, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([ 64,  32, 32], 2, [2, 1, 1], math_inst, min_cc, max_cc),
     ]
 
     data_type = [
@@ -1465,7 +1476,7 @@ def GenerateSM75_TensorOp_8816_TN(manifest, cuda_version):
       math_inst.element_accumulator,
       DataType.s32,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination)
 
@@ -1487,7 +1498,7 @@ def GenerateSM75_TensorOp_8816_TN(manifest, cuda_version):
 
       operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
-    
+
       operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
         data_type_mixed, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
 
@@ -1551,7 +1562,7 @@ def GenerateSM75_TensorOp_8816_Interleaved(manifest, cuda_version):
       math_inst.element_a,
       DataType.f32,
     ]
-    
+
     operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
 
@@ -1609,10 +1620,10 @@ def GenerateSM75_TensorOp_8832_TN(manifest, cuda_version):
       math_inst.element_accumulator,
       DataType.s32,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination)
-      
+
     conv_layout = (LayoutType.TensorNHWC, LayoutType.TensorNHWC, LayoutType.TensorNHWC)
     CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
       data_type, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombination)
@@ -1631,7 +1642,7 @@ def GenerateSM75_TensorOp_8832_TN(manifest, cuda_version):
 
       operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
-    
+
       operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
         data_type_mixed, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
 
@@ -1696,12 +1707,12 @@ def GenerateSM75_TensorOp_8832_Interleaved(manifest, cuda_version):
         data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
 
       conv_layout = (LayoutType.TensorNC64HW64, LayoutType.TensorC64RSK64, LayoutType.TensorNC64HW64)
-  
+
       operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
         data_type_mixed, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
 
       for op in operations:
-        op.C.alignment = 16 
+        op.C.alignment = 16
 #
 
 #
@@ -1722,7 +1733,7 @@ def GenerateSM75_TensorOp_88128(manifest, cuda_version):
       MathOperation.xor_popc),
   ]
 
-  min_cc = 75 
+  min_cc = 75
   max_cc = 1024
   alignment_constraints = [128,]
 
@@ -1785,7 +1796,7 @@ def GenerateSM75_WmmaTensorOp_161616(manifest, cuda_version):
       math_inst.element_accumulator,
       DataType.f32,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
@@ -1923,7 +1934,7 @@ def GenerateSM80_TensorOp_16816(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
@@ -2011,7 +2022,7 @@ def GenerateSM80_SparseTensorOp_16832(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateSparseGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
@@ -2086,7 +2097,7 @@ def GenerateSM80_PlanarComplexTensorOp_16816(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmPlanarComplexOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints, complex_transforms)
 
@@ -2152,7 +2163,7 @@ def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
       TileDescription([ 64, 128, 128],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 128],  5, [2, 2, 1], math_inst, min_cc, max_cc),
     ]
-  
+
     data_type = [math_inst.element_a, math_inst.element_b, math_inst.element_accumulator, DataType.s32]
     data_type_mixed = [math_inst.element_a, math_inst.element_b, math_inst.element_a, DataType.f32]
 
@@ -2162,12 +2173,12 @@ def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
     conv_layout = (LayoutType.TensorNHWC, LayoutType.TensorNHWC, LayoutType.TensorNHWC)
     CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
       data_type, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombination)
- 
+
     operations = []
 
     operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
-    
+
     operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
       data_type_mixed, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
 
@@ -2176,7 +2187,7 @@ def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
 
     operations += CreateConv2dFewChannelsOperator(manifest, conv_layout, tile_descriptions,
       data_type_mixed, alignment_constraints_small_channels, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
- 
+
     for op in operations:
       if op.tile_description.threadblock_shape[1] >= 128:
         op.C.alignment = 16
@@ -2279,17 +2290,17 @@ def GenerateSM80_TensorOp_16832_Interleaved(manifest, cuda_version):
       TileDescription([ 64, 128, 64],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 64], 10, [2, 2, 1], math_inst, min_cc, max_cc),
     ]
-  
+
     data_type_mixed = [math_inst.element_a, math_inst.element_b, math_inst.element_a, DataType.f32]
-  
+
     operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
- 
+
     conv_layout = (LayoutType.TensorNC32HW32, LayoutType.TensorC32RSK32, LayoutType.TensorNC32HW32)
 
     operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
       data_type_mixed, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
- 
+
     for op in operations:
       op.C.alignment = 8
 #
@@ -2341,25 +2352,25 @@ def GenerateSM80_TensorOp_16864_TN(manifest, cuda_version):
       TileDescription([ 64, 128, 256],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 256],  5, [2, 2, 1], math_inst, min_cc, max_cc),
     ]
-  
+
     data_type = [math_inst.element_a, math_inst.element_b, math_inst.element_accumulator, DataType.s32]
     data_type_mixed = [math_inst.element_a, math_inst.element_b, math_inst.element_a, DataType.f32]
-  
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints, None, EpilogueFunctor.LinearCombination)
-  
+
     operations = []
-  
+
     operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
-       
+
     conv_layout = (LayoutType.TensorNHWC, LayoutType.TensorNHWC, LayoutType.TensorNHWC)
     CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
       data_type, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombination)
-    
+
     operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
       data_type_mixed, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
-  
+
     for op in operations:
       if op.tile_description.threadblock_shape[1] >= 128:
         op.C.alignment = 16
@@ -2459,21 +2470,21 @@ def GenerateSM80_TensorOp_16864_Interleaved(manifest, cuda_version):
       TileDescription([128, 128, 128],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 128],  6, [2, 2, 1], math_inst, min_cc, max_cc),
     ]
-  
+
     data_type_mixed = [math_inst.element_a, math_inst.element_b, math_inst.element_a, DataType.f32]
-    
+
     operations = []
-  
+
     operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type_mixed, alignment_constraints, None, EpilogueFunctor.LinearCombinationClamp)
- 
+
     conv_layout = (LayoutType.TensorNC64HW64, LayoutType.TensorC64RSK64, LayoutType.TensorNC64HW64)
-  
+
     operations += CreateConv2dOperator(manifest, conv_layout, tile_descriptions,
       data_type_mixed, alignment_constraints, [ConvKind.Fprop], EpilogueFunctor.LinearCombinationClamp)
- 
+
     for op in operations:
-      op.C.alignment = 16 
+      op.C.alignment = 16
 #
 
 #
@@ -2495,7 +2506,7 @@ def GenerateSM80_TensorOp_168256(manifest, cuda_version):
   ]
 
   min_cc = 80
-  max_cc = { 
+  max_cc = {
     MathOperation.xor_popc: 1024
   }
 
@@ -2562,7 +2573,7 @@ def GenerateSM80_TensorOp_1688(manifest, cuda_version):
       TileDescription([ 64, 256, 16],  4, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 16],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 16],  4, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 128, 16],  3, [2, 2, 1], math_inst, min_cc, max_cc),            
+      TileDescription([128, 128, 16],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 16], 10, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -2647,7 +2658,7 @@ def GenerateSM80_TensorOp_1688_fast_math(manifest, cuda_version):
       TileDescription([ 64, 256, 16],  4, [1, 4, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 16],  5, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 16],  4, [2, 2, 1], math_inst, min_cc, max_cc),
-      TileDescription([128, 128, 16],  3, [2, 2, 1], math_inst, min_cc, max_cc),            
+      TileDescription([128, 128, 16],  3, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128,  64, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64, 128, 16],  6, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([ 64,  64, 16], 10, [2, 2, 1], math_inst, min_cc, max_cc),
@@ -2883,7 +2894,7 @@ def GenerateSM80_TensorOp_1688_rank_k(manifest, cuda_version):
     FillMode.Lower, FillMode.Upper,
   ]
 
-  math_instructions = [ 
+  math_instructions = [
       MathInstruction(                                    \
       [16, 8, 8],                                         \
       DataType.tf32, DataType.tf32, DataType.f32,         \
@@ -2942,7 +2953,7 @@ def GenerateSM80_TensorOp_1688_rank_k_complex(manifest, cuda_version):
     FillMode.Lower, FillMode.Upper,
   ]
 
-  math_instructions = [ 
+  math_instructions = [
       MathInstruction(                                    \
       [16, 8, 8],                                         \
       DataType.tf32, DataType.tf32, DataType.f32,         \
@@ -3005,7 +3016,7 @@ def GenerateSM80_TensorOp_1688_trmm(manifest, cuda_version):
     DiagType.NonUnit, DiagType.Unit,
   ]
 
-  math_instructions = [ 
+  math_instructions = [
       MathInstruction(                                    \
       [16, 8, 8],                                         \
       DataType.tf32, DataType.tf32, DataType.f32,         \
@@ -3021,7 +3032,7 @@ def GenerateSM80_TensorOp_1688_trmm(manifest, cuda_version):
   min_cc = 80
   max_cc = 1024
 
-  alignment_constraints = [1, 2, 4] 
+  alignment_constraints = [1, 2, 4]
 
   for math_inst in math_instructions:
     tile_descriptions = [
@@ -3072,7 +3083,7 @@ def GenerateSM80_TensorOp_1688_trmm_complex(manifest, cuda_version):
     DiagType.NonUnit, DiagType.Unit,
   ]
 
-  math_instructions = [ 
+  math_instructions = [
       MathInstruction(                                    \
       [16, 8, 8],                                         \
       DataType.tf32, DataType.tf32, DataType.f32,         \
@@ -3130,7 +3141,7 @@ def GenerateSM80_TensorOp_1688_symm(manifest, cuda_version):
     FillMode.Lower, FillMode.Upper,
   ]
 
-  math_instructions = [ 
+  math_instructions = [
       MathInstruction(                                    \
       [16, 8, 8],                                         \
       DataType.tf32, DataType.tf32, DataType.f32,         \
@@ -3148,7 +3159,7 @@ def GenerateSM80_TensorOp_1688_symm(manifest, cuda_version):
 
   alignment_constraints = [
     1, 2, 4
-  ] 
+  ]
 
   for math_inst in math_instructions:
     tile_descriptions = [
@@ -3194,7 +3205,7 @@ def GenerateSM80_TensorOp_1688_symm_complex(manifest, cuda_version):
     FillMode.Lower, FillMode.Upper,
   ]
 
-  math_instructions = [ 
+  math_instructions = [
       MathInstruction(                                    \
       [16, 8, 8],                                         \
       DataType.tf32, DataType.tf32, DataType.f32,         \
@@ -3396,7 +3407,7 @@ def GenerateSM80_TensorOp_884_rank_k(manifest, cuda_version):
   ]
 
   fill_modes = [
-    FillMode.Lower, FillMode.Upper, 
+    FillMode.Lower, FillMode.Upper,
   ]
 
   math_inst =                                             \
@@ -3696,7 +3707,7 @@ def GenerateSM80_TensorOp_884_symm(manifest, cuda_version):
   ]
 
   fill_modes = [
-    FillMode.Lower, FillMode.Upper, 
+    FillMode.Lower, FillMode.Upper,
   ]
 
   math_inst =                                             \
@@ -3878,7 +3889,7 @@ def GenerateSM80_Simt_f32(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
@@ -3925,7 +3936,7 @@ def GenerateSM80_Simt_f64(manifest, cuda_version):
       math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 #
@@ -3953,7 +3964,7 @@ def GenerateSM80_Simt_complex(manifest, cuda_version):
     DataType.cf32,
     DataType.cf32
   ]
-    
+
   layouts = [
     (LayoutType.ColumnMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
     (LayoutType.ColumnMajor, LayoutType.RowMajor, LayoutType.ColumnMajor),
@@ -3980,7 +3991,7 @@ def GenerateSM80_Simt_complex(manifest, cuda_version):
       TileDescription([32, 64, 16], 4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([32, 32, 16], 5, [2, 2, 1], math_inst, min_cc, max_cc),
     ]
-    
+
     CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, alignment_constraints, complex_transforms)
 
     conv_layout = (LayoutType.TensorNHWC, LayoutType.TensorNHWC, LayoutType.TensorNHWC)
@@ -3998,7 +4009,7 @@ def GenerateSM80(manifest, cuda_version):
   GenerateSM80_TensorOp_1688_fast_math(manifest, cuda_version)
   GenerateSM80_SparseTensorOp_16816_fast_math(manifest, cuda_version)
   GenerateSM80_TensorOp_1688_complex(manifest, cuda_version)
-  # 3xTF32 
+  # 3xTF32
   GenerateSM80_TensorOp_1688_fast_fp32_math(manifest, cuda_version)
   GenerateSM80_TensorOp_1688_fast_fp32_math_complex(manifest, cuda_version)
   GenerateSM80_TensorOp_1688_rank_k(manifest, cuda_version)
@@ -4068,41 +4079,93 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
 
   for math_inst in math_instructions:
     tile_descriptions = [
-      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      #TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      #  0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]), - Not compatible with TmaWarpSpecializedCooperative
+      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+      #TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      #  0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),- Not compatible with TmaWarpSpecializedCooperative
+      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+      #TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      #  0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]), - Not compatible with TmaWarpSpecializedCooperative
     ]
 
-    data_type = [
-      math_inst.element_a,
-      math_inst.element_b,
-      math_inst.element_accumulator,
-      math_inst.element_accumulator,
-    ]
+    data_type = {
+      "a_type"   : math_inst.element_a,
+      "b_type"   : math_inst.element_b,
+      "c_type"   : math_inst.element_accumulator,
+      "d_type"   : math_inst.element_accumulator,
+      "acc_type" : math_inst.element_accumulator,
+      "epi_type" : math_inst.element_accumulator
+    }
 
-    CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type)
+    # Set alignment c based on Destination format.
+    for layout in layouts:
+      if data_type["c_type"] in [DataType.s32, DataType.f32]:
+        layout[2][1] = 4
+      elif data_type["c_type"] in [DataType.f16, DataType.bf16]:
+        layout[2][1] = 8
+
+    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
+      kernel_schedules = [
+        KernelScheduleType.ScheduleAuto,
+        KernelScheduleType.TmaWarpSpecializedCooperative,
+        KernelScheduleType.TmaWarpSpecializedPingpong,
+        KernelScheduleType.TmaWarpSpecialized
+      ]
+    else:
+      kernel_schedules = [
+        KernelScheduleType.ScheduleAuto,
+        KernelScheduleType.TmaWarpSpecialized
+        # TmaWarpSpecializedCooperative and TmaWarpSpecializedPingpong require CUDA version >= 12.1 for optimal performance.
+      ]
+
+    schedules = [[s, EpilogueScheduleType.ScheduleAuto] for s in kernel_schedules]
+
+    CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)
+
+    # persistent kernels with TMA epilogues
+    if data_type["c_type"] in [DataType.f16, DataType.bf16] and CudaToolkitVersionSatisfies(cuda_version, 12, 1):
+      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
+        [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
+         [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
 
     # for mixed precision kernels, also generate kernels that write output matrix in the A/B format
     # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
     if math_inst.element_a != math_inst.element_accumulator:
-      data_type_mixed = [
-        math_inst.element_a,
-        math_inst.element_b,
-        math_inst.element_a,
-        math_inst.element_accumulator,
-      ]
+      data_type_mixed = {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
+        "c_type"   : math_inst.element_a,
+        "d_type"   : math_inst.element_a,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : math_inst.element_accumulator
+      }
+
+      # Set alignment c based on Destination format.
+      for layout in layouts:
+        if data_type_mixed["c_type"] in [DataType.s32, DataType.f32]:
+          layout[2][1] = 4
+        elif data_type_mixed["c_type"] in [DataType.f16, DataType.bf16]:
+          layout[2][1] = 8
 
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed)
-
+      # persistent kernels with TMA epilogues
+      if data_type_mixed["c_type"] in [DataType.f16, DataType.bf16] and CudaToolkitVersionSatisfies(cuda_version, 12, 1):
+        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
+          [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
+           [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
 
 #
 def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
@@ -4111,10 +4174,10 @@ def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
 
   # layouts for ABC and their alignments
   layouts_tf32 = [
-    [[LayoutType.ColumnMajor, 1], [LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 1]],
-    [[LayoutType.ColumnMajor, 1], [LayoutType.RowMajor,    1], [LayoutType.ColumnMajor, 1]],
     [[LayoutType.RowMajor,    4], [LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 1]],
-    [[LayoutType.RowMajor,    4], [LayoutType.RowMajor,    1], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.RowMajor,    4], [LayoutType.RowMajor,    4], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 4], [LayoutType.ColumnMajor, 1]],
+    [[LayoutType.ColumnMajor, 4], [LayoutType.RowMajor,    4], [LayoutType.ColumnMajor, 1]],
   ]
 
   math_inst = MathInstruction(
@@ -4127,46 +4190,62 @@ def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
   max_cc = 90
 
   tile_descriptions = [
-    TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+    TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
       0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-    TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+    TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+    TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+    TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
       0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-    TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+    TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
       0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-    TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-    TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+    TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
       0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
   ]
 
-  data_type_tf32 = [
-    math_inst.element_a,
-    math_inst.element_b,
-    math_inst.element_accumulator,
-    math_inst.element_accumulator,
-  ]
+  data_type_tf32 = {
+    "a_type"   : math_inst.element_a,
+    "b_type"   : math_inst.element_b,
+    "c_type"   : math_inst.element_accumulator,
+    "d_type"   : math_inst.element_accumulator,
+    "acc_type" : math_inst.element_accumulator,
+    "epi_type" : math_inst.element_accumulator
+  }
+  # TMA kernels with TN or NN layout
+  layouts_tf32_tn_nn = [layouts_tf32[0], layouts_tf32[2]]
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn, tile_descriptions, data_type_tf32)
 
-  CreateGemmUniversal3xOperator(manifest, layouts_tf32, tile_descriptions, data_type_tf32)
+  # TMA kernels with NT layout, only support 64x128x32 tile for now.
+  layouts_tf32_nt = [layouts_tf32[3]]
+  tile_64x128x32_descriptions = [tile_descriptions[0], tile_descriptions[1], tile_descriptions[2]]
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_nt, tile_64x128x32_descriptions, data_type_tf32)
 
-  # F32 kernel, TN only supported for now
-  layouts_f32 = [layouts_tf32[2]]
+  # TMA kernels with TT layout use EpilogueTransposed, because swapping NN kernel and transposed its epilogue will get the kernel
+  layouts_tf32_tt = [layouts_tf32[1]]
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions, data_type_tf32,
+    [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.EpilogueTransposed]])
 
-  data_type_f32 = [
-    DataType.f32,
-    DataType.f32,
-    math_inst.element_accumulator,
-    DataType.f32,
-  ]
+  # F32 kernel share same settings with tf32 I/O kernels excluding data type
+  data_type_f32 = {
+    "a_type"   : DataType.f32,
+    "b_type"   : DataType.f32,
+    "c_type"   : math_inst.element_accumulator,
+    "d_type"   : math_inst.element_accumulator,
+    "acc_type" : math_inst.element_accumulator,
+    "epi_type" : DataType.f32
+  }
 
-  CreateGemmUniversal3xOperator(manifest, layouts_f32, tile_descriptions, data_type_f32)
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn, tile_descriptions, data_type_f32)
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_nt, tile_64x128x32_descriptions, data_type_f32)
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions, data_type_f32,
+    [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.EpilogueTransposed]])
 
-
+#
 def GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version):
   if not CudaToolkitVersionSatisfies(cuda_version, 12, 0):
     return
-  
+
   # layouts for ABC and their alignments
   layouts = [
     [[LayoutType.RowMajor, 16], [LayoutType.ColumnMajor, 16], [LayoutType.ColumnMajor, 1]],
@@ -4190,28 +4269,41 @@ def GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version):
 
   for math_inst in math_instructions:
     tile_descriptions = [
-      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-      TileDescription([128, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-      TileDescription([ 64, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
     ]
 
-    data_type = [
-      math_inst.element_a,
-      math_inst.element_b,
-      math_inst.element_accumulator,
-      math_inst.element_accumulator,
+    data_types = [
+      {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
+        "c_type"   : math_inst.element_accumulator,
+        "d_type"   : math_inst.element_accumulator,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : math_inst.element_accumulator
+      },
+      {
+        "a_type"   : math_inst.element_a,
+        "b_type"   : math_inst.element_b,
+        "c_type"   : DataType.s8,
+        "d_type"   : DataType.s8,
+        "acc_type" : math_inst.element_accumulator,
+        "epi_type" : DataType.f32
+      }
     ]
 
-    CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type)
+    for data_type in data_types:
+      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type)
 
 #
 def GenerateSM90_TensorOp_1684(manifest, cuda_version):
@@ -4376,7 +4468,7 @@ def GenerateSM90_TensorOp_1684_rank_k(manifest, cuda_version):
   ]
 
   fill_modes = [
-    FillMode.Lower, FillMode.Upper, 
+    FillMode.Lower, FillMode.Upper,
   ]
 
   math_inst =                                             \
@@ -4676,7 +4768,7 @@ def GenerateSM90_TensorOp_1684_symm(manifest, cuda_version):
   ]
 
   fill_modes = [
-    FillMode.Lower, FillMode.Upper, 
+    FillMode.Lower, FillMode.Upper,
   ]
 
   math_inst =                                             \
@@ -4835,14 +4927,32 @@ def GenerateSM90(manifest, cuda_version):
 
 ###################################################################################################
 
-if __name__ == "__main__":
+def numeric_log_level(log_level: str) -> int:
+  """
+  Converts the string identifier of the log level into the numeric identifier used
+  in setting the log level
 
+  :param x: string representation of log level (e.g., 'INFO', 'DEBUG')
+  :type x: str
+
+  :return: numeric representation of log level
+  :rtype: int
+  """
+  numeric_level = getattr(logging, log_level.upper(), None)
+  if not isinstance(numeric_level, int):
+    raise ValueError(f'Invalid log level: {log_level}')
+  return numeric_level
+
+
+# This function for defining the ArgumentParser is used to make it easy for the CUTLASS Python interface
+# to leverage the functionality in this file without running this script via a shell prompt.
+def define_parser():
   parser = argparse.ArgumentParser(description="Generates device kernel registration code for CUTLASS Kernels")
   parser.add_argument("--operations", default="all", help="Specifies the operation to generate (gemm, all)")
   parser.add_argument("--build-dir", default=".", required=False, help="CUTLASS top-level build directory")
   parser.add_argument("--curr-build-dir", default=".", help="CUTLASS current build directory. cmake files will be emitted in this directory")
   parser.add_argument("--generator-target", default='library', help="Target of CUTLASS Library Generator.")
-  parser.add_argument("--architectures", default='53;60;61;70;75;80', help="Target compute architectures")
+  parser.add_argument("--architectures", default='53;60;61;70;75;80;90', help="Target compute architectures")
   parser.add_argument("--kernels", default='', help='Comma delimited list to filter kernels by name.')
   parser.add_argument("--ignore-kernels", default='', help='Comma delimited list of kernels to exclude from build.')
   parser.add_argument("--filter-by-cc", default='True', type=str, help='If enabled, kernels whose compute capability range is not satisfied by the build target are excluded.')
@@ -4852,26 +4962,13 @@ if __name__ == "__main__":
                         help='Specify the output log file containing all enabled kernels in this build')
   parser.add_argument("--interface-dir", default=None, required=False, help="Interface header to kernels")
   parser.add_argument("--disable-full-archs-compilation", action="store_true", required=False, help="Disable compilation for every archs in --architectures")
-
-  def numeric_log_level(log_level: str) -> int:
-    """
-    Converts the string identifier of the log level into the numeric identifier used
-    in setting the log level
-
-    :param x: string representation of log level (e.g., 'INFO', 'DEBUG')
-    :type x: str
-
-    :return: numeric representation of log level
-    :rtype: int
-    """
-    numeric_level = getattr(logging, log_level.upper(), None)
-    if not isinstance(numeric_level, int):
-      raise ValueError(f'Invalid log level: {log_level}')
-    return numeric_level
-
   parser.add_argument("--log-level", default='info', type=numeric_log_level, required=False,
                       help='Logging level to be used by the generator script')
+  return parser
 
+
+if __name__ == "__main__":
+  parser = define_parser()
   args = parser.parse_args()
 
   # Set the logging level based on the user-provided `--log-level` command-line option
@@ -4886,7 +4983,6 @@ if __name__ == "__main__":
   GenerateSM75(manifest, args.cuda_version)
   GenerateSM80(manifest, args.cuda_version)
   GenerateSM90(manifest, args.cuda_version)
-
   if 'library' in args.generator_target.split(','):
     manifest.emit(GeneratorTarget.Library)
 

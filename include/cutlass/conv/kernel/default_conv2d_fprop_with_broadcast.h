@@ -99,7 +99,7 @@ struct DefaultConv2dFpropWithBroadcast {
     AlignmentB
   >::Kernel;
 
-  // Replace epilogue
+  // Define epilogue
   using Epilogue = typename cutlass::conv::kernel::detail::DefaultConvEpilogueWithBroadcastTensorOp<
     ArchTag,
     typename ImplicitGemmBase::Epilogue::Shape,

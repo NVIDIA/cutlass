@@ -41,7 +41,7 @@
 #include <thrust/device_vector.h>
 
 #include <cute/tensor.hpp>
-#include <cute/arch/cluster_sm90.hpp> 
+#include <cute/arch/cluster_sm90.hpp>
 
 #include <cutlass/util/reference/host/gemm.h>
 #include <cutlass/cluster_launch.hpp>
@@ -52,7 +52,7 @@
 #include "cutlass/util/GPU_Clock.hpp"
 
 #include "testbed.h"
-#include "cutlass/pipeline.hpp"
+#include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/arch/barrier.h"
 #include "cute/arch/cluster_sm90.hpp"
 
@@ -68,12 +68,11 @@ struct SharedStorage
 
 // Goal of this kernel is to complete deadlock-free
 template <class ClusterShape, uint32_t NumStages>
-__global__ static 
+__global__ static
 void pipeline_device(uint32_t const NumIterations)
 {
 
   extern __shared__ char shared_memory[];
-  using DispatchPolicy = cutlass::gemm::MainloopSm90TmaGmma<NumStages, ClusterShape>;
   using MainloopPipeline = cutlass::PipelineTmaAsync<NumStages, ClusterShape>;
   using PipelineState = cutlass::PipelineState<NumStages>;
 
@@ -86,8 +85,8 @@ void pipeline_device(uint32_t const NumIterations)
   dim3 block_id_in_cluster = cute::block_id_in_cluster();
 
   auto cluster_shape = ClusterShape{};
-  
-  // #Producers = #RowsInCluster + #ColsInCluster - 1 
+
+  // #Producers = #RowsInCluster + #ColsInCluster - 1
   uint32_t const NumProducers = cute::size<0>(cluster_shape) + cute::size<1>(cluster_shape) - 1;
   uint32_t const TmaTransactionBytes = sizeof(uint32_t) * NumProducers;
   uint32_t const per_cta_bytes = sizeof(uint32_t);
@@ -104,7 +103,7 @@ void pipeline_device(uint32_t const NumIterations)
   __syncthreads();
 
   // Ensure All CTAs in Cluster have completed init before issuing commits
-  cute::cluster_arrive_relaxed();  
+  cute::cluster_arrive_relaxed();
   cute::cluster_wait();
 
   // Total number of gemm_k_iterations
@@ -126,7 +125,7 @@ void pipeline_device(uint32_t const NumIterations)
   for(int i = 0; i < k_pipe_tma_prologue; ++i) {
     pipeline.producer_acquire(smem_pipe_write);
     // cp.async.bulk.tensor would typically happen here
-    pipeline.producer_commit(smem_pipe_write.index(), per_cta_bytes);
+    pipeline.producer_commit(smem_pipe_write, per_cta_bytes);
     ++smem_pipe_write;
   }
   tma_k_iterations -= k_pipe_tma_prologue;
@@ -156,7 +155,7 @@ void pipeline_device(uint32_t const NumIterations)
     if (lane_predicate && (warp_idx == 0) && (tma_k_iterations > 0)) {
       pipeline.producer_acquire(smem_pipe_write);
       // cp.async.bulk.tensor would typically happen here
-      pipeline.producer_commit(smem_pipe_write.index(), per_cta_bytes);
+      pipeline.producer_commit(smem_pipe_write, per_cta_bytes);
       ++smem_pipe_write;
       --tma_k_iterations;
     }
@@ -167,7 +166,7 @@ void pipeline_device(uint32_t const NumIterations)
   }
 
   // To make sure remote SMEM doesn't get destoryed
-  cute::cluster_arrive();  
+  cute::cluster_arrive();
   cute::cluster_wait();
 }
 /////////////////////////////////////////////////////
@@ -224,11 +223,6 @@ struct PipelineTest {
     }
 
     for (int iter = 0; iter < iterations; ++iter) {
-
-      // Define the tiled MMA layout (static, 4warps)
-      using DispatchPolicy = cutlass::gemm::MainloopSm90TmaGmma<Stages, decltype(cluster_shape)>;
-      using MainloopPipeline = typename cutlass::PipelineTmaAsync<Stages, decltype(cluster_shape)>;
-
       int smem_size = int(sizeof(SharedStorage<Stages, decltype(cluster_shape)>));
 
       result = cudaFuncSetAttribute(
@@ -237,15 +231,15 @@ struct PipelineTest {
         smem_size);
 
       // Launch a single Cluster, with 128 thread per CTA
-      dim3 dimCluster(size<0>(cluster_shape), size<1>(cluster_shape), 1);    
-      dim3 dimGrid(size<0>(cluster_shape), size<1>(cluster_shape), 1);    
+      dim3 dimCluster(size<0>(cluster_shape), size<1>(cluster_shape), 1);
+      dim3 dimGrid(size<0>(cluster_shape), size<1>(cluster_shape), 1);
       dim3 dimBlock(kBlockSize,1,1);
 
       const void* kernel = (const void*)pipeline_device<decltype(cluster_shape), Stages>;
       int iters = kNumIters;
       void* kernel_params[] = {reinterpret_cast<void*>(&iters)};
       cutlass::ClusterLauncher::launch(dimGrid, dimCluster, dimBlock, smem_size, stream, kernel, kernel_params);
-  
+
     } // profiling loop ends
 
     result = cudaEventRecord(events[1]);

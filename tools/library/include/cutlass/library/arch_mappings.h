@@ -102,6 +102,12 @@ template <typename OperatorClass> struct ArchMap<arch::Sm90, OperatorClass> {
   static int const kMax = 1024;
 };
 
+// Arch conditional WGMMA
+template <> struct ArchMap<arch::Sm90, arch::OpClassTensorOp> {
+  static int const kMin = 90;
+  static int const kMax = 90;
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library

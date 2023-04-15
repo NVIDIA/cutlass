@@ -523,8 +523,8 @@ template <class GmemTiledCopy, class Element>
 constexpr int
 get_alignment_count_from_gmem_tiled_copy() {
   // For TMA tiled copies, we know the alignment has to be 128 bits
-  if constexpr (   std::is_base_of_v<cute::SM90_TMA_LOAD,                GmemTiledCopy>
-                || std::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,      GmemTiledCopy>
+  if constexpr (   cute::is_base_of_v<cute::SM90_TMA_LOAD,                GmemTiledCopy>
+                || cute::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,      GmemTiledCopy>
                 ) {
     return 128 / sizeof_bits<Element>::value;
   }
@@ -595,11 +595,11 @@ is_k_major_B() {
 // The following two metafunctions are used to detect whether a `kernel::Gemm` or `kernel::GemmUniversal`
 // is implementing the CUTLASS 3.x API or not, by checking if the problem shape type is aliased within or not. 
 template <class GemmKernel, class = void>
-struct IsCutlass3GemmKernel : std::false_type { };
+struct IsCutlass3GemmKernel : cute::false_type { };
 
 template <typename GemmKernel>
-struct IsCutlass3GemmKernel<GemmKernel, std::void_t<typename GemmKernel::ProblemShape>>
-    : std::true_type { };
+struct IsCutlass3GemmKernel<GemmKernel, cute::void_t<typename GemmKernel::ProblemShape>>
+    : cute::true_type { };
 
 ///////////////////////////////////////////////////////////////////////////////
 

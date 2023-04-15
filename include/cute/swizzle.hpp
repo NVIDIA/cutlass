@@ -476,6 +476,7 @@ CUTE_HOST_DEVICE void print(MixedBits<S,D,F> const& m)
   printf("M_%u|(%u&%u)=%u", S, uint32_t(m.dynamic_int_), F, to_integral(m));
 }
 
+#if !defined(__CUDACC_RTC__)
 template <uint32_t S, class D, uint32_t F>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, MixedBits<S,D,F> const& m)
 {
@@ -493,5 +494,6 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, Swizzle<B,M,S> const&)
 {
   return os << "S<" << B << "," << M << "," << S << ">";
 }
+#endif // !defined(__CUDACC_RTC__)
 
 } // end namespace cute

@@ -37,7 +37,7 @@
 // Config
 #if defined(__clang__) && defined(__CUDA__)
   // ldmatrix PTX instructions added in Clang 14: https://reviews.llvm.org/D107046
-  // ... but broken until Clang 15:
+  // ... but will not work until Clang 15:
   //   * https://reviews.llvm.org/D121666
   //   * https://reviews.llvm.org/D126846
   #define CUTE_ARCH_CLANG_SUPPORTS_LDSM_SM75 (__clang_major__ >= 15)

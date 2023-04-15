@@ -52,12 +52,6 @@ For example, `print_layout` can display a rank-2 layout in a table
 It has an overload taking a rank-2 matrix layout and a thread layout,
 that displays a table with the mapping between threads and values.
 
-Some CuTe types might not have overloads for `print`,
-but there are other ways to print their contents.
-For example, copy atoms and mma atoms
-(see elsewhere in this tutorial)
-have a `print_all()` member function.
-
 ### Printing LaTeX output
 
 The `cute::print_latex` function works like `cute::print`,
@@ -261,7 +255,7 @@ The complement B of a layout A with respect to an integer M satisfies the follow
 
 1. $A$ and $B$ are *disjoint*: $A(x) \neq B(x)$ for all $x \neq 0$ in the domain of $A$.
 
-2. B is *ordered*: $`B(x-1) < B(x)`$ for all $x$ in $\{0, 1, \dots, size(B) - 1\}$.
+2. B is *ordered*: $B(x-1) \lt B(x)$ for all $x$ in $\{0, 1, \dots, size(B) - 1\}$.
 
 3. B is *bounded* by M: $size(B) \geq M / size(A)$, and $cosize(B) \leq floor(M / cosize(A)) * cosize(A)$.
 
