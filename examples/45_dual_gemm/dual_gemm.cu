@@ -167,10 +167,10 @@ bool run_nonfused_gemm_f16_sm80() {
   std::cout << "Running Non-fused GEMMs FP16 TN GEMMs...\n";
 
   bool pass = nonFusedGemm.run(
-    problem_size, 
-    alpha0, 
-    beta0, 
-    alpha1, 
+    problem_size,
+    alpha0,
+    beta0,
+    alpha1,
     beta1,
     true  /* is_profiling */
   );
@@ -248,10 +248,10 @@ bool run_fused_gemm_f16_sm80_shmem() {
   std::cout << "Running Fused FP16 TN GEMMs + Epilogue2...\n";
 
   bool passed = fusedGemm.run(
-    problem_size, 
-    alpha0, 
-    beta0, 
-    alpha1, 
+    problem_size,
+    alpha0,
+    beta0,
+    alpha1,
     beta1
   );
 
@@ -301,11 +301,11 @@ bool run_batched_fused_gemm_f16_sm80_shmem() {
   std::cout << "Running Batched Fused FP16 TN GEMMs + Epilogue2...\n";
 
   bool passed = fusedGemm.run(
-    batch_problem_size, 
-    alpha0, 
-    beta0, 
-    alpha1, 
-    beta1, 
+    batch_problem_size,
+    alpha0,
+    beta0,
+    alpha1,
+    beta1,
     kBatchCount,
     false,  /* broadcast_b1 */
     false   /* is_profiling */
@@ -358,11 +358,11 @@ bool run_broadcast_fused_gemm_f16_sm80_shmem() {
   std::cout << "Running Broadcast Fused FP16 TN GEMMs + Epilogue2...\n";
 
   bool passed = fusedGemm.run(
-    problem_size, 
-    alpha0, 
-    beta0, 
-    alpha1, 
-    beta1, 
+    problem_size,
+    alpha0,
+    beta0,
+    alpha1,
+    beta1,
     1,     /* batch_count */
     true,  /* broadcast_b1 */
     true   /* is_profiling */
@@ -415,11 +415,11 @@ bool run_batched_broadcast_fused_gemm_f16_sm80_shmem() {
   std::cout << "Running Batch Broadcast Fused FP16 TN GEMMs + Epilogue2...\n";
 
   bool passed = fusedGemm.run(
-    batch_problem_size, 
-    alpha0, 
-    beta0, 
-    alpha1, 
-    beta1, 
+    batch_problem_size,
+    alpha0,
+    beta0,
+    alpha1,
+    beta1,
     kBatchCount,
     true,  /* broadcast_b1 */
     false  /* is_profiling */
@@ -444,11 +444,11 @@ int main() {
   };
 
   std::string test_name = (
-    "dual-gemm f16 bias=" + 
-    std::to_string(kUseBias) + 
-    " split_k_serial=" + 
+    "dual-gemm f16 bias=" +
+    std::to_string(kUseBias) +
+    " split_k_serial=" +
     std::to_string(kSplitKSerial) +
-    " batch_count=" + 
+    " batch_count=" +
     std::to_string(kBatchCount)
   );
 

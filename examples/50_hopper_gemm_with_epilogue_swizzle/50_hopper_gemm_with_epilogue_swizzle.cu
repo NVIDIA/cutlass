@@ -34,7 +34,7 @@
 
     The following example shows how to assemble a custom GEMM kernel that spells out the Collectives
     directly instead of using a builder and, in the process, instance a more efficient Epilogue
-    (from `cutlass/epilogue/collective/epilogue.hpp`) instead of using the default epilogue.
+    (from `cutlass/epilogue/collective/sm70_epilogue_vectorized.hpp`) instead of using the default epilogue.
 
     The GemmUniversal API takes 3 main template arguments:
       (1) the problem shape / extents
@@ -65,7 +65,7 @@
 #include "cute/tensor.hpp"
 #include "cutlass/util/command_line.h"
 #include "cutlass/tensor_ref.h"
-#include "cutlass/epilogue/collective/epilogue.hpp"
+#include "cutlass/epilogue/collective/collective_epilogue.hpp"
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/gemm/collective/collective_builder.hpp"
@@ -122,7 +122,7 @@ struct Options {
   /// Prints the usage statement.
   std::ostream & print_usage(std::ostream &out) const {
 
-    out << "50_hopper_gemm_with_vectorized_epilogue\n\n"
+    out << "50_hopper_gemm_with_epilogue_swizzle\n\n"
       << "Hopper GEMM Example with Epilogue Swizzle.\n\n"
       << "Options:\n\n"
       << "  --help                      If specified, displays this usage statement\n\n"
@@ -286,11 +286,8 @@ struct ExampleRunner {
     typename Gemm::GemmKernel::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
-      block_A.get(),
-      stride_A,
-      block_B.get(),
-      stride_B,
-      {block_C.get(), stride_C, block_D.get(), stride_D, {options.alpha, options.beta}},
+      {block_A.get(), stride_A, block_B.get(), stride_B},
+      {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D},
       hw_info
     };
 
@@ -443,11 +440,11 @@ int main(int argc, char const **args) {
                            cute::SM90_TMA_LOAD,
                            cute::SM90_TMA_LOAD_MULTICAST>::type;
 
-  using SmemLayoutAtomA = decltype(cute::GMMA::smem_selector<
+  using SmemLayoutAtomA = decltype(cutlass::gemm::collective::detail::ss_smem_selector<
       GmmaMajorA, ElementA, decltype(cute::get<0>(TileShape{})), decltype(cute::get<2>(TileShape{}))
     >());
 
-  using SmemLayoutAtomB = decltype(cute::GMMA::smem_selector<
+  using SmemLayoutAtomB = decltype(cutlass::gemm::collective::detail::ss_smem_selector<
       GmmaMajorB, ElementB, decltype(cute::get<1>(TileShape{})), decltype(cute::get<2>(TileShape{}))
     >());
 
@@ -494,14 +491,15 @@ int main(int argc, char const **args) {
                                  Stride<_16,_1>>,
                          TileShapeS2R>;
 
-  using Epilogue = cutlass::epilogue::collective::Epilogue<
+  using Epilogue = cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
+    cutlass::epilogue::collective::Epilogue<
       cutlass::gemm::TagToStrideC_t<LayoutC>,
       cutlass::gemm::TagToStrideC_t<LayoutD>,
       cutlass::epilogue::thread::LinearCombination<int32_t, 1, int32_t, int32_t>,
       SmemLayout,
       Copy_Atom<DefaultCopy, ElementAcc>,
       TiledCopyS2R,
-      Copy_Atom<DefaultCopy, ElementOutput>>;
+      Copy_Atom<DefaultCopy, ElementOutput>>>;
 
   //
   // Assembling the GemmKernel

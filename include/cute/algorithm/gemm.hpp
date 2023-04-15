@@ -32,10 +32,12 @@
 
 #include <cute/config.hpp>
 
-#include <cute/tensor.hpp>
-#include <cute/algorithm/functional.hpp>
-#include <cute/atom/mma_atom.hpp>
 #include <cute/util/type_traits.hpp>
+#include <cute/algorithm/functional.hpp>
+
+#include <cute/tensor.hpp>
+
+#include <cute/atom/mma_atom.hpp>
 
 /** The gemm algorithm takes four (or three) tensors and computes
  *   D += A * B + C
@@ -281,17 +283,15 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<1>(B) == size<2>(C));  // BN == CN
   CUTE_STATIC_ASSERT_V(size<0>(C) == size<0>(D) && size<1>(C) == size<1>(D) && size<2>(C) == size<2>(D));
 
-  // REGISTER .reuse OPTIMIZATIONS
-
   auto M = size<1>(A);
   auto N = size<1>(B);
-
+  // REGISTER .reuse OPTIMIZATIONS
   // 64-bit traversal specialization -- serpentine path
-  if (size<0>(A) * sizeof(typename Tensor<TA,ALayout>::value_type) == 8 &&
-      size<0>(B) * sizeof(typename Tensor<TB,BLayout>::value_type) == 8)
+  if constexpr (decltype(size<0>(A))::value * sizeof(typename TA::value_type) == 8 &&
+                decltype(size<0>(B))::value * sizeof(typename TB::value_type) == 8)
   {
-#if 1 // NOTE: Must depend on the C-matrix order... (which we can test)
-    // Row-major iteration
+#if 1 // NOTE: Row- vs Col- major could depend on the C-matrix order... (which we can test)
+    // Row-major serpentine iteration
     CUTE_UNROLL
     for (int m = 0; m < M; ++m) {
       CUTE_UNROLL
@@ -301,7 +301,7 @@ gemm(MMA_Atom<MMA>       const& mma,
       }
     }
 #else
-    // Col-major iteration
+    // Col-major serpentine iteration
     CUTE_UNROLL
     for (int n = 0; n < N; ++n) {
       CUTE_UNROLL
@@ -312,13 +312,12 @@ gemm(MMA_Atom<MMA>       const& mma,
     }
 #endif
   } else
-
   // 32-bit traversal specialization -- kinked serpentine path
-  if (size<0>(A) * sizeof(typename Tensor<TA,ALayout>::value_type) == 4 &&
-      size<0>(B) * sizeof(typename Tensor<TB,BLayout>::value_type) == 4)
+  if constexpr (decltype(size<0>(A))::value * sizeof(typename TA::value_type) == 4 &&
+                decltype(size<0>(B))::value * sizeof(typename TB::value_type) == 4)
   {
-#if 1  // NOTE: Must depend on the C-matrix order... (which we can test)
-    // Row-major iteration
+#if 1  // NOTE: Row- vs Col- major could depend on the C-matrix order... (which we can test)
+    // Row-major kinked serpentine iteration
     CUTE_UNROLL
     for (int m = 0; m < M; m += 2) {
       CUTE_UNROLL
@@ -332,7 +331,7 @@ gemm(MMA_Atom<MMA>       const& mma,
       }
     }
 #else
-    // Col-major iteration
+    // Col-major kinked serpentine iteration
     CUTE_UNROLL
     for (int n = 0; n < N; n += 2) {
       CUTE_UNROLL
@@ -347,9 +346,36 @@ gemm(MMA_Atom<MMA>       const& mma,
       }
     }
 #endif
-  } else {
-    // Fallback to serpentine loop
-    // Col-major iteration
+  } else
+  // 64-bit + 32-bit traversal order -- keep A (64-bit) in the outer loop and serpentine B
+  if constexpr (decltype(size<0>(A))::value * sizeof(typename TA::value_type) == 8 &&
+                decltype(size<0>(B))::value * sizeof(typename TB::value_type) == 4) {
+    // Row-major serpentine iteration
+    CUTE_UNROLL
+    for (int m = 0; m < M; ++m) {
+      CUTE_UNROLL
+      for (int n = 0; n < N; ++n) {
+        int ns = (m & 1) ? N-1-n : n;  // Serpentine coordinate
+        gemm(mma, D(_,m,ns), A(_,m), B(_,ns), C(_,m,ns));
+      }
+    }
+  } else
+  // 32-bit + 64-bit traversal order -- keep B (64-bit) in the outer loop and serpentine A
+  if constexpr (decltype(size<0>(A))::value * sizeof(typename TA::value_type) == 4 &&
+                decltype(size<0>(B))::value * sizeof(typename TB::value_type) == 8) {
+    // Col-major serpentine iteration
+    CUTE_UNROLL
+    for (int n = 0; n < N; ++n) {
+      CUTE_UNROLL
+      for (int m = 0; m < M; ++m) {
+        int ms = (n & 1) ? M-1-m : m;  // Serpentine coordinate
+        gemm(mma, D(_,ms,n), A(_,ms), B(_,n), C(_,ms,n));
+      }
+    }
+  } else
+  // Fallback to serpentine loop
+  {
+    // Col-major serpentine iteration
     CUTE_UNROLL
     for (int n = 0; n < N; ++n) {
       CUTE_UNROLL
@@ -504,9 +530,9 @@ gemm(ThrMMA<Args...> const& thr_mma,
   using TypeB = typename TB::value_type;
   using TypeC = typename TC::value_type;
 
-  static_assert(std::is_same_v<std::decay_t<std::invoke_result_t<ALoadTransformOp, TypeA>>, TypeA>,
+  static_assert(is_same_v<decay_t<invoke_result_t<ALoadTransformOp, TypeA>>, TypeA>,
     "ALoadTransformOp functor must accept and return value of type TA::value_type");
-  static_assert(std::is_same_v<std::decay_t<std::invoke_result_t<BLoadTransformOp, TypeB>>, TypeB>,
+  static_assert(is_same_v<decay_t<invoke_result_t<BLoadTransformOp, TypeB>>, TypeB>,
     "BLoadTransformOp functor must accept and return value of type TB::value_type");
 
   // Original, static size of the problem

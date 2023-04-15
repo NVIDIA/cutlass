@@ -30,15 +30,9 @@
  **************************************************************************************************/
 #pragma once
 
-#include <limits>
-
-#if defined(__CUDACC_RTC__)
-#include <cuda/std/cstdint>
-#else
-#include <cstdint>
-#endif
-
 #include <cute/config.hpp>
+
+#include <cute/util/type_traits.hpp>
 
 namespace cute
 {
@@ -48,8 +42,8 @@ namespace cute
 //
 
 template <class T, class U,
-          __CUTE_REQUIRES(std::is_arithmetic<T>::value &&
-                          std::is_arithmetic<U>::value)>
+          __CUTE_REQUIRES(is_arithmetic<T>::value &&
+                          is_arithmetic<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 max(T const& t, U const& u) {
@@ -57,8 +51,8 @@ max(T const& t, U const& u) {
 }
 
 template <class T, class U,
-          __CUTE_REQUIRES(std::is_arithmetic<T>::value &&
-                          std::is_arithmetic<U>::value)>
+          __CUTE_REQUIRES(is_arithmetic<T>::value &&
+                          is_arithmetic<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 min(T const& t, U const& u) {
@@ -66,11 +60,11 @@ min(T const& t, U const& u) {
 }
 
 template <class T,
-          __CUTE_REQUIRES(std::is_arithmetic<T>::value)>
+          __CUTE_REQUIRES(is_arithmetic<T>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 abs(T const& t) {
-  if constexpr (std::is_signed<T>::value) {
+  if constexpr (is_signed<T>::value) {
     return t < T(0) ? -t : t;
   } else {
     return t;
@@ -85,8 +79,8 @@ abs(T const& t) {
 
 // Greatest common divisor of two integers
 template <class T, class U,
-          __CUTE_REQUIRES(std::is_integral<T>::value &&
-                          std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value &&
+                          CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 gcd(T t, U u) {
@@ -100,8 +94,8 @@ gcd(T t, U u) {
 
 // Least common multiple of two integers
 template <class T, class U,
-          __CUTE_REQUIRES(std::is_integral<T>::value &&
-                          std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value &&
+                          CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 lcm(T const& t, U const& u) {
@@ -133,11 +127,11 @@ template <class T>
 CUTE_HOST_DEVICE constexpr
 T
 bit_width(T x) {
-  static_assert(std::is_unsigned<T>::value, "Only to be used for unsigned types.");
-  constexpr int N = (std::numeric_limits<T>::digits == 64 ? 6 :
-                    (std::numeric_limits<T>::digits == 32 ? 5 :
-                    (std::numeric_limits<T>::digits == 16 ? 4 :
-                    (std::numeric_limits<T>::digits ==  8 ? 3 : (assert(false),0)))));
+  static_assert(is_unsigned<T>::value, "Only to be used for unsigned types.");
+  constexpr int N = (numeric_limits<T>::digits == 64 ? 6 :
+                    (numeric_limits<T>::digits == 32 ? 5 :
+                    (numeric_limits<T>::digits == 16 ? 4 :
+                    (numeric_limits<T>::digits ==  8 ? 3 : (assert(false),0)))));
   T r = 0;
   for (int i = N - 1; i >= 0; --i) {
     T shift = (x > ((T(1) << (T(1) << i))-1)) << i;
@@ -193,7 +187,7 @@ template <class T>
 CUTE_HOST_DEVICE constexpr
 T
 rotl(T x, int s) {
-  constexpr int N = std::numeric_limits<T>::digits;
+  constexpr int N = numeric_limits<T>::digits;
   return s == 0 ? x : s > 0 ? (x << s) | (x >> (N - s)) : rotr(x, -s);
 }
 
@@ -202,7 +196,7 @@ template <class T>
 CUTE_HOST_DEVICE constexpr
 T
 rotr(T x, int s) {
-  constexpr int N = std::numeric_limits<T>::digits;
+  constexpr int N = numeric_limits<T>::digits;
   return s == 0 ? x : s > 0 ? (x >> s) | (x << (N - s)) : rotl(x, -s);
 }
 
@@ -214,7 +208,7 @@ template <class T>
 CUTE_HOST_DEVICE constexpr
 T
 countl_zero(T x) {
-  return std::numeric_limits<T>::digits - bit_width(x);
+  return numeric_limits<T>::digits - bit_width(x);
 }
 
 // Counts the number of consecutive 1 bits, starting from the most significant bit
@@ -236,7 +230,7 @@ template <class T>
 CUTE_HOST_DEVICE constexpr
 T
 countr_zero(T x) {
-  return x == 0 ? std::numeric_limits<T>::digits : bit_width(T(x & T(-x))) - 1;  // bit_width of the LSB
+  return x == 0 ? numeric_limits<T>::digits : bit_width(T(x & T(-x))) - 1;  // bit_width of the LSB
 }
 
 // Counts the number of consecutive 1 bits, starting from the least significant bit
@@ -288,7 +282,7 @@ shiftr(T x, int s) {
 
 // Returns 1 if x > 0, -1 if x < 0, and 0 if x is zero.
 template <class T,
-          __CUTE_REQUIRES(std::is_unsigned<T>::value)>
+          __CUTE_REQUIRES(is_unsigned<T>::value)>
 CUTE_HOST_DEVICE constexpr
 int
 signum(T const& x) {
@@ -296,7 +290,7 @@ signum(T const& x) {
 }
 
 template <class T,
-          __CUTE_REQUIRES(not std::is_unsigned<T>::value)>
+          __CUTE_REQUIRES(not is_unsigned<T>::value)>
 CUTE_HOST_DEVICE constexpr
 int
 signum(T const& x) {
@@ -307,8 +301,8 @@ signum(T const& x) {
 // @pre t % u == 0
 // @result t / u
 template <class T, class U,
-          __CUTE_REQUIRES(std::is_integral<T>::value &&
-                          std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value &&
+                          CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 safe_div(T const& t, U const& u) {

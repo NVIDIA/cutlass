@@ -80,33 +80,24 @@ make_coord(Ts const&... t) {
 }
 
 
-template <class LogicalShape,
-          class LogicalStride = ColMajor<LogicalShape> >
+template <class Shape, class Stride = LayoutLeft::Apply<Shape> >
 struct Layout
-    : private cute::tuple<LogicalShape, LogicalStride>   // EBO for static layouts
+    : private cute::tuple<Shape, Stride>   // EBO for static layouts
 {
-  // Avoid bad CTAD:
-  //   Layout smem = GMMA::Layout_MN_SW128_Atom<T>;
-  // Should fail because smem is a ComposedLayout (SwizzleLayout) and not a Layout
-  static_assert(is_integral<LogicalShape>::value || is_tuple<LogicalShape>::value);
-
   // Expensive in compilation time...
-  //static_assert(is_congruent<LogicalShape, LogicalStride>::value,
-  //              "Shape and Stride must have the same hierarchical structure");
-  //static_assert(is_integral<LogicalShape>::value || is_tuple<LogicalShape>::value);
+  //static_assert(is_congruent<Shape, Stride>::value, "Shape and Stride must be congruent");
 
   // NOTE: This defaults static Shapes/Strides correctly, but not dynamic
   CUTE_HOST_DEVICE constexpr
-  Layout(LogicalShape  const& logical_shape  = {},
-         LogicalStride const& logical_stride = {})
-      : cute::tuple<LogicalShape, LogicalStride>(logical_shape, logical_stride)
+  Layout(Shape  const& shape  = {}, Stride const& stride = {})
+      : cute::tuple<Shape, Stride>(shape, stride)
   {}
 
   //
   // Accessors
   //
 
-  static constexpr int rank  = rank_v <LogicalShape>;
+  static constexpr int rank  = rank_v<Shape>;
 
   CUTE_HOST_DEVICE constexpr
   decltype(auto)
@@ -124,28 +115,28 @@ struct Layout
   CUTE_HOST_DEVICE constexpr
   decltype(auto)
   shape() {
-    return get<0,I...>(static_cast<cute::tuple<LogicalShape, LogicalStride>&>(*this));
+    return get<0,I...>(static_cast<cute::tuple<Shape, Stride>&>(*this));
   }
 
   template <int... I>
   CUTE_HOST_DEVICE constexpr
   decltype(auto)
   shape() const {
-    return get<0,I...>(static_cast<cute::tuple<LogicalShape, LogicalStride> const&>(*this));
+    return get<0,I...>(static_cast<cute::tuple<Shape, Stride> const&>(*this));
   }
 
   template <int... I>
   CUTE_HOST_DEVICE constexpr
   decltype(auto)
   stride() {
-    return get<1,I...>(static_cast<cute::tuple<LogicalShape, LogicalStride>&>(*this));
+    return get<1,I...>(static_cast<cute::tuple<Shape, Stride>&>(*this));
   }
 
   template <int... I>
   CUTE_HOST_DEVICE constexpr
   decltype(auto)
   stride() const {
-    return get<1,I...>(static_cast<cute::tuple<LogicalShape, LogicalStride> const&>(*this));
+    return get<1,I...>(static_cast<cute::tuple<Shape, Stride> const&>(*this));
   }
 
   //
@@ -314,7 +305,6 @@ struct Layout
 #endif
 };
 
-
 template <class Layout>
 struct is_layout : false_type {};
 template <class Shape, class Stride>
@@ -395,7 +385,15 @@ CUTE_HOST_DEVICE constexpr
 auto
 make_layout_like(Layout<Shape,Stride> const& layout)
 {
+  auto any_zero = any_of(layout.stride(), [](auto d) { return is_constant<0, decltype(d)>{}; });
+  if constexpr (any_zero) {
+    // If there are static-0 strides, then make a col-major layout that keeps those 0s
+    return make_layout(layout.shape(),
+                       compact_col_major(filter_zeros(layout.stride(), layout.shape())));
+  } else
   if constexpr (is_static<Shape>::value && is_static<Stride>::value) {
+    // If the layout is fully static, then make a layout that follows the same order as the strides
+    // Assumes the strides are unique
     return make_ordered_layout(layout.shape(), layout.stride());
   } else {
     return make_layout(layout.shape());
@@ -404,23 +402,37 @@ make_layout_like(Layout<Shape,Stride> const& layout)
   CUTE_GCC_UNREACHABLE;
 }
 
+//
 // Make a layout of the same shape,
-//   with mode-0 being colmajor then following the the mode order in layout
+//   with mode-0 being colmajor then following the mode order in layout
+//
 template <class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 make_fragment_like(Layout<Shape,Stride> const& layout)
 {
-  auto shape = replace<0>(layout.shape(),  size<0>(layout));
-  auto order = replace<0>(layout.stride(), Int<0>{});
-  if constexpr (is_static<decltype(shape)>::value && is_static<decltype(order)>::value) {
-    return make_ordered_layout(shape, order);
+  constexpr int R = Layout<Shape,Stride>::rank;
+  if constexpr (R > 1 && is_static<Shape>::value && is_static<Stride>::value) {
+    return tiled_product(make_layout(shape<0>(layout)), make_ordered_layout(take<1,R>(layout)));
   } else {
     return make_layout(layout.shape());
   }
 
   CUTE_GCC_UNREACHABLE;
 }
+
+template <class Shape,
+          __CUTE_REQUIRES(is_tuple<Shape>::value || is_integral<Shape>::value)>
+CUTE_HOST_DEVICE constexpr
+auto
+make_fragment_like(Shape const& shape)
+{
+  return make_layout(shape);
+}
+
+//
+// Make an identity layout that maps a coordinate to itself
+//
 
 template <class Shape>
 CUTE_HOST_DEVICE constexpr
@@ -434,7 +446,7 @@ make_identity_layout(Shape const& shape)
 // Operations to manipulate Layouts like a tuple of pairs
 //
 
-template <std::size_t... Is, class Shape, class Stride>
+template <size_t... Is, class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 get(Layout<Shape,Stride> const& layout)
@@ -555,7 +567,7 @@ cosize(Layout<Shape,Stride> const& layout)
 }
 
 template <class Layout>
-using cosize_t = decltype(cosize(std::declval<Layout>()));
+using cosize_t = decltype(cosize(declval<Layout>()));
 
 template <class Layout>
 static constexpr int cosize_v = cosize_t<Layout>::value;
@@ -840,7 +852,7 @@ composition(Layout<LShape,LStride> const& lhs,
 
     // NOTE: Should only flatten once for efficiency
     auto flat_shape  = flatten(lhs.shape());
-    auto flat_stride = flatten(lhs.stride());
+    [[maybe_unused]] auto flat_stride = flatten(lhs.stride());
     [[maybe_unused]] constexpr int R  = rank(flat_shape);
 
     if constexpr (is_constant<0, RStride>::value) {
@@ -857,9 +869,9 @@ composition(Layout<LShape,LStride> const& lhs,
       auto result_shape_0  = take<0,R-1>(flat_shape);
 
       // Mod out the rhs_shape from the lhs.shape()
-      auto const [result_shape_1, rest_shape]  = fold(result_shape_0, make_tuple(make_tuple(), rhs_shape),
+      auto const [result_shape_1, rest_shape]  = fold(result_shape_0, cute::make_tuple(cute::make_tuple(), rhs_shape),
         [] (auto const& init, auto const& si) {
-          return make_tuple(append(get<0>(init), cute::min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
+          return cute::make_tuple(append(get<0>(init), cute::min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
         });
 
       // Jump into coalesce and append (rest_shape, get<R-1>(lhs.stride())
@@ -871,18 +883,18 @@ composition(Layout<LShape,LStride> const& lhs,
       auto result_stride_0 = take<0,R-1>(flat_stride);
 
       // Divide out the rhs_stride from the lhs.shape()
-      auto const [result_shape_1, rest_stride] = fold(result_shape_0, make_tuple(make_tuple(), rhs_stride),
+      auto const [result_shape_1, rest_stride] = fold(result_shape_0, cute::make_tuple(cute::make_tuple(), rhs_stride),
         [] (auto const& init, auto const& di) {
-          return make_tuple(append(get<0>(init), shape_div(di, get<1>(init))), shape_div(get<1>(init), di));
+          return cute::make_tuple(append(get<0>(init), shape_div(di, get<1>(init))), shape_div(get<1>(init), di));
         });
 
       // Apply any lhs.shape() changes to the stride
       auto result_stride_1 = elem_scale(result_stride_0, shape_div(result_shape_0, result_shape_1));
 
       // Mod out the rhs_shape from the lhs.shape()
-      auto const [result_shape_2, rest_shape]  = fold(result_shape_1, make_tuple(make_tuple(), rhs_shape),
+      auto const [result_shape_2, rest_shape]  = fold(result_shape_1, cute::make_tuple(cute::make_tuple(), rhs_shape),
         [] (auto const& init, auto const& si) {
-          return make_tuple(append(get<0>(init), cute::min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
+          return cute::make_tuple(append(get<0>(init), cute::min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
         });
 
       // Jump into coalesce and append (rest_shape, rest_stride * get<R-1>(lhs.stride())
@@ -936,37 +948,37 @@ composition(Layout<LShape,LStride> const& lhs,
 //               @a result(i) != @a layout(j)
 //
 
+namespace detail {
+
+// @pre @a layout has been filtered (flattened and no stride-0 or size-1 modes).
 template <class Shape, class Stride, class CoSizeHi>
 CUTE_HOST_DEVICE constexpr
 auto
-complement(Layout<Shape,Stride> const& layout, CoSizeHi const& cosize_hi)
+complement(Shape const& shape, Stride const& stride, CoSizeHi const& cosize_hi)
 {
-  // Remove the stride-0 modes, the size-1 modes, and flatten the layout
-  auto flat_layout = filter(layout);
-
-  if constexpr (is_constant<0, decltype(flat_layout.stride())>::value) {
-    // Special case for stride-0 layout
+  if constexpr (is_constant<0, Stride>::value) {
+    // Special case for irreducible rank-1 stride-0 layout
     return make_layout(cosize_hi);
   } else {
     // General case
-    constexpr int R = decltype(rank(flat_layout))::value;
-    static_assert(R == 1 || is_static<decltype(flat_layout.stride())>::value,
+    constexpr int R = rank_v<Shape>;
+    static_assert(R == 1 || is_static<Stride>::value,
                   "Dynamic-stride complement only for rank-1 layouts");
 
     // Should just be a sort and a fold...
     // Then we could even handle dynamic strides (but they would destroy all static strides)
     auto result = fold(make_seq<R-1>{},
-                       make_tuple(flat_layout.shape(),
-                                  flat_layout.stride(),
-                                  make_tuple(),
-                                  make_tuple(Int<1>{})),
+                       cute::make_tuple(shape,
+                                  stride,
+                                  cute::make_tuple(),
+                                  cute::make_tuple(Int<1>{})),
       [](auto const& init, auto i)
       {
         auto curr_stride = cute::min(get<1>(init));
         auto curr_idx    = find(get<1>(init), curr_stride);
         auto curr_shape  = get<curr_idx>(get<0>(init));
 
-        return make_tuple(remove<curr_idx>(get<0>(init)),                     // Remove the curr shape
+        return cute::make_tuple(remove<curr_idx>(get<0>(init)),                     // Remove the curr shape
                           remove<curr_idx>(get<1>(init)),                     // Remove the curr stride
                           append(get<2>(init), curr_stride / get<3,i>(init)), // new shape  = curr_stride / last_stride
                           append(get<3>(init), curr_shape  * curr_stride));   // new stride = curr_shape  * curr_stride
@@ -986,12 +998,25 @@ complement(Layout<Shape,Stride> const& layout, CoSizeHi const& cosize_hi)
   CUTE_GCC_UNREACHABLE;
 }
 
+} // end namespace detail
+
+template <class Shape, class Stride, class CoSizeHi>
+CUTE_HOST_DEVICE constexpr
+auto
+complement(Layout<Shape,Stride> const& layout, CoSizeHi const& cosize_hi)
+{
+  static_assert(cute::is_integral<CoSizeHi>::value, "Expected integral codomain size in complement.");
+  auto filter_layout = filter(layout);
+  return detail::complement(filter_layout.shape(), filter_layout.stride(), cosize_hi);
+}
+
 template <class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 complement(Layout<Shape,Stride> const& layout)
 {
-  return complement(layout, cosize(layout));
+  auto filter_layout = filter(layout);
+  return detail::complement(filter_layout.shape(), filter_layout.stride(), cosize(filter_layout));
 }
 
 //
@@ -1067,7 +1092,7 @@ right_inverse(Underscore const& _)
 //
 // Build the left-inverse of a layout
 // @pre is_static<Layout>
-// @pre not has_int0<Layout>   // @a layout has no 0-strides (is injective)
+// @pre @a layout is an injective function
 // @result A layout @a result such that
 //    @a result(@a layout(i)) == i for all i < size(@a layout)
 // @result A layout @a result such that
@@ -1090,10 +1115,46 @@ left_inverse(Underscore const& _)
 }
 
 //
-// Max Common Vector
+// Max Common Layout
 //
 
-/* Return Int<N> such that N is the maximum number of continguous elements
+/* Return a layout that points to the maximum number of contiguous elements
+ * that logically correspond in the layouts of @a a and @a b. This is,
+ * the elements that could reasonably be "vectorized" in the layouts.
+ *
+ * @returns Layout R
+ * @post For all 0 <= i < size(R), a(R(i)) == i && b(R(i)) == i
+ */
+template <class ShapeA, class StrideA,
+          class ShapeB, class StrideB>
+CUTE_HOST_DEVICE constexpr
+auto
+max_common_layout(Layout<ShapeA,StrideA> const& a,
+                  Layout<ShapeB,StrideB> const& b)
+{
+  if constexpr (is_static<ShapeA>::value && is_static<StrideA>::value &&
+                is_static<ShapeB>::value && is_static<StrideB>::value)
+  {
+    Layout inv_b  = right_inverse(b);
+    Layout common = coalesce(composition(a, inv_b));
+
+    if constexpr (is_constant<1, decltype(stride<0>(common))>::value) {
+      // Truncate to the size of the contiguous vector (static stride-1 mode)
+      return composition(inv_b, layout<0>(common));
+    } else {
+      return Layout<_1,_0>{};
+    }
+  } else {
+    // CASE: One of the layouts is dynamic, can't prove alignment+vectorization is valid
+    // NOTE: Could weaken if we assume dynamic shapes/strides obey alignment requirements
+    //         (i.e. are large and multiples of the vector)
+    return Layout<_1,_0>{};
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+/* Return Int<N> such that N is the maximum number of contiguous elements
  * that logically correspond in the layouts of @a a and @a b. This is,
  * the number of elements that could reasonably be "vectorized" in the layouts.
  *
@@ -1104,24 +1165,10 @@ template <class ShapeA, class StrideA,
           class ShapeB, class StrideB>
 CUTE_HOST_DEVICE constexpr
 auto
-max_common_vector(Layout<ShapeA,StrideA> const& a, Layout<ShapeB,StrideB> const& b)
+max_common_vector(Layout<ShapeA,StrideA> const& a,
+                  Layout<ShapeB,StrideB> const& b)
 {
-  if constexpr (is_static<Layout<ShapeA,StrideA>>::value &&
-                is_static<Layout<ShapeB,StrideB>>::value)
-  {
-    auto result = coalesce(composition(a, right_inverse(b)));
-
-    if constexpr (is_constant<1, decltype(stride<0>(result))>::value) {
-      return shape<0>(result);
-    } else {
-      return Int<1>{};
-    }
-  } else {
-    // Dynamic case  NOTE: could weaken if we assume dynamic strides are large and multiples of the vector
-    return Int<1>{};
-  }
-
-  CUTE_GCC_UNREACHABLE;
+  return size(max_common_layout(a, b));
 }
 
 //
@@ -1450,11 +1497,13 @@ CUTE_HOST_DEVICE void print(Layout<Shape,Stride> const& layout)
   print(layout.shape()); print(":"); print(layout.stride());
 }
 
+#if !defined(__CUDACC_RTC__)
 template <class Shape, class Stride>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, Layout<Shape,Stride> const& layout)
 {
   return os << shape(layout) << ":" << stride(layout);
 }
+#endif
 
 // Generic 2D Layout to console table
 template <class Layout>

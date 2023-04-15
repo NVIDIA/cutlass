@@ -42,7 +42,7 @@ namespace cute
 template <int N>
 CUTE_HOST_DEVICE constexpr
 bool
-is_byte_aligned(void const* const ptr) 
+is_byte_aligned(void const* const ptr)
 {
   static_assert(N > 0 && (N & (N - 1)) == 0, "N must be a power of 2 in alignment check");
   return (reinterpret_cast<uintptr_t>(ptr) & (N-1)) == 0;
@@ -54,7 +54,7 @@ is_byte_aligned(void const* const ptr)
 #  define CUTE_ALIGNAS(n) alignas(n)
 #endif
 
-template <std::size_t Alignment>
+template <size_t Alignment>
 struct aligned_struct {};
 
 template <> struct CUTE_ALIGNAS(  1) aligned_struct<  1> {};

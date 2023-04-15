@@ -545,6 +545,9 @@ struct NumericConverter<tfloat32_t, float, FloatRoundStyle::round_to_nearest> {
 
     unsigned storage = reinterpret_cast<unsigned const &>(s);
 
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+    asm volatile("cvt.rn.tf32.f32 %0, %1;" : "=r"(storage) : "r"(storage));
+#else
     if ((storage & 0x7f800000) != 0x7f800000) {
 
       bool mantissa_bit = ((storage & (1 << 13)) != 0);
@@ -570,6 +573,7 @@ struct NumericConverter<tfloat32_t, float, FloatRoundStyle::round_to_nearest> {
     else if (storage & ~0xff800000) {
       storage = 0x7fffffff;
     }
+#endif
 
     return tfloat32_t::bitcast(storage);
   }
@@ -715,6 +719,24 @@ struct NumericConverterClamp {
     return convert(s);
   }
 };
+
+// This converter is needed to enable half_t output types when using int32_t accumulators.
+// Since floating-point types do not require a clamp, this converter simply casts from
+// the source type to half_t.
+template <
+  typename S
+>
+struct NumericConverterClamp<cutlass::half_t, S> {
+
+  using result_type = cutlass::half_t;
+  using source_type = S;
+
+  CUTLASS_HOST_DEVICE
+    result_type operator()(source_type const &s) {
+    return static_cast<cutlass::half_t>(s);
+  }
+};
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -1989,7 +2011,7 @@ struct NumericArrayConverter<float_e5m2_t, float_e5m2_t, 4, Round> {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
-// Partial specialziations for:
+// Partial specializations for:
 //       Array<T, N> <=> Array<float_e4m3_t, N>
 //       Array<T, N> <=> Array<float_e5m2_t, N>
 // using packed converter under the hood
@@ -2414,11 +2436,13 @@ struct PreferredRoundingMode {
   static FloatRoundStyle const kRound = FloatRoundStyle::round_to_nearest;
 };
 
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 900
 /// Defines preferred rounding mode for a pair of types
 template <>
 struct PreferredRoundingMode<tfloat32_t, float> {
   static FloatRoundStyle const kRound = FloatRoundStyle::round_half_ulp_truncate;
 };
+#endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

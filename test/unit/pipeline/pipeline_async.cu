@@ -51,7 +51,7 @@
 #include "cutlass/util/GPU_Clock.hpp"
 
 #include "testbed.h"
-#include "cutlass/pipeline.hpp"
+#include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/arch/barrier.h"
 #include "cute/arch/cluster_sm90.hpp"
 
@@ -98,20 +98,20 @@ void pipeline_async_basic_device(uint32_t const num_iterations)
   cute::cluster_wait();
   __syncthreads();
 
+
   if (lane_predicate) {
     // Producer Warps
     if (warp_idx==0 || warp_idx==1) {
 
+      PipelineState smem_pipe_write = cutlass::make_producer_start_state<MainloopPipeline>();
       int prologue_iterations = min(NumStages, num_iterations);
       for ( int i = 0; i < prologue_iterations; ++i) {
         // Can also specify stage to commit directly
-        pipeline.producer_commit(i);
+        pipeline.producer_commit(smem_pipe_write);
+        ++smem_pipe_write;
       }
 
       int mainloop_iterations = num_iterations - prologue_iterations;
-
-      // Only the mainloop needs a PipelineState because this is where we start "waiting" (acquiring)
-      PipelineState smem_pipe_write;
 
       for ( ; mainloop_iterations > 0; --mainloop_iterations) {
         pipeline.producer_acquire(smem_pipe_write);
@@ -123,7 +123,7 @@ void pipeline_async_basic_device(uint32_t const num_iterations)
       PipelineState smem_pipe_read;
       for (int iter=0 ; iter < num_iterations; ++iter) {
         pipeline.consumer_wait(smem_pipe_read);
-        pipeline.consumer_release(smem_pipe_read.index());
+        pipeline.consumer_release(smem_pipe_read);
         ++smem_pipe_read;
       }
     }

@@ -44,6 +44,11 @@
 #include <mma.h>
 #endif // defined(CUTLASS_ARCH_WMMA_ENABLED)
 
+#ifdef _MSC_VER
+// Provides support for alternate operators such as 'and', 'or', ...
+#include <iso646.h>
+#endif // _MSC_VER
+
 namespace cutlass {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -148,7 +153,11 @@ template <typename T>
 struct maximum_with_nan_propogation {
   CUTLASS_HOST_DEVICE
   T operator()(T const &lhs, T const &rhs) const {
+#if defined(__CUDA_ARCH__)
+    return lhs > rhs or isnan(lhs) ? lhs : rhs;
+#else
     return lhs > rhs or std::isnan(lhs) ? lhs : rhs;
+#endif
   }
 };
 
@@ -159,6 +168,8 @@ struct maximum_with_nan_propogation<float> {
     float res;
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
     asm volatile("max.NaN.f32 %0, %1, %2;\n" : "=f"(res) : "f"(lhs), "f"(rhs));
+#elif defined(__CUDA_ARCH__)
+    res = lhs > rhs or isnan(lhs) ? lhs : rhs;
 #else
     res = lhs > rhs or std::isnan(lhs) ? lhs : rhs;
 #endif

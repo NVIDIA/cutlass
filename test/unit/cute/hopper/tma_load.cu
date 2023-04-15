@@ -47,78 +47,51 @@ struct SharedStorage
   cute::uint64_t tma_load_mbar[1];
 };
 
-// __grid_constant__ was introduced in CUDA 11.7.
-#if ((__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 7)))
-#  define CUTE_GRID_CONSTANT_SUPPORTED
-#endif
-
-// __grid_constant__ can be enabled only on SM70+
-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 700))
-#  define CUTE_GRID_CONSTANT_ENABLED
-#endif
-
-#if ! defined(CUTE_GRID_CONSTANT)
-#  if defined(CUTE_GRID_CONSTANT_SUPPORTED) && defined(CUTE_GRID_CONSTANT_ENABLED)
-#    define CUTE_GRID_CONSTANT __grid_constant__
-#  else
-#    define CUTE_GRID_CONSTANT
-#  endif
-#endif
-
 #if CUDA_12_0_SM90_FEATURES_SUPPORTED
-template <class T, class TiledCopy, class GmemLayout, class SmemLayout>
+template <class T, class TiledCopy, class CTA_Tiler, class GmemLayout, class SmemLayout>
 __global__ void
 tma_test_device_cute(T const* g_in, T* g_out,
-                     CUTE_GRID_CONSTANT TiledCopy const tma,
+                     CUTE_GRID_CONSTANT TiledCopy const tma, CTA_Tiler cta_tiler,
                      GmemLayout gmem_layout, SmemLayout smem_layout)
 {
-  assert(product_each(shape(gmem_layout)) == product_each(smem_layout.shape()));
+  CUTE_STATIC_ASSERT_V(product_each(shape(cta_tiler)) == product_each(shape(smem_layout)));
 
   // Use Shared Storage structure to allocate and distribute aligned SMEM addresses
   extern __shared__ char shared_memory[];
   using SharedStorage = SharedStorage<T, SmemLayout>;
   SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
-
+  // Construct SMEM tensor
+  Tensor sA = make_tensor(make_smem_ptr(shared_storage.smem.data()), smem_layout);  // (CTA_TILE_M,CTA_TILE_N,...)
   // Shared memory barriers use 64bits in SMEM for synchronization
   uint64_t* tma_load_mbar = shared_storage.tma_load_mbar;
-  // Construct SMEM tensor
-  Tensor sA = make_tensor(make_smem_ptr(shared_storage.smem.data()), smem_layout);
-
-#if 0
-
-  //
-  // Read in trivially
-  //
-
-  Tensor gA_in = make_tensor(make_gmem_ptr(g_in), gmem_layout);
-
-  // Input gmem -> smem
-  for (int i = threadIdx.x; i < size(sA); i += blockDim.x) {
-    sA(i) = gA_in(i);
-  }
-  __syncthreads();
-
-#else
 
   // TMA requires special handling of strides to deal with coord codomain mapping
   // Represent the full tensors -- get these from TMA
-  Tensor gA = tma.get_tma_tensor(shape(gmem_layout));
+  Tensor mA = tma.get_tma_tensor(shape(gmem_layout));
+  Tensor mB = make_tensor(make_gmem_ptr(g_out), gmem_layout);
+
+  constexpr int R = rank_v<CTA_Tiler>;
+  Tensor gA = local_tile(mA, cta_tiler, repeat<R>(_));               // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
+  Tensor gB = local_tile(mB, cta_tiler, repeat<R>(_));               // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
 
   //
   // Prepare the TMA_LOAD
   //
 
-  auto cta_tma = tma.get_slice(Int<0>{});        // CTA slice
+  auto cta_tma = tma.get_slice(Int<0>{});                            // CTA slice
 
-  Tensor tAgA = cta_tma.partition_S(gA);         // (TMA,TMA_M,TMA_N)
-  Tensor tAsA = cta_tma.partition_D(sA);         // (TMA,TMA_M,TMA_N)
+  Tensor tAgA_x = cta_tma.partition_S(gA);                           // (TMA,TMA_M,TMA_N,REST_M,REST_N)
+  Tensor tAsA_x = cta_tma.partition_D(sA);                           // (TMA,TMA_M,TMA_N)
 
 #if 0
   if (thread0()) {
-    print("  gA:  "); print(gA.data()); print(" o "); print(gA.layout()); print("\n");
-    print("tAgA:  "); print(tAgA.data()); print(" o "); print(tAgA.layout()); print("\n");
-    print("  sA:  "); print(sA.data()); print(" o "); print(sA.layout()); print("\n");
-    print("tAsA:  "); print(tAsA.data()); print(" o "); print(tAsA.layout()); print("\n");
+    print(tma);
+    print("TILE  :  "); print(cta_tiler); print("\n");
+    print("  mA  :  "); print(  mA.data());   print(" o "); print(  mA.layout());   print("\n");
+    print("  gA  :  "); print(  gA.data());   print(" o "); print(  gA.layout());   print("\n");
+    print("tAgA_x:  "); print(tAgA_x.data()); print(" o "); print(tAgA_x.layout()); print("\n");
+    print("  sA  :  "); print(  sA.data());   print(" o "); print(  sA.layout());   print("\n");
+    print("tAsA_x:  "); print(tAsA_x.data()); print(" o "); print(tAsA_x.layout()); print("\n");
   }
 #endif
 
@@ -126,14 +99,24 @@ tma_test_device_cute(T const* g_in, T* g_out,
   // Perform the TMA_LOAD
   //
 
-  // Group the TMA_M and TMA_N modes
-  Tensor tAgA_2  = group_modes<1,rank(tAgA)>(tAgA);   // (TMA,Rest)
-  Tensor tAsA_TR = group_modes<1,rank(tAsA)>(tAsA);   // (TMA,Rest)
-  static_assert(size<1>(tAsA_TR) == 1);
-  Tensor tAsA_2 = tAsA_TR(_,0);
+  // INPUT: Group the REST_X modes and the TMA_X modes to easily iterate through the tiles
+  Tensor tAgA = group_modes<1,rank(tAgA_x)>(tAgA_x);                 // (TMA,REST)
+  Tensor tAsA = group_modes<1,rank(tAsA_x)>(tAsA_x);                 // (TMA,REST)
+  static_assert(size<1>(tAsA) == 1);
+
+  // OUTPUT: Group the CTA_TILE_X modes and REST_X modes for output
+  Tensor tBgB = group_modes<0,R>(group_modes<R,rank(gB)>(gB));       // (CTA_TILE, REST)
+
+#if 0
+  if (thread0()) {
+    print("tAgA  :  "); print(tAgA.data()); print(" o "); print(tAgA.layout()); print("\n");
+    print("tAsA  :  "); print(tAsA.data()); print(" o "); print(tAsA.layout()); print("\n");
+    print("tBgB  :  "); print(tBgB.data()); print(" o "); print(tBgB.layout()); print("\n");
+  }
+#endif
 
   // Loop over the TMA stages, using smem as our buffer
-  for (int stage = 0; stage < size<1>(tAgA_2); ++stage)
+  for (int stage = 0; stage < size<1>(tAgA); ++stage)
   {
     // Set the bytes transferred in this TMA transaction (may involve multiple issues)
     constexpr int kTmaTransactionBytes = size(sA) * sizeof(T);
@@ -145,7 +128,7 @@ tma_test_device_cute(T const* g_in, T* g_out,
       cute::initialize_barrier(tma_load_mbar[0], 1 /*numThreads*/);
       cute::set_barrier_transaction_bytes(tma_load_mbar[0], kTmaTransactionBytes);
 
-      copy(tma.with(tma_load_mbar[0]), tAgA_2(_,stage), tAsA_2);
+      copy(tma.with(tma_load_mbar[0]), tAgA(_,stage), tAsA(_,0));
     }
     __syncthreads();
 
@@ -153,343 +136,282 @@ tma_test_device_cute(T const* g_in, T* g_out,
     constexpr int kPhaseBit = 0;
     cute::wait_barrier(tma_load_mbar[0], kPhaseBit);
 
-  #endif
-
     //
-    // Write out trivially
+    // Write out trivially smem -> gmem
     //
 
-    Tensor gA_out = make_tensor(make_gmem_ptr(g_out), gmem_layout);
-    // Do the same slicing and grouping as sA
-    Tensor tAgA_out = cta_tma.partition_D(gA_out);         // (TMA,TMA_M,TMA_N)
-    Tensor tAgA_2_out = group_modes<1,rank(tAgA_out)>(tAgA_out);   // (TMA,Rest)
-
-    // Output smem -> gmem
-    for (int i = threadIdx.x; i < size(tAsA_2); i += blockDim.x) {
-      tAgA_2_out(i,stage) = tAsA_2(i);
+    for (int i = threadIdx.x; i < size(sA); i += blockDim.x) {
+      tBgB(i,stage) = sA(i);
     }
     __syncthreads();
   }
 }
 
-TEST(SM90_CuTe_Hopper, Tma_load_32x32_Col)
+template <class T, class GMEM_Layout, class SMEM_Layout, class CTA_Tile>
+void
+test_tma_load(GMEM_Layout const& gmem_layout,
+              SMEM_Layout const& smem_layout,
+              CTA_Tile    const& cta_tile)
 {
-  using T = half_t;
+  thrust::host_vector<T> h_in(cosize(gmem_layout));
+  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
+  thrust::device_vector<T> d_in = h_in;
+  thrust::device_vector<T> d_out(h_in.size(), T(-1));
+
+  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
+  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout, cta_tile, Int<1>{});
+  //print("TMA Box   size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
+  //print("TMA Instr size:  "); print(decltype(tma)::NumValSrc); print("\n");
+
+  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
+  tma_test_device_cute<<<1, 128, smem_size>>>(
+    thrust::raw_pointer_cast(d_in.data()),
+    thrust::raw_pointer_cast(d_out.data()),
+    tma, cta_tile,
+    gmem_layout,
+    smem_layout);
+
+  thrust::host_vector<T> h_out = d_out;
+  Tensor hA_in  = make_tensor(h_in.data(),  gmem_layout);
+  Tensor hA_out = make_tensor(h_out.data(), gmem_layout);
+  for (int i = 0; i < size(gmem_layout); ++i) {
+    EXPECT_EQ(hA_in(i), hA_out(i));
+  }
+}
+
+template <class T, class GMEM_Layout, class SMEM_Layout>
+void
+test_tma_load(GMEM_Layout const& gmem_layout,
+              SMEM_Layout const& smem_layout)
+{
+  return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
+}
+
+TEST(SM90_CuTe_Hopper, Tma_Load_32x32_Col)
+{
   Layout smem_layout = Layout<Shape<_32,_32>, Stride<_1,_32>>{};
+  {
   Layout gmem_layout = smem_layout;
-
-  thrust::host_vector<T> h_in(size(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
-
-  Tensor gA  = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout);
-  //print("TMA Box size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
-
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma,
-    gmem_layout,
-    smem_layout);
-
-  thrust::host_vector<T> h_out = d_out;
-  for (int i = 0; i < size(smem_layout); ++i) {
-    //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
-    EXPECT_EQ(h_out[i], h_in[i]);
+  test_tma_load<int8_t>(gmem_layout, smem_layout);
+  test_tma_load<half_t>(gmem_layout, smem_layout);
+  test_tma_load< float>(gmem_layout, smem_layout);
+  test_tma_load<double>(gmem_layout, smem_layout);
   }
-  CUTLASS_TRACE_HOST("CuTe TMA_LOAD 32x32 ColMajor SUCCESS\n");
+
+  {
+  Layout gmem_layout = make_layout(make_shape(32,32), GenColMajor{});
+  test_tma_load<int8_t>(gmem_layout, smem_layout);
+  test_tma_load<half_t>(gmem_layout, smem_layout);
+  test_tma_load< float>(gmem_layout, smem_layout);
+  test_tma_load<double>(gmem_layout, smem_layout);
+  }
+
+  {
+  Layout gmem_layout = make_layout(make_shape(32,32), make_stride(Int<1>{}, 1024));
+  test_tma_load<int8_t>(gmem_layout, smem_layout);
+  test_tma_load<half_t>(gmem_layout, smem_layout);
+  test_tma_load< float>(gmem_layout, smem_layout);
+  test_tma_load<double>(gmem_layout, smem_layout);
+  }
 }
 
-TEST(SM90_CuTe_Hopper, Tma_load_32x32_Row)
+TEST(SM90_CuTe_Hopper, Tma_Load_32x32_Row)
 {
-  using T = half_t;
   Layout smem_layout = Layout<Shape<_32,_32>, Stride<_32,_1>>{};
+  {
   Layout gmem_layout = smem_layout;
-
-  thrust::host_vector<T> h_in(size(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
-
-  Tensor gA  = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout);
-  //print("TMA Box size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
-
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma,
-    gmem_layout,
-    smem_layout);
-
-  thrust::host_vector<T> h_out = d_out;
-  for (int i = 0; i < size(smem_layout); ++i) {
-    //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
-    EXPECT_EQ(h_out[i], h_in[i]);
+  test_tma_load<int8_t>(gmem_layout, smem_layout);
+  test_tma_load<half_t>(gmem_layout, smem_layout);
+  test_tma_load< float>(gmem_layout, smem_layout);
+  test_tma_load<double>(gmem_layout, smem_layout);
   }
-  CUTLASS_TRACE_HOST("CuTe TMA_LOAD 32x32 RowMajor SUCCESS\n");
+
+  {
+  Layout gmem_layout = make_layout(make_shape(32,32), GenRowMajor{});
+  test_tma_load<int8_t>(gmem_layout, smem_layout);
+  test_tma_load<half_t>(gmem_layout, smem_layout);
+  test_tma_load< float>(gmem_layout, smem_layout);
+  test_tma_load<double>(gmem_layout, smem_layout);
+  }
+
+  {
+  Layout gmem_layout = make_layout(make_shape(32,32), make_stride(1024, Int<1>{}));
+  test_tma_load<int8_t>(gmem_layout, smem_layout);
+  test_tma_load<half_t>(gmem_layout, smem_layout);
+  test_tma_load< float>(gmem_layout, smem_layout);
+  test_tma_load<double>(gmem_layout, smem_layout);
+  }
 }
 
-TEST(SM90_CuTe_Hopper, Tma_load_GMMA_SW128_MN)
+template <class T, template <typename> typename SWIZZLE_ATOM>
+void
+test_tma_load_swizzle_atom_mn()
 {
-  using T = half_t;
-  auto   smem_layout = GMMA::Layout_MN_SW128_Atom<T>{};
-  Layout gmem_layout = make_layout(make_shape(size<0>(smem_layout), size<1>(smem_layout)), GenColMajor{});
-
-  thrust::host_vector<T> h_in(size(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
-
-  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout);
-  //print("TMA Box size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
-
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma,
-    gmem_layout,
-    smem_layout);
-
-  thrust::host_vector<T> h_out = d_out;
-  for (int i = 0; i < size(smem_layout); ++i) {
-    //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
-    EXPECT_EQ(h_out[i], h_in[i]);
-  }
-  CUTLASS_TRACE_HOST("CuTe TMA_LOAD GMMA::Layout_MN_SW128_Atom<T> SUCCESS\n");
+  auto   smem_layout = SWIZZLE_ATOM<T>{};
+  Layout gmem_layout = make_layout(shape(smem_layout), GenColMajor{});
+  return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
 }
 
-TEST(SM90_CuTe_Hopper, Tma_load_GMMA_SW128_K)
+template <class T, template <typename> typename SWIZZLE_ATOM>
+void
+test_tma_load_swizzle_atom_k()
 {
-  using T = half_t;
-  auto   smem_layout = GMMA::Layout_K_SW128_Atom<T>{};
-  Layout gmem_layout = make_layout(make_shape(size<0>(smem_layout), size<1>(smem_layout)), GenRowMajor{});
-
-  thrust::host_vector<T> h_in(size(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
-
-  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout);
-  //print("TMA Box size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
-
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma,
-    gmem_layout,
-    smem_layout);
-
-  thrust::host_vector<T> h_out = d_out;
-  for (int i = 0; i < size(smem_layout); ++i) {
-    //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
-    EXPECT_EQ(h_out[i], h_in[i]);
-  }
-  CUTLASS_TRACE_HOST("CuTe TMA_LOAD GMMA::Layout_K_SW128_Atom<T> SUCCESS\n");
+  auto   smem_layout = SWIZZLE_ATOM<T>{};
+  Layout gmem_layout = make_layout(shape(smem_layout), GenRowMajor{});
+  return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
 }
 
-TEST(SM90_CuTe_Hopper, Tma_load_GMMA_SW128_MN_Multi)
+TEST(SM90_CuTe_Hopper, Tma_Load_Swizzle_Atoms)
 {
-  using T = half_t;
-  auto   smem_layout = tile_to_shape(GMMA::Layout_MN_SW128_Atom<T>{}, Shape<Int<128>,Int<128>>{});
-  Layout gmem_layout = make_layout(make_shape(size<0>(smem_layout), size<1>(smem_layout)), GenColMajor{});
+  test_tma_load_swizzle_atom_mn<int8_t, GMMA::Layout_MN_SW128_Atom>();
+  test_tma_load_swizzle_atom_mn<half_t, GMMA::Layout_MN_SW128_Atom>();
+  test_tma_load_swizzle_atom_mn< float, GMMA::Layout_MN_SW128_Atom>();
+  test_tma_load_swizzle_atom_mn<double, GMMA::Layout_MN_SW128_Atom>();
 
-  thrust::host_vector<T> h_in(size(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
+  test_tma_load_swizzle_atom_mn<int8_t, GMMA::Layout_MN_SW64_Atom>();
+  test_tma_load_swizzle_atom_mn<half_t, GMMA::Layout_MN_SW64_Atom>();
+  test_tma_load_swizzle_atom_mn< float, GMMA::Layout_MN_SW64_Atom>();
+  test_tma_load_swizzle_atom_mn<double, GMMA::Layout_MN_SW64_Atom>();
 
-  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout);
-  //print("TMA Box size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
+  test_tma_load_swizzle_atom_mn<int8_t, GMMA::Layout_MN_SW32_Atom>();
+  test_tma_load_swizzle_atom_mn<half_t, GMMA::Layout_MN_SW32_Atom>();
+  test_tma_load_swizzle_atom_mn< float, GMMA::Layout_MN_SW32_Atom>();
+  test_tma_load_swizzle_atom_mn<double, GMMA::Layout_MN_SW32_Atom>();
 
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma,
-    gmem_layout,
-    smem_layout);
+  test_tma_load_swizzle_atom_mn<int8_t, GMMA::Layout_MN_INTER_Atom>();
+  test_tma_load_swizzle_atom_mn<half_t, GMMA::Layout_MN_INTER_Atom>();
+  test_tma_load_swizzle_atom_mn< float, GMMA::Layout_MN_INTER_Atom>();
+  test_tma_load_swizzle_atom_mn<double, GMMA::Layout_MN_INTER_Atom>();
 
-  thrust::host_vector<T> h_out = d_out;
-  for (int i = 0; i < size(smem_layout); ++i) {
-    //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
-    EXPECT_EQ(h_out[i], h_in[i]);
-  }
-  CUTLASS_TRACE_HOST("CuTe TMA_LOAD GMMA::Layout_MN_SW128_Atom<T> Multi SUCCESS\n");
+  test_tma_load_swizzle_atom_k<int8_t, GMMA::Layout_K_SW128_Atom>();
+  test_tma_load_swizzle_atom_k<half_t, GMMA::Layout_K_SW128_Atom>();
+  test_tma_load_swizzle_atom_k< float, GMMA::Layout_K_SW128_Atom>();
+  test_tma_load_swizzle_atom_k<double, GMMA::Layout_K_SW128_Atom>();
+
+  test_tma_load_swizzle_atom_k<int8_t, GMMA::Layout_K_SW64_Atom>();
+  test_tma_load_swizzle_atom_k<half_t, GMMA::Layout_K_SW64_Atom>();
+  test_tma_load_swizzle_atom_k< float, GMMA::Layout_K_SW64_Atom>();
+  test_tma_load_swizzle_atom_k<double, GMMA::Layout_K_SW64_Atom>();
+
+  test_tma_load_swizzle_atom_k<int8_t, GMMA::Layout_K_SW32_Atom>();
+  test_tma_load_swizzle_atom_k<half_t, GMMA::Layout_K_SW32_Atom>();
+  test_tma_load_swizzle_atom_k< float, GMMA::Layout_K_SW32_Atom>();
+  test_tma_load_swizzle_atom_k<double, GMMA::Layout_K_SW32_Atom>();
+
+  test_tma_load_swizzle_atom_k<int8_t, GMMA::Layout_K_INTER_Atom>();
+  test_tma_load_swizzle_atom_k<half_t, GMMA::Layout_K_INTER_Atom>();
+  test_tma_load_swizzle_atom_k< float, GMMA::Layout_K_INTER_Atom>();
+  test_tma_load_swizzle_atom_k<double, GMMA::Layout_K_INTER_Atom>();
 }
 
-TEST(SM90_CuTe_Hopper, Tma_load_GMMA_SW128_MN_Multi2)
+template <class T, template <typename> typename SWIZZLE_ATOM>
+void
+test_tma_load_swizzle_tile_mn()
 {
-  using T = half_t;
-  // Tile the GMMA::Layout atom in the K-mode first, then the M-mode to get a bigger box size
-  auto   smem_layout = tile_to_shape(GMMA::Layout_MN_SW128_Atom<T>{}, Shape<Int<128>,Int<128>>{}, Step<_2,_1>{});
-  Layout gmem_layout = make_layout(make_shape(size<0>(smem_layout), size<1>(smem_layout)), GenColMajor{});
-
-  thrust::host_vector<T> h_in(size(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
-
-  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout);
-  //print("TMA Box size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
-
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma,
-    gmem_layout,
-    smem_layout);
-
-  thrust::host_vector<T> h_out = d_out;
-  for (int i = 0; i < size(smem_layout); ++i) {
-    //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
-    EXPECT_EQ(h_out[i], h_in[i]);
-  }
-  CUTLASS_TRACE_HOST("CuTe TMA_LOAD GMMA::Layout_MN_SW128_Atom<T> Multi SUCCESS\n");
+  auto   smem_layout = tile_to_shape(SWIZZLE_ATOM<T>{}, Shape<_128,_128>{});
+  Layout gmem_layout = make_layout(make_shape(int(size<0>(smem_layout)), int(size<1>(smem_layout))), GenColMajor{});
+  return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
 }
 
-TEST(SM90_CuTe_Hopper, Tma_load_GMMA_SW128_MN_Multi_Dyn)
+template <class T, template <typename> typename SWIZZLE_ATOM>
+void
+test_tma_load_swizzle_tile_k()
 {
-  using T = half_t;
-  auto   smem_layout = tile_to_shape(GMMA::Layout_MN_SW128_Atom<T>{}, Shape<Int<128>,Int<128>>{}, Step<_2,_1>{});
-  Layout gmem_layout = make_layout(make_shape(128, 128), GenColMajor{});
-
-  thrust::host_vector<T> h_in(size(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
-
-  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout);
-  //print("TMA Box size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
-
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma,
-    gmem_layout,
-    smem_layout);
-
-  thrust::host_vector<T> h_out = d_out;
-  for (int i = 0; i < size(smem_layout); ++i) {
-    //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
-    EXPECT_EQ(h_out[i], h_in[i]);
-  }
-  CUTLASS_TRACE_HOST("CuTe TMA_LOAD GMMA::Layout_MN_SW128_Atom<T> Multi SUCCESS\n");
+  auto   smem_layout = tile_to_shape(SWIZZLE_ATOM<T>{}, Shape<_128,_128>{});
+  Layout gmem_layout = make_layout(make_shape(int(size<0>(smem_layout)), int(size<1>(smem_layout))), GenRowMajor{});
+  return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
 }
 
-TEST(SM90_CuTe_Hopper, Tma_load_32x32_Multimode)
+TEST(SM90_CuTe_Hopper, Tma_Load_Swizzle_Tiles)
 {
-  using T = half_t;
-  auto   smem_layout = Layout<Shape<_32,_32>, Stride<_32,_1>>{};
-  Layout gmem_layout = make_layout(make_shape(make_shape(8,4), 32), GenRowMajor{});
-
-  //auto   smem_layout = Layout<Shape<_32,_32>>{};
-  //Layout gmem_layout = make_layout(make_shape(make_shape(8,4), 32), GenColMajor{});
-
-  thrust::host_vector<T> h_in(size(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
-
-  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout);
-  //print("TMA Box size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
-
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma,
-    gmem_layout,
-    smem_layout);
-
-  thrust::host_vector<T> h_out = d_out;
-  for (int i = 0; i < size(smem_layout); ++i) {
-    //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
-    EXPECT_EQ(h_out[i], h_in[i]);
-  }
-  CUTLASS_TRACE_HOST("CuTe TMA_LOAD GMMA::Layout_MN_SW128_Atom<T> Multi SUCCESS\n");
+  // Other T-types use too much smem
+  test_tma_load_swizzle_tile_mn<int8_t, GMMA::Layout_MN_SW128_Atom>();
+  test_tma_load_swizzle_tile_mn<half_t, GMMA::Layout_MN_SW128_Atom>();
+  test_tma_load_swizzle_tile_mn<int8_t, GMMA::Layout_MN_SW64_Atom>();
+  test_tma_load_swizzle_tile_mn<half_t, GMMA::Layout_MN_SW64_Atom>();
+  test_tma_load_swizzle_tile_mn<int8_t, GMMA::Layout_MN_SW32_Atom>();
+  test_tma_load_swizzle_tile_mn<half_t, GMMA::Layout_MN_SW32_Atom>();
+  test_tma_load_swizzle_tile_mn<int8_t, GMMA::Layout_MN_INTER_Atom>();
+  test_tma_load_swizzle_tile_mn<half_t, GMMA::Layout_MN_INTER_Atom>();
+  test_tma_load_swizzle_tile_k<int8_t, GMMA::Layout_K_SW128_Atom>();
+  test_tma_load_swizzle_tile_k<half_t, GMMA::Layout_K_SW128_Atom>();
+  test_tma_load_swizzle_tile_k<int8_t, GMMA::Layout_K_SW64_Atom>();
+  test_tma_load_swizzle_tile_k<half_t, GMMA::Layout_K_SW64_Atom>();
+  test_tma_load_swizzle_tile_k<int8_t, GMMA::Layout_K_SW32_Atom>();
+  test_tma_load_swizzle_tile_k<half_t, GMMA::Layout_K_SW32_Atom>();
+  test_tma_load_swizzle_tile_k<int8_t, GMMA::Layout_K_INTER_Atom>();
+  test_tma_load_swizzle_tile_k<half_t, GMMA::Layout_K_INTER_Atom>();
 }
 
-TEST(SM90_CuTe_Hopper, Tma_load_Tensor_blocking)
+
+TEST(SM90_CuTe_Hopper, Tma_Load_Metamode)
 {
-  using T = half_t;
-  auto gmem_layout = make_shape(make_shape(336,40),make_shape(32,656));         // GMEM
-  auto cta_tile    = make_shape(make_shape(_16{},_8{}),make_shape(_32{},_2{})); // GMEM Tiling:
-                                                                                //   Take 16-elem from m0, 8-elem from m1,
-                                                                                //   Take 32-elem from k0, 2-elem from k1
-  auto smem_layout = make_layout(cta_tile);                                     // Col-Major SMEM
-
-  thrust::host_vector<T> h_in(size(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
-
-  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout, cta_tile, Int<1>{});
-  //print("TMA Box size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
-
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma,
-    gmem_layout,
-    smem_layout);
-
-  thrust::host_vector<T> h_out = d_out;
-  for (int i = 0; i < size(smem_layout); ++i) {
-    //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
-    EXPECT_EQ(h_out[i], h_in[i]);
+  {
+  auto smem_layout = Layout<Shape<_32,_32>, Stride<_1,_32>>{};
+    {
+    Layout gmem_layout = make_layout(make_shape(make_shape(8,4), 32), GenColMajor{});
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    }
+    {
+    Layout gmem_layout = make_layout(make_shape(make_shape(8,32), 32), GenColMajor{});
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    }
+    {
+    Layout gmem_layout = make_layout(make_shape(make_shape(64,32), 32), GenColMajor{});
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    }
   }
-  CUTLASS_TRACE_HOST("CuTe TMA_LOAD Tensor blocking SUCCESS\n");
+
+  {
+  auto smem_layout = Layout<Shape<_32,_32>, Stride<_32,_1>>{};
+    {
+    Layout gmem_layout = make_layout(make_shape(make_shape(8,4), 32), GenRowMajor{});
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    }
+    {
+    Layout gmem_layout = make_layout(make_shape(make_shape(8,32), 32), GenRowMajor{});
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    }
+    {
+    Layout gmem_layout = make_layout(make_shape(make_shape(64,32), 32), GenRowMajor{});
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    }
+  }
 }
 
-TEST(SM90_CuTe_Hopper, Tma_load_Tensor_blocking_2)
+TEST(SM90_CuTe_Hopper, Tma_Load_Tensor)
 {
-  using T = half_t;
-  auto gmem_layout = make_shape(make_shape(32,40),make_shape(make_shape(8,8),656)); // GMEM
-  auto cta_tile    = make_shape(_128{},make_shape(_32{},_2{}));                // GMEM Tiling:
-                                                                               //   Take 128-elem from m: m0 must divide 128,
-                                                                               //                         m-last may be predicated
-                                                                               //   Take 32-elem from k0, 2-elem from k1
-  auto smem_layout = make_layout(cta_tile);                                    // Col-Major SMEM
-
-  thrust::host_vector<T> h_in(size(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
-
-  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout, cta_tile, Int<1>{});
-  //print("TMA Box size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
-
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma,
-    gmem_layout,
-    smem_layout);
-
-  thrust::host_vector<T> h_out = d_out;
-  for (int i = 0; i < size(smem_layout); ++i) {
-    //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
-    EXPECT_EQ(h_out[i], h_in[i]);
+  // Tensor by-mode
+  {
+  Layout gmem_layout = make_layout(make_shape(make_shape(80,40),make_shape(32,12)));
+  auto cta_tile      = Shape<Shape<_16,_8>,Shape<_32,_2>>{}; // GMEM Tiling:
+                                                             //   Take 16-elem from m0, 8-elem from m1,
+                                                             //   Take 32-elem from k0, 2-elem from k1
+  auto smem_layout = make_layout(Shape<_128,_64>{});
+  test_tma_load<half_t>(gmem_layout, smem_layout, cta_tile);
   }
-  CUTLASS_TRACE_HOST("CuTe TMA_LOAD Tensor blocking 2 SUCCESS\n");
+
+  // Tensor Metamode -- Tiler selects flat elements from a multimode
+  {
+  Layout gmem_layout = make_layout(make_shape(make_shape(32,40),make_shape(make_shape(8,8),12)));
+  auto cta_tile      = Shape<_128, Shape<_32,_2>>{};         // GMEM Tiling:
+                                                             //   Take 128-elem from m: m0 must divide 128,
+                                                             //                         m-last may be predicated
+                                                             //   Take 32-elem from k0, 2-elem from k1
+  auto smem_layout = make_layout(Shape<_128,_64>{});
+  test_tma_load<half_t>(gmem_layout, smem_layout, cta_tile);
+  }
+
+  // Tensor Multimode -- TMA with more than 5 modes in GMEM (packs residual modes into last TMA mode)
+  {
+  Layout gmem_layout = make_layout(make_shape(make_shape(32,3,2,2),make_shape(32,4,2)));
+  auto cta_tile      = Shape<Shape<_32>, Shape<_32,_2>>{};    // GMEM Tiling:
+                                                              //  Take 32-elem from m0
+                                                              //  Take 32-elem from k0, 2-elem from k1
+  auto smem_layout = make_layout(Shape<_32,_64>{});
+  test_tma_load<half_t>(gmem_layout, smem_layout, cta_tile);
+  }
+
 }
+
 #endif

@@ -40,7 +40,11 @@ namespace cutlass::gemm::collective {
 // Used to specify stage counts or dispatch to automatic computation of stage count
 template<int num_stages>
 struct StageCount { static constexpr int value = num_stages; };
-struct StageCountAuto {};
+
+template<int carveout_bytes>
+struct StageCountAutoCarveout { static constexpr int bytes = carveout_bytes; };
+
+using StageCountAuto = StageCountAutoCarveout<0>;
 
 // Used to automatically let the builder pick the kernel schedule.
 // Can be overridden with kernel schedule tags in cutlass/gemm/dispatch_policy.hpp

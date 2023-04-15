@@ -60,7 +60,7 @@ struct bit_field
                                                 (BitStart / 32 == (BitStart + NumBits - 1) / 32) ? 32 : 64;
   using storage_type = cute::uint_bit_t<storage_type_bits>;
 
-  static_assert(sizeof(OtherValueType) == sizeof(value_type) || std::is_same<OtherValueType,dummy_type>::value,
+  static_assert(sizeof(OtherValueType) == sizeof(value_type) || is_same<OtherValueType,dummy_type>::value,
                 "sizeof(OtherValueType) must be same as sizeof(value_type).");
 
   // Number of storage values needed: ceil_div(BitStart + NumBits, storage_type_bits)

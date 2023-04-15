@@ -64,6 +64,8 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  using ElementD = ElementC;
+  using LayoutD = LayoutC;
   // assuming all tensors use same type for StrideIndex 
   using StrideIndex = typename Operator::LayoutA::Index;
   using ElementAccumulator = typename Operator::ElementAccumulator;
@@ -121,6 +123,7 @@ public:
     description_.A = make_TensorDescription<ElementA, LayoutA>(Operator::kAlignmentA);
     description_.B = make_TensorDescription<ElementB, LayoutB>(Operator::kAlignmentB);
     description_.C = make_TensorDescription<ElementC, LayoutC>(Operator::kAlignmentC);
+    description_.D = make_TensorDescription<ElementD, LayoutD>(Operator::kAlignmentC);
     description_.element_epilogue = NumericTypeMap<ElementCompute>::kId;
 
     description_.split_k_mode = SplitKMode::kNone;
@@ -147,6 +150,8 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  using ElementD = ElementC;
+  using LayoutD = LayoutC;
   using ElementAccumulator = typename Operator::ElementAccumulator;
   using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
   using OperatorArguments = typename Operator::Arguments;
@@ -204,7 +209,7 @@ protected:
     operator_args.ref_A.reset(static_cast<ElementA const *>(arguments->A));
     operator_args.ref_B.reset(static_cast<ElementB const *>(arguments->B));
     operator_args.ref_C.reset(static_cast<ElementC const *>(arguments->C));
-    operator_args.ref_D.reset(static_cast<ElementC *>(arguments->D));
+    operator_args.ref_D.reset(static_cast<ElementD *>(arguments->D));
 
     return Status::kSuccess;
   }
@@ -345,6 +350,8 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  using ElementD = ElementC;
+  using LayoutD = LayoutC;
   using ElementE = typename Operator::ElementE;
   using LayoutE = typename Operator::LayoutE;
   using ElementAccumulator = typename Operator::ElementAccumulator;
@@ -405,7 +412,7 @@ protected:
     operator_args.ref_A.reset(static_cast<ElementA const *>(arguments->A));
     operator_args.ref_B.reset(static_cast<ElementB const *>(arguments->B));
     operator_args.ref_C.reset(static_cast<ElementC const *>(arguments->C));
-    operator_args.ref_D.reset(static_cast<ElementC *>(arguments->D));
+    operator_args.ref_D.reset(static_cast<ElementD *>(arguments->D));
     operator_args.ref_E.reset(static_cast<ElementE const *>(arguments->E));
 
     return Status::kSuccess;
@@ -547,6 +554,8 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  using ElementD = ElementC;
+  using LayoutD = LayoutC;
   using ElementAccumulator = typename Operator::ElementAccumulator;
   using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
 
@@ -751,6 +760,8 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  using ElementD = ElementC;
+  using LayoutD = LayoutC;
   using ElementAccumulator = typename Operator::ElementAccumulator;
   using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
 
@@ -958,6 +969,8 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  using ElementD = ElementC;
+  using LayoutD = LayoutC;
   using ElementAccumulator = typename Operator::ElementAccumulator;
   using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
 
@@ -1159,6 +1172,8 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  using ElementD = ElementC;
+  using LayoutD = LayoutC;
   using ElementAccumulator = typename Operator::ElementAccumulator;
   using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
 
@@ -1218,7 +1233,7 @@ protected:
     op_args.ptr_A         = static_cast<ElementA **>(arguments->ptr_A);
     op_args.ptr_B         = static_cast<ElementB **>(arguments->ptr_B);
     op_args.ptr_C         = static_cast<ElementC **>(arguments->ptr_C);
-    op_args.ptr_D         = static_cast<ElementC **>(arguments->ptr_D);
+    op_args.ptr_D         = static_cast<ElementD **>(arguments->ptr_D);
 
     op_args.lda           = arguments->lda;
     op_args.ldb           = arguments->ldb;

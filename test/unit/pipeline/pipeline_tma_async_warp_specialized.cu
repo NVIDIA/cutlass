@@ -50,7 +50,7 @@
 #include "cutlass/util/GPU_Clock.hpp"
 
 #include "testbed.h"
-#include "cutlass/pipeline.hpp"
+#include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/arch/barrier.h"
 #include "cute/arch/cluster_sm90.hpp"
 #include "cutlass/arch/barrier.h"
@@ -138,7 +138,7 @@ void pipeline_device(KernelParams const kernel_params)
       for(int i = 0; i < tma_k_prologue; ++i) {
         pipeline.producer_acquire(smem_pipe_write);
         // Simulating cp.async.bulk.tensor behavior
-        pipeline.producer_commit(smem_pipe_write.index(), per_cta_bytes);
+        pipeline.producer_commit(smem_pipe_write, per_cta_bytes);
         ++smem_pipe_write;
       }
       int tma_k_iter = kernel_params.num_iterations - tma_k_prologue;
@@ -150,7 +150,7 @@ void pipeline_device(KernelParams const kernel_params)
         pipeline.producer_acquire(smem_pipe_write);
 
         // Simulating cp.async.bulk.tensor behavior
-        pipeline.producer_commit(smem_pipe_write.index(), per_cta_bytes);
+        pipeline.producer_commit(smem_pipe_write, per_cta_bytes);
 
         // Advance write stage
         ++smem_pipe_write;

@@ -549,6 +549,22 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
       dist
     );
     break;
+  case library::NumericTypeID::kFE4M3:
+    cutlass::reference::device::BlockFillRandom<cutlass::float_e4m3_t>(
+      reinterpret_cast<cutlass::float_e4m3_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kFE5M2:
+    cutlass::reference::device::BlockFillRandom<cutlass::float_e5m2_t>(
+      reinterpret_cast<cutlass::float_e5m2_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
   case library::NumericTypeID::kF64:
     cutlass::reference::device::BlockFillRandom<double>(
       reinterpret_cast<double *>(pointer_),
@@ -681,6 +697,22 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
   std::vector<uint8_t> host_data(bytes());
 
   switch (type_) {
+  case library::NumericTypeID::kFE4M3:
+    cutlass::reference::host::BlockFillRandom<cutlass::float_e4m3_t>(
+      reinterpret_cast<cutlass::float_e4m3_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
+  case library::NumericTypeID::kFE5M2:
+    cutlass::reference::host::BlockFillRandom<cutlass::float_e5m2_t>(
+      reinterpret_cast<cutlass::float_e5m2_t *>(pointer_),
+      capacity_,
+      seed,
+      dist
+    );
+    break;
   case library::NumericTypeID::kF16:
     cutlass::reference::host::BlockFillRandom<cutlass::half_t>(
       reinterpret_cast<cutlass::half_t *>(host_data.data()),
@@ -942,6 +974,18 @@ bool DeviceAllocation::block_compare_equal(
   size_t capacity) {
 
   switch (numeric_type) {
+  case library::NumericTypeID::kFE4M3:
+    return reference::device::BlockCompareEqual<float_e4m3_t>(
+      reinterpret_cast<float_e4m3_t const *>(ptr_A), 
+      reinterpret_cast<float_e4m3_t const *>(ptr_B), 
+      capacity);
+    
+  case library::NumericTypeID::kFE5M2:
+    return reference::device::BlockCompareEqual<float_e5m2_t>(
+      reinterpret_cast<float_e5m2_t const *>(ptr_A),
+      reinterpret_cast<float_e5m2_t const *>(ptr_B), 
+      capacity);
+
   case library::NumericTypeID::kF16:
     return reference::device::BlockCompareEqual<half_t>(
       reinterpret_cast<half_t const *>(ptr_A), 
@@ -1095,6 +1139,22 @@ bool DeviceAllocation::block_compare_relatively_equal(
   double nonzero_floor) {
 
   switch (numeric_type) {
+  case library::NumericTypeID::kFE4M3:
+    return reference::device::BlockCompareRelativelyEqual<float_e4m3_t>(
+      reinterpret_cast<float_e4m3_t const *>(ptr_A), 
+      reinterpret_cast<float_e4m3_t const *>(ptr_B),
+      capacity, 
+      static_cast<float_e4m3_t>(epsilon), 
+      static_cast<float_e4m3_t>(nonzero_floor));
+    
+  case library::NumericTypeID::kFE5M2:
+    return reference::device::BlockCompareRelativelyEqual<float_e5m2_t>(
+      reinterpret_cast<float_e5m2_t const *>(ptr_A), 
+      reinterpret_cast<float_e5m2_t const *>(ptr_B),
+      capacity, 
+      static_cast<float_e5m2_t>(epsilon), 
+      static_cast<float_e5m2_t>(nonzero_floor));
+
   case library::NumericTypeID::kF16:
     return reference::device::BlockCompareRelativelyEqual<half_t>(
       reinterpret_cast<half_t const *>(ptr_A), 
@@ -1430,6 +1490,14 @@ void DeviceAllocation::write_tensor_csv(
   std::ostream &out) {
 
   switch (this->type()) {
+  case library::NumericTypeID::kFE4M3:
+    write_tensor_csv_static_type<float_e4m3_t>(out, *this);
+    break;
+  
+  case library::NumericTypeID::kFE5M2:
+    write_tensor_csv_static_type<float_e5m2_t>(out, *this);
+    break;
+
   case library::NumericTypeID::kF16:
     write_tensor_csv_static_type<half_t>(out, *this);
     break;
@@ -1586,6 +1654,14 @@ static void tensor_fill(DeviceAllocation &allocation, Element val = Element()) {
 void DeviceAllocation::fill(double val = 0.0) {
 
   switch (this->type()) {
+  case library::NumericTypeID::kFE4M3:
+    tensor_fill<float_e4m3_t>(*this, static_cast<float_e4m3_t>(val));
+    break;
+
+  case library::NumericTypeID::kFE5M2:
+    tensor_fill<float_e5m2_t>(*this, static_cast<float_e5m2_t>(val));
+    break;
+
   case library::NumericTypeID::kF16:
     tensor_fill<half_t>(*this, static_cast<half_t>(val));
     break;

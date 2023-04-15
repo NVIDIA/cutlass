@@ -137,6 +137,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int8_t,
     float,
     int32_t,
+    int8_t,
     NumericConverterClamp<int8_t, float>
   >(manifest);
 
@@ -145,6 +146,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int8_t,
     int32_t,
     float,
+    int32_t,
     int32_t,
     NumericConverterClamp<int32_t, float>
   >(manifest);
@@ -163,6 +165,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int8_t,
     float,
     int32_t,
+    int8_t,
     NumericConverterClamp<int8_t, float>
   >(manifest);
 
@@ -172,6 +175,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int32_t,
     float,
     int32_t,
+    int32_t,
     NumericConverterClamp<int32_t, float>
   >(manifest);
 
@@ -191,6 +195,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int32_t,
     float,
     int32_t,
+    int32_t,
     NumericConverterClamp<int32_t, float>
   >(manifest);
 
@@ -201,6 +206,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int8_t,
     float,
     int32_t,
+    int8_t,
     NumericConverterClamp<int8_t, float>
   >(manifest);
 
@@ -220,6 +226,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int32_t,
     float,
     int32_t,
+    int32_t,
     NumericConverterClamp<int32_t, float>
   >(manifest);
 
@@ -230,6 +237,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     uint8_t,
     float,
     int32_t,
+    uint8_t,
     NumericConverterClamp<uint8_t, float>
   >(manifest);
 
@@ -240,6 +248,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int8_t,
     float,
     int32_t,
+    int8_t,
     NumericConverterClamp<int8_t, float>
   >(manifest);
 
@@ -259,6 +268,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int32_t,
     float,
     int32_t,
+    int32_t,
     NumericConverterClamp<int32_t, float>
   >(manifest);
 
@@ -269,6 +279,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int4b_t,
     float,
     int32_t,
+    int4b_t,
     NumericConverterClamp<int4b_t, float>
   >(manifest);
 
@@ -288,6 +299,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int32_t,
     float,
     int32_t,
+    int32_t,
     NumericConverterClamp<int32_t, float>
   >(manifest);
 
@@ -298,6 +310,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     uint4b_t,
     float,
     int32_t,
+    uint4b_t,
     NumericConverterClamp<uint4b_t, float>
   >(manifest);
 
@@ -308,6 +321,7 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     int4b_t,
     float,
     int32_t,
+    int4b_t,
     NumericConverterClamp<int4b_t, float>
   >(manifest);
 
@@ -329,6 +343,359 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     complex<double>,
     complex<double>,
     complex<double>
+  >(manifest);
+
+  //
+  // FP8 GEMMs
+  //
+  //////////////////////////////////
+  /// ElementC: half_t
+  //////////////////////////////////
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    half_t                                  // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float ,                                 // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+
+  //////////////////////////////////
+  
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float ,                                 // ElementAccumulator
+    half_t                                  // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+ 
+  //////////////////////////////////
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    half_t                                  // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+
+  //////////////////////////////////
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    half_t                                  // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+
+  //////////////////////////////////
+  /// ElementC: bfloat16_t
+  //////////////////////////////////
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    bfloat16_t                              // ElementD
+    >(manifest);                            
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+ 
+  //////////////////////////////////
+  
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    bfloat16_t                              // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+
+  //////////////////////////////////
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    bfloat16_t                              // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+
+  //////////////////////////////////
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    bfloat16_t                              // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+  //////////////////////////////////
+  /// ElementC: float
+  //////////////////////////////////
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float                                   // ElementD
+  >(manifest);                              
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);                              
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);                              
+
+  //////////////////////////////////
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float                                   // ElementD
+  >(manifest);                              
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);                              
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);                              
+
+  //////////////////////////////////
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float                                   // ElementD
+  >(manifest);                              
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);                              
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);    
+
+  //////////////////////////////////
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float                                   // ElementD
+  >(manifest);                              
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);                              
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
   >(manifest);
 }
 

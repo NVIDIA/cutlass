@@ -89,7 +89,7 @@ public:
   /// Waits until the semaphore is equal to the given value
   CUTLASS_DEVICE
   void wait(int status = 0) {
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_PYTHON_HOST_CC)
     while( __syncthreads_and(state != status) ) {
       fetch();
     }
@@ -101,7 +101,7 @@ public:
   /// Updates the lock with the given result
   CUTLASS_DEVICE
   void release(int status = 0) {
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_PYTHON_HOST_CC)
     __syncthreads();
 
     if (wait_thread) {

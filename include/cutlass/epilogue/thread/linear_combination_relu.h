@@ -34,7 +34,7 @@
 
 #pragma once
 
-#include <cutlass/half.h>
+#include "cutlass/half.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 #include "cutlass/array.h"
@@ -90,6 +90,7 @@ public:
   using FragmentAccumulator = Array<ElementAccumulator, kCount>;
   using FragmentCompute = Array<ElementCompute, kCount>;
   using FragmentScaleBias = Array<ElementCompute, kCount>;
+  using FragmentSource = Array<ElementOutput, kCount>;
 
   static FloatRoundStyle const kRound = Round;
 
@@ -321,6 +322,7 @@ public:
   using FragmentAccumulator = Array<ElementAccumulator, kCount>;
   using FragmentCompute = Array<ElementCompute, kCount>;
   using FragmentScaleBias = Array<ElementCompute, kCount>;
+  using FragmentSource = Array<ElementOutput, kCount>;
 
   static FloatRoundStyle const kRound = Round;
 

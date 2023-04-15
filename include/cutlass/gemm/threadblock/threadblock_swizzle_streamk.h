@@ -50,7 +50,6 @@
 #endif
 
 
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -632,7 +631,7 @@ struct ThreadblockSwizzleStreamK {
 
 
 // Guards needed for PyCUTLASS library generation
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_PYTHON_HOST_CC)
 
   //
   // Device-side interface
@@ -795,7 +794,7 @@ struct ThreadblockSwizzleStreamK {
     return get_sk_block_idx(iter);
   }
 
-#endif // defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
+#endif // !defined(CUTLASS_PYTHON_HOST_CC)
 
 };
 

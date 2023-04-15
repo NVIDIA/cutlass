@@ -308,7 +308,7 @@ transfer_swizzle(Layout<OldShape,OldStride> const& old_layout,
   auto active_Y = swizzle_active_bits & shiftr(swizzle_active_bits, -msk_sft) & yyy_msk;
 
   // Pass the identifiers through the old layout and new layout to make a new swizzle identifier, L*(L[(P o L)(c*)])
-  auto new_active_Z = new_layout(old_layout.get_1d_coord(active_Z));  
+  auto new_active_Z = new_layout(old_layout.get_1d_coord(active_Z));
   auto new_active_Y = new_layout(old_layout.get_1d_coord(active_Y));
 
   // Use this new swizzle identifier to construct the new swizzle for new_layout
@@ -394,7 +394,7 @@ cosize(ComposedLayout<Swizzle,Offset,Layout> const& layout)
 // Operations to manipulate Layouts like a tuple of pairs
 //
 
-template <std::size_t I, class Swizzle, class Offset, class Layout>
+template <size_t I, class Swizzle, class Offset, class Layout>
 CUTE_HOST_DEVICE constexpr
 auto
 get(ComposedLayout<Swizzle,Offset,Layout> const& a)
@@ -450,7 +450,7 @@ make_swizzle_strides(true_type,
                      int_sequence<I...>)
 {
   // Below is an optimized/compressed version of:
-  //return make_tuple((swizzle(offset + Z*Int<(1 << I)>{}) - swizzle(offset))...);
+  //return cute::make_tuple((swizzle(offset + Z*Int<(1 << I)>{}) - swizzle(offset))...);
   // with knowledge of Swizzle, I... ranges for each B bits,
   //    and the layout won't slice along z-bits that are already set
 
@@ -471,7 +471,7 @@ make_swizzle_strides(false_type,
                      int_sequence<I...>)
 {
   // Below is an optimized/compressed version of:
-  //return make_tuple((swizzle(offset + Y*Int<(1 << I)>{}) - swizzle(offset))...);
+  //return cute::make_tuple((swizzle(offset + Y*Int<(1 << I)>{}) - swizzle(offset))...);
   // with knowledge of Swizzle, I... ranges for each B bits,
   //    and the layout won't slice along y-bits that are already set
 
@@ -1001,10 +1001,12 @@ CUTE_HOST_DEVICE void print(ComposedLayout<Swizzle,Offset,Layout> const& layout)
   print(layout.swizzle_fn()); print(" o "); print(layout.offset_fn()); print(" o "); print(layout.layout_fn());
 }
 
+#if !defined(__CUDACC_RTC__)
 template <class Swizzle, class Offset, class Layout>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, ComposedLayout<Swizzle,Offset,Layout> const& layout)
 {
   return os << layout.swizzle_fn() << " o " << layout.offset_fn() << " o " << layout.layout_fn();
 }
+#endif
 
 } // end namespace cute

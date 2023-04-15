@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -38,6 +38,7 @@
 
 #include "cutlass/complex.h"
 #include "cutlass/numeric_conversion.h"
+#include "cutlass/epilogue/thread/activation.h"
 
 #include "cute/tensor.hpp"
 
@@ -75,7 +76,11 @@ template<
   class ElementAccumulator_,
   class ElementCompute_,
   class TensorC_,                                                                                          // (M, N, L)
-  class TensorD_                                                                                           // (M, N, L)
+  class TensorD_,                                                                                          // (M, N, L)
+  class TensorBias_,                                                                                       //    (M, 1)
+  class TensorT_,                                                                                          // (M, N, L)
+  class ActivationFunctor_ = cutlass::epilogue::thread::Identity<ElementCompute_>,
+  class BiasBinaryOp_ = cutlass::plus<ElementCompute_>
 >
 struct GettEpilogueParams {
   using ElementScalar = ElementScalar_;
@@ -83,15 +88,26 @@ struct GettEpilogueParams {
   using ElementCompute = ElementCompute_;
   using TensorC = TensorC_;
   using TensorD = TensorD_;
+  using TensorBias = TensorBias_;
+  using TensorT = TensorT_;
+  using ActivationFunctor = ActivationFunctor_;
+  using BiasBinaryOp = BiasBinaryOp_;
+
   using EngineC = typename TensorC::engine_type;
   using LayoutC = typename TensorC::layout_type;
   using EngineD =  typename TensorD::engine_type;
   using LayoutD = typename TensorD::layout_type;
+  using EngineBias =  typename TensorBias::engine_type;
+  using LayoutBias = typename TensorBias::layout_type;
+  using EngineT =  typename TensorT::engine_type;
+  using LayoutT = typename TensorT::layout_type;
   ElementScalar alpha = ElementScalar(1);
   ElementScalar beta = ElementScalar(0);
 
   TensorC C{};
   TensorD D{};
+  TensorBias Bias{};
+  TensorT T{};
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -204,18 +220,32 @@ void gett_epilogue(
   using ElementC = typename EpilogueParams::EngineC::value_type;
 
   using ElementD = typename EpilogueParams::EngineD::value_type;
+  using ElementBias = typename EpilogueParams::EngineBias::value_type;
+  using ElementT = typename EpilogueParams::EngineT::value_type;
+
   using ElementScalar = typename EpilogueParams::ElementScalar;
+  using ActivationFunctor = typename EpilogueParams::ActivationFunctor;
+  using BiasBinaryOp = typename EpilogueParams::BiasBinaryOp;
+
   // Input related converter
   NumericConverter<ElementCompute, ElementAccumulator> accumulator_converter;
   NumericConverter<ElementCompute, ElementC> source_converter;
+  NumericConverter<ElementCompute, ElementBias> bias_converter;
 
   // Scale related converter
   NumericConverter<ElementCompute, ElementScalar> scale_converter;
   // Output related converter
   NumericConverter<ElementD, ElementCompute> destination_converter;
+  NumericConverter<ElementT, ElementCompute> temporary_converter;
   // Epilogue operations
   multiply_add<ElementCompute, ElementCompute, ElementCompute> epilogue_fma;
   multiplies<ElementCompute> mul;
+
+  // Activation operation
+  ActivationFunctor activation;
+
+  // Bias binary operation
+  BiasBinaryOp bias_op;
 
   // Do conversion
   ElementCompute converted_alpha = scale_converter(epilogue_params.alpha);
@@ -225,10 +255,24 @@ void gett_epilogue(
       if (m + m_b < cute::size<0>(epilogue_params.D.layout()) && n + n_b < cute::size<1>(epilogue_params.D.layout())) {
         // Convert every type to ElementCompute first, do compute, convert to output type, write it out
         ElementCompute converted_acc = accumulator_converter(acc[m_b][n_b]);
-        ElementCompute converted_src = source_converter(epilogue_params.C(m + m_b, n + n_b, l));
 
-        ElementScalar output = epilogue_fma(converted_alpha, converted_acc, ElementCompute(0));
-        output = epilogue_fma(converted_beta, converted_src, output);
+        ElementCompute output = mul(converted_alpha, converted_acc);
+        if (epilogue_params.Bias.data()) {
+          ElementCompute converted_bias = bias_converter(epilogue_params.Bias(m + m_b));
+          output = bias_op(output, converted_bias);
+        }
+
+        if (epilogue_params.C.data()) {
+          ElementCompute converted_src = source_converter(epilogue_params.C(m + m_b, n + n_b, l));
+          output = epilogue_fma(converted_beta, converted_src, output);
+        }
+
+        if (epilogue_params.T.data()) {
+          // Store intermediate output
+          epilogue_params.T(m + m_b, n + n_b, l) = temporary_converter(output);
+        }
+
+        output = activation(output);
 
         epilogue_params.D(m + m_b, n + n_b, l) = destination_converter(output);
       }
@@ -237,6 +281,14 @@ void gett_epilogue(
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <class TensorType>
+auto make_layout_rank3(const TensorType& tensor) {
+  // append a batch mode of size 1 if we do not have tensors that are rank 3
+  return make_layout(
+      make_shape(get<0>(tensor.shape()), get<1>(tensor.shape()), Int<1>{}),
+      make_stride(get<0>(tensor.stride()), get<1>(tensor.stride()), int64_t(cosize(tensor.layout()))));
+}
 
 /// GEMM - General Matrix-Matrix contraction without conjugation options
 template <
@@ -254,26 +306,20 @@ void Gemm3x(
   static_assert(rank(typename MainloopParams::LayoutA{}) == rank(typename EpilogueParams::LayoutC{}));
 
   if constexpr (rank(typename MainloopParams::LayoutA{}) == 2) {
-    // append a batch mode of size 1 if we do not have tensors that are rank 3
-    Layout layout_A = make_layout(
-      make_shape(get<0>(mainloop_params.A.shape()), get<1>(mainloop_params.A.shape()), Int<1>{}),
-      make_stride(get<0>(mainloop_params.A.stride()), get<1>(mainloop_params.A.stride()), int64_t(cosize(mainloop_params.A.layout()))));
+    Layout layout_A = make_layout_rank3(mainloop_params.A);
+    Layout layout_B = make_layout_rank3(mainloop_params.B);
+    Layout layout_C = make_layout_rank3(epilogue_params.C);
+    Layout layout_D = make_layout_rank3(epilogue_params.D);
+    Layout layout_Bias = make_layout_rank3(epilogue_params.Bias);
+    Layout layout_T = make_layout_rank3(epilogue_params.T);
 
-    Layout layout_B = make_layout(
-      make_shape(get<0>(mainloop_params.B.shape()), get<1>(mainloop_params.B.shape()), Int<1>{}),
-      make_stride(get<0>(mainloop_params.B.stride()), get<1>(mainloop_params.B.stride()), int64_t(cosize(mainloop_params.B.layout()))));
-
-    Layout layout_C = make_layout(
-      make_shape(get<0>(epilogue_params.C.shape()), get<1>(epilogue_params.C.shape()), Int<1>{}),
-      make_stride(get<0>(epilogue_params.C.stride()), get<1>(epilogue_params.C.stride()), int64_t(cosize(epilogue_params.C.layout()))));
-
-    Layout layout_D = make_layout(
-      make_shape(get<0>(epilogue_params.D.shape()), get<1>(epilogue_params.D.shape()), Int<1>{}),
-      make_stride(get<0>(epilogue_params.D.stride()), get<1>(epilogue_params.D.stride()), int64_t(cosize(epilogue_params.D.layout()))));
     auto TensorA = make_tensor(mainloop_params.A.data(), layout_A);
     auto TensorB = make_tensor(mainloop_params.B.data(), layout_B);
     auto TensorC = make_tensor(epilogue_params.C.data(), layout_C);
     auto TensorD = make_tensor(epilogue_params.D.data(), layout_D);
+    auto TensorBias = make_tensor(epilogue_params.Bias.data(), layout_Bias);
+    auto TensorT = make_tensor(epilogue_params.T.data(), layout_T);
+
     // Reconstruct mainloop params
     GettMainloopParams<typename MainloopParams::ElementAccumulator,
                        decltype(TensorA),
@@ -288,12 +334,16 @@ void Gemm3x(
                        typename EpilogueParams::ElementAccumulator,
                        typename EpilogueParams::ElementCompute,
                        decltype(TensorC),
-                       decltype(TensorD)
+                       decltype(TensorD),
+                       decltype(TensorBias),
+                       decltype(TensorT)
                       >
         epilogue_params_converted{epilogue_params.alpha,
                                   epilogue_params.beta,
                                   TensorC,
-                                  TensorD
+                                  TensorD,
+                                  TensorBias,
+                                  TensorT
                                   };
 
     Gett(mainloop_params_converted, epilogue_params_converted);

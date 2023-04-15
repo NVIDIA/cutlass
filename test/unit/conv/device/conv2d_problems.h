@@ -35,8 +35,6 @@
 
 #include <vector>
 
-#include "../../common/cutlass_unit_test.h"
-
 #include "cutlass/cutlass.h"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/conv/convolution.h"

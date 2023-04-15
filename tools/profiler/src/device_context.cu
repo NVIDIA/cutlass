@@ -76,7 +76,8 @@ DeviceAllocation *DeviceContext::allocate_tensor(
   library::LayoutTypeID layout_id, 
   std::vector<int> const &extent, 
   std::vector<int64_t> const &stride,
-  int batch_count) {
+  int batch_count,
+  int seed_shift) {
 
   DeviceAllocation *allocation = 
     allocate_tensor(name, type, layout_id, extent, stride, batch_count);
@@ -88,6 +89,12 @@ DeviceAllocation *DeviceContext::allocate_tensor(
     if(!options.initialization.fix_data_distribution) {
       // change data distribution based on bit width
       switch(type) {
+        case library::NumericTypeID::kFE4M3:
+          data_distribution.set_uniform(-1, 1, 0);
+          break;
+        case library::NumericTypeID::kFE5M2:
+          data_distribution.set_uniform(-1, 1, 0);
+          break;
         case library::NumericTypeID::kF16:
           data_distribution.set_uniform(-3, 3, 0);
           break;
@@ -118,12 +125,12 @@ DeviceAllocation *DeviceContext::allocate_tensor(
 
     if (options.initialization.provider == library::Provider::kReferenceDevice) {
       allocation->initialize_random_device(
-        options.initialization.seed, 
+        options.initialization.seed + seed_shift, 
         data_distribution);
     }
     else if (options.initialization.provider == library::Provider::kReferenceHost) {
       allocation->initialize_random_host(
-        options.initialization.seed, 
+        options.initialization.seed + seed_shift, 
         data_distribution);
     }
   }
@@ -140,7 +147,8 @@ DeviceAllocation *DeviceContext::allocate_sparsemeta_tensor(
   library::NumericTypeID type_a,
   std::vector<int> const &extent, 
   std::vector<int64_t> const &stride,
-  int batch_count) {
+  int batch_count,
+  int seed_shift) {
 
   DeviceAllocation *allocation = 
     allocate_tensor(name, type, layout_id, extent, stride, batch_count);
@@ -151,12 +159,12 @@ DeviceAllocation *DeviceContext::allocate_sparsemeta_tensor(
 
     if (options.initialization.provider == library::Provider::kReferenceDevice) {
       allocation->initialize_random_sparsemeta_device(
-        options.initialization.seed, 
+        options.initialization.seed + seed_shift, 
         MetaSizeInBits);
     }
     else if (options.initialization.provider == library::Provider::kReferenceHost) {
       allocation->initialize_random_sparsemeta_host(
-        options.initialization.seed, 
+        options.initialization.seed + seed_shift, 
         MetaSizeInBits);
     }
   }

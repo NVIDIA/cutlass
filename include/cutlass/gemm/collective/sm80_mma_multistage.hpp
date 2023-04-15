@@ -124,12 +124,16 @@ struct CollectiveMma<
     cute::array_aligned<ElementB, cute::cosize_v<SmemLayoutB>> smem_b;
   };
 
-  struct Params {
+  // Host side kernel arguments
+  struct Arguments {
     ElementA const* ptr_A;
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
   };
+
+  // Device side kernel params
+  using Params = Arguments;
 
   //
   // Methods
@@ -137,11 +141,11 @@ struct CollectiveMma<
 
   CollectiveMma() = default;
 
-  template <class Args>
+  template <class ProblemShape>
   static constexpr Params
-  to_underlying_arguments(Args const& args, void* workspace) {
+  to_underlying_arguments(ProblemShape const& _, Arguments const& args, void* workspace) {
     (void) workspace;
-    return {args.ptr_A, args.dA, args.ptr_B, args.dB};
+    return args;
   }
 
   /// Perform a collective-scoped matrix multiply-accumulate
@@ -409,12 +413,16 @@ struct CollectiveMma<
     cute::array_aligned<ElementB, cute::cosize_v<SmemLayoutB>> smem_b;
   };
 
-  struct Params {
+  // Host side kernel arguments
+  struct Arguments {
     ElementA const* ptr_A;
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
   };
+
+  // Device side kernel params
+  using Params = Arguments;
 
   //
   // Methods
@@ -422,11 +430,11 @@ struct CollectiveMma<
 
   CollectiveMma() = default;
 
-  template <class Args>
+  template <class ProblemShape>
   static constexpr Params
-  to_underlying_arguments(Args const& args, void* workspace) {
+  to_underlying_arguments(ProblemShape const& _, Arguments const& args, void* workspace) {
     (void) workspace;
-    return {args.ptr_A, args.dA, args.ptr_B, args.dB};
+    return args;
   }
 
   /// Perform a collective-scoped matrix multiply-accumulate

@@ -43,9 +43,10 @@ namespace library {
 
 // naming convention initialize_reduce_[ReductionOp]_[EpilogueOp]_[ElementWorkspace]_[ElementAccumulator]_[ElementOutput]
 
+
 void initialize_reduce_add_linear_combination_f16_f16_f16(Manifest &manifest) {
 
-  using ElementWorkspace = cutlass::half_t; 
+  using ElementWorkspace = cutlass::half_t;
   using ElementAccumulator = cutlass::half_t;
   using ElementOutput = cutlass::half_t;
   using ElementCompute = cutlass::half_t;
@@ -58,7 +59,7 @@ void initialize_reduce_add_linear_combination_f16_f16_f16(Manifest &manifest) {
   >;
 
   using ReductionOp = cutlass::reduction::thread::ReduceAdd<
-    ElementAccumulator, 
+    ElementAccumulator,
     typename EpilogueOutputOp::ElementAccumulator,
     EpilogueOutputOp::kCount
   >;
@@ -79,7 +80,7 @@ void initialize_reduce_add_linear_combination_f16_f16_f16(Manifest &manifest) {
 
 void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest) {
 
-  using ElementWorkspace = float; 
+  using ElementWorkspace = float;
   using ElementAccumulator = float;
   using ElementOutput = cutlass::half_t;
   using ElementCompute = float;
@@ -92,7 +93,7 @@ void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest) {
   >;
 
   using ReductionOp = cutlass::reduction::thread::ReduceAdd<
-    ElementAccumulator, 
+    ElementAccumulator,
     typename EpilogueOutputOp::ElementAccumulator,
     EpilogueOutputOp::kCount
   >;
@@ -114,7 +115,7 @@ void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest) {
 
 void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest) {
 
-  using ElementWorkspace = float; 
+  using ElementWorkspace = float;
   using ElementAccumulator = float;
   using ElementOutput = float;
   using ElementCompute = float;
@@ -127,7 +128,7 @@ void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest) {
   >;
 
   using ReductionOp = cutlass::reduction::thread::ReduceAdd<
-    ElementAccumulator, 
+    ElementAccumulator,
     typename EpilogueOutputOp::ElementAccumulator,
     EpilogueOutputOp::kCount
   >;
@@ -148,7 +149,7 @@ void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest) {
 
 void initialize_reduce_add_linear_combination_f64_f64_f64(Manifest &manifest) {
 
-  using ElementWorkspace = double; 
+  using ElementWorkspace = double;
   using ElementAccumulator = double;
   using ElementOutput = double;
   using ElementCompute = double;
@@ -161,7 +162,7 @@ void initialize_reduce_add_linear_combination_f64_f64_f64(Manifest &manifest) {
   >;
 
   using ReductionOp = cutlass::reduction::thread::ReduceAdd<
-    ElementAccumulator, 
+    ElementAccumulator,
     typename EpilogueOutputOp::ElementAccumulator,
     EpilogueOutputOp::kCount
   >;
@@ -182,7 +183,7 @@ void initialize_reduce_add_linear_combination_f64_f64_f64(Manifest &manifest) {
 
 void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest) {
 
-  using ElementWorkspace = cutlass::complex<float>; 
+  using ElementWorkspace = cutlass::complex<float>;
   using ElementAccumulator = cutlass::complex<float>;
   using ElementOutput = cutlass::complex<float>;
   using ElementCompute = cutlass::complex<float>;
@@ -195,7 +196,7 @@ void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest)
   >;
 
   using ReductionOp = cutlass::reduction::thread::ReduceAdd<
-    ElementAccumulator, 
+    ElementAccumulator,
     typename EpilogueOutputOp::ElementAccumulator,
     EpilogueOutputOp::kCount
   >;

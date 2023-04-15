@@ -31,4 +31,3 @@ cutlass_example_add_executable(
   sgemm_nt_1
   sgemm_nt_1.cu
 )
-

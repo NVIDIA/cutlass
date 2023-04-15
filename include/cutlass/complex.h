@@ -179,16 +179,6 @@ class complex
   complex(cuDoubleComplex const &z) : _real(static_cast<T>(cuCreal(z))), _imag(static_cast<T>(cuCimag(z))) {}
   #endif
 
-  /// Assignment
-  template<typename A>
-  CUTLASS_HOST_DEVICE
-  complex<T>& operator=(complex<A> const &z)
-  {
-    _real = static_cast<T>(z.real());
-    _imag = static_cast<T>(z.imag());
-    return *this;
-  }
-
   /// Equality operator
   CUTLASS_HOST_DEVICE bool operator==(complex<T> const &rhs) const {
     return this->real() == rhs.real() && this->imag() == rhs.imag();

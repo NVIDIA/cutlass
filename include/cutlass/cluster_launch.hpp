@@ -35,10 +35,15 @@
 
 #pragma once
 
-#include <cuda.h>
 #include <cuda_runtime_api.h>
 #include "cutlass/cutlass.h"
 #include "cutlass/trace.h"
+
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/type_traits>
+#else
+#include <type_traits>
+#endif
 
 #if ((__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8)))
 #  define CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED
@@ -72,7 +77,7 @@ struct ClusterLauncher {
 
   // Check for hardware compatibility
   static inline __host__
-  Status check_cluster_dims(dim3 const& grid, dim3 const& cluster) {
+  Status check_cluster_dims(dim3 grid, dim3 cluster) {
     if (((cluster.x * cluster.y * cluster.z) <= MaxClusterSize) &&
         (grid.x % cluster.x == 0) && (grid.y % cluster.y == 0) && (grid.z % cluster.z == 0)) {
       return Status::kSuccess;
@@ -105,11 +110,11 @@ struct ClusterLauncher {
   // This is the method we expect to use going forward
   static inline __host__
   Status launch(
-      dim3 const& grid_dims,
-      dim3 const& cluster_dims,
-      dim3 const& block_dims,
-      size_t const& smem_size,
-      cudaStream_t& cuda_stream,
+      dim3 const grid_dims,
+      dim3 const cluster_dims,
+      dim3 const block_dims,
+      size_t const smem_size,
+      cudaStream_t cuda_stream,
       void const* kernel,
       void** kernel_params) {
 #if defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
@@ -152,5 +157,79 @@ struct ClusterLauncher {
 #endif
   }
 };
+
+namespace detail {
+
+template<class Arg>
+void* checked_addressof(Arg&& arg) {
+  static_assert(! std::is_rvalue_reference_v<Arg> || ! std::is_const_v<Arg>, "You cannot take the address of a const rvalue reference (const T&&).");
+  // We use std::addressof to ensure we get the address,
+  // in case the type has an overloaded operator&.
+  // Note that this precludes `const T&&` references.
+  return const_cast<void*>(reinterpret_cast<void const*>(std::addressof(arg)));
+}
+
+} // namespace detail
+
+//! Parameters for launch_on_cluster (see below).
+struct ClusterLaunchParams {
+  //! Grid dimensions
+  dim3 grid_dims{1, 1, 1};
+
+  //! Block dimensions
+  dim3 block_dims{1, 1, 1};
+
+  //! Cluster dimensions
+  dim3 cluster_dims{1, 1, 1};
+
+  //! Number of bytes required for the kernel's shared memory.
+  int smem_size_in_bytes = 0;
+
+  //! CUDA stream on which to launch the kernel.
+  cudaStream_t cuda_stream = nullptr;
+};
+
+/// @brief Launch the kernel on the stream using cluster launch.
+///
+/// @param params Cluster launch parameters (see above).
+/// @param kernel_ptr Pointer to the kernel function (see example).
+/// @param args Zero or more arguments to pass to the kernel.
+///
+/// @tparam Args Types of the arguments passed to the kernel.
+///   Don't specify this/these template argument(s) explicitly.
+///
+/// @return Status::Success on success, else an error code.
+///
+/// @code
+/// template<class SharedMemoryType, class A, class B, class C>
+/// __global__ void kernel(A a, B b, C c);
+///
+/// X x = get_x();
+/// Y y = get_y();
+/// Z z = get_z();
+///
+/// void const* kernel_ptr =
+///   const_cast<void const*>(reinterpret_cast<void*>(
+///     &kernel<SharedMemory, X, Y, Z>));
+/// auto status = launch_on_cluster(
+///   {grid_dims, block_dims, cluster_dims, sizeof(SharedMemory)},
+///   kernel_ptr, x, y, z);
+/// @endcode
+template<class ... Args>
+__host__ cutlass::Status
+launch_kernel_on_cluster(const ClusterLaunchParams& params,
+  void const* kernel_ptr,
+  Args&& ... args)
+{
+  // Unfortunately, we find ourselves needing to pass in
+  // the parameters as an array of raw pointers.
+  void* kernel_params[] = {
+    detail::checked_addressof(std::forward<Args>(args))...
+  };
+  return cutlass::ClusterLauncher::launch(
+    params.grid_dims, params.cluster_dims, params.block_dims,
+    params.smem_size_in_bytes, params.cuda_stream,
+    kernel_ptr, kernel_params);
+}
 
 }  // namespace cutlass

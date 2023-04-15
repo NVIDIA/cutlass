@@ -293,7 +293,7 @@ public:
   static Status can_implement(Conv2dProblemSize const &problem_size) {
 
     // check alignment constraint on iterator's contiguous dimension
-    if (problem_size.C % AccessType::kElements) {
+    if (problem_size.K % AccessType::kElements) {
       return Status::kErrorInvalidProblem;
     }
 

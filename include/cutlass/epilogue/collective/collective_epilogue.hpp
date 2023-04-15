@@ -24,6 +24,8 @@
  **************************************************************************************************/
 #pragma once
 
+#include <cutlass/detail/dependent_false.hpp>
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::epilogue::collective {
@@ -34,8 +36,8 @@ template <
   class DispatchPolicy,
   class... Args
 >
-struct CollectiveEpilogue {
-  static_assert(std::is_void_v<DispatchPolicy>, "Could not find an epilogue specialization.");
+class CollectiveEpilogue {
+  static_assert(cutlass::detail::dependent_false<DispatchPolicy>, "Could not find an epilogue specialization.");
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -44,6 +46,10 @@ struct CollectiveEpilogue {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include "detail.hpp"
 #include "default_epilogue.hpp"
-#include "epilogue.hpp"
+#include "epilogue_tensor_broadcast.hpp"
+#include "sm70_epilogue_vectorized.hpp"
+#include "sm90_epilogue_tma_warpspecialized.hpp"
+#include "sm90_epilogue_tma_warpspecialized_bias_elementwise.hpp"
 /////////////////////////////////////////////////////////////////////////////////////////////////

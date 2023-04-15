@@ -35,6 +35,7 @@
 #include "cutlass/kernel_hardware_info.hpp"
 #include "cute/arch/cluster_sm90.hpp"
 #include "cutlass/arch/mma_sm90.h"
+#include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
@@ -71,7 +72,7 @@ class GemmUniversal<
   CollectiveMainloop_,
   CollectiveEpilogue_,
   GridSwizzle_,
-  std::enable_if_t<std::is_base_of_v<KernelTma, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
+  cute::enable_if_t<cute::is_base_of_v<KernelTma, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 {
 public:
   //
@@ -94,6 +95,7 @@ public:
   using DispatchPolicy = typename CollectiveMainloop::DispatchPolicy;
   using ElementAccumulator = typename CollectiveMainloop::ElementAccumulator;
   using ClusterShape = typename DispatchPolicy::ClusterShape;
+  using MainloopArguments = typename CollectiveMainloop::Arguments;
   using MainloopParams = typename CollectiveMainloop::Params;
   static_assert(ArchTag::kMinComputeCapability >= 90);
 
@@ -103,8 +105,9 @@ public:
   using StrideC  = typename CollectiveEpilogue::StrideC;
   using ElementD = typename CollectiveEpilogue::ElementD;
   using StrideD  = typename CollectiveEpilogue::StrideD;
+  using EpilogueArguments = typename CollectiveEpilogue::Params;
   using EpilogueParams = typename CollectiveEpilogue::Params;
-  static_assert(std::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
+  static_assert(cute::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
     "Mainloop and epilogue do not agree on accumulator value type.");
 
   static constexpr int SharedStorageSize = cute::max(
@@ -118,12 +121,9 @@ public:
   struct Arguments {
     GemmUniversalMode mode{};
     ProblemShape problem_shape{};
-    ElementA const* ptr_A = nullptr;
-    StrideA dA{};
-    ElementB const* ptr_B = nullptr;
-    StrideB dB{};
-    EpilogueParams epilogue_params{};
-    KernelHardwareInfo hw_info;
+    MainloopArguments mainloop{};
+    EpilogueArguments epilogue{};
+    KernelHardwareInfo hw_info{};
   };
 
   // Kernel entry point API
@@ -152,16 +152,38 @@ public:
     return {
       args.mode,
       problem_shape,
-      CollectiveMainloop::to_underlying_arguments(args, workspace),
-      CollectiveEpilogue::to_underlying_arguments(args, workspace)
+      CollectiveMainloop::to_underlying_arguments(args.problem_shape, args.mainloop, workspace),
+      CollectiveEpilogue::to_underlying_arguments(args.problem_shape, args.epilogue, workspace)
     };
   }
 
   CUTLASS_HOST_DEVICE static
   bool
   can_implement(Arguments const& args) {
-    return args.mode == GemmUniversalMode::kGemm or
-          (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
+    bool implementable = (args.mode == GemmUniversalMode::kGemm) or
+        (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Arguments or Problem Size don't meet the requirements.\n");
+      return implementable;
+    }
+    static constexpr int tma_alignment_bits = 128;
+    static constexpr int min_tma_aligned_elements = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
+    auto M = get<0>(args.problem_shape);
+    auto N = get<1>(args.problem_shape);
+    auto K = get<2>(args.problem_shape);
+    // Contiguous dimension for the TMA tensor should be 128b aligned
+    implementable = std::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> ? 
+                        K % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0;
+    implementable = implementable && (std::is_same_v<gemm::detail::StrideToLayoutTagB_t<StrideB>, layout::RowMajor> ? 
+                        N % min_tma_aligned_elements == 0 : K % min_tma_aligned_elements == 0);
+    implementable = implementable && (!cutlass::epilogue::collective::detail::IF_EPILOGUE_USES_TMA<CollectiveEpilogue>::value ||
+                        (cutlass::epilogue::collective::detail::IF_EPILOGUE_USES_TMA<CollectiveEpilogue>::value &&
+                        std::is_same_v<gemm::detail::StrideToLayoutTagC_t<StrideC>, layout::RowMajor> ? 
+                        N % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0));
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
+    }
+    return implementable;
   }
 
   static
@@ -250,8 +272,6 @@ public:
     // Allocate the tiled_mma and the accumulators for the (M,N) blk_shape
     TiledMma tiled_mma;
     Tensor accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape));                   // (MMA,MMA_M,MMA_N)
-
-    clear(accumulators);
 
     auto k_tile_iter  = cute::make_coord_iterator(shape<2>(gA));
     auto k_tile_count = size<2>(gA);

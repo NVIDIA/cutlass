@@ -24,15 +24,112 @@
  **************************************************************************************************/
 #pragma once
 
+#include "cutlass/numeric_conversion.h"
+#include "cutlass/epilogue/thread/scale_type.h"
+
 //////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::epilogue {
 
 //////////////////////////////////////////////////////////////////////////////
 
+// Epilogue schedule types that can be used for categorical dispatch
+struct NoSmemWarpSpecialized {};
+struct TmaWarpSpecialized {};
+struct TmaWarpSpecializedCooperative {};
+
+struct TmaWarpSpecializedElementwiseBase : public TmaWarpSpecialized {};
+struct TmaWarpSpecializedCooperativeElementwiseBase : public TmaWarpSpecializedCooperative {};
+
+template <
+  template <class T> class ActivationFunctor_,
+  thread::ScaleType::Kind Scale_ = thread::ScaleType::Default,
+  FloatRoundStyle Round_ = FloatRoundStyle::round_to_nearest
+>
+struct TmaWarpSpecializedElementwise : public TmaWarpSpecializedElementwiseBase {
+  template <class T>
+  using ActivationFunctor = ActivationFunctor_<T>;
+  static constexpr thread::ScaleType::Kind Scale = Scale_;
+  static constexpr FloatRoundStyle Round = Round_;
+};
+
+template <
+  template <class T> class ActivationFunctor_,
+  thread::ScaleType::Kind Scale_ = thread::ScaleType::Default,
+  FloatRoundStyle Round_ = FloatRoundStyle::round_to_nearest
+>
+struct TmaWarpSpecializedCooperativeElementwise : public TmaWarpSpecializedCooperativeElementwiseBase {
+  template <class T>
+  using ActivationFunctor = ActivationFunctor_<T>;
+  static constexpr thread::ScaleType::Kind Scale = Scale_;
+  static constexpr FloatRoundStyle Round = Round_;
+};
+
+struct TmaWarpSpecializedBiasElementwiseBase : public TmaWarpSpecialized{};
+struct TmaWarpSpecializedCooperativeBiasElementwiseBase : public TmaWarpSpecializedCooperative {};
+
+template <
+  template <class T> class ActivationFunctor_,
+  class ElementT_,
+  template <class T> class BiasOp_,
+  bool StoreT_,
+  class ElementBias_
+>
+struct TmaWarpSpecializedBiasElementwise : public TmaWarpSpecializedBiasElementwiseBase {
+  template <class T>
+  using ActivationFunctor = ActivationFunctor_<T>;
+  using ElementT = ElementT_;
+
+  template <class T>
+  using BiasOp = BiasOp_<T>;
+
+  static constexpr bool StoreT = StoreT_;
+  using ElementBias = ElementBias_;
+};
+
+template <
+  template <class T> class ActivationFunctor_,
+  class ElementT_,
+  template <class T> class BiasOp_,
+  bool StoreT_,
+  class ElementBias_
+>
+struct TmaWarpSpecializedCooperativeBiasElementwise : public TmaWarpSpecializedCooperativeBiasElementwiseBase {
+  template <class T>
+  using ActivationFunctor = ActivationFunctor_<T>;
+
+  using ElementT = ElementT_;
+
+  template <class T>
+  using BiasOp = BiasOp_<T>;
+
+  static constexpr bool StoreT = StoreT_;
+  using ElementBias = ElementBias_;
+};
+
 //
 // Collective Epilogue Policies
 //
+
+template<
+  int StagesC_,
+  int StagesD_,
+  bool DisableSmemReuseC_
+>
+struct Sm90TmaWarpSpecialized {
+  constexpr static int StagesC = StagesC_;
+  constexpr static int StagesD = StagesD_;
+  constexpr static bool DisableSmemReuseC = DisableSmemReuseC_;
+};
+
+template<
+  int StagesC_,
+  int StagesD_
+>
+struct Sm90TmaWarpSpecializedBiasElementwise {
+  constexpr static int StagesC = StagesC_;
+  constexpr static int StagesD = StagesD_;
+};
 
 //////////////////////////////////////////////////////////////////////////////
 

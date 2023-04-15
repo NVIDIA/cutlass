@@ -37,7 +37,7 @@
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
 #include "cutlass/gemm/collective/collective_builder.hpp"
 
-#include "cutlass/epilogue/collective/default_epilogue.hpp"
+#include "cutlass/epilogue/collective/collective_epilogue.hpp"
 #include "cutlass/epilogue/thread/linear_combination.h"
 
 namespace example {
@@ -88,10 +88,12 @@ gett_kernel(
       cutlass::FloatRoundStyle::round_to_nearest, ElementC>;
 
   // No changes are required to the default epilogue
-  using CollectiveEpilogue = cutlass::epilogue::collective::DefaultEpilogue<
+  using CollectiveEpilogue = cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
+    cutlass::epilogue::collective::DefaultEpilogue<
       StrideC,
       StrideD,
-      EpilogueThreadOp>;
+      EpilogueThreadOp,
+      cutlass::gemm::EpilogueDefault>>;
 
   // CollectiveMma for GETTs can be built using the CollectiveBuilders
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -100,7 +102,7 @@ gett_kernel(
       ElementB, StrideB, 128 / cutlass::sizeof_bits<ElementB>::value,
       ElementAccumulator,
       TileShape, Shape<_1,_2,_1>,
-      cutlass::gemm::collective::StageCountAuto,
+      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
@@ -115,9 +117,8 @@ gett_kernel(
   typename GettOperator::Arguments args {
     cutlass::gemm::GemmUniversalMode::kBatched,
     problem_shape_mnkl,
-    ptr_A, stride_a_mkl,
-    ptr_B, stride_b_nkl,
-    { ptr_C, stride_c_mnl, ptr_D, stride_d_mnl, {alpha, beta} }
+    { ptr_A, stride_a_mkl, ptr_B, stride_b_nkl }, 
+    { {alpha, beta}, ptr_C, stride_c_mnl, ptr_D, stride_d_mnl }
   };
 
 #if CUTLASS_DEBUG_TRACE_LEVEL > 0

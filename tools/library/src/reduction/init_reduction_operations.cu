@@ -58,7 +58,6 @@ void initialize_all_reduction_op(Manifest &manifest) {
   initialize_reduce_add_linear_combination_f32_f32_f32(manifest);
   initialize_reduce_add_linear_combination_f64_f64_f64(manifest);
   initialize_reduce_add_linear_combination_cf32_cf32_cf32(manifest);
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

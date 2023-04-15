@@ -114,6 +114,8 @@ enum class NumericTypeID {
   kS16,
   kS32,
   kS64,
+  kFE4M3,
+  kFE5M2,
   kF16,
   kBF16, 
   kTF32,
@@ -474,8 +476,11 @@ struct GemmDescription : public OperationDescription {
   /// Describes the B operand
   TensorDescription B;
 
-  /// Describes the source and destination matrices
+  /// Describes the source matrix
   TensorDescription C;
+
+  /// Describes the destination matrix
+  TensorDescription D;
 
   /// Describes the sparse meta matrices
   TensorDescription E;
@@ -501,6 +506,7 @@ struct GemmDescription : public OperationDescription {
     TensorDescription const &A = TensorDescription(),
     TensorDescription const &B = TensorDescription(),
     TensorDescription const &C = TensorDescription(),
+    TensorDescription const &D = TensorDescription(),
     NumericTypeID element_epilogue = NumericTypeID::kInvalid,
     SplitKMode split_k_mode = SplitKMode::kNone,
     ComplexTransform transform_A = ComplexTransform::kNone,
@@ -510,6 +516,7 @@ struct GemmDescription : public OperationDescription {
     A(A),
     B(B),
     C(C),
+    D(D),
     element_epilogue(element_epilogue),
     split_k_mode(split_k_mode),
     transform_A(transform_A),
@@ -527,13 +534,14 @@ struct SparseGemmDescription : public GemmDescription {
     TensorDescription const &A = TensorDescription(),
     TensorDescription const &B = TensorDescription(),
     TensorDescription const &C = TensorDescription(),
+    TensorDescription const &D = TensorDescription(),
     TensorDescription const &E = TensorDescription(),
     NumericTypeID element_epilogue = NumericTypeID::kInvalid,
     SplitKMode split_k_mode = SplitKMode::kNone,
     ComplexTransform transform_A = ComplexTransform::kNone,
     ComplexTransform transform_B = ComplexTransform::kNone
   ):
-    GemmDescription(gemm_kind, A, B, C, element_epilogue, split_k_mode, transform_A, transform_B)
+    GemmDescription(gemm_kind, A, B, C, D, element_epilogue, split_k_mode, transform_A, transform_B)
      {this->E = E;}
 };
 
@@ -1019,6 +1027,9 @@ struct GemmUniversalArguments {
   int64_t batch_stride_B;
   int64_t batch_stride_C;
   int64_t batch_stride_D;
+
+  // Needed for some 3.x kernels
+  int sm_count;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

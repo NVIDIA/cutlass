@@ -56,7 +56,11 @@ template <typename T>
 CUTLASS_HOST_DEVICE
 bool relatively_equal_float(T a, T b, T epsilon, T nonzero_floor) {
   
+#if defined(__CUDACC_RTC__)
+  using cuda::std::abs;
+#else
   using std::abs;
+#endif
 
   T abs_A = abs(a);
   T abs_B = abs(b);
@@ -156,6 +160,18 @@ bool relatively_equal<uint64_t>(uint64_t a, uint64_t b, uint64_t, uint64_t) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_e4m3_t>(float_e4m3_t a, float_e4m3_t b, float_e4m3_t epsilon, float_e4m3_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
+bool relatively_equal<float_e5m2_t>(float_e5m2_t a, float_e5m2_t b, float_e5m2_t epsilon, float_e5m2_t nonzero_floor) {
+  return detail::relatively_equal_float<float>(a, b, epsilon, nonzero_floor);
+}
 
 template <>
 CUTLASS_HOST_DEVICE

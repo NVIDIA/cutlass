@@ -71,7 +71,7 @@ template <
   typename ThreadMap_,       ///< Thread map (conept: OutputTileThreadMap)
   typename Element_,         ///< Element data type
   bool ScatterD = false,     ///< Scatter D operand or not
-  typename PermuteDLayout = layout::NoPermute,     ///< Permute D operand or not
+  typename PermuteDLayout = layout::NoPermute, ///< Permute D operand or not
   bool UseCUDAStore = false
 >
 class PredicatedTileIterator {
@@ -92,6 +92,8 @@ public:
   static int const kElementsPerAccess = ThreadMap::kElementsPerAccess;
   static int const kThreads = ThreadMap::kThreads;
   static int const kIterations = ThreadMap::Count::kTile;
+
+  static bool constexpr PermuteD = !layout::is_trivial_permute<PermuteDLayout>;
 
   static_assert( ThreadMap::Iterations::kRow > 0,"ThreadMap::Iterations::kRow must be > 0");
   static_assert( ThreadMap::Iterations::kGroup > 0,"ThreadMap::Iterations::kGroup must be > 0");
@@ -202,11 +204,9 @@ private:
   /// Scatter indices
   int const *indices_; 
 
-  /// Whether to perform Permute Op
-  bool PermuteD;
   /// PermuteDLayout
-  mutable PermuteDLayout permute_layout_;
- 
+  PermuteDLayout permute_layout_;
+
   //
   // Static asserts about internal strides
   //
@@ -237,7 +237,8 @@ public:
     TensorCoord threadblock_offset = TensorCoord(),
     int const *indices = nullptr
   ): 
-    params_(params), indices_(indices)
+    params_(params), indices_(indices),
+    permute_layout_(PitchLinearCoord(extent.column(), extent.row()), params_.stride * kElementsPerAccess / sizeof(AccessType))
   {
 
     TensorCoord thread_offset = ThreadMap::initial_offset(thread_idx) + threadblock_offset;
@@ -276,17 +277,7 @@ public:
     }
 
     // store_byte_pointer_ is set to be the same with byte_pointer_ unless PermuteD is used.
-    store_byte_pointer_ = byte_pointer_;
-
-    // Initialize PermuteD. If PermuteD is true, store_byte_pointer_ is initialized accordingly.
-    if (platform::is_same<PermuteDLayout, layout::NoPermute>::value) {
-      PermuteD = false;
-    }else{
-      PermuteD = true;
-      store_byte_pointer_ = reinterpret_cast<uint8_t *>(pointer);
-      permute_layout_ = PermuteDLayout(extent, 
-                          params_.stride * kElementsPerAccess / sizeof(AccessType));
-    }
+    store_byte_pointer_ = PermuteD ? reinterpret_cast<uint8_t *>(pointer) : byte_pointer_;
 
     // Initialize internal state counter
     state_[0] = state_[1] = state_[2] = 0;
@@ -411,18 +402,17 @@ public:
           for (int column = 0; column < ThreadMap::Iterations::kColumn; ++column) {
 
             bool guard = row_guard && mask_.predicates[column];
-
-            int col_offset = column * ThreadMap::Delta::kColumn;
             
             if (PermuteD) {
+
+              int col_offset = column * ThreadMap::Delta::kColumn;
+
               int col = col_offset + thread_start_column_;
               int row = row_offset + thread_start_row_;
 
-              TensorCoord init_coord(row, col);
-
               // Locate memory_pointer
               memory_pointer = reinterpret_cast<AccessType *>(byte_pointer + byte_offset
-                 + permute_layout_(init_coord) * sizeof(AccessType) / kElementsPerAccess);
+                 + permute_layout_(PitchLinearCoord(col, row)) * sizeof(AccessType) / kElementsPerAccess);
             }
 
             if (UseCUDAStore) {

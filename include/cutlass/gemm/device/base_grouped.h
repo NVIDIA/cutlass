@@ -157,7 +157,7 @@ private:
   static void reorder_array(T* data, const std::vector<size_t>& indices) {
     // For now, simply create a copy of the data and then copy over to the original.
     std::vector<T> copy(indices.size());
-    for (unsigned i = 0; i < indices.size(); ++i) {
+    for (size_t i = 0; i < indices.size(); ++i) {
       copy.at(i) = data[indices[i]];
     }
 

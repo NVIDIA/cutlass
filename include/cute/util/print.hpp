@@ -30,9 +30,10 @@
  **************************************************************************************************/
 #pragma once
 
-#include <type_traits>
-
 #include <cute/config.hpp>
+
+#include <cute/util/type_traits.hpp>
+#include <cute/numeric/integral_constant.hpp>
 
 //
 // CUDA compatible print and printf
@@ -123,7 +124,7 @@ print(char const& c) {
 }
 
 template <class T,
-          __CUTE_REQUIRES(std::is_integral<T>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value)>
 CUTE_HOST_DEVICE
 void
 print(T const& a) {

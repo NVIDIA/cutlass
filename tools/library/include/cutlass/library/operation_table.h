@@ -66,6 +66,9 @@ struct GemmFunctionalKey {
   LayoutTypeID layout_B;
   ComplexTransform transform_B;
   NumericTypeID element_C;
+  LayoutTypeID layout_C;
+  NumericTypeID element_D;
+  LayoutTypeID layout_D;
 
   //
   // Methods
@@ -83,7 +86,10 @@ struct GemmFunctionalKey {
     NumericTypeID element_B = NumericTypeID::kF16,
     LayoutTypeID layout_B = LayoutTypeID::kColumnMajor,
     ComplexTransform transform_B = ComplexTransform::kNone,
-    NumericTypeID element_C = NumericTypeID::kF16
+    NumericTypeID element_C = NumericTypeID::kF16,
+    LayoutTypeID layout_C = LayoutTypeID::kColumnMajor,
+    NumericTypeID element_D = NumericTypeID::kF16,
+    LayoutTypeID layout_D = LayoutTypeID::kColumnMajor
   ):
     provider(provider),
     gemm_kind(gemm_kind),
@@ -95,7 +101,10 @@ struct GemmFunctionalKey {
     element_B(element_B),
     layout_B(layout_B),
     transform_B(transform_B),
-    element_C(element_C)
+    element_C(element_C),
+    layout_C(layout_C),
+    element_D(element_D),
+    layout_D(layout_D)
   { }
 
   inline
@@ -111,7 +120,10 @@ struct GemmFunctionalKey {
       (element_B == rhs.element_B) &&
       (layout_B == rhs.layout_B) &&
       (transform_B == rhs.transform_B) &&
-      (element_C == rhs.element_C);
+      (element_C == rhs.element_C) &&
+      (layout_C == rhs.layout_C) &&
+      (element_D == rhs.element_D) &&
+      (layout_D == rhs.layout_D);
   }
 
   inline
@@ -137,6 +149,9 @@ std::ostream & operator<<(std::ostream &out, cutlass::library::GemmFunctionalKey
     << "         layout_B: " << to_string(k.layout_B) << "\n"
     << "      transform_B: " << to_string(k.transform_B) << "\n"
     << "        element_C: " << to_string(k.element_C) << "\n"
+    << "         layout_C: " << to_string(k.layout_C) << "\n"
+    << "        element_D: " << to_string(k.element_D) << "\n"
+    << "         layout_D: " << to_string(k.layout_D) << "\n"
     << "}";
 
   return out;
@@ -157,18 +172,21 @@ struct GemmFunctionalKeyHasher {
   size_t operator()(GemmFunctionalKey const &key) const {
     IntHash hash;
 
-    return 
-      rotl(hash(int(key.provider)), 1) ^ 
-      rotl(hash(int(key.gemm_kind)), 2) ^ 
+    return
+      rotl(hash(int(key.provider)),        1) ^ 
+      rotl(hash(int(key.gemm_kind)),       2) ^ 
       rotl(hash(int(key.element_compute)), 3) ^
-      rotl(hash(int(key.element_scalar)), 4) ^
-      rotl(hash(int(key.element_A)), 5) ^
-      rotl(hash(int(key.layout_A)), 6) ^
-      rotl(hash(int(key.transform_A)), 7) ^
-      rotl(hash(int(key.element_B)), 8) ^
-      rotl(hash(int(key.layout_B)), 9) ^
-      rotl(hash(int(key.transform_B)), 10) ^
-      rotl(hash(int(key.element_C)), 11);
+      rotl(hash(int(key.element_scalar)),  4) ^
+      rotl(hash(int(key.element_A)),       5) ^
+      rotl(hash(int(key.layout_A)),        6) ^
+      rotl(hash(int(key.transform_A)),     7) ^
+      rotl(hash(int(key.element_B)),       8) ^
+      rotl(hash(int(key.layout_B)),        9) ^
+      rotl(hash(int(key.transform_B)),    10) ^
+      rotl(hash(int(key.element_C)),      11) ^
+      rotl(hash(int(key.layout_C)),       12) ^
+      rotl(hash(int(key.element_D)),      13) ^
+      rotl(hash(int(key.layout_D)),       14);
   }
 };
 
