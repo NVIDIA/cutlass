@@ -151,7 +151,7 @@ bool run_fused_gemm_s8_sm80_shmem() {
   using WarpShape1 = cutlass::gemm::GemmShape<64, 64, 64>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 32>;
 
-  using EpilogueOutputOp0 = 
+  using EpilogueOutputOp0 =
     cutlass::epilogue::thread::LinearCombinationRelu<
       ElementOutput,
       8 * InstructionShape::kN / 32,
@@ -160,7 +160,7 @@ bool run_fused_gemm_s8_sm80_shmem() {
       cutlass::epilogue::thread::ScaleType::OnlyAlphaScaling
     >;
 
-  using EpilogueOutputOp1 = 
+  using EpilogueOutputOp1 =
     cutlass::epilogue::thread::LinearCombinationRelu<
       ElementOutput,
       64 / cutlass::sizeof_bits<ElementOutput>::value,
@@ -168,7 +168,7 @@ bool run_fused_gemm_s8_sm80_shmem() {
       ElementCompute,
       cutlass::epilogue::thread::ScaleType::NoBetaScaling
     >;
-  
+
   const bool SmemAccumulator = true;
 
   using B2bGemm = cutlass::gemm::device::B2bGemm<
@@ -193,7 +193,6 @@ bool run_fused_gemm_s8_sm80_shmem() {
     SmemAccumulator,
     16,
     16,
-    false,
     cutlass::arch::OpMultiplyAddSaturate
   >;
 
