@@ -1,11 +1,11 @@
 # Introduction
 
-This example shows fusing two back-to-back GEMMs/Convolutions into one kernel. 
+This example shows fusing two back-to-back GEMMs/Convolutions into one kernel.
 
 <p align="center"><img src=/media/images/13_example_fusion.png></p>
 
-When running two unfused GEMM/Conv operations, each operation loads one input 
-activation matrix, one weight matrix (or filter matrix) from the memory and then 
+When running two unfused GEMM/Conv operations, each operation loads one input
+activation matrix, one weight matrix (or filter matrix) from the memory and then
 stores the result activation matrix back to the memory.
 
 When the two GEMM/Conv operations are fused together, the mainloops of the two
@@ -27,10 +27,10 @@ In order to run two GEMM/Convs in a single kernel, the example requires the same
 threadblocks are used across 2 GEMMs/Convs. This also ensures the same threadblock tile M across
 2 GEMMs/Convs.
 
-In order to reuse the output accumulator (stored in register-file) of the 1st GEMM as the 
+In order to reuse the output accumulator (stored in register-file) of the 1st GEMM as the
 input activation, the example enforces the following two constraints:
 
-- thread_block_tile_N = problem_N 
+- thread_block_tile_N = problem_N
 
 <p align="center"><img src=/media/images/13_example_block_resident_fusion.png></p>
 
@@ -39,7 +39,7 @@ addition to its own input activation tile. Therefore the input activation tile o
 2nd GEMM/Conv only depends on the output activation tile of the 1st GEMM/Conv, and the
 operation can be fully block-resident.
 
-- warp_tile_N = thread_block_tile_N 
+- warp_tile_N = thread_block_tile_N
 
 <p align="center"><img src=/media/images/13_example_rf_resident_fusion.png></p>
 
@@ -82,7 +82,7 @@ threadblock. Typically this requires the 2nd Convolution uses 1x1 filter without
   - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_s8_sm75_shmem`
   - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_s8_sm80_rf`
   - `./examples/13_two_tensor_op_fusion/13_fused_two_gemms_s8_sm80_shmem`
- 
+
 
 # Copyright
 
