@@ -300,7 +300,7 @@ struct DualGemm {
     int offset_k = 0;
     int problem_size_k = params.problem_size.k();
 
-    ElementA *ptr_A0 = static_cast<ElementA *>(params.ref_A0.data()); 
+    ElementA *ptr_A0 = static_cast<ElementA *>(params.ref_A0.data());
     ElementB *ptr_B0 = static_cast<ElementB *>(params.ref_B0.data());
     ElementB *ptr_B1 = static_cast<ElementB *>(params.ref_B1.data());
 
@@ -309,7 +309,7 @@ struct DualGemm {
     //
     if (params.mode == DualGemmMode::kGemm) {
       if (threadblock_tile_offset.k() + 1 < params.grid_tiled_shape.k()) {
-        problem_size_k = (threadblock_tile_offset.k() + 1) * params.gemm_k_size; 
+        problem_size_k = (threadblock_tile_offset.k() + 1) * params.gemm_k_size;
       }
 
       offset_k = threadblock_tile_offset.k() * params.gemm_k_size;
@@ -413,11 +413,11 @@ struct DualGemm {
 
     int block_idx = threadblock_tile_offset.m() + threadblock_tile_offset.n() * params.grid_tiled_shape.m();
 
-    ElementC *ptr_C0 = static_cast<ElementC *>(params.ref_C0.data()); 
-    ElementC *ptr_C1 = static_cast<ElementC *>(params.ref_C1.data()); 
-    ElementC *ptr_D0 = static_cast<ElementC *>(params.ref_D0.data()); 
-    ElementC *ptr_D1 = static_cast<ElementC *>(params.ref_D1.data()); 
-    ElementC *ptr_D2 = static_cast<ElementC *>(params.ref_D2.data()); 
+    ElementC *ptr_C0 = static_cast<ElementC *>(params.ref_C0.data());
+    ElementC *ptr_C1 = static_cast<ElementC *>(params.ref_C1.data());
+    ElementC *ptr_D0 = static_cast<ElementC *>(params.ref_D0.data());
+    ElementC *ptr_D1 = static_cast<ElementC *>(params.ref_D1.data());
+    ElementC *ptr_D2 = static_cast<ElementC *>(params.ref_D2.data());
 
     // Construct the semaphore.
     Semaphore semaphore(params.semaphore + block_idx, thread_idx);
@@ -425,7 +425,7 @@ struct DualGemm {
     if (params.mode == DualGemmMode::kGemm) {
       // If performing a reduction via split-K, fetch the initial synchronization
       if (kSplitKSerial && params.grid_tiled_shape.k() > 1) {
-        
+
         // Fetch the synchronization lock initially but do not block.
         semaphore.fetch();
 

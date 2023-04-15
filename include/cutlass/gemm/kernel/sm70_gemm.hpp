@@ -52,7 +52,7 @@ class GemmUniversal<
   CollectiveMainloop_,
   CollectiveEpilogue_,
   GridSwizzle_,
-  std::enable_if_t<std::is_base_of_v<KernelMultistage, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
+  cute::enable_if_t<cute::is_base_of_v<KernelMultistage, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 {
 public:
   //
@@ -74,6 +74,7 @@ public:
   using StrideB   = typename CollectiveMainloop::StrideB;
   using DispatchPolicy = typename CollectiveMainloop::DispatchPolicy;
   using ElementAccumulator = typename CollectiveMainloop::ElementAccumulator;
+  using MainloopArguments = typename CollectiveMainloop::Arguments;
   using MainloopParams = typename CollectiveMainloop::Params;
 
   // Epilogue derived types
@@ -82,8 +83,9 @@ public:
   using StrideC  = typename CollectiveEpilogue::StrideC;
   using ElementD = typename CollectiveEpilogue::ElementD;
   using StrideD  = typename CollectiveEpilogue::StrideD;
+  using EpilogueArguments = typename CollectiveEpilogue::Arguments;
   using EpilogueParams = typename CollectiveEpilogue::Params;
-  static_assert(std::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
+  static_assert(cute::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
     "Mainloop and epilogue do not agree on accumulator value type.");
 
   static constexpr int SharedStorageSize = cute::max(
@@ -97,12 +99,9 @@ public:
   struct Arguments {
     GemmUniversalMode mode{};
     ProblemShape problem_shape{};
-    ElementA const* ptr_A = nullptr;
-    StrideA dA{};
-    ElementB const* ptr_B = nullptr;
-    StrideB dB{};
-    EpilogueParams epilogue_params{};
-    KernelHardwareInfo hw_info;
+    MainloopArguments mainloop{};
+    EpilogueArguments epilogue{};
+    KernelHardwareInfo hw_info{};
   };
 
   // Kernel entry point API
@@ -125,8 +124,8 @@ public:
     return {
       args.mode,
       args.problem_shape,
-      CollectiveMainloop::to_underlying_arguments(args, workspace),
-      CollectiveEpilogue::to_underlying_arguments(args, workspace)
+      CollectiveMainloop::to_underlying_arguments(args.problem_shape, args.mainloop, workspace),
+      CollectiveEpilogue::to_underlying_arguments(args.problem_shape, args.epilogue, workspace)
     };
   }
 

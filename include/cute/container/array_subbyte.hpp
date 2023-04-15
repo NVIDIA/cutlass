@@ -38,6 +38,7 @@
 #include <cute/config.hpp>
 
 #include <cute/numeric/int.hpp>   // sizeof_bits
+#include <cute/numeric/integral_constant.hpp>
 
 namespace cute
 {
@@ -45,7 +46,7 @@ namespace cute
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Statically sized array for any data type
-template <class T, std::size_t N>
+template <class T, size_t N>
 class array_subbyte
 {
  public:
@@ -54,22 +55,15 @@ class array_subbyte
   static constexpr int kSizeBits = sizeof_bits<T>::value * N;
 
   /// Storage type
-  using Storage = typename std::conditional<
-                    (kSizeBits % 32) == 0,
-                    uint32_t,
-                    typename std::conditional<
-                      (kSizeBits % 16) == 0,
-                      uint16_t,
-                      uint8_t
-                    >::type
-                  >::type;
-
+  using Storage = conditional_t<(kSizeBits % 32) == 0, uint32_t,
+                  conditional_t<(kSizeBits % 16) == 0, uint16_t,
+                                                                           uint8_t>>;
 
   /// Number of logical elements per stored object
   static constexpr int kElementsPerStoredItem = sizeof_bits<Storage>::value / sizeof_bits<T>::value;
 
   /// Number of storage elements
-  static constexpr std::size_t kStorageElements = (N + kElementsPerStoredItem - 1) / kElementsPerStoredItem;
+  static constexpr size_t kStorageElements = (N + kElementsPerStoredItem - 1) / kElementsPerStoredItem;
 
   /// Bitmask for covering one item
   static constexpr Storage bit_mask_ = ((Storage(1) << sizeof_bits<T>::value) - 1);
@@ -82,8 +76,8 @@ class array_subbyte
   using pointer       = value_type*;
   using const_pointer = value_type const*;
 
-  using size_type       = std::size_t;
-  using difference_type = std::ptrdiff_t;
+  using size_type       = size_t;
+  using difference_type = ptrdiff_t;
 
   //
   // References
@@ -110,7 +104,7 @@ class array_subbyte
     /// Assignment
     CUTE_HOST_DEVICE constexpr
     reference& operator=(T x) {
-      Storage item = (reinterpret_cast<Storage const&>(x) & bit_mask_);
+      Storage item = (x & bit_mask_);
       Storage kUpdateMask = Storage(~(bit_mask_ << (idx_ * sizeof_bits<T>::value)));
       *ptr_ = Storage((*ptr_ & kUpdateMask) | (item << (idx_ * sizeof_bits<T>::value)));
       return *this;
@@ -118,33 +112,20 @@ class array_subbyte
 
     CUTE_HOST_DEVICE constexpr
     T get() const {
-      Storage item = Storage((*ptr_ >> (idx_ * sizeof_bits<T>::value)) & bit_mask_);
-      return reinterpret_cast<T const&>(item);
+      if constexpr (is_same<bool, T>::value) {
+        // Extract to bool -- potentially faster impl
+        return bool((*ptr_) & (bit_mask_ << (idx_ * sizeof_bits<T>::value)));
+      } else {
+        // Extract to T
+        Storage item = Storage((*ptr_ >> (idx_ * sizeof_bits<T>::value)) & bit_mask_);
+        return reinterpret_cast<T const&>(item);
+      }
     }
 
-    /// Extract to type T -- disable if T == bool
-    template <class U = T, __CUTE_REQUIRES(not std::is_same<U,bool>::value)>
+    /// Extract to type T
     CUTE_HOST_DEVICE constexpr
     operator T() const {
       return get();
-    }
-
-    // Extract to bool -- potentially faster impl
-    CUTE_HOST_DEVICE constexpr
-    operator bool() const {
-      return bool((*ptr_) & (bit_mask_ << (idx_ * sizeof_bits<T>::value)));
-    }
-
-    /// Explicit cast to int
-    CUTE_HOST_DEVICE constexpr
-    explicit operator int() const {
-      return int(get());
-    }
-
-    /// Explicit cast to float
-    CUTE_HOST_DEVICE constexpr
-    explicit operator float() const {
-      return float(get());
     }
   };
 
@@ -169,33 +150,20 @@ class array_subbyte
 
     CUTE_HOST_DEVICE constexpr
     const T get() const {
-      Storage item = Storage((*ptr_ >> (idx_ * sizeof_bits<T>::value)) & bit_mask_);
-      return reinterpret_cast<T const&>(item);
+      if constexpr (is_same<bool, T>::value) {
+        // Extract to bool -- potentially faster impl
+        return bool((*ptr_) & (bit_mask_ << (idx_ * sizeof_bits<T>::value)));
+      } else {
+        // Extract to T
+        Storage item = Storage((*ptr_ >> (idx_ * sizeof_bits<T>::value)) & bit_mask_);
+        return reinterpret_cast<T const&>(item);
+      }
     }
 
-    /// Extract to type T -- disable if T == bool
-    template <class U = T, __CUTE_REQUIRES(not std::is_same<U,bool>::value)>
+    /// Extract to type T
     CUTE_HOST_DEVICE constexpr
     operator T() const {
       return get();
-    }
-
-    // Extract to bool -- potentially faster impl
-    CUTE_HOST_DEVICE constexpr
-    operator bool() const {
-      return bool((*ptr_) & (bit_mask_ << (idx_ * sizeof_bits<T>::value)));
-    }
-
-    /// Explicit cast to int
-    CUTE_HOST_DEVICE constexpr
-    explicit operator int() const {
-      return int(get());
-    }
-
-    /// Explicit cast to float
-    CUTE_HOST_DEVICE constexpr
-    explicit operator float() const {
-      return float(get());
     }
   };
 
@@ -543,14 +511,14 @@ public:
 // Operators
 //
 
-template <class T, std::size_t N>
+template <class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 void clear(array_subbyte<T,N>& a)
 {
   a.clear();
 }
 
-template <class T, std::size_t N>
+template <class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 void fill(array_subbyte<T,N>& a, T const& value)
 {
@@ -565,12 +533,16 @@ void fill(array_subbyte<T,N>& a, T const& value)
 // Specialize tuple-related functionality for cute::array_subbyte
 //
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/tuple>
+#else
 #include <tuple>
+#endif
 
 namespace cute
 {
 
-template <std::size_t I, class T, std::size_t N>
+template <size_t I, class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 T& get(array_subbyte<T,N>& a)
 {
@@ -578,7 +550,7 @@ T& get(array_subbyte<T,N>& a)
   return a[I];
 }
 
-template <std::size_t I, class T, std::size_t N>
+template <size_t I, class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 T const& get(array_subbyte<T,N> const& a)
 {
@@ -586,7 +558,7 @@ T const& get(array_subbyte<T,N> const& a)
   return a[I];
 }
 
-template <std::size_t I, class T, std::size_t N>
+template <size_t I, class T, size_t N>
 CUTE_HOST_DEVICE constexpr
 T&& get(array_subbyte<T,N>&& a)
 {
@@ -596,18 +568,66 @@ T&& get(array_subbyte<T,N>&& a)
 
 } // end namespace cute
 
-namespace std
+namespace CUTE_STL_NAMESPACE
 {
 
-template <class T, std::size_t N>
+template <class T, size_t N>
 struct tuple_size<cute::array_subbyte<T,N>>
-    : std::integral_constant<std::size_t, N>
+    : cute::integral_constant<size_t, N>
 {};
 
-template <std::size_t I, class T, std::size_t N>
+template <size_t I, class T, size_t N>
 struct tuple_element<I, cute::array_subbyte<T,N>>
 {
   using type = T;
 };
 
+template <class T, size_t N>
+struct tuple_size<const cute::array_subbyte<T,N>>
+    : cute::integral_constant<size_t, N>
+{};
+
+template <size_t I, class T, size_t N>
+struct tuple_element<I, const cute::array_subbyte<T,N>>
+{
+  using type = T;
+};
+
+} // end namespace CUTE_STL_NAMESPACE
+
+#ifdef CUTE_STL_NAMESPACE_IS_CUDA_STD
+namespace std
+{
+
+#if defined(__CUDACC_RTC__)
+template <class... _Tp>
+struct tuple_size;
+
+template<size_t _Ip, class... _Tp>
+struct tuple_element;
+#endif
+
+template <class T, size_t N>
+struct tuple_size<cute::array_subbyte<T,N>>
+    : cute::integral_constant<size_t, N>
+{};
+
+template <size_t I, class T, size_t N>
+struct tuple_element<I, cute::array_subbyte<T,N>>
+{
+  using type = T;
+};
+
+template <class T, size_t N>
+struct tuple_size<const cute::array_subbyte<T,N>>
+    : cute::integral_constant<size_t, N>
+{};
+
+template <size_t I, class T, size_t N>
+struct tuple_element<I, const cute::array_subbyte<T,N>>
+{
+  using type = T;
+};
+
 } // end namespace std
+#endif // CUTE_STL_NAMESPACE_IS_CUDA_STD

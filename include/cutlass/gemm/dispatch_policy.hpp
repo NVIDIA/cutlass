@@ -48,7 +48,12 @@ using namespace cute;
 struct KernelMultistage { };
 struct KernelTma { };
 struct KernelTmaWarpSpecialized { };
-struct KernelTmaWarpSpecializedPersistent { };
+struct KernelTmaWarpSpecializedPingpong { };
+struct KernelTmaWarpSpecializedCooperative { };
+
+// Policies for dispatch of epilogue
+struct EpilogueDefault { };
+struct EpilogueTransposed { };
 
 //
 // Collective Mainloop Policies
@@ -130,13 +135,34 @@ struct MainloopSm90TmaGmma {
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class KernelSchedule = KernelTmaWarpSpecialized
+  class KernelSchedule = KernelTmaWarpSpecializedCooperative
 >
 struct MainloopSm90TmaGmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
   using ClusterShape = ClusterShape_;
   using ArchTag = arch::Sm90;
   using Schedule = KernelSchedule;
+};
+
+// n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule
+// With GMMA's A data from registers.
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelTmaWarpSpecialized,
+  int PipelineAsyncMmaStages_ = 1
+>
+struct MainloopSm90TmaGmmaRmemAWarpSpecialized {
+  constexpr static int Stages = Stages_;
+  using ClusterShape = ClusterShape_;
+  constexpr static int PipelineAsyncMmaStages = PipelineAsyncMmaStages_;
+  using ArchTag = arch::Sm90;
+  using Schedule = KernelSchedule;
+  static_assert(
+    cute::is_same_v<Schedule, KernelTmaWarpSpecialized> ||
+    cute::is_same_v<Schedule, KernelTmaWarpSpecializedPingpong> ||
+    cute::is_same_v<Schedule, KernelTmaWarpSpecializedCooperative>,
+    "KernelSchedule must be one of the warp specialized policies");
 };
 
 //////////////////////////////////////////////////////////////////////////////

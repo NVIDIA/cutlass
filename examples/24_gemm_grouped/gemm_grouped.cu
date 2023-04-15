@@ -37,7 +37,7 @@
     leading dimensions and problem sizes are stored in arrays in GMEM.
 
     This differs from "Batched Array" GEMM because the size of each GEMM problem in the Grouped GEMM
-    concept may be distinct. 
+    concept may be distinct.
 
     This benchmark program initializes a workspace with random problem sizes for a given number of
     groups. Command line options enable overriding M, N, and/or K dimensions with uniform values to
@@ -186,7 +186,7 @@ struct Options {
 
   //
   // Methods
-  // 
+  //
 
   Options():
     help(false),
@@ -216,7 +216,7 @@ struct Options {
     cmd.get_cmd_line_argument("alignment", alignment, 8);
     cmd.get_cmd_line_argument("groups", problem_count, 15);
     cmd.get_cmd_line_argument("alpha", alpha, 1.0f);
-    cmd.get_cmd_line_argument("beta", beta, 0.0f);    
+    cmd.get_cmd_line_argument("beta", beta, 0.0f);
     cmd.get_cmd_line_argument("iterations", iterations, 20);
     cmd.get_cmd_line_argument("streams", cuda_streams, 0);
     cmd.get_cmd_line_argument("verbose", verbose, false);
@@ -455,13 +455,13 @@ struct Options {
   /// Compute performance in GFLOP/s
   double gflops(double runtime_s) const {
 
-    // Number of real-valued multiply-adds 
+    // Number of real-valued multiply-adds
     int64_t fmas = int64_t();
 
     for (auto const & problem : problem_sizes) {
       fmas += problem.product();
     }
-    
+
     // Two flops per multiply-add
     return 2.0 * double(fmas) / double(1.0e9) / runtime_s;
   }
@@ -546,7 +546,7 @@ public:
   template <typename Element>
   void initialize_tensor(
     Element *ptr,
-    size_t capacity, 
+    size_t capacity,
     cutlass::Distribution::Kind dist_kind,
     uint32_t seed) {
 
@@ -578,7 +578,7 @@ public:
 
       cutlass::reference::device::BlockFillRandomUniform(
         ptr, capacity, seed, scope_max, scope_min, 0);
-    } 
+    }
     else if (dist_kind == cutlass::Distribution::Gaussian) {
 
       cutlass::reference::device::BlockFillRandomGaussian(
@@ -589,7 +589,7 @@ public:
       // Fill with increasing elements
       cutlass::reference::device::BlockFillSequential(
         ptr, capacity, Element(1), Element());
-    } 
+    }
     else {
 
       // Fill with all 1s
@@ -674,13 +674,13 @@ public:
 
     ptr_A.reset(problem_count());
     ptr_A.copy_from_host(ptr_A_host.data());
-    
+
     ptr_B.reset(problem_count());
     ptr_B.copy_from_host(ptr_B_host.data());
-    
+
     ptr_C.reset(problem_count());
     ptr_C.copy_from_host(ptr_C_host.data());
-    
+
     ptr_D.reset(problem_count());
     ptr_D.copy_from_host(ptr_D_host.data());
 
@@ -712,7 +712,7 @@ public:
       MatrixCoord extent_A{problem.m(), problem.k()};
       MatrixCoord extent_B{problem.k(), problem.n()};
       MatrixCoord extent_C{problem.m(), problem.n()};
-      
+
       cutlass::TensorView<ElementA, LayoutA> view_A(block_A.get() + offset_A.at(i), layout_A, extent_A);
       cutlass::TensorView<ElementB, LayoutB> view_B(block_B.get() + offset_B.at(i), layout_B, extent_B);
       cutlass::TensorView<ElementC, LayoutC> view_C(block_C.get() + offset_C.at(i), layout_C, extent_C);
@@ -724,18 +724,18 @@ public:
       cutlass::reference::device::GemmComplex<
           ElementA, LayoutA,
           ElementB, LayoutB,
-          ElementC, LayoutC, 
+          ElementC, LayoutC,
           ElementCompute, ElementAccumulator
       >(
         problem,
-        options.alpha, 
+        options.alpha,
         view_A,
         Gemm::kTransformA,
         view_B,
         Gemm::kTransformB,
-        options.beta, 
-        view_C, 
-        view_Ref_device, 
+        options.beta,
+        view_C,
+        view_Ref_device,
         ElementAccumulator(0)
       );
 
@@ -781,8 +781,8 @@ public:
     std::cout << "Conventionally executed as " << this->options.problem_bins.size() << " batched GEMMs:\n";
     for (auto const & bin : this->options.problem_bins) {
 
-      std::cout << "  [" << bin_idx << "]: " 
-        << bin.first.m() << "-by-" << bin.first.n() << "-by-" << bin.first.k() 
+      std::cout << "  [" << bin_idx << "]: "
+        << bin.first.m() << "-by-" << bin.first.n() << "-by-" << bin.first.k()
         << ", batch count: " << bin.second.size() << "\n";
 
       ++bin_idx;
@@ -832,7 +832,7 @@ public:
 
     for (auto const & bin : this->options.problem_bins) {
       int first_idx = bin.second.front();
-      
+
       bin_problem_sizes.push_back(this->options.problem_sizes.at(first_idx));
       bin_count.push_back(int32_t(bin.second.size()));
 
@@ -974,7 +974,7 @@ public:
         std::cerr << "CUTLASS error on line " << __LINE__ << std::endl;
         return result;
       }
-      
+
     }
 
     //
@@ -1027,7 +1027,7 @@ public:
     int last_stream_idx = 0;
 
     for (int iter = 0; iter < this->options.iterations; ++iter) {
-      
+
       for (int bin_idx = 0; bin_idx < int32_t(bin_problem_sizes.size()); ++bin_idx) {
 
         cutlass::gemm::GemmCoord const & problem = bin_problem_sizes[bin_idx];
@@ -1098,7 +1098,7 @@ public:
       std::cerr << "cudaEventRecord() failed: " << cudaGetErrorString(result.error) << std::endl;
       return result;
     }
-    
+
     //
     // Wait for work to be completed
     //
@@ -1129,10 +1129,10 @@ public:
     for (auto event : events) {
       (void)cudaEventDestroy(event);
     }
-    
+
     for (auto stream : cuda_streams) {
       if (stream) {
-        (void)cudaStreamDestroy(stream);  
+        (void)cudaStreamDestroy(stream);
       }
     }
 
@@ -1203,8 +1203,8 @@ public:
       int tiles = Gemm::problem_tile_count(problem);
       total_tiles += tiles;
 
-      std::cout << "  [" << idx << "]: " 
-        << problem.m() << "-by-" << problem.n() << "-by-" << problem.k() 
+      std::cout << "  [" << idx << "]: "
+        << problem.m() << "-by-" << problem.n() << "-by-" << problem.k()
         << " (" << tiles << " threadblock tiles)" << "\n";
 
       ++idx;
@@ -1442,12 +1442,12 @@ int main(int argc, char const **args) {
   }
 
   if (__CUDACC_VER_MAJOR__ < 11 || props.major < 8) {
-  
+
     //
     // This example requires an NVIDIA Ampere-architecture GPU.
     //
 
-    std::cout 
+    std::cout
       << "CUTLASS's Grouped GEMM example requires a GPU of NVIDIA's Ampere Architecture or "
       << "later (compute capability 80 or greater).\n";
 
@@ -1497,9 +1497,9 @@ int main(int argc, char const **args) {
     cutlass::gemm::GemmShape<64, 64, 32>,
     cutlass::gemm::GemmShape<16, 8, 16>,
     cutlass::epilogue::thread::LinearCombination<
-      ElementOutput, 
+      ElementOutput,
       128 / cutlass::sizeof_bits<ElementOutput>::value,
-      ElementAccumulator, 
+      ElementAccumulator,
       ElementAccumulator
     >,
     cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<8>,
@@ -1519,8 +1519,8 @@ int main(int argc, char const **args) {
     cutlass::ComplexTransform::kNone,
     8,
     ElementOutput, LayoutC,
-    ElementAccumulator, 
-    cutlass::arch::OpClassTensorOp, 
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<128, 128, 32>,
     cutlass::gemm::GemmShape<64, 64, 32>,
@@ -1531,7 +1531,7 @@ int main(int argc, char const **args) {
     // NOTE: Threadblock swizzling is currently not supported by CUTLASS's grouped kernels.
     // This parameter is passed in at present to match the APIs of other kernels. The parameter
     // is unused within the kernel.
-    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
+    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle,
     4>::GemmKernel;
 
   using GemmGrouped = cutlass::gemm::device::GemmGrouped<GemmKernel>;

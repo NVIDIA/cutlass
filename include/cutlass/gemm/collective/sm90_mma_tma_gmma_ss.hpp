@@ -40,7 +40,7 @@
 #include "cute/algorithm/gemm.hpp"
 #include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
-#include "cutlass/pipeline.hpp"
+#include "cutlass/pipeline/pipeline.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -132,20 +132,20 @@ struct CollectiveMma<
       Step<_2,_1,_3>{}));
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 1 or more.");
-  static_assert(std::is_base_of<cute::GMMA::gmma_descriptor_iterator, typename TiledMma::FrgTypeA>::value &&
-                std::is_base_of<cute::GMMA::gmma_descriptor_iterator, typename TiledMma::FrgTypeB>::value,
+  static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
+                cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeB>::value,
                 "MMA atom must source both A and B operand from smem_desc for this mainloop.");
-  static_assert(std::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD> || std::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>,
+  static_assert(cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD> || cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>,
       "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
-  static_assert(std::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD> || std::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>,
+  static_assert(cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD> || cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>,
       "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
 
   // TMA converts f32 input to tf32 when copying from GMEM to SMEM
   // For all other types, cast to size equivalent uint type to avoid any rounding by TMA.
-  static constexpr bool ConvertF32toTF32A = std::is_same_v<float, ElementA>;
-  static constexpr bool ConvertF32toTF32B = std::is_same_v<float, ElementB>;
-  using InternalElementA = std::conditional_t<ConvertF32toTF32A, tfloat32_t, uint_bit_t<sizeof_bits_v<ElementA>>>;
-  using InternalElementB = std::conditional_t<ConvertF32toTF32B, tfloat32_t, uint_bit_t<sizeof_bits_v<ElementB>>>;
+  static constexpr bool ConvertF32toTF32A = cute::is_same_v<float, ElementA>;
+  static constexpr bool ConvertF32toTF32B = cute::is_same_v<float, ElementB>;
+  using InternalElementA = cute::conditional_t<ConvertF32toTF32A, tfloat32_t, uint_bit_t<sizeof_bits_v<ElementA>>>;
+  using InternalElementB = cute::conditional_t<ConvertF32toTF32B, tfloat32_t, uint_bit_t<sizeof_bits_v<ElementB>>>;
 
   struct SharedStorage
   {
@@ -156,22 +156,27 @@ struct CollectiveMma<
     alignas(16) PipelineStorage pipeline_storage;
   };
 
-  struct Params {
-    InternalElementA const* ptr_A;
+  // Host side kernel arguments
+  struct Arguments {
+    ElementA const* ptr_A;
     StrideA dA;
-    InternalElementB const* ptr_B;
+    ElementB const* ptr_B;
     StrideB dB;
+  };
+
+  // Device side kernel params
+  struct Params {
     // Assumption: StrideA is congruent with Problem_MK
     using TMA_A = decltype(make_tma_copy(
         GmemTiledCopyA{},
-        make_tensor(ptr_A, repeat_like(StrideA{}, int32_t(0)), dA),
+        make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(StrideA{}, int32_t(0)), StrideA{}),
         SmemLayoutA{}(_,_,0),
         make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
         size<1>(ClusterShape{})));  // mcast along N mode for this M load, if any
     // Assumption: StrideB is congruent with Problem_NK
     using TMA_B = decltype(make_tma_copy(
         GmemTiledCopyB{},
-        make_tensor(ptr_B, repeat_like(StrideB{}, int32_t(0)), dB),
+        make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(StrideB{}, int32_t(0)), StrideB{}),
         SmemLayoutB{}(_,_,0),
         make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
         size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
@@ -183,22 +188,23 @@ struct CollectiveMma<
   // Methods
   //
 
-  template <class Args>
+  template <class ProblemShape>
   static constexpr Params
-  to_underlying_arguments(Args const& args, void* workspace) {
+  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     (void) workspace;
+
     // Optionally append _1s until problem shape is rank-4 (MNKL), in case it is only rank-3 (MNK)
-    auto problem_shape_MNKL = append<4>(args.problem_shape, Int<1>{});
+    auto problem_shape_MNKL = append<4>(problem_shape, Int<1>{});
     auto M = get<0>(problem_shape_MNKL);
     auto N = get<1>(problem_shape_MNKL);
     auto K = get<2>(problem_shape_MNKL);
     auto L = get<3>(problem_shape_MNKL);
 
-    auto reinterpreted_ptr_A = reinterpret_cast<InternalElementA const*>(args.ptr_A);
-    auto reinterpreted_ptr_B = reinterpret_cast<InternalElementB const*>(args.ptr_B);
+    auto ptr_A = reinterpret_cast<InternalElementA const*>(args.ptr_A);
+    auto ptr_B = reinterpret_cast<InternalElementB const*>(args.ptr_B);
 
-    Tensor tensor_a = make_tensor(reinterpreted_ptr_A, make_layout(make_shape(M,K,L), args.dA));
-    Tensor tensor_b = make_tensor(reinterpreted_ptr_B, make_layout(make_shape(N,K,L), args.dB));
+    Tensor tensor_a = make_tensor(ptr_A, make_layout(make_shape(M,K,L), args.dA));
+    Tensor tensor_b = make_tensor(ptr_B, make_layout(make_shape(N,K,L), args.dB));
     typename Params::TMA_A tma_load_a = make_tma_copy(
         GmemTiledCopyA{},
         tensor_a,
@@ -212,10 +218,6 @@ struct CollectiveMma<
         make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
         size<0>(ClusterShape{})); // mcast along M mode for this N load, if any
     return {
-      reinterpreted_ptr_A,
-      args.dA,
-      reinterpreted_ptr_B,
-      args.dB,
       tma_load_a,
       tma_load_b
     };
@@ -253,9 +255,9 @@ struct CollectiveMma<
     static_assert(rank(SmemLayoutAtomB{}) == 2, "SmemLayoutAtom must be rank 2.");
     static_assert(rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
     static_assert(rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
-    static_assert(std::is_void_v<SmemCopyAtomA>,
+    static_assert(cute::is_void_v<SmemCopyAtomA>,
       "SM90 GMMA mainloops cannot have a non-void copy atom for smem sourced instructions.");
-    static_assert(std::is_void_v<SmemCopyAtomB>,
+    static_assert(cute::is_void_v<SmemCopyAtomB>,
       "SM90 GMMA mainloops cannot have a non-void copy atom for smem sourced instructions.");
 
     SharedStorage& storage = *reinterpret_cast<SharedStorage*>(shared_memory);
@@ -342,14 +344,14 @@ struct CollectiveMma<
     // Issue TmaLoads (Prologue fetches)
     if (warp_idx == 0 && lane_predicate == 1) {
       // Maps the tile -> block, value
-      if constexpr (std::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>) {
+      if constexpr (cute::is_same_v<GmemTiledCopyA, SM90_TMA_LOAD_MULTICAST>) {
         auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{}; // (m,n) -> block_id
         for (int n = 0; n < size<1>(block_layout); ++n) {
           mcast_mask_a |= (uint16_t(1) << block_layout(cluster_local_block_id.x,n,Int<0>{}));
         }
       }
 
-      if constexpr (std::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>) {
+      if constexpr (cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>) {
         auto block_layout = Layout<typename DispatchPolicy::ClusterShape>{}; // (m,n) -> block_id
         for (int m = 0; m < size<0>(block_layout); ++m) {
           mcast_mask_b |= (uint16_t(1) << block_layout(m,cluster_local_block_id.y,Int<0>{}));
@@ -361,8 +363,8 @@ struct CollectiveMma<
       CUTLASS_PRAGMA_UNROLL
       for (int stage = 0; stage < prologue_tma_count; ++stage) {
         pipeline.producer_acquire(smem_pipe_write);
-        using BarrierType = typename MainloopPipeline::ValueType;
-        BarrierType* tma_barrier = pipeline.producer_get_barrier(stage);
+        using BarrierType = typename MainloopPipeline::ProducerBarrierType;
+        BarrierType* tma_barrier = pipeline.producer_get_barrier(smem_pipe_write);
 
         copy(tma_load_a.with(*tma_barrier, mcast_mask_a), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,stage));
         copy(tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,stage));
@@ -397,6 +399,8 @@ struct CollectiveMma<
 
     __syncthreads();
 
+    tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+
     warpgroup_fence_operand(accum);
     // Prologue MMAs
     CUTLASS_PRAGMA_UNROLL
@@ -406,7 +410,14 @@ struct CollectiveMma<
       // WAIT on smem_pipe_read until it's data is available
       pipeline.consumer_wait(smem_pipe_read);
       warpgroup_arrive();
-      cute::gemm(tiled_mma, tCrA(_,_,_,smem_pipe_read.index()), tCrB(_,_,_,smem_pipe_read.index()), accum);  // (V,M,K) x (V,N,K) => (V,M,N)
+      // Unroll the K mode manually to set scale D to 1
+      CUTLASS_PRAGMA_UNROLL
+      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
+        // (V,M,K) x (V,N,K) => (V,M,N)
+        cute::gemm(tiled_mma, tCrA(_,_,k_block,smem_pipe_read.index()), tCrB(_,_,k_block,smem_pipe_read.index()), accum);
+        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+      }
+
       warpgroup_commit_batch();
       ++smem_pipe_read;
       --k_tile_count;
@@ -429,7 +440,13 @@ struct CollectiveMma<
 
       warpgroup_fence_operand(accum);
       warpgroup_arrive();
-      cute::gemm(tiled_mma, tCrA(_,_,_,smem_pipe_read.index()), tCrB(_,_,_,smem_pipe_read.index()), accum);  // (V,M,K) x (V,N,K) => (V,M,N)
+      // Unroll the K mode manually to set scale D to 1
+      CUTLASS_PRAGMA_UNROLL
+      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
+        // (V,M,K) x (V,N,K) => (V,M,N)
+        cute::gemm(tiled_mma, tCrA(_,_,k_block,smem_pipe_read.index()), tCrB(_,_,k_block,smem_pipe_read.index()), accum);
+        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+      }
       warpgroup_commit_batch();
 
       /// Wait on the GMMA barrier for K_PIPE_MMAS (or fewer) outstanding to ensure smem_pipe_write is consumed
@@ -446,8 +463,8 @@ struct CollectiveMma<
       if (warp_idx == 0 && lane_predicate == 1 && (k_tile_count_tma > 0) ) {
         pipeline.producer_acquire(smem_pipe_write);  // LOCK wr stage, for _writing_
 
-        using BarrierType = typename MainloopPipeline::ValueType;
-        BarrierType* tma_barrier = pipeline.producer_get_barrier(smem_pipe_write.index());
+        using BarrierType = typename MainloopPipeline::ProducerBarrierType;
+        BarrierType* tma_barrier = pipeline.producer_get_barrier(smem_pipe_write);
 
         copy(tma_load_a.with(*tma_barrier, mcast_mask_a), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,smem_pipe_write.index()));
         copy(tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,smem_pipe_write.index()));

@@ -67,7 +67,8 @@ template <
   typename LayoutC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ElementD_ = ElementC_,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 class GemmReferenceOperation : public Operation {
@@ -84,7 +85,9 @@ public:
   static cutlass::ComplexTransform const kTransformB = TransformB;
   using ElementC = ElementC_;
   using LayoutC = LayoutC_;
+  using ElementD = ElementD_;
   using TensorRefC = TensorRef<ElementC, LayoutC>;
+  using TensorRefD = TensorRef<ElementD, LayoutC>;
   using ElementCompute = ElementCompute_;
   using ElementAccumulator = ElementAccumulator_;
   using ConvertOp = ConvertOp_;
@@ -114,6 +117,7 @@ public:
     description_.B = make_TensorDescription<ElementB, LayoutB>();
     description_.transform_B = ComplexTransformMap<kTransformB>::kId;
     description_.C = make_TensorDescription<ElementC, LayoutC>();
+    description_.D = make_TensorDescription<ElementD, LayoutC>();
     
     // Epilogue compute and accumulator type description
     description_.element_epilogue = NumericTypeMap<ElementCompute>::kId;
@@ -196,7 +200,7 @@ public:
     TensorRefA ref_A{static_cast<ElementA *>(const_cast<void *>(args.A)), LayoutA(int(config.lda))};
     TensorRefB ref_B{static_cast<ElementB *>(const_cast<void *>(args.B)), LayoutB(int(config.ldb))};
     TensorRefC ref_C{static_cast<ElementC *>(const_cast<void *>(args.C)), LayoutC(int(config.ldc))};
-    TensorRefC ref_D{static_cast<ElementC *>(args.D), LayoutC(int(config.ldd))};
+    TensorRefD ref_D{static_cast<ElementD *>(args.D), LayoutC(int(config.ldd))};
 
     if (kProvider == Provider::kReferenceHost) {
 
@@ -209,6 +213,7 @@ public:
         LayoutC,
         ElementCompute,
         ElementAccumulator,
+        ElementD,
         ConvertOp,
         InnerProductOp
       >(
@@ -242,6 +247,7 @@ public:
         LayoutC,
         ElementCompute,
         ElementAccumulator,
+        ElementD,
         ConvertOp,
         InnerProductOp
       >(
@@ -282,7 +288,8 @@ template <
   typename LayoutC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ElementD_ = ElementC_,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_gemm(Manifest &manifest) {
@@ -294,6 +301,7 @@ void make_gemm(Manifest &manifest) {
     ElementC_, LayoutC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >);
@@ -305,6 +313,7 @@ void make_gemm(Manifest &manifest) {
     ElementC_, LayoutC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >);
@@ -317,37 +326,42 @@ template <
   typename ElementC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ElementD_ = ElementC_,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_gemm_canonical_layouts(Manifest &manifest) {
 
+  // M Major outputs
   make_gemm<
     ElementA_, cutlass::layout::ColumnMajor, TransformA,
     ElementB_, cutlass::layout::ColumnMajor, TransformB,
     ElementC_, cutlass::layout::ColumnMajor,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
-  
+
   make_gemm<
     ElementA_, cutlass::layout::ColumnMajor, TransformA,
     ElementB_, cutlass::layout::RowMajor, TransformB,
     ElementC_, cutlass::layout::ColumnMajor,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
-  
+
   make_gemm<
     ElementA_, cutlass::layout::RowMajor, TransformA,
     ElementB_, cutlass::layout::ColumnMajor, TransformB,
     ElementC_, cutlass::layout::ColumnMajor,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -358,6 +372,52 @@ void make_gemm_canonical_layouts(Manifest &manifest) {
     ElementC_, cutlass::layout::ColumnMajor,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
+    ConvertOp_,
+    InnerProductOp_
+  >(manifest);
+
+  // N Major outputs
+  make_gemm<
+    ElementA_, cutlass::layout::ColumnMajor, TransformA,
+    ElementB_, cutlass::layout::ColumnMajor, TransformB,
+    ElementC_, cutlass::layout::RowMajor,
+    ElementCompute_,
+    ElementAccumulator_,
+    ElementD_,
+    ConvertOp_,
+    InnerProductOp_
+  >(manifest);
+
+  make_gemm<
+    ElementA_, cutlass::layout::ColumnMajor, TransformA,
+    ElementB_, cutlass::layout::RowMajor, TransformB,
+    ElementC_, cutlass::layout::RowMajor,
+    ElementCompute_,
+    ElementAccumulator_,
+    ElementD_,
+    ConvertOp_,
+    InnerProductOp_
+  >(manifest);
+
+  make_gemm<
+    ElementA_, cutlass::layout::RowMajor, TransformA,
+    ElementB_, cutlass::layout::ColumnMajor, TransformB,
+    ElementC_, cutlass::layout::RowMajor,
+    ElementCompute_,
+    ElementAccumulator_,
+    ElementD_,
+    ConvertOp_,
+    InnerProductOp_
+  >(manifest);
+
+  make_gemm<
+    ElementA_, cutlass::layout::RowMajor, TransformA,
+    ElementB_, cutlass::layout::RowMajor, TransformB,
+    ElementC_, cutlass::layout::RowMajor,
+    ElementCompute_,
+    ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -372,6 +432,7 @@ template <
   typename ElementC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
+  typename ElementD_ = ElementC_,
   typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
@@ -383,6 +444,7 @@ void make_gemm_interleaved_layouts(Manifest &manifest) {
     ElementC_, cutlass::layout::ColumnMajor,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -396,7 +458,8 @@ template <
   typename ElementC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ElementD_ = ElementC_,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_gemm_real_canonical_layouts(Manifest &manifest) {
@@ -406,6 +469,7 @@ void make_gemm_real_canonical_layouts(Manifest &manifest) {
     ElementC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);  
@@ -418,7 +482,8 @@ template <
   typename ElementC_,
   typename ElementCompute_,
   typename ElementAccumulator_ = ElementCompute_,
-  typename ConvertOp_ = NumericConverter<ElementC_, ElementCompute_>,
+  typename ElementD_ = ElementC_,
+  typename ConvertOp_ = NumericConverter<ElementD_, ElementCompute_>,
   typename InnerProductOp_ = multiply_add<ElementAccumulator_>
 >
 void make_gemm_complex_canonical_layouts(Manifest &manifest) {
@@ -429,6 +494,7 @@ void make_gemm_complex_canonical_layouts(Manifest &manifest) {
     ElementC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -439,6 +505,7 @@ void make_gemm_complex_canonical_layouts(Manifest &manifest) {
     ElementC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -449,6 +516,7 @@ void make_gemm_complex_canonical_layouts(Manifest &manifest) {
     ElementC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);
@@ -459,6 +527,7 @@ void make_gemm_complex_canonical_layouts(Manifest &manifest) {
     ElementC_,
     ElementCompute_,
     ElementAccumulator_,
+    ElementD_,
     ConvertOp_,
     InnerProductOp_
   >(manifest);

@@ -149,7 +149,7 @@ if (thread_idx == 0 or thread_idx == 1) {
     // If any memory operations are involved, then we also need
     // to guarantee that writes are completed and visible to consumer(s).
 
-    pipeline.producer_commit(smem_pipe_write.index());
+    pipeline.producer_commit(smem_pipe_write);
     ++smem_pipe_write;
   }
 }

@@ -24,8 +24,8 @@ and an `MMA_Traits` struct templated on the Operation struct type.
 An "Operation" struct exposes the PTX instruction
 for that specific operation.
 It defines the arguments and interface it expects.
-Operation structs have minimal software dependencies -- 
-it does not use layouts, tensors, or non-standard numeric data types.
+Operation structs have minimal software dependencies --
+they do not use layouts, tensors, or non-standard numeric data types.
 Different structs have different names
 that describe what the MMA instruction does.
 We will explain the naming scheme below.

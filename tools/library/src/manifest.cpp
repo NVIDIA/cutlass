@@ -57,7 +57,7 @@ Status Manifest::initialize() {
   // initialize procedurally generated cutlass op in manifest object
   initialize_all(*this);
 
-  // initialize manually instanced conv3d reference op in manifest object
+  // initialize manually instanced reference op in manifest object
   initialize_reference_operations(*this);
 
   // initialize manually instanced reduction reference op in manifest object

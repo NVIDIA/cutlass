@@ -68,23 +68,26 @@ CUTLASS_HOST_DEVICE void __CUTLASS_UNUSED(T const &)
   #define CUTLASS_UNUSED(expr) do { ; } while (&expr != &expr)
 #endif
 
+#ifdef _MSC_VER
+// Provides support for alternative operators 'and', 'or', and 'not'
+#include <iso646.h>
+#endif // _MSC_VER
+
 #if !defined(__CUDACC_RTC__)
-
 #include <assert.h>
+#endif
 
-  #if defined(__CUDA_ARCH__)
-    #if defined(_MSC_VER)
-      #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __FUNCSIG__); asm volatile ("brkpt;\n"); }
-    #else
-      #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __PRETTY_FUNCTION__); asm volatile ("brkpt;\n"); }
-    #endif
-
+#if defined(__CUDA_ARCH__)
+  #if defined(_MSC_VER)
+    #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __FUNCSIG__); asm volatile ("brkpt;\n"); }
   #else
-    #if defined(_MSC_VER)
-      #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __FUNCSIG__)
-    #else
-      #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __PRETTY_FUNCTION__)
-    #endif
+    #define CUTLASS_NOT_IMPLEMENTED() { printf("%s not implemented\n", __PRETTY_FUNCTION__); asm volatile ("brkpt;\n"); }
+  #endif
+#else
+  #if defined(_MSC_VER)
+    #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __FUNCSIG__)
+  #else
+    #define CUTLASS_NOT_IMPLEMENTED() assert(0 && __PRETTY_FUNCTION__)
   #endif
 #endif
 
@@ -160,7 +163,7 @@ static char const* cutlassGetStatusString(cutlass::Status status) {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // CUTLASS_PRAGMA_(UNROLL|NO_UNROLL) optimization directives for the CUDA compiler.
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDA_ARCH__) && !defined(__INTELLISENSE__)
   #if defined(__CUDACC_RTC__) || (defined(__clang__) && defined(__CUDA__))
     #define CUTLASS_PRAGMA_UNROLL _Pragma("unroll")
     #define CUTLASS_PRAGMA_NO_UNROLL _Pragma("unroll 1")

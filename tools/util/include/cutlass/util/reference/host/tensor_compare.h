@@ -39,11 +39,11 @@
 
 // Cutlass includes
 #include "cutlass/cutlass.h"
+#include "cutlass/relatively_equal.h"
 #include "cutlass/tensor_view.h"
 #include "cutlass/tensor_view_planar_complex.h"
 
 #include "cutlass/util/distribution.h"
-//#include "cutlass/util/type_traits.h"
 #include "tensor_foreach.h"
 
 namespace cutlass {
@@ -83,10 +83,55 @@ struct TensorEqualsFunc {
 
     Element lhs_ = lhs.at(coord);
     Element rhs_ = rhs.at(coord);
-    
+
     if (lhs_ != rhs_) {
       result = false;
-    }  
+    }
+  }
+
+  /// Returns true if equal
+  operator bool() const {
+    return result;
+  }
+};
+
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+struct TensorRelativelyEqualsFunc {
+
+  //
+  // Data members
+  //
+
+  TensorView<Element, Layout> lhs;
+  TensorView<Element, Layout> rhs;
+  Element epsilon;
+  Element nonzero_floor;
+  bool result;
+
+  /// Ctor
+  TensorRelativelyEqualsFunc(
+    TensorView<Element, Layout> const &lhs_,
+    TensorView<Element, Layout> const &rhs_,
+    Element epsilon_,
+    Element nonzero_floor_
+  ) :
+    lhs(lhs_),
+    rhs(rhs_),
+    epsilon(epsilon_),
+    nonzero_floor(nonzero_floor_),
+    result(true) { }
+
+  /// Visits a coordinate
+  void operator()(Coord<Layout::kRank> const &coord) {
+
+    Element lhs_ = lhs.at(coord);
+    Element rhs_ = rhs.at(coord);
+
+    if (!relatively_equal(lhs_, rhs_, epsilon, nonzero_floor)) {
+      result = false;
+    }
   }
 
   /// Returns true if equal
@@ -104,7 +149,7 @@ template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
 bool TensorEquals(
-  TensorView<Element, Layout> const &lhs, 
+  TensorView<Element, Layout> const &lhs,
   TensorView<Element, Layout> const &rhs) {
 
   // Extents must be identical
@@ -126,7 +171,7 @@ template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
 bool TensorEquals(
-  TensorViewPlanarComplex<Element, Layout> const &lhs, 
+  TensorViewPlanarComplex<Element, Layout> const &lhs,
   TensorViewPlanarComplex<Element, Layout> const &rhs) {
 
   // Extents must be identical
@@ -135,7 +180,7 @@ bool TensorEquals(
   }
 
   detail::TensorEqualsFunc<Element, Layout> real_func(
-    {lhs.data(), lhs.layout(), lhs.extent()}, 
+    {lhs.data(), lhs.layout(), lhs.extent()},
     {rhs.data(), rhs.layout(), rhs.extent()}
   );
 
@@ -164,12 +209,85 @@ bool TensorEquals(
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Returns true if two tensor views are relatively equal.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+bool TensorRelativelyEquals(
+  TensorView<Element, Layout> const &lhs,
+  TensorView<Element, Layout> const &rhs,
+  Element epsilon,
+  Element nonzero_floor) {
+
+  // Extents must be identical
+  if (lhs.extent() != rhs.extent()) {
+    return false;
+  }
+
+  detail::TensorRelativelyEqualsFunc<Element, Layout> func(lhs, rhs, epsilon, nonzero_floor);
+  TensorForEach(
+    lhs.extent(),
+    func
+  );
+
+  return bool(func);
+}
+
+/// Returns true if two tensor views are relatively equal.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+bool TensorRelativelyEquals(
+  TensorViewPlanarComplex<Element, Layout> const &lhs,
+  TensorViewPlanarComplex<Element, Layout> const &rhs,
+  Element epsilon,
+  Element nonzero_floor) {
+
+  // Extents must be identical
+  if (lhs.extent() != rhs.extent()) {
+    return false;
+  }
+
+  detail::TensorRelativelyEqualsFunc<Element, Layout> real_func(
+    {lhs.data(), lhs.layout(), lhs.extent()},
+    {rhs.data(), rhs.layout(), rhs.extent()},
+    epsilon,
+    nonzero_floor
+  );
+
+  TensorForEach(
+    lhs.extent(),
+    real_func
+  );
+
+  if (!bool(real_func)) {
+    return false;
+  }
+
+  detail::TensorEqualsFunc<Element, Layout> imag_func(
+    {lhs.data() + lhs.imaginary_stride(), lhs.layout(), lhs.extent()},
+    {rhs.data() + rhs.imaginary_stride(), rhs.layout(), rhs.extent()},
+    epsilon,
+    nonzero_floor
+  );
+
+  TensorForEach(
+    lhs.extent(),
+    imag_func
+  );
+
+  return bool(imag_func);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Returns true if two tensor views are NOT equal.
 template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
 bool TensorNotEquals(
-  TensorView<Element, Layout> const &lhs, 
+  TensorView<Element, Layout> const &lhs,
   TensorView<Element, Layout> const &rhs) {
 
   // Extents must be identical
@@ -191,7 +309,7 @@ template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
 bool TensorNotEquals(
-  TensorViewPlanarComplex<Element, Layout> const &lhs, 
+  TensorViewPlanarComplex<Element, Layout> const &lhs,
   TensorViewPlanarComplex<Element, Layout> const &rhs) {
 
   return !TensorEquals(lhs, rhs);
@@ -235,7 +353,7 @@ struct TensorContainsFunc {
 
     if (view.at(coord) == value) {
       if (!contains) {
-        location = coord; 
+        location = coord;
       }
       contains = true;
     }

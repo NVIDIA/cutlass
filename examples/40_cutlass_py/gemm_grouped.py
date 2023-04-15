@@ -37,10 +37,10 @@ import argparse
 import numpy as np
 import sys
 
-import cutlass
-import pycutlass
-from pycutlass import *
-from pycutlass.utils.device import device_cc
+import cutlass_bindings
+import cutlass.backend as pycutlass
+from cutlass.backend import *
+from cutlass.backend.utils.device import device_cc
 
 
 parser = argparse.ArgumentParser(description="Launch a grouped GEMM kernel from Python")
@@ -65,11 +65,11 @@ pycutlass.compiler.nvcc()
 
 # Set up A, B, C and accumulator
 alignment = 1
-A = TensorDescription(cutlass.float16, cutlass.ColumnMajor, alignment)
-B = TensorDescription(cutlass.float16, cutlass.RowMajor, alignment)
-C = TensorDescription(cutlass.float32, cutlass.ColumnMajor, alignment)
-element_acc = cutlass.float32
-element_epilogue = cutlass.float32
+A = TensorDescription(cutlass_bindings.float16, cutlass_bindings.ColumnMajor, alignment)
+B = TensorDescription(cutlass_bindings.float16, cutlass_bindings.RowMajor, alignment)
+C = TensorDescription(cutlass_bindings.float32, cutlass_bindings.ColumnMajor, alignment)
+element_acc = cutlass_bindings.float32
+element_epilogue = cutlass_bindings.float32
 
 # Select instruction shape based on the Tensor Core instructions supported
 # by the device on which we are running
@@ -78,12 +78,14 @@ if cc == 70:
 elif cc == 75:
     instruction_shape = [16, 8, 8]
 else:
+    # Use CUTLASS kernels for CC 80 by default (e.g., for cases in which SM86 is used)
+    cc = 80
     instruction_shape = [16, 8, 16]
 
 math_inst = MathInstruction(
     instruction_shape,
     A.element, B.element, element_acc,
-    cutlass.OpClass.TensorOp,
+    cutlass_bindings.OpClass.TensorOp,
     MathOperation.multiply_add
 )
 
@@ -112,8 +114,8 @@ pycutlass.compiler.add_module(operations)
 
 # Initialize tensors for each problem in the group
 problem_sizes = [
-    cutlass.gemm.GemmCoord(128, 128, 64),
-    cutlass.gemm.GemmCoord(512, 256, 128)
+    cutlass_bindings.gemm.GemmCoord(128, 128, 64),
+    cutlass_bindings.gemm.GemmCoord(512, 256, 128)
 ]
 problem_count = len(problem_sizes)
 

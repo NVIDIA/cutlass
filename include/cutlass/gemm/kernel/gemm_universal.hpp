@@ -68,5 +68,6 @@ class GemmUniversal;
 #include "cutlass/gemm/kernel/sm70_gemm.hpp"
 #include "cutlass/gemm/kernel/sm90_gemm_tma.hpp"
 #include "cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp"
-#include "cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_persistent.hpp"
+#include "cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp"
+#include "cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_cooperative.hpp"
 ////////////////////////////////////////////////////////////////////////////////

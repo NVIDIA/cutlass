@@ -277,7 +277,7 @@ warp-specialized mainloop implementation:
 template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
-  class KernelSchedule = KernelTmaWarpSpecialized
+  class KernelSchedule = KernelTmaWarpSpecializedCooperative
 >
 struct MainloopSm90TmaGmmaWarpSpecialized {
   constexpr static int Stages = Stages_;
@@ -299,7 +299,8 @@ it needs to be run, or exposes a template API that lets the user pick a subset o
 struct KernelMultistage { };
 struct KernelTma { };
 struct KernelTmaWarpSpecialized { };
-struct KernelTmaWarpSpecializedPersistent { };
+struct KernelTmaWarpSpecializedPingpong { };
+struct KernelTmaWarpSpecializedCooperative { };
 ```
 
 - A single kernel schedule can support multiple mainloop implementations. For example,
@@ -308,7 +309,7 @@ architectures such as `MainloopSm70TwoStage`, `MainloopSm80CpAsyncUnpredicated`,
 
 - A single mainloop can be composed with multiple
 possible kernel schedules. For example, the `MainloopSm90TmaGmmaWarpSpecialized` can be
-composed with either the `KernelTmaWarpSpecialized` or `KernelTmaWarpSpecializedPersistent`
+composed with any of the `KernelTmaWarpSpecialized`, `KernelTmaWarpSpecializedPingpong` or `KernelTmaWarpSpecializedCooperative`
 kernel schedules.
 
 As [discussed in the CUTLASS 3.0 design documentation](cutlass_3x_design.md), adopting tag
@@ -487,7 +488,7 @@ any of various `include/cutlass/gemm/kernel/{arch_tag}*.hpp` files in the direct
 Which specialization to dispatch to is decided through the dispatch policy's `Schedule` type.
 
 For example, the header file
-[include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_persistent.hpp](../../include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_persistent.hpp)
+[include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp](../../include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp)
 has a specialization of `kernel::GemmUniversal` for Hopper
 that uses a warp-specialized mainloop with a persistent scheduling algorithm,
 while the header file

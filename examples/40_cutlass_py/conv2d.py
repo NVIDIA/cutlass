@@ -38,10 +38,11 @@ import torch
 import numpy as np
 import sys
 
-import cutlass
-import pycutlass
-from pycutlass import *
-from pycutlass.utils.device import device_cc
+import cutlass_bindings
+import cutlass.backend as pycutlass
+from cutlass.backend import *
+from cutlass.backend.utils.reference_model import Conv2dReferenceModule
+from cutlass.backend.utils.device import device_cc
 
 
 parser = argparse.ArgumentParser(
@@ -76,11 +77,11 @@ pycutlass.get_memory_pool(init_pool_size=2**30, max_pool_size=2**32)
 pycutlass.compiler.nvcc()
 
 # Set up A, B, C and accumulator
-A = TensorDescription(cutlass.float16, cutlass.TensorNHWC, alignment)
-B = TensorDescription(cutlass.float16, cutlass.TensorNHWC, alignment)
-C = TensorDescription(cutlass.float32, cutlass.TensorNHWC, alignment)
-element_acc = cutlass.float32
-element_epilogue = cutlass.float32
+A = TensorDescription(cutlass_bindings.float16, cutlass_bindings.TensorNHWC, alignment)
+B = TensorDescription(cutlass_bindings.float16, cutlass_bindings.TensorNHWC, alignment)
+C = TensorDescription(cutlass_bindings.float32, cutlass_bindings.TensorNHWC, alignment)
+element_acc = cutlass_bindings.float32
+element_epilogue = cutlass_bindings.float32
 
 # Select instruction shape based on the Tensor Core instructions supported
 # by the device on which we are running
@@ -89,12 +90,14 @@ if cc == 70:
 elif cc == 75:
     instruction_shape = [16, 8, 8]
 else:
+    # Use CUTLASS kernels for CC 80 by default (e.g., for cases in which SM86 is used)
+    cc = 80
     instruction_shape = [16, 8, 16]
 
 math_inst = MathInstruction(
     instruction_shape,
     A.element, B.element, element_acc,
-    cutlass.OpClass.TensorOp,
+    cutlass_bindings.OpClass.TensorOp,
     MathOperation.multiply_add
 )
 
@@ -108,8 +111,8 @@ tile_description = TileDescription(
 epilogue_functor = pycutlass.LinearCombination(C.element, C.alignment, element_acc, element_epilogue)
 
 operation = Conv2dOperation(
-    conv_kind=cutlass.conv.Operator.fprop,
-    iterator_algorithm=cutlass.conv.IteratorAlgorithm.optimized,
+    conv_kind=cutlass_bindings.conv.Operator.fprop,
+    iterator_algorithm=cutlass_bindings.conv.IteratorAlgorithm.optimized,
     arch=cc, tile_description=tile_description,
     A=A, B=B, C=C, stride_support=StrideSupport.Strided,
     epilogue_functor=epilogue_functor
@@ -125,20 +128,20 @@ pycutlass.compiler.add_module(operations)
 
 # Randomly initialize tensors
 
-problem_size = cutlass.conv.Conv2dProblemSize(
-    cutlass.Tensor4DCoord(args.n, args.h, args.c, args.w),
-    cutlass.Tensor4DCoord(args.k, args.r, args.s, args.c),
-    cutlass.Tensor4DCoord(0, 0, 0, 0),      # Padding
-    cutlass.MatrixCoord(1, 1),              # Strides
-    cutlass.MatrixCoord(1, 1),              # Dilation
-    cutlass.conv.Mode.cross_correlation, 
+problem_size = cutlass_bindings.conv.Conv2dProblemSize(
+    cutlass_bindings.Tensor4DCoord(args.n, args.h, args.c, args.w),
+    cutlass_bindings.Tensor4DCoord(args.k, args.r, args.s, args.c),
+    cutlass_bindings.Tensor4DCoord(0, 0, 0, 0),      # Padding
+    cutlass_bindings.MatrixCoord(1, 1),              # Strides
+    cutlass_bindings.MatrixCoord(1, 1),              # Dilation
+    cutlass_bindings.conv.Mode.cross_correlation, 
     1,                                      # Split k slices
     1                                       # Groups
 )
 
-tensor_A_size = cutlass.conv.implicit_gemm_tensor_a_size(operation.conv_kind, problem_size)
-tensor_B_size = cutlass.conv.implicit_gemm_tensor_b_size(operation.conv_kind, problem_size)
-tensor_C_size = cutlass.conv.implicit_gemm_tensor_c_size(operation.conv_kind, problem_size)
+tensor_A_size = cutlass_bindings.conv.implicit_gemm_tensor_a_size(operation.conv_kind, problem_size)
+tensor_B_size = cutlass_bindings.conv.implicit_gemm_tensor_b_size(operation.conv_kind, problem_size)
+tensor_C_size = cutlass_bindings.conv.implicit_gemm_tensor_c_size(operation.conv_kind, problem_size)
 
 tensor_A = torch.ceil(torch.empty(size=(tensor_A_size,), dtype=torch.float16, device="cuda").uniform_(-8.5, 7.5))
 tensor_B = torch.ceil(torch.empty(size=(tensor_B_size,), dtype=torch.float16, device="cuda").uniform_(-8.5, 7.5))

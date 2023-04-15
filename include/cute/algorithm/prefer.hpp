@@ -34,7 +34,7 @@ namespace cute
 {
 
 // Infinite types that inherit from each other
-template <std::size_t N>
+template <size_t N>
 struct prefer : prefer<N-1> {};
 
 template <>

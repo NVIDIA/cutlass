@@ -209,7 +209,7 @@ struct GettCommandLine {
     //
 
     // Permute the batched modes to promote coalescing
-    // Sort the batched modes by min(ldAl,ldBl) and tie-broken by the size
+    // Sort the batched modes by min(ldAl,ldBl) and in case of a tie by the size
     std::sort(std::begin(bat_mode), std::end(bat_mode), [&](char l1, char l2) {
         return std::tie(std::min(mode_ldA[l1],mode_ldB[l1]),mode_size[l1])
              < std::tie(std::min(mode_ldA[l2],mode_ldB[l2]),mode_size[l2]);
@@ -227,7 +227,7 @@ struct GettCommandLine {
     }
 
     // Permute the reduction modes to promote coalescing
-    // Sort the reduction modes by min(ldAk,ldBk) and tie-broken by the size
+    // Sort the reduction modes by min(ldAk,ldBk) and in case of a tie by the size
     std::sort(std::begin(red_mode), std::end(red_mode), [&](char k1, char k2) {
         return std::tie(std::min(mode_ldA[k1],mode_ldB[k1]),mode_size[k1])
              < std::tie(std::min(mode_ldA[k2],mode_ldB[k2]),mode_size[k2]);
@@ -243,7 +243,7 @@ struct GettCommandLine {
     }
 
     // Permute the row modes to promote coalescing
-    // Sort the row modes by min(ldAm,ldCm) and tie-broken by ldAm
+    // Sort the row modes by min(ldAm,ldCm) and in case of a tie by ldAm
     std::sort(std::begin(row_mode), std::end(row_mode), [&](char m1, char m2) {
         return std::tie(std::min(mode_ldA[m1],mode_ldC[m1]),mode_ldA[m1])
              < std::tie(std::min(mode_ldA[m2],mode_ldC[m2]),mode_ldA[m2]);
@@ -259,7 +259,7 @@ struct GettCommandLine {
     }
 
     // Permute the col modes to promote coalescing
-    // Sort the col modes by min(ldBn,ldCn) and tie-broken by ldBn
+    // Sort the col modes by min(ldBn,ldCn) and in case of a tie by ldBn
     std::sort(std::begin(col_mode), std::end(col_mode), [&](char n1, char n2) {
         return std::tie(std::min(mode_ldB[n1],mode_ldC[n1]),mode_ldB[n1])
              < std::tie(std::min(mode_ldB[n2],mode_ldC[n2]),mode_ldB[n2]);
@@ -362,7 +362,7 @@ struct GettCommandLine {
       "    A command delimited list of symbolic mode and its corresponding extent.\n"
       "    Extents are defaulted to 1 if any are not provided.\n\n"
 
-      "Example usage: gett.exe --modeC=m,n,l --modeA=m,k,l --modeB=k,n,l --extent=m:4096,n:4096,k:4096\n";
+      "Example usage: gett.exe --modeC=m,n,l --modeA=m,k,l --modeB=k,n,l --extents=m:4096,n:4096,k:4096\n";
   }
 };
 

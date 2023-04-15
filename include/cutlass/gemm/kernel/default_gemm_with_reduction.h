@@ -117,7 +117,7 @@ struct DefaultGemmWithReduction {
     SharedMemoryClearOption::kClearLastStage
   >::GemmKernel;
 
-  // Replace epilogue
+  // Define epilogue
   using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueWithReductionTensorOp<
     typename GemmBase::Epilogue::Shape,
     typename GemmBase::Epilogue::WarpMmaOperator,
@@ -218,7 +218,7 @@ struct DefaultGemmWithReduction<
     Operator
   >::GemmKernel;
 
-  // Replace epilogue
+  // Define epilogue
   using Epilogue = typename cutlass::epilogue::threadblock::DefaultEpilogueWithReductionVoltaTensorOp<
     typename GemmBase::Epilogue::Shape,
     typename GemmBase::Epilogue::WarpMmaOperator,

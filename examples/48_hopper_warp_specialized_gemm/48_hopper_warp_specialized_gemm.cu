@@ -60,6 +60,7 @@
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/gemm/collective/collective_builder.hpp"
+#include "cutlass/epilogue/collective/collective_builder.hpp"
 #include "cutlass/gemm/device/gemm_universal_adapter.h"
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
 
@@ -95,12 +96,13 @@ constexpr int AlignmentB  = 128 / cutlass::sizeof_bits<ElementB>::value;    // M
 // C/D matrix configuration
 using         ElementC    = float;                                          // Element type for C and D matrix operands
 using         LayoutC     = cutlass::layout::ColumnMajor;                   // Layout type for C and D matrix operands
+constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // Memory access granularity/alignment of C matrix in units of elements (up to 16 bytes)
 
 // Core kernel configurations
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
 using ArchTag             = cutlass::arch::Sm90;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
-using TilesShape          = Shape<_128,_128,_32>;                           // Threadblock-level tile size
+using TileShape           = Shape<_128,_128,_32>;                           // Threadblock-level tile size
 using ClusterShape        = Shape<_1,_2,_1>;                                // Shape of the threadblocks in a cluster
 using StageCountType = cutlass::gemm::collective::StageCountAuto;           // Stage count maximized based on the tile size
 using KernelSchedule = cutlass::gemm::collective::KernelScheduleAuto;       // Kernel to launch based on the default setting in the Collective Builder 
@@ -110,15 +112,20 @@ using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder
     ElementA, LayoutA, AlignmentA,
     ElementB, LayoutB, AlignmentB,
     ElementAccumulator,
-    TilesShape, ClusterShape,
+    TileShape, ClusterShape,
     cutlass::gemm::collective::StageCountAuto,
     cutlass::gemm::collective::KernelScheduleAuto
   >::CollectiveOp;
 
-using CollectiveEpilogue = cutlass::epilogue::collective::DefaultEpilogue<
-    cutlass::gemm::TagToStrideC_t<LayoutC>,
-    cutlass::gemm::TagToStrideC_t<LayoutC>,
-    cutlass::epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>>;
+using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+    cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+    TileShape, ClusterShape,
+    cutlass::epilogue::collective::EpilogueTileAuto,
+    ElementAccumulator, ElementAccumulator,
+    ElementC, LayoutC, AlignmentC,
+    ElementC, LayoutC, AlignmentC,
+    cutlass::epilogue::collective::EpilogueScheduleAuto
+  >::CollectiveOp;
 
 using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
     Shape<int,int,int>, // Indicates ProblemShape
@@ -308,11 +315,8 @@ typename Gemm::Arguments args_from_options(const Options &options)
   typename Gemm::Arguments arguments{
     cutlass::gemm::GemmUniversalMode::kGemm,
     {options.m, options.n, options.k},
-    block_A.get(),
-    stride_A,
-    block_B.get(),
-    stride_B,
-    {block_C.get(), stride_C, block_D.get(), stride_D, {options.alpha, options.beta}}
+    {block_A.get(), stride_A, block_B.get(), stride_B},
+    {{options.alpha, options.beta}, block_C.get(), stride_C, block_D.get(), stride_D}
   };
 
   return arguments;

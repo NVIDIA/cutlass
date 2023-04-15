@@ -121,6 +121,8 @@ set(SUBDIRS
   reduction
   util
   pipeline
+  substrate
+  cluster_launch
   )
 
 if(TARGET nvidia::nvrtc AND TARGET nvidia::cuda_driver)

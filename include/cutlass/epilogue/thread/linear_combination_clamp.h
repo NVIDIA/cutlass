@@ -87,6 +87,7 @@ public:
   using FragmentOutput = Array<ElementOutput, kCount>;
   using FragmentAccumulator = Array<ElementAccumulator, kCount>;
   using ComputeFragment = Array<ElementCompute, kCount>;
+  using FragmentSource = Array<ElementOutput, kCount>;
 
   static FloatRoundStyle const kRound = Round;
 

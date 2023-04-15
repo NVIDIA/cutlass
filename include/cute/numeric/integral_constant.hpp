@@ -39,7 +39,7 @@ namespace cute
 {
 
 template <class T, T v>
-struct constant : std::integral_constant<T,v> {
+struct constant : CUTE_STL_NAMESPACE::integral_constant<T,v> {
   static constexpr T value = v;
   using value_type = T;
   using type = constant<T,v>;
@@ -56,7 +56,7 @@ using bool_constant = constant<bool,b>;
 using true_type  = bool_constant<true>;
 using false_type = bool_constant<false>;
 
-// 
+//
 // Traits
 //
 
@@ -64,14 +64,14 @@ using false_type = bool_constant<false>;
 // Use cute::is_integral<T> to match both built-in integral types AND constant<T,t>
 
 template <class T>
-struct is_integral : bool_constant<std::is_integral<T>::value> {};
+struct is_integral : bool_constant<CUTE_STL_NAMESPACE::is_integral<T>::value> {};
 template <class T, T v>
 struct is_integral<constant<T,v>> : true_type {};
 
 // is_static detects if an (abstract) value is defined completely by it's type (no members)
 
 template <class T>
-struct is_static : bool_constant<std::is_empty<T>::value> {};
+struct is_static : bool_constant<is_empty<T>::value> {};
 
 // is_constant detects if a type is a constant<T,v> and if v is equal to a value
 
@@ -95,45 +95,51 @@ struct is_constant<n, constant<T,v>     &&> : bool_constant<v == n> {};
 template <int v>
 using Int = constant<int,v>;
 
-using _m32  = Int<-32>;
-using _m24  = Int<-24>;
-using _m16  = Int<-16>;
-using _m12  = Int<-12>;
-using _m10  = Int<-10>;
-using _m9   = Int<-9>;
-using _m8   = Int<-8>;
-using _m7   = Int<-7>;
-using _m6   = Int<-6>;
-using _m5   = Int<-5>;
-using _m4   = Int<-4>;
-using _m3   = Int<-3>;
-using _m2   = Int<-2>;
-using _m1   = Int<-1>;
-using _0    = Int<0>;
-using _1    = Int<1>;
-using _2    = Int<2>;
-using _3    = Int<3>;
-using _4    = Int<4>;
-using _5    = Int<5>;
-using _6    = Int<6>;
-using _7    = Int<7>;
-using _8    = Int<8>;
-using _9    = Int<9>;
-using _10   = Int<10>;
-using _12   = Int<12>;
-using _16   = Int<16>;
-using _24   = Int<24>;
-using _32   = Int<32>;
-using _64   = Int<64>;
-using _96   = Int<96>;
-using _128  = Int<128>;
-using _192  = Int<192>;
-using _256  = Int<256>;
-using _512  = Int<512>;
-using _1024 = Int<1024>;
-using _2048 = Int<2048>;
-using _4096 = Int<4096>;
-using _8192 = Int<8192>;
+using _m32    = Int<-32>;
+using _m24    = Int<-24>;
+using _m16    = Int<-16>;
+using _m12    = Int<-12>;
+using _m10    = Int<-10>;
+using _m9     = Int<-9>;
+using _m8     = Int<-8>;
+using _m7     = Int<-7>;
+using _m6     = Int<-6>;
+using _m5     = Int<-5>;
+using _m4     = Int<-4>;
+using _m3     = Int<-3>;
+using _m2     = Int<-2>;
+using _m1     = Int<-1>;
+using _0      = Int<0>;
+using _1      = Int<1>;
+using _2      = Int<2>;
+using _3      = Int<3>;
+using _4      = Int<4>;
+using _5      = Int<5>;
+using _6      = Int<6>;
+using _7      = Int<7>;
+using _8      = Int<8>;
+using _9      = Int<9>;
+using _10     = Int<10>;
+using _12     = Int<12>;
+using _16     = Int<16>;
+using _24     = Int<24>;
+using _32     = Int<32>;
+using _64     = Int<64>;
+using _96     = Int<96>;
+using _128    = Int<128>;
+using _192    = Int<192>;
+using _256    = Int<256>;
+using _512    = Int<512>;
+using _1024   = Int<1024>;
+using _2048   = Int<2048>;
+using _4096   = Int<4096>;
+using _8192   = Int<8192>;
+using _16384  = Int<16384>;
+using _32768  = Int<32768>;
+using _65536  = Int<65536>;
+using _131072 = Int<131072>;
+using _262144 = Int<262144>;
+using _524288 = Int<524288>;
 
 /***************/
 /** Operators **/
@@ -198,7 +204,7 @@ CUTE_BINARY_OP(<=);
 //
 
 template <class T, class U,
-          __CUTE_REQUIRES(std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 constant<T, 0>
 operator*(constant<T, 0>, U) {
@@ -206,7 +212,7 @@ operator*(constant<T, 0>, U) {
 }
 
 template <class U, class T,
-          __CUTE_REQUIRES(std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 constant<T, 0>
 operator*(U, constant<T, 0>) {
@@ -214,7 +220,7 @@ operator*(U, constant<T, 0>) {
 }
 
 template <class T, class U,
-          __CUTE_REQUIRES(std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 constant<T, 0>
 operator/(constant<T, 0>, U) {
@@ -222,7 +228,7 @@ operator/(constant<T, 0>, U) {
 }
 
 template <class U, class T,
-          __CUTE_REQUIRES(std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 constant<T, 0>
 operator%(U, constant<T, 1>) {
@@ -230,7 +236,7 @@ operator%(U, constant<T, 1>) {
 }
 
 template <class U, class T,
-          __CUTE_REQUIRES(std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 constant<T, 0>
 operator%(U, constant<T,-1>) {
@@ -238,7 +244,7 @@ operator%(U, constant<T,-1>) {
 }
 
 template <class T, class U,
-          __CUTE_REQUIRES(std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 constant<T, 0>
 operator%(constant<T, 0>, U) {
@@ -246,7 +252,7 @@ operator%(constant<T, 0>, U) {
 }
 
 template <class T, class U,
-          __CUTE_REQUIRES(std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 constant<T, 0>
 operator&(constant<T, 0>, U) {
@@ -254,7 +260,7 @@ operator&(constant<T, 0>, U) {
 }
 
 template <class T, class U,
-          __CUTE_REQUIRES(std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 constant<T, 0>
 operator&(U, constant<T, 0>) {
@@ -262,7 +268,7 @@ operator&(U, constant<T, 0>) {
 }
 
 template <class T, T t, class U,
-          __CUTE_REQUIRES(std::is_integral<U>::value && !bool(t))>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value && !bool(t))>
 CUTE_HOST_DEVICE constexpr
 constant<bool, false>
 operator&&(constant<T, t>, U) {
@@ -270,7 +276,7 @@ operator&&(constant<T, t>, U) {
 }
 
 template <class T, T t, class U,
-          __CUTE_REQUIRES(std::is_integral<U>::value && !bool(t))>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value && !bool(t))>
 CUTE_HOST_DEVICE constexpr
 constant<bool, false>
 operator&&(U, constant<T, t>) {
@@ -278,7 +284,7 @@ operator&&(U, constant<T, t>) {
 }
 
 template <class T, class U, T t,
-          __CUTE_REQUIRES(std::is_integral<U>::value && bool(t))>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value && bool(t))>
 CUTE_HOST_DEVICE constexpr
 constant<bool, true>
 operator||(constant<T, t>, U) {
@@ -286,7 +292,7 @@ operator||(constant<T, t>, U) {
 }
 
 template <class T, class U, T t,
-          __CUTE_REQUIRES(std::is_integral<U>::value && bool(t))>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value && bool(t))>
 CUTE_HOST_DEVICE constexpr
 constant<bool, true>
 operator||(U, constant<T, t>) {
@@ -314,7 +320,7 @@ operator||(U, constant<T, t>) {
   }                                                                  \
                                                                      \
   template <class T, T t, class U,                                   \
-            __CUTE_REQUIRES(std::is_integral<U>::value)>             \
+            __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>             \
   CUTE_HOST_DEVICE constexpr                                         \
   auto                                                               \
   OP (constant<T,t>, U u) {                                          \
@@ -322,7 +328,7 @@ operator||(U, constant<T, t>) {
   }                                                                  \
                                                                      \
   template <class T, class U, U u,                                   \
-            __CUTE_REQUIRES(std::is_integral<T>::value)>             \
+            __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value)>             \
   CUTE_HOST_DEVICE constexpr                                         \
   auto                                                               \
   OP (T t, constant<U,u>) {                                          \
@@ -356,7 +362,7 @@ safe_div(constant<T, t>, constant<U, u>) {
 }
 
 template <class T, T t, class U,
-          __CUTE_REQUIRES(std::is_integral<U>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 safe_div(constant<T, t>, U u) {
@@ -364,7 +370,7 @@ safe_div(constant<T, t>, U u) {
 }
 
 template <class T, class U, U u,
-          __CUTE_REQUIRES(std::is_integral<T>::value)>
+          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 safe_div(T t, constant<U, u>) {
@@ -376,7 +382,7 @@ safe_div(T t, constant<U, u>) {
 template <class TrueType, class FalseType>
 CUTE_HOST_DEVICE constexpr
 decltype(auto)
-conditional_return(std::true_type, TrueType&& t, FalseType&&) {
+conditional_return(true_type, TrueType&& t, FalseType&&) {
   return static_cast<TrueType&&>(t);
 }
 
@@ -385,7 +391,7 @@ conditional_return(std::true_type, TrueType&& t, FalseType&&) {
 template <class TrueType, class FalseType>
 CUTE_HOST_DEVICE constexpr
 decltype(auto)
-conditional_return(std::false_type, TrueType&&, FalseType&& f) {
+conditional_return(false_type, TrueType&&, FalseType&& f) {
   return static_cast<FalseType&&>(f);
 }
 
@@ -397,6 +403,18 @@ conditional_return(bool b, TrueType const& t, FalseType const& f) {
   return b ? t : f;
 }
 
+// TrueType and FalseType don't require a common type
+template <bool b, class TrueType, class FalseType>
+CUTE_HOST_DEVICE constexpr
+auto
+conditional_return(TrueType const& t, FalseType const& f) {
+  if constexpr (b) {
+    return t;
+  } else {
+    return f;
+  }
+}
+
 //
 // Display utilities
 //
@@ -406,9 +424,11 @@ CUTE_HOST_DEVICE void print(integral_constant<T,N> const&) {
   printf("_%d", N);
 }
 
+#if !defined(__CUDACC_RTC__)
 template <class T, T N>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, integral_constant<T,N> const&) {
   return os << "_" << N;
 }
+#endif
 
 } // end namespace cute

@@ -86,7 +86,6 @@ struct Sm80 {
 struct Sm86 {
   static int const kMinComputeCapability = 86;
 };
-
 struct Sm90 {
   static int const kMinComputeCapability = 90; 
 };

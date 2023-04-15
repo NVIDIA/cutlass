@@ -44,11 +44,11 @@ namespace cute
 //
 
 template <class T, class = void>
-struct has_dereference : std::false_type {
+struct has_dereference : false_type {
 };
 
 template <class T>
-struct has_dereference<T, void_t<decltype(*std::declval<T>())>> : std::true_type {
+struct has_dereference<T, void_t<decltype(*declval<T>())>> : true_type {
 };
 
 //
@@ -91,7 +91,7 @@ struct device_ptr
   DerivedType operator+(Index const& i) const { return {ptr_ + i}; }
 
   CUTE_HOST_DEVICE constexpr friend
-  std::ptrdiff_t operator-(device_ptr<T,DerivedType> const& a,
+  ptrdiff_t operator-(device_ptr<T,DerivedType> const& a,
                            device_ptr<T,DerivedType> const& b) {
     return a.ptr_ - b.ptr_;
   }
@@ -301,6 +301,7 @@ CUTE_HOST_DEVICE void print(rmem_ptr<T> const& ptr)
   printf("rmem_ptr_%db(%p)", int(8*sizeof(T)), ptr.get());
 }
 
+#if !defined(__CUDACC_RTC__)
 template <class T>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, gmem_ptr<T> const& ptr)
 {
@@ -318,5 +319,7 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, rmem_ptr<T> const& ptr)
 {
   return os << "rmem_ptr_" << int(8*sizeof(T)) << "b";
 }
+
+#endif // !defined(__CUDACC_RTC__)
 
 } // end namespace cute

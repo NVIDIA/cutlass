@@ -43,9 +43,11 @@ using cutlass::tfloat32_t;
 // Display utilities
 //
 
+#if !defined(__CUDACC_RTC__)
 CUTE_HOST std::ostream& operator<<(std::ostream& os, tfloat32_t const& v)
 {
   return os << float(v);
 }
+#endif
 
 } // end namespace cute

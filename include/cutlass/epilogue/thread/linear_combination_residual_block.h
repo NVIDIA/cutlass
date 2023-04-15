@@ -38,20 +38,13 @@
 #include "cutlass/array.h"
 #include "cutlass/functional.h"
 #include "cutlass/numeric_conversion.h"
+#include "cutlass/epilogue/thread/detail.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace epilogue {
 namespace thread {
-
-namespace detail {
-
-/// Dummy class used to designate that the second binary operator in the epilogue is unsued
-template <typename T>
-class NoOp {};
-
-}
 
 /// Models a residual block of the form: UnaryOp(BinaryOp(BinaryOp(ActivationOp(TensorOp(X) + bias), residual1), residual2))
 template <typename ElementOutput_, typename ElementAccumulator_,

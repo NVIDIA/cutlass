@@ -362,6 +362,58 @@ ShortComplexLayoutNames = {
 }
 
 ###################################################################################################
+class KernelScheduleType(enum.Enum):
+  ScheduleAuto = enum_auto()
+  Multistage = enum_auto()
+  Tma = enum_auto()
+  TmaWarpSpecialized = enum_auto()
+  TmaWarpSpecializedPingpong = enum_auto()
+  TmaWarpSpecializedCooperative = enum_auto()
+#
+KernelScheduleTag = {
+  KernelScheduleType.ScheduleAuto: 'cutlass::gemm::collective::KernelScheduleAuto',
+  KernelScheduleType.Multistage: 'cutlass::gemm::KernelMultistage',
+  KernelScheduleType.Tma: 'cutlass::gemm::KernelTma',
+  KernelScheduleType.TmaWarpSpecialized: 'cutlass::gemm::KernelTmaWarpSpecialized',
+  KernelScheduleType.TmaWarpSpecializedPingpong: 'cutlass::gemm::KernelTmaWarpSpecializedPingpong',
+  KernelScheduleType.TmaWarpSpecializedCooperative: 'cutlass::gemm::KernelTmaWarpSpecializedCooperative',
+}
+
+#
+KernelScheduleSuffixes = {
+  KernelScheduleType.ScheduleAuto: '',
+  KernelScheduleType.Multistage: '_cpasync',
+  KernelScheduleType.Tma: '_unspecialized',
+  KernelScheduleType.TmaWarpSpecialized: '_warpspecialized',
+  KernelScheduleType.TmaWarpSpecializedPingpong: '_warpspecialized_pingpong',
+  KernelScheduleType.TmaWarpSpecializedCooperative: '_warpspecialized_cooperative',
+}
+
+class EpilogueScheduleType(enum.Enum):
+  ScheduleAuto = enum_auto()
+  EpilogueTransposed = enum_auto()
+  NoSmemWarpSpecialized = enum_auto()
+  TmaWarpSpecialized = enum_auto()
+  TmaWarpSpecializedCooperative = enum_auto()
+#
+EpilogueScheduleTag = {
+  EpilogueScheduleType.ScheduleAuto: 'cutlass::epilogue::collective::EpilogueScheduleAuto',
+  EpilogueScheduleType.EpilogueTransposed: 'cutlass::gemm::EpilogueTransposed',
+  EpilogueScheduleType.NoSmemWarpSpecialized: 'cutlass::epilogue::NoSmemWarpSpecialized',
+  EpilogueScheduleType.TmaWarpSpecialized: 'cutlass::epilogue::TmaWarpSpecialized',
+  EpilogueScheduleType.TmaWarpSpecializedCooperative: 'cutlass::epilogue::TmaWarpSpecializedCooperative',
+}
+
+#
+EpilogueScheduleSuffixes = {
+  EpilogueScheduleType.ScheduleAuto: '',
+  EpilogueScheduleType.EpilogueTransposed: '',
+  EpilogueScheduleType.NoSmemWarpSpecialized: '_epi_nosmem',
+  EpilogueScheduleType.TmaWarpSpecialized: '_epi_tma',
+  EpilogueScheduleType.TmaWarpSpecializedCooperative: '_epi_tma',
+}
+
+###################################################################################################
 
 #
 class SideMode(enum.Enum):

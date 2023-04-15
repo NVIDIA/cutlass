@@ -277,7 +277,7 @@ public:
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Regular tile iterator specialized for pitch-linear
+/// Regular tile iterator specialized for row major 
 template <
   typename Shape_,
   typename Element_,

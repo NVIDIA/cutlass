@@ -47,13 +47,6 @@
 
 #pragma once
 
-
-#if defined(__CUDACC_RTC__)
-#include <cuda/std/cmath>
-#else
-#include <cmath>
-#endif
-
 #include "cutlass/cutlass.h"
 #include "cutlass/tensor_coord.h"
 #include "cutlass/fast_math.h"

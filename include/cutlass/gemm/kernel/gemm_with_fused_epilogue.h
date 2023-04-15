@@ -198,7 +198,7 @@ public:
       lda(lda), ldb(ldb), ldc1(ldc1), ldc2(ldc2), ldd(ldd), ldr(ldr), ldt(ldt)
     {
       CUTLASS_TRACE_HOST("GemmWithFusedEpilogue::Arguments::Arguments() - problem_size: " << problem_size);
-      CUTLASS_TRACE_HOST("  ptr_Reduction: " << (void *)this->ptr_Reduction);
+      CUTLASS_TRACE_HOST("  ptr_Vector: " << (void *)this->ptr_Vector);
       CUTLASS_TRACE_HOST("  ptr_Tensor: " << (void *)this->ptr_Tensor);
       CUTLASS_TRACE_HOST("  ldr: " << this->ldr);
       CUTLASS_TRACE_HOST("  ldt: " << this->ldt);
@@ -304,7 +304,7 @@ public:
       batch_stride_Tensor(args.batch_stride_Tensor)
     {
       CUTLASS_TRACE_HOST("GemmWithFusedEpilogue::Params::Params() - problem_size: " << problem_size);
-      CUTLASS_TRACE_HOST("  ptr_Reduction: " << (void *)this->ptr_Reduction);
+      CUTLASS_TRACE_HOST("  ptr_Vector: " << (void *)this->ptr_Vector);
       CUTLASS_TRACE_HOST("  ptr_Tensor: " << (void *)this->ptr_Tensor);
       CUTLASS_TRACE_HOST("  ldr: " << this->ldr);
       CUTLASS_TRACE_HOST("  ldt: " << args.ldt);
@@ -335,7 +335,7 @@ public:
       output_op = args.epilogue;
 
       CUTLASS_TRACE_HOST("GemmWithFusedEpilogue::Params::update()");
-      CUTLASS_TRACE_HOST("  ptr_Reduction: " << (void *)this->ptr_Reduction);
+      CUTLASS_TRACE_HOST("  ptr_Vector: " << (void *)this->ptr_Vector);
       CUTLASS_TRACE_HOST("  ptr_Tensor: " << (void *)this->ptr_Tensor);
       CUTLASS_TRACE_HOST("  ldr: " << this->ldr);
     }
@@ -1055,7 +1055,7 @@ public:
       output_op = args.epilogue;
 
       CUTLASS_TRACE_HOST("GemmWithFusedEpilogue::Params::update()");
-      CUTLASS_TRACE_HOST("  ptr_Reduction: " << (void *)this->ptr_Reduction);
+      CUTLASS_TRACE_HOST("  ptr_Vector: " << (void *)this->ptr_Vector);
       CUTLASS_TRACE_HOST("  ptr_Tensor: " << (void *)this->ptr_Tensor);
       CUTLASS_TRACE_HOST("  ldr: " << this->ldr);
     }

@@ -67,7 +67,10 @@ namespace device {
 
 namespace detail{
 
-template <typename Gemm>
+template <
+  typename Gemm,
+  template <class T> class ActivationFunctor_ = cutlass::epilogue::thread::Identity
+>
 struct TestbedImpl {
   // Kernel data types
   using ElementA = typename Gemm::GemmKernel::ElementA;
@@ -82,6 +85,8 @@ struct TestbedImpl {
   using ElementCompute = typename Gemm::GemmKernel::CollectiveEpilogue::ElementCompute;
   using ElementScalar = typename Gemm::GemmKernel::CollectiveEpilogue::ElementScalar;
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
+  using ThreadEpilogueOp = typename Gemm::GemmKernel::CollectiveEpilogue::ThreadEpilogueOp;
+  using ActivationFunctor = ActivationFunctor_<ElementCompute>;
 
   static_assert(rank(StrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
   static_assert(rank(StrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
@@ -110,7 +115,6 @@ struct TestbedImpl {
   using LayoutTagB = decltype(cutlass::gemm::detail::stride_to_layout_tag_B<StrideB>());
   using LayoutTagC = decltype(cutlass::gemm::detail::stride_to_layout_tag_A<StrideC>());
   using LayoutTagD = decltype(cutlass::gemm::detail::stride_to_layout_tag_A<StrideD>());
-  using LayoutTagPackedVector = cutlass::layout::PackedVectorLayout;
 
   /// Initialization
   StrideA stride_a;
@@ -136,7 +140,6 @@ struct TestbedImpl {
 
   // Used to force multi-wave tests for persistent kernel schedules
   constexpr static int MaxSmCount = 16;
-
   //
   // Methods
   //
@@ -214,6 +217,10 @@ struct TestbedImpl {
         view.data(), view.capacity());
     }
 
+    else if (dist_kind == cutlass::Distribution::AllOnes) {
+      cutlass::reference::host::TensorFill(view, Element(1));
+    }
+
     else {
       EXPECT_TRUE(false) << "Not implemented";
       return false;
@@ -260,7 +267,7 @@ struct TestbedImpl {
     // in the upper left corner of each operand.
     tensor_A.host_view().at({0, 0}) = ElementA(1);
     tensor_B.host_view().at({0, 0}) = ElementB(1);
-    tensor_C.host_view().at(cutlass::make_Coord(0, 0)) = ElementC(1);
+    tensor_C.host_view().at({0, 0}) = ElementC(1);
 
     cutlass::reference::host::TensorCopy(reference_D.host_view(), tensor_C.host_view());
 
@@ -274,8 +281,8 @@ struct TestbedImpl {
   bool compare_reference(
       cute::Shape<int,int,int,int> problem_shape_MNKL,
       ElementScalar alpha,
-      ElementScalar beta
-    ) {
+      ElementScalar beta)
+  {
     auto [M, N, K, L] = problem_shape_MNKL;
 
     tensor_D.sync_host();
@@ -322,8 +329,8 @@ struct TestbedImpl {
   bool verify(
       ProblemShapeType problem_size,
       ElementScalar alpha,
-      ElementScalar beta
-    ) {
+      ElementScalar beta) 
+  {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     auto M = cute::size<0>(problem_shape_MNKL);
     auto N = cute::size<1>(problem_shape_MNKL);
@@ -338,6 +345,10 @@ struct TestbedImpl {
         cute::make_layout(cute::make_shape(M, N, L), stride_c));
     auto D = cute::make_tensor(reference_D.host_data(),
         cute::make_layout(cute::make_shape(M, N, L), stride_d));
+    auto Bias = cute::make_tensor(static_cast<ElementCompute*>(nullptr),
+        cute::make_layout(cute::make_shape(M, 1)));
+    auto T = cute::make_tensor(static_cast<ElementD*>(nullptr),
+        cute::make_layout(cute::make_shape(M, N, L), stride_d));
     cutlass::reference::host::GettMainloopParams<ElementAccumulator, decltype(A), decltype(B)> mainloop_params{A, B};
 
     cutlass::reference::host::GettEpilogueParams<
@@ -345,18 +356,19 @@ struct TestbedImpl {
         ElementAccumulator,
         ElementCompute,
         decltype(C),
-        decltype(D)
+        decltype(D),
+        decltype(Bias),
+        decltype(T),
+        ActivationFunctor
         >
         epilogue_params{
           alpha, beta,
-          C, D
+          C, D, Bias, T
         };
 
     cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
 
-    return compare_reference(
-      problem_shape_MNKL, alpha, beta
-    );
+    return compare_reference(problem_shape_MNKL, alpha, beta);
   }
 
 	/// Determine if the CUDA device is sufficient to run the kernel
@@ -429,12 +441,12 @@ struct TestbedImpl {
 
   /// Executes one test
   bool run(
-      ProblemShapeType problem_size,
-      ElementScalar alpha = ElementScalar(1),
-      ElementScalar beta = ElementScalar(0),
-      bool profiling = false,
-      int iterations = 20
-    ) {
+    ProblemShapeType problem_size,
+    ElementScalar alpha = ElementScalar(1),
+    ElementScalar beta = ElementScalar(0),
+    bool profiling = false,
+    int iterations = 20) 
+  {
     // Fail test if insufficient CUDA device
     if (!sufficient()) {
       std::cout << "Test failed due to insufficient CUDA device." << std::endl;
@@ -459,17 +471,21 @@ struct TestbedImpl {
       hw_info.sm_count = this->sm_count;
     }
 
-      // DefaultEpilogue
-      arguments = typename Gemm::Arguments{
-        cutlass::gemm::GemmUniversalMode::kGemm,
-        problem_size,
-        tensor_A.device_data(),
-        stride_a,
-        tensor_B.device_data(),
-        stride_b,
-        {tensor_C.device_data(), stride_c, tensor_D.device_data(), stride_d, {alpha, beta}},
-        hw_info
-      };
+    // DefaultEpilogue
+    arguments = typename Gemm::Arguments{
+      cutlass::gemm::GemmUniversalMode::kGemm,
+      problem_size,
+      {
+        tensor_A.device_data(), stride_a,
+        tensor_B.device_data(), stride_b
+      },
+      {
+        {alpha, beta},
+        tensor_C.device_data(), stride_c, tensor_D.device_data(), stride_d
+      },
+      hw_info
+    };
+
     Gemm gemm_op;
 
     size_t workspace_size = Gemm::get_workspace_size(arguments);
@@ -505,9 +521,7 @@ struct TestbedImpl {
       //
       // Verify
       //
-      bool passed = this->verify(
-          problem_size, alpha, beta
-        );
+      bool passed = this->verify(problem_size, alpha, beta);
       if (!passed) {
         std::cout << "Error : Failed : with alpha: " << float(alpha) << ", beta: " << float(beta)
                   << "\n";
@@ -525,33 +539,143 @@ struct TestbedImpl {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Gemm>
-struct Testbed {
+template <
+  typename Gemm,
+  template <class T> class ActivationFunctor
+>
+struct Testbed3x {
 
-  using TestBedImplementation = typename detail::TestbedImpl<Gemm>;
+  using TestBedImpl = typename detail::TestbedImpl<Gemm, ActivationFunctor>;
+  using Kernel      = typename Gemm::GemmKernel;
+  using Epilogue    = typename Gemm::GemmKernel::CollectiveEpilogue;
 
-  using ElementAccumulator = typename Gemm::GemmKernel::ElementAccumulator;
-  using ElementCompute = typename Gemm::GemmKernel::CollectiveEpilogue::ElementCompute;
-  using ElementScalar = typename Gemm::GemmKernel::CollectiveEpilogue::ElementScalar;
-  using LayoutTagA = typename TestBedImplementation::LayoutTagA;
-  using LayoutTagB = typename TestBedImplementation::LayoutTagB;
-  using LayoutTagC = typename TestBedImplementation::LayoutTagC;
-  using LayoutTagD = typename TestBedImplementation::LayoutTagD;
+  using ElementAccumulator   = typename Kernel::ElementAccumulator;
+  using ElementCompute       = typename Epilogue::ElementCompute;
+  using ElementScalar        = typename Epilogue::ElementScalar;
+  using LayoutTagA = typename TestBedImpl::LayoutTagA;
+  using LayoutTagB = typename TestBedImpl::LayoutTagB;
+  using LayoutTagC = typename TestBedImpl::LayoutTagC;
+  using LayoutTagD = typename TestBedImpl::LayoutTagD;
 
   // Detail Implementation
-  TestBedImplementation impl_;
+  TestBedImpl impl_;
 
   //
   // Methods
   //
- Testbed(
+  Testbed3x(
+      cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
+      cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
+      cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
+      uint64_t seed_ = TestBedImpl::kDefaultSeed)
+      : impl_(init_A_, init_B_, init_C_, seed_) {}
+
+  Testbed3x(    
+      typename LayoutTagA::Stride stride_factor_A_,
+      typename LayoutTagB::Stride stride_factor_B_,
+      typename LayoutTagC::Stride stride_factor_C_,
+      typename LayoutTagD::Stride stride_factor_D_,
+      cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
+      cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
+      cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
+          uint64_t seed_ = TestBedImpl::kDefaultSeed)
+      : impl_(stride_factor_A_,
+              stride_factor_B_,
+              stride_factor_C_,
+              stride_factor_D_,
+              init_A_,
+              init_B_,
+              init_C_,
+              seed_) {}
+
+  /// Executes one test
+  bool run(
+    typename TestBedImpl::ProblemShapeType problem_size,
+    ElementScalar alpha = ElementScalar(1),
+    ElementScalar beta = ElementScalar(0),
+    bool profiling = false,
+    int iterations = 20) 
+  {
+    return impl_.run(
+        problem_size, alpha, beta, profiling, iterations
+        );
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Testbed for GEMMs with epilogues including a bias operation and an elementwise function
+template <typename Gemm>
+struct Testbed3xBiasElementwise {
+
+  using TestBedImpl = typename detail::TestbedImpl<Gemm>;
+  using Kernel      = typename Gemm::GemmKernel;
+  using Epilogue    = typename Gemm::GemmKernel::CollectiveEpilogue;
+
+  using ElementA = typename Kernel::ElementA;
+  using StrideA  = typename Kernel::StrideA;
+  using ElementB = typename Kernel::ElementB;
+  using StrideB  = typename Kernel::StrideB;
+  using ElementC = typename Kernel::ElementC;
+  using StrideC  = typename Kernel::StrideC;
+  using ElementD = typename Kernel::ElementD;
+  using StrideD  = typename Kernel::StrideD;
+
+  using ElementAccumulator   = typename Kernel::ElementAccumulator;
+  using ElementCompute       = typename Epilogue::ElementCompute;
+  using ProblemShapeType     = typename Kernel::ProblemShape;
+  using ElementBias          = typename Epilogue::ElementBias;
+  using ElementT             = typename Epilogue::ElementT;
+  using ElementScalar        = typename Epilogue::ElementScalar;
+  using ActivationFunctor    = typename Epilogue::ActivationFunctor;
+  using BinaryOp             = typename Epilogue::BinaryOp;
+
+  static constexpr bool IsBiasEnabled = Epilogue::iskThreadEpilogueOpWithBias;
+  static constexpr bool StoreT = Epilogue::StoreT;
+
+  using LayoutTagA = typename TestBedImpl::LayoutTagA;
+  using LayoutTagB = typename TestBedImpl::LayoutTagB;
+  using LayoutTagC = typename TestBedImpl::LayoutTagC;
+  using LayoutTagD = typename TestBedImpl::LayoutTagD;
+  using LayoutTagVector = cutlass::layout::PackedVectorLayout;
+
+  cutlass::HostTensor<ElementBias, LayoutTagVector>        bias;
+  cutlass::HostTensor<   ElementT,      LayoutTagD>    tensor_T;
+  cutlass::HostTensor<   ElementT,      LayoutTagD> reference_T;
+
+  // Detail Implementation
+  TestBedImpl impl_;
+
+  // Whether to use relative equality checks
+  bool check_relative_equality;
+
+  // Factors used for calculating relative equality. These default
+  // values are borrowed from those used by default in the CUTLASS
+  // profiler for performing relative equality checks.
+  float epsilon = 0.05f;
+  float nonzero_floor = 1.0f / 256.0f;
+
+  //
+  // Methods
+  //
+  Testbed3xBiasElementwise(
+    bool check_relative_equality_,
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
-    uint64_t seed_ = TestBedImplementation::kDefaultSeed)
-     : impl_(init_A_, init_B_, init_C_, seed_) {}
+    uint64_t seed_ = TestBedImpl::kDefaultSeed
+  ) :
+    impl_(init_A_, init_B_, init_C_, seed_), check_relative_equality(check_relative_equality_) { }
 
- Testbed(    
+  Testbed3xBiasElementwise(
+    cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
+    cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
+    uint64_t seed_ = TestBedImpl::kDefaultSeed
+  ) :
+    impl_(init_A_, init_B_, init_C_, seed_), check_relative_equality(false)  { }
+
+  Testbed3xBiasElementwise(
     typename LayoutTagA::Stride stride_factor_A_,
     typename LayoutTagB::Stride stride_factor_B_,
     typename LayoutTagC::Stride stride_factor_C_,
@@ -559,33 +683,292 @@ struct Testbed {
     cutlass::Distribution::Kind init_A_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_B_ = cutlass::Distribution::Uniform,
     cutlass::Distribution::Kind init_C_ = cutlass::Distribution::Uniform,
-         uint64_t seed_ = TestBedImplementation::kDefaultSeed)
-     : impl_(stride_factor_A_,
-             stride_factor_B_,
-             stride_factor_C_,
-             stride_factor_D_,
-             init_A_,
-             init_B_,
-             init_C_,
-             seed_) {}
+    uint64_t seed_ = TestBedImpl::kDefaultSeed
+  ) :
+    impl_(stride_factor_A_,
+          stride_factor_B_,
+          stride_factor_C_,
+          stride_factor_D_,
+          init_A_,
+          init_B_,
+          init_C_,
+          seed_),
+    check_relative_equality(false)  { }
 
- /// Executes one test
- bool run(
-  typename TestBedImplementation::ProblemShapeType problem_size,
-  ElementScalar alpha = ElementScalar(1),
-  ElementScalar beta = ElementScalar(0),
-  bool profiling = false,
-  int iterations = 20
-  ) {
-   return impl_.run(
-       problem_size, alpha, beta, profiling, iterations
-      );
- }
+  /// Initializes data structures
+  void initialize(ProblemShapeType problem_size) {
+    //
+    // Allocate the GEMM workspace for A/B/C/D/T tensor
+    //
+    impl_.initialize(problem_size);
+
+    if constexpr (StoreT) {
+      auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
+      auto [M, N, K, L] = problem_shape_MNKL;
+      auto c_coord = cutlass::make_Coord(M * L, N);
+      tensor_T.resize(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(c_coord, impl_.stride_factor_D));
+      reference_T.resize(c_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(c_coord, impl_.stride_factor_D), false);
+      tensor_T.sync_device();
+    }
+  }
+
+  void initialize_bias(ProblemShapeType problem_size) {
+    auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
+    auto M = cute::get<0>(problem_shape_MNKL);
+    bias.resize(cutlass::Coord<1>(M));
+
+    EXPECT_TRUE(impl_.initialize_tensor(bias.host_view(), cutlass::Distribution::Uniform, impl_.seed + 2023));
+    bias.sync_device();
+  }
+
+  template <
+    class Element,
+    class Layout
+  >
+  bool equality_check(
+    cutlass::TensorView<Element, Layout> const& lhs,
+    cutlass::TensorView<Element, Layout> const& rhs) const {
+
+    if (check_relative_equality) {
+      return cutlass::reference::host::TensorRelativelyEquals(
+        lhs, rhs, Element(epsilon), Element(nonzero_floor));
+    }
+    else {
+      return cutlass::reference::host::TensorEquals(lhs, rhs);
+    }
+  }
+
+  /// Compares computed reference with device reference and outputs to a file if incorrect
+  bool compare_reference(
+      cute::Shape<int,int,int,int> problem_shape_MNKL,
+      ElementScalar alpha,
+      ElementScalar beta) {
+    auto [M, N, K, L] = problem_shape_MNKL;
+    auto coord_0 = cutlass::make_Coord(0);
+
+    impl_.tensor_D.sync_host();
+    tensor_T.sync_host();
+    EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.tensor_A.host_view()), 0);
+    EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.tensor_B.host_view()), 0);
+    EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.tensor_C.host_view()), 0);
+
+    if (impl_.tensor_D.size() > 1) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.tensor_D.host_view()), 0);
+    }
+
+    if (impl_.reference_D.size() > 1) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.reference_D.host_view()), 0);
+    }
+
+    if constexpr (StoreT) {
+      EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_T.host_view()), 0);
+      EXPECT_GT(cutlass::reference::host::TensorNorm(reference_T.host_view()), 0);
+    }
+
+    bool passed_D = equality_check(impl_.reference_D.host_view(), impl_.tensor_D.host_view());
+    EXPECT_TRUE(passed_D);
+
+    bool passed_T = StoreT ? equality_check(reference_T.host_view(), tensor_T.host_view()) : true;
+    EXPECT_TRUE(passed_T);
+
+    bool passed = passed_D && passed_T;
+    if (!passed) {
+      std::stringstream fname;
+      fname << "error_Gemm_device_"
+        << M << "x" << N << "x" << K << "x" << L << "_"
+        << cute::get<0>(typename Gemm::GemmKernel::TileShape{}) << "_"
+        << cute::get<1>(typename Gemm::GemmKernel::TileShape{}) << "_"
+        << cute::get<2>(typename Gemm::GemmKernel::TileShape{}) << ".txt";
+
+      std::ofstream file(fname.str());
+      file
+        << "problem: " << ' ' << M << "x" << N << "x" << K << ", Batch count = " << L
+        << ", alpha: " << float(alpha) << ", beta: " << float(beta) << "\n\n";
+
+      if constexpr (IsBiasEnabled) {
+        file << "Bias = \n" << bias.host_view()<< "\n\n";
+      }
+
+      file
+        << "A =\n" << impl_.tensor_A.host_view()
+        << "\nB =\n" << impl_.tensor_B.host_view()
+        << "\nC =\n" << impl_.tensor_C.host_view();
+      if constexpr (StoreT) {
+        file
+          << "\n\nReference_T =\n" << reference_T.host_view()
+          << "\n\nComputed_T =\n" << tensor_T.host_view();
+      }
+      file
+        << "\n\nReference_D =\n" << impl_.reference_D.host_view()
+        << "\n\nComputed_D =\n" << impl_.tensor_D.host_view();
+    }
+
+    return passed;
+  }
+
+  /// Verifies the result against a reference implementation
+  bool verify(
+    ProblemShapeType problem_size,
+    ElementScalar alpha,
+    ElementScalar beta)
+  {
+    auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
+    auto M = cute::get<0>(problem_shape_MNKL);
+    auto N = cute::get<1>(problem_shape_MNKL);
+    auto K = cute::get<2>(problem_shape_MNKL);
+    auto L = cute::get<3>(problem_shape_MNKL);
+    auto coord_0 = cutlass::make_Coord(0);
+
+    auto A = cute::make_tensor(impl_.tensor_A.host_data(),
+        cute::make_layout(cute::make_shape(M, K, L), impl_.stride_a));
+    auto B = cute::make_tensor(impl_.tensor_B.host_data(),
+        cute::make_layout(cute::make_shape(N, K, L), impl_.stride_b));
+    auto C = cute::make_tensor(impl_.tensor_C.host_data(),
+        cute::make_layout(cute::make_shape(M, N, L), impl_.stride_c));
+    auto D = cute::make_tensor(impl_.reference_D.host_data(),
+        cute::make_layout(cute::make_shape(M, N, L), impl_.stride_d));
+    auto Bias = cute::make_tensor(static_cast<ElementBias*>(IsBiasEnabled ? bias.host_data() : nullptr),
+        cute::make_layout(cute::make_shape(M, 1)));
+    auto T = cute::make_tensor(static_cast<ElementT*>(StoreT ? reference_T.host_data() : nullptr),
+        cute::make_layout(cute::make_shape(M, N, L), impl_.stride_d));
+    cutlass::reference::host::GettMainloopParams<ElementAccumulator, decltype(A), decltype(B)> mainloop_params{A, B};
+
+    cutlass::reference::host::GettEpilogueParams<
+      ElementScalar,
+      ElementAccumulator,
+      ElementCompute,
+      decltype(C),
+      decltype(D),
+      decltype(Bias),
+      decltype(T),
+      ActivationFunctor,
+      BinaryOp>
+        epilogue_params{
+          alpha,
+          beta,
+          C,
+          D,
+          Bias,
+          T
+        };
+
+    cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
+
+    return compare_reference(problem_shape_MNKL, alpha, beta);
+  }
+
+  /// Executes one test
+  bool run(
+      ProblemShapeType problem_size,
+      ElementScalar alpha = ElementScalar(1),
+      ElementScalar beta = ElementScalar(0),
+      bool profiling = false,
+      int iterations = 20)
+  {
+    // Fail test if insufficient CUDA device
+    if (!impl_.sufficient()) {
+      std::cout << "Test failed due to insufficient CUDA device." << std::endl;
+      return false;
+    }
+    //
+    // Initialize the GEMM operator
+    //
+
+    typename Gemm::Arguments arguments;
+    cutlass::KernelHardwareInfo hw_info;
+    hw_info.device_id = 0;
+    if (not profiling) {
+      impl_.sm_count = min(impl_.MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
+      hw_info.sm_count = impl_.sm_count;
+    }
+    else {
+      impl_.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
+      hw_info.sm_count = impl_.sm_count;
+    }
+
+    /// Initializes data structures
+    /// A/B/C/D Tensor
+    initialize(problem_size);
+
+    /// bias
+    if constexpr (IsBiasEnabled){
+      initialize_bias(problem_size);
+    }
+
+    arguments = typename Gemm::Arguments{
+      cutlass::gemm::GemmUniversalMode::kGemm,
+      problem_size,
+      {
+        impl_.tensor_A.device_data(), impl_.stride_a,
+        impl_.tensor_B.device_data(), impl_.stride_b
+      },
+      { // Epilogue arguments
+        {
+          alpha,
+          beta
+        },
+        impl_.tensor_C.device_data(),
+        impl_.stride_c,
+        impl_.tensor_D.device_data(),
+        impl_.stride_d,
+        bias.device_data(),
+        tensor_T.device_data()
+      }, // Epilogue arguments end
+      hw_info
+    };
+
+    Gemm gemm_op;
+
+    size_t workspace_size = Gemm::get_workspace_size(arguments);
+    cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
+
+    cutlass::Status status = gemm_op.can_implement(arguments);
+
+    if (status != cutlass::Status::kSuccess) {
+      cudaError_t error = cudaGetLastError();
+      std::cerr << "This test is not supported: " << cudaGetErrorString(error) << "\n";
+      return true;
+    }
+
+    //
+    // Run the GEMM
+    //
+
+    if (profiling) {
+      return impl_.profile(problem_size, iterations, gemm_op, arguments, workspace);
+    }
+    else {
+      cudaError_t result;
+      status = gemm_op.initialize(arguments, workspace.get());
+      status = gemm_op.run();
+      result = cudaDeviceSynchronize();
+      if (result != cudaSuccess) {
+        EXPECT_EQ(result, cudaSuccess) << "Error at Kernel Sync.";
+        return false;
+      }
+
+      EXPECT_TRUE(status == cutlass::Status::kSuccess) << to_string(status);
+
+      //
+      // Verify
+      //
+      bool passed = this->verify(problem_size, alpha, beta);
+      if (!passed) {
+        std::cout << "Error : Failed : with alpha: " << float(alpha) << ", beta: " << float(beta)
+                  << "\n";
+      }
+
+      return passed;
+    }
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename Gemm>
+template <
+  typename Gemm,
+  template <class T> class ActivationFunctor = cutlass::epilogue::thread::Identity
+>
 bool TestAll() {
   using ElementScalar = typename Gemm::GemmKernel::CollectiveEpilogue::ElementScalar;
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
@@ -595,7 +978,7 @@ bool TestAll() {
   std::vector<int> problem_size_n = {max_alignment, 512 - 2 * max_alignment};
 
   if constexpr (std::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
-                cutlass::gemm::KernelTmaWarpSpecializedPersistent>) {
+                cutlass::gemm::KernelTmaWarpSpecializedPingpong>) {
     problem_size_m.push_back(768);
     problem_size_n.push_back(768);
   }
@@ -605,7 +988,73 @@ bool TestAll() {
 
   std::vector<int> problem_size_k = {max_alignment, TileShapeK * (Stages + 1) - max_alignment};
 
-  Testbed<Gemm> testbed;
+  Testbed3x<Gemm, ActivationFunctor> testbed;
+  bool passed = true;
+
+  for (int m : problem_size_m) {
+    for (int n : problem_size_n) {
+      for (int k : problem_size_k) {
+        ProblemShapeType problem_size;
+        if constexpr (cute::rank(ProblemShapeType{}) == 4) {
+          problem_size = ProblemShapeType{m, n, k, /* l */ 1};
+        }
+        else {
+          problem_size = ProblemShapeType{m, n, k};
+        }
+
+        passed = testbed.run(
+          problem_size,
+          cutlass::from_real<ElementScalar>(1),
+          cutlass::from_real<ElementScalar>(0)
+        );
+
+        if (!passed) {
+          return false;
+        }
+      }
+    }
+  }
+
+  // if we do support batched GEMM, just run one test on it to save on test time
+  if constexpr (cute::rank(ProblemShapeType{}) == 4) {
+    auto problem_size = ProblemShapeType{256 + max_alignment, 256 + max_alignment, 160 + max_alignment, /* l */ 3};
+    passed = testbed.run(
+      problem_size,
+      cutlass::from_real<ElementScalar>(1),
+      cutlass::from_real<ElementScalar>(0)
+    );
+
+    if (!passed) {
+      return false;
+    }
+  }
+
+  return passed;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <typename Gemm>
+bool TestAllBiasElementwise(bool check_relative_equality=false) {
+  using ElementScalar = typename Gemm::GemmKernel::CollectiveEpilogue::ElementScalar;
+  using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
+
+  int max_alignment = std::max(Gemm::kAlignmentA, Gemm::kAlignmentB);
+  std::vector<int> problem_size_m = {max_alignment, 512 - 3 * max_alignment};
+  std::vector<int> problem_size_n = {max_alignment, 512 - 2 * max_alignment};
+
+  if constexpr (std::is_same_v<typename Gemm::GemmKernel::DispatchPolicy::Schedule,
+                cutlass::gemm::KernelTmaWarpSpecializedPingpong>) {
+    problem_size_m.push_back(768);
+    problem_size_n.push_back(768);
+  }
+
+  constexpr int Stages = Gemm::GemmKernel::DispatchPolicy::Stages;
+  constexpr int TileShapeK = cute::size<2>(typename Gemm::GemmKernel::TileShape{});
+
+  std::vector<int> problem_size_k = {max_alignment, TileShapeK * (Stages + 1) - max_alignment};
+
+  Testbed3xBiasElementwise<Gemm> testbed(check_relative_equality);
   bool passed = true;
 
   for (int m : problem_size_m) {
@@ -651,7 +1100,7 @@ bool TestAll() {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 template <typename Gemm>
-bool TestGemmPerf(int iterations = 20) {
+bool TestGemmPerf3x(int iterations = 20) {
   using ProblemShapeType = typename Gemm::GemmKernel::ProblemShape;
   using ElementAccumulator = typename Gemm::GemmKernel::ElementAccumulator;
   using ElementScalar = ElementAccumulator;
@@ -661,7 +1110,7 @@ bool TestGemmPerf(int iterations = 20) {
   std::vector<int> problem_size_n = { 4608 };
   std::vector<int> problem_size_k = { 8192 };
 
-  Testbed<Gemm> testbed;
+  Testbed3x<Gemm, cutlass::epilogue::thread::Identity> testbed;
 
   for (int m : problem_size_m) {
     for (int n : problem_size_n) {

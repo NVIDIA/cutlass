@@ -31,83 +31,181 @@
 
 /**
 
-This example shows how to run convolution kernels using functions and data structures
-provided by CUTLASS using tensor cores; which we run on a NVIDIA Ampere GPU.
+This example shows how to run CUTLASS's convolution kernels
+based on the Implicit GEMM algorithm, that use the Tensor Cores
+on an NVIDIA Ampere GPU.
 
-Writing a single high performance convolution kernel is hard but do-able. Whereas writing
-high performance kernels at scale which works for multiple problem sizes with good abstractions is
-really hard. CUTLASS solves this problem by providing simplified abstractions to compose
-multiple sections of implicit gemm kernel. When used properly, the kernels can hit peak performance
-of GPU easily.
+Writing a single high-performance convolution kernel is hard enough,
+let alone writing kernels that perform well for multiple problem sizes
+and use good software abstractions.
+CUTLASS provides simplified abstractions
+to compose multiple sections of a convolution kernel.
+When used properly, the kernels can reach peak GPU performance.
 
-CUTLASS divides a kernel into hierarchical composable sections. Which means, at each thread, warp
-and thread-block level, they compute on their own tile-size with higher level of tile sizes being
-composed from lower level ones. Multiple thread-tiles (tile size each thread computes) can be used
-to form warp-tiles (tile size each warp computes) and multiple warp tiles can be used to compute
-threadblock-tile (tile size computed by a threadblock).
+CUTLASS divides a kernel into hierarchical composable sections
+for each level of the GPU hardware hierarchy:
+thread, warp, and threadblock.
+Each section computes on its own tile shape,
+with each higher level's tile shape
+being composed from lower-level tile shapes.
+Multiple thread tiles (the tile shape each thread computes)
+can be used to form warp tiles (the tile shape each warp computes),
+and multiple warp tiles can be used to compute threadblock tiles
+(the tile shape computed by a threadblock).
 
-In thie example, we split variable initialization into
-1. Setting up data properties : describes how tensors are laid out in the memory and how the kernel
-can view them (logical to physical mapping)
-2. Setting up computation properties : describes how the above set tensors will be used to compute
-output of convolution.
+In thie example, we split variable initialization into two parts.
 
-First, we setup the data types of the input tensor A, weights' tensor B and output tensor C along
-with alpha, beta as the equation for convolution is C = alpha * Conv2dFprop(A, B) + beta * C. In CUTLASS,
-the kernels first compute Conv2dFprop(A, B) and leave the rest of the computation to end of the kernel as
-alpha * X + beta * C is a simple element-wise operation on X (Conv2dFprop(A, B)) and C. We call this as 
-epilogue of kernel. Hence, we setup data types for alpha and beta to be equal to 
-ElementComputeEpilogue = float. We use the data type for elements in input tensor A and B as 
-cutlass::half_t. We convey this to CUTLASS kernel by initializing template variables ElementAccumulator (float),
-ElementComputeEpilogue (float), ElementInputA (cutlass::half_t), ElementInputB (cutlass::half_t),
-ElementOutput (float). Communicating just the data type is not enough. As the data is laid out 
-linearly in memory, we have to convey the layout of tensors. We do that by initializing template
-variables LayoutInputA, LayoutInputB and LayoutOutput to TensorNHWC cutlass variable. Next, we setup
-rules to comptue alpha * X + beta * C which is called epilogue of the kernel. We initialize template
-variable EpilogueOp, which takes the data type of output ElementOutput (float), the number of
-elements per vector memory access (8), data type of accumulator (float) and data type of
-computation of linear combination (alpha * X + beta * C).
+1. Setting up data properties: describes how tensors are laid out in the memory
+   and how the kernel can view them (logical to physical mapping)
 
-Now that we setup the properties of data, we have to setup properties of computation.
+2. Setting up computation properties: describes how the above tensors
+   will be used to compute the output of convolution
 
-Second, we create template variables of tile sizes for thread-block, warp and mma-op to 128x128x64,
-64x64x64, 16x8x16 (MxNxK) respectively. When passed to instantiate CUTLASS Implicit GEMM kernel, it
-internally deduces the amount of threads needed per thread-block, amount of shared memory, storing
-data in bank-conflict free manner, and ton of other variables required to compose, initialize and
-launch a high performance Implicit GEMM kernel. This is the beauty of CUTLASS, it relieves developer
-from understanding and coding complicated hardware optimizations which can easily go wrong.
+We begin by setting up the data types
+of all the input and output elements of a convolution.
+A convolution computes
+C = alpha * Conv2dFprop(A, B) + beta * C,
+so we set up data types for the input tensor A,
+weights tensor B, output tensor C,
+and the scaling factors alpha and beta.
+CUTLASS divides the convolution into two parts:
+the "mainloop" that computes X = Conv2dFprop(A, B),
+and the "epilogue" that computes C = alpha * X + beta * C.
+The epilogue is an element-wise operation on X and C.
+In this case, it is a linear combination,
+but other epilogues are possible.
 
-CUTLASS also supports multiple MMA pipelines in a threadblock. What are MMA pipelines? MMA pipelines
-constitute the whole process of loading input data from global memory to shared memory, loading data
-from shared memory to registers, doing matrix multiplication, store to global memory. The below flow
-sequence shows a typical mma multistage pipeline.
-(see include/cutlass/conv/threadblock/implicit_gemm_multistage.h)
+In this example, we want
 
-tensor in global memory --cp_async--> tile in shared memory --smem loads--> registers 
---mma--> registers --global stores--> output to global memory
+* the scaling factors alpha and beta to be float,
 
-NVIDIA Ampere uses `cp_async` to build multistage software pipeline to better hide latencies.
+* the elements of A and B to be cutlass::half_t
+  (a 16-bit floating-point type),
 
+* the elements of C to be float, and
 
-There are few more template variables initialized such as, which threadblock tile of output matrix
-is done which threadblock launched on an SM, CUDA SM architecture of GPU you want to run on.
+* intermediate sums to be accumulated in float.
 
-These are all put together to create a template variable which describes CUTLASS Implicit GEMM
-kernel using cutlass::conv::device::ImplicitGemm template.
+We convey this to the CUTLASS kernel
+by setting the following template parameters.
 
-The next step is to initialize physical data, instantiate and initialize CUTLASS kernel and run it.
-We use CUTLASS utilities to initialize, fill, compare tensors as they are simple and doesn't come
-in the way of learning CUTLASS.
+* alpha and beta: ElementComputeEpilogue = float
 
-Once all the tensors are initialized and filled with data, create arguments tuple to launch CUTLASS
-kernel which takes problem size (N = 1, H = 64, W = 64, C = 128), filter size (K = 64,
-R = 3, S = 3, C = 128 ), padding, strides, dilation, tensors, alpha, beta and the
-important one, split k-dimension factor. Along with that, we query CUTLASS if any scratch-space
-memory required by the kernel we instantiated. If yes, we create it and pass it along with other
-arguments created to initialize CUTLASS kernel then, the kernel is launched.
+* Elements of input tensor A: ElementInputA = cutlass::half_t
 
-In this example, we later on launch a reference convolution kernel (from CUTLASS utilities) to
-compare if the output from CUTLASS kernel is same as the reference implicit GEMM kernel.
+* Elements of input tensor B: ElementInputB = cutlass::half_t
+
+* Elements of output tensor C: ElementOutput = float
+
+* Accumulation type: ElementAccumulator = float
+
+Next, we describe the layout of the input and output tensors.
+We convey this to the CUTLASS kernel
+by setting the following template parameters.
+
+* Layout of input tensor A: LayoutInputA = TensorNHWC
+
+* Layout of input tensor B: LayoutInputB = TensorNHWC
+
+* Layout of output tensor C: LayoutOutput = TensorNHWC
+
+After that, we set up rules to compute the epilogue.
+The epilogue in this case is a simple linear combination
+C = alpha * X + beta * C.
+Thus, we set the kernel's template parameter EpilogueOp
+to LinearCombination.  LinearCombination itself
+has template parameters:
+
+* the element type of the output tensor (ElementOutput),
+
+* the number of elements per vector memory access (8),
+
+* the data type of the accumulator (ElementAccumulator),
+
+* and the data type used to compute the linear combination
+  (ElementComputeEpilogue).
+
+We then define the tile shapes
+that each level of the computation uses.
+We define these as types that encode the tile shapes
+as compile-time integer values.
+Each shape expresses the dimensions M x N x K.
+Here, the letters refer to the dimensions
+of a matrix-matrix multiply.
+
+* ThreadblockShape defines the threadblock tile shape
+  as 128 x 128 x 64.
+
+* WarpShape defines the warp tile shape as 64 x 64 x 64.
+
+* InstructionShape defines the MMA
+  (matrix multiply-accumulate) operation shape
+  as 16 x 8 x 16.
+
+These types become template arguments
+of the kernel properties type
+cutlass::conv::kernel::DefaultConv2dFprop.
+The kernel uses these shapes to deduce
+the number of threads needed per threadblock,
+the required amount of shared memory,
+the internal layouts needed to access
+shared memory without bank conflicts,
+and many other properties that the kernel needs
+for good performance.
+CUTLASS deduces all these properties automatically,
+so that users don't have to.
+DefaultConv2dFprop accepts other template parameters
+that describe things like the target CUDA SM architecture.
+
+CUTLASS also supports multiple MMA pipelines in a threadblock.
+An MMA pipeline constitutes the whole process
+of loading input data from global memory to shared memory,
+loading data from shared memory to registers,
+doing matrix multiplication,
+and storing the result to global memory.
+The below flow sequence shows a typical MMA multistage pipeline
+(see include/cutlass/conv/threadblock/implicit_gemm_multistage.h).
+
+tensor in global memory
+--cp_async-->
+tile in shared memory
+--smem loads-->
+registers
+--mma-->
+registers
+--global stores-->
+output to global memory
+
+On NVIDIA Ampere, the kernel uses `cp_async`
+to build a multistage software pipeline.
+This helps it better hide latency.
+
+At this point, we can define the actual CUTLASS kernel type
+as the alias ImplicitGemm, a specialization of
+cutlass::conv::device::ImplicitGemmConvolution.
+The latter accepts the kernel properties type alias
+Conv2dFpropKernel as its one template argument.
+
+This example then sets up a test problem
+and arguments to the kernel.
+We use CUTLASS utilities to allocate
+the input and output tensors
+and fill them with sample input data.
+We then create the kernel arguments
+as an instance of ImplicitGemm::Arguments.
+The arguments include
+the problem size (N = 1, H = 64, W = 64, C = 128),
+filter size (K = 64, R = 3, S = 3, C = 128),
+padding, strides, dilation, tensors, alpha, beta,
+and the split k-dimension factor.
+We also query CUTLASS if the kernel we instantiated
+requires any memory for scratch space.
+If yes, we reserve scratch space and pass it along
+with other arguments to initialize the CUTLASS kernel.
+
+After lauching the CUTLASS kernel, this example runs
+a reference convolution kernel (from CUTLASS utilities)
+to check correctness.
 */
 
 #include <iostream>
@@ -131,8 +229,8 @@ compare if the output from CUTLASS kernel is same as the reference implicit GEMM
 
 #include "helper.h"
 
-// The code section below describes datatype for input, output tensors and computation between
-// elements 
+// Data types for input and output tensors
+// and computation between elements
 using ElementAccumulator = float;                  // Data type of accumulator
 using ElementComputeEpilogue = float;              // Data type of epilogue computation (alpha, beta)
 using ElementInputA = cutlass::half_t;             // Data type of elements in input tensor
@@ -143,39 +241,40 @@ using LayoutInputA = cutlass::layout::TensorNHWC;
 using LayoutInputB = cutlass::layout::TensorNHWC;
 using LayoutOutput = cutlass::layout::TensorNHWC;
 
-// This code section describes whether you want to use tensor cores or regular SIMT cores on GPU SM
+// Whether to use tensor cores or regular SIMT cores on GPU SM
 using MMAOp = cutlass::arch::OpClassTensorOp;
 
-// This code section describes CUDA SM architecture number
+// SM architecture number
 using SmArch = cutlass::arch::Sm80;
 
-// This code section describes the tile size a thread block will compute
-using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 64>;  // Threadblock tile shape
+// Threadblock tile shape
+using ThreadblockShape = cutlass::gemm::GemmShape<128, 128, 64>;
 
-// This code section describes tile size a warp will compute
-using WarpShape = cutlass::gemm::GemmShape<64, 64, 64>;         // Warp tile shape
+// Warp tile shape
+using WarpShape = cutlass::gemm::GemmShape<64, 64, 64>;
 
-// This code section describes the size of MMA op
-using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;    // TensorCore instruction shape
+// MMA (Tensor Core instruction, in this case) tile shape
+using InstructionShape = cutlass::gemm::GemmShape<16, 8, 16>;
 
-// This code section describes how threadblocks are scheduled on GPU
+// How the kernel schedules threadblocks
 using SwizzleThreadBlock = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
 
-// Number of pipelines you want to use
+// Number of pipeline stages to use
 constexpr int NumStages = 3;
 
-// This code section describe iterator algorithm selected is Analytic or Optimized
+// Which iterator algorithm to use: Analytic or Optimized
 static cutlass::conv::IteratorAlgorithm const IteratorAlgorithm = cutlass::conv::IteratorAlgorithm::kOptimized;
 
-// This code section describes the epilogue part of the kernel, we use default value
+// The epilogue part of the kernel
 using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
     ElementOutput,                                     // Data type of output matrix.
-    128 / cutlass::sizeof_bits<ElementOutput>::value,  // The number of elements per vectorized.
+    128 / cutlass::sizeof_bits<ElementOutput>::value,  // The number of elements per vectorized
                                                        // memory access. This becomes the vector width of
                                                        // math instructions in the epilogue too.
     ElementAccumulator,                                // Data type of accumulator
     ElementComputeEpilogue>;                           // Data type for alpha/beta in linear combination
 
+// Kernel properties type
 using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
   ElementInputA, LayoutInputA,
   ElementInputB, LayoutInputB,
@@ -193,6 +292,7 @@ using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
   IteratorAlgorithm
 >::Kernel;
 
+// Type of the actual kernel
 using ImplicitGemm = cutlass::conv::device::ImplicitGemmConvolution<Conv2dFpropKernel>;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -230,7 +330,7 @@ struct Options {
     beta(0),
     benchmark(false) { }
 
-  // Verify the problem size is compatible with the CUTLASS Convolution implementation.
+  // Verify that the problem size is compatible with CUTLASS's convolution implementation
   bool valid() {
 
     //
@@ -256,7 +356,7 @@ struct Options {
     return true;
   }
 
-  /// Updates input and filter sizes
+  /// Update input and filter sizes
   void update(
     cutlass::Tensor4DCoord input_size,
     cutlass::Tensor4DCoord filter_size) {
@@ -270,7 +370,7 @@ struct Options {
     padding.c() = filter_size.w() / 2;
   }
 
-  // Parses the command line
+  // Parse command-line arguments
   void parse(int argc, char const **args) {
     cutlass::CommandLine cmd(argc, args);
 
@@ -302,11 +402,11 @@ struct Options {
     cmd.get_cmd_line_argument("k", filter_size.n());
     cmd.get_cmd_line_argument("r", filter_size.h());
     cmd.get_cmd_line_argument("s", filter_size.w());
-    filter_size.c() = input_size.c(); 
+    filter_size.c() = input_size.c();
 
     cmd.get_cmd_line_argument("alpha", alpha);
     cmd.get_cmd_line_argument("beta", beta);
-    
+
     cmd.get_cmd_line_argument("iterations", iterations);
     cmd.get_cmd_line_argument("tag", tag);
 
@@ -320,12 +420,12 @@ struct Options {
     }
   }
 
-  /// Prints the usage statement.
+  /// Print an explanation of the command-line arguments
   std::ostream & print_usage(std::ostream &out) const {
 
     out << "16_ampere_tensorop_conv2dfprop example\n\n"
-      << "  This example uses Ampere's Tensor Core operators on F16 data types to compute\n"
-      << "  forward convolution on tensors of layout NHWC.\n\n"
+      << "  This example uses Ampere's Tensor Core operators on F16 data types\n"
+      << "  to compute forward convolution on tensors of layout NHWC.\n\n"
       << "Options:\n\n"
       << "  --help               If specified, displays this usage statement.\n\n"
       << "  --n=<int>            Input tensor extent N\n"
@@ -350,7 +450,7 @@ struct Options {
 
     return out;
   }
-  
+
   /// Computes the output tensor size (NPQK)
   cutlass::Tensor4DCoord output_size() const {
     return cutlass::Tensor4DCoord(
@@ -360,18 +460,19 @@ struct Options {
       filter_size.n());
   }
 
-  /// Compute performance in GFLOP/s
+  /// Compute performance in Gflop/s
+  ///
+  /// Gflop/s stands for billions (10^9) of
+  /// floating-point operations per second (Gflop/s).
   double gflops(double runtime_s) const {
 
     // Number of multiply-adds = NPQK * CRS
     int64_t fmas = output_size().product() * int64_t(filter_size.h() * filter_size.w() * filter_size.c());
-    
+
     // Two flops per multiply-add
     return 2.0 * double(fmas) / double(1.0e9) / runtime_s;
   }
 };
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct Result {
   double runtime_ms;
@@ -380,14 +481,14 @@ struct Result {
   cutlass::Status reference_check;
   cudaError_t error;
 
-  Result(): 
-    runtime_ms(0), 
+  Result():
+    runtime_ms(0),
     gflops(0),
     status(cutlass::Status::kSuccess),
     reference_check(cutlass::Status::kInvalid),
     error(cudaSuccess) { }
 
-  static std::ostream & print_header(std::ostream &out, Options const &options) {
+  static std::ostream& print_header(std::ostream &out, Options const &options) {
 
     if (!options.tag.empty()) {
       out << "Name,";
@@ -404,7 +505,7 @@ struct Result {
       out << options.tag << ",";
     }
 
-    out 
+    out
       << "conv_" << idx << ","
       << options.input_size.n() << ","
       << options.input_size.h() << ","
@@ -419,8 +520,6 @@ struct Result {
     return out;
   }
 };
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Runs one benchmark
 Result profile_convolution(Options const &options) {
@@ -441,7 +540,7 @@ Result profile_convolution(Options const &options) {
   // Initialize tensors
   //
 
-  // Fill tensor A on host with uniform-distribution random data
+  // Fill tensor A on host with uniformly distributed random data
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_a.host_view(),
       1,
@@ -449,7 +548,7 @@ Result profile_convolution(Options const &options) {
       ElementInputA(-8),
       0);
 
-  // Fill tensor B on host with uniform-distribution random data
+  // Fill tensor B on host with uniformly distributed random data
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_b.host_view(),
       1,
@@ -457,7 +556,7 @@ Result profile_convolution(Options const &options) {
       ElementInputB(-8),
       0);
 
-  // Fill tensor C on host with uniform-distribution random data
+  // Fill tensor C on host with uniformly distributed random data
   cutlass::reference::host::TensorFillRandomUniform(
       tensor_c.host_view(),
       1,
@@ -490,7 +589,7 @@ Result profile_convolution(Options const &options) {
   int split_k_slices = 1;
 
   // Construct Conv2dProblemSize with user defined output size
-  cutlass::conv::Conv2dProblemSize problem_size(      
+  cutlass::conv::Conv2dProblemSize problem_size(
       options.input_size,
       options.filter_size,
       options.padding,
@@ -501,7 +600,7 @@ Result profile_convolution(Options const &options) {
       split_k_slices
   );
 
-  // Construct ImplicitGemm::Argument structure with conv2d 
+  // Construct ImplicitGemm::Argument structure with conv2d
   // problem size, data pointers, and epilogue values
   typename ImplicitGemm::Arguments arguments{
     problem_size,
@@ -539,7 +638,7 @@ Result profile_convolution(Options const &options) {
   //
   // Optional reference check
   //
-  
+
   if (options.reference_check) {
     std::cout << "Verification on host...\n";
 
@@ -552,8 +651,7 @@ Result profile_convolution(Options const &options) {
       ElementOutput,
       LayoutOutput,
       ElementComputeEpilogue,
-      ElementAccumulator,
-      cutlass::NumericConverter<ElementOutput, ElementComputeEpilogue>
+      ElementAccumulator
     >(
       problem_size,
       tensor_a.host_ref(),
@@ -564,7 +662,7 @@ Result profile_convolution(Options const &options) {
       options.beta
     );
 
-    // Check if output from CUTLASS kernel and reference kernel are equal or not
+    // Check if CUTLASS kernel and reference kernel produced the same output
     tensor_d.sync_host();
 
     bool passed = cutlass::reference::host::TensorEquals(
@@ -589,14 +687,14 @@ Result profile_convolution(Options const &options) {
     std::stringstream ss;
 
     ss << "16_ampere_workspace_conv2dfprop_"
-      << options.input_size.n() << "x" << options.input_size.h() << "x" << options.input_size.w() << "x" << options.input_size.c() 
+      << options.input_size.n() << "x" << options.input_size.h() << "x" << options.input_size.w() << "x" << options.input_size.c()
       << "_"
-      << options.filter_size.n() << "x" << options.filter_size.h() << "x" << options.filter_size.w() << "x" << options.filter_size.c() 
+      << options.filter_size.n() << "x" << options.filter_size.h() << "x" << options.filter_size.w() << "x" << options.filter_size.c()
       << ".dat";
 
     std::ofstream output_workspace(ss.str());
 
-    output_workspace 
+    output_workspace
       << "Input = \n" << tensor_a.host_view() << "\n\n"
       << "Filters = \n" << tensor_b.host_view() << "\n\n";
 
@@ -616,7 +714,7 @@ Result profile_convolution(Options const &options) {
   if (options.measure_performance) {
 
     cudaEvent_t events[2];
-    
+
     for (auto & event : events) {
       result.error = cudaEventCreate(&event);
       if (result.error != cudaSuccess) {
@@ -632,7 +730,7 @@ Result profile_convolution(Options const &options) {
       return result;
     }
 
-    // Launch a sequence of implicit GEMM operations on the device
+    // Launch a sequence of implicit GEMM operations on the device.
     for (int iteration = 0; iteration < options.iterations; ++iteration) {
       result.status = implicit_gemm_op();
       CUTLASS_CHECK(result.status);
@@ -652,7 +750,7 @@ Result profile_convolution(Options const &options) {
       return result;
     }
 
-    // Measure elapsed runtime
+    // Measure elapsed runtime.
     float runtime_ms = 0;
     result.error = cudaEventElapsedTime(&runtime_ms, events[0], events[1]);
     if (result.error != cudaSuccess) {
@@ -660,7 +758,7 @@ Result profile_convolution(Options const &options) {
       return result;
     }
 
-    // Print average runtime and GFLOPs.
+    // Print average run time and floating-point throughput (Gflop/s).
     result.runtime_ms = double(runtime_ms) / double(options.iterations);
     result.gflops = options.gflops(result.runtime_ms / 1000.0);
 
@@ -672,8 +770,6 @@ Result profile_convolution(Options const &options) {
 
   return result;
 }
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char const **args) {
 
@@ -701,7 +797,7 @@ int main(int argc, char const **args) {
   }
 
   Options options;
-  
+
   options.parse(argc, args);
 
   if (options.help) {
@@ -768,5 +864,3 @@ int main(int argc, char const **args) {
 
   return 0;
 }
-
-/////////////////////////////////////////////////////////////////////////////////////////////////

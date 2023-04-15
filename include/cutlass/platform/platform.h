@@ -879,6 +879,7 @@ struct numeric_limits<uint8_t> {
   static constexpr bool is_integer = true;
 };
 
+#if !defined(__CUDACC_RTC__)
 template <>
 struct numeric_limits<float> {
   CUTLASS_HOST_DEVICE
@@ -886,6 +887,7 @@ struct numeric_limits<float> {
   static constexpr bool is_integer = false;
   static constexpr bool has_infinity = true;
 };
+#endif
 
 }  // namespace platform
 }  // namespace cutlass

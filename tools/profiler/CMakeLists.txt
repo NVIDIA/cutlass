@@ -29,7 +29,7 @@
 #
 # Sources for CUTLASS Profiler Tool
 #
-
+cmake_policy(SET CMP0112 NEW)
 set(CUTLASS_TOOLS_PROFILER_SOURCES
   src/main.cpp
   src/cutlass_profiler.cu

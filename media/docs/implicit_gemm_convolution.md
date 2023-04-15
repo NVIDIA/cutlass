@@ -19,16 +19,20 @@ This release of CUTLASS contains several artifacts related to convolution.
 
 # Implicit GEMM Algorithm
 
-2-D convolution may be mapped to matrix multiply by forming a _convolution matrix_ containing
-elements of the activations tensor then multiplying this by a matrix formed from the filters tensor.
-The earliest form of this algorithm construct the convolution matrix explicitly via an operation
+2-D convolution may be mapped to matrix multiply
+by first forming a _convolution matrix_ containing elements of the activations tensor,
+then multiplying this by a matrix formed from the filters tensor.
+The earliest form of this algorithm constructs the convolution matrix explicitly via an operation
 conventionally referred to as `im2col`. The resulting matrix replicates each activation element by a factor
 equal to the filter size, consuming additional storage capacity and memory bandwidth.
 
-The _implicit GEMM_ algorithm is a variation on the blocked, hierarchical GEMM computation in CUDA
-that instead forms tiles of the convolution matrix on the fly as data is loaded from global memory
-into Shared Memory by carefully updating pointers and predicates. Once the convolution matrix is
-formed in Shared Memory, the existing components computing warp-level GEMM accumulate the result of
+The _implicit GEMM_ algorithm is a variation on the blocked, hierarchical GEMM computation in CUDA.
+Instead of constructing the convolution matrix explicitly,
+it forms tiles of the convolution matrix on the fly
+as data are loaded from global memory into Shared Memory
+by carefully updating pointers and predicates.
+Once the convolution matrix is formed in Shared Memory,
+the existing warp-level GEMM components accumulate the result of
 convolution and update the output tensor.
 
 This section describes the structure of an efficient Implicit GEMM Convolution CUDA kernel
@@ -158,7 +162,7 @@ To get the best performance, the following parameters are recommended.
 - Channel count (C) is a multiple of 32 elements
 - Filter count (K) is a multiple of 32 elements
 
-This enables 128-bit vector memory acceses which lead to efficient CUDA kernels. Smaller alignment is supported even on tensor cores by setting AlignmentA and AlignmentB in conv::kernel::DefaultConv2dFprop, but the performance is lower than 128-bit aligned tesnors.
+This enables 128-bit vector memory acceses which lead to efficient CUDA kernels. Smaller alignment is supported even on tensor cores by setting AlignmentA and AlignmentB in `conv::kernel::DefaultConv2dFprop`, but the performance is lower than 128-bit aligned tensors.
 
 # CUTLASS Device-level Convolution Operator
 
@@ -187,12 +191,12 @@ using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
   SwizzleThreadBlock,                                     // optional function to reorder threadblocks for locality
   NumStages,                                              // number of pipeline stages in threadblock-scoped GEMM
   cutlass::arch::OpMultiplyAddSaturate,                   // math operation on data of element a and b
-  cutlass::conv::IteratorAlgorithm::kOptimized            // globabl memory iterator algorithm  
+  cutlass::conv::IteratorAlgorithm::kOptimized            // global memory iterator algorithm  
 >::Kernel
 ```
 
 This template is intended to be generic and cover all feasible configurations. The example specifies
-the following concrete data types, layouts, and tile sizes.
+the following concrete data types, layouts, and tile shapes.
 
 ```c++
 /// Define an Implicit GEMM convolution forward propagation (fprop) kernel
@@ -219,7 +223,7 @@ using Conv2dFpropKernel = typename cutlass::conv::kernel::DefaultConv2dFprop<
   SwizzleThreadBlock,                                  // optional function to reorder threadblocks for locality
   2,                                                   // number of pipeline stages in threadblock-scoped GEMM
   cutlass::arch::OpMultiplyAddSaturate,                // math operation on data of element a and b
-  cutlass::conv::IteratorAlgorithm::kOptimized         // globabl memory iterator algorithm  
+  cutlass::conv::IteratorAlgorithm::kOptimized         // global memory iterator algorithm  
 >::Kernel
 ```
 
@@ -227,7 +231,7 @@ That is, this computes 2D convolutional forward propagation with 4-bit integer i
 Internal accumulation is performed using 32-bit integers (`int32_t`), and an elementwise linear combination operation
 is performed on the output in single-precision floating point (`float`).
 
-The threadblock and warp-level tile sizes refer to the hierarhically blocked GEMM computation 
+The threadblock and warp-level tile shapes refer to the hierarchically blocked GEMM computation 
 [described here](/media/docs/gemm_api.md). Larger tiles achieve greater reuse of data loaded through shared memory
 but launch fewer CTAs and may not fully occupy the GPU for small problem sizes. Smaller tile configurations achieve
 lower peak utilizations but may better match the number of SMs within the GPU for real-world workloads.
@@ -344,13 +348,13 @@ creating GEMM-A tile in shared memory.
 - [conv2d_fprop_filter_tile_access_iterator_optimized.h](/include/cutlass/conv/threadblock/conv2d_fprop_filter_tile_access_iterator_optimized.h) optimizes iterating over global memory and 
 creating GEMM-B tile in shared memory.
 
-The improvements covered by optimized iterators are: 
-- (a) Precomputing kernel-invariant pointer deltas on the host 
-- (b) Computing cta-invariant mask predicates on device-side iterator ctors
-- (c) Use of [fast divmod](/include/cutlass/fast_math.h) to map GEMM dimensions to convolution tensors. 
-For example, _optimized_ activation iterator uses fast divmod to map GEMM _M_ to NPQ 
-for activation iterator
+The improvements covered by optimized iterators are:
 
+a. Precomputing kernel-invariant pointer deltas on the host 
+b. Computing cta-invariant mask predicates on device-side iterator ctors
+c. Use of [fast divmod](/include/cutlass/fast_math.h) to map GEMM dimensions to convolution tensors.
+
+For example, an _optimized_ activation iterator uses fast divmod to map GEMM _M_ to NPQ.
 
 **Pipelined mainloop** loads threadblock-scoped tiles from global memory into shared memory and then applies
 CUTLASS warp-level GEMM operations to load from Shared Memory and issue instructions to Turing Tensor Cores.
@@ -483,7 +487,7 @@ inc_next[2] = (
 }
 ```
 
-This allows only a simple lookup from the _delta table_ performed in device code in `Conv2dFpropActivationTileAccessIteratorOptimized::advance()`
+This allows only a simple lookup from the _delta table_ performed in device code in `Conv2dFpropActivationTileAccessIteratorOptimized::advance()`.
 
 ```c++
 // cutlass/conv/threadblock/conv2d_fprop_activation_tile_access_iterator_optimized.h
@@ -516,17 +520,17 @@ void advance() {
 
 ```
 
-### Utilizing Tensor Cores
+### Making use of Tensor Cores
 
 Turing Tensor Cores compute matrix multiply-accumulate operations efficiently by sharing data among all
 threads within a warp. The following operations are supported.
 
-|**Shape**|**A**|**B**|**C**|
-|---------|-----|-----|-----|
-| 8x8x32  | int4b_t | int4b_t | int32_t |
-| 8x8x16  | int8b_t | int8b_t | int32_t |
-| 16x8x8  | half   | half   | half    |
-| 16x8x8  | half   | half   | float   |
+| **Shape** | **A**   | **B**   | **C**   |
+|-----------|---------|---------|---------|
+| 8x8x32    | int4b_t | int4b_t | int32_t |
+| 8x8x16    | int8b_t | int8b_t | int32_t |
+| 16x8x8    | half    | half    | half    |
+| 16x8x8    | half    | half    | float   |
 
 Functionally, the Turing 8x8x32 matrix multiply operation distributes the _A_, _B_, and _C_ matrix across 32
 threads within a warp according to the following illustration.
@@ -551,7 +555,7 @@ asm volatile(
   : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
 ```
 
-To efficiently load data from Shared Memory into registers with the distribution among
+To load data efficiently from Shared Memory into registers with the distribution among
 warps matching the above, the Turing GPU architecture introduces 
 [`ldmatrix`](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-instructions-ldmatrix).
 `ldmatrix` is the ultimate warp-cooperative instruction, as all threads contribute addresses to up to 32 row vectors of
@@ -652,8 +656,11 @@ CUTLASS structures this as several components:
 ## Unit Tests
 
 Unit tests verify the functional behavior of each of the above components in a standalone CUDA kernel. This provides a
-convenient environment to (a.) inspect the template definition, (b.) showcase instantiation of use of these templates
-in device code, and (c.) assert functional correctness.
+convenient environment to
+
+a. inspect the template definition,
+b. showcase instantiation of use of these templates in device code, and
+c. assert functional correctness.
 
 **Convolution unit tests**
 - Device-wide convolution operator: [conv2d_fprop_implicit_gemm_s4nhwc_s4nhwc_s32nhwc_tensor_op_s32_sm75.cu](/test/unit/conv/device/conv2d_fprop_implicit_gemm_s4nhwc_s4nhwc_s32nhwc_tensor_op_s32_sm75.cu)

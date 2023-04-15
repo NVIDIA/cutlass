@@ -222,6 +222,138 @@ struct DefaultConv2dGroupFprop <
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Defines a kernel for Conv2dGroupFprop specialization for Analytic IteratorAlgorithm and
+/// 2 stage pipeline that supports all GroupMode.
+
+template <
+  typename ElementA,
+  typename LayoutA,
+  typename ElementB,
+  typename LayoutB,
+  typename ElementC,
+  typename LayoutC,
+  typename ElementAccumulator,
+  typename ArchTag,
+  typename ThreadblockShape,
+  typename WarpShape,
+  typename InstructionShape,
+  typename EpilogueOutputOp,
+  typename ThreadblockSwizzle,
+  typename MathOperatorTag,
+  conv::GroupMode GroupMode,
+  conv::StrideSupport StrideSupport,
+  int AlignmentA,
+  int AlignmentB
+>
+struct DefaultConv2dGroupFprop <
+  ElementA,
+  LayoutA,
+  ElementB,
+  LayoutB,
+  ElementC,
+  LayoutC,
+  ElementAccumulator,
+  arch::OpClassTensorOp,
+  ArchTag,
+  ThreadblockShape,
+  WarpShape,
+  InstructionShape,
+  EpilogueOutputOp,
+  ThreadblockSwizzle,
+  2,
+  MathOperatorTag,
+  GroupMode,
+  IteratorAlgorithm::kAnalytic,
+  StrideSupport,
+  AlignmentA,
+  AlignmentB
+> {
+
+  static_assert(std::is_same<LayoutA, cutlass::layout::TensorNHWC>::value,
+    "Current group conv only support NHWC layout");
+  static_assert(std::is_same<LayoutB, cutlass::layout::TensorNHWC>::value,
+    "Current group conv only support NHWC layout");
+  static_assert(std::is_same<LayoutC, cutlass::layout::TensorNHWC>::value,
+    "Current group conv only support NHWC layout");
+
+  // Define the core components from GEMM
+  using MmaCore = typename cutlass::gemm::threadblock::DefaultMmaCore<
+      ThreadblockShape, WarpShape, InstructionShape, ElementA, layout::RowMajor,
+      ElementB, layout::ColumnMajor, ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp,
+      2, MathOperatorTag>;
+
+  // Define iterators over tiles from the A operand
+  using ThreadMapA = typename MmaCore::IteratorThreadMapA;
+  using AccessTypeA = cutlass::AlignedArray<ElementA, AlignmentA>;
+  using IteratorA =
+    cutlass::conv::threadblock::TileIterator<
+      cutlass::conv::threadblock::Conv2dFpropActivationTileAccessIteratorAnalytic<
+        cutlass::MatrixShape<ThreadblockShape::kM, ThreadblockShape::kK>,
+        ElementA, LayoutA,
+        ThreadMapA,
+        AccessTypeA,
+        GroupMode
+      >
+    >;
+
+  using SmemIteratorA = typename MmaCore::SmemIteratorA;
+
+  // Define iterators over tiles from the B operand
+  using ThreadMapB = typename MmaCore::IteratorThreadMapB;
+  using AccessTypeB = cutlass::AlignedArray<ElementB, AlignmentB>;
+  using IteratorB =
+    cutlass::conv::threadblock::TileIterator<
+      cutlass::conv::threadblock::Conv2dFpropFilterTileAccessIteratorAnalytic<
+        cutlass::MatrixShape<ThreadblockShape::kK, ThreadblockShape::kN>,
+        ElementB, LayoutB,
+        ThreadMapB,
+        AccessTypeB,
+        GroupMode
+      >
+    >;
+
+  using SmemIteratorB = typename MmaCore::SmemIteratorB;
+
+  // Warp-level GEMM components
+  using WarpMmaTensorOp = typename MmaCore::MmaTensorOp;
+  using MmaPolicy = typename MmaCore::MmaPolicy;
+
+  // Define the Mma
+  using Mma = threadblock::ImplicitGemmPipelined<
+    ThreadblockShape,
+    IteratorA,
+    SmemIteratorA,
+    IteratorB,
+    SmemIteratorB,
+    ElementC,
+    LayoutC,
+    MmaPolicy
+  >;
+
+  static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
+
+  // Define the epilogue
+  using Epilogue = typename detail::DefaultConvEpilogue<
+    ArchTag,
+    ThreadblockShape,
+    WarpMmaTensorOp,
+    kPartitionsK,
+    EpilogueOutputOp
+  >::Epilogue;
+
+  // Define the kernel
+  using Kernel = cutlass::conv::kernel::ImplicitGemmConvolution<
+    Mma,
+    Epilogue,
+    ThreadblockSwizzle,
+    conv::Operator::kFprop,
+    Conv2dProblemSize,
+    GroupMode
+  >;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Defines a kernel for Conv2dGroupFprop specialization for Optimized IteratorAlgorithm and multistage
 /// pipeline that supports GroupMode::kSingleGroup.
 template <

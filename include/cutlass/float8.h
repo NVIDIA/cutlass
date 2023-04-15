@@ -35,9 +35,25 @@
 */
 #pragma once
 
-#include <cuda_fp16.h>
+// FP8 types are available starting CUDA 11.8+
+#if (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
+#define CUDA_FP8_ENABLED 1
+#endif
 
-#include "cutlass/cutlass.h"
+#if defined(__CUDA_ARCH__)
+#  if (__CUDA_ARCH__ >= 900)
+#    if (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
+#      define CUDA_PTX_FP8_CVT_ENABLED 1
+#    endif // (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
+#  endif // (__CUDA_ARCH__ >= 900)
+#endif // defined(__CUDA_ARCH__)
+
+#ifdef __GNUC__
+// Ignore checks on reinterpret-casts that are being used for bitcasts.
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+#endif
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined(__CUDACC_RTC__)
 
@@ -53,20 +69,14 @@
 #include <cstring>
 #endif
 
+#ifdef CUDA_FP8_ENABLED
+#include <cuda_fp8.h>
+#endif
+#include <cuda_fp16.h>
+
+#include "cutlass/cutlass.h"
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-#if (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
-#ifndef CUDA_PTX_FP8_CVT_ENABLED
-#define CUDA_PTX_FP8_CVT_ENABLED 1
-#endif
-#endif
-#endif
-
-#ifdef __GNUC__
-// Ignore checks on reinterpret-casts that are being used for bitcasts.
-#pragma GCC diagnostic ignored "-Wstrict-aliasing"
-#endif
 
 namespace cutlass {
 
@@ -435,20 +445,16 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
     // Methods
     //
 
-    /// Default constructor
-    CUTLASS_HOST_DEVICE
-    float_e4m3_t() : Base() { }
+    /// Constructor inheritance
+    using Base::Base;
 
-    /// Reinterpret cast from CUDA's FP8 type
+#ifdef CUDA_FP8_ENABLED
+    /// Conversion from CUDA's FP8 type
     CUTLASS_HOST_DEVICE
-    float_e4m3_t(float_e4m3_t const& x) {
-    #if defined(__CUDA_ARCH__)
-        storage = reinterpret_cast<uint8_t const &>(x);
-    #else
-        uint8_t raw = x.storage;
-        std::memcpy(&storage, &raw, sizeof(storage));
-    #endif
+    explicit float_e4m3_t(__nv_fp8_e4m3 x) {
+        storage = x.__x;
     }
+#endif
 
     /// Floating point conversion
     CUTLASS_HOST_DEVICE
@@ -475,17 +481,14 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
     CUTLASS_HOST_DEVICE
     explicit float_e4m3_t(float_e5m2_t x);
 
-    /// Assignment
+#ifdef CUDA_FP8_ENABLED
+    /// Assignment from CUDA's FP8 type
     CUTLASS_HOST_DEVICE
-    float_e4m3_t & operator=(float_e4m3_t const &x) {
-    #if defined(__CUDA_ARCH__)
-        storage = reinterpret_cast<uint8_t const &>(x);
-    #else
-        uint8_t raw = x.storage;
-        std::memcpy(&storage, &raw, sizeof(storage));
-    #endif
+    float_e4m3_t & operator=(__nv_fp8_e4m3 x) {
+        storage = x.__x;
         return *this;
     }
+#endif
 
     /// Converts to float
     CUTLASS_HOST_DEVICE
@@ -561,7 +564,6 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
         return int(storage & Base::FP8_MANTISSA_MASK);
     }
 };
-
 ///////////////////////////////////////////////////////////////
 ///
 /// floating-point 8 type : E5M2
@@ -645,20 +647,16 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
     // Methods
     //
 
-    /// Default constructor
-    CUTLASS_HOST_DEVICE
-    float_e5m2_t() : Base() { }
+    /// Constructor inheritance
+    using Base::Base;
 
-    /// Reinterpret cast from CUDA's FP8 type
+#ifdef CUDA_FP8_ENABLED
+    /// Conversion from CUDA's FP8 type
     CUTLASS_HOST_DEVICE
-    float_e5m2_t(float_e5m2_t const& x) {
-    #if defined(__CUDA_ARCH__)
-        storage = reinterpret_cast<uint8_t const &>(x);
-    #else
-        uint8_t raw = x.storage;
-        std::memcpy(&storage, &raw, sizeof(storage));
-    #endif
+    explicit float_e5m2_t(__nv_fp8_e5m2 x) {
+        storage = x.__x;
     }
+#endif
 
     /// Floating point conversion
     CUTLASS_HOST_DEVICE
@@ -685,17 +683,14 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
     CUTLASS_HOST_DEVICE
     explicit float_e5m2_t(float_e4m3_t x);
 
-    /// Assignment
+#ifdef CUDA_FP8_ENABLED
+    /// Assignment from CUDA's FP8 type
     CUTLASS_HOST_DEVICE
-    float_e5m2_t & operator=(float_e5m2_t const &x) {
-    #if defined(__CUDA_ARCH__)
-        storage = reinterpret_cast<uint8_t const &>(x);
-    #else
-        uint8_t raw = x.storage;
-        std::memcpy(&storage, &raw, sizeof(storage));
-    #endif
+    float_e5m2_t & operator=(__nv_fp8_e5m2 x) {
+        storage = x.__x;
         return *this;
     }
+#endif
 
     /// Converts to float
     CUTLASS_HOST_DEVICE
@@ -771,7 +766,6 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
         return int(storage & Base::FP8_MANTISSA_MASK);
     }
 };
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Arithmetic operators

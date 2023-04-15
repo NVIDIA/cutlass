@@ -50,7 +50,7 @@
 #include "cutlass/util/GPU_Clock.hpp"
 
 #include "testbed.h"
-#include "cutlass/pipeline.hpp"
+#include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/arch/barrier.h"
 #include "cute/arch/cluster_sm90.hpp"
 #include "cutlass/arch/barrier.h"
@@ -90,7 +90,7 @@ struct CollectiveSimulation {
       for(int i = 0; i < tma_k_prologue; ++i) {
         pipeline.producer_acquire(tile_start_state_pipe);
         // Simulating cp.async.bulk.tensor behavior
-        pipeline.producer_commit(tile_start_state_pipe.index(), per_cta_bytes);
+        pipeline.producer_commit(tile_start_state_pipe, per_cta_bytes);
         ++tile_start_state_pipe;
       }
       int tma_k_iter = num_iterations - tma_k_prologue;
@@ -103,7 +103,7 @@ struct CollectiveSimulation {
         pipeline.producer_acquire(wr_pipe);
 
         // Simulating cp.async.bulk.tensor behavior
-        pipeline.producer_commit(wr_pipe.index(), per_cta_bytes);
+        pipeline.producer_commit(wr_pipe, per_cta_bytes);
 
         // Advance write stage
         ++wr_pipe;
@@ -198,9 +198,6 @@ __global__ static
 void pipeline_device(KernelParams params)
 {
   extern __shared__ char shared_memory[];
-  using DispatchPolicy = cutlass::gemm::MainloopSm90TmaGmmaWarpSpecialized<Stages,
-                          ClusterShape,
-                          cutlass::gemm::KernelTmaWarpSpecializedPersistent>;
   using MainloopPipeline = typename cutlass::PipelineTmaAsync<Stages, ClusterShape>;
   using PipelineState = typename cutlass::PipelineState<Stages>;
 
@@ -345,9 +342,6 @@ struct PipelineTest {
     }
 
     for (int iter = 0; iter < iterations; ++iter) {
-    
-      using MainloopPipeline = typename cutlass::PipelineTmaAsync<Stages, decltype(cluster_shape)>;
-
       constexpr int StagesPerMathWarpGroup = 2;
       constexpr int MathWarpGroupCountPersistent = 2;
       int smem_size = int(sizeof(SharedStorage<Stages, decltype(cluster_shape), 

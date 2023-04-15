@@ -264,7 +264,7 @@ TEST(SM90_CuTe_Hopper, Stsm)
     //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
     EXPECT_EQ(h_out[i], h_in[i]);
   }
-  CUTLASS_TRACE_HOST("CuTe 32x8 interleaved STS.U16 SUCCESS\n");
+  CUTLASS_TRACE_HOST("CuTe 32x8 interleaved STSM.U16 SUCCESS\n");
   }
 
   {
@@ -352,7 +352,7 @@ TEST(SM90_CuTe_Hopper, Stsm)
     //printf("%d  %d\n", int(h_in[i]), int(h_out[i]));
     EXPECT_EQ(h_out[i], h_in[i]);
   }
-  CUTLASS_TRACE_HOST("CuTe 32x32 STS.U16 SUCCESS\n");
+  CUTLASS_TRACE_HOST("CuTe 32x32 STSM.U16 SUCCESS\n");
   }
 
   {

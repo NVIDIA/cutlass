@@ -42,17 +42,21 @@
   // __nvvm_get_smem_pointer added in Clang 14: https://reviews.llvm.org/D111665
     #define CUTE_CLANG_SUPPORTS_NVVM_GET_SMEM_POINTER (__clang_major__ >= 14)
   #else
-    // ... but broken on Windows until Clang 15: https://reviews.llvm.org/D122897
+    // ... but will not work on Windows until Clang 15: https://reviews.llvm.org/D122897
     #define CUTE_CLANG_SUPPORTS_NVVM_GET_SMEM_POINTER (__clang_major__ >= 15)
   #endif
 #endif
 
 #if defined(__NVCC__) || defined(__CUDACC_RTC__)
   // __cvta_generic_to_shared added in CUDA 11+
-  #define CUTE_NVCC_SUPPORTS_CVTA_GENERIC_TO_SHARED (defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 11))
+  #if defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ >= 11)
+    #define CUTE_NVCC_SUPPORTS_CVTA_GENERIC_TO_SHARED 1
+  #endif
 
   // __nvvm_get_smem_pointer added in CUDA 10.2
-  #define CUTE_NVCC_SUPPORTS_NVVM_GET_SMEM_POINTER (defined(__CUDA_ARCH__) && (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2))
+  #if defined(__CUDA_ARCH__) && __CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2
+    #define CUTE_NVCC_SUPPORTS_NVVM_GET_SMEM_POINTER 1
+  #endif
 #endif
 
 #define CUTE_CVTA_GENERIC_TO_SHARED_SUPPORTED (CUTE_NVCC_SUPPORTS_CVTA_GENERIC_TO_SHARED || CUTE_CLANG_SUPPORTS_CVTA_GENERIC_TO_SHARED)
@@ -170,6 +174,40 @@ explode(Fn fn,
         PtrC&& c, int_sequence<Ic...>)
 {
   return fn(d[Id]..., a[Ia]..., b[Ib]..., c[Ic]...);
+}
+
+template <class Fn,
+          class PtrA, int... Ia,
+          class PtrB, int... Ib,
+          class PtrC, int... Ic,
+          class ParamType>
+CUTE_HOST_DEVICE constexpr
+void
+explode_with_d_scaling(Fn fn,
+        PtrA&& a, int_sequence<Ia...>,
+        PtrB&& b, int_sequence<Ib...>,
+        PtrC&& c, int_sequence<Ic...>,
+        ParamType&& p0)
+{
+  return fn(a[Ia]..., b[Ib]..., c[Ic]..., p0);
+}
+
+template <class Fn,
+          class PtrD, int... Id,
+          class PtrA, int... Ia,
+          class PtrB, int... Ib,
+          class PtrC, int... Ic,
+          class ParamType>
+CUTE_HOST_DEVICE constexpr
+void
+explode_with_d_scaling(Fn fn,
+        PtrD&& d, int_sequence<Id...>,
+        PtrA&& a, int_sequence<Ia...>,
+        PtrB&& b, int_sequence<Ib...>,
+        PtrC&& c, int_sequence<Ic...>,
+        ParamType&& p0)
+{
+  return fn(d[Id]..., a[Ia]..., b[Ib]..., c[Ic]..., p0);
 }
 
 } // end namespace detail

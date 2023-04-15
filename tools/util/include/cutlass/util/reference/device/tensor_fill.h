@@ -58,6 +58,8 @@
 #include "cutlass/tensor_view.h"
 #include "cutlass/blas3.h"
 
+#include "cutlass/layout/vector.h"
+
 #include "cutlass/util/reference/device/tensor_foreach.h"
 #include "cutlass/util/distribution.h"
 
@@ -1646,6 +1648,15 @@ void BlockFillSequential(
   Element v = Element(1),
   Element s = Element(0)) {
 
+  using Layout = layout::PackedVectorLayout;
+  Layout::TensorCoord size(static_cast<Layout::Index>(capacity)); // -Wconversion
+  Layout layout = Layout::packed(size);
+  TensorView<Element, Layout> view(ptr, layout, size);
+
+  Array<Element, Layout::kRank> c;
+  c[0] = v;
+
+  TensorFillLinear(view, c, s);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

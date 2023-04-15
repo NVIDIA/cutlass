@@ -65,7 +65,8 @@ template <
   typename LayoutC,
   typename ElementCompute,
   typename ElementAccumulator = ElementCompute,
-  typename ConvertOp = NumericConverter<ElementC, ElementCompute>,
+  typename ElementD = ElementC,
+  typename ConvertOp = NumericConverter<ElementD, ElementCompute>,
   typename InnerProductOp = multiply_add<ElementAccumulator>
 >
 void Conv2dFprop(
@@ -73,7 +74,7 @@ void Conv2dFprop(
   TensorRef<ElementA, LayoutA> tensor_x,
   TensorRef<ElementB, LayoutB> tensor_w,
   TensorRef<ElementC, LayoutC> tensor_y_in,
-  TensorRef<ElementC, LayoutC> tensor_y_out,
+  TensorRef<ElementD, LayoutC> tensor_y_out,
   ElementCompute alpha,
   ElementCompute beta) {
 
@@ -142,12 +143,13 @@ template <typename ElementA,
           typename LayoutC,
           typename ElementCompute,
           typename ElementAccumulator = ElementCompute,
-          typename ConvertOp = NumericConverter<ElementC, ElementCompute>,
-          typename InnerProductOp = multiply_add<ElementAccumulator> >
+          typename ElementD = ElementC,
+          typename ConvertOp = NumericConverter<ElementD, ElementCompute>,
+          typename InnerProductOp = multiply_add<ElementAccumulator>>
 void Depsep_Fprop(cutlass::TensorView<ElementA, LayoutA> tensor_A,
                   cutlass::TensorView<ElementB, LayoutB> tensor_B,
                   cutlass::TensorView<ElementC, LayoutC> tensor_C,
-                  cutlass::TensorView<ElementC, LayoutC> tensor_D,
+                  cutlass::TensorView<ElementD, LayoutC> tensor_D,
                   ElementCompute alpha,
                   ElementCompute beta,
                   cutlass::Tensor4DCoord padding = cutlass::Tensor4DCoord(),
@@ -208,7 +210,8 @@ template <
   typename LayoutC,
   typename ElementCompute,
   typename ElementAccumulator = ElementCompute,
-  typename ConvertOp = NumericConverter<ElementC, ElementCompute>,
+  typename ElementD = ElementC,
+  typename ConvertOp = NumericConverter<ElementD, ElementCompute>,
   typename InnerProductOp = multiply_add<ElementAccumulator>
 >
 void Conv2dDgrad(
@@ -216,7 +219,7 @@ void Conv2dDgrad(
   TensorRef<ElementA, LayoutA> tensor_dy,
   TensorRef<ElementB, LayoutB> tensor_w,
   TensorRef<ElementC, LayoutC> tensor_dx_in,
-  TensorRef<ElementC, LayoutC> tensor_dx_out,
+  TensorRef<ElementD, LayoutC> tensor_dx_out,
   ElementCompute alpha,
   ElementCompute beta) {
 
@@ -309,7 +312,8 @@ template <
   typename LayoutC,
   typename ElementCompute,
   typename ElementAccumulator = ElementCompute,
-  typename ConvertOp = NumericConverter<ElementC, ElementCompute>,
+  typename ElementD = ElementC,
+  typename ConvertOp = NumericConverter<ElementD, ElementCompute>,
   typename InnerProductOp = multiply_add<ElementAccumulator>
 >
 void Conv2dWgrad(
@@ -317,7 +321,7 @@ void Conv2dWgrad(
   TensorRef<ElementA, LayoutA> tensor_dy,
   TensorRef<ElementB, LayoutB> tensor_x,
   TensorRef<ElementC, LayoutC> tensor_dw_in,
-  TensorRef<ElementC, LayoutC> tensor_dw_out,
+  TensorRef<ElementD, LayoutC> tensor_dw_out,
   ElementCompute alpha,
   ElementCompute beta) {
   
@@ -389,7 +393,8 @@ template <
   typename LayoutC,
   typename ElementCompute,
   typename ElementAccumulator = ElementCompute,
-  typename ConvertOp = NumericConverter<ElementC, ElementCompute>,
+  typename ElementD = ElementC,
+  typename ConvertOp = NumericConverter<ElementD, ElementCompute>,
   typename InnerProductOp = multiply_add<ElementAccumulator>
 >
 void Conv2d(
@@ -398,7 +403,7 @@ void Conv2d(
   TensorRef<ElementA, LayoutA> tensor_A,
   TensorRef<ElementB, LayoutB> tensor_B,
   TensorRef<ElementC, LayoutC> tensor_C,
-  TensorRef<ElementC, LayoutC> tensor_D,
+  TensorRef<ElementD, LayoutC> tensor_D,
   ElementCompute alpha,
   ElementCompute beta) {
 
@@ -409,7 +414,8 @@ void Conv2d(
       ElementB, LayoutB,
       ElementC, LayoutC,
       ElementCompute,
-      ElementAccumulator, 
+      ElementAccumulator,
+      ElementD,
       ConvertOp, InnerProductOp
     >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta);
     break;
@@ -421,6 +427,7 @@ void Conv2d(
       ElementC, LayoutC,
       ElementCompute,
       ElementAccumulator,
+      ElementD,
       ConvertOp, InnerProductOp
     >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta);
     break;
@@ -431,7 +438,8 @@ void Conv2d(
       ElementB, LayoutB,
       ElementC, LayoutC,
       ElementCompute,
-      ElementAccumulator, 
+      ElementAccumulator,
+      ElementD,
       ConvertOp, InnerProductOp
     >(problem_size, tensor_A, tensor_B, tensor_C, tensor_D, alpha, beta);
     break;
