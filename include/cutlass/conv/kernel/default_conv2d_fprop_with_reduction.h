@@ -100,7 +100,7 @@ struct DefaultConv2dFpropWithReduction {
     AlignmentB
   >::Kernel;
 
-  // Replace epilogue
+  // Define epilogue
   using Epilogue = typename cutlass::conv::kernel::detail::DefaultConvEpilogueWithReductionTensorOp<
     ArchTag,
     typename ImplicitGemmBase::Epilogue::Shape,

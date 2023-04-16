@@ -96,12 +96,16 @@ inline std::ostream & TensorView_WriteRank(
 
     if (rank + 2 == Layout::kRank) {
       // Write least significant ranks asa matrix with rows delimited by "\n"
-      out << (idx ? ",\n" : "");
+      if (idx) {
+        out << ",\n";
+      }
       TensorView_WriteLeastSignificantRank(out, view, coord, rank + 1, width);
     }
     else {
       // Higher ranks are separated by newlines
-      out << (idx ? ",\n\n" : "");
+      if (idx) {
+        out << ",\n\n";
+      }
       TensorView_WriteRank(out, view, coord, rank + 1, width);
     }
   }
@@ -166,12 +170,16 @@ inline std::ostream & TensorViewPlanarComplex_WriteRank(
 
     if (rank + 2 == Layout::kRank) {
       // Write least significant ranks asa matrix with rows delimited by ";\n"
-      out << (idx ? ";\n" : "");
+      if (idx) {
+        out << ";\n";
+      }
       TensorViewPlanarComplex_WriteLeastSignificantRank(out, view, coord, rank + 1, width);
     }
     else {
       // Higher ranks are separated by newlines
-      out << (idx ? "\n" : "");
+      if (idx) {
+        out << "\n";
+      }
       TensorViewPlanarComplex_WriteRank(out, view, coord, rank + 1, width);
     }
   }

@@ -80,7 +80,7 @@ class GemmUniversalAdapter;
 template <class GemmKernel_>
 class GemmUniversalAdapter<
   GemmKernel_,
-  std::enable_if_t<gemm::detail::IsCutlass3GemmKernel<GemmKernel_>::value>>
+  cute::enable_if_t<gemm::detail::IsCutlass3GemmKernel<GemmKernel_>::value>>
 {
 public:
   using GemmKernel = GemmKernel_;
@@ -88,6 +88,7 @@ public:
   using ElementA = typename GemmKernel::ElementA;
   using ElementB = typename GemmKernel::ElementB;
   using ElementC = typename GemmKernel::ElementC;
+  using ElementD = typename GemmKernel::ElementD;
   using ElementAccumulator = typename GemmKernel::TiledMma::ValTypeC;
   using DispatchPolicy = typename GemmKernel::DispatchPolicy;
   using CollectiveMainloop = typename GemmKernel::CollectiveMainloop;
@@ -107,14 +108,14 @@ public:
   using MathOperator = cutlass::arch::OpMultiplyAdd;
 
   // If our TiledMMA's instruction thread layout size is larger than 1, we know its a tensorop!
-  using OperatorClass = std::conditional_t<
+  using OperatorClass = cute::conditional_t<
       (cute::size(typename GemmKernel::TiledMma::AtomThrID{}) > 1),
       cutlass::arch::OpClassTensorOp, cutlass::arch::OpClassSimt>;
 
   using ArchTag = typename GemmKernel::ArchTag;
 
   // NOTE: Assume identity swizzle for now
-  static_assert(std::is_void_v<typename GemmKernel::GridSwizzle>,
+  static_assert(cute::is_void_v<typename GemmKernel::GridSwizzle>,
     "CUTLASS 3.x kernel types do not support grid swizzle functors yet.");
   using ThreadblockSwizzle = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
 
@@ -142,7 +143,7 @@ public:
   // But we can best approximate it by inspecting the TiledMma::TiledShape_MNK
   // For this, we make the assumption that we always have 4 warps along M, and rest along N, none along K
   // We also always round up the warp count to 4 if the tiled mma is smaller than 128 threads
-  static constexpr int WarpsInMma = std::max(4, cute::size(typename GemmKernel::TiledMma{}) / 32);
+  static constexpr int WarpsInMma = cute::max(4, cute::size(typename GemmKernel::TiledMma{}) / 32);
   static constexpr int WarpsInMmaM = 4;
   static constexpr int WarpsInMmaN = cute::ceil_div(WarpsInMma, WarpsInMmaM);
   using WarpCount = cutlass::gemm::GemmShape<WarpsInMmaM, WarpsInMmaN, 1>;
@@ -166,7 +167,7 @@ public:
   using EpilogueOutputOp = typename CollectiveEpilogue::ThreadEpilogueOp;
 
   // Split-K preserves splits that are 128b aligned
-  static int constexpr kSplitKAlignment = std::max(
+  static int constexpr kSplitKAlignment = cute::max(
       128 / sizeof_bits<ElementA>::value, 128 / sizeof_bits<ElementB>::value);
 
   /// Argument structure: User API
@@ -208,8 +209,8 @@ public:
 
   /// Computes the grid shape
   static dim3
-  get_grid_shape(Arguments const& args) {
-    auto tmp_params = GemmKernel::to_underlying_arguments(args);
+  get_grid_shape(Arguments const& args, void* workspace = nullptr) {
+    auto tmp_params = GemmKernel::to_underlying_arguments(args, workspace);
     return GemmKernel::get_grid_shape(tmp_params);
   }
 
@@ -397,14 +398,14 @@ public:
 template <typename GemmKernel_>
 class GemmUniversalAdapter<
   GemmKernel_,
-  std::enable_if_t<not gemm::detail::IsCutlass3GemmKernel<GemmKernel_>::value>>
+  cute::enable_if_t<not gemm::detail::IsCutlass3GemmKernel<GemmKernel_>::value>>
 {
 public:
 
   using GemmKernel = GemmKernel_;
 
   static bool const kInternalTranspose = 
-    platform::is_same<typename GemmKernel::LayoutC, cutlass::layout::RowMajor>::value;
+    cute::is_same<typename GemmKernel::LayoutC, cutlass::layout::RowMajor>::value;
 
   using ThreadblockShape = typename GemmKernel::Mma::Shape;
   using WarpShape = typename GemmKernel::WarpShape;
@@ -447,11 +448,15 @@ public:
   using ElementC = typename GemmKernel::ElementC;
   using LayoutC = typename MapArguments::LayoutC;
   static int const kAlignmentC = GemmKernel::kAlignmentC;
+  
+  // C and D same type for 2.x kernel
+  using ElementD = ElementC;
+  using LayoutD = LayoutC;
  
   using TensorRefA = TensorRef<ElementA const, LayoutA>;
   using TensorRefB = TensorRef<ElementB const, LayoutB>;
   using TensorRefC = TensorRef<ElementC const, LayoutC>;
-  using TensorRefD = TensorRef<ElementC, LayoutC>;
+  using TensorRefD = TensorRef<ElementD, LayoutD>;
 
   static int const kStages = GemmKernel::Mma::kStages;
 

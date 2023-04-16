@@ -49,7 +49,7 @@ CUTE_DEVICE void cluster_arrive_relaxed()
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   asm volatile("barrier.cluster.arrive.relaxed.aligned;\n" : : );
 #else
-  asm volatile ("brkpt;\n" ::);
+  CUTE_RUNTIME_ASSERT("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
 #endif
 }
 
@@ -58,7 +58,7 @@ CUTE_DEVICE void cluster_arrive()
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   asm volatile("barrier.cluster.arrive.aligned;\n" : : );
 #else
-  asm volatile ("brkpt;\n" ::);
+  CUTE_RUNTIME_ASSERT("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
 #endif
 }
 
@@ -67,7 +67,7 @@ CUTE_DEVICE void cluster_wait()
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   asm volatile("barrier.cluster.wait.aligned;\n" : : );
 #else
-  asm volatile ("brkpt;\n" ::);
+  CUTE_RUNTIME_ASSERT("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
 #endif
 }
 
@@ -77,7 +77,7 @@ CUTE_DEVICE void cluster_sync()
   cluster_arrive();
   cluster_wait();
 #else
-  asm volatile ("brkpt;\n" ::);
+  CUTE_RUNTIME_ASSERT("CUTE_ARCH_CLUSTER_SM90_ENABLED is not defined");
 #endif
 }
 
@@ -90,8 +90,13 @@ CUTE_DEVICE dim3 cluster_grid_dims()
   asm volatile("mov.u32 %0, %nclusterid.y;\n" : "=r"(y) : );
   asm volatile("mov.u32 %0, %nclusterid.z;\n" : "=r"(z) : );
   return {x, y, z};
-#else
+#elif defined(__CUDA_ARCH__)
+  // MSVC requires protecting use of gridDim with __CUDA_ARCH__.
   return gridDim;
+#elif defined(_MSC_VER)
+  CUTE_RUNTIME_ASSERT("cluster_grid_dims() can only be called on device");
+#else
+  return {0, 0, 0};
 #endif
 }
 
@@ -104,8 +109,13 @@ CUTE_DEVICE dim3 cluster_id_in_grid()
   asm volatile("mov.u32 %0, %clusterid.y;\n" : "=r"(y) : );
   asm volatile("mov.u32 %0, %clusterid.z;\n" : "=r"(z) : );
   return {x, y, z};
-#else
+#elif defined(__CUDA_ARCH__)
+  // MSVC requires protecting use of blockIdx with __CUDA_ARCH__.
   return blockIdx;
+#elif defined(_MSC_VER)
+  CUTE_RUNTIME_ASSERT("cluster_id_in_grid() can only be called on device");
+#else
+  return {0, 0, 0};
 #endif
 }
 
@@ -154,8 +164,8 @@ CUTLASS_DEVICE uint32_t set_block_rank(uint32_t smemAddr, uint32_t rank)
 {
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   uint32_t result;
-  asm volatile("mapa.shared::cluster.u32  %0, %1, %2;\n" 
-              : "=r"(result) 
+  asm volatile("mapa.shared::cluster.u32  %0, %1, %2;\n"
+              : "=r"(result)
               : "r"(smemAddr), "r"(rank));
   return result;
 #else
@@ -184,6 +194,36 @@ CUTE_HOST_DEVICE uint32_t elect_one_sync()
   return (threadIdx.x % 32) == 0;
 #else
   return true;
+#endif
+}
+
+struct ElectOneLaneIdReturnType {
+  uint32_t is_leader;
+  uint32_t leader_lane_id;
+};
+
+CUTE_HOST_DEVICE
+ElectOneLaneIdReturnType
+elect_one_leader_sync()
+{
+#if defined(CUTE_ARCH_ELECT_ONE_SM90_ENABLED)
+  uint32_t pred = 0;
+  uint32_t laneid = 0;
+  asm volatile(
+    "{\n"
+    ".reg .b32 %rx;\n"
+    ".reg .pred %px;\n"
+    "     elect.sync %rx|%px, %2;\n"
+    "@%px mov.s32 %1, 1;\n"
+    "     mov.s32 %0, %rx;\n"
+    "}\n"
+    : "+r"(laneid), "+r"(pred)
+    : "r"(0xFFFFFFFF));
+  return {pred, laneid};
+#elif defined(__CUDA_ARCH__)
+  return {(threadIdx.x % 32) == 0, 0};
+#else
+  return {true, 0};
 #endif
 }
 

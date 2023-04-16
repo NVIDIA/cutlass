@@ -611,7 +611,7 @@ Status Conv2dOperationProfiler::initialize_workspace(
 
 
   if (options.execution_mode != ExecutionMode::kDryRun) {
-
+    int seed_shift = 0;
     conv_workspace_.A = device_context.allocate_tensor(
       options,
       "A",
@@ -619,7 +619,8 @@ Status Conv2dOperationProfiler::initialize_workspace(
       operation_desc.A.layout,
       problem_.extent_a(operation_desc.conv_kind),
       conv_workspace_.configuration.stride_a,
-      conv_workspace_.problem_count
+      conv_workspace_.problem_count,
+      seed_shift++
     );
 
     conv_workspace_.B = device_context.allocate_tensor(
@@ -629,7 +630,8 @@ Status Conv2dOperationProfiler::initialize_workspace(
       operation_desc.B.layout,
       problem_.extent_b(operation_desc.conv_kind),
       conv_workspace_.configuration.stride_b,
-      conv_workspace_.problem_count
+      conv_workspace_.problem_count,
+      seed_shift++
     );
 
     if(problem_.groups == problem_.c && problem_.groups == problem_.k){
@@ -641,7 +643,8 @@ Status Conv2dOperationProfiler::initialize_workspace(
         operation_desc.B.layout,
         problem_.extent_b(operation_desc.conv_kind),
         conv_workspace_.configuration.stride_b,
-        conv_workspace_.problem_count
+        conv_workspace_.problem_count,
+        seed_shift++
       );
     }
 
@@ -652,7 +655,8 @@ Status Conv2dOperationProfiler::initialize_workspace(
       operation_desc.C.layout,
       problem_.extent_c(operation_desc.conv_kind),
       conv_workspace_.configuration.stride_c,
-      conv_workspace_.problem_count
+      conv_workspace_.problem_count,
+      seed_shift++
     );
 
     conv_workspace_.Computed = device_context.allocate_tensor(

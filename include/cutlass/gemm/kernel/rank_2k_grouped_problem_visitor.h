@@ -138,7 +138,7 @@
             i = i_macro
             j = j_macro
 
-    Handling cases with grid dimensions that aren't multiples of each other
+    Handling cases with grid dimensions that aren't multiples of eachother
     ----------------------------------------------------------------------
     Even though threadblock shapes M and N are typically multiples of one another, the grid
     for a given problem may not have dimensions of the same ratio as that of the threadblock.

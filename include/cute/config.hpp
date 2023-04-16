@@ -40,9 +40,12 @@
 #  define CUTE_HOST        inline
 #endif // CUTE_HOST_DEVICE, CUTE_DEVICE
 
-#if defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA)
+#if !defined(__CUDACC_RTC__) && (defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA))
 #  define CUTE_UNROLL    #pragma unroll
 #  define CUTE_NO_UNROLL #pragma unroll 1
+#elif defined(__CUDACC_RTC__)
+#  define CUTE_UNROLL    _Pragma("unroll")
+#  define CUTE_NO_UNROLL _Pragma("unroll 1")
 #else
 #  define CUTE_UNROLL
 #  define CUTE_NO_UNROLL
@@ -52,6 +55,24 @@
 #  define CUTE_INLINE_CONSTANT                 static const __device__
 #else
 #  define CUTE_INLINE_CONSTANT                 static constexpr
+#endif
+
+// __grid_constant__ was introduced in CUDA 11.7.
+#if ((__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 7)))
+#  define CUTE_GRID_CONSTANT_SUPPORTED
+#endif
+
+// __grid_constant__ can be enabled only on SM70+.
+#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 700))
+#  define CUTE_GRID_CONSTANT_ENABLED
+#endif
+
+#if ! defined(CUTE_GRID_CONSTANT)
+#  if defined(CUTE_GRID_CONSTANT_SUPPORTED) && defined(CUTE_GRID_CONSTANT_ENABLED)
+#    define CUTE_GRID_CONSTANT __grid_constant__
+#  else
+#    define CUTE_GRID_CONSTANT
+#  endif
 #endif
 
 // Some versions of GCC < 11 have trouble deducing that a
@@ -72,17 +93,33 @@
 #  endif
 #endif
 
+#ifdef _MSC_VER
+// Provides support for alternative operators 'and', 'or', and 'not'
+#include <iso646.h>
+#endif // _MSC_VER
+
+#if defined(__CUDACC_RTC__)
+#define CUTE_STL_NAMESPACE cuda::std
+#define CUTE_STL_NAMESPACE_IS_CUDA_STD
+#else
+#define CUTE_STL_NAMESPACE std
+#endif
+
 //
 // Assertion helpers
 //
 
+#if defined(__CUDACC_RTC__)
+#include <cuda/std/cassert>
+#else
 #include <cassert>
+#endif
 
 #define CUTE_STATIC_ASSERT          static_assert
 #define CUTE_STATIC_ASSERT_V(x,...) static_assert(decltype(x)::value, ##__VA_ARGS__)
 
 #if defined(__CUDA_ARCH__)
-#  define CUTE_RUNTIME_ASSERT(x) asm volatile ("brkpt;\n" ::: "memory")
+#  define CUTE_RUNTIME_ASSERT(x) __brkpt()
 #else
 #  define CUTE_RUNTIME_ASSERT(x) assert(0 && x)
 #endif
@@ -91,9 +128,11 @@
 // IO
 //
 
+#if !defined(__CUDACC_RTC__)
 #include <cstdio>
 #include <iostream>
 #include <iomanip>
+#endif
 
 //
 // Support

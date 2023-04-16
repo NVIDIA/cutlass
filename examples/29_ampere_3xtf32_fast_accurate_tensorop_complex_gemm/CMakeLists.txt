@@ -27,9 +27,9 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
+# Both filenames are shorter to avoid MAX_PATH issues on Windows.
 cutlass_example_add_executable(
-  29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm
-  29_ampere_3xtf32_fast_accurate_tensorop_complex_gemm.cu
+  29_3xtf32_complex_gemm
+  29_3xtf32_complex_gemm.cu
   )
 

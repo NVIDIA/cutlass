@@ -192,7 +192,12 @@ idx2crd(Index  const& idx,
         return transform(shape, compact_col_major(shape, stride), [&](auto const& s, auto const& d){ return idx2crd(idx,s,d); });
       }
     } else {                                     // "int" "int" "int"
-      return (idx / stride) % shape;
+      if constexpr (is_constant<1, Shape>::value) {
+        // Skip potential stride-0 division
+        return Int<0>{};
+      } else {
+        return (idx / stride) % shape;
+      }
     }
   }
 
@@ -259,66 +264,88 @@ crd2crd(Coord  const& coord,
 // Compact Major
 //
 
-// General tag for common layouts and dispatching
-struct GenColMajor {};
-struct GenRowMajor {};
+// Tags for common layouts and dispatching
+struct LayoutLeft;               // Col-major layout mapping; leftmost extent has stride 1
+using GenColMajor = LayoutLeft;  // Alias
 
-template <class Shape, class Current = Int<1>, class Major = GenColMajor>
-CUTE_HOST_DEVICE constexpr
-auto
-compact_major(Shape   const& shape,
-              Current const& current = {},
-              Major   const& major = {});
+struct LayoutRight;              // Row-major layout mapping; rightmost extent has stride 1
+using GenRowMajor = LayoutRight; // Alias
 
 namespace detail {
 
-template <class Shape, class Current, int... Is>
+// GGC8.5 WAR -- Use of lambdas in unevaluated contexts. Instead use function objects.
+template <class Major>
+struct CompactLambda;
+
+// @pre is_integral<Current>
+// Return (result, current * product(shape)) to enable recurrence
+template <class Major, class Shape, class Current>
 CUTE_HOST_DEVICE constexpr
 auto
-compact_major_ti(Shape       const& shape,
-                 Current     const& current,
-                 GenColMajor const& major, seq<Is...>)
+compact(Shape   const& shape,
+        Current const& current)
 {
-  return cute::make_tuple(compact_major(get<Is>(shape), current * product<0,Is>(shape), major)...);
+  if constexpr (is_tuple<Shape>::value) { // Shape::tuple Current::int
+    using Lambda = CompactLambda<Major>;                  // Append or Prepend
+    using Seq    = typename Lambda::template seq<Shape>;  // Seq or RSeq
+    return cute::detail::fold(shape, cute::make_tuple(cute::make_tuple(), current), Lambda{}, Seq{});
+  } else {                                // Shape::int Current::int
+    if constexpr (is_constant<1, Shape>::value) {
+      return cute::make_tuple(Int<0>{}, current); // If current is dynamic, this could save a reg
+    } else {
+      return cute::make_tuple(current, current * shape);
+    }
+  }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
-template <class Shape, class Current, int... Is>
-CUTE_HOST_DEVICE constexpr
-auto
-compact_major_ti(Shape       const& shape,
-                 Current     const& current,
-                 GenRowMajor const& major, seq<Is...>)
+// GCC8.5 WAR -- Specialization LayoutLeft
+template <>
+struct CompactLambda<LayoutLeft>
 {
-  constexpr int E = tuple_size<Shape>::value;
-  return cute::make_tuple(compact_major(get<Is>(shape), current * product<Is+1,E>(shape), major)...);
-}
+  template <class Init, class Shape>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(Init const& init, Shape const& si) {
+    auto result = detail::compact<LayoutLeft>(si, get<1>(init));
+    return cute::make_tuple(append(get<0>(init), get<0>(result)), get<1>(result));  // Append
+  }
+
+  template <class Shape>
+  using seq = tuple_seq<Shape>;                                                     // Seq
+};
+
+// GCC8.5 WAR -- Specialization LayoutRight
+template <>
+struct CompactLambda<LayoutRight>
+{
+  template <class Init, class Shape>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(Init const& init, Shape const& si) {
+    auto result = detail::compact<LayoutRight>(si, get<1>(init));
+    return cute::make_tuple(prepend(get<0>(init), get<0>(result)), get<1>(result));  // Prepend
+  }
+
+  template <class Shape>
+  using seq = tuple_rseq<Shape>;                                                     // RSeq
+};
 
 } // end namespace detail
 
-template <class Shape, class Current, class Major>
+template <class Major, class Shape, class Current = Int<1>,
+          __CUTE_REQUIRES(is_tuple<Shape>::value || is_integral<Shape>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 compact_major(Shape   const& shape,
-              Current const& current,
-              Major   const& major)
+              Current const& current = {})
 {
-  if constexpr (is_tuple<Shape>::value) {
-    if constexpr (is_tuple<Current>::value) {    // tuple tuple
-      static_assert(tuple_size<Shape>::value == tuple_size<Current>::value, "Mismatched Ranks");
-      return transform(shape, current, [&](auto const& s, auto const& c){ return compact_major(s,c,major); });
-    } else {                                     // tuple int
-      return detail::compact_major_ti(shape, current, major, tuple_seq<Shape>{});
-    }
+  if constexpr (is_tuple<Current>::value) {    // Shape::tuple Current::tuple
+    static_assert(is_tuple<Shape>::value, "Invalid parameters");
+    static_assert(tuple_size<Shape>::value == tuple_size<Current>::value, "Mismatched Ranks");
+    // Recurse to apply to the terminals of current
+    return transform(shape, current, [&](auto const& s, auto const& c){ return compact_major<Major>(s,c); });
   } else {
-    if constexpr (is_tuple<Current>::value) {    // int tuple
-      static_assert(sizeof(Shape) == 0, "Invalid parameters");
-    } else {                                     // int int
-      if constexpr (is_constant<1, Shape>::value) {
-        return Int<0>{};                         // If current is dynamic, this could save a reg
-      } else {
-        return current;
-      }
-    }
+    return get<0>(detail::compact<Major>(shape, current));
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -328,21 +355,28 @@ compact_major(Shape   const& shape,
 // Compact Col Major
 //
 
+struct LayoutLeft {
+  template <class Shape>
+  using Apply = decltype(compact_major<LayoutLeft>(declval<Shape>()));
+};
+
 template <class Shape, class Current = Int<1>>
 CUTE_HOST_DEVICE constexpr
 auto
 compact_col_major(Shape   const& shape,
                   Current const& current = {})
 {
-  return compact_major(shape, current, GenColMajor{});
+  return compact_major<LayoutLeft>(shape, current);
 }
-
-template <class Shape>
-using ColMajor = decltype(compact_col_major(std::declval<Shape>()));
 
 //
 // Compact Row Major
 //
+
+struct LayoutRight {
+  template <class Shape>
+  using Apply = decltype(compact_major<LayoutRight>(declval<Shape>()));
+};
 
 template <class Shape, class Current = Int<1>>
 CUTE_HOST_DEVICE constexpr
@@ -350,11 +384,8 @@ auto
 compact_row_major(Shape   const& shape,
                   Current const& current = {})
 {
-  return compact_major(shape, current, GenRowMajor{});
+  return compact_major<LayoutRight>(shape, current);
 }
-
-template <class Shape>
-using RowMajor = decltype(compact_row_major(std::declval<Shape>()));
 
 //
 // Compact Order -- compute a compact stride based on an ordering of the modes
@@ -397,7 +428,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 compact_order(Shape const& shape, GenColMajor const& major)
 {
-  return compact_major(shape, Int<1>{}, major);
+  return compact_major<LayoutLeft>(shape);
 }
 
 template <class Shape>
@@ -405,7 +436,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 compact_order(Shape const& shape, GenRowMajor const& major)
 {
-  return compact_major(shape, Int<1>{}, major);
+  return compact_major<LayoutRight>(shape);
 }
 
 } // end namespace cute

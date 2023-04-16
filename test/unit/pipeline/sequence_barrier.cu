@@ -49,7 +49,7 @@
 #include "cutlass/util/GPU_Clock.hpp"
 
 #include "testbed.h"
-#include "cutlass/pipeline.hpp"
+#include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/arch/barrier.h"
 #include "cute/arch/cluster_sm90.hpp"
 
@@ -96,7 +96,7 @@ void ordered_sequence_device(uint32_t const num_iterations)
     #ifndef NDEBUG
     int thread_idx_in_group = threadIdx.x % ThreadsPerGroup;
     if (thread_idx_in_group == 0) {
-      printf("STAGE 0 : Group_IDX : %d, id = %d, iter = %d, tidx = %d\n", group_idx, params.id, i, threadIdx.x);
+      printf("STAGE 0 : Group_IDX : %d, id = %d, iter = %d, tidx = %d\n", group_idx, params.group_id, i, threadIdx.x);
     }
     #endif
     // Simulates long running stage
@@ -109,7 +109,7 @@ void ordered_sequence_device(uint32_t const num_iterations)
     // STAGE 2 CODE...
     #ifndef NDEBUG
     if (thread_idx_in_group == 0) {
-      printf("STAGE 1 : Group_IDX : %d, id = %d, iter = %d, tidx = %d\n", group_idx, params.id, i, threadIdx.x);
+      printf("STAGE 1 : Group_IDX : %d, id = %d, iter = %d, tidx = %d\n", group_idx, params.group_id, i, threadIdx.x);
     }
     #endif
     // Simulates long running stage

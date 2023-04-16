@@ -819,8 +819,13 @@ public:
     // Define conversions from source type to instruction operands' type
     //
 
+    #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+    FloatRoundStyle const kRoundA = FloatRoundStyle::round_to_nearest;
+    FloatRoundStyle const kRoundB = FloatRoundStyle::round_to_nearest;
+    #else
     FloatRoundStyle const kRoundA = FloatRoundStyle::round_half_ulp_trunc_dntz; 
     FloatRoundStyle const kRoundB = FloatRoundStyle::round_half_ulp_trunc_dntz;
+    #endif
 
     detail::UnpackComplexConvertAndPackForMma <
       RealElementA,

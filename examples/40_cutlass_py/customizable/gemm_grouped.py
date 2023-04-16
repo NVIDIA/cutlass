@@ -30,9 +30,9 @@
 #
 ################################################################################
 import numpy as np
-import pycutlass
-from pycutlass import *
-from pycutlass.utils.device import device_cc
+import cutlass.backend as pycutlass
+from cutlass.backend import *
+from cutlass.backend.utils.device import device_cc
 import csv
 import sys
 
@@ -61,7 +61,7 @@ parser.add_argument("-tacc", "--element_acc", default="float32", type=str,
                     help='Data type of accumulator')
 parser.add_argument('-m', "--math", default="multiply_add",
                     type=str, choices=["multiply_add", "multiply_add_fast_bf16", "multiply_add_fast_f32"], help="math instruction")
-parser.add_argument('-op', "--opcode", default="simt", type=str,
+parser.add_argument('-op', "--opcode", default="Simt", type=str,
                     choices=["Simt", 'TensorOp'], help='This option describes whether you want to use tensor \
                         cores (TensorOp) or regular SIMT cores (Simt) on GPU SM')
 # tile description
@@ -111,7 +111,7 @@ parser.add_argument("-pm", "--precompute_mode",
                     default="Device", type=str, choices=["Host", "Device"],
                     help="Grouped Gemm Scheduing on device only (Device) or using host precompute (Host)")
 # arguments
-parser.add_argument("-p", "--problem_size_dir", type=str, 
+parser.add_argument("-p", "--problem_size_dir", type=str, default="grouped_gemm_problem_size.csv",
                     help="path to the csv file contains the problem sizes")
 parser.add_argument("-alpha", "--alpha", default=1.0, type=float, help="alpha")
 parser.add_argument("-beta", "--beta", default=0.0, type=float, help="beta")
@@ -139,12 +139,12 @@ pycutlass.get_memory_pool(init_pool_size=2**30, max_pool_size=2**32)
 
 np.random.seed(0)
 
-element_a = getattr(cutlass, args.element_a)
-element_b = getattr(cutlass, args.element_b)
-element_c = getattr(cutlass, args.element_c)
-element_acc = getattr(cutlass, args.element_acc)
+element_a = getattr(cutlass_bindings, args.element_a)
+element_b = getattr(cutlass_bindings, args.element_b)
+element_c = getattr(cutlass_bindings, args.element_c)
+element_acc = getattr(cutlass_bindings, args.element_acc)
 math_operation = getattr(MathOperation, args.math)
-opclass = getattr(cutlass.OpClass, args.opcode)
+opclass = getattr(cutlass_bindings.OpClass, args.opcode)
 
 math_inst = MathInstruction(
     args.instruction_shape, element_a, element_b,
@@ -156,9 +156,9 @@ tile_description = TileDescription(
     math_inst
 )
 
-layout_a = getattr(cutlass, args.layout_a)
-layout_b = getattr(cutlass, args.layout_b)
-layout_c = getattr(cutlass, args.layout_c)
+layout_a = getattr(cutlass_bindings, args.layout_a)
+layout_b = getattr(cutlass_bindings, args.layout_b)
+layout_c = getattr(cutlass_bindings, args.layout_c)
 
 A = TensorDescription(
     element_a, layout_a, args.alignment_a
@@ -172,7 +172,7 @@ C = TensorDescription(
     element_c, layout_c, args.alignment_c
 )
 
-element_epilogue = getattr(cutlass, args.element_epilogue)
+element_epilogue = getattr(cutlass_bindings, args.element_epilogue)
 if args.activation_function == "identity":
     epilogue_functor = getattr(pycutlass, args.epilogue_functor)(
         C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
@@ -180,7 +180,7 @@ else:
     epilogue_functor = getattr(pycutlass, "LinearCombinationGeneric")(
         getattr(pycutlass, args.activation_function)(element_epilogue),
         C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
-swizzling_functor = getattr(cutlass, args.swizzling_functor)
+swizzling_functor = getattr(cutlass_bindings, args.swizzling_functor)
 precompute_mode = getattr(SchedulerMode, args.precompute_mode)
 
 operation = GemmOperationGrouped(
@@ -203,7 +203,7 @@ with open(args.problem_size_dir) as csv_file:
     reader = csv.reader(csv_file)
     for row in reader:
         problem_sizes.append(
-            cutlass.gemm.GemmCoord(int(row[0]), int(row[1]), int(row[2]))
+            cutlass_bindings.gemm.GemmCoord(int(row[0]), int(row[1]), int(row[2]))
         )
 
 problem_count = len(problem_sizes)

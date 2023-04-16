@@ -30,10 +30,10 @@
 #
 ################################################################################
 import numpy as np
-import pycutlass
-from pycutlass import *
-from pycutlass.utils.device import device_cc
-import cutlass
+import cutlass.backend as pycutlass
+from cutlass.backend import *
+from cutlass.backend.utils.device import device_cc
+import cutlass_bindings
 from bfloat16 import bfloat16
 import sys
 
@@ -62,7 +62,7 @@ parser.add_argument("-tacc", "--element_acc", default="float32", type=str,
                     help='Data type of accumulator')
 parser.add_argument('-m', "--math", default="multiply_add",
                     type=str, choices=["multiply_add", "multiply_add_fast_bf16", "multiply_add_fast_f32"], help="math instruction")
-parser.add_argument('-op', "--opcode", default="simt", type=str,
+parser.add_argument('-op', "--opcode", default="Simt", type=str,
                     choices=["Simt", 'TensorOp'], 
                     help="This option describes whether you want to use tensor \
                         cores (TensorOp) or regular SIMT cores (Simt) on GPU SM")
@@ -147,12 +147,12 @@ pycutlass.compiler.nvcc()
 
 np.random.seed(0)
 
-element_a = getattr(cutlass, args.element_a)
-element_b = getattr(cutlass, args.element_b)
-element_c = getattr(cutlass, args.element_c)
-element_acc = getattr(cutlass, args.element_acc)
+element_a = getattr(cutlass_bindings, args.element_a)
+element_b = getattr(cutlass_bindings, args.element_b)
+element_c = getattr(cutlass_bindings, args.element_c)
+element_acc = getattr(cutlass_bindings, args.element_acc)
 math_operation = getattr(MathOperation, args.math)
-opclass = getattr(cutlass.OpClass, args.opcode)
+opclass = getattr(cutlass_bindings.OpClass, args.opcode)
 
 math_inst = MathInstruction(
     args.instruction_shape, element_a, element_b,
@@ -164,9 +164,9 @@ tile_description = TileDescription(
     math_inst
 )
 
-layout_a = getattr(cutlass, args.layout_a)
-layout_b = getattr(cutlass, args.layout_b)
-layout_c = getattr(cutlass, args.layout_c)
+layout_a = getattr(cutlass_bindings, args.layout_a)
+layout_b = getattr(cutlass_bindings, args.layout_b)
+layout_c = getattr(cutlass_bindings, args.layout_c)
 
 A = TensorDescription(
     element_a, layout_a, args.alignment_a
@@ -180,7 +180,7 @@ C = TensorDescription(
     element_c, layout_c, args.alignment_c
 )
 
-element_epilogue = getattr(cutlass, args.element_epilogue)
+element_epilogue = getattr(cutlass_bindings, args.element_epilogue)
 if (args.activation_function == "identity" 
     or (args.gemm_mode == "GemmSplitKParallel" and args.split_k_slices > 1)):
     #
@@ -191,7 +191,7 @@ else:
         getattr(pycutlass, args.activation_function)(element_epilogue),
         C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
 
-swizzling_functor = getattr(cutlass, args.swizzling_functor)
+swizzling_functor = getattr(cutlass_bindings, args.swizzling_functor)
 
 visitor = args.epilogue_visitor is not None
 
@@ -275,7 +275,7 @@ if args.gemm_mode == "GemmSplitKParallel":
             C.element, C.alignment, math_inst.element_accumulator, element_epilogue)
 
     reduction_operation = ReductionOperation(
-        shape=cutlass.MatrixCoord(4, 32 * C.alignment),
+        shape=cutlass_bindings.MatrixCoord(4, 32 * C.alignment),
         C=C, element_accumulator=element_acc,
         element_compute=element_epilogue, 
         epilogue_functor=epilogue_functor_reduction,
@@ -287,7 +287,7 @@ pycutlass.compiler.add_module(operations)
 
 # User-provide inputs
 
-problem_size = cutlass.gemm.GemmCoord(
+problem_size = cutlass_bindings.gemm.GemmCoord(
     args.problem_size[0], args.problem_size[1], args.problem_size[2])
 
 tensor_a_size = args.batch * problem_size.m() * problem_size.k()
@@ -384,7 +384,7 @@ arguments = GemmArguments(
     operation=operation, problem_size=problem_size,
     A=tensor_A, B=tensor_B, C=tensor_C, D=tensor_D,
     output_op=output_op,
-    gemm_mode=getattr(cutlass.gemm.Mode, args.gemm_mode),
+    gemm_mode=getattr(cutlass_bindings.gemm.Mode, args.gemm_mode),
     split_k_slices=args.split_k_slices, batch=args.batch
 )
 

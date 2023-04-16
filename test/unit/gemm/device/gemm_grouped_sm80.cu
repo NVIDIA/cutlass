@@ -30,7 +30,7 @@
  **************************************************************************************************/
 /*! \file
     \brief Tests for device-wide GEMM interface
-    
+
 */
 
 #include <iostream>
@@ -80,7 +80,7 @@ struct GemmGroupedProblemVisitor {
   //
   // Data members
   //
-  
+
   SharedStorage &shared_storage;
   Params const &params;
   cutlass::MatrixCoord threadblock_shape;
@@ -95,7 +95,7 @@ struct GemmGroupedProblemVisitor {
   //
   CUTLASS_DEVICE
   GemmGroupedProblemVisitor(
-    SharedStorage &shared_storage_, 
+    SharedStorage &shared_storage_,
     Params const &params_,
     cutlass::MatrixCoord threadblock_shape_,
     int32_t block_idx
@@ -187,7 +187,7 @@ struct GemmGroupedProblemVisitor {
 
   CUTLASS_DEVICE
   void advance(int32_t grid_size) {
-    tile_idx += grid_size; 
+    tile_idx += grid_size;
   }
 };
 
@@ -199,9 +199,9 @@ __global__ void GroupedBatchedKernel(GemmGroupedProblemVisitor::Params params) {
   __shared__ GemmGroupedProblemVisitor::SharedStorage shared_storage;
 
   GemmGroupedProblemVisitor problem_visitor(
-    shared_storage, 
-    params, 
-    {ThreadblockShapeM, ThreadblockShapeN}, 
+    shared_storage,
+    params,
+    {ThreadblockShapeM, ThreadblockShapeN},
     blockIdx.x);
 
   while (problem_visitor.next_tile()) {
@@ -220,12 +220,12 @@ __global__ void GroupedBatchedKernel(GemmGroupedProblemVisitor::Params params) {
 
     if (threadIdx.x == 0) {
       #if 0
-      printf("Block %d - tile: %lld, problem %d, threadblock_idx: %lld, threadblock(m: %d, n: %d)\n", 
-        blockIdx.x, 
-        problem_visitor.tile_index(), 
-        problem_visitor.problem_index(), 
-        threadblock_idx, 
-        threadblock_tile_m_idx, 
+      printf("Block %d - tile: %lld, problem %d, threadblock_idx: %lld, threadblock(m: %d, n: %d)\n",
+        blockIdx.x,
+        static_cast<long long>(problem_visitor.tile_index()),
+        problem_visitor.problem_index(),
+        threadblock_idx,
+        threadblock_tile_m_idx,
         threadblock_tile_n_idx);
       #endif
     }
@@ -272,10 +272,10 @@ TEST(SM80_Device_GemmGrouped_scheduler, 64x64x32_32x32x32) {
     tile_counts.at(i) = tile_count;
 
     if (false) {
-      std::cout << "Problem " << i << " size(" 
-        << problem_sizes.at(i).m() << "-by-" << problem_sizes.at(i).n() 
-        << ") - tiles: " << problem_tile_count << ",  grid(" << grid_shape.m() << ", " << grid_shape.n() 
-        << "), tiles[" << tile_start << ", " << tile_count << ")" << std::endl;  
+      std::cout << "Problem " << i << " size("
+        << problem_sizes.at(i).m() << "-by-" << problem_sizes.at(i).n()
+        << ") - tiles: " << problem_tile_count << ",  grid(" << grid_shape.m() << ", " << grid_shape.n()
+        << "), tiles[" << tile_start << ", " << tile_count << ")" << std::endl;
     }
   }
 
@@ -309,25 +309,25 @@ TEST(SM80_Device_GemmGrouped_f16n_f16t_f32n_tensor_op_f32, 128x128x32_64x64x32) 
   using ElementAccumulator = float;
 
   using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmGrouped<
-    cutlass::half_t, 
-    cutlass::layout::ColumnMajor, 
+    cutlass::half_t,
+    cutlass::layout::ColumnMajor,
     cutlass::ComplexTransform::kNone,
     8,
     cutlass::half_t,
-    cutlass::layout::ColumnMajor, 
+    cutlass::layout::ColumnMajor,
     cutlass::ComplexTransform::kNone,
     8,
     ElementOutput, cutlass::layout::ColumnMajor,
-    ElementAccumulator, 
-    cutlass::arch::OpClassTensorOp, 
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<128, 128, 32>,
-    cutlass::gemm::GemmShape<64, 64, 32>, 
+    cutlass::gemm::GemmShape<64, 64, 32>,
     cutlass::gemm::GemmShape<16, 8, 16>,
     cutlass::epilogue::thread::LinearCombination<
         ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
         ElementAccumulator, ElementAccumulator>,
-    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
+    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle,
     3>::GemmKernel;
 
   using Gemm = cutlass::gemm::device::GemmGrouped<GemmKernel>;
@@ -340,7 +340,7 @@ TEST(SM80_Device_GemmGrouped_f16n_f16t_f32n_tensor_op_f32, 128x128x32_64x64x32) 
 
   bool passed = testbed.run(24);
   EXPECT_TRUE(passed);
-  
+
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -392,25 +392,25 @@ TEST(SM80_Device_GemmGrouped_f16t_f16n_f32n_tensor_op_f32, 128x64x32_64x32x32) {
   using ElementAccumulator = float;
 
   using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmGrouped<
-    cutlass::half_t, 
-    cutlass::layout::RowMajor, 
+    cutlass::half_t,
+    cutlass::layout::RowMajor,
     cutlass::ComplexTransform::kNone,
     8,
     cutlass::half_t,
-    cutlass::layout::ColumnMajor, 
+    cutlass::layout::ColumnMajor,
     cutlass::ComplexTransform::kNone,
     8,
     ElementOutput, cutlass::layout::ColumnMajor,
-    ElementAccumulator, 
-    cutlass::arch::OpClassTensorOp, 
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<128, 64, 32>,
-    cutlass::gemm::GemmShape<64, 32, 32>, 
+    cutlass::gemm::GemmShape<64, 32, 32>,
     cutlass::gemm::GemmShape<16, 8, 16>,
     cutlass::epilogue::thread::LinearCombination<
         ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
         ElementAccumulator, ElementAccumulator>,
-    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
+    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle,
     4>::GemmKernel;
 
   using Gemm = cutlass::gemm::device::GemmGrouped<GemmKernel>;
@@ -475,17 +475,17 @@ TEST(SM80_Device_GemmGrouped_f64t_f64t_f64n_tensor_op_f64, 64x64x16_32x32x16) {
   using ElementAccumulator = double;
 
   using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmGrouped<
-    ElementInput, 
-    cutlass::layout::RowMajor, 
+    ElementInput,
+    cutlass::layout::RowMajor,
     cutlass::ComplexTransform::kNone,
     1,
     ElementInput,
-    cutlass::layout::RowMajor, 
+    cutlass::layout::RowMajor,
     cutlass::ComplexTransform::kNone,
     1,
     ElementOutput, cutlass::layout::ColumnMajor,
-    ElementAccumulator, 
-    cutlass::arch::OpClassTensorOp, 
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<64, 64, 16>,
     cutlass::gemm::GemmShape<32, 32, 16>,
@@ -493,7 +493,7 @@ TEST(SM80_Device_GemmGrouped_f64t_f64t_f64n_tensor_op_f64, 64x64x16_32x32x16) {
     cutlass::epilogue::thread::LinearCombination<
         ElementOutput, 1,
         ElementAccumulator, ElementAccumulator>,
-    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
+    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle,
     4>::GemmKernel;
 
   using Gemm = cutlass::gemm::device::GemmGrouped<GemmKernel>;
@@ -517,17 +517,17 @@ TEST(SM80_Device_GemmGrouped_f32t_f32t_f32n_simt_f32, 128x128x8_64x32x1) {
   using ElementAccumulator = float;
 
   using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmGrouped<
-    ElementInput, 
-    cutlass::layout::RowMajor, 
+    ElementInput,
+    cutlass::layout::RowMajor,
     cutlass::ComplexTransform::kNone,
     1,
     ElementInput,
-    cutlass::layout::RowMajor, 
+    cutlass::layout::RowMajor,
     cutlass::ComplexTransform::kNone,
     1,
     ElementOutput, cutlass::layout::ColumnMajor,
-    ElementAccumulator, 
-    cutlass::arch::OpClassSimt, 
+    ElementAccumulator,
+    cutlass::arch::OpClassSimt,
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<128, 128, 8>,
     cutlass::gemm::GemmShape<64, 32, 8>,
@@ -535,7 +535,7 @@ TEST(SM80_Device_GemmGrouped_f32t_f32t_f32n_simt_f32, 128x128x8_64x32x1) {
     cutlass::epilogue::thread::LinearCombination<
         ElementOutput, 1,
         ElementAccumulator, ElementAccumulator>,
-    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
+    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle,
     3>::GemmKernel;
 
   using Gemm = cutlass::gemm::device::GemmGrouped<GemmKernel>;
@@ -685,17 +685,17 @@ TEST(SM80_Device_GemmGrouped_cf32n_cf32n_cf32n_tensorop_f32, 64x64x16_32x32x16) 
   using ElementAccumulator = cutlass::complex<float>;
 
   using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmGrouped<
-    ElementInput, 
-    cutlass::layout::ColumnMajor, 
+    ElementInput,
+    cutlass::layout::ColumnMajor,
     cutlass::ComplexTransform::kNone,
     1,
     ElementInput,
-    cutlass::layout::ColumnMajor, 
+    cutlass::layout::ColumnMajor,
     cutlass::ComplexTransform::kNone,
     1,
     ElementOutput, cutlass::layout::ColumnMajor,
-    ElementAccumulator, 
-    cutlass::arch::OpClassTensorOp, 
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<64, 64, 16>,
     cutlass::gemm::GemmShape<32, 32, 16>,
@@ -703,7 +703,7 @@ TEST(SM80_Device_GemmGrouped_cf32n_cf32n_cf32n_tensorop_f32, 64x64x16_32x32x16) 
     cutlass::epilogue::thread::LinearCombination<
         ElementOutput, 1,
         ElementAccumulator, ElementAccumulator>,
-    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
+    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle,
     3,
     cutlass::gemm::kernel::GroupScheduleMode::kDeviceOnly,
     cutlass::arch::OpMultiplyAddComplex>::GemmKernel;
@@ -729,17 +729,17 @@ TEST(SM80_Device_GemmGrouped_cf32c_cf32t_cf32n_tensorop_f32, 64x64x16_32x32x16) 
   using ElementAccumulator = cutlass::complex<float>;
 
   using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmGrouped<
-    ElementInput, 
-    cutlass::layout::ColumnMajor, 
+    ElementInput,
+    cutlass::layout::ColumnMajor,
     cutlass::ComplexTransform::kConjugate,
     1,
     ElementInput,
-    cutlass::layout::ColumnMajor, 
+    cutlass::layout::ColumnMajor,
     cutlass::ComplexTransform::kConjugate,
     1,
     ElementOutput, cutlass::layout::ColumnMajor,
-    ElementAccumulator, 
-    cutlass::arch::OpClassTensorOp, 
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<64, 64, 16>,
     cutlass::gemm::GemmShape<32, 32, 16>,
@@ -747,7 +747,7 @@ TEST(SM80_Device_GemmGrouped_cf32c_cf32t_cf32n_tensorop_f32, 64x64x16_32x32x16) 
     cutlass::epilogue::thread::LinearCombination<
         ElementOutput, 1,
         ElementAccumulator, ElementAccumulator>,
-    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
+    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle,
     3,
     cutlass::gemm::kernel::GroupScheduleMode::kDeviceOnly,
     cutlass::arch::OpMultiplyAddComplex>::GemmKernel;
@@ -817,17 +817,17 @@ TEST(SM80_Device_GemmGrouped_cf32t_cf32h_cf32n_tensorop_f32, 64x64x16_16x16x16) 
   using ElementAccumulator = cutlass::complex<double>;
 
   using GemmKernel = typename cutlass::gemm::kernel::DefaultGemmGrouped<
-    ElementInput, 
-    cutlass::layout::RowMajor, 
+    ElementInput,
+    cutlass::layout::RowMajor,
     cutlass::ComplexTransform::kNone,
     1,
     ElementInput,
-    cutlass::layout::RowMajor, 
+    cutlass::layout::RowMajor,
     cutlass::ComplexTransform::kConjugate,
     1,
     ElementOutput, cutlass::layout::ColumnMajor,
-    ElementAccumulator, 
-    cutlass::arch::OpClassTensorOp, 
+    ElementAccumulator,
+    cutlass::arch::OpClassTensorOp,
     cutlass::arch::Sm80,
     cutlass::gemm::GemmShape<32, 32, 16>,
     cutlass::gemm::GemmShape<16, 16, 16>,
@@ -835,7 +835,7 @@ TEST(SM80_Device_GemmGrouped_cf32t_cf32h_cf32n_tensorop_f32, 64x64x16_16x16x16) 
     cutlass::epilogue::thread::LinearCombination<
         ElementOutput, 1,
         ElementAccumulator, ElementAccumulator>,
-    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 
+    cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle,
     3,
     cutlass::gemm::kernel::GroupScheduleMode::kDeviceOnly,
     cutlass::arch::OpMultiplyAddComplex>::GemmKernel;

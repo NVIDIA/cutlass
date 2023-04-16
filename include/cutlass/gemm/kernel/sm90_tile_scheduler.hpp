@@ -31,6 +31,7 @@
 #pragma once
 
 #include "cutlass/fast_math.h"
+#include "cutlass/kernel_hardware_info.hpp"
 #include "cute/layout.hpp"
 
 namespace cutlass::gemm::kernel::detail {
@@ -44,13 +45,8 @@ class PersistentTileSchedulerSm90 {
   //
 
 private:
-  uint32_t blocks_per_problem_;
-  uint32_t current_work_linear_idx_;
-  uint32_t grid_blocks_total_;
-
-  FastDivmod divmod_batch_;
-  FastDivmod divmod_grid_y_;
-  FastDivmod divmod_blk_m_;
+  uint64_t current_work_linear_idx_{static_cast<uint64_t>((int(blockIdx.x) * int(gridDim.y)) + int(blockIdx.y))};
+  uint64_t grid_blocks_total_{static_cast<uint64_t>(int(gridDim.x) * int(gridDim.y))};
 
   struct WorkTileInfo {
     int32_t M_idx = 0;
@@ -65,9 +61,17 @@ private:
 
 public:
 
-  template<class ProblemShapeMNKL, class TileShape, class ClusterShape>
-  CUTLASS_DEVICE
-  PersistentTileSchedulerSm90(ProblemShapeMNKL problem_shape_mnkl, TileShape tile_shape, ClusterShape cluster_shape) {
+  struct Params {
+    FastDivmodU64 divmod_batch_{};
+    FastDivmodU64 divmod_grid_y_{};
+    FastDivmodU64 divmod_blk_m_{};
+
+    uint64_t blocks_per_problem_ = 0;
+  };
+
+  template <class ProblemShapeMNKL, class TileShape, class ClusterShape>
+  static Params
+  to_underlying_arguments(ProblemShapeMNKL problem_shape_mnkl, TileShape tile_shape, ClusterShape cluster_shape) {
     // We only need the tile and cluster shape during scheduler setup, so let FTAD do the magic
     static_assert(is_static<TileShape>::value);
     static_assert(is_static<ClusterShape>::value);
@@ -76,32 +80,32 @@ public:
     auto [problem_blocks_m, problem_blocks_n, problem_blocks_l] = get_tiled_blk_shape_mnl(
         problem_shape_mnkl, tile_shape, cluster_shape);
 
-    blocks_per_problem_ = problem_blocks_m * problem_blocks_n * problem_blocks_l;
-    current_work_linear_idx_ = (int(blockIdx.x) * int(gridDim.y)) + int(blockIdx.y);
-    grid_blocks_total_ = int(gridDim.x) * int(gridDim.y);
-
-    // Pre-compute our fast div/mods for rasterization so we don't have to pay for DIVs
-    divmod_batch_  = FastDivmod(problem_blocks_m * problem_blocks_n);
-    divmod_grid_y_ = FastDivmod(size<1>(cluster_shape));
-    divmod_blk_m_  = FastDivmod(problem_blocks_m);
+    return {
+      FastDivmodU64(problem_blocks_m * problem_blocks_n),
+      FastDivmodU64(size<1>(cluster_shape)),
+      FastDivmodU64(problem_blocks_m),
+      problem_blocks_m * problem_blocks_n * problem_blocks_l
+    };
   }
+
+  PersistentTileSchedulerSm90() = default;
 
   CUTLASS_DEVICE
   WorkTileInfo
-  get_current_work() const {
+  get_current_work(Params const& scheduler_params) const {
     // Map worker's linear index into the CTA tiled problem shape to the corresponding MNL indices
-    int work_idx_l, remainder;
-    divmod_batch_(work_idx_l, remainder, current_work_linear_idx_);
+    uint64_t work_idx_l, remainder;
+    scheduler_params.divmod_batch_(work_idx_l, remainder, current_work_linear_idx_);
 
-    int blk_per_grid_dim, dontcare;
-    divmod_grid_y_(blk_per_grid_dim, dontcare, remainder);
+    uint64_t blk_per_grid_dim, dontcare;
+    scheduler_params.divmod_grid_y_(blk_per_grid_dim, dontcare, remainder);
 
-    int block_idx_m, block_idx_n;
-    divmod_blk_m_(block_idx_n, block_idx_m, blk_per_grid_dim);
-    int work_idx_m = block_idx_m;
-    int work_idx_n = (block_idx_n * gridDim.y) + blockIdx.y;
+    uint64_t block_idx_m, block_idx_n;
+    scheduler_params.divmod_blk_m_(block_idx_n, block_idx_m, blk_per_grid_dim);
+    int32_t work_idx_m = static_cast<int32_t>(block_idx_m);
+    int32_t work_idx_n = static_cast<int32_t>((block_idx_n * gridDim.y) + blockIdx.y);
 
-    return {work_idx_m, work_idx_n, work_idx_l, current_work_linear_idx_ < blocks_per_problem_};
+    return {work_idx_m, work_idx_n, static_cast<int32_t>(work_idx_l), current_work_linear_idx_ < scheduler_params.blocks_per_problem_};
   }
 
   CUTLASS_DEVICE 
@@ -127,6 +131,45 @@ public:
     // Cluster tile does not span the batch mode, so no extra rounding up required for it
     int problem_blocks_l = int(cute::size<3>(problem_shape_mnkl));
     return {uint32_t(problem_blocks_m), uint32_t(problem_blocks_n), uint32_t(problem_blocks_l)};
+  }
+
+  // Given the inputs, computes the physical grid we should launch.
+  template<class ProblemShapeMNKL, class BlockShape, class ClusterShape>
+  CUTLASS_HOST_DEVICE constexpr static
+  dim3
+  get_grid_shape(ProblemShapeMNKL problem_shape_mnk, BlockShape blk_shape, ClusterShape cluster_shape, KernelHardwareInfo hw_info) {
+    int const sm_count = hw_info.sm_count;
+    CUTLASS_TRACE_HOST("get_grid_shape(): Persistent schedule grid plan using SM count = " << sm_count);
+    // Compute the total number of output tiles our problem has
+    auto problem_shape_MNKL = append<4>(problem_shape_mnk, Int<1>{});
+    auto [problem_blocks_m, problem_blocks_n, problem_blocks_l] =
+        get_tiled_blk_shape_mnl(problem_shape_MNKL, blk_shape, cluster_shape);
+    int problem_blocks_total = problem_blocks_m * problem_blocks_n * problem_blocks_l;
+
+    dim3 launch_grid(1, cute::size<1>(cluster_shape), 1);
+
+    // The else path is generic, however, we can avoid some divs if we know Cluster size is 1
+    if constexpr (size(cluster_shape) == 1) {
+      launch_grid.x = std::min(sm_count, problem_blocks_total);
+    }
+    else {
+      /*
+      * Optimal grid size calculation is based on
+      * GH100: 8 GPCs, 72 TPCs (9 TPCs/GPC), 2 SMs/TPC, 144 SMs per full GPU
+      * Hence, maximum SMs per GPC = 18
+      */
+      constexpr int max_sm_per_gpc = 18;
+      // Provided SM count could possibly be less than the assumed maximum SMs per GPC
+      int const min_num_gpc = sm_count < max_sm_per_gpc ? 1 : sm_count / max_sm_per_gpc;
+      int const max_blk_occupancy_per_gpc = max_sm_per_gpc - (max_sm_per_gpc % size(cluster_shape));
+      int blk_per_device = min_num_gpc * max_blk_occupancy_per_gpc;
+      blk_per_device = sm_count < blk_per_device ? sm_count : blk_per_device;
+
+      launch_grid.x = std::min(
+          blk_per_device       / size<1>(cluster_shape),
+          problem_blocks_total / size<1>(cluster_shape));
+    }
+    return launch_grid;
   }
 };
 

@@ -713,9 +713,10 @@ Options::Options(cutlass::CommandLine const &cmdline):
   }
 
   // Prevent launches on the device for anything other than CUTLASS operation
+  // Allow verification only on host
   if (execution_mode == ExecutionMode::kTrace) {
     initialization.provider = library::Provider::kReferenceHost;
-    verification.enabled = false;
+    verification.providers = {library::Provider::kReferenceHost};
     profiling.enabled = false;
   }
 }

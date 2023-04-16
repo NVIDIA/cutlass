@@ -39,33 +39,33 @@ and function inlining.
 
 ### Constant Memory
 
-Several CUTLASS template classes exhibit a pattern in which problem-specific internal state is known at kernel 
-launch time and remains invariant throughout the execution of a kernel. For example, tile iterators compute several 
-offsets based on the strides of the input tensor that is added to an internal pointer when loading the elements 
-of a tile. These are computed from the tensor stride and never updated; the per-thread internal state consists 
+Several CUTLASS template classes exhibit a pattern in which problem-specific internal state is known at kernel
+launch time and remains invariant throughout the execution of a kernel. For example, tile iterators compute several
+offsets based on the strides of the input tensor that is added to an internal pointer when loading the elements
+of a tile. These are computed from the tensor stride and never updated; the per-thread internal state consists
 only of the internal global memory pointer.
 
-CUTLASS can take advantage of this CUDA grid-invariant property by constructing the object in host code and passing 
-a composed parameters structure to the kernel. This confers two benefits: (1.) invariant state is held in constant 
+CUTLASS can take advantage of this CUDA grid-invariant property by constructing the object in host code and passing
+a composed parameters structure to the kernel. This confers two benefits: (1.) invariant state is held in constant
 memory, and (2.) there is no overhead to compute the initial state by each thread.
 
-The design pattern in CUTLASS is for classes with nontrivial constructors to define `struct Params` as an inner class 
-which contains grid-invariant state. These should define a constructor and an `initialize()` method. The `Params` 
-structure should also include a data member corresponding to each data member in the parent class, so these too can 
-be properly constructed in host code. The parent class should define a constructor which accepts `Params const &` as 
+The design pattern in CUTLASS is for classes with nontrivial constructors to define `struct Params` as an inner class
+which contains grid-invariant state. These should define a constructor and an `initialize()` method. The `Params`
+structure should also include a data member corresponding to each data member in the parent class, so these too can
+be properly constructed in host code. The parent class should define a constructor which accepts `Params const &` as
 its first argument.
 
 
 ### Composable Shared Memory
 
-Shared memory requires explicit effort by the programmer to allocate and de-allocate. CUTLASS follows the paradigm 
-introduced by [CUB](https://nvlabs.github.io/cub/) to define composed structures for storing data intended to be held 
-in shared memory. Any object requiring shared memory storage for itself or its data members should define a child 
-structure called `SharedStorage`. This holds data needed by the class and also instantiates `SharedStorage` 
+Shared memory requires explicit effort by the programmer to allocate and de-allocate. CUTLASS follows the paradigm
+introduced by [CUB](https://nvlabs.github.io/cub/) to define composed structures for storing data intended to be held
+in shared memory. Any object requiring shared memory storage for itself or its data members should define a child
+structure called `SharedStorage`. This holds data needed by the class and also instantiates `SharedStorage`
 objects for each data member.
 
-To be consistent, this pattern defines a convention in which classes define internal shared memory storage requirements. 
-Classes should consider all SharedStorage structures to be opaque other than their own child class. When the lifetimes 
+To be consistent, this pattern defines a convention in which classes define internal shared memory storage requirements.
+Classes should consider all SharedStorage structures to be opaque other than their own child class. When the lifetimes
 of child objects are known to be non-overlapping, `union`s may be used to alias multiple SharedStorage objects to the same
 shared memory region and reduce overall shared memory capacity.  Developers should carefully note that C++ `union` rules
 require that they only access the most recently written ("active") member of the `union`; this differs from C rules.
@@ -80,7 +80,7 @@ Consequently, most loops within the CUTLASS GEMM implementation are specified by
 is able to unroll the loop bodies, map array elements to registers, and construct an efficient instruction schedule.
 
 All loops expected to be unrolled should be annotated with `CUTLASS_PRAGMA_UNROLL` to explicitly direct the compiler
-to unroll them. 
+to unroll them.
 
 ```c++
 int const kN = 8;
@@ -89,7 +89,7 @@ Array<float, kN> x;                       // Array we would like to store in reg
 CUTLASS_PRAGMA_UNROLL                     // Directs the CUDA compiler to unroll this loop.
 for (int idx = 0; idx < kN; ++idx) {      // Loop has constant number of iterations.
 
-  x[i] = float(idx);                      // Indirect access by induction variable results in 
+  x[i] = float(idx);                      // Indirect access by induction variable results in
                                           // direct register access.
 }
 ```
@@ -159,16 +159,13 @@ void possibly_an_unusually_long_function_name(
   std::uint32_t const* bar,
   TypeA a,
   TypeB b,
-  TypeC c)
-{
+  TypeC c) {
   // ... the function's body ...
 }
 ```
 
-For function definitions only,
-break the line between the parenthesis
-that closes the function's parameters,
-and the curly bracket
+A newline should not be inserted between the parenthesis
+that closes the function's parameters and the curly bracket
 that opens the function's body.
 
 #### If-else brackets and spacing
@@ -302,9 +299,9 @@ struct Bar {
 #ifdef BAD_CUTLASS_SWAP
 namespace cutlass {
 
+// don't do this
 template<class T>
-void swap(T& a, T& b) // don't do this
-{
+void swap(T& a, T& b) {
   T tmp = a;
   a = b;
   b = tmp;
@@ -324,8 +321,7 @@ using cutlass::swap;
 // and that T is constrained via
 // std::enable_if or a requires clause.
 template<class T>
-void foo(T& a, T& b)
-{
+void foo(T& a, T& b) {
   // The usual idiom for using std::swap is the "swap two-step":
   //
   // 1. import std::swap into the current scope, then
@@ -340,8 +336,7 @@ void foo(T& a, T& b)
 
 } // namespace other
 
-int main()
-{
+int main() {
   int x = 42;
   int y = 43;
   other::foo(x, y);
@@ -415,8 +410,7 @@ struct my_computation_result {
 
 my_computation_result my_computation(float tolerance);
 
-void foo(float tolerance)
-{
+void foo(float tolerance) {
   // Approach 1: Use structured binding.  The names
   // you choose on the left-hand side have nothing
   // to do with the struct, so it's up to you
@@ -523,8 +517,7 @@ struct foo_result {
   bool success = false;
 };
 
-foo_result foo(std::span<const float> input)
-{
+foo_result foo(std::span<const float> input) {
   // ... code  ...
 
   // Prefer this.  We know what type the function returns.
@@ -539,8 +532,7 @@ However, note that this won't work if the function returns `auto`.
 The general rule is to avoid code duplication.
 
 ```c++
-auto foo(std::span<const float> input)
-{
+auto foo(std::span<const float> input) {
   // ... code  ...
 
   if constexpr (some_condition) {
@@ -619,7 +611,7 @@ Members within classes and structures should be organized as follows:
 
 This convention follows the
 [CUB library](https://nvlabs.github.io/cub/)
-and is also described by 
+and is also described by
 [Howard Hinnant](https://howardhinnant.github.io/classdecl.html).
 It also approximates the usual ordering of chapters
 in a typical Systems and Controls textbook.
@@ -772,7 +764,7 @@ Use `#pragma once` to guard all headers.
 #### CUDA Built-in Variables
 
 Avoid direct access to CUDA built-in variables `threadIdx`, `blockIdx`, `blockDim`, and `gridDim` within
-CUTLASS components except in special circumstances. 
+CUTLASS components except in special circumstances.
 
 Using built-in global variables directly within resuable components necessitates that all components
 use them consistently which may not be possible if CUTLASS components are used in other contexts.

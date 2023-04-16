@@ -81,7 +81,7 @@ protected:
   CUTLASS_DEVICE
   static void red_release(int *ptr, int val)
   {
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_PYTHON_HOST_CC)
 #if (__CUDA_ARCH__ >= 700)
     /// SM70 and newer use memory consistency qualifiers
 
@@ -104,7 +104,7 @@ public:
   CUTLASS_DEVICE
   static void wait_lt(void *lock_ptr, int thread_idx, int flag_idx, int count)
   {
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_PYTHON_HOST_CC)
     T *flag_ptr = reinterpret_cast<T*>(lock_ptr) + flag_idx;
 
     if (thread_idx == 0)
@@ -122,7 +122,7 @@ public:
   CUTLASS_DEVICE
   static void wait_eq(void *lock_ptr, int thread_idx, int flag_idx, T val = 1)
   {
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_PYTHON_HOST_CC)
     T *flag_ptr = reinterpret_cast<T*>(lock_ptr) + flag_idx;
 
     if (thread_idx == 0)
@@ -138,7 +138,7 @@ public:
   /// Uses thread[0] to wait for the specified count of signals on the given flag counter
   CUTLASS_DEVICE
   static void wait_eq_reset(void *lock_ptr, int thread_idx, int flag_idx, T val = 1) {
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_PYTHON_HOST_CC)
     T *flag_ptr = reinterpret_cast<T*>(lock_ptr) + flag_idx;
 
     if (thread_idx == 0)
@@ -156,7 +156,7 @@ public:
   CUTLASS_DEVICE
   static void arrive_inc(void *lock_ptr, int thread_idx, int flag_idx)
   {
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_PYTHON_HOST_CC)
     T* flag_ptr = reinterpret_cast<T*>(lock_ptr) + flag_idx;
 
     __syncthreads();
@@ -173,7 +173,7 @@ public:
   CUTLASS_DEVICE
   static void arrive_range_inc(void *lock_ptr, int thread_idx, int first_flag_idx, int count = 1)
   {
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__)) || defined(__CUDACC_RTC__)
+#if !defined(CUTLASS_PYTHON_HOST_CC)
     int flag_idx = first_flag_idx + thread_idx;
     T* flag_ptr = reinterpret_cast<T*>(lock_ptr) + flag_idx;
 

@@ -199,9 +199,9 @@ which produces the following output for the above examples.
   4   6   5   7
 ```
 
-The multi-indices within the `layout_4x4` example are handled as expected and interpreted as a rank-2 layout.
+The multi-indices within the `layout_2x4` example are handled as expected and interpreted as a rank-2 layout.
 
-Note that for `layout_1x4`, we're using a 1-D coordinate for a 2-D multi-index in the second mode. In fact, we can generalize this and treat all of the above layouts as 1-D layouts.  For instance, the following `print1D` function
+Note that for `layout_2x4`, we're using a 1-D coordinate for a 2-D multi-index in the second mode. In fact, we can generalize this and treat all of the above layouts as 1-D layouts.  For instance, the following `print1D` function
 
 ```c++
 template <class Shape, class Stride>

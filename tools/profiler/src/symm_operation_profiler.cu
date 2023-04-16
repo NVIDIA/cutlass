@@ -415,7 +415,7 @@ Status SymmOperationProfiler::initialize_workspace(
     static_cast<library::SymmDescription const &>(operation->description());
 
   if (options.execution_mode != ExecutionMode::kDryRun) {
-
+    int seed_shift = 0;
     if (operation_desc.side_mode == SideMode::kLeft) {
       symm_workspace_.A = device_context.allocate_tensor(
         options,
@@ -424,7 +424,8 @@ Status SymmOperationProfiler::initialize_workspace(
         operation_desc.A.layout,
         {int(problem_.m), int(problem_.m)},
         {int(problem_.lda)},
-        1 // batch_count = 1, default
+        1, // batch_count
+        seed_shift++
       );
     } else if (operation_desc.side_mode == SideMode::kRight) {
       symm_workspace_.A = device_context.allocate_tensor(
@@ -434,7 +435,8 @@ Status SymmOperationProfiler::initialize_workspace(
         operation_desc.A.layout,
         {int(problem_.n), int(problem_.n)},
         {int(problem_.lda)},
-        1 // batch_count = 1, default
+        1, // batch_count
+        seed_shift++
       );
     }
 
@@ -444,7 +446,9 @@ Status SymmOperationProfiler::initialize_workspace(
       operation_desc.B.element,
       operation_desc.B.layout,
       {int(problem_.m), int(problem_.n)},
-      {int(problem_.ldb)}
+      {int(problem_.ldb)},
+      1, // batch_count
+      seed_shift++
     );
 
     symm_workspace_.C = device_context.allocate_tensor(
@@ -454,7 +458,8 @@ Status SymmOperationProfiler::initialize_workspace(
       operation_desc.C.layout,
       {int(problem_.m), int(problem_.n)},
       {int(problem_.ldc)},
-      1 // batch_count = 1, default
+      1, // batch_count
+      seed_shift++
     );
 
     symm_workspace_.Computed = device_context.allocate_tensor(

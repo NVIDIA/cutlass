@@ -34,7 +34,6 @@
 
 #pragma once
 #include "cutlass/cutlass.h"
-#include "cutlass/kernel_hardware_info.hpp"
 #include "cutlass/library/library.h"
 #include "library_internal.h"
 
@@ -56,6 +55,8 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  using ElementD = typename Operator::ElementD;
+  using LayoutD = typename Operator::LayoutD;
   // assuming all tensors use same type for StrideIndex
   using StrideIndex = typename Operator::LayoutA::Index;
   using ElementAccumulator = typename Operator::ElementAccumulator;
@@ -117,6 +118,7 @@ public:
     description_.A = make_TensorDescription<ElementA, LayoutA>(Operator::kAlignmentA);
     description_.B = make_TensorDescription<ElementB, LayoutB>(Operator::kAlignmentB);
     description_.C = make_TensorDescription<ElementC, LayoutC>(Operator::kAlignmentC);
+    description_.D = make_TensorDescription<ElementD, LayoutD>(Operator::kAlignmentD);
     description_.element_epilogue = NumericTypeMap<ElementCompute>::kId;
 
     description_.split_k_mode = SplitKMode::kNone;
@@ -144,6 +146,8 @@ public:
   using LayoutB = typename Operator::LayoutB;
   using ElementC = typename Operator::ElementC;
   using LayoutC = typename Operator::LayoutC;
+  using ElementD = typename Operator::ElementD;
+  using LayoutD = typename Operator::LayoutD;
   using ElementAccumulator = typename Operator::ElementAccumulator;
   using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
 
@@ -167,9 +171,6 @@ protected:
     // Do nothing here and construct kernel arguments in update_arguments_ instead
     // We also cannot construct TMA descriptors without all the arguments available
 
-    if (operator_args.hw_info.sm_count <= 0) {
-      operator_args.hw_info.sm_count = KernelHardwareInfo::query_device_multiprocessor_count();
-    }
     operator_args.mode = configuration->mode;
     return Status::kSuccess;
   }
@@ -181,13 +182,13 @@ protected:
       typename ThreadEpilogueOp::Params params(
           *static_cast<ElementCompute const *>(arguments->alpha),
           *static_cast<ElementCompute const *>(arguments->beta));
-      operator_args.epilogue_params.thread_params = params;
+      operator_args.epilogue.thread = params;
     }
     else if (arguments->pointer_mode == ScalarPointerMode::kDevice) {
       typename ThreadEpilogueOp::Params params(
           static_cast<ElementCompute const *>(arguments->alpha),
           static_cast<ElementCompute const *>(arguments->beta));
-      operator_args.epilogue_params.thread_params = params;
+      operator_args.epilogue.thread = params;
     }
     else {
       return Status::kErrorInvalidProblem;
@@ -201,18 +202,21 @@ protected:
       arguments->batch_count);
 
     // update arguments
-    operator_args.ptr_A = static_cast<ElementA const *>(arguments->A);
-    operator_args.ptr_B = static_cast<ElementB const *>(arguments->B);
-    operator_args.epilogue_params.ptr_C = static_cast<ElementC const *>(arguments->C);
-    operator_args.epilogue_params.ptr_D = static_cast<ElementC       *>(arguments->D);
+    operator_args.mainloop.ptr_A = static_cast<ElementA const *>(arguments->A);
+    operator_args.mainloop.ptr_B = static_cast<ElementB const *>(arguments->B);
+    operator_args.epilogue.ptr_C = static_cast<ElementC const *>(arguments->C);
+    operator_args.epilogue.ptr_D = static_cast<ElementD       *>(arguments->D);
 
-    operator_args.dA = cute::make_int_tuple_from<typename Operator::GemmKernel::StrideA>(
+    operator_args.mainloop.dA = cute::make_int_tuple_from<typename Operator::GemmKernel::StrideA>(
         arguments->lda, arguments->batch_stride_A);
-    operator_args.dB = cute::make_int_tuple_from<typename Operator::GemmKernel::StrideB>(
+    operator_args.mainloop.dB = cute::make_int_tuple_from<typename Operator::GemmKernel::StrideB>(
         arguments->ldb, arguments->batch_stride_B);
-    operator_args.epilogue_params.dC = cute::make_int_tuple_from<typename Operator::GemmKernel::StrideC>(
+    operator_args.epilogue.dC = cute::make_int_tuple_from<typename Operator::GemmKernel::StrideC>(
         arguments->ldc, arguments->batch_stride_C);
-    operator_args.epilogue_params.dD = operator_args.epilogue_params.dC;
+    operator_args.epilogue.dD = operator_args.epilogue.dC;
+
+    /* Query device SM count to pass onto the kernel as an argument, where needed */
+    operator_args.hw_info.sm_count = arguments->sm_count;
 
     return Status::kSuccess;
   }
@@ -223,6 +227,8 @@ public:
   Status can_implement(
       void const *configuration_ptr, void const *arguments_ptr) const override {
 
+    GemmUniversalConfiguration const *configuration = 
+      static_cast<GemmUniversalConfiguration const *>(configuration_ptr);
     GemmUniversalArguments const *arguments =
       static_cast<GemmUniversalArguments const *>(arguments_ptr);
 
@@ -231,6 +237,13 @@ public:
     if (status != Status::kSuccess) {
       return status;
     }
+
+    // can_implement rules may need access to problem shape
+    args.problem_shape = cute::make_shape(
+      configuration->problem_size.m(),
+      configuration->problem_size.n(),
+      configuration->problem_size.k(),
+      configuration->batch_count);
 
     return Operator::can_implement(args);
   }

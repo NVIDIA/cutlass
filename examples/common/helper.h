@@ -31,6 +31,7 @@
 #pragma once
 
 #include "cuda_runtime.h"
+#include <iostream>
 
 /**
  * Panic wrapper for unwinding CUTLASS errors

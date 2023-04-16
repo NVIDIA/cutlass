@@ -146,6 +146,7 @@ struct ConvReferenceDispatcher<
         LayoutC,
         ElementCompute,
         ElementAccumulator,
+        ElementC,
         ConvertOp,
         InnerProductOp
       >(

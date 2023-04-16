@@ -40,6 +40,7 @@
 #include "cutlass/layout/layout.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/gemm/collective/collective_mma.hpp"
+#include "cutlass/epilogue/collective/collective_builder.hpp"
 
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/thread/linear_combination.h"
@@ -200,7 +201,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<float, 1, float, float>>;
+    epilogue::thread::LinearCombination<float, 1, float, float>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -331,7 +333,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<float, 1, float, float>>;
+    epilogue::thread::LinearCombination<float, 1, float, float>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -397,7 +400,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<int32_t, 1, int32_t, int32_t>>;
+    epilogue::thread::LinearCombination<int32_t, 1, int32_t, int32_t>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -504,7 +508,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>>;
+    epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 
@@ -579,7 +584,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<ElementC, 1, int32_t, int32_t>>;
+    epilogue::thread::LinearCombination<ElementC, 1, int32_t, int32_t>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -642,7 +648,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<ElementC, 1, int32_t, int32_t>>;
+    epilogue::thread::LinearCombination<ElementC, 1, int32_t, int32_t>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -703,7 +710,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<ElementC, 1, int32_t, int32_t>>;
+    epilogue::thread::LinearCombination<ElementC, 1, int32_t, int32_t>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -764,7 +772,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<ElementC, 1, int32_t, int32_t>>;
+    epilogue::thread::LinearCombination<ElementC, 1, int32_t, int32_t>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -827,7 +836,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>>;
+    epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -886,7 +896,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>>;
+    epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -947,7 +958,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>>;
+    epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1008,7 +1020,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<LayoutC>,
     TagToStrideC_t<LayoutC>,
-    epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>>;
+    epilogue::thread::LinearCombination<ElementC, 1, ElementAccumulator, ElementAccumulator>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1071,7 +1084,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<cutlass::layout::ColumnMajor>,
     TagToStrideC_t<cutlass::layout::ColumnMajor>,
-    epilogue::thread::LinearCombination<double, 1, double, double>>;
+    epilogue::thread::LinearCombination<double, 1, double, double>,
+    cutlass::gemm::EpilogueDefault>;
 
 /*
   using EpilogueOutputOp = epilogue::collective::Epilogue<
@@ -1148,7 +1162,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<cutlass::layout::ColumnMajor>,
     TagToStrideC_t<cutlass::layout::ColumnMajor>,
-    epilogue::thread::LinearCombination<double, 1, double, double>>;
+    epilogue::thread::LinearCombination<double, 1, double, double>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1211,7 +1226,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<cutlass::layout::ColumnMajor>,
     TagToStrideC_t<cutlass::layout::ColumnMajor>,
-    epilogue::thread::LinearCombination<double, 1, double, double>>;
+    epilogue::thread::LinearCombination<double, 1, double, double>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1274,7 +1290,8 @@ struct DefaultGemmConfigurationToCutlass3Types<
   using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
     TagToStrideC_t<cutlass::layout::ColumnMajor>,
     TagToStrideC_t<cutlass::layout::ColumnMajor>,
-    epilogue::thread::LinearCombination<double, 1, double, double>>;
+    epilogue::thread::LinearCombination<double, 1, double, double>,
+    cutlass::gemm::EpilogueDefault>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1330,10 +1347,16 @@ struct DefaultGemmConfigurationToCutlass3Types<
   >;
 
   // Epilogue
-  using CollectiveEpilogue = epilogue::collective::DefaultEpilogue<
-    TagToStrideC_t<cutlass::layout::ColumnMajor>,
-    TagToStrideC_t<cutlass::layout::ColumnMajor>,
-    epilogue::thread::LinearCombination<double, 1, double, double>>;
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+    cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+    TileShape, Shape<_1,_1,_1>,
+    cutlass::epilogue::collective::EpilogueTileAuto,
+    double, double,
+    double, cutlass::layout::ColumnMajor, 1,
+    double, cutlass::layout::ColumnMajor, 1,
+    cutlass::epilogue::collective::EpilogueScheduleAuto
+  >::CollectiveOp;
+
 };
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -186,7 +186,7 @@ template <
     int kAccessSizeInBits_,
     /// Operation performed by GEMM
     typename Operator_>
-struct DefaultMmaCoreWithAccessSize<Shape_, WarpShape_, typename std::enable_if<kAccessSizeInBits_ != -1, GemmShape<1, 1, 1>>::type, ElementA_,
+struct DefaultMmaCoreWithAccessSize<Shape_, WarpShape_, typename platform::enable_if<kAccessSizeInBits_ != -1, GemmShape<1, 1, 1>>::type, ElementA_,
                       layout::ColumnMajor, ElementB_, layout::RowMajor,
                       ElementC_, LayoutC_, arch::OpClassSimt, kAccessSizeInBits_, 2, Operator_
                      > {

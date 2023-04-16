@@ -1,16 +1,30 @@
 /***************************************************************************************************
- * Copyright (c) 2011-2019, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2023 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
  *
- * Redistribution and use in source and binary forms, with or without modification, are not permit-
- * ted.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ * list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ * this list of conditions and the following disclaimer in the documentation
+ * and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
@@ -22,7 +36,6 @@
 
 #include <cutlass/arch/memory_sm75.h>
 #include <cute/arch/cluster_sm90.hpp>
-
 namespace cutlass {
 /// @brief
 namespace arch {
@@ -72,7 +85,7 @@ class NamedBarrier {
   static void arrive_and_wait(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
     asm volatile("bar.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads));
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -81,7 +94,7 @@ class NamedBarrier {
   static void arrive(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
     asm volatile("bar.arrive %0, %1;" : : "r"(barrier_id), "r"(num_threads));
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -94,15 +107,15 @@ class NamedBarrier {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Hopper introduces a new cluster-wide barrier which handle with Cluster-wide AW behaviour.
-// This is an extension to the Ampere AW barriers
-// Note : Ampere AW Barriers have a larger max-arrive count (2^30) than Hopper AW Barriers (2^20).
+// Hopper introduces a new cluster-wide barrier which handle with Cluster-wide arrive-wait behaviour.
+// This is an extension to the Ampere arrive-wait barriers
+// Note : Ampere arrive-wait Barriers have a larger max-arrive count (2^30) than Hopper arrive-wait Barriers (2^20).
 struct ClusterBarrier {
 
   using ValueType = uint64_t;
 
 protected:
-  // Can never be initializated - can only be aliased to smem
+  // Can never be initialized - can only be aliased to smem
   ValueType barrier_;
 
 public:
@@ -118,6 +131,11 @@ public:
   CUTLASS_DEVICE
   uint32_t test_wait(uint32_t phase, uint32_t pred=true) const {
     return ClusterBarrier::test_wait(&this->barrier_, phase, pred);
+  }
+
+  CUTLASS_DEVICE
+  uint32_t try_wait(uint32_t phase) const {
+    return ClusterBarrier::try_wait(&this->barrier_, phase);
   }
 
   CUTLASS_DEVICE
@@ -150,7 +168,7 @@ public:
         "}"
         :
         : "r"(arrive_count), "r"(smem_addr));
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -174,7 +192,7 @@ public:
         :
         : "r"(smem_addr), "r"(phase), "r"(ticks));
 
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -197,7 +215,29 @@ public:
         : "r"(smem_addr), "r"(phase), "r"(pred));
 
     return waitComplete;
-#else
+#elif defined(__CUDA_ARCH__)
+    asm volatile ("brkpt;\n" ::);
+#endif
+    return 0;
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t try_wait(ValueType const* smem_ptr, uint32_t phase) {
+#if CUDA_BARRIER_ENABLED
+    uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+    uint32_t waitComplete;
+
+    asm volatile(
+        "{\n\t"
+        ".reg .pred P1; \n\t"
+        "mbarrier.try_wait.parity.shared.b64 P1, [%1], %2; \n\t"
+        "selp.b32 %0, 1, 0, P1; \n\t"
+        "}"
+        : "=r"(waitComplete)
+        : "r"(smem_addr), "r"(phase));
+
+    return waitComplete;
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
     return 0;
@@ -218,7 +258,7 @@ public:
         "}"
         :
         : "r"(smem_addr), "r"(cta_id), "r"(pred));
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -235,7 +275,7 @@ public:
         "}"
         :
         : "r"(smem_addr), "l"(state));
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -250,7 +290,7 @@ public:
         "}"
         :
         : "r"(smem_addr));
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -303,7 +343,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr));
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -324,7 +364,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "}"
         :
         : "r"(smem_addr), "r"(cta_id), "r"(pred), "r"(transaction_bytes));
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -340,7 +380,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr));
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -360,7 +400,7 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         "}"
         :
         : "r"(transaction_bytes), "r"(smem_addr), "r"(pred));
-#else
+#elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
   }
@@ -378,8 +418,8 @@ void fence_barrier_init() {
       "fence.mbarrier_init.release.cluster; \n"
       "}"
       ::);
-#else
-    asm volatile ("brkpt;\n" ::);
+#elif defined(__CUDA_ARCH__)
+  asm volatile ("brkpt;\n" ::);
 #endif
 }
 
@@ -392,8 +432,8 @@ void fence_view_async_shared() {
         "fence.proxy.async.shared::cta; \n"
         "}"
         ::);
-#else
-    asm volatile ("brkpt;\n" ::);
+#elif defined(__CUDA_ARCH__)
+  asm volatile ("brkpt;\n" ::);
 #endif
 }
 

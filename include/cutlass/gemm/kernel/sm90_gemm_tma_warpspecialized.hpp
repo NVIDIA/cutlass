@@ -36,10 +36,11 @@
 #include "cute/arch/cluster_sm90.hpp"
 #include "cutlass/arch/reg_reconfig.h"
 #include "cutlass/arch/mma_sm90.h"
+#include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
-#include "cutlass/pipeline.hpp"
+#include "cutlass/pipeline/pipeline.hpp"
 #include "cute/tensor.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -59,7 +60,7 @@ class GemmUniversal<
   CollectiveMainloop_,
   CollectiveEpilogue_,
   GridSwizzle_,
-  std::enable_if_t<std::is_base_of_v<KernelTmaWarpSpecialized, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
+  cute::enable_if_t<cute::is_base_of_v<KernelTmaWarpSpecialized, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 {
 public:
   //
@@ -82,6 +83,7 @@ public:
   using DispatchPolicy = typename CollectiveMainloop::DispatchPolicy;
   using ElementAccumulator = typename CollectiveMainloop::ElementAccumulator;
   using ClusterShape = typename DispatchPolicy::ClusterShape;
+  using MainloopArguments = typename CollectiveMainloop::Arguments;
   using MainloopParams = typename CollectiveMainloop::Params;
   static_assert(ArchTag::kMinComputeCapability >= 90);
 
@@ -91,29 +93,44 @@ public:
   using StrideC  = typename CollectiveEpilogue::StrideC;
   using ElementD = typename CollectiveEpilogue::ElementD;
   using StrideD  = typename CollectiveEpilogue::StrideD;
+  using EpilogueArguments = typename CollectiveEpilogue::Arguments;
   using EpilogueParams = typename CollectiveEpilogue::Params;
-  static_assert(std::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
+  static_assert(cute::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
     "Mainloop and epilogue do not agree on accumulator value type.");
 
-  static constexpr int SharedStorageSize = cute::max(
-      sizeof(typename CollectiveMainloop::SharedStorage),
-      sizeof(typename CollectiveEpilogue::SharedStorage));
+  // Kernel level shared memory storage
+  struct SharedStorage {
+    union TensorStorage {
+      using MainloopTensorStorage = typename CollectiveMainloop::TensorStorage;
+      using EpilogueTensorStorage = typename CollectiveEpilogue::TensorStorage;
 
-  static constexpr uint32_t NumDmaWarpGroups = 1;
+      MainloopTensorStorage mainloop;
+      EpilogueTensorStorage epilogue;
+    } tensors;
+
+    struct PipelineStorage : cute::aligned_struct<16> {
+      using MainloopPipelineStorage = typename CollectiveMainloop::PipelineStorage;
+      using EpiLoadPipelineStorage = typename CollectiveEpilogue::PipelineStorage;
+
+      alignas(16) MainloopPipelineStorage mainloop;
+      alignas(16) EpiLoadPipelineStorage epi_load;
+    } pipelines;
+  };
+
+  static constexpr int SharedStorageSize = sizeof(SharedStorage);
+
+  static constexpr uint32_t NumLoadWarpGroups = 1;
   static constexpr uint32_t NumMmaWarpGroups = 1;
-  static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{}) + (NumDmaWarpGroups * NumThreadsPerWarpGroup);
+  static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{}) + (NumLoadWarpGroups * NumThreadsPerWarpGroup);
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
 
   // Device side arguments
   struct Arguments {
     GemmUniversalMode mode{};
     ProblemShape problem_shape{};
-    ElementA const* ptr_A = nullptr;
-    StrideA dA{};
-    ElementB const* ptr_B = nullptr;
-    StrideB dB{};
-    EpilogueParams epilogue_params{};
-    KernelHardwareInfo hw_info;
+    MainloopArguments mainloop{};
+    EpilogueArguments epilogue{};
+    KernelHardwareInfo hw_info{};
   };
 
   // Kernel entry point API
@@ -142,16 +159,38 @@ public:
     return {
       args.mode,
       problem_shape,
-      CollectiveMainloop::to_underlying_arguments(args, workspace),
-      CollectiveEpilogue::to_underlying_arguments(args, workspace)
+      CollectiveMainloop::to_underlying_arguments(args.problem_shape, args.mainloop, workspace),
+      CollectiveEpilogue::to_underlying_arguments(args.problem_shape, args.epilogue, workspace)
     };
   }
 
   CUTLASS_HOST_DEVICE static
   bool
   can_implement(Arguments const& args) {
-    return args.mode == GemmUniversalMode::kGemm or
-          (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
+    bool implementable = (args.mode == GemmUniversalMode::kGemm) or
+        (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Arguments or Problem Size don't meet the requirements.\n");
+      return implementable;
+    }
+    static constexpr int tma_alignment_bits = 128;
+    static constexpr int min_tma_aligned_elements = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
+    auto M = get<0>(args.problem_shape);
+    auto N = get<1>(args.problem_shape);
+    auto K = get<2>(args.problem_shape);
+    // Contiguous dimension for the TMA tensor should be 128b aligned
+    implementable = std::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> ? 
+                        K % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0;
+    implementable = implementable && (std::is_same_v<gemm::detail::StrideToLayoutTagB_t<StrideB>, layout::RowMajor> ? 
+                        N % min_tma_aligned_elements == 0 : K % min_tma_aligned_elements == 0);
+    implementable = implementable && (!cutlass::epilogue::collective::detail::IF_EPILOGUE_USES_TMA<CollectiveEpilogue>::value ||
+                        (cutlass::epilogue::collective::detail::IF_EPILOGUE_USES_TMA<CollectiveEpilogue>::value &&
+                        std::is_same_v<gemm::detail::StrideToLayoutTagC_t<StrideC>, layout::RowMajor> ? 
+                        N % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0));
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
+    }
+    return implementable;
   }
 
   static
@@ -196,6 +235,9 @@ public:
       Consumer = 1,
     };
 
+    // Kernel level shared memory storage
+    SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
+
     int thread_idx = int(threadIdx.x);
     int warp_idx   = canonical_warp_idx();
     int warp_group_thread_idx = thread_idx % NumThreadsPerWarpGroup;
@@ -205,24 +247,54 @@ public:
     // Issue Tma Descriptor Prefetch from a single thread
     if ((warp_idx == 0) && lane_predicate) {
       CollectiveMainloop::prefetch_tma_descriptors(params.mainloop);
+      CollectiveEpilogue::prefetch_tma_descriptors(params.epilogue);
     }
 
-    using Pipeline = typename CollectiveMainloop::MainloopPipeline;
-
-    using PipelineParams = typename CollectiveMainloop::PipelineParams;
-    PipelineParams params_pipeline;
-    params_pipeline.transaction_bytes = CollectiveMainloop::TmaTransactionBytes;
+    // Mainloop Load pipeline
+    using MainloopPipeline = typename CollectiveMainloop::MainloopPipeline;
+    typename MainloopPipeline::Params mainloop_pipeline_params;
     if (warp_group_role == WarpGroupRole::Producer) {
-      params_pipeline.role = Pipeline::ThreadCategory::Producer;
+      mainloop_pipeline_params.role = MainloopPipeline::ThreadCategory::Producer;
     }
-    else {
-      params_pipeline.role = Pipeline::ThreadCategory::Consumer;
+    if (warp_group_role == WarpGroupRole::Consumer) {
+      mainloop_pipeline_params.role = MainloopPipeline::ThreadCategory::Consumer;
     }
-    params_pipeline.is_leader = warp_group_thread_idx == 0;
-    params_pipeline.num_consumers = NumThreadsPerWarpGroup;
+    mainloop_pipeline_params.is_leader = warp_group_thread_idx == 0;
+    mainloop_pipeline_params.num_consumers = NumThreadsPerWarpGroup;
+    mainloop_pipeline_params.transaction_bytes = CollectiveMainloop::TmaTransactionBytes;
+    MainloopPipeline mainloop_pipeline(shared_storage.pipelines.mainloop, mainloop_pipeline_params);
 
-    // Initialize pipeline and setup starting pipeline state for the collectives
-    Pipeline pipeline = CollectiveMainloop::make_pipeline(smem_buf, params_pipeline);
+    // Epilogue Load pipeline
+    using EpiLoadPipeline = typename CollectiveEpilogue::LoadPipeline;
+    typename EpiLoadPipeline::Params epi_load_pipeline_params;
+    if (warp_group_role == WarpGroupRole::Producer) {
+      epi_load_pipeline_params.role = EpiLoadPipeline::ThreadCategory::Producer;
+    }
+    if (warp_group_role == WarpGroupRole::Consumer) {
+      epi_load_pipeline_params.role = EpiLoadPipeline::ThreadCategory::Consumer;
+    }
+    epi_load_pipeline_params.dst_blockid = cute::block_rank_in_cluster();
+    epi_load_pipeline_params.producer_arv_count = 1; // 1 thread issues TMA load
+    epi_load_pipeline_params.consumer_arv_count = NumThreadsPerWarpGroup;
+    epi_load_pipeline_params.transaction_bytes = CollectiveEpilogue::TmaTransactionBytes;
+    EpiLoadPipeline epi_load_pipeline(shared_storage.pipelines.epi_load, epi_load_pipeline_params);
+
+    // Epilogue Store pipeline
+    using EpiStorePipeline = typename CollectiveEpilogue::StorePipeline;
+    typename EpiStorePipeline::Params epi_store_pipeline_params;
+    epi_store_pipeline_params.always_wait = true;
+    EpiStorePipeline epi_store_pipeline(epi_store_pipeline_params);
+
+    // Initialize starting pipeline states for the collectives
+    // Epilogue store pipe is producer-only (consumer is TMA unit, waits via scoreboarding)
+    typename CollectiveMainloop::PipelineState mainloop_pipe_consumer_state;
+    typename CollectiveEpilogue::LoadPipelineState epi_load_pipe_consumer_state;
+
+    // For the DMA Load (producer) we start with an opposite phase 
+    // i.e., we skip all waits since we know that the buffer is indeed empty
+    PipelineState mainloop_pipe_producer_state = cutlass::make_producer_start_state<MainloopPipeline>();
+    PipelineState epi_load_pipe_producer_state = cutlass::make_producer_start_state<EpiLoadPipeline>();
+    PipelineState epi_store_pipe_producer_state = cutlass::make_producer_start_state<EpiStorePipeline>();
 
     auto cluster_wait_fn = [&] () {
       // We need this to guarantee that the Pipeline init is visible
@@ -258,89 +330,99 @@ public:
 
     // Get the appropriate blocks for this thread block -- potential for thread block locality
     auto blk_shape = TileShape{};                                                                // (BLK_M,BLK_N,BLK_K)
-    auto blk_coord = make_coord(_,_,_);                                                   // (m,n,k) -- defer the slice
+    TiledMma tiled_mma;
 
-    // Make tiled views
-    Tensor gA_mkl = local_tile(mA_mkl, blk_shape, blk_coord, Step<_1, X,_1>{});                  // (BLK_M,BLK_K,m,k,l)
-    Tensor gB_nkl = local_tile(mB_nkl, blk_shape, blk_coord, Step< X,_1,_1>{});                  // (BLK_N,BLK_K,n,k,l)
+    // Make tiled views, defer the slice
+    Tensor gA_mkl = local_tile(mA_mkl, blk_shape, make_coord(_,_,_), Step<_1, X,_1>{});          // (BLK_M,BLK_K,m,k,l)
+    Tensor gB_nkl = local_tile(mB_nkl, blk_shape, make_coord(_,_,_), Step< X,_1,_1>{});          // (BLK_N,BLK_K,n,k,l)
 
     // Compute m_coord, n_coord, and l_coord with their post-tiled shapes
     auto m_coord = idx2crd(int(blockIdx.x), shape<2>(gA_mkl));
     auto n_coord = idx2crd(int(blockIdx.y), shape<2>(gB_nkl));
     auto l_coord = idx2crd(int(blockIdx.z), shape<4>(gB_nkl));
-    auto output_tile_coord = make_coord(m_coord, n_coord, _, l_coord);
+    auto blk_coord = make_coord(m_coord, n_coord, _, l_coord);
 
     // Slice with m_coord and n_coord
     Tensor gA = gA_mkl(_,_,m_coord,_,l_coord);                                                       // (BLK_M,BLK_K,k)
     Tensor gB = gB_nkl(_,_,n_coord,_,l_coord);                                                       // (BLK_N,BLK_K,k)
 
+    // Get pipeline iterators and increments from tensor shapes
     auto k_tile_iter  = cute::make_coord_iterator(shape<2>(gA));
     auto k_tile_count = size<2>(gA);
+    auto c_tile_count = CollectiveEpilogue::get_load_pipe_increment(blk_shape);
+    auto d_tile_count = CollectiveEpilogue::get_store_pipe_increment(blk_shape);
 
     // Wait for all thread blocks in the Cluster
     cluster_wait_fn();
 
-    // In a warp specialized kernel, CollectiveMainloop exposes data movement and compute operations separately
+    // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop;
+    CollectiveEpilogue collective_epilogue{params.epilogue};
 
     if (warp_group_role == WarpGroupRole::Producer) {
-      // For the DMA (prologue) - we start with an opposite phase - since we skip all waits
-      // i.e., we know that the buffer is indeed empty
-      typename CollectiveMainloop::PipelineState smem_pipe_write = cutlass::make_producer_start_state<Pipeline>();
-      collective_mainloop.dma(
-        pipeline,
-        smem_pipe_write,
+      collective_mainloop.load(
+        mainloop_pipeline,
+        mainloop_pipe_producer_state,
         gA, params.mainloop.tma_load_a,
         gB, params.mainloop.tma_load_b,
         k_tile_iter, k_tile_count,
         thread_idx,
-        smem_buf
+        shared_storage.tensors.mainloop
       );
-      // Update starting pipeline state for the next tile
-      smem_pipe_write.advance(k_tile_count);
-      // Make sure all Consumer Warp Groups have been waited upon
-      collective_mainloop.dma_epilogue(pipeline, smem_pipe_write);
+      // Update starting mainloop pipeline state for the pipeline drain
+      mainloop_pipe_producer_state.advance(k_tile_count);
+      // Make sure mainloop consumer has been waited upon before issuing epilogue load
+      collective_mainloop.load_tail(mainloop_pipeline, mainloop_pipe_producer_state);
+
+      if (collective_epilogue.is_source_needed()) {
+        collective_epilogue.load(
+          epi_load_pipeline,
+          epi_load_pipe_producer_state,
+          problem_shape_MNKL,
+          blk_shape,
+          blk_coord,
+          tiled_mma,
+          warp_group_thread_idx,
+          shared_storage.tensors.epilogue
+        );
+        // Update starting load pipeline state for the pipeline drain
+        epi_load_pipe_producer_state.advance(c_tile_count);
+        collective_epilogue.load_tail(epi_load_pipeline, epi_load_pipe_producer_state);
+      }
     }
     else if (warp_group_role == WarpGroupRole::Consumer) {
-      typename CollectiveMainloop::PipelineState smem_pipe_read;
-      TiledMma tiled_mma;
       Tensor accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape));                 // (MMA,MMA_M,MMA_N)
-      clear(accumulators);
 
       collective_mainloop.mma(
-        pipeline,
-        smem_pipe_read,
+        mainloop_pipeline,
+        mainloop_pipe_consumer_state,
         accumulators,
         k_tile_count,
         thread_idx,
-        smem_buf,
+        shared_storage.tensors.mainloop,
         params.mainloop
       );
 
-      constexpr int BLK_M_RANK = rank<0>(blk_shape);
-      bool m_oob = int(blockIdx.x) >= size<2>(gA_mkl);
-      auto m_max_coord = unwrap(cute::transform(make_seq<BLK_M_RANK>{}, [&](auto i) {
-          return  m_oob ? 0 : get<i>(M) - get<0,i>(blk_shape) * get<i>(m_coord);
-        }));
-
-      constexpr int BLK_N_RANK = rank<1>(blk_shape);
-      bool n_oob = int(blockIdx.y) >= size<2>(gB_nkl);
-      auto n_max_coord = unwrap(cute::transform(make_seq<BLK_N_RANK>{}, [&](auto i) {
-          return  n_oob ? 0 : get<i>(N) - get<1,i>(blk_shape) * get<i>(n_coord);
-        }));
-      auto residue_mnk = make_tuple(m_max_coord, n_max_coord, Int<0>{});
+      // Make sure the math instructions are done and free buffers before entering the epilogue
+      collective_mainloop.mma_tail(
+        mainloop_pipeline,
+        mainloop_pipe_consumer_state,
+        k_tile_count
+      );
 
       // Epilogue and write to gD
-      CollectiveEpilogue epilogue{params.epilogue};
-      epilogue(
+      collective_epilogue.store(
+        epi_load_pipeline,
+        epi_load_pipe_consumer_state,
+        epi_store_pipeline,
+        epi_store_pipe_producer_state,
         problem_shape_MNKL,
         blk_shape,
-        output_tile_coord,
+        blk_coord,
         accumulators,
         tiled_mma,
-        residue_mnk,
         warp_group_thread_idx,
-        smem_buf
+        shared_storage.tensors.epilogue
       );
     }
   }

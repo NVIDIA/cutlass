@@ -103,13 +103,22 @@ bool get_cublas_transpose_operation(
 
 /// Maps a CUTLASS numeric type to a cuBLAS data type enumeration
 bool get_cublas_datatype(cublasDataType_t &data_type, library::NumericTypeID element_type) {
-  switch (element_type) {
+  switch (element_type) {  
+  case library::NumericTypeID::kFE4M3:
+    data_type = CUDA_R_8F_E4M3;
+    return true;
+  
+  case library::NumericTypeID::kFE5M2:
+    data_type = CUDA_R_8F_E5M2;
+    return true;
+
   case library::NumericTypeID::kF16:
     data_type = CUDA_R_16F;
     return true;
     
   case library::NumericTypeID::kBF16:
-    break;
+    data_type = CUDA_R_16BF;
+    return true;
   
   case library::NumericTypeID::kTF32: 
     break;

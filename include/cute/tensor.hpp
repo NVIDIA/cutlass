@@ -57,14 +57,14 @@ namespace cute
 // };
 
 template <class T, int N>
-using ArrayEngine = typename std::conditional<(sizeof_bits<T>::value % 8 == 0),
+using ArrayEngine = typename conditional<(sizeof_bits<T>::value % 8 == 0),
                                               array_aligned<T,N>,
                                               array_subbyte<T,N>>::type;
 
 template <class Iterator>
 struct ViewEngine
 {
-  using value_type = typename cute::remove_cvref<decltype(*std::declval<Iterator>())>::type;
+  using value_type = typename cute::remove_cvref<decltype(*declval<Iterator>())>::type;
 
   using iterator = Iterator;
   iterator storage_;
@@ -91,7 +91,7 @@ struct is_gmem<ViewEngine<Iter>> : is_gmem<Iter> {};
 template <class Iterator>
 struct ConstViewEngine
 {
-  using value_type = typename cute::remove_cvref<decltype(*std::declval<Iterator>())>::type;
+  using value_type = typename cute::remove_cvref<decltype(*declval<Iterator>())>::type;
 
   using iterator = Iterator;
   iterator storage_;
@@ -335,80 +335,134 @@ template <class Engine, class Layout>
 struct is_smem<Tensor<Engine,Layout>> : is_smem<Engine> {};
 template <class Engine, class Layout>
 struct is_gmem<Tensor<Engine,Layout>> : is_gmem<Engine> {};
+// Customization point for creation of owning and non-owning Tensors
+template <class T>
+struct MakeTensor
+{
+  template <class Layout,
+            __CUTE_REQUIRES(not has_dereference<T>::value &&
+                            is_layout<Layout>::value)>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(Layout const& layout) const
+  {
+    static_assert(is_static<Layout>::value, "Dynamic owning tensors not supported");
+    using Engine = ArrayEngine<T, cosize_v<Layout>>;
+    return Tensor<Engine,Layout>();
+  }
+
+  template <class Layout,
+            __CUTE_REQUIRES(has_dereference<T>::value &&
+                            is_layout<Layout>::value)>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(T const& iter, Layout const& layout)
+  {
+    using Engine = ViewEngine<T>;
+    return Tensor<Engine,Layout>(iter, layout);
+  }
+
+  template <class LayoutArg, class... LayoutArgs,
+            __CUTE_REQUIRES(not is_layout<LayoutArg>::value)>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(LayoutArg const& arg, LayoutArgs const&... args) const
+  {
+    return operator()(make_layout(arg, args...));
+  }
+
+  template <class LayoutArg, class... LayoutArgs,
+            __CUTE_REQUIRES(not is_layout<LayoutArg>::value)>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(T const& iter, LayoutArg const& arg, LayoutArgs const&... args)
+  {
+    return operator()(iter, make_layout(arg, args...));
+  }
+};
+
 //
+// make_tensor
+//
+
 // Make an owning Tensor that will allocate a static array
-//
-
-template <class T, class Layout,
-          __CUTE_REQUIRES(is_layout<Layout>::value)>
+// e.g. make_tensor<float>(Int<12>{})
+template <class T, class... Args>
 CUTE_HOST_DEVICE constexpr
 auto
-make_tensor(Layout const& layout)
+make_tensor(Args const&... args)
 {
-  static_assert(is_static<Layout>::value, "Dynamic owning tensors not supported");
-  using Engine = ArrayEngine<T, cosize_v<Layout>>;
-  return Tensor<Engine,Layout>();
+  return MakeTensor<T>{}(args...);
 }
 
-// e.g. make_tensor<double>(12)
-template <class T, class LayoutArg, class... LayoutArgs,
-          __CUTE_REQUIRES(not is_layout<LayoutArg>::value)>
-CUTE_HOST_DEVICE constexpr
-auto
-make_tensor(LayoutArg const& arg, LayoutArgs const&... args)
-{
-  return make_tensor<T>(make_layout(arg, args...));
-}
-
-//
 // Make a non-owning Tensor that will use a pointer (view)
-//
-
-template <class Iterator, class Layout,
-          __CUTE_REQUIRES(has_dereference<Iterator>::value &&
-                          is_layout<Layout>::value)>
-CUTE_HOST_DEVICE constexpr
-auto
-make_tensor(Iterator const& iter, Layout const& layout)
-{
-  using Engine = ViewEngine<Iterator>;
-  return Tensor<Engine,Layout>(iter, layout);
-}
-
 // e.g. make_tensor(vec.data(), 12)
-template <class Iterator, class LayoutArg, class... LayoutArgs,
-          __CUTE_REQUIRES(not is_layout<LayoutArg>::value)>
+template <class Iterator, class... Args>
 CUTE_HOST_DEVICE constexpr
 auto
-make_tensor(Iterator const& iter, LayoutArg const& arg, LayoutArgs const&... args)
+make_tensor(Iterator const& iter, Args const&... args)
 {
-  return make_tensor(iter, make_layout(arg, args...));
+  return MakeTensor<Iterator>{}(iter, args...);
 }
 
 //
-// make_tensor_like -- make a register tensor the same type and shape as another
+// make_tensor_like
+//   Make a register tensor the same type and shape and (if possible) order as another tensor
 //
+
+template <class NewT, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+make_tensor_like(Layout const& layout)
+{
+  if constexpr (is_static<Layout>::value) {
+    return make_tensor<NewT>(make_ordered_layout(layout));
+  } else {
+    return make_tensor<NewT>(make_layout(layout.shape()));
+  }
+}
+
+template <class NewT, class Engine, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+make_tensor_like(Tensor<Engine,Layout> const& tensor)
+{
+  return make_tensor_like<NewT>(tensor.layout());
+}
 
 template <class Engine, class Layout>
 CUTE_HOST_DEVICE constexpr
 auto
 make_tensor_like(Tensor<Engine,Layout> const& tensor)
 {
-  using value_type = typename Tensor<Engine,Layout>::value_type;
-  return make_tensor<value_type>(tensor.shape());
+  return make_tensor_like<typename Engine::value_type>(tensor.layout());
 }
 
 //
-// make_fragment_like -- make a register tensor the same type, shape, and (if possible) order as another tensor
+// make_fragment_like --
+//   Make a tensor the same shape and (if possible) order as another tensor, with special
+//   consideration of the 0th mode. The 0th mode is commonly used for MMA_Atoms or Copy_Atoms
+//   so this allocates the 0th mode with LayoutLeft regardless of the reference layout.
 //
+
+template <class NewT, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+make_fragment_like(Layout const& layout)
+{
+  return make_tensor<NewT>(make_fragment_like(layout));
+}
+
+template <class NewT, class Engine, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+make_fragment_like(Tensor<Engine,Layout> const& tensor)
+{
+  return make_fragment_like<NewT>(tensor.layout());
+}
 
 template <class Engine, class Layout>
 CUTE_HOST_DEVICE constexpr
 auto
 make_fragment_like(Tensor<Engine,Layout> const& tensor)
 {
-  using value_type = typename Tensor<Engine,Layout>::value_type;
-  return make_tensor<value_type>(make_layout_like(tensor.layout()));
+  return make_fragment_like<typename Engine::value_type>(tensor.layout());
 }
 
 //
@@ -452,7 +506,7 @@ template <int B, int E, class Tensor,
           __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
 CUTE_HOST_DEVICE constexpr
 decltype(auto)
-take(Tensor&& tensor) 
+take(Tensor&& tensor)
 {
   return make_tensor(std::forward<Tensor>(tensor).data(), take<B,E>(tensor.layout()));
 }
@@ -627,11 +681,11 @@ max_common_vector(Tensor<SrcEngine,SrcLayout> const& a,
   if constexpr (// Should be the same value_types, else the copy is also performing a cast
                 sizeof(SrcType) == sizeof(DstType) &&
                 // The types should be trivially copyable so that vectorization is valid
-                std::is_trivially_copyable<SrcType>::value &&
-                std::is_trivially_copyable<DstType>::value &&
+                is_trivially_copyable<SrcType>::value &&
+                is_trivially_copyable<DstType>::value &&
                 // Should be load/storing real data, rather than implicit iterators or such
-                std::is_reference<SrcRef>::value &&
-                std::is_reference<DstRef>::value)
+                is_reference<SrcRef>::value &&
+                is_reference<DstRef>::value)
   {
     return max_common_vector(a.layout(), b.layout());
   } else {
@@ -833,6 +887,7 @@ CUTE_HOST_DEVICE void print(Tensor<Engine,Layout> const& tensor)
   print_tensor(tensor);
 }
 
+#if !defined(__CUDACC_RTC__)
 template <class Engine, class Layout>
 CUTE_HOST std::ostream& print_tensor_os(std::ostream& os, Tensor<Engine,Layout> const& tensor)
 {
@@ -879,6 +934,7 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, Tensor<Engine,Layout> const
   os << tensor.layout() << std::endl;
   return print_tensor_os(os, tensor);
 }
+#endif // !defined(__CUDACC_RTC__)
 
 } // end namespace cute
 

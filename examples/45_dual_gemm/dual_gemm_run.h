@@ -45,6 +45,7 @@
 #include "cutlass/util/reference/device/gemm.h"
 #include "cutlass/util/reference/device/tensor_relu.h"
 
+#include "cutlass/platform/platform.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/device/gemm_universal.h"
 
@@ -356,13 +357,13 @@ struct NonFusedDualGemmRun
 
       for(int i = 0; i < runs; i++) {
           status = gemm_op_0();
-      
+ 
           CUTLASS_CHECK(status);
       }
       cudaEventRecord(stop1);
       for(int i = 0; i < runs; i++) {
           status = gemm_op_1();
-      
+
           CUTLASS_CHECK(status);
       }
 
@@ -564,22 +565,22 @@ struct DualFusedGemmRun
     cutlass::HostTensor<
       typename DualGemm::ElementA,
       typename DualGemm::LayoutA> tensor_A0(
-        std::is_same<typename DualGemm::LayoutA, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.k()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutA, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.k()) :
           cutlass::MatrixCoord(problem_size.m(), batch_count * problem_size.k()));
 
     cutlass::HostTensor<
       typename DualGemm::ElementB,
       typename DualGemm::LayoutB0> tensor_B0(
-        std::is_same<typename DualGemm::LayoutB0, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.k(), problem_size.n()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutB0, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.k(), problem_size.n()) :
           cutlass::MatrixCoord(problem_size.k(), batch_count * problem_size.n()));
 
     cutlass::HostTensor<
       typename DualGemm::ElementC,
       typename DualGemm::LayoutC> tensor_C0(
-        std::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) :
           cutlass::MatrixCoord(problem_size.m(), batch_count * problem_size.n()));
 
     cutlass::HostTensor<
@@ -589,22 +590,22 @@ struct DualFusedGemmRun
     cutlass::HostTensor<
       typename DualGemm::ElementC,
       typename DualGemm::LayoutC> tensor_D0(
-        std::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) :
           cutlass::MatrixCoord(problem_size.m(), batch_count * problem_size.n()));
 
     cutlass::HostTensor<
       typename DualGemm::ElementC,
       typename DualGemm::LayoutC> reference_D0(
-        std::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) :
           cutlass::MatrixCoord(problem_size.m(), batch_count * problem_size.n()));
 
     cutlass::HostTensor<
       typename DualGemm::ElementB,
       typename DualGemm::LayoutB1> tensor_B1(
-        std::is_same<typename DualGemm::LayoutB1, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.k(), problem_size.n()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutB1, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.k(), problem_size.n()) :
           cutlass::MatrixCoord(problem_size.k(), batch_count * problem_size.n()));
     if (broadcast_b1) {
       tensor_B1.resize({problem_size.k(), batch_count});
@@ -613,8 +614,8 @@ struct DualFusedGemmRun
     cutlass::HostTensor<
       typename DualGemm::ElementC,
       typename DualGemm::LayoutC> tensor_C1(
-        std::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) :
           cutlass::MatrixCoord(problem_size.m(), batch_count * problem_size.n()));
 
     cutlass::HostTensor<
@@ -624,29 +625,29 @@ struct DualFusedGemmRun
     cutlass::HostTensor<
       typename DualGemm::ElementC,
       typename DualGemm::LayoutC> tensor_D1(
-        std::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) :
           cutlass::MatrixCoord(problem_size.m(), batch_count * problem_size.n()));
 
     cutlass::HostTensor<
       typename DualGemm::ElementC,
       typename DualGemm::LayoutC> tensor_D2(
-        std::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) :
           cutlass::MatrixCoord(problem_size.m(), batch_count * problem_size.n()));
 
     cutlass::HostTensor<
       typename DualGemm::ElementC,
       typename DualGemm::LayoutC> reference_D1(
-        std::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) :
           cutlass::MatrixCoord(problem_size.m(), batch_count * problem_size.n()));
 
     cutlass::HostTensor<
       typename DualGemm::ElementC,
       typename DualGemm::LayoutC> reference_D2(
-        std::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ? 
-          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) : 
+        cutlass::platform::is_same<typename DualGemm::LayoutC, cutlass::layout::RowMajor>::value ?
+          cutlass::MatrixCoord(batch_count * problem_size.m(), problem_size.n()) :
           cutlass::MatrixCoord(problem_size.m(), batch_count * problem_size.n()));
 
     CHECK_TRUE(initialize_tensor(tensor_A0.host_view(), init_A, seed + 2019));
@@ -712,16 +713,16 @@ struct DualFusedGemmRun
       ref_B1 = {tensor_Bias1.device_data(), typename DualGemm::LayoutC::Stride(0)};
     }
     typename DualGemm::Arguments arguments{
-      (batch_count > 1 ? 
-        cutlass::gemm::DualGemmMode::kBatched : 
+      (batch_count > 1 ?
+        cutlass::gemm::DualGemmMode::kBatched :
         cutlass::gemm::DualGemmMode::kGemm),
       problem_size,
       tensor_A0.device_ref(),
       tensor_B0.device_ref(),
       ref_B0,
       DualGemm::kStoreD0 ? tensor_D0.device_ref() : nullptr_ref,
-      (broadcast_b1 ? 
-        typename DualGemm::TensorRefB1(tensor_B1.device_data(), 0) : 
+      (broadcast_b1 ?
+        typename DualGemm::TensorRefB1(tensor_B1.device_data(), 0) :
         tensor_B1.device_ref()),
       ref_B1,
       DualGemm::kStoreD1 ? tensor_D1.device_ref() : nullptr_ref,
@@ -793,15 +794,15 @@ struct DualFusedGemmRun
     using GemmUniversal0 = cutlass::gemm::device::GemmUniversal<
       typename DualGemm::ElementA, typename DualGemm::LayoutA,
       typename DualGemm::ElementB, typename DualGemm::LayoutB0,
-      typename DualGemm::ElementC, typename DualGemm::LayoutC, 
+      typename DualGemm::ElementC, typename DualGemm::LayoutC,
       ElementAccumulator
     >;
 
     GemmUniversal0 reference_gemm0;
 
     typename GemmUniversal0::Arguments args0 {
-      (batch_count > 1 ? 
-        cutlass::gemm::GemmUniversalMode::kBatched : 
+      (batch_count > 1 ?
+        cutlass::gemm::GemmUniversalMode::kBatched :
         cutlass::gemm::GemmUniversalMode::kGemm),
       problem_size,
       batch_count,
@@ -828,15 +829,15 @@ struct DualFusedGemmRun
     using GemmUniversal1 = cutlass::gemm::device::GemmUniversal<
       typename DualGemm::ElementA, typename DualGemm::LayoutA,
       typename DualGemm::ElementB, typename DualGemm::LayoutB1,
-      typename DualGemm::ElementC, typename DualGemm::LayoutC, 
+      typename DualGemm::ElementC, typename DualGemm::LayoutC,
       ElementAccumulator
     >;
 
     GemmUniversal1 reference_gemm1;
 
     typename GemmUniversal1::Arguments args1 {
-      (batch_count > 1 ? 
-        cutlass::gemm::GemmUniversalMode::kBatched : 
+      (batch_count > 1 ?
+        cutlass::gemm::GemmUniversalMode::kBatched :
         cutlass::gemm::GemmUniversalMode::kGemm),
       problem_size,
       batch_count,
@@ -861,7 +862,7 @@ struct DualFusedGemmRun
     CUTLASS_CHECK(status);
 
     if(relu) {
-       cutlass::reference::device::TensorReLu(reference_D0.device_view()); 
+       cutlass::reference::device::TensorReLu(reference_D0.device_view());
        cutlass::reference::device::TensorReLu(reference_D1.device_view()); 
     }
 

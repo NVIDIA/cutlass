@@ -129,6 +129,10 @@ template <
     bool ScatterD = false,
     /// Permute result D
     typename PermuteDLayout = layout::NoPermute,
+    /// Permute operand A
+    typename PermuteALayout = layout::NoPermute,
+    /// Permute operand B
+    typename PermuteBLayout = layout::NoPermute,
     ///
     typename Enable = void
 >
@@ -180,19 +184,25 @@ template <
     /// Scatter result D by using an index array
     bool ScatterD,
     /// Permute result D
-    typename PermuteDLayout
+    typename PermuteDLayout,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
 >
 struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB, ElementC,
                    layout::RowMajor, ElementAccumulator, arch::OpClassTensorOp,
                    arch::Sm90, ThreadblockShape, WarpShape, InstructionShape,
                    EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
-                   Operator, SharedMemoryClear, GatherA, GatherB, ScatterD, PermuteDLayout> {
+                   Operator, SharedMemoryClear, GatherA, GatherB, ScatterD,
+                   PermuteDLayout, PermuteALayout, PermuteBLayout> {
   /// Define the threadblock-scoped matrix multiply-accumulate
   using Mma = typename cutlass::gemm::threadblock::DefaultMma<
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm90,
       ThreadblockShape, WarpShape, InstructionShape, Stages,
-      Operator, false, SharedMemoryClear, GatherA, GatherB>::ThreadblockMma;
+      Operator, false, SharedMemoryClear, GatherA, GatherB, 
+      PermuteALayout, PermuteBLayout>::ThreadblockMma;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
 
@@ -254,13 +264,18 @@ template <
     /// Scatter result D by using an index array
     bool ScatterD,
     /// Permute result D
-    typename PermuteDLayout
+    typename PermuteDLayout,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
 >
 struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB, ElementC,
                    LayoutC, ElementAccumulator, arch::OpClassTensorOp,
                    arch::Sm80, ThreadblockShape, WarpShape, InstructionShape,
                    EpilogueOutputOp, ThreadblockSwizzle, Stages, SplitKSerial,
-                   Operator, SharedMemoryClear, GatherA, GatherB, ScatterD, PermuteDLayout> {
+                   Operator, SharedMemoryClear, GatherA, GatherB, ScatterD,
+                   PermuteDLayout, PermuteALayout, PermuteBLayout> {
 
   static_assert((platform::is_same<LayoutC, layout::RowMajor>::value
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value),
@@ -271,7 +286,8 @@ struct DefaultGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignment
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, LayoutC, arch::OpClassTensorOp, arch::Sm80,
       ThreadblockShape, WarpShape, InstructionShape, Stages,
-      Operator, false, SharedMemoryClear, GatherA, GatherB>::ThreadblockMma;
+      Operator, false, SharedMemoryClear, GatherA, GatherB,
+      PermuteALayout, PermuteBLayout>::ThreadblockMma;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
 
@@ -337,7 +353,11 @@ template <
   /// Scatter result D by using an index array
   bool ScatterD,
   /// Permute result D
-  typename PermuteDLayout
+  typename PermuteDLayout,
+  /// Permute operand A
+  typename PermuteALayout,
+  /// Permute operand B
+  typename PermuteBLayout
 >
 struct DefaultGemm<
   ElementA, LayoutA, kAlignmentA,
@@ -358,7 +378,9 @@ struct DefaultGemm<
   GatherA,
   GatherB,
   ScatterD,
-  PermuteDLayout
+  PermuteDLayout,
+  PermuteALayout,
+  PermuteBLayout
 > {
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -381,7 +403,9 @@ struct DefaultGemm<
     false,
     SharedMemoryClear,
     GatherA,
-    GatherB
+    GatherB,
+    PermuteALayout,
+    PermuteBLayout
   >::ThreadblockMma;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
@@ -576,7 +600,11 @@ template <
   /// Scatter result D by using an index array
   bool ScatterD,
   /// Permute result D
-  typename PermuteDLayout
+  typename PermuteDLayout,
+  /// Permute operand A
+  typename PermuteALayout,
+  /// Permute operand B
+  typename PermuteBLayout
 >
 struct DefaultGemm<
   ElementA, LayoutA, kAlignmentA,
@@ -597,7 +625,9 @@ struct DefaultGemm<
   GatherA,
   GatherB,
   ScatterD,
-  PermuteDLayout
+  PermuteDLayout,
+  PermuteALayout,
+  PermuteBLayout
 > {
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -620,7 +650,9 @@ struct DefaultGemm<
     false,
     SharedMemoryClear,
     GatherA,
-    GatherB
+    GatherB,
+    PermuteALayout,
+    PermuteBLayout
   >::ThreadblockMma;
 
   static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
@@ -685,7 +717,11 @@ template <
     /// Scatter result D by using an index array
     bool ScatterD,
     /// Permute result D
-    typename PermuteDLayout
+    typename PermuteDLayout,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
   >
 struct DefaultGemm<
     ElementA,
@@ -712,6 +748,8 @@ struct DefaultGemm<
     GatherB,
     ScatterD,
     PermuteDLayout,
+    PermuteALayout,
+    PermuteBLayout,
     typename platform::enable_if< ! platform::is_same<ArchTag, arch::Sm80>::value >::type > {
 
   static_assert((platform::is_same<LayoutC, layout::RowMajor>::value
@@ -738,7 +776,9 @@ struct DefaultGemm<
       false,
       SharedMemoryClear,
       GatherA,
-      GatherB>::ThreadblockMma;
+      GatherB,
+      PermuteALayout,
+      PermuteBLayout>::ThreadblockMma;
 
   static int const kEpilogueElementsPerAccess = EpilogueOutputOp::kCount;
   static_assert(kEpilogueElementsPerAccess == 1, "simt epilogue must operate on scalars");
@@ -814,7 +854,11 @@ template <
     /// Scatter result D by using an index array
     bool ScatterD,
     /// Permute result D
-    typename PermuteDLayout
+    typename PermuteDLayout,
+    /// Permute operand A
+    typename PermuteALayout,
+    /// Permute operand B
+    typename PermuteBLayout
 >
 struct DefaultGemm<ElementA,
                    LayoutA,
@@ -839,7 +883,9 @@ struct DefaultGemm<ElementA,
                    GatherA,
                    GatherB,
                    ScatterD,
-                   PermuteDLayout> {
+                   PermuteDLayout,
+                   PermuteALayout,
+                   PermuteBLayout> {
 
   static_assert((platform::is_same<LayoutC, layout::RowMajor>::value
              || platform::is_same<LayoutC, layout::AffineRankN<2>>::value),
@@ -850,7 +896,8 @@ struct DefaultGemm<ElementA,
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
       ElementAccumulator, LayoutC, arch::OpClassSimt, arch::Sm80,
       ThreadblockShape, WarpShape, GemmShape<1, 1, 1>, Stages,
-      Operator, false, SharedMemoryClear, GatherA, GatherB>::ThreadblockMma;
+      Operator, false, SharedMemoryClear, GatherA, GatherB,
+      PermuteALayout, PermuteBLayout>::ThreadblockMma;
 
   static int const kEpilogueElementsPerAccess = EpilogueOutputOp::kCount;
   static_assert(kEpilogueElementsPerAccess == 1, "simt epilogue must operate on scalars");
@@ -921,14 +968,16 @@ struct DefaultGemm<int8_t, LayoutA, kAlignmentA, int8_t, LayoutB, kAlignmentB,
                    ElementC, LayoutC, ElementAccumulator, arch::OpClassSimt,
                    ArchTag, ThreadblockShape, WarpShape, GemmShape<1, 1, 4>,
                    EpilogueOutputOp, ThreadblockSwizzle, 2, SplitKSerial,
-                   Operator, SharedMemoryClear, false, false, false> {
+                   Operator, SharedMemoryClear, false, false, false,
+                   layout::NoPermute, layout::NoPermute> {
   using InstructionShape = GemmShape<1, 1, 4>;
   using ElementA = int8_t;
   using ElementB = int8_t;
 
   using OperatorClass =  arch::OpClassSimt;
   /// Define the threadblock-scoped matrix multiply-accumulate
-  using Mma = typename cutlass::gemm::threadblock::DefaultMma<ElementA,
+  using Mma = typename cutlass::gemm::threadblock::DefaultMma<
+      ElementA,
       LayoutA,
       kAlignmentA,
       ElementB,
@@ -1020,7 +1069,9 @@ struct DefaultGemm<
   SharedMemoryClear,
   false,
   false,
-  false
+  false,
+  layout::NoPermute,
+  layout::NoPermute
 > {
   /// Define the threadblock-scoped matrix multiply-accumulate
   using Mma = typename cutlass::gemm::threadblock::DefaultMma<

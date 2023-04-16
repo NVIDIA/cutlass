@@ -48,6 +48,7 @@
 #include "cutlass/coord.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/layout/matrix.h"
+#include "cutlass/layout/permute.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/matrix_shape.h"
 #include "cutlass/predicate_vector.h"
@@ -314,7 +315,8 @@ class PredicatedTileAccessIteratorPredicates {
 /// PredicatedTileAccessIterator
 ///
 template <typename Shape, typename Element, typename Layout, int AdvanceRank,
-          typename ThreadMap, typename AccessType, bool Gather = false>
+          typename ThreadMap, typename AccessType, bool Gather = false,
+          typename PermuteLayout = layout::NoPermute>
 class PredicatedTileAccessIterator;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -322,9 +324,11 @@ class PredicatedTileAccessIterator;
 /// Specialization of PredicatedTileAccessIterator for pitch-linear data.
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, typename AccessType_, bool Gather>
+          typename ThreadMap_, typename AccessType_, bool Gather,
+          typename PermuteLayout>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
-                                   AdvanceRank, ThreadMap_, AccessType_, Gather> {
+                                   AdvanceRank, ThreadMap_, AccessType_, Gather,
+                                   PermuteLayout> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -355,6 +359,9 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
   
   static_assert(!(ThreadMap::kElementsPerAccess % AccessType::kElements), 
     "Vectors implied by the thread map must be divisible by the access type.");
+
+  static bool constexpr Permute = !platform::is_same<PermuteLayout, layout::NoPermute>::value
+                               && !platform::is_same<PermuteLayout, layout::InversePermute<layout::NoPermute>>::value;
 
   using Mask = typename UnderlyingPredicates::Mask;
 
@@ -402,12 +409,18 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
   /// and contiguous_offset separated to compute the offset by using
   ///
   /// offset = contiguous_offset + indices[strided_offset]
-  ///
 
   /// Gather indices
   int const *indices_;
 
-  Index gather_offset_strided;
+  /// Function to perform layout permutation and offset computation
+  PermuteLayout permute_layout_;
+
+  /// Tracks thread's coordinate offset in the matrix for current tile.
+  /// This is only used in the following cases:
+  /// - when Gather is true, strided coordinate needed to access indices (contiguous offset is tracked via pointer_)
+  /// - when Permute is true, both coordinates are neeeded as input into permutation function (pointer_ is fixed)
+  TensorCoord coord_offset_;
 
  private:
   /// Computes predicates based on internally tracked per-thread offset.
@@ -442,22 +455,29 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
       /// Gather indices
       int const *indices = nullptr)
       : params_(params),
-	pointer_(reinterpret_cast<BytePointer>(
-            const_cast<NonConstPointer>(pointer))),
-	the_predicates(extent),
+	      pointer_(reinterpret_cast<BytePointer>(
+                 const_cast<NonConstPointer>(pointer))),
+	      the_predicates(extent),
         is_residue_tile_(true),
-        indices_(indices) {
+        indices_(indices),
+        permute_layout_(TensorCoord(extent.contiguous(), extent.strided()), params.stride_) {
 
     the_predicates.set_predicates(thread_id, threadblock_offset);
           
+    if (Gather) {
+      assert(indices_);
+    }
+
     // update internal pointers
     Layout layout(params_.stride_);
 
-    if (!Gather) {
+    if (!Gather && !Permute) {
       add_pointer_offset(layout(the_predicates.thread_offset_));
     } else {
-      gather_offset_strided = the_predicates.thread_offset_.strided();
-      add_pointer_offset(layout(make_Coord(the_predicates.thread_offset_.contiguous(), 0)));
+      coord_offset_ = the_predicates.thread_offset_;
+      if (!Permute) {
+        add_pointer_offset(layout(make_Coord(coord_offset_.contiguous(), 0)));
+      }
     }
   }
 
@@ -499,7 +519,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
 
       Layout layout(params_.stride_);
 
-      if (!Gather) {
+      if (!Gather && !Permute) {
         add_pointer_offset(layout(the_predicates.residue_offset_));
 
         if (kAdvanceRank) {
@@ -510,19 +530,16 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
           pointer_ += Shape::kStrided * tile_offset.strided();
         }
       } else {
-        gather_offset_strided = the_predicates.thread_offset_.strided();
-        add_pointer_offset(layout(make_Coord(the_predicates.residue_offset_.contiguous(), 0)));
-
-        if (kAdvanceRank) {
-          gather_offset_strided += Shape::kStrided * (tile_offset.strided() - 1);
-          add_pointer_offset(Shape::kContiguous * tile_offset.contiguous());
+        coord_offset_.strided() = the_predicates.thread_offset_.strided() + Shape::kStrided * (tile_offset.strided() - kAdvanceRank);
+        if (!Permute) {
+          add_pointer_offset(layout(make_Coord(the_predicates.residue_offset_.contiguous(), 0)));
+          add_pointer_offset(Shape::kContiguous * (tile_offset.contiguous() - (1 - kAdvanceRank)));
         } else {
-          add_pointer_offset(Shape::kContiguous * (tile_offset.contiguous() - 1));
-          gather_offset_strided += Shape::kStrided * tile_offset.strided();
+          coord_offset_.contiguous() = the_predicates.thread_offset_.contiguous() + Shape::kContiguous * (tile_offset.contiguous() - (1 - kAdvanceRank));
         }
       }
     } else {
-      if (!Gather) {
+      if (!Gather && !Permute) {
         if (kAdvanceRank) {
           pointer_ += params_.inc_advance_ * LongIndex(tile_offset.strided());
           pointer_ += Shape::kContiguous * tile_offset.contiguous();
@@ -531,8 +548,12 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
           pointer_ += Shape::kStrided * tile_offset.strided();
         }
       } else {
-        add_pointer_offset(Shape::kContiguous * tile_offset.contiguous());
-        gather_offset_strided += Shape::kStrided * tile_offset.strided();
+        coord_offset_.strided() += Shape::kStrided * tile_offset.strided();
+        if (!Permute) {
+          add_pointer_offset(Shape::kContiguous * tile_offset.contiguous());
+        } else {
+          coord_offset_.contiguous() += Shape::kContiguous * tile_offset.contiguous();
+        }
       }
     }
 
@@ -542,19 +563,21 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
   /// Returns a pointer
   CUTLASS_HOST_DEVICE
   AccessType *get() const {
-    if (Gather) {
-      assert(indices_);
 
+    if (Gather || Permute)
+    {
       if (!valid()) {
         return nullptr;
       }
 
-      LongIndex contiguous_offset = the_predicates.iteration_contiguous_ * (ThreadMap::Delta::kContiguous * sizeof_bits<Element>::value / 8) + the_predicates.iteration_vector_;
-      int strided_index = gather_offset_strided + the_predicates.iteration_strided_ * ThreadMap::Delta::kStrided;
+      Index coord_contig  = (Permute ? coord_offset_.contiguous() : 0) + the_predicates.iteration_contiguous_ * ThreadMap::Delta::kContiguous + the_predicates.iteration_vector_ * AccessType::kElements;
+      Index coord_strided = coord_offset_.strided() + the_predicates.iteration_strided_ * ThreadMap::Delta::kStrided;
+      if (Gather) {
+        coord_strided = indices_[coord_strided];
+      }
 
-      LongIndex strided_offset = indices_[strided_index] * LongIndex(params_.stride_) * sizeof_bits<Element>::value / 8;
-
-      return reinterpret_cast<AccessType *>(pointer_ + contiguous_offset + strided_offset);
+      LongIndex offset = Permute ? permute_layout_(TensorCoord(coord_contig, coord_strided)) : (coord_strided * LongIndex(params_.stride_) + coord_contig);
+      return reinterpret_cast<AccessType *>(pointer_ + OffsetBytes<Element>(offset));
     }
 
     return reinterpret_cast<AccessType *>(
@@ -580,13 +603,12 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
       return *this;
     }
 
-    // Enter here only if (iteration_contiguous_ ==
-    // ThreadMap::Iteration::kContiguous)
+    // Enter here only if (iteration_contiguous_ == ThreadMap::Iteration::kContiguous)
     the_predicates.iteration_contiguous_ = 0;
     ++the_predicates.iteration_strided_;
 
     if (the_predicates.iteration_strided_ < ThreadMap::Iterations::kStrided) {
-      if (!Gather) {
+      if (!Gather && !Permute) {
         pointer_ += params_.inc_strided_;
       }
 
@@ -597,7 +619,7 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
     // which means we enter the next tile.
     the_predicates.iteration_strided_ = 0;
 
-    if (!Gather) {
+    if (!Gather && !Permute) {
       // advance to next tile
       pointer_ += params_.inc_next_;
   
@@ -659,9 +681,11 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::PitchLinear,
 ///            MaskedTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, typename AccessType_, bool Gather>
+          typename ThreadMap_, typename AccessType_, bool Gather,
+          typename PermuteLayout>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_, Gather> {
+                                   AdvanceRank, ThreadMap_, AccessType_, Gather,
+                                   PermuteLayout> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -687,7 +711,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
 
   using UnderlyingIterator = PredicatedTileAccessIterator<
       layout::PitchLinearShape<Shape::kRow, Shape::kColumn>, Element,
-      layout::PitchLinear, (kAdvanceRank == 0 ? 0 : 1), ThreadMap, AccessType, Gather>;
+      layout::PitchLinear, (kAdvanceRank == 0 ? 0 : 1), ThreadMap, AccessType,
+      Gather, PermuteLayout>;
 
   /// Predicate vector stores mask to guard accesses
   using Mask = typename UnderlyingIterator::Mask;
@@ -846,9 +871,11 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::ColumnMajor,
 ///            MaskedTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, typename AccessType_, bool Gather>
+          typename ThreadMap_, typename AccessType_, bool Gather,
+          typename PermuteLayout>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_, Gather> {
+                                   AdvanceRank, ThreadMap_, AccessType_, Gather,
+                                   PermuteLayout> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -874,7 +901,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
 
   using UnderlyingIterator = PredicatedTileAccessIterator<
       layout::PitchLinearShape<Shape::kColumn, Shape::kRow>, Element,
-      layout::PitchLinear, (kAdvanceRank == 0 ? 1 : 0), ThreadMap, AccessType, Gather>;
+      layout::PitchLinear, (kAdvanceRank == 0 ? 1 : 0), ThreadMap, AccessType, 
+      Gather, PermuteLayout>;
 
   static int const kAccessesPerVector = UnderlyingIterator::kAccessesPerVector;
 
@@ -1035,7 +1063,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::RowMajor,
 template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
-                                   AdvanceRank, ThreadMap_, AccessType_, false> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false,
+                                   layout::NoPermute> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1342,7 +1371,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRankN<2>,
 template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_, false> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false,
+                                   layout::NoPermute> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1524,7 +1554,8 @@ class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2ColumnMa
 template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_>
 class PredicatedTileAccessIterator<Shape_, Element_, layout::AffineRank2RowMajor,
-                                   AdvanceRank, ThreadMap_, AccessType_, false> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false,
+                                   layout::NoPermute> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1709,7 +1740,8 @@ template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_, int InterleavedK>
 class PredicatedTileAccessIterator<Shape_, Element_,
                                    layout::ColumnMajorInterleaved<InterleavedK>,
-                                   AdvanceRank, ThreadMap_, AccessType_, false> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false,
+                                   layout::NoPermute> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -1899,7 +1931,8 @@ template <typename Shape_, typename Element_, int AdvanceRank,
           typename ThreadMap_, typename AccessType_, int InterleavedK>
 class PredicatedTileAccessIterator<Shape_, Element_,
                                    layout::RowMajorInterleaved<InterleavedK>,
-                                   AdvanceRank, ThreadMap_, AccessType_, false> {
+                                   AdvanceRank, ThreadMap_, AccessType_, false,
+                                   layout::NoPermute> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,

@@ -99,4 +99,25 @@ transform(Tensor<Engine,Layout>&& tensor, UnaryOp&& op)
   return transform(tensor, std::forward<UnaryOp>(op));
 }
 
+// Similar to std::transform transforms one tensors and assigns it to another
+template <class EngineIn, class LayoutIn, class EngineOut, class LayoutOut, class UnaryOp>
+CUTE_HOST_DEVICE constexpr
+void
+transform(Tensor<EngineIn,LayoutIn>& tensor_in, Tensor<EngineOut,LayoutOut>& tensor_out, UnaryOp&& op)
+{
+  CUTE_UNROLL
+  for (int i = 0; i < size(tensor_in); ++i) {
+    tensor_out(i) = static_cast<UnaryOp&&>(op)(tensor_in(i));
+  }
+}
+
+// Accept mutable temporaries
+template <class EngineIn, class LayoutIn, class EngineOut, class LayoutOut, class UnaryOp>
+CUTE_HOST_DEVICE constexpr
+void
+transform(Tensor<EngineIn,LayoutIn>&& tensor_in, Tensor<EngineOut,LayoutOut>&& tensor_out, UnaryOp&& op)
+{
+  return transform(tensor_in, tensor_out, std::forward<UnaryOp>(op));
+}
+
 } // end namespace cute

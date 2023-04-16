@@ -137,7 +137,8 @@ template <
   int AdvanceRank,
   typename ThreadMap,
   int AccessSize = ThreadMap::kElementsPerAccess,
-  bool Gather = false
+  bool Gather = false,
+  typename PermuteLayout = layout::NoPermute
 >
 class PredicatedTileIterator;
 
@@ -151,9 +152,9 @@ class PredicatedTileIterator;
 ///            MaskedTileIteratorConcept
 ///
 template <typename Shape_, typename Element_, int AdvanceRank,
-          typename ThreadMap_, int AccessSize, bool Gather>
+          typename ThreadMap_, int AccessSize, bool Gather, typename PermuteLayout>
 class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
-                             ThreadMap_, AccessSize, Gather> {
+                             ThreadMap_, AccessSize, Gather, PermuteLayout> {
  public:
   static_assert(
       AdvanceRank == 0 || AdvanceRank == 1,
@@ -182,7 +183,7 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
   /// Underlying iterator to compute the addresses
   using TileAccessIterator =
       PredicatedTileAccessIterator<Shape, Element, Layout, kAdvanceRank,
-                                   ThreadMap, AccessType, Gather>;
+                                   ThreadMap, AccessType, Gather, PermuteLayout>;
 
   static int const kAccessesPerVector = TileAccessIterator::kAccessesPerVector;
 
@@ -395,7 +396,7 @@ class PredicatedTileIterator<Shape_, Element_, layout::PitchLinear, AdvanceRank,
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileIterator for pitch-linear data.
+/// Specialization of PredicatedTileIterator for column-major data.
 ///
 /// Satisfies: ForwardTileIteratorConcept | 
 ///            ReadableContiguousTileIteratorConcept | 
@@ -408,9 +409,11 @@ template <
   int AdvanceRank,
   typename ThreadMap_,
   int AccessSize,
-  bool Gather
+  bool Gather,
+  typename PermuteLayout
 >
-class PredicatedTileIterator<Shape_, Element_, layout::ColumnMajor, AdvanceRank, ThreadMap_, AccessSize, Gather> {
+class PredicatedTileIterator<Shape_, Element_, layout::ColumnMajor, AdvanceRank, 
+                             ThreadMap_, AccessSize, Gather, PermuteLayout> {
 public:
 
   static_assert(AdvanceRank == 0 || AdvanceRank == 1, 
@@ -440,7 +443,8 @@ public:
     (kAdvanceRank == 0 ? 0 : 1),
     ThreadMap,
     AccessSize,
-    Gather
+    Gather,
+    PermuteLayout
   >;
 
   using AccessType = typename UnderlyingIterator::AccessType;
@@ -610,7 +614,7 @@ public:
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Specialization of PredicatedTileIterator for pitch-linear data.
+/// Specialization of PredicatedTileIterator for row-major data.
 ///
 /// Satisfies: ForwardTileIteratorConcept | 
 ///            ReadableContiguousTileIteratorConcept | 
@@ -623,9 +627,11 @@ template <
   int AdvanceRank,
   typename ThreadMap_,
   int AccessSize,
-  bool Gather
+  bool Gather,
+  typename PermuteLayout
 >
-class PredicatedTileIterator<Shape_, Element_, layout::RowMajor, AdvanceRank, ThreadMap_, AccessSize, Gather> {
+class PredicatedTileIterator<Shape_, Element_, layout::RowMajor, AdvanceRank, 
+                             ThreadMap_, AccessSize, Gather, PermuteLayout> {
 public:
 
   static_assert(AdvanceRank == 0 || AdvanceRank == 1, 
@@ -655,7 +661,8 @@ public:
     (kAdvanceRank == 0 ? 1 : 0),
     ThreadMap,
     AccessSize,
-    Gather
+    Gather,
+    PermuteLayout
   >;
 
   using AccessType = typename UnderlyingIterator::AccessType;

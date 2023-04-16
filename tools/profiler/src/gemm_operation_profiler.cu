@@ -61,7 +61,7 @@ GemmOperationProfiler::GemmOperationProfiler(Options const &options):
     options,
     library::OperationKind::kGemm,
     {
-      {ArgumentTypeID::kEnumerated, {"gemm_kind"}, "Variant of GEMM (gemm, batched, array, universal, planar_complex, planar_complex_array)"},
+      {ArgumentTypeID::kEnumerated, {"gemm_kind"}, "Variant of GEMM (universal, gemm, planar_complex, planar_complex_array)"},
       {ArgumentTypeID::kInteger, {"m", "problem-size::m"}, "M dimension of the GEMM problem space"},
       {ArgumentTypeID::kInteger, {"n", "problem-size::n"}, "N dimension of the GEMM problem space"},
       {ArgumentTypeID::kInteger, {"k", "problem-size::k"}, "K dimension of the GEMM problem space"},
@@ -432,7 +432,7 @@ bool GemmOperationProfiler::initialize_reduction_configuration_(
     library::Provider::kCUTLASS,
     gemm_desc.tile_description.math_instruction.element_accumulator,    // element workspace
     gemm_desc.tile_description.math_instruction.element_accumulator,    // element accumulator
-    gemm_desc.C.element,                                                // element output
+    gemm_desc.D.element,                                                // element output
     gemm_desc.element_epilogue                                          // element compute
   );
 
@@ -485,7 +485,7 @@ Status GemmOperationProfiler::initialize_workspace(
   }
 
   if (options.execution_mode != ExecutionMode::kDryRun) {
-
+    int seed_shift = 0;
     gemm_workspace_.A = device_context.allocate_tensor(
       options,
       "A",
@@ -493,7 +493,8 @@ Status GemmOperationProfiler::initialize_workspace(
       operation_desc.A.layout,
       {int(problem_.m), int(problem_.k)},
       {int(problem_.lda)},
-      problem_.batch_count * gemm_workspace_.problem_count
+      problem_.batch_count * gemm_workspace_.problem_count,
+      seed_shift++
     );
 
     gemm_workspace_.B = device_context.allocate_tensor(
@@ -503,7 +504,8 @@ Status GemmOperationProfiler::initialize_workspace(
       operation_desc.B.layout,
       {int(problem_.k), int(problem_.n)},
       {int(problem_.ldb)},
-      problem_.batch_count * gemm_workspace_.problem_count
+      problem_.batch_count * gemm_workspace_.problem_count,
+      seed_shift++
     );
 
     gemm_workspace_.C = device_context.allocate_tensor(
@@ -513,13 +515,14 @@ Status GemmOperationProfiler::initialize_workspace(
       operation_desc.C.layout,
       {int(problem_.m), int(problem_.n)},
       {int(problem_.ldc)},
-      problem_.batch_count * gemm_workspace_.problem_count
+      problem_.batch_count * gemm_workspace_.problem_count,
+      seed_shift++
     );
 
     gemm_workspace_.Computed = device_context.allocate_tensor(
       "D",
-      operation_desc.C.element,
-      operation_desc.C.layout,
+      operation_desc.D.element,
+      operation_desc.D.layout,
       {int(problem_.m), int(problem_.n)},
       {int(problem_.ldc)},
       problem_.batch_count * gemm_workspace_.problem_count
@@ -527,8 +530,8 @@ Status GemmOperationProfiler::initialize_workspace(
 
     gemm_workspace_.Reference = device_context.allocate_tensor(
       "Reference",
-      operation_desc.C.element,
-      operation_desc.C.layout,
+      operation_desc.D.element,
+      operation_desc.D.layout,
       {int(problem_.m), int(problem_.n)},
       {int(problem_.ldc)},
       problem_.batch_count * gemm_workspace_.problem_count
@@ -547,6 +550,9 @@ Status GemmOperationProfiler::initialize_workspace(
     gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
     gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
     gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
+
+    /* Query device SM count to pass onto the kernel as an argument, where needed */
+    gemm_workspace_.arguments.sm_count = options.device.properties.multiProcessorCount;
   }
 
   //
@@ -965,9 +971,12 @@ bool GemmOperationProfiler::verify_with_reference_(
       problem_.beta.data(),
 
       gemm_desc.C.element,
+      gemm_desc.C.layout,
       ptr_C,
       int(gemm_workspace_.configuration.ldc),
 
+      gemm_desc.D.element,
+      gemm_desc.D.layout,
       ptr_D,
       int(gemm_workspace_.configuration.ldd),
 
@@ -975,8 +984,7 @@ bool GemmOperationProfiler::verify_with_reference_(
       gemm_workspace_.A->batch_stride(),
       gemm_workspace_.B->batch_stride(),
       gemm_workspace_.C->batch_stride(),
-      gemm_workspace_.Reference->batch_stride()
-    );
+      gemm_workspace_.Reference->batch_stride());
 
     if (status != Status::kSuccess) {
       results_.back().verification_map[provider] = Disposition::kNotRun;

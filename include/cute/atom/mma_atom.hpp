@@ -30,101 +30,16 @@
  **************************************************************************************************/
 #pragma once
 
-#include <type_traits>
-
 #include <cute/config.hpp>
-
 #include <cute/arch/mma.hpp>
-#include <cute/atom/mma_traits.hpp>
-#include <cute/atom/mma_traits_sm90.hpp>
+
 #include <cute/tensor.hpp>
 
+#include <cute/atom/mma_traits.hpp>
+
+#include <cute/util/type_traits.hpp>
+
 namespace cute {
-
-// Generic mma_unpack for any MMA_Traits
-template <class Operation,
-          class TD, class DLayout,
-          class TA, class ALayout,
-          class TB, class BLayout,
-          class TC, class CLayout>
-CUTE_HOST_DEVICE constexpr
-void
-mma_unpack(MMA_Traits<Operation> const&,
-           Tensor<TD, DLayout>      & D,
-           Tensor<TA, ALayout> const& A,
-           Tensor<TB, BLayout> const& B,
-           Tensor<TC, CLayout> const& C)
-{
-  static_assert(is_rmem<TD>::value, "Expected registers in MMA_Atom::call");
-  static_assert(is_rmem<TA>::value, "Expected registers in MMA_Atom::call");
-  static_assert(is_rmem<TB>::value, "Expected registers in MMA_Atom::call");
-  static_assert(is_rmem<TC>::value, "Expected registers in MMA_Atom::call");
-
-  // Register value types from the MMA_Operation register arrays
-  using RegTypeD = typename std::remove_extent<typename Operation::DRegisters>::type;
-  using RegTypeA = typename std::remove_extent<typename Operation::ARegisters>::type;
-  using RegTypeB = typename std::remove_extent<typename Operation::BRegisters>::type;
-  using RegTypeC = typename std::remove_extent<typename Operation::CRegisters>::type;
-  constexpr int RegNumD = std::extent<typename Operation::DRegisters>::value;
-  constexpr int RegNumA = std::extent<typename Operation::ARegisters>::value;
-  constexpr int RegNumB = std::extent<typename Operation::BRegisters>::value;
-  constexpr int RegNumC = std::extent<typename Operation::CRegisters>::value;
-
-  Tensor rA = recast<RegTypeA>(A);
-  Tensor rB = recast<RegTypeB>(B);
-
-  CUTE_STATIC_ASSERT_V(size(rA) == Int<RegNumA>{});
-  CUTE_STATIC_ASSERT_V(size(rB) == Int<RegNumB>{});
-
-  if constexpr (std::is_same<RegTypeD, void>::value)
-  {
-    static_assert(std::is_same<typename TD::value_type, typename TC::value_type>::value, "GMMA C and D value_type must match.");
-    static_assert(std::is_same<DLayout, CLayout>::value, "GMMA C and D layouts must match.");
-    // assert((void*)&C == (void*)&D);
-
-    Tensor rC = recast<RegTypeC>(D);  // NOTE: D and C are same, so use mutable D
-
-    //CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
-
-    detail::explode(Operation::fma,
-                    rA, make_int_sequence<RegNumA>{},
-                    rB, make_int_sequence<RegNumB>{},
-                    rC, make_int_sequence<RegNumC>{});
-  } else
-  {
-    Tensor rD = recast<RegTypeD>(D);
-    Tensor rC = recast<RegTypeC>(C);
-
-    CUTE_STATIC_ASSERT_V(size(rD) == Int<RegNumD>{});
-    CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
-
-    detail::explode(Operation::fma,
-                    rD, make_int_sequence<RegNumD>{},
-                    rA, make_int_sequence<RegNumA>{},
-                    rB, make_int_sequence<RegNumB>{},
-                    rC, make_int_sequence<RegNumC>{});
-  }
-}
-
-
-namespace detail {
-
-template <class X, class = void>
-struct FrgTypeA_or_Default { using type = typename X::ElementAVal; };
-template <class X>
-struct FrgTypeA_or_Default<X,void_t<typename X::ElementAFrg>> { using type = typename X::ElementAFrg; };
-
-template <class X, class = void>
-struct FrgTypeB_or_Default { using type = typename X::ElementBVal; };
-template <class X>
-struct FrgTypeB_or_Default<X,void_t<typename X::ElementBFrg>> { using type = typename X::ElementBFrg; };
-
-template <class X, class = void>
-struct FrgTypeC_or_Default { using type = typename X::ElementCVal; };
-template <class X>
-struct FrgTypeC_or_Default<X,void_t<typename X::ElementCFrg>> { using type = typename X::ElementCFrg; };
-
-} // end namespace detail
 
 template <class... Args>
 struct MMA_Atom;
@@ -165,17 +80,6 @@ struct MMA_Atom<MMA_Traits<Args...>>
   with(TraitsArgs&&... args) const {
     auto traits = Traits::with(std::forward<TraitsArgs>(args)...);
     return MMA_Atom<decltype(traits)>{traits};
-  }
-
-  // Print thread and data layouts for debugging
-  CUTE_HOST_DEVICE static
-  void
-  print_all()
-  {
-    print("ThrID:         "); print(ThrID{});      print("\n");
-    print("LayoutA_TV:    "); print(LayoutA_TV{}); print("\n");
-    print("LayoutB_TV:    "); print(LayoutB_TV{}); print("\n");
-    print("LayoutC_TV:    "); print(LayoutC_TV{}); print("\n");
   }
 
   //
@@ -232,7 +136,6 @@ struct MMA_Atom<MMA_Traits<Args...>>
     // Check that this tensor is likely already partitioned
     CUTE_STATIC_ASSERT_V(rank(ctensor) >= Int<3>{});  // VMN
     CUTE_STATIC_ASSERT_V(size<0>(ctensor) == size<1>(LayoutC_TV{}));
-
     // C is a bit special because we are after accumulators here
     // The input/output type doesn't have to match the accumulator type
     //static_assert(std::is_same<ValTypeC, typename remove_cvref_t<CTensor>::value_type>::value, "Expecting ValTypeC type");
@@ -249,12 +152,14 @@ struct MMA_Atom<MMA_Traits<Args...>>
     // Check that this tensor is likely already partitioned
     CUTE_STATIC_ASSERT_V(rank(atensor) >= Int<3>{});  // VMK
     CUTE_STATIC_ASSERT_V(size<0>(atensor) == size<1>(LayoutA_TV{}));
-    static_assert(std::is_same<ValTypeA, typename remove_cvref_t<ATensor>::value_type>::value, "Expecting ValTypeA type");
 
     if constexpr (has_dereference<FrgTypeA>::value) {
-      return recast<FrgTypeA>(std::forward<ATensor>(atensor));
+      // If the intended FrgTypeA is a view (of the current tensor), forward the whole
+      static_assert(is_same<ValTypeA, typename remove_cvref_t<ATensor>::value_type>::value, "Expecting ValTypeA type");
+      return make_tensor<FrgTypeA>(std::forward<ATensor>(atensor));
     } else {
-      return make_tensor<FrgTypeA>(make_fragment_like(atensor.layout()));
+      // Else, the intended FrgTypeA is a value type, construct a new tensor with a fragment layout
+      return make_fragment_like<FrgTypeA>(atensor);
     }
 
     CUTE_GCC_UNREACHABLE;
@@ -268,12 +173,14 @@ struct MMA_Atom<MMA_Traits<Args...>>
     // Check that this tensor is likely already partitioned
     CUTE_STATIC_ASSERT_V(rank(btensor) >= Int<3>{});  // VNK
     CUTE_STATIC_ASSERT_V(size<0>(btensor) == size<1>(LayoutB_TV{}));
-    static_assert(std::is_same<ValTypeB, typename remove_cvref_t<BTensor>::value_type>::value, "Expecting ValTypeB type");
 
     if constexpr (has_dereference<FrgTypeB>::value) {
-      return recast<FrgTypeB>(std::forward<BTensor>(btensor));
+      // If the intended FrgTypeB is a view (of the current tensor), forward the whole
+      static_assert(is_same<ValTypeB, typename remove_cvref_t<BTensor>::value_type>::value, "Expecting ValTypeB type");
+      return make_tensor<FrgTypeB>(std::forward<BTensor>(btensor));
     } else {
-      return make_tensor<FrgTypeB>(make_fragment_like(btensor.layout()));
+      // Else, the intended FrgTypeB is a value type, construct a new tensor with a fragment layout
+      return make_fragment_like<FrgTypeB>(btensor);
     }
 
     CUTE_GCC_UNREACHABLE;
@@ -607,7 +514,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_C(CTensor&& ctensor) const
   {
-    auto thr_tensor = make_tensor(std::forward<CTensor>(ctensor).data(), thrfrg_C(ctensor.layout()));
+    auto thr_tensor = make_tensor(std::forward<CTensor>(ctensor).data(), TiledMMA::thrfrg_C(ctensor.layout()));
 
     auto thr_vmn = make_coord(get<0>(thr_vmnk_), make_coord(get<1>(thr_vmnk_), get<2>(thr_vmnk_)));
     return thr_tensor(thr_vmn, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -618,7 +525,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_A(ATensor&& atensor) const
   {
-    auto thr_tensor = make_tensor(std::forward<ATensor>(atensor).data(), thrfrg_A(atensor.layout()));
+    auto thr_tensor = make_tensor(std::forward<ATensor>(atensor).data(), TiledMMA::thrfrg_A(atensor.layout()));
 
     auto thr_vmk = make_coord(get<0>(thr_vmnk_), make_coord(get<1>(thr_vmnk_), get<3>(thr_vmnk_)));
     return thr_tensor(thr_vmk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -629,7 +536,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_B(BTensor&& btensor) const
   {
-    auto thr_tensor = make_tensor(std::forward<BTensor>(btensor).data(), thrfrg_B(btensor.layout()));
+    auto thr_tensor = make_tensor(std::forward<BTensor>(btensor).data(), TiledMMA::thrfrg_B(btensor.layout()));
 
     auto thr_vnk = make_coord(get<0>(thr_vmnk_), make_coord(get<2>(thr_vmnk_), get<3>(thr_vmnk_)));
     return thr_tensor(thr_vnk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -675,8 +582,8 @@ make_tiled_mma(MMA_Atom<MMA_Op> const&,
                MMAValLayout     const& val_layout   = {},
                Permutations     const& permutations = {})
 {
-  auto thr_layout_mnk  = append<3>(thr_layout,   Layout<_1>{});
-  auto val_layout_mnk  = append<3>(val_layout,   Layout<_1>{});
+  auto thr_layout_mnk  = append<3>(thr_layout, Layout<_1,_0>{});
+  auto val_layout_mnk  = append<3>(val_layout, Layout<_1,_0>{});
   auto permutation_mnk = append<3>(permutations, _);
 
   return TiledMMA<MMA_Atom<MMA_Op>,
@@ -707,25 +614,60 @@ make_tiled_mma(MMA_Op       const&,
 template <class... Args, class Shape_MN>
 CUTE_HOST_DEVICE constexpr
 auto
-partition_fragment_C(TiledMMA<Args...>, Shape_MN shapeMN)
+partition_shape_C(TiledMMA<Args...> const& mma, Shape_MN const& shape_MN)
 {
   constexpr int R = rank_v<Shape_MN>;
   static_assert(R >= 2, "Must have at least rank-2");
-  auto atomMNK  = typename TiledMMA<Args...>::AtomShape_MNK{};
-  auto thrVMNK  = typename TiledMMA<Args...>::ThrLayoutVMNK{};
+  auto atomMNK = typename TiledMMA<Args...>::AtomShape_MNK{};
+  auto thrVMNK = typename TiledMMA<Args...>::ThrLayoutVMNK{};
+  auto V = shape<1>(typename TiledMMA<Args...>::AtomLayoutC_TV{});
+  auto M = shape_div(size<0>(shape_MN), size<0>(atomMNK) * size<1>(thrVMNK));
+  auto N = shape_div(size<1>(shape_MN), size<1>(atomMNK) * size<2>(thrVMNK));
+  return tuple_cat(make_shape(V,M,N), take<2,R>(shape_MN));
+}
 
-  auto V = size<1>(typename TiledMMA<Args...>::AtomLayoutC_TV{});
-  auto M = shape_div(size<0>(shapeMN), size<0>(atomMNK) * size<1>(thrVMNK));
-  auto N = shape_div(size<1>(shapeMN), size<1>(atomMNK) * size<2>(thrVMNK));
-  auto frg_shape = tuple_cat(make_shape(V,M,N), take<2,R>(shapeMN));
-
-  return make_tensor<typename TiledMMA<Args...>::FrgTypeC>(frg_shape);
+template <class... Args, class Shape_MN>
+CUTE_HOST_DEVICE constexpr
+auto
+partition_fragment_C(TiledMMA<Args...> const& mma, Shape_MN const& shapeMN)
+{
+  return make_tensor<typename TiledMMA<Args...>::FrgTypeC>(partition_shape_C(mma, shapeMN));
 }
 
 // partition_fragment_A and partition_fragment_B often depend on the
 //   layout of A and B and/or the thread_idx that is requesting the partition.
 // For these reasons, they should not be used in a static context.
 // See TiledMMA::get_slice(thr_idx).partition_fragment_A(tensorA) instead.
+
+template <class... Args, class Shape_MK>
+CUTE_HOST_DEVICE constexpr
+auto
+partition_shape_A(TiledMMA<Args...> const& mma, Shape_MK const& shape_MK)
+{
+  constexpr int R = rank_v<Shape_MK>;
+  static_assert(R >= 2, "Must have at least rank-2");
+  auto atomMNK = typename TiledMMA<Args...>::AtomShape_MNK{};
+  auto thrVMNK = typename TiledMMA<Args...>::ThrLayoutVMNK{};
+  auto V = shape<1>(typename TiledMMA<Args...>::AtomLayoutA_TV{});
+  auto M = shape_div(size<0>(shape_MK), size<0>(atomMNK) * size<1>(thrVMNK));
+  auto K = shape_div(size<1>(shape_MK), size<2>(atomMNK) * size<3>(thrVMNK));
+  return tuple_cat(make_shape(V,M,K), take<2,R>(shape_MK));
+}
+
+template <class... Args, class Shape_NK>
+CUTE_HOST_DEVICE constexpr
+auto
+partition_shape_B(TiledMMA<Args...> const& mma, Shape_NK const& shape_NK)
+{
+  constexpr int R = rank_v<Shape_NK>;
+  static_assert(R >= 2, "Must have at least rank-2");
+  auto atomMNK = typename TiledMMA<Args...>::AtomShape_MNK{};
+  auto thrVMNK = typename TiledMMA<Args...>::ThrLayoutVMNK{};
+  auto V = shape<1>(typename TiledMMA<Args...>::AtomLayoutB_TV{});
+  auto N = shape_div(size<0>(shape_NK), size<1>(atomMNK) * size<2>(thrVMNK));
+  auto K = shape_div(size<1>(shape_NK), size<2>(atomMNK) * size<3>(thrVMNK));
+  return tuple_cat(make_shape(V,N,K), take<2,R>(shape_NK));
+}
 
 //
 // Size
@@ -739,17 +681,61 @@ tile_size(TiledMMA<Args...> const& mma)
   return size<I...>(typename TiledMMA<Args...>::TiledShape_MNK{});
 }
 
-template <class... Args>
+template <int... I, class... Args>
+CUTE_HOST_DEVICE constexpr
+auto
+tile_shape(TiledMMA<Args...> const& mma)
+{
+  return shape<I...>(typename TiledMMA<Args...>::TiledShape_MNK{});
+}
+
+template <int... I, class... Args>
 CUTE_HOST_DEVICE constexpr
 auto
 size(TiledMMA<Args...> const& mma)
 {
-  return size(typename TiledMMA<Args...>::ThrLayoutVMNK{});
+  return size<I...>(typename TiledMMA<Args...>::ThrLayoutVMNK{});
 }
 
 //
 // Display utilities
 //
+
+template <class... Args>
+CUTE_HOST_DEVICE
+void
+print(MMA_Atom<MMA_Traits<Args...>> const&)
+{
+  using Atom = MMA_Atom<MMA_Traits<Args...>>;
+  print("MMA_Atom\n");
+  print("  ThrID:         "); print(typename Atom::ThrID{});      print("\n");
+  print("  LayoutA_TV:    "); print(typename Atom::LayoutA_TV{}); print("\n");
+  print("  LayoutB_TV:    "); print(typename Atom::LayoutB_TV{}); print("\n");
+  print("  LayoutC_TV:    "); print(typename Atom::LayoutC_TV{}); print("\n");
+}
+
+template <class Atom, class TiledThr, class TiledVal, class TiledPerm>
+CUTE_HOST_DEVICE
+void
+print(TiledMMA<Atom, TiledThr, TiledVal, TiledPerm> const& mma)
+{
+  using MMA = TiledMMA<Atom, TiledThr, TiledVal, TiledPerm>;
+  print("TiledMMA\n");
+  print("  TiledThr:  "); print(TiledThr{});  print("\n");
+  print("  TiledVal:  "); print(TiledVal{});  print("\n");
+  print("  TiledPerm: "); print(TiledPerm{}); print("\n");
+  print("  TiledShape_MNK: "); print(typename MMA::TiledShape_MNK{}); print("\n");
+  print("  ThrLayoutVMNK:  "); print(typename MMA::ThrLayoutVMNK{});  print("\n");
+  print(static_cast<Atom const&>(mma));
+}
+
+template <class TiledMMA, class ThrVMNK>
+CUTE_HOST_DEVICE
+void
+print(ThrMMA<TiledMMA, ThrVMNK> const&)
+{
+  print(TiledMMA{});
+}
 
 template <class... Args>
 CUTE_HOST_DEVICE
@@ -992,9 +978,9 @@ print_latex_mma(Shape_MNK const& shape_mnk,
 
   printf(latex_header);
 
-  int M = size<0>(shape_mnk);
-  int N = size<1>(shape_mnk);
-  int K = size<2>(shape_mnk);
+  constexpr int M = size<0>(shape_mnk);
+  constexpr int N = size<1>(shape_mnk);
+  constexpr int K = size<2>(shape_mnk);
 
   // C starting at 0,0
   bool c_filled[M][N] = {};
@@ -1070,12 +1056,10 @@ print_latex_mma(Shape_MNK const& shape_mnk,
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <cute/atom/mma_traits.hpp>
 #include <cute/atom/mma_traits_sm61.hpp>
 #include <cute/atom/mma_traits_sm70.hpp>
 #include <cute/atom/mma_traits_sm75.hpp>
 #include <cute/atom/mma_traits_sm80.hpp>
 #include <cute/atom/mma_traits_sm90.hpp>
 #include <cute/atom/mma_traits_sm90_gmma.hpp>
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////

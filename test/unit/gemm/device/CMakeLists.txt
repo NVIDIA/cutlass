@@ -267,6 +267,19 @@ cutlass_test_unit_add_executable(
   sm90_gemm_tf32_tf32_f32_alignx_tensor_op_f32.cu
 )
 
+# Fused epilogue tests
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_epilogue_fusion_sm90
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+  sm90_gemm_f16_f16_f16_tensor_op_f32_tensor_broadcast.cu
+  sm90_gemm_f32_f32_f32_tensor_op_f32_tensor_broadcast.cu
+  sm90_gemm_s8_s8_s8_tensor_op_s32_tensor_broadcast.cu
+  sm90_gemm_f16_f16_f16_tensor_op_f32_cluster_warpspecialized_cooperative_bias_elementwise.cu
+  sm90_gemm_f16_f16_f16_tensor_op_f32_cluster_warpspecialized_pingpong_bias_elementwise.cu
+)
+
 
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_tensorop_cluster_multicast_sm90
@@ -276,7 +289,17 @@ cutlass_test_unit_add_executable(
 
   sm90_gemm_f16_f16_f16_tensor_op_f32_cluster_unspecialized.cu
   sm90_gemm_f16_f16_f16_tensor_op_f32_cluster_warpspecialized.cu
-  sm90_gemm_f16_f16_f16_tensor_op_f32_cluster_warpspecialized_persistent.cu
+  sm90_gemm_f16_f16_f16_tensor_op_f32_cluster_warpspecialized_pingpong.cu
+  sm90_gemm_f16_f16_f16_tensor_op_f32_cluster_warpspecialized_cooperative.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_tensorop_gmma_rs_warpspecialized_sm90
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  sm90_gemm_tf32_tf32_f32_tensor_op_f32_gmma_rs_cluster_warpspecialized.cu
 )
 
 cutlass_test_unit_add_executable(
@@ -337,6 +360,7 @@ cutlass_test_unit_add_executable(
   gemm_s8t_s8n_s32n_tensor_op_s32_sm80.cu
   gemm_s8t_s8n_s8n_tensor_op_s32_sm80.cu
   gemm_s8t_s8n_s8t_tensor_op_s32_sm80.cu
+  gemm_s8t_s8n_f16t_tensor_op_s32_sm80.cu
   gemm_s4t_s4n_s32n_tensor_op_s32_sm80.cu
   gemm_s4t_s4n_s32t_tensor_op_s32_sm80.cu
   gemm_s4t_s4n_s4n_tensor_op_s32_sm80.cu 
@@ -416,7 +440,6 @@ cutlass_test_unit_add_executable(
   gemm_planar_complex_f16_f16_f32_tensor_op_sm75.cu                                         
   gemm_planar_complex_f16_f16_f32_tensor_op_sm80.cu
 )
-
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_grouped
 

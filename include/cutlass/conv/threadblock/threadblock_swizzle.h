@@ -107,7 +107,7 @@ struct StridedDgradHorizontalThreadblockSwizzle :
     // compute number of tiles in m dimension
     int tile_m = get_strided_dgrad_tile_m(problem_size, tile_size.m());
 
-    // compute number of tiles in n dimension
+    // compute number of tiles in n dimension 
     int tile_n = (implicit_gemm_problem_size.n() + tile_size.n() - 1) / tile_size.n();
 
     return gemm::GemmCoord(
@@ -148,7 +148,7 @@ struct StridedDgradIdentityThreadblockSwizzle :
     // compute number of tiles in m dimension
     int tile_m = get_strided_dgrad_tile_m(problem_size, tile_size.m());
 
-    // compute number of tiles in n dimension
+    // compute number of tiles in n dimension 
     int tile_n = (implicit_gemm_problem_size.n() + tile_size.n() - 1) / tile_size.n();
 
     return gemm::GemmCoord(
