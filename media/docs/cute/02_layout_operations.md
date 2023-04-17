@@ -136,7 +136,7 @@ This code produces the following text output.
 ```
 
 `print(layout(1, 1))` prints the mapping of
-the logical 2-D coordinate (0,1) to 1-D index, which is 4.
+the logical 2-D coordinate (1,1) to 1-D index, which is 4.
 You can see that from the table,
 which shows the left logical index as the "row,"
 and the right logical index as the "column."
@@ -456,7 +456,7 @@ Shape ((3, 2), (4, 2)) and Stride ((16, 1), (4, 2)).
 | (2,1) | 33    | 37    | 41    | 45    | 35    | 39    | 43    | 47    |
 
 The tile is now interleaved or "raked" with the other 3x4 matrix-of-tiles
-instead of appearing as blocks. Other references call this is cyclic 
+instead of appearing as blocks. Other references call this cyclic 
 distribution.
 
 This might look familiar if you have ever used ScaLAPACK.
@@ -521,7 +521,6 @@ Layout mat = logical_divide(vec, col);   // (4,(2,2)) : (6,(3,24))
 
 ```c++
 Layout vec = Layout<_16,_3>{};           //  16 : 3
-Layout col = Layout< _4,_2>{};
 Layout col = Layout<Shape <_2,_2>,
                     Stride<_4,_1>>{};    // (2,2) : (4,1)
 Layout mat = logical_divide(vec, col);   // ((2,2),(2,2)) : ((12,3),(6,24))
