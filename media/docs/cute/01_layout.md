@@ -165,7 +165,7 @@ auto layout_2sx4s = make_layout(make_shape(Int<2>{},Int<4>{}));
 auto layout_2sx4d = make_layout(make_shape(Int<2>{},4));
 
 auto layout_2x4 = make_layout(make_shape (2, make_shape (2,2)),
-                              make_stride(4, make_stride(1,2)));
+                              make_stride(4, make_stride(2,1)));
 ```
 
 ## Using a `Layout`
