@@ -25,13 +25,12 @@ We plan to add support for installing via `python setup.py install` in a future 
 
 ## Docker
 To ensure that you have all of the necessary Python modules for running the examples using the
-CUTLASS Python interface, we recommend using one of the Docker images for CUDA [11.8](../../../python/docker/Dockerfile-cuda11.8-pytorch)
-and [12.0](../../../python/docker/Dockerfile-cuda12.0-pytorch) are located in the docker directory.
+CUTLASS Python interface, we recommend using one of the Docker images located in the docker directory.
 
-For example, to build and launch a container that uses CUDA 12.0 via an NGC PyTorch container, run:
+For example, to build and launch a container that uses CUDA 12.1 via an NGC PyTorch container, run:
 ```bash
-docker build -t cutlass-cuda12.0:latest -f docker/Dockerfile-cuda12.0-pytorch .
-docker run --gpus all -it --rm cutlass-cuda12.0:latest
+docker build -t cutlass-cuda12.1:latest -f docker/Dockerfile-cuda12.1-pytorch .
+docker run --gpus all -it --rm cutlass-cuda12.1:latest
 ```
 
-The CUTLASS Python interface has been tested with CUDA 11.8 and CUDA 12.0 on Python 3.8.10 and 3.9.7.
+The CUTLASS Python interface has been tested with CUDA 11.8, 12.0, and 12.1 on Python 3.8.10 and 3.9.7.
