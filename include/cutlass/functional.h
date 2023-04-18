@@ -1422,8 +1422,8 @@ struct negate<Array<half_t, N>> {
     }
 
     if (N % 2) {
-      half_t x = lhs[N - 1];
-      __half lhs_val = -reinterpret_cast<__half const &>(x);
+      half_t x = -lhs[N - 1];
+      __half lhs_val = reinterpret_cast<__half const &>(x);
       result[N - 1] = reinterpret_cast<half_t const &>(lhs_val);
     }
 
