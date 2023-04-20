@@ -175,7 +175,7 @@ class PredicatedTileAccessIteratorResidualLast<
   Mask residual_tile_mask;
 
   /// Parameters object with precomputed internal state
-  Params const& params_;
+  Params params_;
 
   /// Internal pointer to first access of tile
   BytePointer pointer_;
@@ -1018,7 +1018,7 @@ class PredicatedTileAccessIteratorResidualLast<
   //
 
   /// Parameters object with precomputed internal state
-  Params const& params_;
+  Params params_;
 
   /// Internal pointer to first access of tile
   BytePointer pointer_;
