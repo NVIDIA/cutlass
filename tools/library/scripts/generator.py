@@ -4160,7 +4160,7 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
         elif data_type_mixed["c_type"] in [DataType.f16, DataType.bf16]:
           layout[2][1] = 8
 
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed)
+      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed, schedules)
       # persistent kernels with TMA epilogues
       if data_type_mixed["c_type"] in [DataType.f16, DataType.bf16] and CudaToolkitVersionSatisfies(cuda_version, 12, 1):
         CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
