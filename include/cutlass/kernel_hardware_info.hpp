@@ -56,15 +56,16 @@ struct KernelHardwareInfo {
         << cudaGetErrorString(result));
       return 0;
     }
-    cudaDeviceProp properties;
-    result = cudaGetDeviceProperties(&properties, device_id);
+    int multiprocessor_count;
+    result = cudaDeviceGetAttribute(&multiprocessor_count,
+      cudaDevAttrMultiProcessorCount, device_id);
     if (result != cudaSuccess) {
       CUTLASS_TRACE_HOST(
-        "  cudaGetDeviceProperties() returned error "
+        "  cudaDeviceGetAttribute() returned error "
         << cudaGetErrorString(result));
       return 0;
     }
-    return properties.multiProcessorCount;
+    return multiprocessor_count;
   }
 };
 
