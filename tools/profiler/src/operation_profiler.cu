@@ -270,17 +270,17 @@ int OperationProfiler::profile_all(
   ProblemSpace::Iterator problem_it = problem_space.begin();
   ProblemSpace::Iterator problem_end = problem_space.end();
 
-  bool continue_profiling = true, internal_error = false;
+  bool continue_profiling = true;
+  int retval = 0;
 
   // For each problem in problem space
   for (; continue_profiling && problem_it != problem_end; ++problem_it) {
-
     ProblemSpace::Problem problem = problem_it.at();
-
     report.next_problem();
 
     // For each operation in manifest
-    for (auto const & operation_ptr : manifest) {
+    int matched_operation_count = 0;
+    for (auto const& operation_ptr : manifest) {
 
       library::Operation const *operation = operation_ptr.get();
 
@@ -292,8 +292,8 @@ int OperationProfiler::profile_all(
 
       // Execute compatible cutlass operations if they satisfy the current device's compute capability
       if (operation->description().kind == kind_ &&
-        operation->description().provider == library::Provider::kCUTLASS &&
-        options.device.compute_capability() >= min_cc &&
+          operation->description().provider == library::Provider::kCUTLASS &&
+          options.device.compute_capability() >= min_cc &&
           options.device.compute_capability() <= max_cc) {
 
         std::string operation_name(operation->description().name);
@@ -320,7 +320,10 @@ int OperationProfiler::profile_all(
         if (!filtered_by_name || !satisfies(operation->description(), problem_space, problem)) {
           continue;
         }
-      
+
+        // we have found a kernel match, so increment the counter for match kernels
+        ++matched_operation_count;
+
         // A. Initialize configuration
         Status status = this->initialize_configuration(
           options,
@@ -374,7 +377,6 @@ int OperationProfiler::profile_all(
         //
 
         // B. Verify CUTLASS
-         
         if (continue_profiling && options.profiling.provider_enabled(library::Provider::kCUTLASS)) {
 
           continue_profiling = this->verify_cutlass(
@@ -426,10 +428,18 @@ int OperationProfiler::profile_all(
       if (!continue_profiling) {
         break;
       }
-    } 
+    }
+
+    // If we did not find any kernels that match our filters and error_on_no_match was set, report an error
+    if (options.profiling.error_on_no_match && matched_operation_count <= 0) {
+      #if !NDEBUG
+      std::cout << "Error: No matching kernels found with kernel selection filters [--error_on_no_match]" << std::endl;
+      #endif
+      retval = 1;
+    }
   }
 
-  return internal_error ? 1 : 0;
+  return retval;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

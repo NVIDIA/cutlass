@@ -3,8 +3,8 @@
 ## Layout
 
 This document describes `Layout`, CuTe's core abstraction.
-A `Layout` maps from (a) logical coordinate space(s)
-to a physical index space.
+A `Layout` maps from a logical coordinate space
+to an index space.
 
 `Layout`s present a common interface to multidimensional array access
 that abstracts away the details of how the array's elements are organized in memory.
@@ -19,7 +19,11 @@ This can help users do things like partition layouts of data over layouts of thr
 
 ## Layouts and Tensors
 
-Any of the `Layout`s discussed in this section can be composed with data -- a pointer or an array -- to create a `Tensor`. The responsibility of the `Layout` is to define valid coordinate space(s) and, therefore, the logical shape of the data and map those into an index space. The index space is precisely the offset that would be used to index into the array of data.
+Any of the `Layout`s discussed in this section can be composed with data -- e.g., a pointer or an array -- to create a `Tensor`.
+The `Layout`'s logical coordinate space represents the logical "shape" of the data,
+e.g., the modes of the `Tensor` and their extents.
+The `Layout` maps a logical coordinate into an index,
+which is an offset to be used to index into the array of data.
 
 For details on `Tensor`, please refer to the
 [`Tensor` section of the tutorial](./03_tensor.md).
@@ -31,31 +35,31 @@ Both `Shape` and `Stride` are `IntTuple` types.
 
 ### IntTuple
 
-An `IntTuple` is an integer or a tuple of `IntTuple`s.
+An `IntTuple` is defined recursively as either a single integer, or a tuple of `IntTuple`s.
 This means that `IntTuple`s can be arbitrarily nested.
 Operations defined on `IntTuple`s include the following.
 
-* `get<I>(IntTuple)`: The `I`th element of the `IntTuple`. Note that `get<0>` is defined for integer `IntTuples`.
+* `get<I>(IntTuple)`: The `I`th element of the `IntTuple`.  For an `IntTuple` consisting of a single integer, `get<0>` is just that integer.
 
-* `rank(IntTuple)`: The number of elements in an `IntTuple`. An int has rank 1, a tuple has rank `tuple_size`.
+* `rank(IntTuple)`: The number of elements in an `IntTuple`. A single integer has rank 1, and a tuple has rank `tuple_size`.
 
-* `depth(IntTuple)`: The number of hierarchical `IntTuple`s. An int has depth 0, a tuple has depth 1, a tuple that contains a tuple has depth 2, etc.
+* `depth(IntTuple)`: The number of hierarchical `IntTuple`s. A single integer has depth 0, a tuple of integers has depth 1, a tuple that contains a tuple of integers has depth 2, etc.
 
-* `size(IntTuple)`: The product of all elements of the IntTuple.
+* `size(IntTuple)`: The product of all elements of the `IntTuple`.
 
-We write `IntTuple`s with parenthesis to denote the hierarchy. E.g. `6`, `(2)`, `(4,3)`, `(3,(6,2),8)` are all `IntTuple`s.
+We write `IntTuple`s with parenthesis to denote the hierarchy. For example, `6`, `(2)`, `(4,3)`, `(3,(6,2),8)` are all `IntTuple`s.
 
 ## Layout
 
-A `Layout` is then a pair of `IntTuple`s. The first defines the abstract *shape* of the layout and the second defines the *strides*, which map from coordinates within the shape to the index space.
+A `Layout` is then a pair of `IntTuple`s. The first element defines the abstract *shape* of the `Layout`, and the second element defines the *strides*, which map from coordinates within the shape to the index space.
 
-As a pair of `IntTuple`s, we can define many similar operations on `Layout`s including
+Since a `Layout` is just a pair of `IntTuple`s, we can define operations on `Layout`s analogous to those defined on `IntTuple`.
 
 * `get<I>(Layout)`: The `I`th sub-layout of the `Layout`.
 
 * `rank(Layout)`: The number of modes in a `Layout`.
 
-* `depth(Layout)`: The number of hierarchical `Layout`s. An int has depth 0, a tuple has depth 1, a tuple that contains a tuple has depth 2, etc.
+* `depth(Layout)`: The number of hierarchical `Layout`s. A single integer has depth 0, a tuple of integers has depth 1, a tuple that contains a tuple of integers has depth 2, etc.
 
 * `shape(Layout)`: The shape of the `Layout`.
 
@@ -86,7 +90,7 @@ These hierarchical access functions include the following.
 
 ### Vector examples
 
-Then, we can define a vector as any `Shape` and `Stride` pair with `rank == 1`.
+We define a vector as any `Shape` and `Stride` pair with `rank == 1`.
 For example, the `Layout`
 
 ```
@@ -95,9 +99,9 @@ Stride: (1)
 ```
 
 defines a contiguous 8-element vector.
-Similarly, with a stride of `(2)`,
+For a vector with the same Shape but a Stride of `(2)`,
 the interpretation is that the eight elements
-are stored at positions 0, 2, 4, $\dots$.
+are stored at positions 0, 2, 4, $\dots$, 14.
 
 By the above definition, we *also* interpret
 
@@ -168,9 +172,17 @@ auto layout_2x4 = make_layout(make_shape (2, make_shape (2,2)),
                               make_stride(4, make_stride(2,1)));
 ```
 
+The `make_layout` function returns a `Layout`.
+It deduces the returned `Layout`'s template arguments from the function's arguments.
+Similarly, the `make_shape` and `make_stride` functions
+return a `Shape` resp. `Stride`.
+CuTe often uses these `make_*` functions,
+because constructor template argument deduction (CTAD)
+does not work for `cute::tuple` as it works for `std::tuple`.
+
 ## Using a `Layout`
 
-The fundamental use of a `Layout` is to map between logical coordinate space(s) and index space. For example, to print an arbitrary rank-2 layout, we can write the function
+The fundamental use of a `Layout` is to map between logical coordinate space(s) and an index space. For example, to print an arbitrary rank-2 layout, we can write the function
 
 ```c++
 template <class Shape, class Stride>

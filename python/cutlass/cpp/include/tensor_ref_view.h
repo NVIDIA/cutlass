@@ -43,10 +43,10 @@
 template<typename T, typename L, typename TF>
 void bind_tensor_ref_view(py::module &m, std::string name) {
     py::class_<cutlass::TensorRef<T, L>>(m, ("TensorRef" + name).c_str())
-        .def("__init__", [](cutlass::TensorRef<T, L>& tensor_ref, int64_t address, const L& layout_ ) {
+        .def(py::init([](int64_t address, const L& layout_ ) {
             T* ptr = reinterpret_cast< T*>(address);
-            new (&tensor_ref) cutlass::TensorRef<T, L>(ptr, layout_);
-        })
+            return new cutlass::TensorRef<T, L>(ptr, layout_);
+        }))
         .def("data", [](cutlass::TensorRef<T, L>& tensor_ref) {
             T* ptr = tensor_ref.data();
             return int64_t(ptr);

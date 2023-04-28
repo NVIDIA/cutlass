@@ -73,6 +73,7 @@ In C++, we identify a Tuple with the
 `cute::tuple` behaves like `std::tuple`, but it works on device or host,
 and it imposes restrictions on its template arguments for performance and simplicity.
 
+
 #### IntTuple
 
 CuTe then defines an IntTuple as either an integer, or a Tuple of IntTuple.
@@ -136,7 +137,7 @@ This code produces the following text output.
 ```
 
 `print(layout(1, 1))` prints the mapping of
-the logical 2-D coordinate (1,1) to 1-D index, which is 4.
+the logical 2-D coordinate (1,1) to the 1-D index, which is 4.
 You can see that from the table,
 which shows the left logical index as the "row,"
 and the right logical index as the "column."
@@ -302,13 +303,13 @@ Both humans and CuTe compute composition using the following rules.
 
 2. Concatenation: A layout can be expressed as the concatenation of its sublayouts.  We denote concatenation with parentheses: $B = (B_0,B_1,...)$.  The CuTe function `make_layout`, when given zero or more `Layout`s, concatenates them.
 
-3. Composition is (left-)distributive with concatenation: $A \circ B = A \circ (B0, B1, ...) = (A \circ B0, A \circ B1, ...)$.
+3. Composition is (left-)distributive with concatenation: $A \circ B = A \circ (B_0, B_1, ...) = (A \circ B_0, A \circ B_1, ...)$.
 
 4. "Base case": For layouts $A = a : b$ and $B = c : d$ with integral shape and stride, $A \circ B = R = c : (b * d)$.
 
 5. By-mode composition: Let $\langle B, C \rangle$ (angle brackets, not parentheses)
-   denote a tuple of two layouts B and C, not their concatenation.  Let A = (A0, A1).
-   Then, $A \circ \langle B, C \rangle = (A0, A1) \circ \langle B, C \rangle = (A0 \circ B, A1 \circ C)$.
+   denote a tuple of two layouts B and C, not their concatenation.  Let $A = (A_0, A_1)$.
+   Then, $A \circ \langle B, C \rangle = (A_0, A_1) \circ \langle B, C \rangle = (A_0 \circ B, A_1 \circ C)$.
    This allows the application of composition independently to sublayouts of $A$.
 
 #### Examples: Reshape a vector into a matrix
@@ -358,6 +359,55 @@ The resulting layout has shape $(4,5)$, just as before.  What are the strides?
 4. $20:2 \circ 5:1$ has shape $5$ and stride $2 = 2 \cdot 1$.
 
 5. Result: (4:10, 5:2), which by concatenation is (4,5) : (10,2).
+
+#### Example: Reshape a matrix into another matrix
+
+The composition $((20,2):(16,4) \circ (4,5):(1,4))$
+expresses reshaping the matrix with layout (20,2):(16:4),
+into a 4 x 5 matrix in a column-major way.
+
+1. By deconcatenation, $(4,5) : (1,4)$ is $(4:1, 5:4)$.
+
+2. Composition is distributive, so $(20,2):(16,4) \circ (4:1, 5:4)$ is $((20,2):(16,4) \circ 4:1, (20,2):(16,4) \circ 5:4)$.
+
+3. $(20,2):(16,4) \circ 4:1$ has shape $4$ and stride $16$.  (4:1 expresses picking the first 4 consecutive elements of (20,2):(16,4).  These elements run down the 0th column (leftmost mode) of the layout, whose stride is 16.)
+
+4. $(20,2):(16,4) \circ 5:4$ has shape $5$ and stride $64 = 4 \cdot 16$.
+
+5. Result: $(4:16, 5:64)$, which by concatenation is $(4,5) : (16,64)$.
+
+We get exactly this result with CuTe
+if we use compile-time shapes and strides.
+The following C++ code prints `(_4,_5):(_16,_64).`
+
+```c++
+using namespace cute;
+auto a = make_layout(make_shape(Int<20>{}, _2{}), make_stride(_16{}, _4{}));
+auto b = make_layout(make_shape(     _4{}, _5{}), make_stride( _1{}, _4{}));
+auto c = composition(a, b);
+printf("\n");
+print(c);
+```
+
+Results may _look_ different (but are the same mathematically)
+if we use run-time integers.
+The following C++ code prints `((4,1),(5,1)):((16,4),(64,4)).`
+
+```c++
+using namespace cute;
+auto a = make_layout(make_shape(20, 2), make_stride(16, 4));
+auto b = make_layout(make_shape( 4, 5), make_stride( 1, 4));
+auto c = composition(a, b);
+printf("\n");
+print(c);
+```
+
+((4,1),(5,1)):((16,4),(64,4)) is effectively the same layout
+as (4,5) : (16,64), because the 1s in the shape don't affect the layout
+(as a mathematical function from one integer to one integer).
+CuTe chooses not to simplify layout computations
+with run-time values in them as much as it could,
+because simplifications involving run-time values have a run-time cost.
 
 ### Product
 
@@ -428,7 +478,7 @@ results in Shape ((2, 2), (3, 4)) and Stride ((1, 2), (16, 4)).
 | (1,1) |  3    | 19    | 35    |  7    | 23    | 39    | 11    | 27    | 43    | 15    | 31    | 47    |
 
 Note how the tile appears in the leftmost column and is reproduced
-in each column in the same order as the matrix-of-tiles. That is, 
+in each column in the same order as the matrix-of-tiles. That is,
 the tile can be indexed through the first mode of the result and the
 matrix-of-tiles can be indexed through the second mode.
 
@@ -456,8 +506,8 @@ Shape ((3, 2), (4, 2)) and Stride ((16, 1), (4, 2)).
 | (2,1) | 33    | 37    | 41    | 45    | 35    | 39    | 43    | 47    |
 
 The tile is now interleaved or "raked" with the other 3x4 matrix-of-tiles
-instead of appearing as blocks. Other references call this cyclic 
-distribution.
+instead of appearing as blocks. Other references call this a "cyclic
+distribution."
 
 This might look familiar if you have ever used ScaLAPACK.
 It expresses a 2-D block cyclic distribution of a 6 x 8 matrix
@@ -542,7 +592,87 @@ CuTe includes 3 different kinds of layout division operations.
 
 We will summarize these in the sections that follow.
 
-#### Logical divide : the intuitive tiling
+#### Logical divide
+
+##### Example worked in detail
+
+This section will work the following logical divide example in detail.
+
+```c++
+Layout a = make_layout(24, 2);
+Layout b = make_layout( 4, 2);
+Layout c = logical_divide(a, b);
+```
+
+Logical divide produces a rank-2 `Layout`,
+where mode 0 (the leftmost mode) corresponds to the divisor `b`,
+and mode 1 (the rightmost mode) corresponds to the "remainder."
+Intuitively, the remainder of 24 divided by 4 is 6,
+so we know that mode 1 has 6 elements.
+We just don't know its shape yet.
+
+CuTe defines `logical_divide(a, b)` as
+`composition(a, make_layout(b, complement(b, size(a))))`.
+Here, `size(a)` is 24.
+What is `complement(b, 24)`?
+Intuitively, it means "the remainder,"
+what's left over after applying `b` to 0, 1, 2, $\dots$, 23.
+
+The layout 4:2 means "take 4 elements at even-numbered indices."
+The following table overlays the range of 4:2
+atop the complement's codomain 0, 1, $\dots$, 23.
+
+| Range of 4:2  | 0     |       | 2     |       | 4     |       | 6     |     |     |     |         |     |
+| ---           | ---   | ---   | ---   | ---   | ---   | ---   | ---   | --- | --- | --- | ---     | --- |
+| Codomain      | 0     | 1     | 2     | 3     | 4     | 5     | 6     | 7   | 8   | 9   | $\dots$ | 23  |
+
+Layouts are linear, so their range must include zero.
+The complement of 4:2 with respect to 24 is thus a layout whose range
+
+* includes zero;
+
+* does not include any other elements of the range of 4:2
+    (i.e., satisfies the disjoint property; see above); and
+
+* includes as much of 0, 1, $\dots$, 23 as possible
+    (so that it forms the "remainder" of 4:2 with respect to 24).
+
+Intuitively, the range of the complement must look like this:
+0, 1, 8, 9, 16, 17.
+The resulting layout is ordered.
+It has size 6 and cosize 18,
+so it satisfies the bounded property (see above).
+This is the layout (2, 3) : (1, 8).
+(Going from this intuitive sense of the complement
+to knowing how to compute it directly
+is out of scope for this part of the tutorial.)
+
+The following table shows 4:2 with its complement (2, 3) : (1, 8).
+
+| Range of 4:2        | 0     |       | 2     |       | 4     |       | 6     |     |     |     |     |     |     |     |     |     |     |     |         |     |
+| ---                 | ---   | ---   | ---   | ---   | ---   | ---   | ---   | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---     | --- |
+| Codomain            | 0     | 1     | 2     | 3     | 4     | 5     | 6     | 7   | 8   | 9   | 10  | 11  | 12  | 13  | 14  | 15  | 16  | 17  | $\dots$ | 23  |
+| ---                 | ---   | ---   | ---   | ---   | ---   | ---   | ---   | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---     | --- |
+| Range of complement | 0     | 1     |       |       |       |       |       |     | 8   | 9   |     |     |     |     |     |     | 16  | 17  |         |     |
+
+Now we know that `logical_divide`(24:2, 4:2) is
+`composition`(24:2, `make_layout`(4:2, (2,3):(1,8))).
+The composition of two layouts has the shape of the second (rightmost) layout,
+so the resulting shape is (4, (2, 3)).
+We see that the leftmost mode 4 corresponds to the divisor 4:2,
+and the rightmost mode (2, 3) describes what's "left over"
+from the original shape 24.
+
+What are the strides?
+We can start from the leftmost mode.
+4:2 takes every other element (the even-numbered elements) of 24:2.
+That's a stride-2 thing, striding over a stride-2 thing.
+The resulting stride is 4.
+Similarly, the stride 2 of 24:2
+doubles the two strides of the rightmost mode.
+The resulting layout is (4, (2, 3)) : (4, (2, 16)).
+
+##### Tiling example
 
 Suppose I have the 6 x 8 matrix from the Raked Product section
 and want to "collect" the `tile`, turning the Raked Product into
@@ -607,7 +737,7 @@ Note that this is the same layout as the result in the Logical Product section.
 That is, the first mode is our original tile (and can be interpreted as a 2x2 matrix itself)
 and the second mode is its logical layout within the raked layout.
 
-##### More Examples of Divide
+#### More Examples of Divide
 
 For brevity, shapes can be used with `logical_divide` and `tiled_divide` to quickly split and tile modes of a tensor. For example, this C++ code
 

@@ -130,6 +130,7 @@ public:
   using ActivationFunctor = ActivationFunctor_<ElementCompute>;
 
   static constexpr int kCount = 1;
+  static constexpr ScaleType::Kind kScale = Scale;
 
   using FragmentOutput = Array<ElementOutput, kCount>;
   using FragmentAccumulator = Array<ElementAccumulator, kCount>;

@@ -34,7 +34,7 @@
   matrix multiply kernel to verify its correctness.
 
   The CUTLASS Trmm template is instantiated in the function CutlassStrmmNN. This is kernel computes
-  the triangular matrix product (TRMM) using double-precision doubleing-point arithmetic and assumes
+  the triangular matrix product (TRMM) using double-precision floating-point arithmetic and assumes
   all matrices have column-major layout.
 
   The threadblock tile size is chosen as 64x64x16 which offers good performance for large matrices.

@@ -68,6 +68,7 @@ GemmOperationProfiler::GemmOperationProfiler(Options const &options):
       {ArgumentTypeID::kTensor, {"A"}, "Tensor storing the A operand"},
       {ArgumentTypeID::kTensor, {"B"}, "Tensor storing the B operand"},
       {ArgumentTypeID::kTensor, {"C"}, "Tensor storing the C operand"},
+      {ArgumentTypeID::kTensor, {"D"}, "Tensor storing the D output"},
       {ArgumentTypeID::kScalar, {"alpha", "epilogue::alpha"}, "Epilogue scalar alpha"},
       {ArgumentTypeID::kScalar, {"beta", "epilogue::beta"}, "Epilogue scalar beta"},
       {ArgumentTypeID::kEnumerated, {"split_k_mode", "split-k-mode"}, "Variant of split K mode(serial, parallel)"},
@@ -206,6 +207,10 @@ Status GemmOperationProfiler::GemmProblem::parse(
     return Status::kErrorInvalidProblem;
   }
 
+  if (!tensor_description_satisfies(operation_desc.D, "D", problem_space, problem)) {
+    return Status::kErrorInvalidProblem;
+  }
+
   if (!arg_as_scalar(
     this->alpha, 
     operation_desc.element_epilogue, 
@@ -306,6 +311,9 @@ void GemmOperationProfiler::GemmProblem::initialize_result(
 
   set_argument(result, "C", problem_space,
     std::string(library::to_string(operation_desc.C.element)) + ":" + library::to_string(operation_desc.C.layout));
+
+  set_argument(result, "D", problem_space,
+    std::string(library::to_string(operation_desc.D.element)) + ":" + library::to_string(operation_desc.D.layout));
 
   set_argument(result, "m", problem_space, m);
   set_argument(result, "n", problem_space, n);
@@ -536,8 +544,6 @@ Status GemmOperationProfiler::initialize_workspace(
       {int(problem_.ldc)},
       problem_.batch_count * gemm_workspace_.problem_count
     );
-
-    gemm_workspace_.Reference->copy_from_device(gemm_workspace_.C->data());
 
     // NOTE: the leading non-batch strides are duplicated here for 3.0 API kernels
     gemm_workspace_.arguments.problem_size = {int(problem_.m), int(problem_.n), int(problem_.k)};

@@ -64,6 +64,10 @@ namespace library {
 
 template <typename T> struct NumericTypeMap;
 
+template <> struct NumericTypeMap<void> {
+  static NumericTypeID const kId = NumericTypeID::kVoid;
+};
+
 template <> struct NumericTypeMap<cutlass::uint1b_t> {
   static NumericTypeID const kId = NumericTypeID::kB1;
 };

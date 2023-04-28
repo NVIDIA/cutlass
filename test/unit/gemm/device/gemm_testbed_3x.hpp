@@ -77,7 +77,8 @@ struct TestbedImpl {
   using StrideA  = typename Gemm::GemmKernel::StrideA;
   using ElementB = typename Gemm::GemmKernel::ElementB;
   using StrideB  = typename Gemm::GemmKernel::StrideB;
-  using ElementC = typename Gemm::GemmKernel::ElementC;
+  using ElementC = std::conditional_t<std::is_void_v<typename Gemm::GemmKernel::ElementC>,
+                    typename Gemm::GemmKernel::ElementD,typename Gemm::GemmKernel::ElementC>;
   using StrideC  = typename Gemm::GemmKernel::StrideC;
   using ElementD = typename Gemm::GemmKernel::ElementD;
   using StrideD  = typename Gemm::GemmKernel::StrideD;

@@ -630,9 +630,6 @@ struct ThreadblockSwizzleStreamK {
   }
 
 
-// Guards needed for PyCUTLASS library generation
-#if !defined(CUTLASS_PYTHON_HOST_CC)
-
   //
   // Device-side interface
   //
@@ -692,7 +689,7 @@ struct ThreadblockSwizzleStreamK {
     return GemmCoord(m, n, get_batch_idx());
   }
 
-  /// Obtains the calling threadblock's tiled coordinates for the given tile index (row-major rastorization)
+  /// Obtains the calling threadblock's tiled coordinates for the given tile index (row-major rasterization)
   CUTLASS_DEVICE
   GemmCoord get_tile_offset_row_major(int tile_idx) const
   {
@@ -740,7 +737,7 @@ struct ThreadblockSwizzleStreamK {
     div_mod_sk_iters_per_region(region_idx, iter_in_region, iter);
 
     int big_block_iters = (sk_big_blocks_per_region * sk_iters_per_normal_block()) + sk_big_blocks_per_region;   // number of iterations in the region's big blocks
-    int normal_block_iters = iter_in_region - big_block_iters;                                                 // number of iterations in the region's normal bocks
+    int normal_block_iters = iter_in_region - big_block_iters;                                                 // number of iterations in the region's normal blocks
 
     int big_block_idx_in_region = div_mod_sk_iters_per_big_block.div(iter_in_region);
     int normal_block_idx_in_region = sk_big_blocks_per_region + div_mod_sk_iters_per_normal_block.div(normal_block_iters);
@@ -793,8 +790,6 @@ struct ThreadblockSwizzleStreamK {
     int iter = tile_idx * iters_per_tile();
     return get_sk_block_idx(iter);
   }
-
-#endif // !defined(CUTLASS_PYTHON_HOST_CC)
 
 };
 
