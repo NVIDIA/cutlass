@@ -227,4 +227,17 @@ elect_one_leader_sync()
 #endif
 }
 
+// Store value to remote shared memory in the cluster
+CUTE_DEVICE
+void
+store_shared_remote(uint32_t value, uint32_t smem_addr, uint32_t mbarrier_addr, uint32_t dst_cta_rank)
+{
+#if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
+  uint32_t dsmem_addr = set_block_rank(smem_addr, dst_cta_rank);
+  uint32_t remote_barrier_addr = set_block_rank(mbarrier_addr, dst_cta_rank);
+  asm volatile("st.async.shared::cluster.mbarrier::complete_tx::bytes.u32 [%0], %1, [%2];"
+               : : "r"(dsmem_addr), "r"(value), "r"(remote_barrier_addr));
+#endif
+}
+
 } // end namespace cute

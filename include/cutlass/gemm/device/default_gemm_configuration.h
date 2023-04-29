@@ -490,9 +490,9 @@ struct DefaultGemmConfiguration<arch::OpClassTensorOp, arch::Sm80, double,
   static int const kAlignmentA = 1;
   static int const kAlignmentB = 1;
   
-  using ThreadblockShape = GemmShape<128, 256, 64>;
-  using WarpShape = GemmShape<64, 64, 64>;
-  using InstructionShape = GemmShape<16, 8, 16>;
+  using ThreadblockShape = GemmShape<128, 128, 16>;
+  using WarpShape = GemmShape<32, 64, 16>;
+  using InstructionShape = GemmShape<8, 8, 4>;
   static int const kStages = 3;
 
   using EpilogueOutputOp = epilogue::thread::LinearCombination<

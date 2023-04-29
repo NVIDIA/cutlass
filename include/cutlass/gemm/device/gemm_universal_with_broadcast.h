@@ -31,7 +31,7 @@
 
 /*! \file
     \brief Template for a GEMM kernel that can broadcast bias vector in the
-           epigloue.
+           epilogue.
 */
 
 #pragma once

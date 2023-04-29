@@ -182,9 +182,9 @@ class GemmOperation:
           ar = self.arch,
           op = opcode_class_name,
           ex = self.extended_name_3x(),
-          tbm = self.tile_description.threadblock_shape[0],
-          tbn = self.tile_description.threadblock_shape[1],
-          tbk = self.tile_description.threadblock_shape[2],
+          tbm = self.tile_description.tile_shape[0],
+          tbn = self.tile_description.tile_shape[1],
+          tbk = self.tile_description.tile_shape[2],
           cm = self.tile_description.cluster_shape[0],
           cn = self.tile_description.cluster_shape[1],
           ck = self.tile_description.cluster_shape[2],
@@ -640,7 +640,7 @@ class EmitGemmUniversal3xInstance:
 using ${operation_name}_epilogue =
   typename cutlass::epilogue::collective::CollectiveBuilder<
     ${arch}, ${opcode_class},
-    cute::Shape<cute::_${threadblock_shape_m}, cute::_${threadblock_shape_n}, cute::_${threadblock_shape_k}>,
+    cute::Shape<cute::_${tile_shape_m}, cute::_${tile_shape_n}, cute::_${tile_shape_k}>,
     cute::Shape<cute::_${cluster_m},cute::_${cluster_n},cute::_${cluster_k}>,
     cutlass::epilogue::collective::EpilogueTileAuto,
     ${element_accumulator}, ${element_epilogue},
@@ -655,7 +655,7 @@ using ${operation_name}_mainloop =
     ${element_a}, ${layout_a}, ${align_a},
     ${element_b}, ${layout_b}, ${align_b},
     ${element_accumulator},
-    cute::Shape<cute::_${threadblock_shape_m}, cute::_${threadblock_shape_n}, cute::_${threadblock_shape_k}>,
+    cute::Shape<cute::_${tile_shape_m}, cute::_${tile_shape_n}, cute::_${tile_shape_k}>,
     cute::Shape<cute::_${cluster_m},cute::_${cluster_n},cute::_${cluster_k}>,
     cutlass::gemm::collective::StageCountAutoCarveout<
       sizeof(typename ${operation_name}_epilogue::SharedStorage)>,
@@ -686,14 +686,14 @@ ${compile_guard_end}
   #
   def emit(self, operation):
 
-    threadblock_shape = operation.tile_description.threadblock_shape
+    tile_shape = operation.tile_description.tile_shape
     warp_count = operation.tile_description.warp_count
     # stage count set to zero indicates builder automatic stage selection
     if operation.tile_description.stages > 0:
       stage_count_string = f"cutlass::gemm::collective::StageCount<{str(operation.tile_description.stages)}>"
     else:
       stage_count_string = "cutlass::gemm::collective::StageCountAuto"
-    warp_shape = [threadblock_shape[idx] // warp_count[idx] for idx in range(3)]
+    warp_shape = [tile_shape[idx] // warp_count[idx] for idx in range(3)]
 
     instance_layout_A, instance_layout_B, instance_layout_C , instance_layout_D = \
       (operation.A.layout, operation.B.layout, operation.C.layout, operation.D.layout)
@@ -727,9 +727,9 @@ ${compile_guard_end}
       'element_accumulator': DataTypeTag[operation.accumulator_type()],
       'opcode_class': OpcodeClassTag[operation.tile_description.math_instruction.opcode_class],
       'arch': "cutlass::arch::Sm%d" % operation.arch,
-      'threadblock_shape_m': str(operation.tile_description.threadblock_shape[0]),
-      'threadblock_shape_n': str(operation.tile_description.threadblock_shape[1]),
-      'threadblock_shape_k': str(operation.tile_description.threadblock_shape[2]),
+      'tile_shape_m': str(operation.tile_description.tile_shape[0]),
+      'tile_shape_n': str(operation.tile_description.tile_shape[1]),
+      'tile_shape_k': str(operation.tile_description.tile_shape[2]),
       'cluster_m': str(operation.tile_description.cluster_shape[0]),
       'cluster_n': str(operation.tile_description.cluster_shape[1]),
       'cluster_k': str(operation.tile_description.cluster_shape[2]),

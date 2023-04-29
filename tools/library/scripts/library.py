@@ -40,6 +40,7 @@ GeneratorTargetNames = {
 
 #
 class DataType(enum.Enum):
+  void = enum_auto()  # primarily used to disable C tensor for epilogues
   b1 = enum_auto()
   u4 = enum_auto()
   u8 = enum_auto()
@@ -89,6 +90,7 @@ ShortDataTypeNames = {
 
 #
 DataTypeNames = {
+  DataType.void: "void",
   DataType.b1: "b1",
   DataType.u4: "u4",
   DataType.u8: "u8",
@@ -121,10 +123,11 @@ DataTypeNames = {
   DataType.cs8: "cs8",
   DataType.cs16: "cs16",
   DataType.cs32: "cs32",
-  DataType.cs64: "cs64", 
+  DataType.cs64: "cs64",
 }
 
 DataTypeTag = {
+  DataType.void: "void",
   DataType.b1: "cutlass::uint1b_t",
   DataType.u4: "cutlass::uint4b_t",
   DataType.u8: "uint8_t",
@@ -161,6 +164,7 @@ DataTypeTag = {
 }
 
 DataTypeSize = {
+  DataType.void: 0,
   DataType.b1: 1,
   DataType.u4: 4,
   DataType.u8: 8,
@@ -765,6 +769,7 @@ class TileDescription:
 
   def __init__(self, threadblock_shape, stages, warp_count, math_instruction, min_compute, max_compute, cluster_shape = [1,1,1]):
     self.threadblock_shape = threadblock_shape
+    self.tile_shape = threadblock_shape
     self.stages = stages
     self.warp_count = warp_count
     self.math_instruction = math_instruction

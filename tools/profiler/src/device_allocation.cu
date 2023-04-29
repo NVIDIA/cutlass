@@ -462,6 +462,13 @@ size_t DeviceAllocation::bytes() const {
 
 /// Copies from an equivalent-sized tensor in device memory
 void DeviceAllocation::copy_from_device(void const *ptr) {
+  if (!bytes()) {
+#ifndef NDEBUG
+    std::cout << "Skipping copy of size 0 allocation\n";
+#endif
+    return;
+  }
+
   cudaError_t result = cudaMemcpy(data(), ptr, bytes(), cudaMemcpyDeviceToDevice);
   if (result != cudaSuccess) {
     throw std::runtime_error("Failed device-to-device copy");
@@ -470,22 +477,43 @@ void DeviceAllocation::copy_from_device(void const *ptr) {
 
 /// Copies from an equivalent-sized tensor in device memory
 void DeviceAllocation::copy_from_host(void const *ptr) {
+  if (!bytes()) {
+#ifndef NDEBUG
+    std::cout << "Skipping copy of size 0 allocation\n";
+#endif
+    return;
+  }
+
   cudaError_t result = cudaMemcpy(data(), ptr, bytes(), cudaMemcpyHostToDevice);
   if (result != cudaSuccess) {
-    throw std::runtime_error("Failed device-to-device copy");
+    throw std::runtime_error("Failed host-to-device copy");
   }
 }
 
 /// Copies from an equivalent-sized tensor in device memory
 void DeviceAllocation::copy_to_host(void *ptr) {
+  if (!bytes()) {
+#ifndef NDEBUG
+    std::cout << "Skipping copy of size 0 allocation\n";
+#endif
+    return;
+  }
+
   cudaError_t result = cudaMemcpy(ptr, data(), bytes(), cudaMemcpyDeviceToHost);
   if (result != cudaSuccess) {
-    throw std::runtime_error("Failed device-to-device copy");
+    throw std::runtime_error("Failed device-to-host copy");
   }
 }
 
 void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
-  if (!good()) {
+  if (!bytes()) {
+#ifndef NDEBUG
+    std::cout << "Skipping initialization of size 0 allocation\n";
+#endif
+    return;
+  }
+
+  if (!data()) {
     throw std::runtime_error("Attempting to initialize invalid allocation.");
   }
 
@@ -690,7 +718,14 @@ void DeviceAllocation::initialize_random_device(int seed, Distribution dist) {
 }
 
 void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
-  if (!good()) {
+  if (!bytes()) {
+#ifndef NDEBUG
+    std::cout << "Skipping initialization of size 0 allocation\n";
+#endif
+    return;
+  }
+
+  if (!data()) {
     throw std::runtime_error("Attempting to initialize invalid allocation.");
   }
 
@@ -699,7 +734,7 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
   switch (type_) {
   case library::NumericTypeID::kFE4M3:
     cutlass::reference::host::BlockFillRandom<cutlass::float_e4m3_t>(
-      reinterpret_cast<cutlass::float_e4m3_t *>(pointer_),
+      reinterpret_cast<cutlass::float_e4m3_t *>(host_data.data()),
       capacity_,
       seed,
       dist
@@ -707,7 +742,7 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
     break;
   case library::NumericTypeID::kFE5M2:
     cutlass::reference::host::BlockFillRandom<cutlass::float_e5m2_t>(
-      reinterpret_cast<cutlass::float_e5m2_t *>(pointer_),
+      reinterpret_cast<cutlass::float_e5m2_t *>(host_data.data()),
       capacity_,
       seed,
       dist
@@ -904,7 +939,14 @@ void DeviceAllocation::initialize_random_host(int seed, Distribution dist) {
 }
 
 void DeviceAllocation::initialize_random_sparsemeta_device(int seed, int MetaSizeInBits) {
-  if (!good()) {
+  if (!bytes()) {
+#ifndef NDEBUG
+    std::cout << "Skipping initialization of size 0 allocation\n";
+#endif
+    return;
+  }
+
+  if (!data()) {
     throw std::runtime_error("Attempting to initialize invalid allocation.");
   }
 
@@ -934,7 +976,14 @@ void DeviceAllocation::initialize_random_sparsemeta_device(int seed, int MetaSiz
 }
 
 void DeviceAllocation::initialize_random_sparsemeta_host(int seed, int MetaSizeInBits) {
-  if (!good()) {
+  if (!bytes()) {
+#ifndef NDEBUG
+    std::cout << "Skipping initialization of size 0 allocation\n";
+#endif
+    return;
+  }
+
+  if (!data()) {
     throw std::runtime_error("Attempting to initialize invalid allocation.");
   }
 

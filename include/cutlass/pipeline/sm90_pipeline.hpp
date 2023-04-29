@@ -450,7 +450,7 @@ private :
   CUTLASS_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase, ConsumerToken barrier_token) {
     if (barrier_token == BarrierStatus::WaitAgain) {
-      consumer_wait(stage, phase);
+      full_barrier_ptr_[stage].wait(phase);
     }
   }
 
@@ -654,7 +654,7 @@ public :
     consumer_release(state.index());
   }
 
-protected:
+private:
   FullBarrier *full_barrier_ptr_ = nullptr;
   EmptyBarrier *empty_barrier_ptr_ = nullptr;
   Params params_;
@@ -973,6 +973,11 @@ public:
   void arrive() {
     int signalling_id = (params_.group_id + 1) % Length;
     get_barrier_for_current_stage(signalling_id).arrive();
+    ++stage_;
+  }
+
+  CUTLASS_DEVICE
+  void advance() {
     ++stage_;
   }
 

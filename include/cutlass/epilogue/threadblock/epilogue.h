@@ -323,7 +323,7 @@ public:
       OutputTileIterator destination_iterator,        ///< Tile iterator for destination
       OutputTileIterator source_iterator)             ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
   {
-    // Redcuce peer accumulator fragments into one fragment
+    // Reduce peer accumulator fragments into one fragment
     AccumulatorFragment accum_fragment;
     BaseStreamK::reduce(accum_fragment, peer_idx_begin, peer_idx_end, reduce_fragment_idx, element_workspace);
 

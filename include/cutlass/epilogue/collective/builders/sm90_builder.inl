@@ -290,7 +290,7 @@ struct CollectiveBuilder<
     AlignmentD,
     Schedule,
     cute::enable_if_t<cute::is_same_v<Schedule, TmaWarpSpecialized> ||
-                     cute::is_same_v<Schedule, TmaWarpSpecializedCooperative> >> {
+                      cute::is_same_v<Schedule, TmaWarpSpecializedCooperative> >> {
 public:
   // Passing void C disables source load
   using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,
@@ -302,16 +302,33 @@ public:
 
   using ThreadOp = thread::LinearCombination<
     ElementD, AlignmentD, ElementAccumulator, ElementCompute,
-    thread::ScaleType::Default, FloatRoundStyle::round_to_nearest, ElementC>;
+    ScaleType, FloatRoundStyle::round_to_nearest, ElementC>;
 
-private:
-  using Impl = detail::TmaBuilderImpl<
-    TileShape_MNK, ClusterShape_MNK, EpilogueTileType, ElementAccumulator, ElementCompute,
-    ElementC, GmemLayoutTagC, AlignmentC, ElementD, GmemLayoutTagD, AlignmentD,
-    Schedule, ThreadOp, cutlass::epilogue::Sm90TmaWarpSpecialized<1,2,true>>;
+  using GmemStrideTypeC = gemm::TagToStrideC_t<GmemLayoutTagC>;
+  using GmemStrideTypeD = gemm::TagToStrideC_t<GmemLayoutTagD>;
 
-public:
-  using CollectiveOp = typename Impl::CollectiveOp;
+  using EpilogueTile_MN = decltype(detail::sm90_compute_tile_shape_or_override<
+      ElementD, EpilogueTileType, Schedule>());
+
+  static constexpr int StagesC = 1;
+  static constexpr int StagesD = 2;
+  static constexpr bool DisableReuseSmemC = true;
+  using CollectiveOp = cutlass::epilogue::collective::CollectiveEpilogue<
+      cutlass::epilogue::Sm90TmaWarpSpecialized<StagesC,StagesD,DisableReuseSmemC>,
+      TileShape_MNK,
+      EpilogueTile_MN,
+      ElementC_, // need to pass void to expose via GemmUniversal
+      GmemStrideTypeC,
+      ElementD,
+      GmemStrideTypeD,
+      ThreadOp,
+      SM90_TMA_LOAD,
+      decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<GmemStrideTypeC, ElementC, TileShape_MNK>()),
+      decltype(detail::sm90_get_smem_load_op_for_source<GmemStrideTypeC, ElementC>()),
+      SM90_TMA_STORE,
+      decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<GmemStrideTypeD, ElementD, EpilogueTile_MN>()),
+      decltype(detail::sm90_get_smem_store_op_for_accumulator<GmemStrideTypeD, ElementD>())
+    >;
 };
 
 // Auto builder
@@ -409,7 +426,7 @@ struct CollectiveBuilder<
     AlignmentD,
     Schedule,
     cute::enable_if_t<cute::is_base_of_v<TmaWarpSpecializedElementwiseBase, Schedule> ||
-                     cute::is_base_of_v<TmaWarpSpecializedCooperativeElementwiseBase, Schedule> >> {
+                      cute::is_base_of_v<TmaWarpSpecializedCooperativeElementwiseBase, Schedule> >> {
 
 public:
   using ThreadOp = thread::LinearCombinationGeneric<
@@ -419,10 +436,13 @@ public:
     Schedule::Round>;
 
 private:
+  static constexpr int StagesC = 1;
+  static constexpr int StagesD = 2;
+  static constexpr bool DisableReuseSmemC = true;
   using Impl = detail::TmaBuilderImpl<
     TileShape_MNK, ClusterShape_MNK, EpilogueTileType, ElementAccumulator, ElementCompute,
     ElementC, GmemLayoutTagC, AlignmentC, ElementD, GmemLayoutTagD, AlignmentD,
-    Schedule, ThreadOp, cutlass::epilogue::Sm90TmaWarpSpecialized<1,2,true>>;
+    Schedule, ThreadOp, cutlass::epilogue::Sm90TmaWarpSpecialized<StagesC,StagesD,DisableReuseSmemC>>;
 
 public:
   using CollectiveOp = typename Impl::CollectiveOp;
@@ -459,7 +479,7 @@ struct CollectiveBuilder<
     AlignmentD,
     Schedule,
     cute::enable_if_t<cute::is_base_of_v<TmaWarpSpecializedBiasElementwiseBase, Schedule> ||
-                     cute::is_base_of_v<TmaWarpSpecializedCooperativeBiasElementwiseBase, Schedule> >> {
+                      cute::is_base_of_v<TmaWarpSpecializedCooperativeBiasElementwiseBase, Schedule> >> {
 
 public:
   using ThreadOp = thread::LinearCombinationBiasElementwise<
@@ -468,10 +488,12 @@ public:
       Schedule::StoreT, typename Schedule::ElementBias>;
 
 private:
+  static constexpr int StagesC = 1;
+  static constexpr int StagesD = 2;
   using Impl = detail::TmaBuilderImpl<
     TileShape_MNK, ClusterShape_MNK, EpilogueTileType, ElementAccumulator, ElementCompute,
     ElementC, GmemLayoutTagC, AlignmentC, ElementD, GmemLayoutTagD, AlignmentD,
-    Schedule, ThreadOp, cutlass::epilogue::Sm90TmaWarpSpecializedBiasElementwise<1,2>>;
+    Schedule, ThreadOp, cutlass::epilogue::Sm90TmaWarpSpecializedBiasElementwise<StagesC,StagesD>>;
 
 public:
   using CollectiveOp = typename Impl::CollectiveOp;

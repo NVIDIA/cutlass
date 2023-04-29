@@ -150,7 +150,7 @@ template<
   int Stages_,
   class ClusterShape_ = Shape<_1,_1,_1>,
   class KernelSchedule = KernelTmaWarpSpecialized,
-  int PipelineAsyncMmaStages_ = 1
+  int PipelineAsyncMmaStages_ = 0
 >
 struct MainloopSm90TmaGmmaRmemAWarpSpecialized {
   constexpr static int Stages = Stages_;

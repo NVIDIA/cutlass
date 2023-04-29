@@ -41,6 +41,7 @@ add_custom_target(
   cutlass_test_unit_gemm_device_tensorop_planar_complex
   cutlass_test_unit_gemm_device_sparse_tensorop_sm80
   cutlass_test_unit_gemv_device
+  cutlass_test_unit_gemv_device_strided_batched
   cutlass_test_unit_gemm_device_tensorop_sm90
   cutlass_test_unit_gemm_device_tensorop_cluster_multicast_sm90
 )
@@ -60,6 +61,7 @@ add_custom_target(
   test_unit_gemm_device_tensorop_planar_complex
   test_unit_gemm_device_sparse_tensorop_sm80
   test_unit_gemv_device
+  test_unit_gemv_device_strided_batched
   test_unit_gemm_device_tensorop_sm90
 )
 
@@ -496,6 +498,15 @@ cutlass_test_unit_add_executable(
   BATCH_SIZE 4
 
   gemv.cu
+)
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemv_device_strided_batched
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemv_strided_batched.cu
 )
 
 if (NOT CUDA_COMPILER MATCHES "[Cc]lang")
