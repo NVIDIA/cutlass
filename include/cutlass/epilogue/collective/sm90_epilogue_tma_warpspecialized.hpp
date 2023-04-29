@@ -82,7 +82,6 @@ public:
   //
   // Type Aliases
   //
-  // derived types of output thread level operator
   using DispatchPolicy = Sm90TmaWarpSpecialized<StagesC_,StagesD_,DisableSmemReuseC_>;
   using BlockTileShape = BlockTileShape_;
   using EpilogueTile = EpilogueTile_;
@@ -108,7 +107,6 @@ public:
   constexpr static bool iskThreadEpilogueOpWithBias = detail::IsThreadEpilogueOpWithBias<ThreadEpilogueOp>::value;
   using AlignmentType = typename uint_bit<sizeof_bits<ElementOutput>::value * kOutputAlignment>::type;
 
-  static_assert(sizeof(ElementC) == 2, "Only 16b source supported for now");
   static_assert(sizeof(ElementD) == 2, "Only 16b output supported for now");
   static_assert(!is_layout<EpilogueTile>::value && is_tuple<EpilogueTile>::value, "EpilogueTile must be a cute::Tile or cute::Shape");
   static_assert(rank(BlockTileShape{}) == 3, "BlockTileShape must be rank-3: [BLK_M,BLK_N,BLK_K]");
@@ -117,17 +115,19 @@ public:
   static_assert(rank(StrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
 
 private:
+  using InternalElementC = std::conditional_t<std::is_void_v<ElementC>,ElementD,ElementC>; // prevents void ref breakages
   constexpr static int StagesC = StagesC_;
   constexpr static int StagesD = StagesD_;
   constexpr static bool is_source_supported = ThreadEpilogueOp::kScale == cutlass::epilogue::thread::ScaleType::Default ||
                                               ThreadEpilogueOp::kScale == cutlass::epilogue::thread::ScaleType::NoBetaScaling;
+  static_assert((std::is_void_v<ElementC> && not is_source_supported) || (not std::is_void_v<ElementC> && is_source_supported));
 
   // internal optimization to reuse C shared memory for storing D
-  using SmemLayoutAtomBitsC = decltype(downcast<sizeof_bits<ElementC>::value>(SmemLayoutAtomC{}));
+  using SmemLayoutAtomBitsC = decltype(downcast<sizeof_bits<InternalElementC>::value>(SmemLayoutAtomC{}));
   using SmemLayoutAtomBitsD = decltype(downcast<sizeof_bits<ElementD>::value>(SmemLayoutAtomD{}));
   constexpr static bool ReuseSmemC = not DispatchPolicy::DisableSmemReuseC &&
                                      is_source_supported &&
-                                     sizeof(ElementC) == sizeof(ElementD) &&
+                                     sizeof(InternalElementC) == sizeof(ElementD) &&
                                      StrideC{} == StrideD{} &&
                                      cute::is_same_v<SmemLayoutAtomBitsC,SmemLayoutAtomBitsD>;
 
@@ -152,7 +152,7 @@ public:
   using LoadPipeline = cutlass::PipelineTransactionAsync<is_source_supported ? StagesC : 0>;
   using LoadPipelineState = cutlass::PipelineState<is_source_supported ? StagesC : 0>;
   constexpr static uint32_t TmaTransactionBytes =
-    size(take<0,2>(SmemLayoutC{})) * static_cast<uint32_t>(sizeof(ElementC));
+    size(take<0,2>(SmemLayoutC{})) * static_cast<uint32_t>(sizeof(InternalElementC));
 
   // TMA pipeline for storing D
   using StorePipeline = cutlass::PipelineTmaStore<ReuseSmemC ? StagesC : StagesD>;
@@ -161,8 +161,8 @@ public:
   struct SharedStorage {
     struct TensorStorage : aligned_struct<128> {
       cute::conditional_t<not is_source_supported,
-        detail::EmptyStorage<ElementC>,
-        array_aligned<ElementC, size(SmemLayoutC{})>> smem_C;
+        detail::EmptyStorage<InternalElementC>,
+        array_aligned<InternalElementC, size(SmemLayoutC{})>> smem_C;
       alignas(128) cute::conditional_t<ReuseSmemC,
         detail::EmptyStorage<ElementD>,
         array_aligned<ElementD, size(SmemLayoutD{})>> smem_D;
@@ -187,7 +187,7 @@ public:
   struct Params {
     using TMA_C = decltype(make_tma_copy(
         CopyOpG2S{},
-        make_tensor(static_cast<ElementC const*>(nullptr),
+        make_tensor(static_cast<InternalElementC const*>(nullptr),
             repeat_like(StrideC{}, int32_t(0)), StrideC{}),
         SmemLayoutC{}(_,_,0)));
     using TMA_D = decltype(make_tma_copy(
@@ -217,7 +217,7 @@ public:
     auto M = get<0>(problem_shape_MNKL);
     auto N = get<1>(problem_shape_MNKL);
     auto L = get<3>(problem_shape_MNKL);
-    Tensor tensor_c = make_tensor(args.ptr_C, make_layout(make_shape(M,N,L), args.dC));
+    Tensor tensor_c = make_tensor(static_cast<InternalElementC const*>(args.ptr_C), make_layout(make_shape(M,N,L), args.dC));
     Tensor tensor_d = make_tensor(args.ptr_D, make_layout(make_shape(M,N,L), args.dD));
     typename Params::TMA_C tma_load_c = make_tma_copy(
         CopyOpG2S{},
@@ -409,7 +409,7 @@ public:
 
     // Allocate register tensors
     auto tRS_rD_shape = take<0,3>(shape(thread_r2s.partition_S(bEsD)));                            // (R2S,R2S_M,R2S_N)
-    Tensor tRS_rC = make_tensor<ElementC>(tRS_rD_shape);                                           // (R2S,R2S_M,R2S_N)
+    Tensor tRS_rC = make_tensor<InternalElementC>(tRS_rD_shape);                                   // (R2S,R2S_M,R2S_N)
     Tensor tRS_rD = make_tensor<ElementD>(tRS_rD_shape);                                           // (R2S,R2S_M,R2S_N)
 
     // Vectorized fragment view for thread epilogue op
@@ -418,7 +418,7 @@ public:
     Tensor tRS_rD_frg   = recast<typename ThreadEpilogueOp::FragmentOutput>(tRS_rD);
 
     // Partition for smem to register copy (tSR_)
-    TiledCopy tiled_s2r = make_tiled_copy_S(Copy_Atom<CopyOpS2R,ElementC>{}, tiled_r2s);
+    TiledCopy tiled_s2r = make_tiled_copy_S(Copy_Atom<CopyOpS2R,InternalElementC>{}, tiled_r2s);
     ThrCopy thread_s2r = tiled_s2r.get_slice(thread_idx);
     Tensor tSR_sC = thread_s2r.partition_S(bEsC);                                      // (S2R,S2R_M,S2R_N,EPI_M,EPI_N)
     Tensor tSR_rC = thread_s2r.retile_D(tRS_rC);                                       //             (S2R,S2R_M,S2R_N)

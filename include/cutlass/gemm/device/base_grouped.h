@@ -301,18 +301,19 @@ public:
       return 0;
     }
 
-    result = cudaGetDeviceProperties(&properties, device_idx);
+    int multiprocessor_count;
+    result = cudaDeviceGetAttribute(&multiprocessor_count,
+      cudaDevAttrMultiProcessorCount, device_idx);
     if (result != cudaSuccess) {
-      // Call cudaGetLastError() to clear the error bit
-      result = cudaGetLastError();
-      CUTLASS_TRACE_HOST("  cudaGetDeviceProperties() returned error "
-          << cudaGetErrorString(result));
+      CUTLASS_TRACE_HOST(
+        "  cudaDeviceGetAttribute() returned error "
+        << cudaGetErrorString(result));
       return 0;
     }
 
-    bool override_sm_count = (available_sm_count < 0 || available_sm_count > properties.multiProcessorCount);
+    bool override_sm_count = (available_sm_count < 0 || available_sm_count > multiprocessor_count);
     if (override_sm_count) {
-      available_sm_count = properties.multiProcessorCount;
+      available_sm_count = multiprocessor_count;
     }
 
     int max_active_blocks = maximum_active_blocks();
@@ -440,8 +441,6 @@ public:
     cudaError_t result = cudaGetLastError();
 
     if (result != cudaSuccess) {
-      // Call cudaGetLastError() to clear the error bit
-      result = cudaGetLastError();
       CUTLASS_TRACE_HOST("  grid launch failed with error " << cudaGetErrorString(result));
       return Status::kErrorInternal;
     }

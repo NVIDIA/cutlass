@@ -12,7 +12,7 @@ A, B, C, D = [np.ones((4096, 4096), dtype=np.float16) for i in range(4)]
 plan.run(A, B, C, D)
 ```
 
-**NOTE** The CUTLASS Python interface is currently an experimental release. The API may change in the future.
+**NOTE:** The CUTLASS Python interface is currently an experimental release. The API may change in the future.
 We welcome feedback from the community.
 
 ## Overview
@@ -93,11 +93,11 @@ The CUTLASS Python interface currently supports the following operations:
 We recommend using the CUTLASS Python interface via one of the Docker images located in the [docker](/python/docker) directory.
 
 ```bash
-docker build -t cutlass-cuda12.0:latest -f docker/Dockerfile-cuda12.0-pytorch .
-docker run --gpus all -it --rm cutlass-cuda12.0:latest
+docker build -t cutlass-cuda12.1:latest -f docker/Dockerfile-cuda12.1-pytorch .
+docker run --gpus all -it --rm cutlass-cuda12.1:latest
 ```
 
-The CUTLASS Python interface has been tested with CUDA 11.8 and CUDA 12.0 on Python 3.8.10 and 3.9.7.
+The CUTLASS Python interface has been tested with CUDA 11.8, 12.0, and 12.1 on Python 3.8.10 and 3.9.7.
 
 ### Optional environment variables
 Prior to installing the CUTLASS Python interface, one may optionally set the following environment variables:

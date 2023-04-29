@@ -29,9 +29,12 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 #################################################################################################
-
+import copy
 import os
+from pybind11.setup_helpers import Pybind11Extension
+import setuptools
 from setuptools import setup
+from setuptools.command.build_ext import build_ext
 
 
 def _cutlass_path_from_dir() -> str:
@@ -61,31 +64,57 @@ cutlass_path = (
     else _cutlass_path_from_dir()
 )
 
+
 cuda_install_path = (
     os.getenv('CUDA_INSTALL_PATH')
     if os.getenv('CUDA_INSTALL_PATH') is not None
     else _cuda_install_path_from_nvcc()
 )
 
-ext_modules = []
 
-try:
-    from pybind11.setup_helpers import Pybind11Extension, build_ext
-    include_dirs = [
-        cutlass_path + '/include',
-        cuda_install_path + '/include',
-        cutlass_path + '/tools/util/include',
-        cutlass_path + '/test',
-    ]
+class BuildExtension(build_ext):
+    """
+    Wrapper around `build_ext` to use NVCC when compiling the CUTLASS Python-C++ bindings.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-    ext_modules = [
-        Pybind11Extension('cutlass_bindings',
-                          ['cutlass/cpp/cutlass_bindings.cpp'],
-                          include_dirs=include_dirs,
-                          extra_compile_args=['-fpermissive', '-w', '-std=c++17', '-DCUTLASS_PYTHON_HOST_CC=1'])
-    ]
-except ImportError:
-    pass
+    def build_extensions(self):
+        original_compile = self.compiler._compile
+
+        def custom_compile(obj, src, ext, cc_args, extra_postargs, pp_opts):
+            """
+            Wrapper around build_ext.compiler._compile method
+            """
+            postargs = copy.deepcopy(extra_postargs)
+            postargs = [f for f in postargs if f not in ['-g0', '-fvisibility=hidden']]
+            postargs.extend(["-Xcompiler='-fPIC'", "-Xcompiler='-g0'", "-Xcompiler='-O3'", '-x', 'cu'])
+            try:
+                original_compiler = self.compiler.compiler_so
+                self.compiler.set_executable('compiler_so', [f'{cuda_install_path}/bin/nvcc'])
+                original_compile(obj, src, ext, cc_args, postargs, pp_opts)
+            finally:
+                self.compiler.set_executable('compiler_so', original_compiler)
+
+        self.compiler._compile = custom_compile
+        super().build_extensions()
+
+
+include_dirs = [
+    cutlass_path + '/include',
+    cuda_install_path + '/include',
+    cutlass_path + '/tools/util/include',
+    cutlass_path + '/test',
+]
+
+
+ext_modules = [
+    Pybind11Extension('cutlass_bindings',
+                      ['cutlass/cpp/cutlass_bindings.cpp'],
+                      include_dirs=include_dirs,
+                      extra_compile_args=['-Xcompiler="-fpermissive"', '-w', '-std=c++17'],
+                      libraries=['cudart'])
+]
 
 
 setup(
@@ -103,4 +132,7 @@ setup(
         'treelib'
         ],
     ext_modules=ext_modules,
+    cmdclass={
+                 'build_ext': BuildExtension
+             }
 )

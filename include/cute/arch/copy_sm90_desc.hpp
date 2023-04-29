@@ -134,6 +134,7 @@ enum class SmemSwizzleBits : uint8_t {
   B128 = 3,
 };
 
+#if !defined(__CUDACC_RTC__)
 #if (__CUDACC_VER_MAJOR__ >= 12)
 
 template <class T>
@@ -164,9 +165,10 @@ inline CUtensorMapSwizzle to_CUtensorMapSwizzle(SmemSwizzleBits const& t) {
 }
 
 #endif // (__CUDACC_VER_MAJOR__ >= 12)
+#endif // !defined(__CUDACC_RTC__)
 } // end namespace TMA
 
-#if (__CUDACC_VER_MAJOR__ >= 12)
+#if (__CUDACC_VER_MAJOR__ >= 12) && !defined(__CUDACC_RTC__)
 using TmaDescriptor = CUtensorMap;
 #else
 using TmaDescriptor = struct { char bytes[128]; };

@@ -630,9 +630,6 @@ struct ThreadblockSwizzleStreamK {
   }
 
 
-// Guards needed for PyCUTLASS library generation
-#if !defined(CUTLASS_PYTHON_HOST_CC)
-
   //
   // Device-side interface
   //
@@ -793,8 +790,6 @@ struct ThreadblockSwizzleStreamK {
     int iter = tile_idx * iters_per_tile();
     return get_sk_block_idx(iter);
   }
-
-#endif // !defined(CUTLASS_PYTHON_HOST_CC)
 
 };
 

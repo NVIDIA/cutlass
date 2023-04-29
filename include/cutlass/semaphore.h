@@ -89,19 +89,16 @@ public:
   /// Waits until the semaphore is equal to the given value
   CUTLASS_DEVICE
   void wait(int status = 0) {
-#if !defined(CUTLASS_PYTHON_HOST_CC)
     while( __syncthreads_and(state != status) ) {
       fetch();
     }
 
     __syncthreads();
-#endif
   }
 
   /// Updates the lock with the given result
   CUTLASS_DEVICE
   void release(int status = 0) {
-#if !defined(CUTLASS_PYTHON_HOST_CC)
     __syncthreads();
 
     if (wait_thread) {
@@ -111,7 +108,6 @@ public:
       asm volatile ("st.global.cg.b32 [%0], %1;\n" : : "l"(lock), "r"(status));
       #endif
     }
-#endif
   }
 };
 

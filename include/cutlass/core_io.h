@@ -59,9 +59,7 @@ inline std::ostream &operator<<(std::ostream &out, dim3 d) {
 
 /// Output operator for CUDA built-in error type
 inline std::ostream &operator<<(std::ostream &out, cudaError_t error) {
-#if !defined(CUTLASS_PYTHON_HOST_CC)
   return out << cudaGetErrorString(error);
-#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

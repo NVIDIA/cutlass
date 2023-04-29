@@ -303,22 +303,6 @@ struct CollectiveMma<
         }
       }
 
-      // Issue the prologue loads
-      int k_tile_prologue = min(k_tile_count, K_PIPE_MAX);
-      CUTLASS_PRAGMA_UNROLL
-      for (int count = 0; count < k_tile_prologue; ++count) {
-        pipeline.producer_acquire(smem_pipe_write);
-        using BarrierType = typename MainloopPipeline::ProducerBarrierType;
-        BarrierType* tma_barrier = pipeline.producer_get_barrier(smem_pipe_write);
-
-        int write_stage = smem_pipe_write.index();
-        copy(tma_load_a.with(*tma_barrier, mcast_mask_a), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,write_stage));
-        copy(tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
-        ++k_tile_iter;
-        ++smem_pipe_write;
-      }
-      k_tile_count -= k_tile_prologue;
-
       // Mainloop
       CUTLASS_PRAGMA_NO_UNROLL
       for ( ; k_tile_count > 0; --k_tile_count)

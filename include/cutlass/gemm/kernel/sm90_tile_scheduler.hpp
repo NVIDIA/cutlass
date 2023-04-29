@@ -163,6 +163,12 @@ public:
       int const min_num_gpc = sm_count < max_sm_per_gpc ? 1 : sm_count / max_sm_per_gpc;
       int const max_blk_occupancy_per_gpc = max_sm_per_gpc - (max_sm_per_gpc % size(cluster_shape));
       int blk_per_device = min_num_gpc * max_blk_occupancy_per_gpc;
+
+      // The calculation below allows for larger grid size launch for different GPUs.
+      int const num_gpc_residual = sm_count < max_sm_per_gpc ? 0 : sm_count % max_sm_per_gpc;
+      int const max_blk_occupancy_per_residual_gpc = num_gpc_residual - (num_gpc_residual % size(cluster_shape));
+      blk_per_device += max_blk_occupancy_per_residual_gpc;
+
       blk_per_device = sm_count < blk_per_device ? sm_count : blk_per_device;
 
       launch_grid.x = std::min(
