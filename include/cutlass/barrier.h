@@ -81,7 +81,6 @@ protected:
   CUTLASS_DEVICE
   static void red_release(int *ptr, int val)
   {
-#if !defined(CUTLASS_PYTHON_HOST_CC)
 #if (__CUDA_ARCH__ >= 700)
     /// SM70 and newer use memory consistency qualifiers
 
@@ -94,7 +93,6 @@ protected:
     __threadfence();
     atomicAdd(ptr, val);
 #endif // (__CUDA_ARCH__ >= 700)
-#endif
   }
 
 
@@ -104,7 +102,6 @@ public:
   CUTLASS_DEVICE
   static void wait_lt(void *lock_ptr, int thread_idx, int flag_idx, int count)
   {
-#if !defined(CUTLASS_PYTHON_HOST_CC)
     T *flag_ptr = reinterpret_cast<T*>(lock_ptr) + flag_idx;
 
     if (thread_idx == 0)
@@ -115,14 +112,12 @@ public:
     }
 
     __syncthreads();
-#endif
   }
 
   /// Uses thread[0] to wait for at least the specified count of signals on the given flag counter
   CUTLASS_DEVICE
   static void wait_eq(void *lock_ptr, int thread_idx, int flag_idx, T val = 1)
   {
-#if !defined(CUTLASS_PYTHON_HOST_CC)
     T *flag_ptr = reinterpret_cast<T*>(lock_ptr) + flag_idx;
 
     if (thread_idx == 0)
@@ -132,13 +127,11 @@ public:
         while(ld_acquire(flag_ptr) != val) {}
     }
     __syncthreads();
-#endif
   }
 
   /// Uses thread[0] to wait for the specified count of signals on the given flag counter
   CUTLASS_DEVICE
   static void wait_eq_reset(void *lock_ptr, int thread_idx, int flag_idx, T val = 1) {
-#if !defined(CUTLASS_PYTHON_HOST_CC)
     T *flag_ptr = reinterpret_cast<T*>(lock_ptr) + flag_idx;
 
     if (thread_idx == 0)
@@ -149,14 +142,12 @@ public:
     }
 
     __syncthreads();
-#endif
   }
 
   /// Increment the arrival count for a flag
   CUTLASS_DEVICE
   static void arrive_inc(void *lock_ptr, int thread_idx, int flag_idx)
   {
-#if !defined(CUTLASS_PYTHON_HOST_CC)
     T* flag_ptr = reinterpret_cast<T*>(lock_ptr) + flag_idx;
 
     __syncthreads();
@@ -165,7 +156,6 @@ public:
     {
       red_release(flag_ptr, 1);
     }
-#endif
   }
 
 
@@ -173,7 +163,6 @@ public:
   CUTLASS_DEVICE
   static void arrive_range_inc(void *lock_ptr, int thread_idx, int first_flag_idx, int count = 1)
   {
-#if !defined(CUTLASS_PYTHON_HOST_CC)
     int flag_idx = first_flag_idx + thread_idx;
     T* flag_ptr = reinterpret_cast<T*>(lock_ptr) + flag_idx;
 
@@ -184,7 +173,6 @@ public:
     if (thread_idx < count) {
       red_release(flag_ptr, 1);
     }
-#endif
   }
 };
 

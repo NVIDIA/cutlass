@@ -204,8 +204,8 @@ public:
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Arguments or Problem Size don't meet the requirements.\n");
       return implementable;
     }
-    static constexpr int tma_alignment_bits = 128;
-    static constexpr int min_tma_aligned_elements = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
+    constexpr int tma_alignment_bits = 128;
+    constexpr int min_tma_aligned_elements = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
     auto M = get<0>(args.problem_shape);
     auto N = get<1>(args.problem_shape);
     auto K = get<2>(args.problem_shape);
@@ -220,7 +220,17 @@ public:
                         N % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0));
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
+      return implementable;
     }
+
+    constexpr bool is_beta_supported = 
+      CollectiveEpilogue::ThreadEpilogueOp::kScale == cutlass::epilogue::thread::ScaleType::Default;
+    implementable = is_beta_supported || (args.epilogue.thread.beta == 0 && args.epilogue.thread.beta_ptr == nullptr);
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Scaling params don't meet ThreadEpilogueOp requirements.\n");
+      return implementable;
+    }
+
     return implementable;
   }
 

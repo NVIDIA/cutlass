@@ -200,7 +200,7 @@ class ArtifactManager:
             self.compiled_cache_host.insert(key, compiled_host_fns)
         return True
 
-    def emit_compile_(self, operation_list, compilation_options, requires_nvcc_hostlib_compilation):
+    def emit_compile_(self, operation_list, compilation_options):
         """
         Compile a list of kernels and store them into database
         """
@@ -306,41 +306,17 @@ class ArtifactManager:
                 cubin_image = file.read()
 
         # Set up the host-side library code
-        if requires_nvcc_hostlib_compilation:
-            cmd_template = (
-                "echo '%s'|${cuda_install_path}/bin/nvcc -x cu -Xcompiler=\"-fpermissive -w -fPIC\" ${options}"
-                % source_buffer_host
-            )
-            cmd = SubstituteTemplate(
-                cmd_template,
-                {
-                    "cuda_install_path": CUDA_INSTALL_PATH,
-                    "options": compilation_options.get_str(),
-                },
-            )
-        else:
-            options = compilation_options.get()
-            cmd = (
-                "echo '%s'|g++ -x c++ -fpermissive -w -fPIC -DCUTLASS_PYTHON_HOST_CC=1"
-                % source_buffer_host
-            )
-            filtered_opts = [
-                "-default-device",
-                "-Xcicc",
-                "-Xllc",
-                "--expt-relaxed-constexpr",
-                "-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored",
-            ]
-            for opt in options:
-                opt = opt.decode("utf-8")
-                if opt not in filtered_opts and "-arch=sm_" not in opt:
-                    if "--include-path=" in opt:
-                        cmd += " " + opt.replace(
-                            "--include-path=",
-                            "-I",
-                        )
-                    else:
-                        cmd += " " + opt
+        cmd_template = (
+            "echo '%s'|${cuda_install_path}/bin/nvcc -x cu -Xcompiler=\"-fpermissive -w -fPIC\" ${options}"
+            % source_buffer_host
+        )
+        cmd = SubstituteTemplate(
+            cmd_template,
+            {
+                "cuda_install_path": CUDA_INSTALL_PATH,
+                "options": compilation_options.get_str(),
+            },
+        )
 
         tempfile.tempdir = "./"
         temp = tempfile.NamedTemporaryFile(
@@ -375,7 +351,6 @@ class ArtifactManager:
         # save the cubin
         operation_key = []
         operation_list = []
-        requires_nvcc_hostlib_compilation = False
         for operation in operations:
             # step 1: get kernel string as key
             key = operation.rt_module.emit() + operation.procedural_name() + self.backend
@@ -398,17 +373,9 @@ class ArtifactManager:
                 operation_list.append(operation.rt_module)
                 operation_key.append(key)
 
-            # Creating the Params structures for certain 3.0 kernels currently requires CUDA. For these cases, use NVCC to generate
-            # the PyCUTLASS host-side library. Otherwise, g++ will be used.
-            if isinstance(operation, GemmOperationUniversal) and operation.api == ApiVersion.v3x:
-                if self.backend == "nvrtc":
-                    raise RuntimeError("CUTLASS 3 kernels currently require NVCC for compilation.")
-
-                requires_nvcc_hostlib_compilation = True
-
         if len(operation_list) > 0:
             cubin_image, host_lib, host_file = self.emit_compile_(
-                operation_list, compile_options, requires_nvcc_hostlib_compilation)
+                operation_list, compile_options)
 
             err, module = cuda.cuModuleLoadData(cubin_image)
             if err != cuda.CUresult.CUDA_SUCCESS:

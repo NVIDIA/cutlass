@@ -240,7 +240,9 @@ class Manifest:
         self.kernel_filter_list = []
     else:
         self.kernel_filter_list = self.get_kernel_filters(args.kernel_filter_file)
-
+        _LOGGER.info("Using {filter_count} kernel filters from {filter_file}".format(
+            filter_count = len(self.kernel_filter_list), 
+            filter_file = args.kernel_filter_file))
 
     self.operation_count = 0
     self.operations_by_name = {}
@@ -311,19 +313,29 @@ class Manifest:
       # compare against the include list
       for name_substr in self.kernel_names:
         if self._filter_string_matches(name_substr, name):
+          _LOGGER.debug("Kernel {kernel} included due to filter string '{filt}'.".format(
+            kernel = operation.procedural_name(),
+            filt = name_substr))
           enabled = True
           break
 
       # compare against the exclude list
       for name_substr in self.ignore_kernel_names:
         if self._filter_string_matches(name_substr, name):
+          _LOGGER.debug("Kernel {kernel} ignored due to filter string '{filt}'.".format(
+            kernel = operation.procedural_name(),
+            filt = name_substr))
           enabled = False
           break
 
     if len(self.kernel_filter_list) > 0:
-        enabled = False
         if self.filter_out_kernels(operation.procedural_name(), self.kernel_filter_list):
-            enabled = True
+          _LOGGER.debug("Kernel {kernel} matched via kernel filter file.".format(kernel = operation.procedural_name()))
+          enabled = True
+        else:
+          _LOGGER.debug("Kernel {kernel} culled due to no match in kernel filter file.".format(kernel = operation.procedural_name()))
+          enabled = False
+
 
     # todo: filter based on compute data type
     return enabled
@@ -389,6 +401,8 @@ class Manifest:
     for operation_kind, configurations in self.operations.items():
       with operation_emitters[target](generated_path, operation_kind, self.args) as operation_kind_emitter:
         for configuration_name, operations in configurations.items():
+          _LOGGER.info("Emitting {config} with {num_ops} operations.".format(
+              config = configuration_name, num_ops = len(operations)))
           operation_kind_emitter.emit(configuration_name, operations)
 
         source_files += operation_kind_emitter.source_files

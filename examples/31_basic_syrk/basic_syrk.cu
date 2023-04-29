@@ -34,7 +34,7 @@
   matrix multiply kernel to verify its correctness.
 
   The CUTLASS Syrk template is instantiated in the function CutlassSsyrkNN. This is kernel computes
-  the symmetric rank-k update (SYRK) using double-precision doubleing-point arithmetic and assumes
+  the symmetric rank-k update (SYRK) using double-precision floating-point arithmetic and assumes
   all matrices have column-major layout.
 
   The threadblock tile size is chosen as 16x32x16 which offers good performance for large matrices.

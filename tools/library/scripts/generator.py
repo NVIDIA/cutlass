@@ -91,21 +91,20 @@ def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
 
 # Generates 3.0 API based GemmUniversal API kernels. Alignment constraints are folded in with layouts
 def CreateGemmUniversal3xOperator(
-    manifest, layouts, tile_descriptions, data_type,
+    manifest, layouts, tile_descriptions, data_types,
     schedules = [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto]],
     complex_transforms=None,
     epilogue_functor=EpilogueFunctor.LinearCombination,
     swizzling_functor=SwizzlingFunctor.Identity1):
 
+  if type(data_types) is dict:
+    data_types = [data_types]
+
+  for s in schedules:
+    assert(len(s) == 2)
+
   if complex_transforms is None:
     complex_transforms = [(ComplexTransform.none, ComplexTransform.none), ]
-
-  element_a        = data_type["a_type"]
-  element_b        = data_type["b_type"]
-  element_c        = data_type["c_type"]
-  element_d        = data_type["d_type"]
-  element_acc      = data_type["acc_type"]
-  element_epilogue = data_type.get("epi_type", element_acc)
 
   operations = []
 
@@ -115,23 +114,25 @@ def CreateGemmUniversal3xOperator(
 
   for layout in layouts:
     for tile_description in tile_descriptions:
-      for complex_transform in complex_transforms:
-        for kernel_schedule, epilogue_schedule in schedules:
-          A = TensorDescription(
-              element_a, layout[0][0], layout[0][1], complex_transform[0])
-          B = TensorDescription(
-              element_b, layout[1][0], layout[1][1], complex_transform[1])
+      for data_type in data_types:
+        for complex_transform in complex_transforms:
+          for kernel_schedule, epilogue_schedule in schedules:
+            A = TensorDescription(
+                data_type["a_type"], layout[0][0], layout[0][1], complex_transform[0])
+            B = TensorDescription(
+                data_type["b_type"], layout[1][0], layout[1][1], complex_transform[1])
 
-          C = TensorDescription(element_c, layout[2][0], layout[2][1])
-          D = TensorDescription(element_d, layout[2][0], layout[2][1])
+            C = TensorDescription(data_type["c_type"], layout[2][0], layout[2][1])
+            D = TensorDescription(data_type["d_type"], layout[2][0], layout[2][1])
 
-          operation = GemmOperation(
-              GemmKind.Universal3x, tile_description.minimum_compute_capability,
-              tile_description, A, B, C, element_epilogue, epilogue_functor, swizzling_functor, D,
-              kernel_schedule, epilogue_schedule)
+            element_compute = data_type.get("epi_type", data_type["acc_type"])
+            operation = GemmOperation(
+                GemmKind.Universal3x, tile_description.minimum_compute_capability,
+                tile_description, A, B, C, element_compute, epilogue_functor, swizzling_functor, D,
+                kernel_schedule, epilogue_schedule)
 
-          manifest.append(operation)
-          operations.append(operation)
+            manifest.append(operation)
+            operations.append(operation)
 
   return operations
 
@@ -4118,25 +4119,28 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
         layout[2][1] = 8
 
     if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      kernel_schedules = [
-        KernelScheduleType.ScheduleAuto,
-        KernelScheduleType.TmaWarpSpecializedCooperative,
-        KernelScheduleType.TmaWarpSpecializedPingpong,
-        KernelScheduleType.TmaWarpSpecialized
+      schedules = [
+        [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
+        [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized],
+        [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.NoSmemWarpSpecialized],
+        [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized]
       ]
     else:
-      kernel_schedules = [
-        KernelScheduleType.ScheduleAuto,
-        KernelScheduleType.TmaWarpSpecialized
+      schedules = [
+        [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
+        [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized]
         # TmaWarpSpecializedCooperative and TmaWarpSpecializedPingpong require CUDA version >= 12.1 for optimal performance.
       ]
-
-    schedules = [[s, EpilogueScheduleType.ScheduleAuto] for s in kernel_schedules]
 
     CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)
 
     # persistent kernels with TMA epilogues
     if data_type["c_type"] in [DataType.f16, DataType.bf16] and CudaToolkitVersionSatisfies(cuda_version, 12, 1):
+      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
+        [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
+         [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
+      # Emit instance without C allocation+load
+      data_type["c_type"] = DataType.void
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
         [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
          [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
@@ -4163,6 +4167,11 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed, schedules)
       # persistent kernels with TMA epilogues
       if data_type_mixed["c_type"] in [DataType.f16, DataType.bf16] and CudaToolkitVersionSatisfies(cuda_version, 12, 1):
+        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
+          [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
+           [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
+        # Emit instance without C allocation+load
+        data_type_mixed["c_type"] = DataType.void
         CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
           [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
            [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
@@ -4212,19 +4221,32 @@ def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
     "acc_type" : math_inst.element_accumulator,
     "epi_type" : math_inst.element_accumulator
   }
+
+  schedules = [
+    [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
+    [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized]
+  ]
+
+  # TMA kernels with TT layout use EpilogueTransposed (NoSmemWarpSpecialized with swapped strides),
+  # because they use NN kernels underneath and transposing its epilogue will get the correct output
+  schedules_transposed_epilogue = [
+    [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.EpilogueTransposed],
+    [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.EpilogueTransposed]
+  ]
+
   # TMA kernels with TN or NN layout
   layouts_tf32_tn_nn = [layouts_tf32[0], layouts_tf32[2]]
-  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn, tile_descriptions, data_type_tf32)
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn, tile_descriptions, data_type_tf32, schedules)
 
   # TMA kernels with NT layout, only support 64x128x32 tile for now.
   layouts_tf32_nt = [layouts_tf32[3]]
   tile_64x128x32_descriptions = [tile_descriptions[0], tile_descriptions[1], tile_descriptions[2]]
-  CreateGemmUniversal3xOperator(manifest, layouts_tf32_nt, tile_64x128x32_descriptions, data_type_tf32)
+  tile_128x128x32_descriptions = [tile_descriptions[3], tile_descriptions[4], tile_descriptions[5]]
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_nt, tile_64x128x32_descriptions, data_type_tf32, schedules)
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_nt, tile_128x128x32_descriptions, data_type_tf32, [schedules[1]])
 
-  # TMA kernels with TT layout use EpilogueTransposed, because swapping NN kernel and transposed its epilogue will get the kernel
   layouts_tf32_tt = [layouts_tf32[1]]
-  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions, data_type_tf32,
-    [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.EpilogueTransposed]])
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions, data_type_tf32, schedules_transposed_epilogue)
 
   # F32 kernel share same settings with tf32 I/O kernels excluding data type
   data_type_f32 = {
@@ -4236,10 +4258,10 @@ def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
     "epi_type" : DataType.f32
   }
 
-  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn, tile_descriptions, data_type_f32)
-  CreateGemmUniversal3xOperator(manifest, layouts_tf32_nt, tile_64x128x32_descriptions, data_type_f32)
-  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions, data_type_f32,
-    [[KernelScheduleType.ScheduleAuto, EpilogueScheduleType.EpilogueTransposed]])
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn, tile_descriptions, data_type_f32, schedules)
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_nt, tile_64x128x32_descriptions, data_type_f32, schedules)
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_nt, tile_128x128x32_descriptions, data_type_f32, [schedules[1]])
+  CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions, data_type_f32, schedules_transposed_epilogue)
 
 #
 def GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version):
@@ -4910,8 +4932,8 @@ def GenerateSM90_TensorOp_1684_symm_complex_gaussian(manifest, cuda_version):
 #
 def GenerateSM90(manifest, cuda_version):
   GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version)
-  GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version)
   GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version)
+  GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version)
   GenerateSM90_TensorOp_1684(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_complex(manifest, cuda_version)
   GenerateSM90_TensorOp_1684_complex_gaussian(manifest, cuda_version)

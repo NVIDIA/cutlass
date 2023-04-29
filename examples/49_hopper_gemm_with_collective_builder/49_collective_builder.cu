@@ -84,9 +84,10 @@
     therefore letting the builder pick the collective specialization.
 
     CUTLASS builders make an attempt to pick the best schedule when `Auto` is provided such that the
-    assembled collctives have the best performance, but this is not a guarantee. A user relying on `Auto`
+    assembled collectives have the best performance, but this is not a guarantee. A user relying on `Auto`
     may get a free performance upgrade with newer CUTLASS releases in case we can provide more optimized
-    implementations that the builder can transparently assemble for `Auto`.
+    implementations that the builder can transparently assemble for `Auto`. But a user should not rely on 
+    `Auto` if they require a specific scheduling policy and/or stage count to be used.
 
     If a user decides to let the builders pick the collective specialization via `Auto` schedules,
     they must be used for both mainloop and epilogue alike to ensure compatibility between the
@@ -98,11 +99,6 @@
     every template parameter to the `gemm::collective::CollectiveMma`. Specifying every template parameter
     in this manner remains the primary API for using CUTLASS 3 kernels. `CollectiveBuilder`s are
     simply meant to be a convenience interface.
-
-    Note also that, while the selections made by CollectiveBuilder attempt to maximize performance, this is not
-    a guarantee. Furthermore, the behavior of the CollectiveBuilder when `Auto` parameters are provided is subject
-    to change in future CUTLASS releases -- do not rely on `Auto` if you require a specific scheduling policy and/or
-    stage count to be used.
 
     Details of this example
     -----------------------

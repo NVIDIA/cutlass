@@ -196,6 +196,9 @@ public:
     /// If true, profiling is actually conducted.
     bool enabled;
 
+    /// If true, profiling returns an error code if no kernels are found to match the filters.
+    bool error_on_no_match = false;
+
     /// List of providers of each functionality to be profiled
     ProviderVector providers;
 

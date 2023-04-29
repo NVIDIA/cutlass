@@ -190,7 +190,8 @@ struct CollectiveMma<
     "SmemLayoutB K must be 128bytes to be transposed.");
   static_assert(!transform::collective::detail::use_universal_transposition<InternalSmemLayoutAtomB, InternalElementB>(),
     "Warp specialized ARF kernels have not supported universal B transposition yet.");
-  static_assert(!TransposeB || shape<0>(TileShape{}) == 64, "Optimized transpose RS kernel requires TileShape M = 64.");
+  static_assert(!TransposeB || !cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperative>,
+    "Transpose RS kernel requires kernel schedule schmem is not KernelTmaWarpSpecializedCooperative.");
 
   struct SharedStorage
   {
@@ -294,7 +295,7 @@ struct CollectiveMma<
 
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
   static constexpr int K_PIPE_MMAS = DispatchPolicy::PipelineAsyncMmaStages;
-  static_assert(K_PIPE_MMAS >= 1, "At least one MMA stage should be asynchronous for this mainloop.");
+  static_assert(K_PIPE_MMAS == 0, "no MMA stage should be asynchronous for this mainloop for now.");
   static constexpr uint32_t TmaTransactionBytes =
         (size<0>(SmemLayoutA{}) * size<1>(SmemLayoutA{}) * static_cast<uint32_t>(sizeof(InternalElementA)))+
         (size<0>(SmemLayoutB{}) * size<1>(SmemLayoutB{}) * static_cast<uint32_t>(sizeof(InternalElementB)));
@@ -368,21 +369,6 @@ struct CollectiveMma<
         }
       }
 
-      // Issue the prologue loads
-      int k_tile_prologue = min(k_tile_count, K_PIPE_MAX);
-      CUTLASS_PRAGMA_UNROLL
-      for (int count = 0; count < k_tile_prologue; ++count) {
-        pipeline.producer_acquire(smem_pipe_write);
-        using BarrierType = typename MainloopPipeline::ProducerBarrierType;
-        BarrierType* tma_barrier = pipeline.producer_get_barrier(smem_pipe_write);
-
-        int write_stage = smem_pipe_write.index();
-        copy(tma_load_a.with(*tma_barrier, mcast_mask_a), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,write_stage));
-        copy(tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
-        ++k_tile_iter;
-        ++smem_pipe_write;
-      }
-      k_tile_count -= k_tile_prologue;
       // Mainloop
       CUTLASS_PRAGMA_NO_UNROLL
       for ( ; k_tile_count > 0; --k_tile_count) {
