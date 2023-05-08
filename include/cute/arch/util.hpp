@@ -34,7 +34,7 @@
 
 #include <cute/numeric/integer_sequence.hpp>
 
-#if defined(__clang__) && defined(__CUDA__)
+#if defined(__clang__) && defined(__CUDA__) && defined(__CUDA_ARCH__)
   //  __cvta_generic_to_shared was added in Clang 14: https://reviews.llvm.org/D111665
   #define CUTE_CLANG_SUPPORTS_CVTA_GENERIC_TO_SHARED (__clang_major__ >= 14)
 
