@@ -90,7 +90,7 @@ namespace cute
 {
 
 /// CUTE helper to cast SMEM pointer to unsigned
-CUTE_HOST_DEVICE
+CUTE_DEVICE
 uint32_t
 cast_smem_ptr_to_uint(void const* const ptr)
 {
@@ -105,15 +105,13 @@ cast_smem_ptr_to_uint(void const* const ptr)
   // In CUDA 11 and beyond, this replaces __nvvm_get_smem_pointer()  [only available in 10.2].
   //
   //__device__ size_t __cvta_generic_to_shared(void* ptr);
-
-  /// CUTE helper to get SMEM pointer
   return static_cast<uint32_t>(__cvta_generic_to_shared(ptr));
 
 #elif CUTE_NVVM_GET_SMEM_POINTER_ACTIVATED
 
   return __nvvm_get_smem_pointer(ptr);
 
-#elif defined(__CUDA_ARCH__)
+#else
 
   uint32_t smem_ptr;
 
@@ -122,13 +120,6 @@ cast_smem_ptr_to_uint(void const* const ptr)
     : "=r"(smem_ptr) : "l"(ptr));
 
   return smem_ptr;
-
-#else
-
-
-  (void) ptr;
-  printf("ERROR: cast_smem_ptr_to_uint not supported but used.\n");
-  return 0;
 
 #endif
 }
