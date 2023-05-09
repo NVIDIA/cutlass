@@ -732,8 +732,8 @@ struct NumericConverterClamp<cutlass::half_t, S> {
   using source_type = S;
 
   CUTLASS_HOST_DEVICE
-    static result_type convert(source_type const & source) {
-    return static_cast<cutlass::half_t>(s);
+    static result_type convert(source_type const &source) {
+    return static_cast<cutlass::half_t>(source);
   }
 
   CUTLASS_HOST_DEVICE
@@ -741,7 +741,6 @@ struct NumericConverterClamp<cutlass::half_t, S> {
     return convert(s);
   }
 };
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -807,18 +806,19 @@ struct NumericArrayConverter<T, T, N, Round, Transform> {
   static_assert(platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value ||
                 platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Conjugate>::value,
                   "Unary Operator not supported.");
+
   CUTLASS_HOST_DEVICE
-  static result_type convert(source_type const & source) {
-      if( platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value )
-      {
-          return source;
-      } else {
-          result_type result;
-          for (int i = 0; i < N; ++i) {
-              result[i] = conj(source[i]);
-          }
-          return result;
-      }
+  static result_type convert(source_type const &source) {
+    if( platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value )
+    {
+        return source;
+    } else {
+        result_type result;
+        for (int i = 0; i < N; ++i) {
+            result[i] = conj(source[i]);
+        }
+        return result;
+    }
   }
 
   CUTLASS_HOST_DEVICE
@@ -826,7 +826,6 @@ struct NumericArrayConverter<T, T, N, Round, Transform> {
     return convert(s);
   }
 };
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -972,7 +971,6 @@ struct NumericArrayConverter<float, half_t, N, Round> {
     return convert(s);
   }
 };
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1995,7 +1993,7 @@ struct NumericArrayConverter<float_e4m3_t, float_e4m3_t, 4, Round> {
   static FloatRoundStyle const round_style = Round;
 
   CUTLASS_HOST_DEVICE
-  static result_type convert(source_type const & source) {
+  static result_type convert(source_type const &source) {
     return source;
   }
 
@@ -2018,7 +2016,7 @@ struct NumericArrayConverter<float_e5m2_t, float_e5m2_t, 4, Round> {
   static FloatRoundStyle const round_style = Round;
 
   CUTLASS_HOST_DEVICE
-  static result_type convert(source_type const & source) {
+  static result_type convert(source_type const &source) {
     return source;
   }
 
