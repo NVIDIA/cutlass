@@ -75,13 +75,13 @@ struct NumericConverter {
   static FloatRoundStyle const round_style = Round;
 
   CUTLASS_HOST_DEVICE
-    static result_type convert(source_type const & s) {
+  static result_type convert(source_type const & s) {
 
     return static_cast<result_type>(s);
   }
 
   CUTLASS_HOST_DEVICE
-    result_type operator()(source_type const &s) const {
+  result_type operator()(source_type const &s) const {
     return convert(s);
   }
 };
@@ -715,7 +715,7 @@ struct NumericConverterClamp {
   }
 
   CUTLASS_HOST_DEVICE
-    result_type operator()(source_type const &s) const {
+  result_type operator()(source_type const &s) const {
     return convert(s);
   }
 };
@@ -732,12 +732,12 @@ struct NumericConverterClamp<cutlass::half_t, S> {
   using source_type = S;
 
   CUTLASS_HOST_DEVICE
-    static result_type convert(source_type const &source) {
+  static result_type convert(source_type const &source) {
     return static_cast<cutlass::half_t>(source);
   }
 
   CUTLASS_HOST_DEVICE
-    result_type operator()(source_type const &s) const {
+  result_type operator()(source_type const &s) const {
     return convert(s);
   }
 };
@@ -809,15 +809,14 @@ struct NumericArrayConverter<T, T, N, Round, Transform> {
 
   CUTLASS_HOST_DEVICE
   static result_type convert(source_type const &source) {
-    if( platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value )
-    {
-        return source;
+    if (platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value) {
+      return source;
     } else {
-        result_type result;
-        for (int i = 0; i < N; ++i) {
-            result[i] = conj(source[i]);
-        }
-        return result;
+      result_type result;
+      for (int i = 0; i < N; ++i) {
+          result[i] = conj(source[i]);
+      }
+      return result;
     }
   }
 
