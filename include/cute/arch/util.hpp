@@ -35,45 +35,44 @@
 #include <cute/numeric/integer_sequence.hpp>
 
 #if defined(__clang__) && defined(__CUDA__)
-//  __cvta_generic_to_shared was added in Clang 14: https://reviews.llvm.org/D111665
-#  if __clang_major__ >= 14
-#    define CUTE_CLANG_SUPPORTS_CVTA_GENERIC_TO_SHARED 1
-#  endif
+  //  __cvta_generic_to_shared was added in Clang 14: https://reviews.llvm.org/D111665
+  #if __clang_major__ >= 14
+    #define CUTE_CLANG_SUPPORTS_CVTA_GENERIC_TO_SHARED 1
+  #endif
 
-
-// __nvvm_get_smem_pointer added in Clang 14: https://reviews.llvm.org/D111665
-// ... but will not work on Windows until Clang 15: https://reviews.llvm.org/D122897
-#  if (!defined(_WIN32) && __clang_major__ >= 14) || __clang_major__ >= 15
-#    define CUTE_CLANG_SUPPORTS_NVVM_GET_SMEM_POINTER 1
-#  endif
+  // __nvvm_get_smem_pointer added in Clang 14: https://reviews.llvm.org/D111665
+  // ... but will not work on Windows until Clang 15: https://reviews.llvm.org/D122897
+  #if (!defined(_WIN32) && __clang_major__ >= 14) || __clang_major__ >= 15
+    #define CUTE_CLANG_SUPPORTS_NVVM_GET_SMEM_POINTER 1
+  #endif
 #endif
 
 #if defined(__NVCC__) || defined(__CUDACC_RTC__)
   // __cvta_generic_to_shared added in CUDA 11+
-#  if __CUDACC_VER_MAJOR__ >= 11
-#    define CUTE_NVCC_SUPPORTS_CVTA_GENERIC_TO_SHARED 1
-#  endif
+  #if __CUDACC_VER_MAJOR__ >= 11
+    #define CUTE_NVCC_SUPPORTS_CVTA_GENERIC_TO_SHARED 1
+  #endif
 
-// __nvvm_get_smem_pointer added in CUDA 10.2
-#  if __CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2
-#    define CUTE_NVCC_SUPPORTS_NVVM_GET_SMEM_POINTER 1
-#  endif
+  // __nvvm_get_smem_pointer added in CUDA 10.2
+  #if __CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2
+    #define CUTE_NVCC_SUPPORTS_NVVM_GET_SMEM_POINTER 1
+  #endif
 #endif
 
 #if CUTE_NVCC_SUPPORTS_CVTA_GENERIC_TO_SHARED || CUTE_CLANG_SUPPORTS_CVTA_GENERIC_TO_SHARED
-#  define CUTE_CVTA_GENERIC_TO_SHARED_SUPPORTED 1
+  #define CUTE_CVTA_GENERIC_TO_SHARED_SUPPORTED 1
 #endif
 
 #if !defined(CUTE_CVTA_GENERIC_TO_SHARED_ACTIVATED) && CUTE_CVTA_GENERIC_TO_SHARED_SUPPORTED && defined(__CUDA_ARCH__)
-#  define CUTE_CVTA_GENERIC_TO_SHARED_ACTIVATED 1
+  #define CUTE_CVTA_GENERIC_TO_SHARED_ACTIVATED 1
 #endif
 
 #if CUTE_NVCC_SUPPORTS_NVVM_GET_SMEM_POINTER || CUTE_CLANG_SUPPORTS_NVVM_GET_SMEM_POINTER
-#  define CUTE_NVVM_GET_SMEM_POINTER_SUPPORTED 1
+  #define CUTE_NVVM_GET_SMEM_POINTER_SUPPORTED 1
 #endif
 
 #if !defined(CUTE_NVVM_GET_SMEM_POINTER_ACTIVATED) && CUTE_NVVM_GET_SMEM_POINTER_SUPPORTED && defined(__CUDA_ARCH__)
-#  define CUTE_NVVM_GET_SMEM_POINTER_ACTIVATED 1
+  #define CUTE_NVVM_GET_SMEM_POINTER_ACTIVATED 1
 #endif
 
 // Clang 14+ provides a declaration of __nvvm_get_smem_pointer, so we only need
@@ -105,13 +104,15 @@ cast_smem_ptr_to_uint(void const* const ptr)
   // In CUDA 11 and beyond, this replaces __nvvm_get_smem_pointer()  [only available in 10.2].
   //
   //__device__ size_t __cvta_generic_to_shared(void* ptr);
+
+  /// CUTE helper to get SMEM pointer
   return static_cast<uint32_t>(__cvta_generic_to_shared(ptr));
 
 #elif CUTE_NVVM_GET_SMEM_POINTER_ACTIVATED
 
   return __nvvm_get_smem_pointer(ptr);
 
-#else
+#elif defined(__CUDA_ARCH__)
 
   uint32_t smem_ptr;
 
@@ -120,6 +121,13 @@ cast_smem_ptr_to_uint(void const* const ptr)
     : "=r"(smem_ptr) : "l"(ptr));
 
   return smem_ptr;
+
+#else
+
+
+  (void) ptr;
+  printf("ERROR: cast_smem_ptr_to_uint not supported but used.\n");
+  return 0;
 
 #endif
 }
