@@ -112,6 +112,7 @@ public:
     ElementBias* ptr_Bias = nullptr;
     ElementC* ptr_C0 = nullptr;
     ElementC* ptr_C1 = nullptr;
+    StrideC dBias{};
   };
 
   // Device side epilogue params
@@ -174,7 +175,7 @@ public:
 
     auto stride_c    = detail::get_epilogue_stride<EpilogueSchedule>(params.dC);
     auto stride_d    = detail::get_epilogue_stride<EpilogueSchedule>(params.dD);
-    auto stride_bias = detail::get_epilogue_stride<EpilogueSchedule>(Stride<_1, _0, _0>{});
+    auto stride_bias = detail::get_epilogue_stride<EpilogueSchedule>(params.dBias);
 
     // Represent the full output tensor
     Tensor mC0_mnl = make_tensor(make_gmem_ptr(params.ptr_C0), make_shape(M,N,L), stride_c);                   // (m,n,l)
