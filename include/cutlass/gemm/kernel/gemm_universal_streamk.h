@@ -42,7 +42,6 @@
 #include "cutlass/complex.h"
 #include "cutlass/barrier.h"
 #include "cutlass/block_striped.h"
-#include "cutlass/gemm/kernel/params_streamk_base.h"
 
 #include "cutlass/trace.h"
 
@@ -117,12 +116,15 @@ public:
   //
 
   /// Argument structure
-  struct Arguments : StreamkArgumentsBase
-  {
+  struct Arguments {
 
     //
     // Data members
     //
+
+    GemmUniversalMode mode;
+    GemmCoord problem_size;
+    int batch_count;        // Either (mode == GemmUniversalMode::kBatched) the batch count, or (mode == GemmUniversalMode::kGemm) the tile-splitting factor
 
     typename EpilogueOutputOp::Params epilogue;
 
@@ -146,6 +148,8 @@ public:
     typename LayoutC::Stride::LongIndex ldc;
     typename LayoutC::Stride::LongIndex ldd;
 
+    int avail_sms;          /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
+
 
     //
     // Methods
@@ -153,10 +157,13 @@ public:
 
     /// Default Constructor
     Arguments():
+      mode(GemmUniversalMode::kGemm),
+      batch_count(1),
       ptr_A(nullptr),
       ptr_B(nullptr),
       ptr_C(nullptr),
-      ptr_D(nullptr)
+      ptr_D(nullptr),
+      avail_sms(-1)
     {}
 
     /// Constructor
@@ -179,11 +186,13 @@ public:
       typename LayoutC::Stride stride_d,
       int avail_sms = -1                            /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
     ):
-      StreamkArgumentsBase(mode, problem_size, batch_split, avail_sms),
+      mode(mode),
+      problem_size(problem_size),
+      batch_count(batch_split),
       epilogue(epilogue),
       ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D),
       batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C), batch_stride_D(batch_stride_D),
-      stride_a(stride_a), stride_b(stride_b), stride_c(stride_c), stride_d(stride_d)
+      stride_a(stride_a), stride_b(stride_b), stride_c(stride_c), stride_d(stride_d), avail_sms(avail_sms)
     {
       CUTLASS_TRACE_HOST("GemmUniversalStreamk::Arguments::Arguments() - problem_size: " << problem_size);
     }
@@ -208,11 +217,13 @@ public:
       typename LayoutC::Stride::LongIndex ldd,
       int avail_sms = -1                            /// The number of SMs that StreamK dispatch heuristics will attempt to load-balance across (-1 defaults to device width, 1 implies classic data-parallel scheduling)
     ):
-      StreamkArgumentsBase(mode, problem_size, batch_split, avail_sms),
+      mode(mode),
+      problem_size(problem_size),
+      batch_count(batch_split),
       epilogue(epilogue),
       ptr_A(ptr_A), ptr_B(ptr_B), ptr_C(ptr_C), ptr_D(ptr_D),
       batch_stride_A(batch_stride_A), batch_stride_B(batch_stride_B), batch_stride_C(batch_stride_C), batch_stride_D(batch_stride_D),
-      lda(lda), ldb(ldb), ldc(ldc), ldd(ldd)
+      lda(lda), ldb(ldb), ldc(ldc), ldd(ldd), avail_sms(avail_sms)
     {
       stride_a = make_Coord(lda);
       stride_b = make_Coord(ldb);
@@ -238,16 +249,8 @@ public:
 
 
   /// Parameters structure
-  struct Params : StreamkParamsBase<
-    ThreadblockSwizzle,
-    ThreadblockShape,
-    GemmUniversalStreamk>
+  struct Params
   {
-    using ParamsBase = StreamkParamsBase<
-      ThreadblockSwizzle,
-      ThreadblockShape,
-      GemmUniversalStreamk>;
-
   public:
 
     //
@@ -263,6 +266,13 @@ public:
     int64_t batch_stride_A;
     int64_t batch_stride_B;
 
+    GemmUniversalMode mode;
+
+    ThreadblockSwizzle block_mapping;
+
+    void *barrier_workspace;
+    void *partials_workspace;
+
     typename EpilogueOutputOp::Params output_op;
 
     void * ptr_D;
@@ -273,6 +283,41 @@ public:
 
     int64_t batch_stride_D;
     int64_t batch_stride_C;
+
+
+  protected:
+
+    //
+    // Host-only dispatch-utilities
+    //
+
+    /// Pad the given allocation size up to the nearest cache line
+    static size_t cacheline_align_up(size_t size)
+    {
+      static const int CACHELINE_SIZE = 128;
+      return (size + CACHELINE_SIZE - 1) / CACHELINE_SIZE * CACHELINE_SIZE;
+    }
+
+    /// Get the workspace size needed for barrier
+    size_t get_barrier_workspace_size() const
+    {
+      // For atomic reduction, each SK-block needs a synchronization flag.  For parallel reduction,
+      // each reduction block needs its own synchronization flag.
+      int sk_blocks = block_mapping.sk_regions() * block_mapping.sk_blocks_per_region();
+      int num_flags = fast_max(sk_blocks, block_mapping.reduction_blocks);
+
+      return cacheline_align_up(sizeof(typename Barrier::T) * num_flags);
+    }
+
+    /// Get the workspace size needed for intermediate partial sums
+    size_t get_partials_workspace_size() const
+    {
+      int sk_blocks = block_mapping.sk_regions() * block_mapping.sk_blocks_per_region();
+      return cacheline_align_up(kWorkspaceBytesPerBlock * sk_blocks);
+    }
+
+
+  public:
 
     //
     // Host dispatch API
@@ -288,12 +333,12 @@ public:
       int device_sms,         /// Number of SMs on the device
       int sm_occupancy)       /// Kernel SM occupancy (in thread blocks)
     :
-      ParamsBase(args, device_sms, sm_occupancy, kWorkspaceBytesPerBlock),
       params_A(args.lda ? make_Coord_with_padding<LayoutA::kStrideRank>(args.lda) : args.stride_a),
       params_B(args.ldb ? make_Coord_with_padding<LayoutB::kStrideRank>(args.ldb) : args.stride_b),
       params_C(args.ldc ? make_Coord_with_padding<LayoutC::kStrideRank>(args.ldc) : args.stride_c),
       params_D(args.ldd ? make_Coord_with_padding<LayoutC::kStrideRank>(args.ldd) : args.stride_d),
       output_op(args.epilogue),
+      mode(args.mode),
       ptr_A(const_cast<void *>(args.ptr_A)),
       ptr_B(const_cast<void *>(args.ptr_B)),
       ptr_C(const_cast<void *>(args.ptr_C)),
@@ -301,8 +346,113 @@ public:
       batch_stride_A(args.batch_stride_A),
       batch_stride_B(args.batch_stride_B),
       batch_stride_C(args.batch_stride_C),
-      batch_stride_D(args.batch_stride_D)
-    { }
+      batch_stride_D(args.batch_stride_D),
+      barrier_workspace(nullptr),
+      partials_workspace(nullptr)
+    {
+      // Number of SMs to make available for StreamK decomposition
+      int avail_sms = (args.avail_sms == -1) ?
+                        device_sms :
+                        fast_min(args.avail_sms, device_sms);
+
+      // Initialize the block mapping structure
+      block_mapping = ThreadblockSwizzle(
+        typename ThreadblockSwizzle::template KernelTraits<GemmUniversalStreamk>(),
+        args.mode,
+        args.problem_size,
+        {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
+        args.batch_count,
+        sm_occupancy,
+        device_sms,
+        avail_sms);
+    }
+
+
+    /// Returns the workspace size (in bytes) needed for these parameters
+    size_t get_workspace_size() const
+    {
+      return
+        get_barrier_workspace_size() +
+        get_partials_workspace_size();
+    }
+
+
+    /// Assign and initialize the specified workspace buffer.  Assumes
+    /// the memory allocated to workspace is at least as large as get_workspace_size().
+    Status init_workspace(
+      void *workspace,
+      cudaStream_t stream = nullptr)
+    {
+      uint8_t *ptr = static_cast<uint8_t*>(workspace);
+
+      // Establish partials workspace
+      partials_workspace = nullptr;
+      size_t partials_workspace_bytes = get_partials_workspace_size();
+      if (partials_workspace_bytes > 0)
+      {
+        if (!workspace) {
+          return Status::kErrorWorkspaceNull;
+        }
+        partials_workspace = ptr;
+        ptr += partials_workspace_bytes;
+      }
+
+      // Establish barrier workspace
+      barrier_workspace = nullptr;
+      size_t barrier_workspace_bytes = get_barrier_workspace_size();
+      if (barrier_workspace_bytes > 0)
+      {
+        if (!workspace) {
+          return Status::kErrorWorkspaceNull;
+        }
+        barrier_workspace = ptr;
+        ptr += barrier_workspace_bytes;
+      }
+
+      // Zero-initialize barrier workspace
+      if (barrier_workspace)
+      {
+        size_t barrier_workspace_bytes = get_barrier_workspace_size();
+
+        CUTLASS_TRACE_HOST("  Initialize " << barrier_workspace_bytes << " barrier bytes");
+
+        cudaError_t result = cudaMemsetAsync(
+          barrier_workspace,
+          0,
+          barrier_workspace_bytes,
+          stream);
+
+        if (result != cudaSuccess) {
+          CUTLASS_TRACE_HOST("  cudaMemsetAsync() returned error " << cudaGetErrorString(result));
+          return Status::kErrorInternal;
+        }
+      }
+
+      return Status::kSuccess;
+    }
+
+
+    /// Returns the GEMM volume in thread block tiles
+    cutlass::gemm::GemmCoord get_tiled_shape() const
+    {
+      return block_mapping.tiled_shape();
+    }
+
+
+    /// Returns the total number of thread blocks to launch
+    int get_grid_blocks() const
+    {
+      dim3 grid_dims = get_grid_dims();
+      return grid_dims.x * grid_dims.y * grid_dims.z;
+    }
+
+
+    /// Returns the grid extents in thread blocks to launch
+    dim3 get_grid_dims() const
+    {
+      return block_mapping.get_grid_dims();
+    }
+
 
     /// Lightweight update given a subset of arguments.
     void update(Arguments const &args)

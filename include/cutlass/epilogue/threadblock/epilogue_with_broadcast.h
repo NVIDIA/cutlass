@@ -880,7 +880,7 @@ private:
         MatrixCoord const &threadblock_offset =         ///< Threadblock's initial offset within the problem size space
             MatrixCoord()) 
     {
-      
+
       BroadcastFragment broadcast_fragment;
       load_broadcast_fragment_(broadcast_fragment, broadcast_ptr, problem_size, threadblock_offset);
 
@@ -1622,6 +1622,7 @@ private:
     }
   }
 
+
   public:
     /// Stream-K reduce helper
     CUTLASS_DEVICE
@@ -1637,7 +1638,7 @@ private:
         MatrixCoord const &threadblock_offset =         ///< Threadblock's initial offset within the problem size space
             MatrixCoord()) 
     {
-      
+
       BroadcastFragment broadcast_fragment;
       load_broadcast_fragment_(broadcast_fragment, broadcast_ptr, problem_size, threadblock_offset);
 
@@ -1706,7 +1707,6 @@ private:
         ++tensor_iterator;
       }
     }
-
 };
 
 ////////////////////////////////////////////////////////////////////////////////
