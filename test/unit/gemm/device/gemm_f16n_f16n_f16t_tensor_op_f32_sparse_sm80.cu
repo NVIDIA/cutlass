@@ -37,6 +37,7 @@
 #include "../../common/cutlass_unit_test.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/device/gemm_sparse.h"
+#include "cutlass/gemm/device/gemm_sparse_row_broadcast.h"
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/host/gemm.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
@@ -265,6 +266,24 @@ TEST(SM80_Device_Sparse_Gemm_f16n_f16n_f16t_tensor_op_f32, 64x64x128_32x32x128) 
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
 
   EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>());
+}
+
+TEST(SM80_Device_Sparse_Gemm_Row_Broadcast_f16n_f16n_f16t_tensor_op_f32, 64x64x128_32x32x128) {
+  using ElementOutput = cutlass::half_t;
+  using ElementAccumulator = float;
+
+  using Gemm = cutlass::gemm::device::SparseGemmRowBroadcast<
+      cutlass::half_t, cutlass::layout::ColumnMajor, cutlass::half_t,
+      cutlass::layout::ColumnMajor, ElementOutput, cutlass::layout::RowMajor,
+      ElementAccumulator, cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80,
+      cutlass::gemm::GemmShape<64, 64, 128>,
+      cutlass::gemm::GemmShape<32, 32, 128>, cutlass::gemm::GemmShape<16, 8, 32>,
+      cutlass::epilogue::thread::LinearCombination<
+          ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
+          ElementAccumulator, ElementAccumulator>,
+      cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
+  
+  EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>(true));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
