@@ -455,8 +455,8 @@ template <
   class EpilogueTileType,
   class ElementAccumulator,
   class ElementCompute,
-  class ElementC,
-  class GmemLayoutTagC,
+  class ElementC_,
+  class GmemLayoutTagC_,
   int AlignmentC,
   class ElementD,
   class GmemLayoutTagD,
@@ -471,8 +471,8 @@ struct CollectiveBuilder<
     EpilogueTileType,
     ElementAccumulator,
     ElementCompute,
-    ElementC,
-    GmemLayoutTagC,
+    ElementC_,
+    GmemLayoutTagC_,
     AlignmentC,
     ElementD,
     GmemLayoutTagD,
@@ -482,6 +482,14 @@ struct CollectiveBuilder<
                       cute::is_base_of_v<TmaWarpSpecializedCooperativeBiasElementwiseBase, Schedule> >> {
 
 public:
+  // Passing void C disables source load
+  using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,
+      ElementD, ElementC_>; // prevents cute breakages
+  using GmemLayoutTagC = cute::conditional_t<cute::is_void_v<ElementC_>,
+      GmemLayoutTagD, GmemLayoutTagC_>;
+  static constexpr thread::ScaleType::Kind ScaleType = cute::is_void_v<ElementC_> ?
+      thread::ScaleType::OnlyAlphaScaling : thread::ScaleType::Default;
+
   using ThreadOp = thread::LinearCombinationBiasElementwise<
       ElementC, ElementAccumulator, ElementCompute, ElementD, typename Schedule::ElementT, AlignmentD,
       typename Schedule::ActivationFunctor<ElementCompute>, typename Schedule::BiasOp<ElementCompute>,
