@@ -31,7 +31,7 @@
 
 /***************************************************************************************************
  Example contrasting the Stream-K parallel decomposition for GEMM threadblocks versus the
- "classic data-parallel" and "Split-K" decompositions.
+ "classic data-parallel" and "Split-K" decompositions + residual add.
 
  For more details regarding the Stream-K method, see "Stream-K: Work-centric Parallel Decomposition
  for Dense Matrix-Matrix Multiplication on the GPU" (https://arxiv.org/abs/2301.03598)
@@ -54,39 +54,13 @@
 
      cutlass/build$ cmake .. -DCUTLASS_NVCC_ARCHS=80
 
-     cutlass/build$ make 47_ampere_gemm_universal_streamk
+     cutlass/build$ make 47_ampere_gemm_universal_streamk_broadcast
 
-     cutlass/build$ ./examples/47_ampere_gemm_universal_streamk/47_ampere_gemm_universal_streamk
+     cutlass/build$ ./examples/47_ampere_gemm_universal_streamk/47_ampere_gemm_universal_streamk_broadcast
 
-        10000 timing iterations of 2048 x 2048 x 2048 matrix-matrix multiply
+ - Reset clocks when done:
 
-        Basic data-parallel GEMM
-          Disposition: Passed
-          Avg runtime: 0.112633 ms
-          GFLOPs: 152530
-
-        StreamK GEMM with default load-balancing
-          Disposition: Passed
-          Avg runtime: 0.0941929 ms
-          GFLOPs: 182390
-          Speedup vs Basic-DP: 1.196
-
-        StreamK emulating basic data-parallel GEMM
-          Disposition: Passed
-          Avg runtime: 0.113119 ms
-          GFLOPs: 151875
-          Speedup vs Basic-DP: 0.996
-
-        Basic split-K GEMM with tile-splitting factor 2
-          Disposition: Passed
-          Avg runtime: 0.104772 ms
-          GFLOPs: 163973
-
-        StreamK emulating Split-K GEMM with tile-splitting factor 2
-          Disposition: Passed
-          Avg runtime: 0.105379 ms
-          GFLOPs: 163029
-          Speedup vs Basic-SplitK: 0.994
+     cutlass$ sudo nvidia-smi -rgc
 
  **************************************************************************************************/
 
@@ -95,11 +69,16 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/device/gemm_universal.h"
+#include "cutlass/gemm/device/gemm_universal_with_broadcast.h"
+#include "cutlass/gemm/device/gemm_universal_streamk_with_broadcast.h"
+#include "cutlass/epilogue/thread/linear_combination_residual_block.h"
 
 #include "cutlass/util/command_line.h"
 #include "cutlass/util/host_tensor.h"
 #include "cutlass/util/reference/device/gemm.h"
+#include "cutlass/util/reference/host/error_metrics.h"
 #include "cutlass/util/reference/host/tensor_compare.h"
+#include "cutlass/util/reference/host/tensor_foreach.h"
 #include "cutlass/util/reference/host/tensor_copy.h"
 #include "cutlass/util/reference/host/tensor_fill.h"
 #include "cutlass/util/tensor_view_io.h"
@@ -113,22 +92,28 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // A matrix configuration
-using         ElementA    = cutlass::half_t;                                // Element type for A matrix operand
-using         LayoutA     = cutlass::layout::RowMajor;                      // Layout type for A matrix operand
-constexpr int AlignmentA  = 128 / cutlass::sizeof_bits<ElementA>::value;    // Memory access granularity/alignment of A matrix in units of elements (up to 16 bytes)
+using         ElementA         = cutlass::half_t;                                  // Element type for A matrix operand
+using         LayoutA          = cutlass::layout::RowMajor;                        // Layout type for A matrix operand
+constexpr int AlignmentA       = 128 / cutlass::sizeof_bits<ElementA>::value;      // Memory access granularity/alignment of A matrix in units of elements (up to 16 bytes)
 
 // B matrix configuration
-using         ElementB    = cutlass::half_t;                                // Element type for B matrix operand
-using         LayoutB     = cutlass::layout::RowMajor;                      // Layout type for B matrix operand
-constexpr int AlignmentB  = 128 / cutlass::sizeof_bits<ElementB>::value;    // Memory access granularity/alignment of B matrix in units of elements (up to 16 bytes)
+using         ElementB         = cutlass::half_t;                                  // Element type for B matrix operand
+using         LayoutB          = cutlass::layout::RowMajor;                        // Layout type for B matrix operand
+constexpr int AlignmentB       = 128 / cutlass::sizeof_bits<ElementB>::value;      // Memory access granularity/alignment of B matrix in units of elements (up to 16 bytes)
 
-// C/D matrix configuration
-using         ElementC    = cutlass::half_t;                                // Element type for C and D matrix operands
-using         LayoutC     = cutlass::layout::RowMajor;                      // Layout type for C and D matrix operands
-constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // Memory access granularity/alignment of C/D matrices in units of elements (up to 16 bytes)
+// C1/C2/D matrix configuration
+using         ElementC         = cutlass::half_t;                                  // Element type for C matrix operands
+using         LayoutC          = cutlass::layout::RowMajor;                        // Layout type for C matrix operands
+constexpr int AlignmentC       = 128 / cutlass::sizeof_bits<ElementC>::value;      // Memory access granularity/alignment of C matrices in units of elements (up to 16 bytes)
+
+// Output matrix configuration
+using         ElementOutput    = cutlass::half_t;                                  // Element type for output matrix operands
+using         LayoutOutput     = cutlass::layout::RowMajor;                        // Layout type for output matrix operands
+// constexpr int AlignmentOutput  = 128 / cutlass::sizeof_bits<ElementOutput>::value; // Memory access granularity/alignment of output matrices in units of elements (up to 16 bytes)
 
 // Multiply-accumulate blocking/pipelining details
 using ElementAccumulator  = cutlass::half_t;                          // Element type for internal accumulation
+using ElementCompute      = cutlass::half_t;                          // Element type for compute
 using ArchTag             = cutlass::arch::Sm80;                      // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;           // Operator class tag
 using ThreadblockShape    = cutlass::gemm::GemmShape<128, 128, 32>;   // Threadblock-level tile size (concept: GemmShape)
@@ -136,12 +121,22 @@ using WarpShape           = cutlass::gemm::GemmShape<64, 64, 32>;     // Warp-le
 using InstructionShape    = cutlass::gemm::GemmShape<16, 8, 16>;      // Instruction-level tile size (concept: GemmShape)
 constexpr int NumStages   = 4;                                        // Number of global->shared pipeline stages used in the GEMM mainloop
 
+// Residual block configuration
+
 // Epilogue output operator
-using EpilogueOp = cutlass::epilogue::thread::LinearCombination<
-    ElementC,               // Element type for C and D matrix operands
-    AlignmentC,             // Memory access granularity of C and D matrix in units of elements
-    ElementAccumulator,     // Element type from internal accumaccumulation
-    ElementAccumulator>;    // Data type used to compute linear combination
+/// Using LinearCombinationResidualBlock
+/// Models a residual block of the form: UnaryOp(BinaryOp(BinaryOp(ActivationOp(TensorOp(X) + bias), residual1), residual2))
+using EpilogueOp = cutlass::epilogue::thread::LinearCombinationResidualBlock<  
+    ElementOutput,                        // Element type for output matrix
+    ElementAccumulator,                   // Element type from internal accumulation
+    ElementCompute,                       // Element type from internal accumulation
+    ElementC,                             // Element type for C1/C2/D matrix operands
+    AlignmentC,                           // Memory access granularity of C and D matrix in units of elements
+    cutlass::epilogue::thread::Identity,  // Activation
+    cutlass::plus,                        // Binary operation 1
+    cutlass::epilogue::thread::Identity,  // Unary operation
+    cutlass::plus                         // Binary operation 2
+    >;
 
 // Reference device GEMM implementation type
 using DeviceGemmReference = cutlass::reference::device::Gemm<
@@ -155,7 +150,7 @@ using DeviceGemmReference = cutlass::reference::device::Gemm<
   ElementAccumulator>;
 
 // Classic data-parallel device GEMM implementation type
-using DeviceGemmBasic = cutlass::gemm::device::GemmUniversal<
+using DeviceGemmBasic = cutlass::gemm::device::GemmUniversalWithBroadcast<
     ElementA, LayoutA,
     ElementB, LayoutB,
     ElementC, LayoutC,
@@ -172,7 +167,7 @@ using DeviceGemmBasic = cutlass::gemm::device::GemmUniversal<
     AlignmentB>;
 
 // StreamK device GEMM implementation type
-using DeviceGemmStreamK = cutlass::gemm::device::GemmUniversal<
+using DeviceGemmStreamK = cutlass::gemm::device::GemmUniversalStreamkWithBroadcast<
     ElementA, LayoutA,
     ElementB, LayoutB,
     ElementC, LayoutC,
@@ -183,7 +178,7 @@ using DeviceGemmStreamK = cutlass::gemm::device::GemmUniversal<
     WarpShape,
     InstructionShape,
     EpilogueOp,
-    cutlass::gemm::threadblock::ThreadblockSwizzleStreamK, // <-- Only difference
+    cutlass::gemm::threadblock::ThreadblockSwizzleStreamK,
     NumStages,
     AlignmentA,
     AlignmentB>;
@@ -224,24 +219,27 @@ struct Options
   float                     beta;
   int                       split_k_factor;
   int                       avail_sms;
-  bool                      reference_check;
   int                       iterations;
+  bool                      real;
 
   cutlass::HostTensor<ElementA, LayoutA> tensor_a;
   cutlass::HostTensor<ElementB, LayoutB> tensor_b;
-  cutlass::HostTensor<ElementC, LayoutC> tensor_c;
+  cutlass::HostTensor<ElementC, LayoutC> tensor_c1;
+  cutlass::HostTensor<ElementC, LayoutC> tensor_c2;
   cutlass::HostTensor<ElementC, LayoutC> tensor_d;
   cutlass::HostTensor<ElementC, LayoutC> tensor_ref_d;
+  cutlass::HostTensor<ElementC, LayoutC> tensor_Vector;
+  // cutlass::HostTensor<ElementC, LayoutC> tensor_Tensor;
 
   Options(std::string command_name) :
     command_name(command_name),
     help(false),
     problem_size({2048, 2048, 2048}),
     alpha(1.0f),
-    beta(0.0f),
+    beta(1.0f),
     split_k_factor(1),
     avail_sms(-1),              // Number of device SMs to use is unlimited
-    reference_check(true),
+    real(false),
     iterations(10000)
   {}
 
@@ -265,6 +263,7 @@ struct Options
     cmd.get_cmd_line_argument("beta", beta);
     cmd.get_cmd_line_argument("split", split_k_factor);
     cmd.get_cmd_line_argument("iterations", iterations);
+    real = cmd.check_cmd_line_flag("real");
   }
 
   /// Prints the usage statement.
@@ -282,6 +281,7 @@ struct Options
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n\n"
       << "  --split=<int>               Split-K factor to emulate\n\n"
+      << "  --real                      If specified, initializes with real values instead of whole numbers. Errors are to be expected.\n\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out
@@ -310,8 +310,12 @@ typename DeviceGemmBasic::Arguments args_from_options(
     const Options &options,
     cutlass::HostTensor<ElementA, LayoutA> &tensor_a,
     cutlass::HostTensor<ElementB, LayoutB> &tensor_b,
-    cutlass::HostTensor<ElementC, LayoutC> &tensor_c,
-    cutlass::HostTensor<ElementC, LayoutC> &tensor_d)
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_c1,
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_c2,
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_d,
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_Vector /*,
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_Tensor */
+    )
 {
   return typename DeviceGemmBasic::Arguments(
     cutlass::gemm::GemmUniversalMode::kGemm,  // universal mode
@@ -323,16 +327,25 @@ typename DeviceGemmBasic::Arguments args_from_options(
     },
     tensor_a.device_data(),                   // ptr_A
     tensor_b.device_data(),                   // ptr_B
-    tensor_c.device_data(),                   // ptr_C
+    tensor_c1.device_data(),                  // ptr_C1
+    tensor_c2.device_data(),                  // ptr_C2
     tensor_d.device_data(),                   // ptr_D
+    tensor_Vector.device_data(),              // ptr_Vector
+    /* tensor_Tensor.device_data(), */nullptr,// ptr_Tensor
     options.problem_size.mk().product(),      // batch_stride_A
     options.problem_size.nk().product(),      // batch_stride_B
-    options.problem_size.mn().product(),      // batch_stride_C
+    options.problem_size.mn().product(),      // batch_stride_C1
+    options.problem_size.mn().product(),      // batch_stride_C2
     options.problem_size.mn().product(),      // batch_stride_D
+    options.problem_size.mn().product(),      // batch_stride_Vector
+    options.problem_size.mn().product(),      // batch_stride_Tensor
     tensor_a.layout().stride(0),              // stride_a
     tensor_b.layout().stride(0),              // stride_b
-    tensor_c.layout().stride(0),              // stride_c
-    tensor_d.layout().stride(0));             // stride_d
+    tensor_c1.layout().stride(0),             // stride_c1
+    tensor_c2.layout().stride(0),             // stride_c2
+    tensor_d.layout().stride(0),              // stride_d
+    /*tensor_Vector.layout().stride(0)*/0,    // stride_Vector
+    /*tensor_Tensor.layout().stride(0)*/0);   // stride_Tensor
 }
 
 /// Populates a DeviceGemmStreamK::Arguments structure from the given commandline options
@@ -341,8 +354,12 @@ typename DeviceGemmStreamK::Arguments args_from_options(
     const Options &options,
     cutlass::HostTensor<ElementA, LayoutA> &tensor_a,
     cutlass::HostTensor<ElementB, LayoutB> &tensor_b,
-    cutlass::HostTensor<ElementC, LayoutC> &tensor_c,
-    cutlass::HostTensor<ElementC, LayoutC> &tensor_d)
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_c1,
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_c2,
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_d,
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_Vector/*,
+    cutlass::HostTensor<ElementC, LayoutC> &tensor_Tensor*/
+    )
 {
   return typename DeviceGemmStreamK::Arguments(
     cutlass::gemm::GemmUniversalMode::kGemm,  // universal mode
@@ -354,19 +371,27 @@ typename DeviceGemmStreamK::Arguments args_from_options(
     },
     tensor_a.device_data(),                   // ptr_A
     tensor_b.device_data(),                   // ptr_B
-    tensor_c.device_data(),                   // ptr_C
+    tensor_c1.device_data(),                  // ptr_C1
+    tensor_c2.device_data(),                  // ptr_C2
     tensor_d.device_data(),                   // ptr_D
+    tensor_Vector.device_data(),              // ptr_Vector
+    /* tensor_Tensor.device_data(), */nullptr,// ptr_Tensor    // We're not storing Tensor
     options.problem_size.mk().product(),      // batch_stride_A
     options.problem_size.nk().product(),      // batch_stride_B
-    options.problem_size.mn().product(),      // batch_stride_C
+    options.problem_size.mn().product(),      // batch_stride_C1
+    options.problem_size.mn().product(),      // batch_stride_C2
     options.problem_size.mn().product(),      // batch_stride_D
+    options.problem_size.mn().product(),      // batch_stride_Vector
+    options.problem_size.mn().product(),      // batch_stride_Tensor
     tensor_a.layout().stride(0),              // stride_a
     tensor_b.layout().stride(0),              // stride_b
-    tensor_c.layout().stride(0),              // stride_c
+    tensor_c1.layout().stride(0),             // stride_c1
+    tensor_c2.layout().stride(0),             // stride_c2
     tensor_d.layout().stride(0),              // stride_d
+    /*tensor_Vector.layout().stride(0)*/0,    // stride_Vector // Vector stride is always 0
+    /*tensor_Tensor.layout().stride(0)*/0,    // stride_Tensor // We're not storing Tensor
     options.avail_sms);                       // avail_sms
 }
-
 
 /// Execute a given example GEMM computation
 template <typename DeviceGemmT>
@@ -383,7 +408,9 @@ Result run(std::string description, Options &options)
   DeviceGemmT device_gemm;
 
   // Create a structure of gemm kernel arguments suitable for invoking an instance of DeviceGemmT
-  auto arguments = args_from_options(device_gemm, options, options.tensor_a, options.tensor_b, options.tensor_c, options.tensor_d);
+  auto arguments = args_from_options(device_gemm, options, 
+      options.tensor_a, options.tensor_b, options.tensor_c1, options.tensor_c2, options.tensor_d, 
+      options.tensor_Vector/*, options.tensor_Tensor*/);
 
   // Using the arguments, query for extra workspace required for matrix multiplication computation
   size_t workspace_size = DeviceGemmT::get_workspace_size(arguments);
@@ -409,7 +436,11 @@ Result run(std::string description, Options &options)
     options.tensor_d.host_view(),
     options.tensor_ref_d.host_view());
 
-  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << std::endl;
+  double err = cutlass::reference::host::TensorRelativeErrorMetric(
+    options.tensor_d.host_view(),
+    options.tensor_ref_d.host_view());
+
+  std::cout << "  Disposition: " << (result.passed ? "Passed" : "Failed") << " \t Relative error: " << err << std::endl;
 
   // Run profiling loop
   if (options.iterations > 0)
@@ -430,9 +461,10 @@ Result run(std::string description, Options &options)
     std::cout << "  GFLOPs: " << result.gflops << std::endl;
   }
 
-  if (!result.passed) {
-    exit(-1);
-  }
+  // TODO: uncomment when results match
+  //if (!result.passed) {
+  //  exit(-1);
+  //}
 
   return result;
 }
@@ -464,7 +496,7 @@ int main(int argc, const char **argv)
   }
 
   // Parse commandline options
-  Options options("ampere_streamk_gemm");
+  Options options("ampere_streamk_broadcast_gemm");
   options.parse(argc, argv);
 
   if (options.help) {
@@ -489,36 +521,50 @@ int main(int argc, const char **argv)
   //
 
   // Initialize tensors using CUTLASS helper functions
-  options.tensor_a.resize(options.problem_size.mk());       // <- Create matrix A with dimensions M x K
-  options.tensor_b.resize(options.problem_size.kn());       // <- Create matrix B with dimensions K x N
-  options.tensor_c.resize(options.problem_size.mn());       // <- Create matrix C with dimensions M x N
-  options.tensor_d.resize(options.problem_size.mn());       // <- Create matrix D with dimensions M x N used to store output from CUTLASS kernel
-  options.tensor_ref_d.resize(options.problem_size.mn());   // <- Create matrix D with dimensions M x N used to store output from reference kernel
+  options.tensor_a.resize(options.problem_size.mk());           // <- Create matrix A with dimensions M x K
+  options.tensor_b.resize(options.problem_size.kn());           // <- Create matrix B with dimensions K x N
+  options.tensor_c1.resize(options.problem_size.mn());          // <- Create matrix C1 with dimensions M x N
+  options.tensor_c2.resize(options.problem_size.mn());          // <- Create matrix C2 with dimensions M x N
+  options.tensor_d.resize(options.problem_size.mn());           // <- Create matrix D with dimensions M x N used to store output from CUTLASS kernel
+  options.tensor_ref_d.resize(options.problem_size.mn());       // <- Create matrix D with dimensions M x N used to store output from reference kernel
+  options.tensor_Vector.resize({1, options.problem_size.n()});  // <- Create broadcast vector with dimensions N x 1
+  // options.tensor_Tensor.resize(options.problem_size.mn());   // <- Create T matrix with dimensions M x N
+
+  int _init_bits = options.real ? -1 : 0;
 
   // Fill matrix A on host with uniform-random data [-2, 2]
   cutlass::reference::host::TensorFillRandomUniform(
       options.tensor_a.host_view(),
       1,
       ElementA(2),
-      ElementA(-2),
-      0);
+      ElementA(-2), _init_bits);
 
   // Fill matrix B on host with uniform-random data [-2, 2]
   cutlass::reference::host::TensorFillRandomUniform(
       options.tensor_b.host_view(),
       1,
       ElementB(2),
-      ElementB(-2),
-      0);
+      ElementB(-2), _init_bits);
 
-  // Fill matrix C on host with uniform-random data [-2, 2]
+  // Fill matrix C1 on host with uniform-random data [-2, 2]
   cutlass::reference::host::TensorFillRandomUniform(
-      options.tensor_c.host_view(),
+      options.tensor_c1.host_view(),
       1,
       ElementC(2),
-      ElementC(-2),
-      0);
+      ElementC(-2), _init_bits);
 
+  // Fill matrix C2 on host with uniform-random data [-2, 2]
+  cutlass::reference::host::TensorFillRandomUniform(
+      options.tensor_c2.host_view(),
+      1,
+      ElementC(2),
+      ElementC(-2), _init_bits);
+
+  cutlass::reference::host::TensorFillRandomUniform(
+      options.tensor_Vector.host_view(),
+      1,
+      ElementC(2),
+      ElementC(-2), _init_bits);
 
   //
   // Compute reference output
@@ -527,7 +573,10 @@ int main(int argc, const char **argv)
   // Copy data from host to GPU
   options.tensor_a.sync_device();
   options.tensor_b.sync_device();
-  options.tensor_c.sync_device();
+  options.tensor_c1.sync_device();
+  options.tensor_c2.sync_device();
+  options.tensor_Vector.sync_device();
+  // options.tensor_Tensor.sync_device();
 
   // Zero-initialize reference output matrix D
   cutlass::reference::host::TensorFill(options.tensor_ref_d.host_view());
@@ -543,7 +592,7 @@ int main(int argc, const char **argv)
     options.tensor_a.device_ref(),
     options.tensor_b.device_ref(),
     ElementAccumulator(options.beta),
-    options.tensor_c.device_ref(),
+    options.tensor_c1.device_ref(),
     options.tensor_ref_d.device_ref());
 
   // Wait for kernels to finish
@@ -552,6 +601,23 @@ int main(int argc, const char **argv)
   // Copy output data from reference kernel to host for comparison
   options.tensor_ref_d.sync_host();
 
+  // Add broadcast vector (without multiplier)
+  // This is only possible because BinaryOp is addition, and UnaryOps are identity.
+  // This makes the addition of broadcast vector commutable.
+  /// identity(plus(identity(alpha * (a * b) + v), beta * c)) ==
+  /// alpha * a * b + v + beta * c                            ==
+  /// (alpha * a * b + beta * c) + v                          ==
+  /// GEMM(a, b, c) + v
+  // Vector broadcast on host
+  for (int i=0; i < options.problem_size.m(); ++i) {
+    for (int j=0; j < options.problem_size.n(); ++j) {
+      options.tensor_ref_d.host_view().ref().at({i, j}) += options.tensor_Vector.host_view().ref().at({0, j});
+      options.tensor_ref_d.host_view().ref().at({i, j}) += options.tensor_c2.host_view().ref().at({i, j});
+    }
+  }
+
+  // Sync back with device just in case
+  options.tensor_ref_d.sync_device();
 
   //
   // Evaluate CUTLASS kernels

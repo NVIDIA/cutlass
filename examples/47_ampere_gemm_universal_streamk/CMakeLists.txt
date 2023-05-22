@@ -33,3 +33,7 @@ cutlass_example_add_executable(
   ampere_gemm_universal_streamk.cu
   )
 
+cutlass_example_add_executable(
+  47_ampere_gemm_universal_streamk_broadcast
+  ampere_gemm_universal_streamk_broadcast.cu
+  )
