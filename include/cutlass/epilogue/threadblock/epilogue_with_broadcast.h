@@ -863,6 +863,98 @@ private:
         frag_Broadcast_ptr[i % ThreadMap::Iterations::kColumn]);
     }
   }
+
+  public:
+    /// Stream-K reduce helper
+    CUTLASS_DEVICE
+    void reduce(
+        int reduce_fragment_idx,                        ///< Reduce fragment index
+        OutputOp const &output_op,                      ///< Output operator
+        ElementVector const * broadcast_ptr,            ///< Broadcast vector
+        OutputTileIterator destination_iterator,        ///< Tile iterator for destination
+        OutputTileIterator source_iterator1,            ///< Tile iterator for first  source accumulator matrix
+        OutputTileIterator source_iterator2,            ///< Tile iterator for second source accumulator matrix
+        TensorTileIterator tensor_iterator,             ///< Threadblock tile iterator for additional tensor operand
+        MatrixCoord const &problem_size =               ///< Problem size needed to guard against out-of-bounds accesses
+            MatrixCoord(Shape::kM, Shape::kN),
+        MatrixCoord const &threadblock_offset =         ///< Threadblock's initial offset within the problem size space
+            MatrixCoord()) 
+    {
+
+      BroadcastFragment broadcast_fragment;
+      load_broadcast_fragment_(broadcast_fragment, broadcast_ptr, problem_size, threadblock_offset);
+
+      // Initialize/load source-fragment data
+      typename OutputTileIterator::Fragment source_fragment1;
+      source_fragment1.clear();
+      typename OutputTileIterator::Fragment source_fragment2;
+      source_fragment2.clear();
+
+      if (output_op.is_source_needed())
+      {
+        source_iterator1 += reduce_fragment_idx;
+        source_iterator1.load(source_fragment1);
+
+        source_iterator2 += reduce_fragment_idx;
+        source_iterator2.load(source_fragment2);
+      }
+
+      // Load fragment from shared memory
+      typename SharedLoadIterator::Fragment aligned_accum_fragment[kPartitionsK];
+      shared_load_iterator_.load(aligned_accum_fragment[0]);
+
+      // Add fragments shared by other k partitions
+      if (kPartitionsK > 1)
+      {
+        plus <typename SharedLoadIterator::Fragment> add_fragments;
+
+        CUTLASS_PRAGMA_UNROLL
+        for ( int i = 1; i < kPartitionsK; ++i) {
+          shared_load_iterator_.add_pointer_offset(kSmemPointerOffset);
+          shared_load_iterator_.load(aligned_accum_fragment[i]);
+          aligned_accum_fragment[0] = add_fragments(aligned_accum_fragment[0], aligned_accum_fragment[i]);
+        }
+      }
+
+      //
+      // Apply output operation
+      //
+
+      typename OutputTileIterator::Fragment frag_Z;
+      typename TensorTileIterator::Fragment frag_T;
+
+      if (!output_op.is_source_needed()) {
+        apply_output_operator_source_not_needed_(
+          frag_Z,
+          frag_T,
+          output_op,
+          aligned_accum_fragment[0],
+          broadcast_fragment);
+      } else {
+        apply_output_operator_(
+          frag_Z,
+          frag_T,
+          output_op,
+          aligned_accum_fragment[0],
+          source_fragment1,
+          source_fragment2,
+          broadcast_fragment);
+      }
+
+      //
+      // Conditionally store fragments
+      //
+
+      if (OutputOp::kStoreZ) {
+        destination_iterator.store(frag_Z);
+        ++destination_iterator;
+      }
+
+      if (OutputOp::kStoreT) {
+        tensor_iterator.store(frag_T);
+        ++tensor_iterator;
+      }
+    }
 };
 
 
@@ -1529,6 +1621,92 @@ private:
         frag_Broadcast_ptr[i % ThreadMap::Iterations::kColumn]);
     }
   }
+
+
+  public:
+    /// Stream-K reduce helper
+    CUTLASS_DEVICE
+    void reduce(
+        int reduce_fragment_idx,                        ///< Reduce fragment index
+        OutputOp const &output_op,                      ///< Output operator
+        ElementVector const * broadcast_ptr,            ///< Broadcast vector
+        OutputTileIterator destination_iterator,        ///< Tile iterator for destination
+        OutputTileIterator source_iterator,             ///< Threadblock tile coordinate in GEMM (in units of threadblock tiles)
+        TensorTileIterator tensor_iterator,             ///< Threadblock tile iterator for additional tensor operand
+        MatrixCoord const &problem_size =               ///< Problem size needed to guard against out-of-bounds accesses
+            MatrixCoord(Shape::kM, Shape::kN),
+        MatrixCoord const &threadblock_offset =         ///< Threadblock's initial offset within the problem size space
+            MatrixCoord()) 
+    {
+
+      BroadcastFragment broadcast_fragment;
+      load_broadcast_fragment_(broadcast_fragment, broadcast_ptr, problem_size, threadblock_offset);
+
+      // Initialize/load source-fragment data
+      typename OutputTileIterator::Fragment source_fragment;
+      source_fragment.clear();
+
+      if (output_op.is_source_needed())
+      {
+        source_iterator += reduce_fragment_idx;
+        source_iterator.load(source_fragment);
+      }
+
+      // Load fragment from shared memory
+      typename SharedLoadIterator::Fragment aligned_accum_fragment[kPartitionsK];
+      shared_load_iterator_.load(aligned_accum_fragment[0]);
+
+      // Add fragments shared by other k partitions
+      if (kPartitionsK > 1)
+      {
+        plus <typename SharedLoadIterator::Fragment> add_fragments;
+
+        CUTLASS_PRAGMA_UNROLL
+        for ( int i = 1; i < kPartitionsK; ++i) {
+          shared_load_iterator_.add_pointer_offset(kSmemPointerOffset);
+          shared_load_iterator_.load(aligned_accum_fragment[i]);
+          aligned_accum_fragment[0] = add_fragments(aligned_accum_fragment[0], aligned_accum_fragment[i]);
+        }
+      }
+
+      //
+      // Apply output operation
+      //
+
+      typename OutputTileIterator::Fragment frag_Z;
+      typename TensorTileIterator::Fragment frag_T;
+
+      if (!output_op.is_source_needed()) {
+        apply_output_operator_source_not_needed_(
+          frag_Z,
+          frag_T,
+          output_op,
+          aligned_accum_fragment[0],
+          broadcast_fragment);
+      } else {
+        apply_output_operator_(
+          frag_Z,
+          frag_T,
+          output_op,
+          aligned_accum_fragment[0],
+          source_fragment,
+          broadcast_fragment);
+      }
+
+      //
+      // Conditionally store fragments
+      //
+
+      if (OutputOp::kStoreZ) {
+        destination_iterator.store(frag_Z);
+        ++destination_iterator;
+      }
+
+      if (OutputOp::kStoreT) {
+        tensor_iterator.store(frag_T);
+        ++tensor_iterator;
+      }
+    }
 };
 
 ////////////////////////////////////////////////////////////////////////////////
