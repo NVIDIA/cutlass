@@ -774,7 +774,8 @@ struct NumericArrayConverter {
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N; ++i) {
-      if (platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value) {
+      if( platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value )
+      {
         result[i] = convert_(s[i]);
       } else { // conjugate
         result[i] = conj(convert_(s[i]));
@@ -2078,7 +2079,7 @@ public:
   }
 
   CUTLASS_HOST_DEVICE
-  result_type operator()(source_type const &s) const{
+  result_type operator()(source_type const &s) const {
     return convert(s);
   }
 };

@@ -28,7 +28,7 @@ for (int cta_n = 0; cta_n < GemmN; cta_n += CtaTileN) {                     // f
       for (int warp_n = 0; warp_n < CtaTileN; warp_n += WarpTileN) {        // for each warp      } warp-level concurrency
         for (int warp_m = 0; warp_m < CtaTileM; warp_m += WarpTileM) {      //    for each warp   }
                                                                             //
-          for (int warp_k = 0; warp_k < CtaTileK; warp_k += MmaK) {         //       fully unroll across CtaTileK - one iteration of this loop is one "k Group" == "MmaK"
+          for (int warp_k = 0; warp_k < CtaTileK; warp_k += WarpTileK) {    //       fully unroll across CtaTileK - one iteration of this loop is one "k Group"
                                                                             //
             for (int mma_k = 0; mma_k < WarpTileK; mma_k += MmaK) {         // cutlass::gemm::warp::Mma
               for (int mma_n = 0; mma_n < WarpTileN; mma_n += MmaN) {       //

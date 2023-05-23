@@ -30,7 +30,7 @@
  **************************************************************************************************/
 #pragma once
 
-#if defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA)
+#if defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA) || defined(__clang__)
 #  define CUTE_HOST_DEVICE __forceinline__ __host__ __device__
 #  define CUTE_DEVICE      __forceinline__          __device__
 #  define CUTE_HOST        __forceinline__ __host__
