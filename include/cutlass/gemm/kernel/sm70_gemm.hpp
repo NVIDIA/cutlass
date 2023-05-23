@@ -129,21 +129,18 @@ public:
     };
   }
 
-  static
-  bool
+  static bool
   can_implement(Arguments const& args) {
     return args.mode == GemmUniversalMode::kGemm or
           (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
   }
 
-  static
-  int
+  static int
   get_workspace_size(Arguments const& args) {
     return 0;
   }
 
-  static constexpr
-  dim3
+  static dim3
   get_grid_shape(Params const& params) {
     int batch_count = 1;
     if constexpr (rank(ProblemShape{}) == 4) {
@@ -157,8 +154,7 @@ public:
     );
   }
 
-  static constexpr
-  dim3
+  static dim3
   get_block_shape() {
     return dim3(MaxThreadsPerBlock, 1, 1);
   }

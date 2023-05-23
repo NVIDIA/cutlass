@@ -103,14 +103,20 @@ bool get_cublas_transpose_operation(
 
 /// Maps a CUTLASS numeric type to a cuBLAS data type enumeration
 bool get_cublas_datatype(cublasDataType_t &data_type, library::NumericTypeID element_type) {
-  switch (element_type) {  
+  switch (element_type) {
   case library::NumericTypeID::kFE4M3:
+#if (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
     data_type = CUDA_R_8F_E4M3;
     return true;
+#endif
+    break;
   
   case library::NumericTypeID::kFE5M2:
+#if (__CUDACC_VER_MAJOR__ >= 12) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ >= 8))
     data_type = CUDA_R_8F_E5M2;
     return true;
+#endif
+    break;
 
   case library::NumericTypeID::kF16:
     data_type = CUDA_R_16F;
@@ -139,7 +145,7 @@ bool get_cublas_datatype(cublasDataType_t &data_type, library::NumericTypeID ele
     return true;
     
   case library::NumericTypeID::kS16: 
-   break;
+    break;
  
   case library::NumericTypeID::kS32: 
     data_type = CUDA_R_32I;
@@ -256,6 +262,13 @@ Status cublas_satisfies(library::GemmDescription const &desc) {
   // output type S4 and S8 not supported in cuBLAS
   if (desc.C.element == library::NumericTypeID::kS4 || 
     desc.C.element == library::NumericTypeID::kS8) {
+
+    return Status::kErrorNotSupported;
+  }
+
+  // input type BF16 and TF32 not supported in cuBLAS
+  if (desc.A.element == library::NumericTypeID::kBF16 || 
+    desc.A.element == library::NumericTypeID::kTF32) {
 
     return Status::kErrorNotSupported;
   }

@@ -660,12 +660,10 @@ public:
       accum = plus_accum(accum, pipe_state.tmp_accum_);
     }
 
-    // Optionally commit and drain all pending and predicated cp.async pnz from the GEMM mainloop
-    if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
-      cutlass::arch::cp_async_fence();
-      cutlass::arch::cp_async_wait<0>();
-      __syncthreads();
-    }
+    // Commit and drain all pending and predicated cp.async pnz from the GEMM mainloop
+    cutlass::arch::cp_async_fence();
+    cutlass::arch::cp_async_wait<0>();
+    __syncthreads();
 
   }
 

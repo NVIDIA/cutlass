@@ -108,7 +108,7 @@ public:
     return {work_idx_m, work_idx_n, static_cast<int32_t>(work_idx_l), current_work_linear_idx_ < scheduler_params.blocks_per_problem_};
   }
 
-  CUTLASS_DEVICE 
+  CUTLASS_DEVICE
   void
   advance_to_next_work(uint32_t advance_count = 1) {
     current_work_linear_idx_ += grid_blocks_total_ * advance_count;
@@ -117,7 +117,7 @@ public:
   // Given the inputs, computes the total number of output blocks this problem will compute over
   // Note that this is only the logical size of our grid, not the physical grid we will actually launch.
   template<class ProblemShapeMNKL, class BlockShape, class ClusterShape>
-  CUTLASS_HOST_DEVICE constexpr static
+  CUTLASS_HOST_DEVICE static
   dim3
   get_tiled_blk_shape_mnl(ProblemShapeMNKL problem_shape_mnkl, BlockShape blk_shape, ClusterShape cluster_shape) {
     // Across M and N is our Cluster tile, so we must round up the blocks to the nearest whole number of Cluster tiles
@@ -135,7 +135,7 @@ public:
 
   // Given the inputs, computes the physical grid we should launch.
   template<class ProblemShapeMNKL, class BlockShape, class ClusterShape>
-  CUTLASS_HOST_DEVICE constexpr static
+  CUTLASS_HOST_DEVICE static
   dim3
   get_grid_shape(ProblemShapeMNKL problem_shape_mnk, BlockShape blk_shape, ClusterShape cluster_shape, KernelHardwareInfo hw_info) {
     int const sm_count = hw_info.sm_count;

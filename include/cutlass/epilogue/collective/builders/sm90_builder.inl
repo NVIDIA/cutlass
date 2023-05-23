@@ -86,18 +86,11 @@ constexpr auto
 sm90_compute_tile_shape_or_override() {
   if constexpr (cute::is_same_v<EpilogueTileType, EpilogueTileAuto>) {
 
-    constexpr int SmemAlloc = 4096;
     if constexpr (detail::sm90_is_cooperative_v<Schedule>) {
-      constexpr int M = 128;
-      constexpr int N = SmemAlloc / (M * sizeof(Element));
-
-      return make_shape(Int<M>{}, Int<N>{});
+      return Shape<_128,_16>{};
     }
     else if constexpr (detail::sm90_is_warp_specialized_v<Schedule>) {
-      constexpr int M = 64;
-      constexpr int N = SmemAlloc / (M * sizeof(Element));
-
-      return make_shape(Int<M>{}, Int<N>{});
+      return Shape<_64,_32>{};
     }
     else {
       static_assert(cutlass::detail::dependent_false<Schedule>, "Unsupported schedule.");
@@ -167,8 +160,8 @@ template <
   class EpilogueTileType,
   class ElementAccumulator,
   class ElementCompute,
-  class ElementC,
-  class GmemLayoutTagC,
+  class ElementC_,
+  class GmemLayoutTagC_,
   int AlignmentC,
   class ElementD,
   class GmemLayoutTagD,
@@ -178,6 +171,11 @@ template <
   class DispatchPolicy
 >
 struct TmaBuilderImpl {
+
+  // Passing void C disables source load
+  using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,ElementD,ElementC_>; // prevents void ref breakages
+  using GmemLayoutTagC = cute::conditional_t<cute::is_void_v<ElementC_>,GmemLayoutTagD,GmemLayoutTagC_>;
+
   using GmemStrideTypeC = gemm::TagToStrideC_t<GmemLayoutTagC>;
   using GmemStrideTypeD = gemm::TagToStrideC_t<GmemLayoutTagD>;
 
@@ -188,7 +186,7 @@ struct TmaBuilderImpl {
       DispatchPolicy,
       TileShape_MNK,
       EpilogueTile_MN,
-      ElementC,
+      ElementC_, // Need to pass void through to expose via GemmUniversal
       GmemStrideTypeC,
       ElementD,
       GmemStrideTypeD,
@@ -246,8 +244,9 @@ struct CollectiveBuilder<
   static constexpr thread::ScaleType::Kind ScaleType = cute::is_void_v<ElementC_> ?
       thread::ScaleType::OnlyAlphaScaling : thread::ScaleType::Default;
 
+  static constexpr int FragmentSize = 1;
   using ThreadOp = thread::LinearCombination<
-    ElementD, 1, ElementAccumulator, ElementCompute,
+    ElementD, FragmentSize, ElementAccumulator, ElementCompute,
     ScaleType, FloatRoundStyle::round_to_nearest, ElementC>;
 
   using CollectiveOp = cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
@@ -267,7 +266,7 @@ template <
   class ElementAccumulator,
   class ElementCompute,
   class ElementC_,
-  class GmemLayoutTagC_,
+  class GmemLayoutTagC,
   int AlignmentC,
   class ElementD,
   class GmemLayoutTagD,
@@ -283,7 +282,7 @@ struct CollectiveBuilder<
     ElementAccumulator,
     ElementCompute,
     ElementC_,
-    GmemLayoutTagC_,
+    GmemLayoutTagC,
     AlignmentC,
     ElementD,
     GmemLayoutTagD,
@@ -292,43 +291,26 @@ struct CollectiveBuilder<
     cute::enable_if_t<cute::is_same_v<Schedule, TmaWarpSpecialized> ||
                       cute::is_same_v<Schedule, TmaWarpSpecializedCooperative> >> {
 public:
-  // Passing void C disables source load
-  using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,
-      ElementD, ElementC_>; // prevents cute breakages
-  using GmemLayoutTagC = cute::conditional_t<cute::is_void_v<ElementC_>,
-      GmemLayoutTagD, GmemLayoutTagC_>;
+  using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>,ElementD,ElementC_>; // prevents void ref breakages
   static constexpr thread::ScaleType::Kind ScaleType = cute::is_void_v<ElementC_> ?
       thread::ScaleType::OnlyAlphaScaling : thread::ScaleType::Default;
 
+  static constexpr int FragmentSize = 4;
   using ThreadOp = thread::LinearCombination<
-    ElementD, AlignmentD, ElementAccumulator, ElementCompute,
+    ElementD, FragmentSize, ElementAccumulator, ElementCompute,
     ScaleType, FloatRoundStyle::round_to_nearest, ElementC>;
 
-  using GmemStrideTypeC = gemm::TagToStrideC_t<GmemLayoutTagC>;
-  using GmemStrideTypeD = gemm::TagToStrideC_t<GmemLayoutTagD>;
-
-  using EpilogueTile_MN = decltype(detail::sm90_compute_tile_shape_or_override<
-      ElementD, EpilogueTileType, Schedule>());
-
+private:
   static constexpr int StagesC = 1;
   static constexpr int StagesD = 2;
   static constexpr bool DisableReuseSmemC = true;
-  using CollectiveOp = cutlass::epilogue::collective::CollectiveEpilogue<
-      cutlass::epilogue::Sm90TmaWarpSpecialized<StagesC,StagesD,DisableReuseSmemC>,
-      TileShape_MNK,
-      EpilogueTile_MN,
-      ElementC_, // need to pass void to expose via GemmUniversal
-      GmemStrideTypeC,
-      ElementD,
-      GmemStrideTypeD,
-      ThreadOp,
-      SM90_TMA_LOAD,
-      decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<GmemStrideTypeC, ElementC, TileShape_MNK>()),
-      decltype(detail::sm90_get_smem_load_op_for_source<GmemStrideTypeC, ElementC>()),
-      SM90_TMA_STORE,
-      decltype(detail::sm90_get_epilogue_smem_swizzle_layout_atom<GmemStrideTypeD, ElementD, EpilogueTile_MN>()),
-      decltype(detail::sm90_get_smem_store_op_for_accumulator<GmemStrideTypeD, ElementD>())
-    >;
+  using Impl = detail::TmaBuilderImpl<
+    TileShape_MNK, ClusterShape_MNK, EpilogueTileType, ElementAccumulator, ElementCompute,
+    ElementC_, GmemLayoutTagC, AlignmentC, ElementD, GmemLayoutTagD, AlignmentD,
+    Schedule, ThreadOp, cutlass::epilogue::Sm90TmaWarpSpecialized<StagesC,StagesD, DisableReuseSmemC>>;
+
+public:
+  using CollectiveOp = typename Impl::CollectiveOp;
 };
 
 // Auto builder
@@ -427,11 +409,11 @@ struct CollectiveBuilder<
     Schedule,
     cute::enable_if_t<cute::is_base_of_v<TmaWarpSpecializedElementwiseBase, Schedule> ||
                       cute::is_base_of_v<TmaWarpSpecializedCooperativeElementwiseBase, Schedule> >> {
-
 public:
+  static constexpr int FragmentSize = 4;
   using ThreadOp = thread::LinearCombinationGeneric<
     Schedule::ActivationFunctor,
-    ElementD, AlignmentD,
+    ElementD, FragmentSize,
     ElementAccumulator, ElementCompute, Schedule::Scale,
     Schedule::Round>;
 
@@ -455,7 +437,7 @@ template <
   class EpilogueTileType,
   class ElementAccumulator,
   class ElementCompute,
-  class ElementC,
+  class ElementC_,
   class GmemLayoutTagC,
   int AlignmentC,
   class ElementD,
@@ -471,7 +453,7 @@ struct CollectiveBuilder<
     EpilogueTileType,
     ElementAccumulator,
     ElementCompute,
-    ElementC,
+    ElementC_,
     GmemLayoutTagC,
     AlignmentC,
     ElementD,
@@ -480,10 +462,14 @@ struct CollectiveBuilder<
     Schedule,
     cute::enable_if_t<cute::is_base_of_v<TmaWarpSpecializedBiasElementwiseBase, Schedule> ||
                       cute::is_base_of_v<TmaWarpSpecializedCooperativeBiasElementwiseBase, Schedule> >> {
+private:
+  // Passing void C disables source load
+  using ElementC = cute::conditional_t<cute::is_void_v<ElementC_>, ElementD, ElementC_>; // prevents void ref breakages
 
 public:
+  static constexpr int FragmentSize = 4;
   using ThreadOp = thread::LinearCombinationBiasElementwise<
-      ElementC, ElementAccumulator, ElementCompute, ElementD, typename Schedule::ElementT, AlignmentD,
+      ElementC, ElementAccumulator, ElementCompute, ElementD, typename Schedule::ElementT, FragmentSize,
       typename Schedule::ActivationFunctor<ElementCompute>, typename Schedule::BiasOp<ElementCompute>,
       Schedule::StoreT, typename Schedule::ElementBias>;
 
@@ -492,7 +478,7 @@ private:
   static constexpr int StagesD = 2;
   using Impl = detail::TmaBuilderImpl<
     TileShape_MNK, ClusterShape_MNK, EpilogueTileType, ElementAccumulator, ElementCompute,
-    ElementC, GmemLayoutTagC, AlignmentC, ElementD, GmemLayoutTagD, AlignmentD,
+    ElementC_, GmemLayoutTagC, AlignmentC, ElementD, GmemLayoutTagD, AlignmentD,
     Schedule, ThreadOp, cutlass::epilogue::Sm90TmaWarpSpecializedBiasElementwise<StagesC,StagesD>>;
 
 public:
@@ -540,8 +526,9 @@ struct CollectiveBuilder<
   static constexpr thread::ScaleType::Kind ScaleType = cute::is_void_v<ElementC_> ?
       thread::ScaleType::OnlyAlphaScaling : thread::ScaleType::Default;
 
+  static constexpr int FragmentSize = 1;
   using ThreadOp = thread::LinearCombination<
-    ElementD, 1, ElementAccumulator, ElementCompute,
+    ElementD, FragmentSize, ElementAccumulator, ElementCompute,
     ScaleType, FloatRoundStyle::round_to_nearest, ElementC>;
 
   using CollectiveOp = cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<

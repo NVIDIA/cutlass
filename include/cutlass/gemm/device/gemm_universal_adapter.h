@@ -28,9 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/*! 
+/*!
   \file
-  \brief The universal GEMM accommodates serial reductions, parallel reductions, batched strided, and 
+  \brief The universal GEMM accommodates serial reductions, parallel reductions, batched strided, and
     batched array variants.
 */
 
@@ -57,7 +57,7 @@ namespace cutlass::gemm::device {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/*! 
+/*!
   GemmUniversalAdapter is a stateful, reusable GEMM handle built around a kernel
   of type cutlass::gemm::kernel::Gemm or cutlass::gemm::kernel::GemmUniversal.
 
@@ -159,10 +159,10 @@ public:
       typename CollectiveMainloop::GmemTiledCopyA, ElementA>();
   static int constexpr kAlignmentB = gemm::detail::get_alignment_count_from_gmem_tiled_copy<
       typename CollectiveMainloop::GmemTiledCopyB, ElementB>();
-
-  // NOTE: 3.0 DefaultEpilogues don't support vectorized stores (yet)
-  static int constexpr kAlignmentC = 1;
-  static int constexpr kAlignmentD = 1;
+  static int constexpr kAlignmentC = gemm::detail::get_alignment_count_from_gmem_tiled_copy<
+      typename CollectiveEpilogue::GmemTiledCopyC, ElementC>();
+  static int constexpr kAlignmentD = gemm::detail::get_alignment_count_from_gmem_tiled_copy<
+      typename CollectiveEpilogue::GmemTiledCopyD, ElementD>();
 
   using EpilogueOutputOp = typename CollectiveEpilogue::ThreadEpilogueOp;
 
@@ -327,7 +327,7 @@ public:
   static Status
   run(Params& params, cudaStream_t stream = nullptr) {
     CUTLASS_TRACE_HOST("GemmUniversal::run()");
-    dim3 constexpr block = GemmKernel::get_block_shape();
+    dim3 const block = GemmKernel::get_block_shape();
     dim3 const grid = get_grid_shape(params);
 
     // configure smem size and carveout
@@ -404,19 +404,19 @@ public:
 
   using GemmKernel = GemmKernel_;
 
-  static bool const kInternalTranspose = 
+  static bool const kInternalTranspose =
     cute::is_same<typename GemmKernel::LayoutC, cutlass::layout::RowMajor>::value;
 
   using ThreadblockShape = typename GemmKernel::Mma::Shape;
   using WarpShape = typename GemmKernel::WarpShape;
   using InstructionShape = typename GemmKernel::InstructionShape;
 
-  // warp-level, arch-level (instruction), math operator 
+  // warp-level, arch-level (instruction), math operator
   using WarpMmaOperator = typename GemmKernel::Mma::Policy::Operator;
   using ArchMmaOperator = typename WarpMmaOperator::ArchMmaOperator;
   using MathOperator = typename WarpMmaOperator::MathOperator;
-  
-  // Operator class and arch tag extract bottom-up 
+
+  // Operator class and arch tag extract bottom-up
   // set it for top-level gemm device-level template
   using OperatorClass = typename WarpMmaOperator::OperatorClass;
   using ArchTag = typename WarpMmaOperator::ArchTag;
@@ -444,15 +444,15 @@ public:
   using LayoutB = typename MapArguments::LayoutB;
   static ComplexTransform const kTransformB = MapArguments::kTransformB;
   static int const kAlignmentB = MapArguments::kAlignmentB;
-  
+
   using ElementC = typename GemmKernel::ElementC;
   using LayoutC = typename MapArguments::LayoutC;
   static int const kAlignmentC = GemmKernel::kAlignmentC;
-  
+
   // C and D same type for 2.x kernel
   using ElementD = ElementC;
   using LayoutD = LayoutC;
- 
+
   using TensorRefA = TensorRef<ElementA const, LayoutA>;
   using TensorRefB = TensorRef<ElementB const, LayoutB>;
   using TensorRefC = TensorRef<ElementC const, LayoutC>;
@@ -493,12 +493,12 @@ public:
 
   /// Gets the workspace size
   static size_t get_workspace_size(Arguments const &args) {
-    
+
     return UnderlyingOperator::get_workspace_size(to_underlying_arguments(args));
   }
 
   /// Computes the grid shape
-  static dim3 get_grid_shape(Arguments const &args) { 
+  static dim3 get_grid_shape(Arguments const &args) {
     return UnderlyingOperator::get_grid_shape(to_underlying_arguments(args));
   }
 
@@ -532,12 +532,12 @@ public:
 
   /// Runs the kernel using initialized state.
   Status operator()(
-    Arguments const &args, 
-    void *workspace = nullptr, 
+    Arguments const &args,
+    void *workspace = nullptr,
     cudaStream_t stream = nullptr) {
-    
+
     Status status = initialize(args, workspace, stream);
-    
+
     if (status == Status::kSuccess) {
       status = run(stream);
     }

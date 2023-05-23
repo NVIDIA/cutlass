@@ -641,6 +641,11 @@ public:
 
     }
 
+    // Commit and drain all pending and predicated cp.async pnz from the GEMM mainloop
+    cutlass::arch::cp_async_fence();
+    cutlass::arch::cp_async_wait<0>();
+    __syncthreads();
+
     // 2nd Gemm
 
     /// Iterator to load a warp-scoped tile of A1 operand from intermediate accumulator tile
@@ -871,7 +876,10 @@ public:
 
     }
 
-
+    // Commit and drain all pending and predicated cp.async pnz from the GEMM mainloop
+    cutlass::arch::cp_async_fence();
+    cutlass::arch::cp_async_wait<0>();
+    __syncthreads();
 
   }
 };
