@@ -46,8 +46,14 @@ namespace cute
 
 using dim3 = ::dim3;
 
+// MSVC doesn't define its C++ version macro to match
+// its C++ language version.  This means that when
+// building with MSVC, dim3 isn't constexpr-friendly.
 template <size_t I>
-CUTE_HOST_DEVICE constexpr
+CUTE_HOST_DEVICE
+#if ! defined(_MSC_VER)
+constexpr
+#endif
 uint32_t& get(dim3& a)
 {
   static_assert(I < 3, "Index out of range");
@@ -63,7 +69,10 @@ uint32_t& get(dim3& a)
 }
 
 template <size_t I>
-CUTE_HOST_DEVICE constexpr
+CUTE_HOST_DEVICE
+#if ! defined(_MSC_VER)
+constexpr
+#endif
 uint32_t const& get(dim3 const& a)
 {
   static_assert(I < 3, "Index out of range");
@@ -79,7 +88,10 @@ uint32_t const& get(dim3 const& a)
 }
 
 template <size_t I>
-CUTE_HOST_DEVICE constexpr
+CUTE_HOST_DEVICE
+#if ! defined(_MSC_VER)
+constexpr
+#endif
 uint32_t&& get(dim3&& a)
 {
   static_assert(I < 3, "Index out of range");

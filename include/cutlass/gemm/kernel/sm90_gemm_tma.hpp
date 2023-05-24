@@ -172,20 +172,20 @@ public:
     auto N = get<1>(args.problem_shape);
     auto K = get<2>(args.problem_shape);
     // Contiguous dimension for the TMA tensor should be 128b aligned
-    implementable = std::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> ? 
+    implementable = std::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> ?
                         K % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0;
-    implementable = implementable && (std::is_same_v<gemm::detail::StrideToLayoutTagB_t<StrideB>, layout::RowMajor> ? 
+    implementable = implementable && (std::is_same_v<gemm::detail::StrideToLayoutTagB_t<StrideB>, layout::RowMajor> ?
                         N % min_tma_aligned_elements == 0 : K % min_tma_aligned_elements == 0);
     implementable = implementable && (!cutlass::epilogue::collective::detail::IF_EPILOGUE_USES_TMA<CollectiveEpilogue>::value ||
                         (cutlass::epilogue::collective::detail::IF_EPILOGUE_USES_TMA<CollectiveEpilogue>::value &&
-                        std::is_same_v<gemm::detail::StrideToLayoutTagC_t<StrideC>, layout::RowMajor> ? 
+                        std::is_same_v<gemm::detail::StrideToLayoutTagC_t<StrideC>, layout::RowMajor> ?
                         N % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0));
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
       return implementable;
     }
 
-    constexpr bool is_beta_supported = 
+    constexpr bool is_beta_supported =
       CollectiveEpilogue::ThreadEpilogueOp::kScale == cutlass::epilogue::thread::ScaleType::Default;
     implementable = is_beta_supported || (args.epilogue.thread.beta == 0 && args.epilogue.thread.beta_ptr == nullptr);
     if (!implementable) {
@@ -196,15 +196,13 @@ public:
     return implementable;
   }
 
-  static
-  int
+  static int
   get_workspace_size(Arguments const& args) {
     return 0;
   }
 
   // Computes the kernel launch grid shape based on runtime parameters
-  static constexpr
-  dim3
+  static dim3
   get_grid_shape(Params const& params) {
     auto cluster_shape = ClusterShape{};
     auto tile_shape = TileShape{};
@@ -213,8 +211,7 @@ public:
         problem_shape_MNKL, tile_shape, cluster_shape);
   }
 
-  static constexpr
-  dim3
+  static dim3
   get_block_shape() {
     return dim3(MaxThreadsPerBlock, 1, 1);
   }
@@ -243,7 +240,7 @@ public:
     int warp_idx   = canonical_warp_idx();
     int lane_predicate = cute::elect_one_sync();
 
-    // Issue Tma Descriptor Prefetch from a single thread 
+    // Issue Tma Descriptor Prefetch from a single thread
     if ((warp_idx == 0) && lane_predicate) {
       CollectiveMainloop::prefetch_tma_descriptors(params.mainloop);
     }

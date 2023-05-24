@@ -623,7 +623,7 @@ partition_shape_C(TiledMMA<Args...> const& mma, Shape_MN const& shape_MN)
   auto V = shape<1>(typename TiledMMA<Args...>::AtomLayoutC_TV{});
   auto M = shape_div(size<0>(shape_MN), size<0>(atomMNK) * size<1>(thrVMNK));
   auto N = shape_div(size<1>(shape_MN), size<1>(atomMNK) * size<2>(thrVMNK));
-  return tuple_cat(make_shape(V,M,N), take<2,R>(shape_MN));
+  return cute::tuple_cat(make_shape(V,M,N), take<2,R>(shape_MN));
 }
 
 template <class... Args, class Shape_MN>
@@ -651,7 +651,7 @@ partition_shape_A(TiledMMA<Args...> const& mma, Shape_MK const& shape_MK)
   auto V = shape<1>(typename TiledMMA<Args...>::AtomLayoutA_TV{});
   auto M = shape_div(size<0>(shape_MK), size<0>(atomMNK) * size<1>(thrVMNK));
   auto K = shape_div(size<1>(shape_MK), size<2>(atomMNK) * size<3>(thrVMNK));
-  return tuple_cat(make_shape(V,M,K), take<2,R>(shape_MK));
+  return cute::tuple_cat(make_shape(V,M,K), take<2,R>(shape_MK));
 }
 
 template <class... Args, class Shape_NK>
@@ -666,7 +666,7 @@ partition_shape_B(TiledMMA<Args...> const& mma, Shape_NK const& shape_NK)
   auto V = shape<1>(typename TiledMMA<Args...>::AtomLayoutB_TV{});
   auto N = shape_div(size<0>(shape_NK), size<1>(atomMNK) * size<2>(thrVMNK));
   auto K = shape_div(size<1>(shape_NK), size<2>(atomMNK) * size<3>(thrVMNK));
-  return tuple_cat(make_shape(V,N,K), take<2,R>(shape_NK));
+  return cute::tuple_cat(make_shape(V,N,K), take<2,R>(shape_NK));
 }
 
 //

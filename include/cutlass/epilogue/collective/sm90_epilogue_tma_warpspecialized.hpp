@@ -48,8 +48,8 @@ template <
   int StagesC_,
   int StagesD_,
   bool DisableSmemReuseC_,
-  class BlockTileShape_, // (BLK_M,BLK_N,BLK_K)
-  class EpilogueTile_,   // (EPI_TILE_M,EPI_TILE_N) per-collective
+  class BlockTileShape_,    //     (BLK_M,BLK_N,BLK_K)
+  class EpilogueTileShape_, // (EPI_TILE_M,EPI_TILE_N)
   class ElementC_,
   class StrideC_,
   class ElementD_,
@@ -65,7 +65,7 @@ template <
 class CollectiveEpilogue<
     Sm90TmaWarpSpecialized<StagesC_,StagesD_,DisableSmemReuseC_>,
     BlockTileShape_,
-    EpilogueTile_,
+    EpilogueTileShape_,
     ElementC_,
     StrideC_,
     ElementD_,
@@ -84,7 +84,7 @@ public:
   //
   using DispatchPolicy = Sm90TmaWarpSpecialized<StagesC_,StagesD_,DisableSmemReuseC_>;
   using BlockTileShape = BlockTileShape_;
-  using EpilogueTile = EpilogueTile_;
+  using EpilogueTileShape = EpilogueTileShape_;
   using ThreadEpilogueOp = ThreadEpilogueOp_;
   using ElementAccumulator = typename ThreadEpilogueOp::ElementAccumulator;
   using ElementCompute = typename ThreadEpilogueOp::ElementCompute;
@@ -103,24 +103,27 @@ public:
   using SmemLayoutAtomD = SmemLayoutAtomD_;
   using CopyOpR2S = CopyOpR2S_;
 
+  using GmemTiledCopyC = SM90_TMA_LOAD;
+  using GmemTiledCopyD = SM90_TMA_STORE;
+
   constexpr static int kOutputAlignment = ThreadEpilogueOp::kCount;
   constexpr static bool iskThreadEpilogueOpWithBias = detail::IsThreadEpilogueOpWithBias<ThreadEpilogueOp>::value;
   using AlignmentType = typename uint_bit<sizeof_bits<ElementOutput>::value * kOutputAlignment>::type;
 
-  static_assert(sizeof(ElementD) == 2, "Only 16b output supported for now");
-  static_assert(!is_layout<EpilogueTile>::value && is_tuple<EpilogueTile>::value, "EpilogueTile must be a cute::Tile or cute::Shape");
+  static_assert(!is_layout<EpilogueTileShape>::value && is_tuple<EpilogueTileShape>::value, "EpilogueTileShape must be a cute::Shape");
   static_assert(rank(BlockTileShape{}) == 3, "BlockTileShape must be rank-3: [BLK_M,BLK_N,BLK_K]");
-  static_assert(rank(EpilogueTile{}) == 2, "EpilogueTile must be rank-2: [EPI_TILE_M,EPI_TILE_N]");
+  static_assert(rank(EpilogueTileShape{}) == 2, "EpilogueTileShape must be rank-2: [EPI_TILE_M,EPI_TILE_N]");
   static_assert(rank(StrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
   static_assert(rank(StrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
 
 private:
-  using InternalElementC = std::conditional_t<std::is_void_v<ElementC>,ElementD,ElementC>; // prevents void ref breakages
+  using InternalElementC = cute::conditional_t<cute::is_void_v<ElementC>,ElementD,ElementC>; // prevents void ref breakages
   constexpr static int StagesC = StagesC_;
   constexpr static int StagesD = StagesD_;
   constexpr static bool is_source_supported = ThreadEpilogueOp::kScale == cutlass::epilogue::thread::ScaleType::Default ||
                                               ThreadEpilogueOp::kScale == cutlass::epilogue::thread::ScaleType::NoBetaScaling;
-  static_assert((std::is_void_v<ElementC> && not is_source_supported) || (not std::is_void_v<ElementC> && is_source_supported));
+  static_assert((cute::is_void_v<ElementC> && not is_source_supported) || (not cute::is_void_v<ElementC> && is_source_supported),
+                "Inconsistent C type and Scale kind");
 
   // internal optimization to reuse C shared memory for storing D
   using SmemLayoutAtomBitsC = decltype(downcast<sizeof_bits<InternalElementC>::value>(SmemLayoutAtomC{}));
@@ -131,21 +134,14 @@ private:
                                      StrideC{} == StrideD{} &&
                                      cute::is_same_v<SmemLayoutAtomBitsC,SmemLayoutAtomBitsD>;
 
-  // Find the max contiguous layout usable by TMA (if EpilogueTile is a by-mode tiler)
-  using SmemLayoutTmaD = decltype(tile_to_shape(
-      SmemLayoutAtomD{},
-      make_shape(max_common_vector(make_layout(get<0>(EpilogueTile{})),make_layout(get<0>(EpilogueTile{}))),
-                 max_common_vector(make_layout(get<1>(EpilogueTile{})),make_layout(get<1>(EpilogueTile{})))),
-      cute::conditional_t<get<0>(StrideD{}) == 1, Step<_2,_1>, Step<_1,_2>>{} ));
-
 public:
   using SmemLayoutC = decltype(tile_to_shape(
       SmemLayoutAtomC{},
       make_shape(size<0>(BlockTileShape{}), size<1>(BlockTileShape{}), Int<StagesC>{}),
       cute::conditional_t<get<0>(StrideC{}) == 1, Step<_2,_1,_3>, Step<_1,_2,_3>>{} ));
   using SmemLayoutD = decltype(tile_to_shape(
-      SmemLayoutTmaD{},
-      make_shape(size<0>(shape(EpilogueTile{})), size<1>(shape(EpilogueTile{})), Int<StagesD>{}),
+      SmemLayoutAtomD{},
+      make_shape(size<0>(EpilogueTileShape{}), size<1>(EpilogueTileShape{}), Int<StagesD>{}),
       cute::conditional_t<get<0>(StrideD{}) == 1, Step<_2,_1,_3>, Step<_1,_2,_3>>{} ));
 
   // TMA pipeline for loading C
@@ -194,7 +190,7 @@ public:
         CopyOpS2G{},
         make_tensor(static_cast<ElementD const*>(nullptr),
             repeat_like(StrideD{}, int32_t(0)), StrideD{}),
-        SmemLayoutTmaD{}));
+        SmemLayoutD{}(_,_,0)));
 
     typename ThreadEpilogueOp::Params thread{};
     TMA_C tma_load_c;
@@ -210,23 +206,32 @@ public:
   to_underlying_arguments(
       ProblemShape const& problem_shape,
       Arguments const& args,
-      [[maybe_unused]] void* workspace)
-  {
+      [[maybe_unused]] void* workspace) {
     // Optionally append _1s until problem shape is rank-4 in case its is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(problem_shape, Int<1>{});
     auto M = get<0>(problem_shape_MNKL);
     auto N = get<1>(problem_shape_MNKL);
     auto L = get<3>(problem_shape_MNKL);
-    Tensor tensor_c = make_tensor(static_cast<InternalElementC const*>(args.ptr_C), make_layout(make_shape(M,N,L), args.dC));
+
+    typename Params::TMA_C tma_load_c = [&]() {
+      if constexpr (not cute::is_void_v<ElementC>) {
+        Tensor tensor_c = make_tensor(static_cast<InternalElementC const*>(args.ptr_C), make_layout(make_shape(M,N,L), args.dC));
+        return make_tma_copy(
+            CopyOpG2S{},
+            tensor_c,
+            SmemLayoutC{}(_,_,0));
+      }
+      else {
+        return typename Params::TMA_C{};
+      }
+    }();
+
     Tensor tensor_d = make_tensor(args.ptr_D, make_layout(make_shape(M,N,L), args.dD));
-    typename Params::TMA_C tma_load_c = make_tma_copy(
-        CopyOpG2S{},
-        tensor_c,
-        SmemLayoutC{}(_,_,0));
     typename Params::TMA_D tma_store_d = make_tma_copy(
         CopyOpS2G{},
         tensor_d,
-        SmemLayoutTmaD{});
+        SmemLayoutD{}(_,_,0));
+
     return {
       args.thread,
       tma_load_c,
@@ -378,8 +383,8 @@ public:
     auto L = get<3>(problem_shape_mnkl);
     auto mma_tile_m = size<0>(typename TiledMma::TiledShape_MNK{});
     auto mma_tile_n = size<1>(typename TiledMma::TiledShape_MNK{});
-    auto epi_tile_m = size<0>(shape(EpilogueTile{}));
-    auto epi_tile_n = size<1>(shape(EpilogueTile{}));
+    auto epi_tile_m = size<0>(EpilogueTileShape{});
+    auto epi_tile_n = size<1>(EpilogueTileShape{});
 
     // Represent the full output tensor
     Tensor mD_mnl = params.tma_store_d.get_tma_tensor(make_shape(M,N,L));                                    // (m,n,l)
@@ -396,11 +401,14 @@ public:
                               SmemLayoutD{});
 
     // Tile thread(b)lock tensors by (E)pilogue output tile shape (bE)
-    Tensor bEsC = local_tile(sC, EpilogueTile{}, _);                             // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
-    Tensor bEgD = local_tile(gD, EpilogueTile{}, _);                             // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
+    Tensor bEsC = local_tile(sC, EpilogueTileShape{}, _);                        // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
+    Tensor bEgD = local_tile(gD, EpilogueTileShape{}, _);                        // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
 
     // Partition for register to smem copy (tRS_)
-    TiledCopy tiled_r2s = make_tiled_copy_C_atom(Copy_Atom<CopyOpR2S,ElementD>{}, tiled_mma);
+    using CopyAtomR2S = cute::conditional_t<cute::is_same_v<CopyOpR2S,DefaultCopy>,
+                          Copy_Atom<UniversalCopy<uint_byte_t<sizeof(ElementD)*2>>,ElementD>,
+                          Copy_Atom<CopyOpR2S,ElementD>>;
+    TiledCopy tiled_r2s = make_tiled_copy_C_atom(CopyAtomR2S{}, tiled_mma);
     ThrCopy thread_r2s = tiled_r2s.get_slice(thread_idx);
     Tensor tRS_rAcc = thread_r2s.retile_S(accumulators);                               //     ((R2S,R2S_V),MMA_M,MMA_N)
     Tensor tRS_sD   = conditional_return<ReuseSmemC>(
@@ -430,7 +438,7 @@ public:
                     thrblk_s2g.partition_S(bEsD) );                                    //        (S2G,S2G_M,S2G_N,PIPE)
     Tensor tSG_gD = thrblk_s2g.partition_D(bEgD);                                      // (S2G,S2G_M,S2G_N,EPI_M,EPI_N)
 
-    CUTE_STATIC_ASSERT(size<0,0>(tRS_rAcc) % ThreadEpilogueOp::kCount == 0, "ThreadEpilogueOp does not vectorize properly");
+    CUTE_STATIC_ASSERT(size<0>(tRS_rAcc) % ThreadEpilogueOp::kCount == 0, "ThreadEpilogueOp does not vectorize properly");
     CUTE_STATIC_ASSERT(mma_tile_m == epi_tile_m, "EPI_TILE_M must equal MMA_TILE_M");
     CUTE_STATIC_ASSERT(mma_tile_n % epi_tile_n == 0, "EPI_TILE_N must divide MMA_TILE_N");
 
@@ -464,7 +472,13 @@ public:
         int r2s_v = epi_n * size(tRS_rD_frg);
         if (epilogue_op.is_source_needed()) {
           // Copy source tile to register from smem
-          copy(tiled_s2r, tSR_sC(_,_,_,epi_m,epi_n), tSR_rC);
+          if constexpr (cute::is_same_v<CopyOpS2R,DefaultCopy>) {
+            copy(tSR_sC(_,_,_,epi_m,epi_n), tSR_rC);
+          }
+          else {
+            copy(tiled_s2r, tSR_sC(_,_,_,epi_m,epi_n), tSR_rC);
+          }
+
           CUTLASS_PRAGMA_UNROLL
           for (int i = 0; i < size(tRS_rD_frg); ++i) {
             tRS_rD_frg(i) = epilogue_op(tRS_rAcc_frg_mn(r2s_v + i), tRS_rC_frg(i));
@@ -491,7 +505,12 @@ public:
           }
 
           // Copy output tile to smem from register
-          copy(tiled_r2s, tRS_rD, tRS_sD(_,_,_,epi_m,epi_n));
+          if constexpr (cute::is_same_v<CopyOpR2S,DefaultCopy>) {
+            copy(tRS_rD, tRS_sD(_,_,_,epi_m,epi_n));
+          }
+          else {
+            copy(tiled_r2s, tRS_rD, tRS_sD(_,_,_,epi_m,epi_n));
+          }
         }
         else {
           // Issue the TMA store of the previous iteration
@@ -514,7 +533,12 @@ public:
           synchronize();
 
           // Copy tile to smem from register
-          copy(tiled_r2s, tRS_rD, tRS_sD(_,_,_,store_pipe_producer_state.index()));
+          if constexpr (cute::is_same_v<CopyOpR2S,DefaultCopy>) {
+            copy(tRS_rD, tRS_sD(_,_,_,store_pipe_producer_state.index()));
+          }
+          else {
+            copy(tiled_r2s, tRS_rD, tRS_sD(_,_,_,store_pipe_producer_state.index()));
+          }
 
           // Advance pipeline state
           store_pipe_producer_state_prev = store_pipe_producer_state;

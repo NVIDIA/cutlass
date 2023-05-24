@@ -110,7 +110,7 @@ public:
   static constexpr uint32_t LoadRegisterRequirement = 40;
   static constexpr uint32_t MmaRegisterRequirement = 232;
 
-  // Order Sequence barrier with two stages: one for Mainloop and one for Epilogue 
+  // Order Sequence barrier with two stages: one for Mainloop and one for Epilogue
   static constexpr uint32_t StagesPerMathWarpGroup = 2;
   using MathWarpGroupOrderBarrier = cutlass::OrderedSequenceBarrier<
     StagesPerMathWarpGroup, NumMmaWarpGroups>;
@@ -210,20 +210,20 @@ public:
     auto N = get<1>(args.problem_shape);
     auto K = get<2>(args.problem_shape);
     // Contiguous dimension for the TMA tensor should be 128b aligned
-    implementable = std::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> ? 
+    implementable = std::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> ?
                         K % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0;
-    implementable = implementable && (std::is_same_v<gemm::detail::StrideToLayoutTagB_t<StrideB>, layout::RowMajor> ? 
+    implementable = implementable && (std::is_same_v<gemm::detail::StrideToLayoutTagB_t<StrideB>, layout::RowMajor> ?
                         N % min_tma_aligned_elements == 0 : K % min_tma_aligned_elements == 0);
     implementable = implementable && (!cutlass::epilogue::collective::detail::IF_EPILOGUE_USES_TMA<CollectiveEpilogue>::value ||
                         (cutlass::epilogue::collective::detail::IF_EPILOGUE_USES_TMA<CollectiveEpilogue>::value &&
-                        std::is_same_v<gemm::detail::StrideToLayoutTagC_t<StrideC>, layout::RowMajor> ? 
+                        std::is_same_v<gemm::detail::StrideToLayoutTagC_t<StrideC>, layout::RowMajor> ?
                         N % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0));
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
       return implementable;
     }
 
-    constexpr bool is_beta_supported = 
+    constexpr bool is_beta_supported =
       CollectiveEpilogue::ThreadEpilogueOp::kScale == cutlass::epilogue::thread::ScaleType::Default;
     implementable = is_beta_supported || (args.epilogue.thread.beta == 0 && args.epilogue.thread.beta_ptr == nullptr);
     if (!implementable) {
@@ -241,15 +241,13 @@ public:
   }
 
   // Computes the kernel launch grid shape based on runtime parameters
-  static constexpr
-  dim3
+  static dim3
   get_grid_shape(Params const& params) {
     // Given device SM count, set grid size s.t. we do not launch more thread blocks than we can run concurrently
     return detail::PersistentTileSchedulerSm90::get_grid_shape(params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info);
   }
 
-  static constexpr
-  dim3
+  static dim3
   get_block_shape() {
     return dim3(MaxThreadsPerBlock, 1, 1);
   }
@@ -341,7 +339,7 @@ public:
     typename CollectiveMainloop::PipelineState mainloop_pipe_consumer_state;
     typename CollectiveEpilogue::LoadPipelineState epi_load_pipe_consumer_state;
 
-    // For the DMA Load (producer) we start with an opposite phase 
+    // For the DMA Load (producer) we start with an opposite phase
     // i.e., we skip all waits since we know that the buffer is indeed empty
     PipelineState mainloop_pipe_producer_state = cutlass::make_producer_start_state<MainloopPipeline>();
     PipelineState epi_load_pipe_producer_state = cutlass::make_producer_start_state<EpiLoadPipeline>();
@@ -389,9 +387,9 @@ public:
     detail::PersistentTileSchedulerSm90 scheduler;
 
     if (warp_group_role == WarpGroupRole::Consumer1) {
-      // Advance 2nd Math WG to the next work tile for the startup 
+      // Advance 2nd Math WG to the next work tile for the startup
       scheduler.advance_to_next_work();
-      // Advance 2nd Math WG pipeline states to the end of 1st Math WG 
+      // Advance 2nd Math WG pipeline states to the end of 1st Math WG
       mainloop_pipe_consumer_state.advance(k_tile_count);
       epi_load_pipe_consumer_state.advance(c_tile_count);
       epi_store_pipe_producer_state.advance(d_tile_count);
@@ -486,7 +484,7 @@ public:
           params.mainloop
         );
 
-        // Cue for next Math WG's MMA to start 
+        // Cue for next Math WG's MMA to start
         math_wg_order_barrier.arrive();
 
         // Make sure the math instructions are done and free buffers before entering the epilogue
@@ -522,7 +520,7 @@ public:
         // Wait for all TMA stores to complete
         epi_store_pipeline.producer_tail(epi_store_pipe_producer_state);
 
-        // Cue for next Math WG's Epilogue to start 
+        // Cue for next Math WG's Epilogue to start
         math_wg_order_barrier.arrive();
 
         // Get next work tile

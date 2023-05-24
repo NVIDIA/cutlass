@@ -846,12 +846,10 @@ public:
 
     }
     
-    if (SharedMemoryClear == SharedMemoryClearOption::kZfill) {
-      // commit and drain all pending and predicated cp.async pnz from the GEMM mainloop
-      cutlass::arch::cp_async_fence();
-      cutlass::arch::cp_async_wait<0>();
-      __syncthreads();
-    }
+    // commit and drain all pending and predicated cp.async pnz from the GEMM mainloop
+    cutlass::arch::cp_async_fence();
+    cutlass::arch::cp_async_wait<0>();
+    __syncthreads();
 
   }
 };
