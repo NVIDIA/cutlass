@@ -522,15 +522,27 @@ stride_to_layout_tag_B() {
 template <class GmemTiledCopy, class Element>
 constexpr int
 get_alignment_count_from_gmem_tiled_copy() {
-  // For TMA tiled copies, we know the alignment has to be 128 bits
-  if constexpr (   cute::is_base_of_v<cute::SM90_TMA_LOAD,                GmemTiledCopy>
-                || cute::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,      GmemTiledCopy>
-                ) {
-    return 128 / sizeof_bits<Element>::value;
+  if constexpr (cute::is_void_v<GmemTiledCopy>) {
+    return 1;
   }
+
+  // Account for ElementC = void kernels
+  else if constexpr (cute::is_void_v<Element>) {
+    return 0;
+  }
+
   else {
-    // For non-TMA tiled copies, TiledCopy holds the alignment count directly in its TiledShape_MN
-    return GmemTiledCopy::NumValSrc;
+    // For TMA tiled copies, we know the alignment has to be 128 bits
+    if constexpr (   cute::is_base_of_v<cute::SM90_TMA_LOAD,                GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,      GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_STORE,               GmemTiledCopy>
+                  ) {
+      return 128 / sizeof_bits<Element>::value;
+    }
+    else {
+      // For non-TMA tiled copies, TiledCopy holds the alignment count directly in its TiledShape_MN
+      return GmemTiledCopy::NumValSrc;
+    }
   }
 }
 

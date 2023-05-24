@@ -664,6 +664,11 @@ public:
 
     }
 
+    // Insert fence and wait for all outstanding cp.async operations to commit.
+    cutlass::arch::cp_async_fence();
+    cutlass::arch::cp_async_wait<0>();
+    __syncthreads();
+
     /// Epilogue for the first Implicit Gemm
     Epilogue0 epilogue0;
 
@@ -855,7 +860,10 @@ public:
 
     }
 
-
+    // Commit and drain all pending and predicated cp.async pnz from the GEMM mainloop
+    cutlass::arch::cp_async_fence();
+    cutlass::arch::cp_async_wait<0>();
+    __syncthreads();
 
   }
 };

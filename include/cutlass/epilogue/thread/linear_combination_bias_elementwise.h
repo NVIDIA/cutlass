@@ -87,7 +87,7 @@ public:
 
   using FragmentAccumulator = Array<ElementAccumulator, kElementsPerAccess>;
   using FragmentCompute = Array<ElementCompute, kElementsPerAccess>;
-  using FragmentC = Array<ElementOutput, kElementsPerAccess>;
+  using FragmentC = Array<ElementC, kElementsPerAccess>;
   using FragmentZ = Array<ElementZ, kElementsPerAccess>;
   using FragmentT = Array<ElementT, kElementsPerAccess>;
 

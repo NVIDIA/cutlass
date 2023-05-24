@@ -773,7 +773,7 @@ TEST(SM90_Device_Gemm_f16n_f16n_f32n_tensor_op_gmma_f32_cooperative, 256x128x64_
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
 }
 
-TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 256x128x64_2x2x1) {
+TEST(SM90_Device_Gemm_f16t_f16n_f16n_tensor_op_gmma_f32_cooperative_epilogue, 256x128x64_2x2x1) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -810,7 +810,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 25
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
 }
 
-TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 256x128x64_2x2x1) {
+TEST(SM90_Device_Gemm_f16t_f16n_f16t_tensor_op_gmma_f32_cooperative_epilogue, 256x128x64_2x2x1) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::RowMajor;
@@ -824,6 +824,80 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 25
       float, float,
       cutlass::half_t, LayoutC, 8,
       cutlass::half_t, LayoutC, 8,
+      cutlass::epilogue::TmaWarpSpecializedCooperative
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      cutlass::half_t, LayoutA, 8,
+      cutlass::half_t, LayoutB, 8,
+      float,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+      cutlass::gemm::KernelTmaWarpSpecializedCooperative
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+}
+
+TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_cooperative_epilogue, 128x128x64_2x2x1) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+  using TileShape_MNK = Shape<_128,_128,_64>;
+  using ClusterShape_MNK = Shape<_2,_2,_1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      float, LayoutC, 4,
+      float, LayoutC, 4,
+      cutlass::epilogue::TmaWarpSpecializedCooperative
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      cutlass::half_t, LayoutA, 8,
+      cutlass::half_t, LayoutB, 8,
+      float,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+      cutlass::gemm::KernelTmaWarpSpecializedCooperative
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+}
+
+TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_cooperative_epilogue, 128x128x64_2x2x1) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::RowMajor;
+  using TileShape_MNK = Shape<_128,_128,_64>;
+  using ClusterShape_MNK = Shape<_2,_2,_1>;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileShape_MNK, ClusterShape_MNK,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      float, LayoutC, 4,
+      float, LayoutC, 4,
       cutlass::epilogue::TmaWarpSpecializedCooperative
     >::CollectiveOp;
 

@@ -4079,32 +4079,36 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
   max_cc = 90
 
   for math_inst in math_instructions:
-    tile_descriptions = [
-      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+    tile_descriptions_small = [
+      # Not compatible with TmaWarpSpecializedCooperative
+      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+       0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+       0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+      TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+       0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+    ]
+    tile_descriptions_medium = [
       TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
         0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
+    ]
+    tile_descriptions_large = [
+      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
+      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
+      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
+        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
       TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1]*2, math_inst.instruction_shape[2]*4],
         0, [4, 2, 1], math_inst, min_cc, max_cc, [2,1,1]),
-      #TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      #  0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]), - Not compatible with TmaWarpSpecializedCooperative
-      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),
       TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1]*2, math_inst.instruction_shape[2]*4],
         0, [4, 2, 1], math_inst, min_cc, max_cc, [1,2,1]),
-      #TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      #  0, [4, 1, 1], math_inst, min_cc, max_cc, [1,2,1]),- Not compatible with TmaWarpSpecializedCooperative
-      TileDescription([math_inst.instruction_shape[0]*4, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-      TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-        0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
-      #TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
-      #  0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]), - Not compatible with TmaWarpSpecializedCooperative
     ]
+    tile_descriptions = tile_descriptions_medium + tile_descriptions_large
 
     data_type = {
       "a_type"   : math_inst.element_a,
@@ -4139,11 +4143,17 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
     CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)
 
     # persistent kernels with TMA epilogues
-    if data_type["c_type"] in [DataType.f16, DataType.bf16] and CudaToolkitVersionSatisfies(cuda_version, 12, 1):
-      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
-        [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
-         [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
-      # Emit instance without C allocation+load
+    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
+      # not enough smem for 256x128 f32 out with C allocation
+      if data_type["d_type"] == DataType.f32:
+        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions_medium, data_type,
+          [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
+           [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
+      else:
+        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
+          [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
+           [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
+      # Emit instance without C allocation + load
       data_type["c_type"] = DataType.void
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
         [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
@@ -4170,7 +4180,7 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
 
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed, schedules)
       # persistent kernels with TMA epilogues
-      if data_type_mixed["c_type"] in [DataType.f16, DataType.bf16] and CudaToolkitVersionSatisfies(cuda_version, 12, 1):
+      if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
         CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,
           [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
            [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
@@ -4330,6 +4340,28 @@ def GenerateSM90_TensorOp_int8_WGMMA_gemm(manifest, cuda_version):
 
     for data_type in data_types:
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type)
+
+    # persistent kernels with TMA epilogues
+    if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
+      # Emit instance without C allocation+load
+      data_types += [
+        {
+          "a_type"   : math_inst.element_a,
+          "b_type"   : math_inst.element_b,
+          "c_type"   : DataType.void,
+          "d_type"   : math_inst.element_accumulator,
+          "acc_type" : math_inst.element_accumulator,
+          "epi_type" : math_inst.element_accumulator
+        }
+      ]
+      for data_type in data_types:
+        # Set alignment d based on Destination format.
+        for layout in layouts:
+          layout[2][1] = 128 // DataTypeSize[data_type["d_type"]]
+        CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
+          [[KernelScheduleType.TmaWarpSpecializedPingpong,    EpilogueScheduleType.TmaWarpSpecialized],
+          [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.TmaWarpSpecializedCooperative]])
+
 
 #
 def GenerateSM90_TensorOp_1684(manifest, cuda_version):

@@ -499,7 +499,7 @@ flatten(T const& t)
 
 namespace detail {
 
-// Shortcut around tuple_cat for common insert/remove/repeat cases
+// Shortcut around cute::tuple_cat for common insert/remove/repeat cases
 template <class T, class X, int... I, int... J, int... K>
 CUTE_HOST_DEVICE constexpr
 auto

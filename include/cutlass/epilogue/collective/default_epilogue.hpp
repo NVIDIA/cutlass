@@ -75,6 +75,9 @@ public:
   using ElementD = typename ThreadEpilogueOp::ElementD;
   using StrideD = StrideD_;
 
+  using GmemTiledCopyC = void;
+  using GmemTiledCopyD = void;
+
   static const int kOutputAlignment = ThreadEpilogueOp::kCount;
   using AlignmentType = typename cute::uint_bit<sizeof_bits<ElementOutput>::value * kOutputAlignment>::type;
 
