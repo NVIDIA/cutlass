@@ -76,6 +76,7 @@ find_library(
   PATHS
   ${CUDA_TOOLKIT_ROOT_DIR}
   PATH_SUFFIXES
+  lib/x86_64-linux-gnu
   lib/x64
   lib64
   lib
@@ -120,6 +121,7 @@ find_library(
   PATHS
   ${CUDA_TOOLKIT_ROOT_DIR}
   PATH_SUFFIXES
+  lib/x86_64-linux-gnu
   lib/x64
   lib64
   lib
