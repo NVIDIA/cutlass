@@ -17,6 +17,7 @@
 * [Batched B2B GEMM](examples/13_two_tensor_op_fusion) now can run multiple Back-to-Back GEMM with the same problem size in parallel.
 * [Batched Strided GEMV](test/unit/gemm/device/gemv.cu) support both row major and column major input matrix.
 * [Permute + GEMM fusion](examples/39_gemm_permute) can fuse Permute with following GEMM now.  Before, we only support fusing GEMM with Permute in the epilogue.
+* [Row Broadcast](include/cutlass/epilogue/threadblock/predicated_tile_iterator_row_broadcast.h) can be fused in the epilogue.
 * The GitHub branch is renamed from `master` to `main` in this release.
 * Optimal performance using [**CUDA 12.1**](https://developer.nvidia.com/cuda-downloads)
 * Updates and bugfixes from the community (thanks!)
