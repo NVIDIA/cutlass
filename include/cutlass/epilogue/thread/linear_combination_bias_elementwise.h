@@ -95,7 +95,7 @@ public:
   using FragmentSource = FragmentC;
   using FragmentOutput = FragmentZ;
   using ElementBias = ElementVector;
-  using FragmentBias = FragmentCompute;
+  using FragmentBias = Array<ElementBias, kElementsPerAccess>;
   using ActivationFunctor = ElementwiseOp;
   static const ScaleType::Kind kScale = ScaleType::Default;
 
