@@ -475,6 +475,12 @@ public:
     Tensor tRS_rT_frg    = recast<typename ThreadEpilogueOp::FragmentT>(tRS_rT);
     Tensor tRS_rBias_frg = recast<typename ThreadEpilogueOp::FragmentBias>(tRS_rBias);
 
+    // thread::LinearCombinationBiasElementwise expects that the bias passed in is of
+    // type ElementCompute. Therefore, conversion from type ElementBias to ElementCompute
+    // is needed before calling the thread-level epilogue.
+    cutlass::NumericArrayConverter<ElementCompute, ElementBias,
+      ThreadEpilogueOp::FragmentBias::kElements> bias_converter;
+
     // Partition for smem to register copy (tSR_)
     TiledCopy tiled_s2r = make_tiled_copy_S(Copy_Atom<CopyOpS2R,InternalElementC>{}, tiled_r2s);
     ThrCopy thread_s2r = tiled_s2r.get_slice(thread_idx);
@@ -538,13 +544,15 @@ public:
 
           CUTLASS_PRAGMA_UNROLL
           for (int i = 0; i < size(tRS_rD_frg); ++i) {
-            epilogue_op(tRS_rD_frg(i), tRS_rT_frg(i), tRS_rAcc_frg_mn(r2s_v + i), tRS_rC_frg(i), tRS_rBias_frg(i));
+            typename ThreadEpilogueOp::FragmentCompute converted_bias = bias_converter(tRS_rBias_frg(i));
+            epilogue_op(tRS_rD_frg(i), tRS_rT_frg(i), tRS_rAcc_frg_mn(r2s_v + i), tRS_rC_frg(i), converted_bias);
           }
         }
         else {
           CUTLASS_PRAGMA_UNROLL
           for (int i = 0; i < size(tRS_rD_frg); ++i) {
-            epilogue_op(tRS_rD_frg(i), tRS_rT_frg(i), tRS_rAcc_frg_mn(r2s_v + i), tRS_rBias_frg(i));
+            typename ThreadEpilogueOp::FragmentCompute converted_bias = bias_converter(tRS_rBias_frg(i));
+            epilogue_op(tRS_rD_frg(i), tRS_rT_frg(i), tRS_rAcc_frg_mn(r2s_v + i), converted_bias);
           }
         }
 
