@@ -87,7 +87,7 @@ Starting from CUTLASS 3.0, CUTLASS removed support for the following:
 
 # Performance
 
-<p align="center"><img src=media/images/cutlass-3.0-gemm-peak-performance.png></p>
+<p align="center"><img src=media/images/cutlass-3.1-gemm-peak-performance.png></p>
 
 CUTLASS primitives are very efficient.  When used to construct device-wide GEMM kernels,
 they exhibit peak performance comparable to cuBLAS for scalar GEMM
