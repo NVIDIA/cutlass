@@ -119,8 +119,10 @@ public:
   using Shape0 = Shape0_;
   ///< Iterates over tiles of A operand in global memory
   using IteratorA0 = IteratorA0_;
+  using IteratorA = IteratorA0;
   ///< Iterates over tiles of B operand in global memory
   using IteratorB0 = IteratorB0_;
+  using IteratorB = IteratorB0;
   ///< Policy describing tuning details
   using Policy0 = Policy0_;
 
@@ -139,6 +141,10 @@ public:
   using IteratorB1 = IteratorB1_;
   ///< Policy describing tuning details
   using Policy1 = Policy1_;
+
+  ///< Export Policy0 as the threadblock-level Mma's policy
+  using Policy = Policy0;
+  using Shape = Shape0;
   
   using SmemIteratorB1 = SmemIteratorB1_;
 
@@ -187,6 +193,10 @@ public:
   
   /// Complex transform on B operand
   static ComplexTransform const kTransformB1 = Operator1::kTransformB;
+
+  /// Complex transform exports needed by higher-level kernels
+  static ComplexTransform const kTransformA = kTransformA0;
+  static ComplexTransform const kTransformB = kTransformB0;
 
   /// Internal structure exposed for introspection.
   struct Detail {
