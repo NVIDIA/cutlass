@@ -63,7 +63,9 @@
 #include "cutlass/transform/threadblock/predicated_tile_iterator.h"
 
 #include "kernel/b2b_gemm.h"
+#include "kernel/grouped.h"
 #include "threadblock/default_b2b_mma.h"
+#include "threadblock/grouped_threadblock_swizzle.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -72,6 +74,9 @@ namespace gemm {
 namespace kernel {
 
 ////////////////////////////////////////////////////////////////////////////////
+
+template <typename T>
+using IsGroupedSwizzle = cutlass::gemm::threadblock::detail::IsGroupedSwizzle<T>;
 
 template <
   /// Element type for A matrix operand
@@ -117,7 +122,9 @@ template <
   /// Operation performed by GEMM
   typename Operator,
   /// Stage accumulator in shared memory
-  bool SmemAccumulator = false
+  bool SmemAccumulator = false,
+  /// Whether or not the operation is grouped
+  typename Enable = void
 >
 struct DefaultB2bGemm;
 
@@ -166,7 +173,7 @@ struct DefaultB2bGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignm
                    arch::Sm80, ThreadblockShape0, ThreadblockShape1,
                    WarpShape0, WarpShape1, InstructionShape,
                    EpilogueOutputOp0, EpilogueOutputOp1, ThreadblockSwizzle, Stages,
-                   Operator> {
+                   Operator, false, typename platform::enable_if<!IsGroupedSwizzle<ThreadblockSwizzle>::value>::type> {
   /// Define the threadblock-scoped matrix multiply-accumulate
   using B2bMma = typename cutlass::gemm::threadblock::DefaultB2bMma<
       ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
@@ -184,6 +191,71 @@ struct DefaultB2bGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignm
 
   /// Define the kernel-level GEMM operator.
   using B2bGemmKernel = kernel::B2bGemm<B2bMma, Epilogue, ThreadblockSwizzle>;
+};
+
+/// Partial specialization for Ampere Architecture with grouped operation
+template <
+    /// Element type for A matrix operand
+    typename ElementA,
+    /// Layout type for A matrix operand
+    typename LayoutA,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentA,
+    /// Element type for B matrix operand
+    typename ElementB,
+    /// Layout type for B matrix operand
+    typename LayoutB,
+    /// Access granularity of A matrix in units of elements
+    int kAlignmentB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Element type for internal accumulation
+    typename ElementAccumulator,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape0,
+    /// Threadblock-level tile size (concept: GemmShape)
+    typename ThreadblockShape1,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape0,
+    /// Warp-level tile size (concept: GemmShape)
+    typename WarpShape1,
+    /// Warp-level tile size (concept: GemmShape)
+    typename InstructionShape,
+    /// Epilogue output operator
+    typename EpilogueOutputOp0,
+    /// Epilogue output operator
+    typename EpilogueOutputOp1,
+    /// Threadblock-level swizzling operator
+    typename ThreadblockSwizzle,
+    /// Number of stages used in the pipelined mainloop
+    int Stages,
+    /// Operation performed by GEMM
+    typename Operator>
+struct DefaultB2bGemm<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB, ElementC,
+                   layout::RowMajor, ElementAccumulator, arch::OpClassTensorOp,
+                   arch::Sm80, ThreadblockShape0, ThreadblockShape1,
+                   WarpShape0, WarpShape1, InstructionShape,
+                   EpilogueOutputOp0, EpilogueOutputOp1, ThreadblockSwizzle, Stages,
+                   Operator, false, typename platform::enable_if<IsGroupedSwizzle<ThreadblockSwizzle>::value>::type> {
+  /// Define the threadblock-scoped matrix multiply-accumulate
+  using B2bMma = typename cutlass::gemm::threadblock::DefaultB2bMma<
+      ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
+      ElementAccumulator, layout::RowMajor, arch::OpClassTensorOp, arch::Sm80,
+      ThreadblockShape0, ThreadblockShape1, WarpShape0, WarpShape1, 
+      InstructionShape, Stages, Operator, EpilogueOutputOp0>::ThreadblockB2bMma;
+
+  static const int kPartitionsK1 = ThreadblockShape1::kK / WarpShape1::kK;
+
+  /// Define the epilogue
+  using Epilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+          ThreadblockShape1, typename B2bMma::Operator1, kPartitionsK1, EpilogueOutputOp1,
+          EpilogueOutputOp1::kCount>::Epilogue;
+
+  /// Define the kernel-level GEMM operator.
+  using UnderlyingB2bGemmKernel = kernel::B2bGemm<B2bMma, Epilogue, ThreadblockSwizzle>;
+
+  using B2bGemmKernel = kernel::GroupedKernel<UnderlyingB2bGemmKernel>;
 };
 
 
@@ -242,7 +314,9 @@ struct DefaultB2bGemm<
   EpilogueOutputOp1,
   ThreadblockSwizzle,
   2,
-  Operator
+  Operator,
+  false,
+  typename platform::enable_if<!IsGroupedSwizzle<ThreadblockSwizzle>::value>::type
 > {
 
   /// Define the threadblock-scoped matrix multiply-accumulate
@@ -324,7 +398,8 @@ struct DefaultB2bGemm<
     arch::OpClassTensorOp, arch::Sm80,
     ThreadblockShape0, ThreadblockShape1, WarpShape0, WarpShape1,
     InstructionShape, EpilogueOutputOp0, EpilogueOutputOp1,
-    ThreadblockSwizzle, Stages, Operator> {
+    ThreadblockSwizzle, Stages,
+    Operator, false, typename platform::enable_if<!IsGroupedSwizzle<ThreadblockSwizzle>::value>::type> {
   using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
   using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
   using LayoutC = layout::ColumnMajorInterleaved<InterleavedK>;
@@ -393,7 +468,8 @@ struct DefaultB2bGemm<ElementA, layout::ColumnMajorInterleaved<InterleavedK>,
                    int32_t, arch::OpClassTensorOp, arch::Sm75,
                    ThreadblockShape0, ThreadblockShape1, WarpShape0, WarpShape1,
                    InstructionShape, EpilogueOutputOp0, EpilogueOutputOp1,
-                   ThreadblockSwizzle, 2, Operator> {
+                   ThreadblockSwizzle, 2, Operator, false,
+                   typename platform::enable_if<!IsGroupedSwizzle<ThreadblockSwizzle>::value>::type> {
   using LayoutA = layout::ColumnMajorInterleaved<InterleavedK>;
   using LayoutB = layout::RowMajorInterleaved<InterleavedK>;
   using LayoutC = layout::ColumnMajorInterleaved<InterleavedK>;

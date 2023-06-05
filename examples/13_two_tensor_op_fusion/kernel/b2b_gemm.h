@@ -40,11 +40,59 @@
 #include "cutlass/matrix_coord.h"
 #include "cutlass/semaphore.h"
 
+#include "kernel/b2b_gemm_grouped_problem_visitor.h"
+#include "threadblock/grouped_threadblock_swizzle.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace gemm {
 namespace kernel {
+
+namespace detail {
+
+/// Utility struct for returning the type of the problem visitor used by the swizzling function,
+/// if it is a grouped swizzling function, or a default visitor. This is used only for defining
+/// the parameters of the problem visitor used in GroupedParams.
+template <
+  typename B2bMma_,
+  typename ThreadblockSwizzle_,
+  typename Enable = void
+>
+struct ProblemVisitorOrDefault;
+
+/// Return a generic problem visitor for GEMM problems
+template <
+  typename B2bMma_,
+  typename ThreadblockSwizzle_
+>
+struct ProblemVisitorOrDefault<B2bMma_,
+                               ThreadblockSwizzle_,
+                               typename platform::enable_if<
+                                                  ! cutlass::gemm::threadblock::detail::IsGroupedSwizzle<ThreadblockSwizzle_>::value
+                                                >::type> {
+  using value = B2bGemmGroupedProblemVisitor<typename B2bMma_::Shape,
+                                             GroupScheduleMode::kDeviceOnly,
+                                             128,
+                                             128,
+                                             platform::is_same<typename B2bMma_::LayoutC,
+                                                               cutlass::layout::ColumnMajor>::value>;
+};
+
+/// Return the problem visitor specified by the swizzling function
+template <
+  typename B2bMma_,
+  typename ThreadblockSwizzle_
+>
+struct ProblemVisitorOrDefault<B2bMma_,
+                               ThreadblockSwizzle_,
+                               typename platform::enable_if<
+                                                  cutlass::gemm::threadblock::detail::IsGroupedSwizzle<ThreadblockSwizzle_>::value
+                                                >::type>  {
+  using value = typename ThreadblockSwizzle_::ProblemVisitor;
+};
+
+} // namespace detail
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -72,9 +120,168 @@ struct B2bGemm {
 
   using ScaleBiasData = typename B2bMma::IteratorAccumulatorScaleBias::Element;
 
+  /// Data types needed for higher-level containers. In some cases, a single type must be exposed
+  /// despite the B2b GEMM using two GEMMs under the hood. In such cases, we select the values from
+  /// the second GEMM (other than for ElementA/ElementB)
+  using ElementA = typename B2bMma::IteratorA0::Element;
+  using LayoutA = typename B2bMma::IteratorA0::Layout;
+  using ElementB = typename B2bMma::IteratorB0::Element;
+  using LayoutB = typename B2bMma::IteratorB0::Layout;
+
+  static ComplexTransform const kTransformA = B2bMma::kTransformA;
+  static ComplexTransform const kTransformB = B2bMma::kTransformB;
+  using Operator = typename B2bMma::Operator0;
+
+  using OperatorClass = typename Operator::OperatorClass;
+  using ThreadblockShape = typename B2bMma::Shape0;
+  using WarpShape = typename Operator::Shape;
+  using InstructionShape = typename Operator::InstructionShape;
+  using ArchTag = typename B2bMma::ArchTag;
+
+  static int const kStages = B2bMma::kStages;
+  static int const kAlignmentA = B2bMma::IteratorA::AccessType::kElements;
+  static int const kAlignmentB = B2bMma::IteratorB::AccessType::kElements;
+  static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
+
+  using Mma = B2bMma;
+  using EpilogueOutputOp = OutputOp1;
+
   /// Warp count (concept: GemmShape)
   using WarpCount0 = typename B2bMma::WarpCount0;
   static int const kThreadCount = 32 * WarpCount0::kCount;
+
+  /// Argument structure
+  struct Arguments {
+
+    //
+    // Data members
+    //
+
+    GemmUniversalMode mode;
+    GemmCoord problem_size_0;
+    GemmCoord problem_size_1;
+    typename B2bMma::IteratorA0::TensorRef ref_A0;
+    typename B2bMma::IteratorB0::TensorRef ref_B0;
+    typename Epilogue::OutputTileIterator::TensorRef ref_C0;
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Scale0;
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Bias0;
+    typename B2bMma::IteratorB1::TensorRef ref_B1;
+    typename Epilogue::OutputTileIterator::TensorRef ref_C1;
+    typename Epilogue::OutputTileIterator::TensorRef ref_D1;
+    int64_t batch_stride_A0;
+    int64_t batch_stride_B0;
+    int64_t batch_stride_B1;
+    int64_t batch_stride_C1;
+    int64_t batch_stride_D1;
+    int64_t batch_stride_Bias0;
+    int64_t batch_stride_Scale0;
+    typename OutputOp0::Params epilogue0;
+    typename OutputOp1::Params epilogue1;
+    int batch_count;
+
+    //
+    // Methods
+    //
+
+    /// Default ctor
+    CUTLASS_HOST_DEVICE
+    Arguments() : mode(mode), problem_size_0(0, 0, 0), problem_size_1(0, 0, 0), batch_count(1) {}
+
+    /// Constructs an Arguments structure
+    CUTLASS_HOST_DEVICE
+    Arguments(
+      GemmUniversalMode mode_,
+      GemmCoord problem_size_0_,
+      GemmCoord problem_size_1_,
+      typename B2bMma::IteratorA0::TensorRef ref_A0_,
+      typename B2bMma::IteratorB0::TensorRef ref_B0_,
+      typename Epilogue::OutputTileIterator::TensorRef ref_C0_,
+      typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Scale0_,
+      typename B2bMma::IteratorAccumulatorScaleBias::TensorRef ref_Bias0_,
+      typename B2bMma::IteratorB1::TensorRef ref_B1_,
+      typename Epilogue::OutputTileIterator::TensorRef ref_C1_,
+      typename Epilogue::OutputTileIterator::TensorRef ref_D1_,
+      int64_t batch_stride_A0_,
+      int64_t batch_stride_B0_,
+      int64_t batch_stride_B1_,
+      int64_t batch_stride_C1_,
+      int64_t batch_stride_D1_,
+      int64_t batch_stride_Bias0_,
+      int64_t batch_stride_Scale0_,
+      typename OutputOp0::Params epilogue0_ = typename OutputOp0::Params(),
+      typename OutputOp1::Params epilogue1_ = typename OutputOp1::Params(),
+      int batch_count_ = 1
+    ):
+      mode(mode_),
+      problem_size_0(problem_size_0_),
+      problem_size_1(problem_size_1_),
+      ref_A0(ref_A0_),
+      ref_B0(ref_B0_),
+      ref_C0(ref_C0_),
+      ref_Scale0(ref_Scale0_),
+      ref_Bias0(ref_Bias0_),
+      ref_B1(ref_B1_),
+      ref_C1(ref_C1_),
+      ref_D1(ref_D1_),
+      batch_stride_A0(batch_stride_A0_),
+      batch_stride_B0(batch_stride_B0_),
+      batch_stride_B1(batch_stride_B1_),
+      batch_stride_C1(batch_stride_C1_),
+      batch_stride_D1(batch_stride_D1_),
+      batch_stride_Bias0(batch_stride_Bias0_),
+      batch_stride_Scale0(batch_stride_Scale0_),
+      epilogue0(epilogue0_),
+      epilogue1(epilogue1_),
+      batch_count(batch_count_) {
+    }
+  };
+
+  // Arguments structure for grouped B2B problems
+  struct GroupedArguments {
+    GemmCoord* problem_size_0;
+    GemmCoord* problem_size_1;
+    typename B2bMma::IteratorA0::TensorRef* ref_A0;
+    typename B2bMma::IteratorB0::TensorRef* ref_B0;
+    typename Epilogue::OutputTileIterator::TensorRef* ref_C0;
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef* ref_Scale0;
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef* ref_Bias0;
+    typename B2bMma::IteratorB1::TensorRef* ref_B1;
+    typename Epilogue::OutputTileIterator::TensorRef* ref_C1;
+    typename Epilogue::OutputTileIterator::TensorRef* ref_D1;
+
+    // Epilogue params remain constant across all problmes in the group. Thus,
+    // the parameter here is not a pointer.
+    typename OutputOp0::Params epilogue0;
+    typename OutputOp1::Params epilogue1;
+
+    int problem_count;
+    int threadblock_count;
+    GemmCoord* host_problem_sizes;
+
+    CUTLASS_HOST_DEVICE
+    GroupedArguments(
+      int problem_count,
+      GemmCoord* problem_size_0_,
+      GemmCoord* problem_size_1_,
+      typename B2bMma::IteratorA0::TensorRef* ref_A0_,
+      typename B2bMma::IteratorB0::TensorRef* ref_B0_,
+      typename Epilogue::OutputTileIterator::TensorRef* ref_C0_,
+      typename B2bMma::IteratorAccumulatorScaleBias::TensorRef* ref_Scale0_,
+      typename B2bMma::IteratorAccumulatorScaleBias::TensorRef* ref_Bias0_,
+      typename B2bMma::IteratorB1::TensorRef* ref_B1_,
+      typename Epilogue::OutputTileIterator::TensorRef* ref_C1_,
+      typename Epilogue::OutputTileIterator::TensorRef* ref_D1_,
+      typename OutputOp0::Params epilogue0_ = typename OutputOp0::Params(),
+      typename OutputOp1::Params epilogue1_ = typename OutputOp1::Params(),
+      int threadblock_count = 0
+    ) : problem_size_0(problem_size_0_), problem_size_1(problem_size_1_),
+        ref_A0(ref_A0_), ref_B0(ref_B0_), ref_C0(ref_C0_),
+        ref_Scale0(ref_Scale0_), ref_Bias0(ref_Bias0_), ref_B1(ref_B1_),
+        ref_C1(ref_C1_), ref_D1(ref_D1_), epilogue0(epilogue0_), epilogue1(epilogue1_),
+        problem_count(problem_count),
+        threadblock_count(threadblock_count)
+        {}
+  };
 
   /// Parameters structure
   struct Params {
@@ -149,7 +356,7 @@ struct B2bGemm {
       problem_size_0(problem_size_0),
       problem_size_1(problem_size_1),
       grid_tiled_shape(grid_tiled_shape),
-      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
+      swizzle_log_tile(ThreadblockSwizzle::get_log_tile(grid_tiled_shape)),
       params_A0(ref_A0.layout()),
       ref_A0(ref_A0),
       params_B0(ref_B0.layout()),
@@ -182,6 +389,81 @@ struct B2bGemm {
       gemm_k_size_1 = gemm_k_iterations_1 * B2bMma::Shape1::kK;
 
     semaphore = workspace;
+    }
+  };
+
+  struct GroupedParams {
+    cutlass::gemm::GemmCoord* problem_size_0;
+    cutlass::gemm::GemmCoord* problem_size_1;
+    cutlass::gemm::GemmCoord* grid_tiled_shape;
+    typename B2bMma::IteratorA0::TensorRef* ref_A0;
+    typename B2bMma::IteratorB0::TensorRef* ref_B0;
+    typename Epilogue::OutputTileIterator::TensorRef* ref_C0;
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef* ref_Scale0;
+    typename B2bMma::IteratorAccumulatorScaleBias::TensorRef* ref_Bias0;
+    typename B2bMma::IteratorB1::TensorRef* ref_B1;
+    typename Epilogue::OutputTileIterator::TensorRef* ref_C1;
+    typename Epilogue::OutputTileIterator::TensorRef* ref_D1;
+
+    // Epilogue params remain constant across all problmes in the group. Thus,
+    // the parameter here is not a pointer.
+    typename OutputOp0::Params output_op_0;
+    typename OutputOp1::Params output_op_1;
+
+    using ProblemVisitor = typename detail::ProblemVisitorOrDefault<B2bMma, ThreadblockSwizzle>::value;
+    typename ProblemVisitor::Params problem_visitor;
+    int threadblock_count;
+    int* workspace;
+
+    CUTLASS_HOST_DEVICE
+    GroupedParams() {}
+
+    CUTLASS_HOST_DEVICE
+    GroupedParams(
+      GroupedArguments const &args,
+      void *workspace = nullptr,
+      int tile_count = 0
+    ) :
+        problem_size_0(args.problem_size_0), problem_size_1(args.problem_size_1),
+        ref_A0(args.ref_A0), ref_B0(args.ref_B0), ref_C0(args.ref_C0),
+        ref_Scale0(args.ref_Scale0), ref_Bias0(args.ref_Bias0), ref_B1(args.ref_B1), ref_C1(args.ref_C1), ref_D1(args.ref_D1),
+        output_op_0(args.epilogue0), output_op_1(args.epilogue1),
+        problem_visitor(args.problem_size_0, args.problem_size_1, args.problem_count, workspace, tile_count),
+        threadblock_count(args.threadblock_count),
+        workspace(reinterpret_cast<int*>(workspace)) {}
+
+    CUTLASS_HOST_DEVICE
+    void transpose() {
+      // Only row-major outputs are currently supported, so no transpose is performed
+    }
+
+    /// Returns non-grouped paramaters to be used as input to the kernel-level
+    /// operator for the problem indicated by problem_visitor.
+    CUTLASS_HOST_DEVICE
+    Params to_single_params(const ProblemVisitor& problem_visitor) const {
+      GemmCoord problem_size0 = problem_visitor.problem_size0();
+      GemmCoord problem_size1 = problem_visitor.problem_size1();
+      int32_t idx = problem_visitor.problem_index();
+      GemmCoord grid_shape = problem_visitor.grid_shape(problem_size1);
+
+      return Params(
+        cutlass::gemm::GemmUniversalMode::kGemm,
+        problem_size0,
+        problem_size1,
+        grid_shape,
+        ref_A0[idx],
+        ref_B0[idx],
+        ref_C0[idx],
+        ref_Scale0[idx],
+        ref_Bias0[idx],
+        ref_B1[idx],
+        ref_C1[idx],
+        ref_D1[idx],
+        0, 0, 0, 0, 0, 0, 0, // Batched B2B GEMMs within the grouped kernel are currently unsupported
+        output_op_0,
+        output_op_1,
+        workspace
+      );
     }
   };
 
@@ -266,9 +548,13 @@ struct B2bGemm {
   /// Executes one GEMM
   CUTLASS_DEVICE
   void operator()(Params const &params, SharedStorage &shared_storage) {
-
-    // Compute threadblock location
     ThreadblockSwizzle threadblock_swizzle;
+    run_with_swizzle(params, shared_storage, threadblock_swizzle);
+  }
+
+  /// Executes one GEMM with an externally-provided swizzling function
+  CUTLASS_DEVICE
+  void run_with_swizzle(Params const &params, SharedStorage &shared_storage, ThreadblockSwizzle& threadblock_swizzle) {
 
     cutlass::gemm::GemmCoord threadblock_tile_offset =
         threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
@@ -391,13 +677,16 @@ struct B2bGemm {
       )
     );
 
-
-
     //
     // Main loop
     //
 
     OutputOp0 output_op_0(params.output_op_0);
+
+    if (cutlass::gemm::threadblock::detail::IsGroupedSwizzle<ThreadblockSwizzle>::value) {
+      // Wait for all threads to finish their epilogue phases from the previous tile.
+      __syncthreads();
+    }
 
     // Construct thread-scoped matrix multiply
     B2bMma b2bMma(shared_storage.main_loop, thread_idx, warp_idx, lane_idx, params.problem_size_0.n());

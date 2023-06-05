@@ -126,7 +126,9 @@ public:
 
   using Shape0 = Shape0_;             ///< Size of the Gemm problem - concept: gemm::GemmShape<>
   using IteratorA0 = IteratorA0_;     ///< Iterates over tiles of A operand in global memory
+  using IteratorA = IteratorA0;
   using IteratorB0 = IteratorB0_;     ///< Iterates over tiles of B operand in global memory
+  using IteratorB = IteratorB0;
   using Policy0 = Policy0_;           ///< Policy describing tuning details
 
   using SmemIteratorA0 = SmemIteratorA0_;
@@ -139,6 +141,8 @@ public:
     FragmentIteratorA1ScaleBias_;     ///< WarpIterator to load Scale or Bias vector from the threadblock fragment
   using IteratorB1 = IteratorB1_;     ///< Iterates over tiles of B operand in global memory
   using Policy1 = Policy1_;           ///< Policy describing tuning details
+  using Policy = Policy1;             ///< Export Policy1 as the threadblock-level Mma's policy
+  using Shape = Shape1;
 
   using SmemIteratorB1 = SmemIteratorB1_;
 
@@ -194,6 +198,10 @@ public:
 
   /// Complex transform on B1 operand
   static ComplexTransform const kTransformB1 = Operator1::kTransformB;
+
+  /// Complex transform exports needed by higher-level kernels
+  static ComplexTransform const kTransformA = kTransformA0;
+  static ComplexTransform const kTransformB = kTransformB0;
 
   /// staticaly assert kStages for MmaPipelined is two (Double-buffered pipeline)
   static_assert((Base::kStages==2), "MmaPipelined requires kStages set to value 2");

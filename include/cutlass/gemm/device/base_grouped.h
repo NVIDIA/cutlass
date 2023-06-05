@@ -290,7 +290,6 @@ public:
                         int available_sm_count=-1) {
     // Determine the number of blocks that would be launched to fill up a single
     // wave on the GPU with each SM having maximum occupancy.
-    cudaDeviceProp properties;
     int device_idx;
     cudaError_t result = cudaGetDevice(&device_idx);
     if (result != cudaSuccess) {
