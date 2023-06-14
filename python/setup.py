@@ -108,10 +108,15 @@ include_dirs = [
 ]
 
 
+library_dirs = [
+    cuda_install_path + '/lib64',
+]
+
 ext_modules = [
     Pybind11Extension('cutlass_bindings',
                       ['cutlass/cpp/cutlass_bindings.cpp'],
                       include_dirs=include_dirs,
+                      library_dirs=library_dirs,
                       extra_compile_args=['-Xcompiler="-fpermissive"', '-w', '-std=c++17'],
                       libraries=['cudart'])
 ]
