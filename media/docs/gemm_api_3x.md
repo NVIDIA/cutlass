@@ -254,7 +254,7 @@ into register memory.
 
 Notice that CUTLASS 3.0 mainloops do not accept a dedicated accumulator element type.
 We obtain the accumulator type from the `typename TiledMma::ValTypeC`. Note also that
-top level API's `ElementA` and `ElementB` can defer from those of the MMA facing
+top level API's `ElementA` and `ElementB` can differ from those of the MMA facing
 `typename TiledMma::ValTypeA` and `typename TiledMma::ValTypeB`, allowing TMA or user
 supplied transform operations to perform type conversions.
 
@@ -325,7 +325,7 @@ all operations that conceptually belong to the same class. This design has the f
 The primary `CollectiveMma` is intended to be an expert user interface that allows full control over
 all the properties of the collective's GPU micro-kernel. However, often a user just wants an
 off-the-shelf GEMM mainloop implementation parameterized on simple configuration parameters. CUTLASS 3.0
-provides [`cutlass::gemm::collective::CollectiveBuilder`](include/cutlass/gemm/collective/collective_builder.hpp) for such scenarios.
+provides [`cutlass::gemm::collective::CollectiveBuilder`](/include/cutlass/gemm/collective/collective_builder.hpp) for such scenarios.
 
 ```c++
 namespace cutlass::gemm::collective {
