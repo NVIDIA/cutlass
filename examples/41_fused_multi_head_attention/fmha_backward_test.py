@@ -142,6 +142,7 @@ with PipedSubprocess(fmha_bw_binary) as bw_kernel:
         "custom_mask_type", (1 if causal else 0),
         "num_batches", B,
         "repeat_count", repeat_count,
+        "num_splits_key", (Mkv // 128),
     )
     bw_kernel.writeTensor(query, "query", ["q_strideB", "q_strideM", "q_strideH"])
     bw_kernel.writeTensor(key, "key", ["k_strideB", "k_strideM", "k_strideH"])
