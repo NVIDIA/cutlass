@@ -440,12 +440,16 @@ public:
         }
 
         if (group + 1 < ThreadMap::Iterations::kGroup) {
-          byte_pointer += params_.increment_group;
+          if (!ScatterD && !PermuteD) {
+            byte_pointer += params_.increment_group;
+          }
         }
       }
 
       if (cluster + 1 < ThreadMap::Iterations::kCluster) {
-        byte_pointer += params_.increment_cluster;
+        if (!ScatterD && !PermuteD) {
+          byte_pointer += params_.increment_cluster;
+        }
       }
     }
   }
