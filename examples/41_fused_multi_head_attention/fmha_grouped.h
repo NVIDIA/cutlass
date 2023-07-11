@@ -847,6 +847,7 @@ public:
 
       // Next tile
       problem_visitor.advance(gridDim.x);
+      __syncthreads(); // Don't start the next iteration until all threads are done using shared memory.
     }
   }
 
