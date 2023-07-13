@@ -30,10 +30,10 @@
  **************************************************************************************************/
 
 /*! \file
-    \brief 
+    \brief
       Default kernel-level GEMM definitions combine threadblock-scoped matrix multiply-add with
       the appropriate threadblock-scoped epilogue.
-  
+
       Note, CUTLASS epilogues universally target row-major outputs. Column-major outputs are
       accommodated by exchanging A and B operands and assuming transposed layouts. Partial
       specializations here choose 'device::GemmTransposed' to implement this functionality.
@@ -50,6 +50,7 @@
 
 #include "fmha_grouped.h"
 #include "gemm_kernel_utils.h"
+#include "gemm/custom_mma.h"
 #include "gemm/find_default_mma.h"
 #include "gemm/mma_from_smem.h"
 
@@ -70,7 +71,7 @@ template <
     bool isAligned_,
     int kQueriesPerBlock,
     int kKeysPerBlock,
-    bool kSingleValueIteration,
+    int kMaxK = (int)cutlass::platform::numeric_limits<uint32_t>::max(),
     GroupScheduleMode GroupScheduleMode_ = GroupScheduleMode::kDeviceOnly
     >
 struct DefaultFMHAGrouped {
@@ -85,6 +86,8 @@ struct DefaultFMHAGrouped {
 
   using ArchTag = ArchTag_;
   static bool const kIsAligned = isAligned_;
+  static bool const kSingleValueIteration = kMaxK <= kKeysPerBlock;
+  static constexpr bool kIsHalf = cutlass::sizeof_bits<scalar_t>::value == 16;
   static int const kWarpSize = 32;
   static int const kNumWarpsPerBlock = kQueriesPerBlock * kKeysPerBlock / (kWarpSize * kWarpSize);
 
@@ -145,14 +148,20 @@ struct DefaultFMHAGrouped {
         ThreadblockShape,
         WarpShape,
         InstructionShape,
-        kStages,
+        ArchTag::kMinComputeCapability >= 80 && kIsHalf
+            ? 4
+            : DefaultConfig::kStages,
         Operator
         >::DefaultMma;
 
     using MmaCore = typename DefaultMma::MmaCore;
     using IteratorA = typename DefaultMma::IteratorA;
     using IteratorB = typename DefaultMma::IteratorB;
-    using Mma = typename DefaultMma::ThreadblockMma;
+    using DefaultThreadblockMma = typename DefaultMma::ThreadblockMma;
+    using Mma = typename cutlass::platform::conditional<
+        kSingleValueIteration,
+        typename MakeCustomMma<DefaultThreadblockMma, kMaxK>::Mma,
+        DefaultThreadblockMma>::type;
     using AccumLambdaIterator = typename DefaultMmaAccumLambdaIterator<
         typename Mma::Operator::IteratorC,
         ElementAccumulator,
@@ -232,14 +241,24 @@ struct DefaultFMHAGrouped {
         InstructionShape,
         EpilogueOutputOp,
         ThreadblockSwizzle,
-        kStages,
+        ArchTag::kMinComputeCapability >= 80 && kIsHalf
+            ? 4
+            : DefaultConfig::kStages,
         kSplitKSerial,
         Operator>;
+
+    using WarpIteratorA = typename cutlass::gemm::threadblock::
+    DefaultWarpIteratorAFromSharedMemory<
+        typename DefaultGemm::Mma::Policy::Operator::Shape, // WarpShape
+        typename DefaultGemm::Mma::Policy::Operator::InstructionShape,
+        typename DefaultGemm::Mma::Policy::Operator::IteratorA,
+        typename DefaultGemm::Mma::Policy>::WarpIterator;
 
     using DefaultMmaFromSmem =
         typename cutlass::gemm::threadblock::DefaultMmaFromSharedMemory<
             typename DefaultGemm::Mma,
-            typename MM0::AccumulatorSharedStorage,
+            MM0::AccumulatorSharedStorage::Shape::kN,  // kMaxK
+            WarpIteratorA,
             false>; // kScaleOperandA
 
     using Mma = typename DefaultMmaFromSmem::Mma;
@@ -256,10 +275,6 @@ struct DefaultFMHAGrouped {
         typename cutlass::epilogue::threadblock::PredicatedTileIterator<
             typename DefaultEpilogue::OutputTileIterator::ThreadMap,
             output_accum_t>;
-
-    struct SharedStorageMM1 {
-      typename Mma::SharedStorage mm;
-    };
   };
 
 /// Define the kernel in terms of the default kernel

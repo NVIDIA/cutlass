@@ -65,10 +65,12 @@ struct DefaultKernel {
         Element,
         true,        // kIsAligned_
         false,       // kApplyDropout_
-        kPreload,// kPreload_
+        kPreload,    // kPreload_
         kBlockSizeI, // kBlockSizeI_,
         kBlockSizeJ, // kBlockSizeJ_,
-        kMaxK        // kMaxK
+        kMaxK,       // kMaxK
+        false,       // kKeysQueriesAlignedToBlockSize
+        true         // kEnableSplitKeys
     >;
 };
 
@@ -181,6 +183,7 @@ int runKernel() {
     READ_I64(custom_mask_type);
     READ_I64(num_batches);
     int64_t repeat_count = readInt64("repeat_count");
+    READ_I64(num_splits_key);
 
     READ_TENSOR_AND_STRIDES_BMH(Element, query, q);
     READ_TENSOR_AND_STRIDES_BMH(Element, key, k);

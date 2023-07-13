@@ -999,7 +999,7 @@ public:
 template <
   int kQueriesPerBlock,
   int kKeysPerBlock,
-  bool kSingleValueIteration
+  int kMaxK
 >
 int run_attention(Options& options) {
   using Attention = AttentionKernel<
@@ -1008,7 +1008,7 @@ int run_attention(Options& options) {
     true,                 // Memory is aligned
     kQueriesPerBlock,
     kKeysPerBlock,
-    kSingleValueIteration,
+    kMaxK,
     false,                // Supports dropout
     false                 // Supports bias
   >;
@@ -1094,15 +1094,16 @@ int main(int argc, char const **args) {
   if (options.head_size_v > 64) {
     static int const kQueriesPerBlock = 32;
     static int const kKeysPerBlock = 128;
-    if (options.head_size_v <= kKeysPerBlock) {
-      return run_attention<kQueriesPerBlock, kKeysPerBlock, true>(options);
+    if (options.head_size_v <= 128) {
+      return run_attention<kQueriesPerBlock, kKeysPerBlock, 128>(options);
     } else {
-      return run_attention<kQueriesPerBlock, kKeysPerBlock, false>(options);
+      return run_attention<kQueriesPerBlock, kKeysPerBlock, 65536>(options);
     }
   } else {
+    static constexpr int kMaxK = 64; // <- Decrease to 32/16 if your problem is smaller
     static int const kQueriesPerBlock = 64;
     static int const kKeysPerBlock = 64;
-    return run_attention<kQueriesPerBlock, kKeysPerBlock, true>(options);
+    return run_attention<kQueriesPerBlock, kKeysPerBlock, kMaxK>(options);
   }
 }
 

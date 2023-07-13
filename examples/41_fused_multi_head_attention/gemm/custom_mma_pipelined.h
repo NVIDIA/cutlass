@@ -310,7 +310,8 @@ class CustomMmaPipelined : public CustomMmaBase<Shape_, Policy_, 2> {
     iterator_B.clear_mask(gemm_k_iterations <= 1);
 
     // Issue loads during the first warp-level matrix multiply-add *AFTER*
-    // issuing shared memory loads (which have the tightest latency requirement).
+    // issuing shared memory loads (which have the tightest latency
+    // requirement).
 
     //
     // Mainloop
