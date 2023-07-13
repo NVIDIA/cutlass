@@ -184,7 +184,7 @@ class WarpIteratorFromSmem {
       }
       origin_ += offset;
     } else {
-      // XXX: This is not tested or used
+      // Note: This is not tested or used
       origin_ = MatrixCoord(0, lane_id % 8);
       static_assert(InstructionCount::kColumn * kAccessesInner == 4, "");
       CUTLASS_PRAGMA_UNROLL

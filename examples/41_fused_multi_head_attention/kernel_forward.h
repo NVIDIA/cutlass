@@ -247,10 +247,10 @@ struct AttentionKernel {
 
       int64_t q_start = 0, k_start = 0;
       // Advance to current batch - in case of different sequence lengths
-      constexpr bool kUseToBatchHook =
+      constexpr bool kToBatchHook =
           !cutlass::platform::is_same<ToBatchHookType_, DefaultToBatchHook>::
               value;
-      if (kUseToBatchHook) {
+      if (kToBatchHook) {
         // Call out to a custom implementation.
         if (!ToBatchHookType_::advance_to_batch(*this, q_start, k_start)) {
           return false;
