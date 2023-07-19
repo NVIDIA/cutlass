@@ -128,7 +128,7 @@ class KernelsForDataType:
         :rtype: int
         """
         # Determine the leading dimension of the shape
-        if layout == cutlass.LayoutType.RowMajor:
+        if layout == cutlass.LayoutType.ColumnMajor:
             ld = shape[0]
         elif layout == cutlass.LayoutType.RowMajor:
             ld = shape[1]
