@@ -737,7 +737,7 @@ tiled_divide(Tensor     && tensor,
 // logical_product on a Tensor doesn't make sense since it often increases cosize
 
 //
-// Logicial Divide utilities: local_partition and local_tile
+// Logical Divide utilities: local_partition and local_tile
 //
 
 template <class Tensor, class Tile, class Coord,
