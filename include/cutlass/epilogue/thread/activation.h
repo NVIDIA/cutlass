@@ -103,6 +103,7 @@ struct Identity {
 
 template <typename T, int N>
 struct Identity<Array<T, N> > {
+  static const bool kIsHeavy=false;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &value) const {
     return value;
@@ -172,6 +173,7 @@ struct ReLu<Array<T, N>> {
 // Leaky Relu operator
 template <typename T>
 struct LeakyReLU {
+  static const bool kIsHeavy=false;
 
   struct Params: LinearCombinationGenericParams<T> {
     T leaky_alpha;            ///< leaky_alpha
@@ -206,6 +208,7 @@ struct LeakyReLU {
 
 template <typename T, int N>
 struct LeakyReLU<Array<T, N> > {
+  static const bool kIsHeavy=false;
 
   struct Params: LinearCombinationGenericParams<T> {
     T leaky_alpha;            ///< leaky_alpha
@@ -249,6 +252,7 @@ struct LeakyReLU<Array<T, N> > {
 // Tanh operator
 template <typename T>
 struct Tanh {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   T operator()(T const &scalar) const {
     return fast_tanh(scalar);
@@ -264,6 +268,7 @@ struct Tanh {
 
 template <typename T, int N>
 struct Tanh<Array<T, N> > {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &value) const {
     Array<T, N> y;
@@ -288,6 +293,7 @@ struct Tanh<Array<T, N> > {
 template <int N>
 struct Tanh<Array<half_t, N>> {
   using T = half_t;
+  static const bool kIsHeavy=false;
 
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const& z) const {
@@ -307,6 +313,7 @@ struct Tanh<Array<half_t, N>> {
 // Sigmoid operator
 template <typename T>
 struct Sigmoid {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   T operator()(T const &scalar) const {
     return T(1) / (T(1) + fast_exp(-scalar));
@@ -322,6 +329,7 @@ struct Sigmoid {
 
 template <typename T, int N>
 struct Sigmoid<Array<T, N> > {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &value) const {
     Array<T, N> y;
@@ -345,6 +353,7 @@ struct Sigmoid<Array<T, N> > {
 
 template <int N>
 struct Sigmoid<Array<half_t, N>> {
+  static const bool kIsHeavy=true;
   using T = half_t;
 
   CUTLASS_HOST_DEVICE
@@ -381,6 +390,7 @@ struct Sigmoid<Array<half_t, N>> {
 // Reference: https://pytorch.org/docs/stable/generated/torch.nn.SiLU.html
 template <typename T>
 struct SiLu {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   T operator()(T const &scalar) const {
     Sigmoid<T> sigmoid;
@@ -397,6 +407,7 @@ struct SiLu {
 
 template <typename T, int N>
 struct SiLu<Array<T, N>> {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &value) const {
     Sigmoid<Array<T, N>> sigmoid_op;
@@ -419,6 +430,7 @@ struct SiLu<Array<T, N>> {
 // Reference: https://pytorch.org/docs/stable/generated/torch.nn.Hardswish.html
 template <typename T>
 struct HardSwish {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   T operator()(T const &x) const {
     minimum<T> mn;
@@ -437,6 +449,7 @@ struct HardSwish {
 
 template <>
 struct HardSwish<float> {
+  static const bool kIsHeavy=true;
   using T = float;
 
   CUTLASS_HOST_DEVICE
@@ -457,6 +470,7 @@ struct HardSwish<float> {
 
 template <typename T, int N>
 struct HardSwish<Array<T, N> > {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &value) const {
     Array<T, N> y;
@@ -480,6 +494,7 @@ struct HardSwish<Array<T, N> > {
 
 template <int N>
 struct HardSwish<Array<half_t, N> > {
+  static const bool kIsHeavy=true;
   using T = half_t;
 
   CUTLASS_HOST_DEVICE
@@ -512,6 +527,7 @@ struct HardSwish<Array<half_t, N> > {
 // GELU operator
 template <typename T>
 struct GELU {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   T operator()(T const &scalar) const {
     return T(cutlass::constants::half<T>() * scalar *
@@ -528,6 +544,7 @@ struct GELU {
 
 template <>
 struct GELU<float> {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   float operator()(float const &scalar) const {
     return cutlass::constants::half<float>() * scalar *
@@ -544,6 +561,7 @@ struct GELU<float> {
 
 template <>
 struct GELU<double> {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   double operator()(double const &scalar) const {
     return cutlass::constants::half<double>() * scalar *
@@ -560,6 +578,7 @@ struct GELU<double> {
 
 template <typename T, int N>
 struct GELU<Array<T, N> > {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &value) const {
     Array<T, N> y;
@@ -664,6 +683,7 @@ struct GELU_taylor<Array<T, N> > {
 /// z is computed from the forward pass.
 template <typename T>
 struct dGELU {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   T operator()(T const &d_t, T const &z) const {
 
@@ -682,6 +702,7 @@ struct dGELU {
 
 template <typename T, int N>
 struct dGELU<Array<T, N> > {
+  static const bool kIsHeavy=true;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &d_t, Array<T, N> const &z) const {
     Array<T, N> y;
