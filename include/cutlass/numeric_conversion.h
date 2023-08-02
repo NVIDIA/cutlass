@@ -2350,11 +2350,9 @@ struct FastNumericArrayConverter {
 
   CUTLASS_DEVICE
   static result_type convert(source_type const &s) {
-    result_type result;
     NumericArrayConverter<T, S, N, Round> convert_;
-    result = convert_(s);
 
-    return result;
+    return convert_(s);
   }
 
   CUTLASS_DEVICE
