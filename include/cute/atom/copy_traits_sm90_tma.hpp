@@ -71,21 +71,6 @@ struct Copy_Traits<SM90_TMA_LOAD_OP, NumBitsPerTMA>
   copy_unpack_(void const* const dst_ptr,
                Coord const& src_coord, seq<Is...>) const
   {
-#if 0
-    print("THR (%d,%d,%d) BLK (%d,%d,%d)\n",
-          threadIdx.x, threadIdx.y, threadIdx.z,
-          blockIdx.x, blockIdx.y, blockIdx.z);
-    print("  TMA Coord "); print(src_coord); print("\n");
-    print("  TMA Shape "); print(cute::make_tuple(uint64_t(tma_desc_.size0_),
-                                                  uint64_t(tma_desc_.size1_),
-                                                  uint64_t(tma_desc_.size2_),
-                                                  uint64_t(tma_desc_.size3_))); print("\n");
-    print("  TMA Box   "); print(cute::make_tuple(uint64_t(tma_desc_.bsize0_),
-                                                  uint64_t(tma_desc_.bsize1_),
-                                                  uint64_t(tma_desc_.bsize2_),
-                                                  uint64_t(tma_desc_.bsize3_))); print("\n");
-#endif
-
     SM90_TMA_LOAD::copy(&tma_desc_, tma_load_mbar_,
                         dst_ptr, get<Is>(src_coord)...);
   }
@@ -191,17 +176,6 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
   copy_unpack_(void const* const dst_ptr,
                Coord const& src_coord, seq<Is...>) const
   {
-#if 0
-    print("THR (%d,%d,%d) BLK (%d,%d,%d)\n",
-          threadIdx.x, threadIdx.y, threadIdx.z,
-          blockIdx.x, blockIdx.y, blockIdx.z);
-    print("  TMA Coord "); print(src_coord); print("\n");
-    print("  TMA Shape "); print(cute::make_tuple(uint64_t(tma_desc_.size0_),
-                                                  uint64_t(tma_desc_.size1_),
-                                                  uint64_t(tma_desc_.size2_),
-                                                  uint64_t(tma_desc_.size3_))); print("\n");
-#endif
-
     SM90_TMA_LOAD_MULTICAST::copy(&tma_desc_, tma_load_mbar_, multicast_mask_,
                                   dst_ptr, get<Is>(src_coord)...);
   }
@@ -313,21 +287,6 @@ struct Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, GmemStrides>
   copy_unpack_(void const* const src_ptr,
                Coord const& dst_coord, seq<Is...>) const
   {
-#if 0
-    print("THR (%d,%d,%d) BLK (%d,%d,%d)\n",
-          threadIdx.x, threadIdx.y, threadIdx.z,
-          blockIdx.x, blockIdx.y, blockIdx.z);
-    print("  TMA Coord "); print(src_coord); print("\n");
-    print("  TMA Shape "); print(cute::make_tuple(uint64_t(tma_desc_.size0_),
-                                                  uint64_t(tma_desc_.size1_),
-                                                  uint64_t(tma_desc_.size2_),
-                                                  uint64_t(tma_desc_.size3_))); print("\n");
-    print("  TMA Box   "); print(cute::make_tuple(uint64_t(tma_desc_.bsize0_),
-                                                  uint64_t(tma_desc_.bsize1_),
-                                                  uint64_t(tma_desc_.bsize2_),
-                                                  uint64_t(tma_desc_.bsize3_))); print("\n");
-#endif
-
     SM90_TMA_STORE::copy(&tma_desc_,
                          src_ptr, get<Is>(dst_coord)...);
   }
