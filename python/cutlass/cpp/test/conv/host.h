@@ -155,7 +155,8 @@ void bind_conv_host_references(py::module &m) {
     /// Cache
     py::class_<test::conv::device::CachedTestKey>(m, "CachedTestKey")
         .def(py::init<>())
-        .def(py::init<std::string, std::string, std::string, uint32_t, uint32_t, uint32_t>());
+        .def(py::init<std::string, std::string, std::string, uint32_t, uint32_t, uint32_t>())
+        .def_readwrite("problem", &test::conv::device::CachedTestKey::problem);
     
     py::class_<test::conv::device::CachedTestResult>(m, "CachedTestResult")
         .def(py::init<>())

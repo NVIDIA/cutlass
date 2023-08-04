@@ -36,18 +36,17 @@
 
 #include <cutlass/arch/memory_sm75.h>
 #include <cute/arch/cluster_sm90.hpp>
-namespace cutlass {
-/// @brief
-namespace arch {
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900 && (__CUDACC_VER_MAJOR__ >= 12)
 #define CUDA_BARRIER_ENABLED 1
 #else
 #define CUDA_BARRIER_ENABLED 0
 #endif
 
+namespace cutlass {
+/// @brief
+namespace arch {
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 class NamedBarrier {
 
   // Data Members:
@@ -65,9 +64,9 @@ class NamedBarrier {
   NamedBarrier(uint32_t num_threads, uint32_t id = 0)
       : num_threads_(num_threads), id_(id) {}
 
-  CUTLASS_DEVICE 
-  void arrive_and_wait() const { 
-    NamedBarrier::arrive_and_wait(num_threads_, id_); 
+  CUTLASS_DEVICE
+  void arrive_and_wait() const {
+    NamedBarrier::arrive_and_wait(num_threads_, id_);
   }
 
   CUTLASS_DEVICE
@@ -75,13 +74,13 @@ class NamedBarrier {
     NamedBarrier::arrive(num_threads_, id_);
   }
 
-  CUTLASS_DEVICE 
-  void sync() const { 
-    NamedBarrier::arrive_and_wait(); 
+  CUTLASS_DEVICE
+  void sync() const {
+    NamedBarrier::arrive_and_wait();
   }
 
   //  Static variants
-  CUTLASS_DEVICE 
+  CUTLASS_DEVICE
   static void arrive_and_wait(uint32_t num_threads, uint32_t barrier_id) {
 #if CUDA_BARRIER_ENABLED
     asm volatile("bar.sync %0, %1;" : : "r"(barrier_id), "r"(num_threads));
@@ -123,7 +122,7 @@ public:
   CUTLASS_DEVICE
   ClusterBarrier() = delete;
 
-  CUTLASS_DEVICE 
+  CUTLASS_DEVICE
   void init(uint32_t arrive_count) const {
     ClusterBarrier::init(&this->barrier_, arrive_count);
   }
@@ -305,36 +304,44 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
   CUTLASS_DEVICE
   ClusterTransactionBarrier() = delete;
 
-  // Performs an arrive operation + bytes reset
+  // Performs an arrive operation + expected transaction bytes increment
   CUTLASS_DEVICE
-  void arrive_and_reset_bytes(uint32_t transaction_bytes) const {
-    ClusterTransactionBarrier::arrive_and_reset_bytes(&this->barrier_, transaction_bytes);
+  void arrive_and_expect_tx(uint32_t transaction_bytes) const {
+    ClusterTransactionBarrier::arrive_and_expect_tx(&this->barrier_, transaction_bytes);
   }
 
-  // Performs an arrive operation + bytes reset
+  // Performs an arrive operation + expected transaction bytes increment
   CUTLASS_DEVICE
-  void arrive_and_reset_bytes(uint32_t transaction_bytes, uint32_t cta_id) const {
-    ClusterTransactionBarrier::arrive_and_reset_bytes(&this->barrier_, transaction_bytes , cta_id, true);
+  void arrive_and_expect_tx(uint32_t transaction_bytes, uint32_t cta_id) const {
+    ClusterTransactionBarrier::arrive_and_expect_tx(&this->barrier_, transaction_bytes , cta_id, true);
   }
 
+  // Performs an expected transaction bytes increment without doing an arrive operation
   CUTLASS_DEVICE
-  void commit(uint32_t transaction_bytes, uint32_t pred = 1) const {
+  void expect_transaction(uint32_t transaction_bytes) const {
+    ClusterTransactionBarrier::expect_transaction(&this->barrier_, transaction_bytes);
+  }
+
+  // Performs an expected transaction bytes decrement without doing an arrive operation
+  CUTLASS_DEVICE
+  void complete_transaction(uint32_t transaction_bytes, uint32_t pred = 1) const {
     uint32_t cta_rank = cute::block_rank_in_cluster();
-    ClusterTransactionBarrier::commit(&this->barrier_, cta_rank, transaction_bytes, pred);
+    ClusterTransactionBarrier::complete_transaction(&this->barrier_, cta_rank, transaction_bytes, pred);
   }
 
+  // Performs an expected transaction bytes decrement without doing an arrive operation
   CUTLASS_DEVICE
-  void commit(uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred) const {
-    ClusterTransactionBarrier::commit(&this->barrier_, dst_cta_id, transaction_bytes, pred);
+  void complete_transaction(uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred) const {
+    ClusterTransactionBarrier::complete_transaction(&this->barrier_, dst_cta_id, transaction_bytes, pred);
   }
 
   //
   //  Static Versions
   //
 
-  // Performs an arrive operation + bytes reset
+  // Performs an arrive operation + expected transaction bytes increment
   CUTLASS_DEVICE
-  static void arrive_and_reset_bytes(ValueType const* smem_ptr, uint32_t transaction_bytes) {
+  static void arrive_and_expect_tx(ValueType const* smem_ptr, uint32_t transaction_bytes) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     asm volatile(
@@ -348,9 +355,9 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
 #endif
   }
 
-  // Performs an arrive operation + bytes reset for a remote cta_id in a Cluster
+  // Performs an arrive operation + expected transaction bytes increment for a remote cta_id in a Cluster
   CUTLASS_DEVICE
-  static void arrive_and_reset_bytes(
+  static void arrive_and_expect_tx(
       ValueType const* smem_ptr, uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -369,9 +376,9 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
 #endif
   }
 
-  // Performs an bytes reset without doing an arrive operation
+  // Performs an expected transaction bytes increment without doing an arrive operation
   CUTLASS_DEVICE
-  static void reset_bytes(ValueType const* smem_ptr, uint32_t transaction_bytes) {
+  static void expect_transaction(ValueType const* smem_ptr, uint32_t transaction_bytes) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
     asm volatile(
@@ -385,9 +392,9 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
 #endif
   }
 
-  // Increments transaction bytes in the barrier
+  // Performs an expected transaction bytes decrement without doing an arrive operation
   CUTLASS_DEVICE
-  static void commit(
+  static void complete_transaction(
       ValueType const* smem_ptr, uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred = 1) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
@@ -403,6 +410,46 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
+  }
+
+  //
+  // DEPRECATED APIs
+  //
+  [[deprecated("Use arrive_and_expect_tx instead")]] CUTLASS_DEVICE
+  void arrive_and_reset_bytes(uint32_t transaction_bytes) const {
+    arrive_and_expect_tx(transaction_bytes);
+  }
+  [[deprecated("Use arrive_and_expect_tx instead")]] CUTLASS_DEVICE
+  void arrive_and_reset_bytes(uint32_t transaction_bytes, uint32_t cta_id) const {
+    arrive_and_expect_tx(transaction_bytes, cta_id);
+  }
+  [[deprecated("Use expect_transaction instead")]] CUTLASS_DEVICE
+  void reset_bytes(uint32_t transaction_bytes) const {
+    expect_transaction(transaction_bytes);
+  }
+  [[deprecated("Use complete_transaction instead")]] CUTLASS_DEVICE
+  void commit(uint32_t transaction_bytes, uint32_t pred = 1) const {
+    complete_transaction(transaction_bytes, pred);
+  }
+  [[deprecated("Use complete_transaction instead")]] CUTLASS_DEVICE
+  void commit(uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred) const {
+    complete_transaction(dst_cta_id, transaction_bytes, pred);
+  }
+  [[deprecated("Use arrive_and_expect_tx instead")]] CUTLASS_DEVICE
+  static void arrive_and_reset_bytes(ValueType const* smem_ptr, uint32_t transaction_bytes) {
+    arrive_and_expect_tx(smem_ptr, transaction_bytes);
+  }
+  [[deprecated("Use arrive_and_expect_tx instead")]] CUTLASS_DEVICE
+  static void arrive_and_reset_bytes(ValueType const* smem_ptr, uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred) {
+    arrive_and_expect_tx(smem_ptr, transaction_bytes, cta_id, pred);
+  }
+  [[deprecated("Use expect_transaction instead")]] CUTLASS_DEVICE
+  static void reset_bytes(ValueType const* smem_ptr, uint32_t transaction_bytes) {
+    expect_transaction(smem_ptr, transaction_bytes);
+  }
+  [[deprecated("Use complete_transaction instead")]] CUTLASS_DEVICE
+  static void commit(ValueType const* smem_ptr, uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred = 1) {
+    complete_transaction(smem_ptr, dst_cta_id, transaction_bytes, pred);
   }
 };
 

@@ -152,7 +152,7 @@ CUTLASS_HOST_DEVICE dividend_t round_nearest(dividend_t dividend, divisor_t divi
  * Greatest common divisor
  */
 template <typename value_t>
-CUTLASS_HOST_DEVICE value_t gcd(value_t a, value_t b) {
+CUTLASS_HOST_DEVICE constexpr value_t gcd(value_t a, value_t b) {
   for (;;) {
     if (a == 0) return b;
     b %= a;
@@ -165,7 +165,7 @@ CUTLASS_HOST_DEVICE value_t gcd(value_t a, value_t b) {
  * Least common multiple
  */
 template <typename value_t>
-CUTLASS_HOST_DEVICE value_t lcm(value_t a, value_t b) {
+CUTLASS_HOST_DEVICE constexpr value_t lcm(value_t a, value_t b) {
   value_t temp = gcd(a, b);
 
   return temp ? (a / temp * b) : 0;
@@ -459,7 +459,6 @@ struct FastDivmodU64 {
       }
       quotient = (x >> shift_right);
     #else
-      // TODO - use proper 'fast' division here also. No reason why x86-code shouldn't be optimized.
       quotient = dividend / divisor;
     #endif
 

@@ -57,6 +57,10 @@ struct Distribution {
     struct {
       double mean;
       double stddev;
+      double pnz;
+      double pnzA;
+      double pnzB;
+      double pnzC;
     } gaussian;
 
     /// Elements are linear combination of row and column index
@@ -88,10 +92,11 @@ struct Distribution {
   }
 
   /// Configures distribution as Gaussian distribution
-  Distribution &set_gaussian(double _mean, double _stddev, int _int_scale = 0) {
+  Distribution &set_gaussian(double _mean, double _stddev, int _int_scale = 0, double _pnz = 100.0) {
     kind = Gaussian;
     gaussian.mean = _mean;
     gaussian.stddev = _stddev;
+    gaussian.pnz = _pnz;
     int_scale = _int_scale;
     return *this;
   }
@@ -123,7 +128,9 @@ inline std::ostream &operator<<(std::ostream &out, cutlass::Distribution const &
       out << "uniform, min: " << dist.uniform.min << ", max: " << dist.uniform.max;
       break;
     case cutlass::Distribution::Gaussian:
-      out << "gaussian, mean: " << dist.gaussian.mean << ", stddev: " << dist.gaussian.stddev;
+      out << "gaussian, mean: " << dist.gaussian.mean << ", stddev: " << dist.gaussian.stddev
+          << ", pnzA: " << dist.gaussian.pnzA << ", pnzB: "
+          << dist.gaussian.pnzB << ", pnzC: " << dist.gaussian.pnzC;
       break;
     case cutlass::Distribution::Identity:
       out << "identity";

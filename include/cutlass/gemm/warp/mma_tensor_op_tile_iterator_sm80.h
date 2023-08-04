@@ -546,7 +546,6 @@ public:
       Fragment &frag,
       /// loads a tile with a logical offset in units of whole tiles
       TensorCoord const &tile_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -558,7 +557,6 @@ public:
       TensorCoord const &tile_offset,
       /// loads a tile with a logical offset AND a pointer offset
       Index pointer_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -774,7 +772,6 @@ public:
       Fragment &frag,
       /// loads a tile with a logical offset in units of whole tiles
       TensorCoord const &tile_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -786,7 +783,6 @@ public:
       TensorCoord const &tile_offset,
       /// loads a tile with a logical offset AND a pointer offset
       Index pointer_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -999,7 +995,8 @@ public:
   CUTLASS_DEVICE
   MmaTensorOpMultiplicandTileIterator &add_tile_offset_negative(TensorCoord const &tile_offset) {
 
-    add_tile_offset(tile_offset); // TODO fix this if it becomes an issue during warp it reset
+    // TODO: fix this if it becomes an issue during warp it reset
+    add_tile_offset(tile_offset);
 
     return *this;
   }
@@ -1334,7 +1331,6 @@ public:
       Fragment &frag,
       /// loads a tile with a logical offset in units of whole tiles
       TensorCoord const &tile_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -1346,7 +1342,6 @@ public:
       TensorCoord const &tile_offset,
       /// loads a tile with a logical offset AND a pointer offset
       Index pointer_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -1567,7 +1562,6 @@ public:
       Fragment &frag,
       /// loads a tile with a logical offset in units of whole tiles
       TensorCoord const &tile_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -1579,7 +1573,6 @@ public:
       TensorCoord const &tile_offset,
       /// loads a tile with a logical offset AND a pointer offset
       Index pointer_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -2170,7 +2163,6 @@ public:
       Fragment &frag,
       /// loads a tile with a logical offset in units of whole tiles
       TensorCoord const &tile_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -2182,7 +2174,6 @@ public:
       TensorCoord const &tile_offset,
       /// loads a tile with a logical offset AND a pointer offset
       Index pointer_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -2399,7 +2390,6 @@ public:
       Fragment &frag,
       /// loads a tile with a logical offset in units of whole tiles
       TensorCoord const &tile_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.
@@ -2411,7 +2401,6 @@ public:
       TensorCoord const &tile_offset,
       /// loads a tile with a logical offset AND a pointer offset
       Index pointer_offset) const {
-    // TODO
   }
 
   /// Loads a fragment from memory with logical offset in units of whole tiles.

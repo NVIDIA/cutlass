@@ -273,7 +273,7 @@ using GenRowMajor = LayoutRight; // Alias
 
 namespace detail {
 
-// GGC8.5 WAR -- Use of lambdas in unevaluated contexts. Instead use function objects.
+// For GCC8.5 -- Use of lambdas in unevaluated contexts. Instead use function objects.
 template <class Major>
 struct CompactLambda;
 
@@ -300,7 +300,7 @@ compact(Shape   const& shape,
   CUTE_GCC_UNREACHABLE;
 }
 
-// GCC8.5 WAR -- Specialization LayoutLeft
+// For GCC8.5 -- Specialization LayoutLeft
 template <>
 struct CompactLambda<LayoutLeft>
 {
@@ -315,7 +315,7 @@ struct CompactLambda<LayoutLeft>
   using seq = tuple_seq<Shape>;                                                     // Seq
 };
 
-// GCC8.5 WAR -- Specialization LayoutRight
+// For GCC8.5 -- Specialization LayoutRight
 template <>
 struct CompactLambda<LayoutRight>
 {
@@ -419,8 +419,15 @@ CUTE_HOST_DEVICE constexpr
 auto
 compact_order(Shape const& shape, Order const& order)
 {
-  static_assert(is_congruent<Shape,Order>::value, "Need congruence of shape and order.");
-  return detail::compact_order(shape, order, flatten_to_tuple(shape), flatten_to_tuple(order));
+  if constexpr(is_congruent<Shape,Order>::value) {
+    return detail::compact_order(shape, order, flatten_to_tuple(shape), flatten_to_tuple(order));
+  }
+  else
+  {
+    // Here we only want to apply order to top-level subshapes and default (col-major) order on other levels
+    static_assert(rank(Shape{}) == rank(Order{}), "Need equal rank of shape and order");
+    return detail::compact_order(shape, order, shape, order);
+  }
 }
 
 template <class Shape>

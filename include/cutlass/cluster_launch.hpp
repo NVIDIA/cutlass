@@ -223,13 +223,21 @@ launch_kernel_on_cluster(const ClusterLaunchParams& params,
 {
   // Unfortunately, we find ourselves needing to pass in
   // the parameters as an array of raw pointers.
-  void* kernel_params[] = {
-    detail::checked_addressof(std::forward<Args>(args))...
-  };
-  return cutlass::ClusterLauncher::launch(
-    params.grid_dims, params.cluster_dims, params.block_dims,
-    params.smem_size_in_bytes, params.cuda_stream,
-    kernel_ptr, kernel_params);
+  if constexpr (sizeof...(Args) == 0) {
+    return cutlass::ClusterLauncher::launch(
+      params.grid_dims, params.cluster_dims, params.block_dims,
+      params.smem_size_in_bytes, params.cuda_stream,
+      kernel_ptr, nullptr);
+  }
+  else {
+    void* kernel_params[sizeof...(Args)] = {
+      detail::checked_addressof(std::forward<Args>(args))...
+    };
+    return cutlass::ClusterLauncher::launch(
+      params.grid_dims, params.cluster_dims, params.block_dims,
+      params.smem_size_in_bytes, params.cuda_stream,
+      kernel_ptr, kernel_params);
+  }
 }
 
 }  // namespace cutlass

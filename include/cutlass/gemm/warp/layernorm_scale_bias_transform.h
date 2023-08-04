@@ -107,7 +107,6 @@ struct LayernormScaleBiasTransform {
           "r"(ptr_var_mean[1]),
           "r"(ptr_gamma_beta[0]), "r"(ptr_gamma_beta[1]));
 #else
-    // TODO: write emulation code
     assert(0);
 #endif
   }

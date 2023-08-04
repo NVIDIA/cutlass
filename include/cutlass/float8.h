@@ -75,7 +75,6 @@
 #include <cuda_fp16.h>
 
 #include "cutlass/cutlass.h"
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -1080,7 +1079,7 @@ struct numeric_limits<cutlass::float_e4m3_t> :
   /// Minimum finite value
   static cutlass::float_e4m3_t lowest() { return cutlass::float_e4m3_t::bitcast(0xfe); }
 
-  /// Returns smallest finite value
+  /// Machine epsilon, that is, the difference between 1.0 and the next representable value
   static cutlass::float_e4m3_t epsilon() { return cutlass::float_e4m3_t::bitcast(0x20); }
 };
 
@@ -1093,7 +1092,7 @@ struct numeric_limits<cutlass::float_e5m2_t>  :
   /// Minimum finite value
   static cutlass::float_e5m2_t lowest() { return cutlass::float_e5m2_t::bitcast(0xfb); }
 
-  /// Returns smallest finite value
+  /// Machine epsilon, that is, the difference between 1.0 and the next representable value
   static cutlass::float_e5m2_t epsilon() { return cutlass::float_e5m2_t::bitcast(0x34); }
 };
 
@@ -1161,7 +1160,7 @@ struct numeric_limits<cutlass::float_e4m3_t> :
   /// Minimum finite value
   static cutlass::float_e4m3_t lowest() { return cutlass::float_e4m3_t::bitcast(0xfe); }
 
-  /// Returns smallest finite value
+  /// Machine epsilon, that is, the difference between 1.0 and the next representable value
   static cutlass::float_e4m3_t epsilon() { return cutlass::float_e4m3_t::bitcast(0x20); }
 };
 
@@ -1174,7 +1173,7 @@ struct numeric_limits<cutlass::float_e5m2_t>  :
   /// Minimum finite value
   static cutlass::float_e5m2_t lowest() { return cutlass::float_e5m2_t::bitcast(0xfb); }
 
-  /// Returns smallest finite value
+  /// Machine epsilon, that is, the difference between 1.0 and the next representable value
   static cutlass::float_e5m2_t epsilon() { return cutlass::float_e5m2_t::bitcast(0x34); }
 };
 

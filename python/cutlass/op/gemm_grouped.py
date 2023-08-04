@@ -168,7 +168,7 @@ class GroupedGemm(Gemm):
         alignment_B = check.alignment_or_default(alignment_B, alignment_preference)
         alignment_C = check.alignment_or_default(alignment_C, alignment_preference)
 
-        self._reset_epilogue_functor_alignment(alignment_C)
+        self.epilogue_functor = self._reset_epilogue_functor_alignment(alignment_C, self.epilogue_functor)
 
         tensor_A = TensorDescription(
             datatypes.binding_type(self._element_a),

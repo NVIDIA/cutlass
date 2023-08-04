@@ -51,7 +51,6 @@
 
 #include "../../common/cutlass_unit_test.h"
 
-#include "testing_elementwise.hpp"
 #include "gemm_testbed_3x.hpp"
 
 
@@ -66,8 +65,9 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using TileShape_MNK = Shape<_128,_128,_64>;
   using ClusterShape_MNK = Shape<_2,_2,_1>;
 
-  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedElementwise<
-        cutlass::epilogue::thread::ReLu>;
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
+  using FusionOperation = cutlass::epilogue::fusion::LinCombEltAct<
+      cutlass::epilogue::thread::ReLu, cutlass::half_t, float>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -76,7 +76,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       float, float,
       cutlass::half_t, LayoutC, 8,
       cutlass::half_t, LayoutC, 8,
-      EpilogueSchedule
+      EpilogueSchedule,
+      FusionOperation
     >::CollectiveOp;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -96,7 +97,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  bool passed = test::gemm::device::TestAll<Gemm, cutlass::epilogue::thread::ReLu>();
+  test::gemm::device::Testbed3x<Gemm, cutlass::epilogue::thread::ReLu> testbed;
+  bool passed = test::gemm::device::TestAll<Gemm>(1, 1, testbed);
   EXPECT_TRUE(passed);
 }
 
@@ -107,9 +109,9 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using TileShape_MNK = Shape<_128,_128,_64>;
   using ClusterShape_MNK = Shape<_2,_2,_1>;
 
-  static constexpr bool StoreT = true;
-  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedBiasElementwise<
-        cutlass::epilogue::thread::ReLu, cutlass::half_t, cutlass::plus, StoreT, float>;
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
+  using FusionOperation = cutlass::epilogue::fusion::LinCombPerRowBiasEltActAux<
+      LayoutC, cutlass::epilogue::thread::ReLu, cutlass::half_t, float, cutlass::half_t, float>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -118,7 +120,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       float, float,
       cutlass::half_t, LayoutC, 8,
       cutlass::half_t, LayoutC, 8,
-      EpilogueSchedule
+      EpilogueSchedule,
+      FusionOperation
     >::CollectiveOp;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -139,7 +142,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>();
+  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>(1, 1);
   EXPECT_TRUE(passed);
 }
 
@@ -150,9 +153,9 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using TileShape_MNK = Shape<_128,_128,_64>;
   using ClusterShape_MNK = Shape<_2,_2,_1>;
 
-  static constexpr bool StoreT = true;
-  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedBiasElementwise<
-        cutlass::epilogue::thread::GELU, cutlass::half_t, cutlass::plus, StoreT, float>;
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
+  using FusionOperation = cutlass::epilogue::fusion::LinCombPerRowBiasEltActAux<
+      LayoutC, cutlass::epilogue::thread::GELU, cutlass::half_t, float, cutlass::half_t, float>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -161,7 +164,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       float, float,
       cutlass::half_t, LayoutC, 8,
       cutlass::half_t, LayoutC, 8,
-      EpilogueSchedule
+      EpilogueSchedule,
+      FusionOperation
     >::CollectiveOp;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -183,7 +187,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
   bool check_relative_equality = true;
-  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>(check_relative_equality);
+  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>(1, 1, check_relative_equality);
   EXPECT_TRUE(passed);
 }
 
@@ -194,9 +198,9 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using TileShape_MNK = Shape<_128,_128,_64>;
   using ClusterShape_MNK = Shape<_2,_2,_1>;
 
-  static constexpr bool StoreT = false;
-  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedBiasElementwise<
-        cutlass::epilogue::thread::ReLu, cutlass::half_t, cutlass::plus, StoreT, float>;
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
+  using FusionOperation = cutlass::epilogue::fusion::LinCombPerRowBiasEltAct<
+      cutlass::epilogue::thread::ReLu, cutlass::half_t, float, float>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -205,7 +209,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       float, float,
       cutlass::half_t, LayoutC, 8,
       cutlass::half_t, LayoutC, 8,
-      EpilogueSchedule
+      EpilogueSchedule,
+      FusionOperation
     >::CollectiveOp;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -226,7 +231,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>();
+  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>(1, 1);
   EXPECT_TRUE(passed);
 }
 
@@ -238,9 +243,9 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using TileShape_MNK = Shape<_128,_128,_64>;
   using ClusterShape_MNK = Shape<_2,_2,_1>;
 
-  static constexpr bool StoreT = true;
-  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedBiasElementwise<
-        test::gemm::device::detail::Negate, cutlass::half_t, cutlass::plus, StoreT, float>;
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
+  using FusionOperation = cutlass::epilogue::fusion::LinCombPerRowBiasEltActAux<
+      LayoutC, cutlass::negate, cutlass::half_t, float, cutlass::half_t, float>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -249,7 +254,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       float, float,
       cutlass::half_t, LayoutC, 8,
       cutlass::half_t, LayoutC, 8,
-      EpilogueSchedule
+      EpilogueSchedule,
+      FusionOperation
     >::CollectiveOp;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -270,11 +276,11 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>();
+  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>(1, 1);
   EXPECT_TRUE(passed);
 }
 
-TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1_BiasF32Mul_ReLU) {
+TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1_BiasF32_ReLU) {
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
@@ -282,9 +288,9 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_persistent_epilogue, 128
   using TileShape_MNK = Shape<_128,_128,_64>;
   using ClusterShape_MNK = Shape<_2,_2,_1>;
 
-  static constexpr bool StoreT = true;
-  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedBiasElementwise<
-        cutlass::epilogue::thread::ReLu, cutlass::half_t, cutlass::multiplies, StoreT, float>;
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
+  using FusionOperation = cutlass::epilogue::fusion::LinCombPerRowBiasEltActAux<
+      LayoutC, cutlass::epilogue::thread::ReLu, cutlass::half_t, float, cutlass::half_t, float>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -293,7 +299,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_persistent_epilogue, 128
       float, float,
       cutlass::half_t, LayoutC, 8,
       cutlass::half_t, LayoutC, 8,
-      EpilogueSchedule
+      EpilogueSchedule,
+      FusionOperation
     >::CollectiveOp;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -314,11 +321,11 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_persistent_epilogue, 128
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 
-  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>();
+  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>(1, 1);
   EXPECT_TRUE(passed);
 }
 
-TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1_BiasF32Mul_ReLU) {
+TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1_BiasF32_ReLU_VoidC) {
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
@@ -326,53 +333,9 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using TileShape_MNK = Shape<_128,_128,_64>;
   using ClusterShape_MNK = Shape<_2,_2,_1>;
 
-  static constexpr bool StoreT = true;
-  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedBiasElementwise<
-        cutlass::epilogue::thread::ReLu, cutlass::half_t, cutlass::multiplies, StoreT, float>;
-
-  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-      TileShape_MNK, ClusterShape_MNK,
-      cutlass::epilogue::collective::EpilogueTileAuto,
-      float, float,
-      cutlass::half_t, LayoutC, 8,
-      cutlass::half_t, LayoutC, 8,
-      EpilogueSchedule
-    >::CollectiveOp;
-
-  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
-      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-      cutlass::half_t, LayoutA, 8,
-      cutlass::half_t, LayoutB, 8,
-      float,
-      TileShape_MNK, ClusterShape_MNK,
-      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
-      cutlass::gemm::KernelTmaWarpSpecializedPingpong
-    >::CollectiveOp;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
-      CollectiveMainloop,
-      CollectiveEpilogue
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-
-  bool passed = test::gemm::device::TestAllBiasElementwise<Gemm>();
-  EXPECT_TRUE(passed);
-}
-
-TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1_BiasF32Mul_ReLU_VoidC) {
-
-  using LayoutA = cutlass::layout::RowMajor;
-  using LayoutB = cutlass::layout::ColumnMajor;
-  using LayoutC = cutlass::layout::RowMajor;
-  using TileShape_MNK = Shape<_128,_128,_64>;
-  using ClusterShape_MNK = Shape<_2,_2,_1>;
-
-  static constexpr bool StoreT = true;
-  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedBiasElementwise<
-        cutlass::epilogue::thread::ReLu, cutlass::half_t, cutlass::multiplies, StoreT, float>;
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
+  using FusionOperation = cutlass::epilogue::fusion::LinCombPerRowBiasEltActAux<
+      LayoutC, cutlass::epilogue::thread::ReLu, cutlass::half_t, float, cutlass::half_t, float>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -381,7 +344,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       float, float,
       void, LayoutC, 8,
       cutlass::half_t, LayoutC, 8,
-      EpilogueSchedule
+      EpilogueSchedule,
+      FusionOperation
     >::CollectiveOp;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -406,7 +370,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   EXPECT_TRUE(passed);
 }
 
-TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1_BiasF16Mul_ReLU_VoidC) {
+TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1_BiasF16_ReLU_VoidC) {
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
@@ -414,9 +378,9 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using TileShape_MNK = Shape<_128,_128,_64>;
   using ClusterShape_MNK = Shape<_2,_2,_1>;
 
-  static constexpr bool StoreT = true;
-  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedBiasElementwise<
-        cutlass::epilogue::thread::ReLu, cutlass::half_t, cutlass::multiplies, StoreT, cutlass::half_t>;
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
+  using FusionOperation = cutlass::epilogue::fusion::LinCombPerRowBiasEltActAux<
+      LayoutC, cutlass::epilogue::thread::ReLu, cutlass::half_t, float, cutlass::half_t, cutlass::half_t>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -425,7 +389,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       float, float,
       void, LayoutC, 8,
       cutlass::half_t, LayoutC, 8,
-      EpilogueSchedule
+      EpilogueSchedule,
+      FusionOperation
     >::CollectiveOp;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
@@ -450,7 +415,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   EXPECT_TRUE(passed);
 }
 
-TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1_BiasS8Mul_ReLU_VoidC) {
+TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1_BiasS8_ReLU_VoidC) {
 
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
@@ -458,9 +423,9 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using TileShape_MNK = Shape<_128,_128,_64>;
   using ClusterShape_MNK = Shape<_2,_2,_1>;
 
-  static constexpr bool StoreT = true;
-  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecializedBiasElementwise<
-        cutlass::epilogue::thread::ReLu, cutlass::half_t, cutlass::multiplies, StoreT, int8_t>;
+  using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
+  using FusionOperation = cutlass::epilogue::fusion::LinCombPerRowBiasEltActAux<
+      LayoutC, cutlass::epilogue::thread::ReLu, cutlass::half_t, float, cutlass::half_t, int8_t>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
@@ -469,7 +434,8 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
       float, float,
       void, LayoutC, 8,
       cutlass::half_t, LayoutC, 8,
-      EpilogueSchedule
+      EpilogueSchedule,
+      FusionOperation
     >::CollectiveOp;
 
   using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<

@@ -45,13 +45,13 @@ template <
   class ProblemShape_,
   class CollectiveMainloop_,
   class CollectiveEpilogue_,
-  class GridSwizzle_
+  class TileScheduler_
 >
 class GemmUniversal<
   ProblemShape_,
   CollectiveMainloop_,
   CollectiveEpilogue_,
-  GridSwizzle_,
+  TileScheduler_,
   cute::enable_if_t<cute::is_base_of_v<KernelMultistage, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 {
 public:
@@ -59,7 +59,7 @@ public:
   // Type Aliases
   //
   using ProblemShape = ProblemShape_;
-  using GridSwizzle = GridSwizzle_;
+
   static_assert(rank(ProblemShape{}) == 3 or rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
 
@@ -77,6 +77,14 @@ public:
   using MainloopArguments = typename CollectiveMainloop::Arguments;
   using MainloopParams = typename CollectiveMainloop::Params;
 
+  static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
+    "SM70 kernel does not support specializing the tile scheduler.");
+  using TileScheduleTag = TileScheduler_;
+  using TileScheduler = typename detail::TileSchedulerSelector<
+    TileScheduler_, ArchTag, TileShape,
+    cute::Shape<cute::Int<1>, cute::Int<1>, cute::Int<1>>>::Scheduler;
+  using TileSchedulerArguments = typename TileScheduler::Arguments;
+
   // Epilogue derived types
   using CollectiveEpilogue = CollectiveEpilogue_;
   using ElementC = typename CollectiveEpilogue::ElementC;
@@ -88,9 +96,10 @@ public:
   static_assert(cute::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
     "Mainloop and epilogue do not agree on accumulator value type.");
 
-  static constexpr int SharedStorageSize = cute::max(
+  // MSVC requires the cast to fix a warning-as-error.
+  static constexpr int SharedStorageSize = static_cast<int>(cute::max(
       sizeof(typename CollectiveMainloop::SharedStorage),
-      sizeof(typename CollectiveEpilogue::SharedStorage));
+      sizeof(typename CollectiveEpilogue::SharedStorage)));
 
   static constexpr uint32_t MaxThreadsPerBlock = cute::size(TiledMma{});
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
@@ -102,6 +111,7 @@ public:
     MainloopArguments mainloop{};
     EpilogueArguments epilogue{};
     KernelHardwareInfo hw_info{};
+    TileSchedulerArguments scheduler{};
   };
 
   // Kernel entry point API
@@ -140,6 +150,12 @@ public:
     return 0;
   }
 
+  static
+  cutlass::Status
+  initialize_workspace(Arguments const& args, void* workspace = nullptr, cudaStream_t stream = nullptr) {
+    return Status::kSuccess;
+  }
+
   static dim3
   get_grid_shape(Params const& params) {
     int batch_count = 1;
@@ -169,7 +185,7 @@ public:
     CUTE_STATIC_ASSERT(is_static<TileShape>::value);
 
     // Separate out problem shape for convenience
-    // Optionally append _1s until problem shape is rank-4 in case its is only rank-3 (MNK)
+    // Optionally append 1s until problem shape is rank-4 in case its is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(params.problem_shape, Int<1>{});
     auto M = get<0>(problem_shape_MNKL);
     auto N = get<1>(problem_shape_MNKL);

@@ -250,9 +250,6 @@ public:
 
   /// Determines whether the GEMM can execute the given problem.
   static Status can_implement(Arguments const &args) {
-
-    // TODO
-
     return Status::kSuccess;
   }
 

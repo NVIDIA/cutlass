@@ -128,4 +128,20 @@ copy_unpack(Copy_Traits<Operation, Args...> const&,
                   rD, make_int_sequence<RegNumDst>{});
 }
 
+//
+// Accept mutable temporaries
+//
+
+template <class Operation, class... Args,
+          class TS, class SLayout,
+          class TD, class DLayout>
+CUTE_HOST_DEVICE constexpr
+void
+copy_unpack(Copy_Traits<Operation, Args...> const& traits,
+            Tensor<TS,SLayout> const&  src,
+            Tensor<TD,DLayout>      && dst)
+{
+  copy_unpack(traits, src, dst);
+}
+
 } // end namespace cute

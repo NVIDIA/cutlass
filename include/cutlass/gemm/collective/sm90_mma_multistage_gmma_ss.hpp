@@ -329,7 +329,8 @@ struct CollectiveMma<
   using ElementB = ElementB_;
   using StrideB = StrideB_;
   using TiledMma = TiledMma_;
-  using ElementAccumulator = typename TiledMma::ValTypeC;  using GmemTiledCopyA = GmemTiledCopyA_;
+  using ElementAccumulator = typename TiledMma::ValTypeC;
+  using GmemTiledCopyA = GmemTiledCopyA_;
   using GmemTiledCopyB = GmemTiledCopyB_;
   using SmemLayoutAtomA = SmemLayoutAtomA_;
   using SmemLayoutAtomB = SmemLayoutAtomB_;
@@ -387,6 +388,14 @@ struct CollectiveMma<
     return args;
   }
 
+  template<class ProblemShape>
+  CUTLASS_HOST_DEVICE static bool
+  can_implement(
+      [[maybe_unused]] ProblemShape const& problem_shape,
+      [[maybe_unused]] Arguments const& args) {
+    return true;
+  }
+
   /// Perform a collective-scoped matrix multiply-accumulate
   template <
     class FrgTensorD,
@@ -399,8 +408,8 @@ struct CollectiveMma<
   CUTLASS_DEVICE void
   operator() (
       FrgTensorD &accum,
-      TensorA gA,
-      TensorB gB,
+      TensorA gA_in,
+      TensorB gB_in,
       FrgTensorC const &src_accum,
       KTileIterator k_tile_iter, int k_tile_count,
       ResidueMNK residue_mnk,
@@ -432,8 +441,8 @@ struct CollectiveMma<
 
     // Shift tensor so residue_k is at origin (Can't read any k_coord < residue_k)
     // This aligns the tensor with BLK_K for all but the 0th k_tile
-    gA.data() = &gA(0, get<2>(residue_mnk), 0);
-    gB.data() = &gB(0, get<2>(residue_mnk), 0);
+    Tensor gA = domain_offset(make_coord(0, get<2>(residue_mnk), 0), gA_in);
+    Tensor gB = domain_offset(make_coord(0, get<2>(residue_mnk), 0), gB_in);
 
     // Partition the copying of A and B tiles across the threads
     GmemTiledCopyA gmem_tiled_copy_a;

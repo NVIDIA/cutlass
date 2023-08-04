@@ -411,11 +411,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 make_tensor_like(Layout const& layout)
 {
-  if constexpr (is_static<Layout>::value) {
-    return make_tensor<NewT>(make_ordered_layout(layout));
-  } else {
-    return make_tensor<NewT>(make_layout(layout.shape()));
-  }
+  return make_tensor<NewT>(make_layout_like(layout));
 }
 
 template <class NewT, class Engine, class Layout>
@@ -466,7 +462,22 @@ make_fragment_like(Tensor<Engine,Layout> const& tensor)
 }
 
 //
+// make_counting_tensor
+//   Make a tensor from a layout by binding it to a counting iter with 0-offset of the same profile as the codomain.
+//
+
+template <class Layout, __CUTE_REQUIRES(is_layout<Layout>::value)>
+CUTE_HOST_DEVICE constexpr
+auto
+make_counting_tensor(Layout const& layout)
+{
+  return make_tensor(ArithmeticTupleIterator(as_arithmetic_tuple(repeat_like(coshape(layout), Int<0>{}))),
+                     layout);
+}
+
+//
 // make_identity_tensor
+//   Make a tensor that maps coordinates within a shape to themselves.
 //
 
 template <class Shape>
@@ -474,8 +485,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 make_identity_tensor(Shape const& shape)
 {
-  return make_tensor(ArithmeticTupleIterator(as_arithmetic_tuple(repeat_like(shape, Int<0>{}))),
-                     make_identity_layout(shape));
+  return make_counting_tensor(make_identity_layout(shape));
 }
 
 //
@@ -596,6 +606,44 @@ coalesce(Tensor&& tensor, Profile const& profile)
   return make_tensor(std::forward<Tensor>(tensor).data(), coalesce(tensor.layout(), profile));
 }
 
+template <class Tensor,
+          __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
+CUTE_HOST_DEVICE constexpr
+auto
+filter_zeros(Tensor&& tensor)
+{
+  return make_tensor(cute::forward<Tensor>(tensor).data(), filter_zeros(tensor.layout()));
+}
+
+template <class Tensor,
+          __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
+CUTE_HOST_DEVICE constexpr
+auto
+filter(Tensor&& tensor)
+{
+  return make_tensor(std::forward<Tensor>(tensor).data(), filter(tensor.layout()));
+}
+
+template <class Tensor, class Profile,
+          __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
+CUTE_HOST_DEVICE constexpr
+auto
+filter(Tensor&& tensor, Profile const& profile)
+{
+  return make_tensor(std::forward<Tensor>(tensor).data(), filter(tensor.layout(), profile));
+}
+
+// Return a tensor with the same shape as input but offset by a given coordinate
+template <class Coord, class Tensor,
+          __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
+CUTE_HOST_DEVICE constexpr
+auto
+domain_offset(Coord const& coord, Tensor&& tensor)
+{
+  auto [layout, ptr_offset] = domain_offset(coord, tensor.layout());
+  return make_tensor(std::forward<Tensor>(tensor).data() + ptr_offset, layout);
+}
+
 // Group the modes [B,E) into a single mode
 // e.g. group<2,4>(make_tensor<int>(Layout<Shape<_1,_2,_3,_4,_5,_6>>{}))
 //      => make_tensor<int>(Layout<Shape<_1,_2,Shape<_3,_4>,_5,_6>>{})
@@ -642,13 +690,28 @@ recast(Tensor&& tensor, type_list<NewType>)
   CUTE_GCC_UNREACHABLE;
 }
 
-template <class NewType, class Tensor,
-          __CUTE_REQUIRES(is_tensor<remove_cvref_t<Tensor>>::value)>
+template <class NewType, class Engine, class Layout>
 CUTE_HOST_DEVICE constexpr
 auto
-recast(Tensor&& tensor)
+recast(Tensor<Engine,Layout> const& tensor)
 {
-  return recast(std::forward<Tensor>(tensor), type_list<NewType>{});
+  return recast(tensor, type_list<NewType>{});
+}
+
+template <class NewType, class Engine, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+recast(Tensor<Engine,Layout>& tensor)
+{
+  return recast(tensor, type_list<NewType>{});
+}
+
+template <class NewType, class Engine, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+recast(Tensor<Engine,Layout>&& tensor)
+{
+  return recast(std::forward<Tensor<Engine,Layout>>(tensor), type_list<NewType>{});
 }
 
 //
@@ -841,8 +904,16 @@ local_tile(Tensor     && tensor,
 //
 
 template <class Engine, class Layout>
+CUTE_HOST_DEVICE void print(Tensor<Engine,Layout> const& tensor)
+{
+  print(tensor.data()); print(" o "); print(tensor.layout()); 
+}
+
+template <class Engine, class Layout>
 CUTE_HOST_DEVICE void print_tensor(Tensor<Engine,Layout> const& tensor)
 {
+  print(tensor); print(":\n");
+
   auto format = get_format(tensor(0));
   using type = typename decltype(format)::type;
 
@@ -880,12 +951,7 @@ CUTE_HOST_DEVICE void print_tensor(Tensor<Engine,Layout> const& tensor)
   }
 }
 
-template <class Engine, class Layout>
-CUTE_HOST_DEVICE void print(Tensor<Engine,Layout> const& tensor)
-{
-  print(tensor.layout()); print("\n");
-  print_tensor(tensor);
-}
+
 
 #if !defined(__CUDACC_RTC__)
 template <class Engine, class Layout>
@@ -943,7 +1009,6 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, Tensor<Engine,Layout> const
 //
 
 #include <cute/swizzle_ptr.hpp>
-
 //
 // Tensor Algorithms
 //

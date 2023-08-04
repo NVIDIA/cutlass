@@ -1793,7 +1793,6 @@ TEST(SM75_gemm_threadblock_interleaved,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
 TEST(SM75_gemm_threadblock_crosswise, tensor_op_64x64x512_64x64x512_8x8x128) {
   using ElementA = cutlass::uint1b_t;
   using LayoutA = cutlass::layout::RowMajor;

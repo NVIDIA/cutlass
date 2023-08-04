@@ -220,7 +220,7 @@ struct BlockStripedReduce :
   CUTLASS_DEVICE
   static void reduce(ArrayT *ptr, const ArrayT &data, int thread_idx)
   {
-    cutlass::red<ElementT> reduce;
+    cutlass::atomic_add<ElementT> reduce;
     ElementT *access_output = reinterpret_cast<ElementT*>(ptr);
     const ElementT *access_data = reinterpret_cast<const ElementT*>(&data);
 
@@ -250,7 +250,7 @@ struct BlockStripedReduce<BlockThreads, ArrayT, half_t> :
   CUTLASS_DEVICE
   static void reduce(ArrayT *ptr, const ArrayT &data, int thread_idx)
   {
-    cutlass::red<half2> reduce;
+    cutlass::atomic_add<half2> reduce;
     half2 *access_output = reinterpret_cast<half2*>(ptr);
     const half2 *access_data = reinterpret_cast<const half2*>(&data);
 

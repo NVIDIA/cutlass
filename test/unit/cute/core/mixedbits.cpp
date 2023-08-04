@@ -55,11 +55,11 @@ TEST(CuTe_core, MixedBits) {
                 auto m0 = make_mixed_bits(S0, d0, F0);
                 auto m1 = make_mixed_bits(S1, d1, F1);
                 //print(m0); print(" & "); print(m1); print(" = "); print(m0 & m1); print("\n");
-                EXPECT_EQ(to_integral(m0 & m1), to_integral(m0) & to_integral(m1));
+                EXPECT_EQ(uint32_t(m0 & m1), uint32_t(m0) & uint32_t(m1));
                 //print(m0); print(" | "); print(m1); print(" = "); print(m0 | m1); print("\n");
-                EXPECT_EQ(to_integral(m0 | m1), to_integral(m0) | to_integral(m1));
+                EXPECT_EQ(uint32_t(m0 | m1), uint32_t(m0) | uint32_t(m1));
                 //print(m0); print(" ^ "); print(m1); print(" = "); print(m0 ^ m1); print("\n");
-                EXPECT_EQ(to_integral(m0 ^ m1), to_integral(m0) ^ to_integral(m1));
+                EXPECT_EQ(uint32_t(m0 ^ m1), uint32_t(m0) ^ uint32_t(m1));
               }
             }
           }

@@ -228,7 +228,14 @@ else()
 endif()
 
 set(CUTLASS_UNITY_BUILD_ENABLED ${CUTLASS_UNITY_BUILD_ENABLED_INIT} CACHE BOOL "Enable combined source compilation")
-set(CUTLASS_UNITY_BUILD_BATCH_SIZE 16 CACHE STRING "Batch size for unified source files")
+
+if (MSVC)
+  set(CUTLASS_UNITY_BUILD_BATCH_SIZE_INIT 8)
+else()
+  set(CUTLASS_UNITY_BUILD_BATCH_SIZE_INIT 16)
+endif()
+
+set(CUTLASS_UNITY_BUILD_BATCH_SIZE ${CUTLASS_UNITY_BUILD_BATCH_SIZE_INIT} CACHE STRING "Batch size for unified source files")
 
 function(cutlass_unify_source_files TARGET_ARGS_VAR)
 

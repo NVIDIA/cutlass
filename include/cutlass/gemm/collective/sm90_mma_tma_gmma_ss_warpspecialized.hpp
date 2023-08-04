@@ -41,6 +41,7 @@
 #include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 #include "cutlass/pipeline/pipeline.hpp"
+#include "cutlass/trace.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -121,16 +122,15 @@ struct CollectiveMma<
   static_assert((size<1>(TileShape{}) % size<0>(SmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(SmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
 
-  // Tile along K mode first before tiling over MN. PIPE mode last as usual.
-  // This maximizes TMA boxes due to better smem-K vectorization, reducing total issued TMAs.
+  // Tile along modes in a way that maximizes the TMA box size.
   using SmemLayoutA = decltype(tile_to_shape(
       SmemLayoutAtomA{},
       make_shape(shape<0>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      Step<_2,_1,_3>{}));
+      conditional_t< ::cutlass::gemm::detail::is_major<0,StrideA>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
   using SmemLayoutB = decltype(tile_to_shape(
       SmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      Step<_2,_1,_3>{}));
+      conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 2 or more.");
   static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
@@ -167,6 +167,7 @@ struct CollectiveMma<
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
+    uint32_t mma_promotion_interval = 4;
   };
 
   // Device side kernel params
@@ -175,14 +176,14 @@ struct CollectiveMma<
     using TMA_A = decltype(make_tma_copy(
         GmemTiledCopyA{},
         make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(StrideA{}, int32_t(0)), StrideA{}),
-        SmemLayoutA{}(_,_,0),
+        SmemLayoutA{}(_,_,cute::Int<0>{}),
         make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
         size<1>(ClusterShape{})));  // mcast along N mode for this M load, if any
     // Assumption: StrideB is congruent with Problem_NK
     using TMA_B = decltype(make_tma_copy(
         GmemTiledCopyB{},
         make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(StrideB{}, int32_t(0)), StrideB{}),
-        SmemLayoutB{}(_,_,0),
+        SmemLayoutB{}(_,_,cute::Int<0>{}),
         make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
         size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
     TMA_A tma_load_a;
@@ -198,12 +199,9 @@ struct CollectiveMma<
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     (void) workspace;
 
-    // Optionally append _1s until problem shape is rank-4 (MNKL), in case it is only rank-3 (MNK)
-    auto problem_shape_MNKL = append<4>(problem_shape, Int<1>{});
-    auto M = get<0>(problem_shape_MNKL);
-    auto N = get<1>(problem_shape_MNKL);
-    auto K = get<2>(problem_shape_MNKL);
-    auto L = get<3>(problem_shape_MNKL);
+    // Optionally append 1s until problem shape is rank-4 (MNKL), in case it is only rank-3 (MNK)
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
+    auto [M,N,K,L] = problem_shape_MNKL;
 
     auto ptr_A = reinterpret_cast<InternalElementA const*>(args.ptr_A);
     auto ptr_B = reinterpret_cast<InternalElementB const*>(args.ptr_B);
@@ -226,6 +224,27 @@ struct CollectiveMma<
       tma_load_a,
       tma_load_b
     };
+  }
+
+  template<class ProblemShape>
+  CUTLASS_HOST_DEVICE static bool
+  can_implement(
+      ProblemShape const& problem_shape,
+      [[maybe_unused]] Arguments const& args) {
+    constexpr int tma_alignment_bits = 128;
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
+    auto [M,N,K,L] = problem_shape_MNKL;
+    
+    bool implementable = true;
+    constexpr int min_tma_aligned_elements_A = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
+    implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), StrideA{});
+    constexpr int min_tma_aligned_elements_B = tma_alignment_bits / cutlass::sizeof_bits<ElementB>::value;
+    implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), StrideB{});
+
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
+    }
+    return implementable;
   }
 
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
@@ -257,11 +276,12 @@ struct CollectiveMma<
       TensorB const& gB, TMA_LOAD_B& tma_load_b,
       KTileIterator k_tile_iter, int k_tile_count,
       int thread_idx,
+      uint32_t block_rank_in_cluster,
       TensorStorage& shared_tensors)
   {
 
     using namespace cute;
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
     int warp_idx_in_warp_group  = warp_idx % 4;
     int lane_predicate = cute::elect_one_sync();
 
@@ -273,7 +293,9 @@ struct CollectiveMma<
       // Prepare the TMA loads for A and B
       //
 
-      dim3 cluster_local_block_id = cute::block_id_in_cluster();
+      constexpr uint32_t cluster_shape_x = get<0>(DispatchPolicy::ClusterShape());
+      uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
+
       auto block_tma_a = tma_load_a.get_slice(cluster_local_block_id.y);
       auto block_tma_b = tma_load_b.get_slice(cluster_local_block_id.x);
 
@@ -334,7 +356,7 @@ struct CollectiveMma<
       MainloopPipeline pipeline, 
       PipelineState smem_pipe_write)
   {
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
     int warp_idx_in_warp_group = warp_idx % 4;
     int lane_predicate = cute::elect_one_sync();
 
@@ -417,7 +439,8 @@ struct CollectiveMma<
     for (int k_tile_prologue = prologue_mma_count; k_tile_prologue > 0; --k_tile_prologue)
     {
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
-      pipeline.consumer_wait(smem_pipe_read);
+      auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+      pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       int read_stage = smem_pipe_read.index();
       warpgroup_arrive();
@@ -442,7 +465,8 @@ struct CollectiveMma<
     for ( ; k_tile_count > 0; --k_tile_count)
     {
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
-      pipeline.consumer_wait(smem_pipe_read);
+      auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+      pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       //
       // Compute on k_tile

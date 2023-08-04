@@ -56,8 +56,13 @@ endmacro()
 string(APPEND NVRTC_INCLUDES_STRINGS "char const *kCutlassHeaders[] = {\n")
 string(APPEND NVRTC_INCLUDES_NAMES "char const *kCutlassHeaderNames[] = {\n")
 
+
+file(GLOB_RECURSE NVRTC_SOURCES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} kernel/thread/*.hpp)
+
 add_nvrtc_headers(${PROJECT_SOURCE_DIR}/include "${CUTLASS_CUTLASS};${CUTLASS_UTIL};${CUTLASS_DEVICE}")
+add_nvrtc_headers(${PROJECT_SOURCE_DIR}/include "${CUTLASS_CUTE}")
 add_nvrtc_headers(${PROJECT_SOURCE_DIR}/test "${CUTLASS_NVRTC};${CUTLASS_UTIL};${CUTLASS_DEVICE}")
+add_nvrtc_headers(${CMAKE_CURRENT_SOURCE_DIR} "${NVRTC_SOURCES}")
 
 add_nvrtc_headers("${CMAKE_CURRENT_SOURCE_DIR}/stdlib" "assert.h;stdint.h")
 if(CUTLASS_NVRTC_HAS_CUDA_FP16)

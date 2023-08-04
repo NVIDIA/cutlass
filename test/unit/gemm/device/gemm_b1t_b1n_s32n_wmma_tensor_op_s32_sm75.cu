@@ -49,7 +49,6 @@
 #include "cutlass/util/reference/host/gemm.h"
 
 #include "testbed.h"
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 ////// WMMA Instruction Shape = 8x8x128, DataType/Instruction = b1 ^ b1 + s32 => s32   /////////
 /////////////////////////////////////////////////////////////////////////////////////////////////    
@@ -240,4 +239,5 @@ TEST(SM75_Device_Gemm_b1t_b1n_s32n_wmma_tensor_op_s32, 64x64x512_32x32x512_8x8x1
 
   EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
+
 #endif //CUTLASS_SUBBYTE_INTEGER_MATRIX_MULTIPLY_ENABLED

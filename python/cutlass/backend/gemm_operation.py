@@ -39,7 +39,17 @@ import cutlass_bindings
 import numpy as np
 import rmm
 
-from cutlass import KernelScheduleSuffixes, KernelScheduleTag, KernelScheduleType
+from cutlass import (
+    EpilogueScheduleSuffixes,
+    EpilogueScheduleTag,
+    EpilogueScheduleType,
+    KernelScheduleSuffixes,
+    KernelScheduleTag,
+    KernelScheduleType,
+    TileSchedulerSuffixes,
+    TileSchedulerTag,
+    TileSchedulerType
+)
 from cutlass.backend.arguments import ArgumentBase
 from cutlass.backend.c_types import (
     GemmCoord_,
@@ -55,6 +65,7 @@ from cutlass.backend.c_types import (
 )
 from cutlass.backend.library import (
     ApiVersion,
+    EmissionType,
     ComplexTransformTag,
     DataTypeNames,
     DataTypeSize,
@@ -548,6 +559,7 @@ class GemmArguments3x(GemmArguments2x):
             stride_A,
             int(self.ptr_B),
             stride_B,
+            4 # mma_promotion_interval
         )
 
         # Set of mainloop arguments needed for this kernel
@@ -561,11 +573,15 @@ class GemmArguments3x(GemmArguments2x):
             stride_D,
         )
 
+        # Set hardware info
+        hw_info = self.operation.rt_module.hw_info(0, device_sm_count())
+
         self.arguments = self.operation.argument_type(
             self.gemm_mode,
             problem_size_,
             mainloop,
             epilogue,
+            hw_info,
         )
         return self.arguments
 
@@ -1102,6 +1118,11 @@ extern "C" {
 
   using GemmType = ${operation_name}_base;
 
+  // Get the workspace size
+  uint64_t ${operation_name}_get_kernel_workspace_size(GemmType::Arguments* argument) {
+    return GemmType::get_workspace_size(*argument);
+  }
+
   // Get the params as byte array
   char* ${operation_name}_get_params(GemmType::Arguments* argument, int* workspace){
     GemmType::Params params = GemmType::to_underlying_arguments(*argument, workspace);
@@ -1118,7 +1139,7 @@ extern "C" {
   uint64_t ${operation_name}_get_persistent_tiled_blk_shape_mnl(GemmType::ProblemShape problem) {
     auto problem_shape_MNKL = append<4>(problem, Int<1>{});
     auto [problem_blocks_m, problem_blocks_n, problem_blocks_l] =
-        cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::get_tiled_blk_shape_mnl(
+        cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::get_tiled_cta_shape_mnl(
             problem_shape_MNKL, GemmType::TileShape{}, GemmType::DispatchPolicy::ClusterShape{});
     return problem_blocks_m * problem_blocks_n * problem_blocks_l;
   }
@@ -1141,7 +1162,8 @@ extern "C" {
         self.extra_funcs = {
             "get_grid_shape": dim3_,
             "get_block_shape": dim3_,
-            "get_persistent_tiled_blk_shape_mnl": ctypes.c_uint64
+            "get_persistent_tiled_blk_shape_mnl": ctypes.c_uint64,
+            "get_kernel_workspace_size": ctypes.c_uint64
         }
         self.emitter = EmitGemmUniversalInstance3x("_type")
         self.mainloop_args = get_mainloop_arguments_3x(
@@ -1151,7 +1173,10 @@ extern "C" {
             operation.A.alignment,
             operation.B.alignment
         )
-        self.argument_type, self.epilogue_args, self.epilogue_type = get_gemm_arguments_3x(self.mainloop_args, operation.epilogue_functor)
+        self.argument_type, self.epilogue_args, self.epilogue_type, self.hw_info = get_gemm_arguments_3x(self.mainloop_args, operation.epilogue_functor)
+
+    def get_device_workspace_size(self, arguments: GemmArguments3x):
+        return self.get_kernel_workspace_size(ctypes.byref(arguments.get_arguments()))
 
 
 class EmitGemmUniversalInstance3x:
@@ -1183,7 +1208,7 @@ using CollectiveEpilogue =
     ${element_accumulator}, ${element_epilogue},
     ${element_c}, ${layout_c}, ${align_c},
     ${element_d}, ${layout_d}, ${align_d},
-    cutlass::epilogue::collective::EpilogueScheduleAuto
+    ${epilogue_schedule}
   >::CollectiveOp;
 
 using CollectiveMainloop =
@@ -1202,7 +1227,8 @@ using CollectiveMainloop =
 using ${operation_name}_base = cutlass::gemm::kernel::GemmUniversal<
     Shape<int,int,int,int>,
     CollectiveMainloop,
-    CollectiveEpilogue
+    CollectiveEpilogue,
+    ${tile_scheduler}
 >;
 
 // Define named type
@@ -1233,9 +1259,15 @@ using DeviceKernel = cutlass::gemm::device::GemmUniversalAdapter<${operation_nam
         else:
             gemm_template = self.gemm_template_device
 
-        schedule = KernelScheduleType.ScheduleAuto
+        kschedule = KernelScheduleType.ScheduleAuto
+        eschedule = EpilogueScheduleType.ScheduleAuto
+        tschedule = TileSchedulerType.Default
         if operation.tile_description.kernel_schedule is not None:
-            schedule = operation.tile_description.kernel_schedule
+            kschedule = operation.tile_description.kernel_schedule
+        if operation.tile_description.epilogue_schedule is not None:
+            eschedule = operation.tile_description.epilogue_schedule
+        if operation.tile_description.tile_scheduler is not None:
+            tschedule = operation.tile_description.tile_scheduler
 
         values = {
             "operation_name": operation.procedural_name(),
@@ -1264,7 +1296,9 @@ using DeviceKernel = cutlass::gemm::device::GemmUniversalAdapter<${operation_nam
             "align_c": str(operation.C.alignment),
             "align_d": str(operation.C.alignment),
             "stage_count_type": stage_count_type,
-            "kernel_schedule": KernelScheduleTag[schedule],
+            "kernel_schedule": KernelScheduleTag[kschedule],
+            "epilogue_schedule": EpilogueScheduleTag[eschedule],
+            "tile_scheduler": TileSchedulerTag[tschedule]
         }
 
         values["epilogue_functor"] = operation.epilogue_functor.emit()
@@ -1380,15 +1414,6 @@ ${operation_name}(${operation_name}${operation_suffix}::Params params) {
 ################################################################################
 # Runtime module for GEMM and grouped GEMM
 ################################################################################
-
-
-class EmissionType(enum.Enum):
-    """
-    Tags for whether to emit a kernel- or device-level operation
-    """
-
-    Kernel = enum_auto()
-    Device = enum_auto()
 
 
 class GemmOperationBase:
@@ -1595,11 +1620,18 @@ class GemmOperationBase:
         else:
             return KernelScheduleSuffixes[self.tile_description.kernel_schedule]
 
+    # Generates a short string representing underlying epilogue schedule type
+    def epilogue_schedule_name_3x(self):
+        if self.tile_description.epilogue_schedule is None:
+            return EpilogueScheduleSuffixes[EpilogueScheduleType.ScheduleAuto]
+        else:
+            return EpilogueScheduleSuffixes[self.tile_description.epilogue_schedule]
+
     def procedural_name(self):
         """The full procedural name indicates architecture, extended name, tile size, and layout."""
         opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
         if self.api == ApiVersion.v3x and self.arch >= 90:
-            kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{k}"
+            kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{k}{e}"
             return kernel_name_template.format(
                 p=self.prefix,
                 ar=self.arch,
@@ -1614,7 +1646,8 @@ class GemmOperationBase:
                 l=self.tile_description.stages,
                 s=self.layout_name_3x(),
                 al=str(self.A.alignment),
-                k=self.kernel_schedule_name_3x()
+                k=self.kernel_schedule_name_3x(),
+                e=self.epilogue_schedule_name_3x()
             )
         else:
             threadblock = self.tile_description.procedural_name()

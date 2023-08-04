@@ -35,44 +35,55 @@
 #include "../common/cutlass_unit_test.h"
 
 #include "cutlass/numeric_types.h"
+#include <bitset>
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(float_e4m3_t, host_conversion) {
+  using FP8 = cutlass::float_e4m3_t;
+  using Base = typename FP8::Base;
+  const float max_abs_normal_val = 448.0f; // 0.1111.110
+  const float min_abs_subnormal_val = 0.001953125f; // 0.0000.001 
+
   for (int i = -8; i < 8; ++i) {
     float f = static_cast<float>(i);
 
-    cutlass::float_e4m3_t x = static_cast<cutlass::float_e4m3_t>(i);
-    cutlass::float_e4m3_t y = static_cast<cutlass::float_e4m3_t>(f);
+    FP8 x = static_cast<FP8>(i);
+    FP8 y = static_cast<FP8>(f);
 
     EXPECT_TRUE(static_cast<int>(x) == i);
     EXPECT_TRUE(static_cast<float>(y) == f);
   }
 
   // Try out default-ctor (zero initialization of primitive proxy type)
-  EXPECT_TRUE(cutlass::float_e4m3_t() == 0.0_fe4m3);
+  EXPECT_TRUE(FP8() == 0.0_fe4m3);
 
   // Try out user-defined literals
-  EXPECT_TRUE(cutlass::float_e4m3_t(7) == 7_fe4m3);
+  EXPECT_TRUE(FP8(7) == 7_fe4m3);
   EXPECT_TRUE(7 == static_cast<int>(7_fe4m3));
 }
 
 TEST(float_e5m2_t, host_conversion) {
+  using FP8 = cutlass::float_e5m2_t;
+  using Base = typename FP8::Base;
+  const float max_abs_normal_val = 57344.0f; // 0.11110.11
+  const float min_abs_subnormal_val = 0.0000152588f; // 0.00000.01 
+
   for (int i = -8; i < 8; ++i) {
     float f = static_cast<float>(i);
 
-    cutlass::float_e5m2_t x = static_cast<cutlass::float_e5m2_t>(i);
-    cutlass::float_e5m2_t y = static_cast<cutlass::float_e5m2_t>(f);
+    FP8 x = static_cast<FP8>(i);
+    FP8 y = static_cast<FP8>(f);
 
     EXPECT_TRUE(static_cast<int>(x) == i);
     EXPECT_TRUE(static_cast<float>(y) == f);
   }
 
   // Try out default-ctor (zero initialization of primitive proxy type)
-  EXPECT_TRUE(cutlass::float_e5m2_t() == 0.0_fe5m2);
+  EXPECT_TRUE(FP8() == 0.0_fe5m2);
 
   // Try out user-defined literals
-  EXPECT_TRUE(cutlass::float_e5m2_t(7) == 7_fe5m2);
+  EXPECT_TRUE(FP8(7) == 7_fe5m2);
   EXPECT_TRUE(7 == static_cast<int>(7_fe5m2));
 }
 

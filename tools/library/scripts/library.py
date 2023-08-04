@@ -263,6 +263,7 @@ class MathOperation(enum.Enum):
   multiply_add = enum_auto()
   multiply_add_saturate = enum_auto()
   xor_popc = enum_auto()
+  and_popc = enum_auto()
   multiply_add_fast_bf16 = enum_auto()
   multiply_add_fast_f16 = enum_auto()
   multiply_add_fast_f32 = enum_auto()
@@ -275,6 +276,7 @@ MathOperationTag = {
   MathOperation.multiply_add: 'cutlass::arch::OpMultiplyAdd', 
   MathOperation.multiply_add_saturate: 'cutlass::arch::OpMultiplyAddSaturate',
   MathOperation.xor_popc: 'cutlass::arch::OpXorPopc',
+  MathOperation.and_popc: 'cutlass::arch::OpAndPopc',
   MathOperation.multiply_add_fast_bf16: 'cutlass::arch::OpMultiplyAddFastBF16',
   MathOperation.multiply_add_fast_f16: 'cutlass::arch::OpMultiplyAddFastF16',
   MathOperation.multiply_add_fast_f32: 'cutlass::arch::OpMultiplyAddFastF32',
@@ -373,6 +375,9 @@ class KernelScheduleType(enum.Enum):
   TmaWarpSpecialized = enum_auto()
   TmaWarpSpecializedPingpong = enum_auto()
   TmaWarpSpecializedCooperative = enum_auto()
+  TmaWarpSpecializedFP8FastAccum = enum_auto()
+  TmaWarpSpecializedCooperativeFP8FastAccum = enum_auto()
+  TmaWarpSpecializedPingpongFP8FastAccum = enum_auto()
 #
 KernelScheduleTag = {
   KernelScheduleType.ScheduleAuto: 'cutlass::gemm::collective::KernelScheduleAuto',
@@ -381,6 +386,9 @@ KernelScheduleTag = {
   KernelScheduleType.TmaWarpSpecialized: 'cutlass::gemm::KernelTmaWarpSpecialized',
   KernelScheduleType.TmaWarpSpecializedPingpong: 'cutlass::gemm::KernelTmaWarpSpecializedPingpong',
   KernelScheduleType.TmaWarpSpecializedCooperative: 'cutlass::gemm::KernelTmaWarpSpecializedCooperative',
+  KernelScheduleType.TmaWarpSpecializedFP8FastAccum: 'cutlass::gemm::KernelTmaWarpSpecializedFP8FastAccum',
+  KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum: 'cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8FastAccum',
+  KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum: 'cutlass::gemm::KernelTmaWarpSpecializedPingpongFP8FastAccum',
 }
 
 #
@@ -391,6 +399,9 @@ KernelScheduleSuffixes = {
   KernelScheduleType.TmaWarpSpecialized: '_warpspecialized',
   KernelScheduleType.TmaWarpSpecializedPingpong: '_warpspecialized_pingpong',
   KernelScheduleType.TmaWarpSpecializedCooperative: '_warpspecialized_cooperative',
+  KernelScheduleType.TmaWarpSpecializedFP8FastAccum: '_warpspecialized_fp8_fastaccum',
+  KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum: '_warpspecialized_cooperative_fp8_fastaccum',
+  KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum: '_warpspecialized_pingpong_fp8_fastaccum',
 }
 
 class EpilogueScheduleType(enum.Enum):
@@ -415,6 +426,24 @@ EpilogueScheduleSuffixes = {
   EpilogueScheduleType.NoSmemWarpSpecialized: '_epi_nosmem',
   EpilogueScheduleType.TmaWarpSpecialized: '_epi_tma',
   EpilogueScheduleType.TmaWarpSpecializedCooperative: '_epi_tma',
+}
+
+class TileSchedulerType(enum.Enum):
+  Default = enum_auto()
+  Persistent = enum_auto()
+  StreamK = enum_auto()
+#
+TileSchedulerTag = {
+  TileSchedulerType.Default: 'void',
+  TileSchedulerType.Persistent: 'cutlass::gemm::PersistentScheduler',
+  TileSchedulerType.StreamK: 'cutlass::gemm::StreamKScheduler',
+}
+
+#
+TileSchedulerSuffixes = {
+  TileSchedulerType.Default: '',
+  TileSchedulerType.Persistent: '',
+  TileSchedulerType.StreamK: '_stream_k',
 }
 
 ###################################################################################################

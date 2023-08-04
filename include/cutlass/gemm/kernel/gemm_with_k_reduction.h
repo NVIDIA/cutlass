@@ -198,14 +198,18 @@ public:
     ThreadblockShape,
     ElementA,
     ElementB,
-    ElementC>
+    ElementC,
+    LayoutA,
+    LayoutB>
   {
     using ParamsBase = UniversalParamsBase<
       ThreadblockSwizzle,
       ThreadblockShape,
       ElementA,
       ElementB,
-      ElementC>;
+      ElementC,
+      LayoutA,
+      LayoutB>;
 
     //
     // Data members
@@ -510,7 +514,7 @@ public:
 
     // Broadcast the warp_id computed by lane 0 to ensure dependent code
     // is compiled as warp-uniform.
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
 
     int lane_idx = threadIdx.x % 32;
 

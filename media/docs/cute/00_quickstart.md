@@ -69,7 +69,10 @@ Other files in this directory discuss specific parts of CuTe.
 * [`0t_mma_atom.md`](./0t_mma_atom.md) demonstrates CuTe's meta-information and interface to our GPUs'
   architecture-specific Matrix Multiply-Accumulate (MMA) instructions.
 
-* [`0x_gemm_tutorial.md`](./0x_gemm_tutorial.md) provides a walkthrough of building a GEMM from scratch using CuTe.
+* [`0x_gemm_tutorial.md`](./0x_gemm_tutorial.md) walks through building a GEMM from scratch using CuTe.
 
 * [`0y_predication.md`](./0y_predication.md) explains what to do
   if a tiling doesn't fit evenly into a matrix.
+
+* [`0z_tma_tensors.md`](./0z_tma_tensors.md) summarizes
+  how CuTe supports TMA loads and stores.

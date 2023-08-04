@@ -512,7 +512,6 @@ public:
         mma(*accum, operand_A, operand_B, *accum);
       }
 
-      // mma(accum.imag(), a.imag(), b.real(), accum.imag())
       CUTLASS_PRAGMA_UNROLL
       for (int n = MmaIterations::kColumn - 1; n >= 0; --n) {
 
@@ -536,7 +535,6 @@ public:
   CUTLASS_DEVICE
   void transform(TransformedFragmentA &dst_A, TransformedFragmentB &dst_B,
                  FragmentA const &A, FragmentB const &B) const {
-    //TODO: Implement this
     dst_A = A;
     dst_B = B;
   }
@@ -1160,8 +1158,6 @@ public:
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-// TODO - partial specializations of real*complex and complex*real
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

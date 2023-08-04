@@ -55,7 +55,6 @@ structure should also include a data member corresponding to each data member in
 be properly constructed in host code. The parent class should define a constructor which accepts `Params const &` as
 its first argument.
 
-
 ### Composable Shared Memory
 
 Shared memory requires explicit effort by the programmer to allocate and de-allocate. CUTLASS follows the paradigm
@@ -155,18 +154,18 @@ When declaring functions, indent function parameters like this.
 
 ```c++
 void possibly_an_unusually_long_function_name(
-  std::uint32_t foo
-  std::uint32_t const* bar,
-  TypeA a,
-  TypeB b,
-  TypeC c) {
+    std::uint32_t foo
+    std::uint32_t const* bar,
+    TypeA a,
+    TypeB b,
+    TypeC c) {
   // ... the function's body ...
 }
 ```
 
 A newline should not be inserted between the parenthesis
 that closes the function's parameters and the curly bracket
-that opens the function's body.
+that opens the function's body. Note the double indent for function parameters.
 
 #### If-else brackets and spacing
 
@@ -743,10 +742,15 @@ These include
     for functions that run on the host and the device,
 
   * `CUTLASS_DEVICE` or `CUTE_DEVICE`
-    for functions that run on the device only, and
+    for functions that run on the device only,
 
   * `CUTE_HOST`
-    for functions that run on the host only; and
+    for functions that run on the host only, and
+
+  * `CUTE_HOST_RTC`
+    for functions that run on the host only,
+    but occur as unevaluated operands (of e.g., `decltype` or `sizeof`;
+    see C++ Standard, `[expr.context]` 1) in device code; and
 
 * annotations to loop unrolling:
 
@@ -758,6 +762,20 @@ These include
 #### Guard all headers with `#pragma once`
 
 Use `#pragma once` to guard all headers.
+
+### CuTe Layout Comments
+
+* Right align CuTe layout comments at column 120. 
+* If layout comment is too long do your best to align it.
+* If layout comment is too long and there are many related tensors that reader should read together, try to align the layout comments of related tensors.
+
+```c++
+    Tensor my_tensor = make_tensor<Type>(Layout<Shape<_2,_2>{}, Stride<_1,_2>>{});                       // (2,2):(1,2)
+    
+    // Related tensors
+    Tensor my_tensor1 = make_tensor<Type>(ThisIsAVeryComplicatedLayoutWithAVeryLongName);         // ((Mode0_0,Mode0_1,Mode0_2),Mode1,Mode2,Mode3)
+    Tensor my_tensor2_related = make_tensor<Type>(ThisIsAVeryComplicatedLayoutWithAVeryLongName); // ((Mode0_0,Mode0_1,Mode0_2),Mode1,Mode2,Mode3)
+```
 
 ### CUDA C++ style
 
@@ -794,6 +812,26 @@ CuTe has replaced CUTLASS 2.x components such as
 [Containers](fundamental_types.md#containers),
 [Layouts](layout.md), and
 [`TensorRef` and `TensorView`](layout.md#tensorref).
+
+## CUTLASS idioms
+
+### Detecting major mode
+
+Developers sometimes need to detect whether a tensor is MN-major or K-major.
+(For definitions, see the [CuTe GEMM tutorial](./cute/0x_gemm_tutorial.md).)
+
+* _Correct_: `cutlass::detail::is_major<0, Stride>()` or
+`cutlass::detail::is_k_major()` from `include/cutlass/gemm/gemm.h`
+
+* _Incorrect_: `get<0>(stride) == 1`
+
+The second point is incorrect because it assumes that the mode
+is a single integer, not a multimode.
+This means that the code will fail to compile for tensor contractions.
+For example, suppose that a tensor A
+has shape `((X, Y), K)` and stride `((1, X), X*Y)`.
+`get<0>(stride)` is the tuple `(1, X)`, not a single integer.
+However, A is certainly M major if interpreted as a matrix.
 
 # Copyright
 

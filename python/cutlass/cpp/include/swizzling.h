@@ -135,9 +135,8 @@ void bind_dgrad_swizzle(py::module & m, std::string name) {
             :param problem_size: Implicit gemm problem size conv_operator(NPQK, NHWC, KRSC)
             :type problem_size: :class:`cutlass.gemm.GemmCoord`)
             )pbdoc")
-        .def("get_grid_shape", [](const T & swizzle, cutlass::gemm::GemmCoord tiled_shape) {
-            return dim3(tiled_shape.m(), tiled_shape.n(), tiled_shape.k());
-        }, py::arg("tiled_shape"),
+        .def("get_grid_shape", &T::get_grid_shape,
+            py::arg("tiled_shape"),
             R"pbdoc(Computes CUDA grid dimensions given a size in units of logical tiles)pbdoc")
         .def("tag", [](const T & swizzle){
             return demangle(typeid(T).name());

@@ -38,7 +38,7 @@ from bfloat16 import bfloat16
 import cutlass_bindings
 import numpy as np
 
-from cutlass.backend.compiler import ArtifactManager
+from cutlass.backend import compiler
 from cutlass.backend.conv2d_operation import Conv2dArguments, Conv2dOperation
 from cutlass.backend.library import DataTypeSize, ShortDataTypeNames, StrideSupport
 from cutlass.backend.memory_manager import get_allocated_size
@@ -127,7 +127,6 @@ def getTensorView(tensor, tensor_layout, conv_kind, problem_size, operand):
         raise ValueError("unsupported data type")
 
 
-# @typechecked
 class Conv2dLauncher:
     """
     Launcher that runs the operation on given problem size
@@ -142,6 +141,7 @@ class Conv2dLauncher:
         profiling=False,
         warmup_iterations=500,
         iterations=500,
+        compilation_mode="nvcc",
         **kwargs,
     ) -> None:
         self.enable_cached_results = True
@@ -176,7 +176,14 @@ class Conv2dLauncher:
         # Compile the operator
         #
 
-        ArtifactManager().add_module([operation, self.reduction_operation])
+        if compilation_mode == "nvcc":
+            compiler.nvcc()
+        elif compilation_mode == "nvrtc":
+            compiler.nvrtc()
+        else:
+            raise Exception(f"Unexpected compilation mode {compilation_mode}")
+
+        compiler.add_module([operation, self.reduction_operation])
 
         self.operation = operation
 
@@ -195,14 +202,14 @@ class Conv2dLauncher:
         element_size = DataTypeSize[operation.A.element]
 
         if element_size <= 8:
-            self.scope = 1
+            self.randomization_max = 1
         elif element_size == 16:
             if accumulator_size <= 16:
-                self.scope = 2
+                self.randomization_max = 2
             else:
-                self.scope = 4
+                self.randomization_max = 4
         else:
-            self.scope = 7
+            self.randomization_max = 7
 
         # Seed
         self.seed = seed
@@ -263,12 +270,12 @@ class Conv2dLauncher:
         if dtype in [np.float32, np.float16, bfloat16, np.float64]:
             return np.ceil(
                 np.random.uniform(
-                    low=-self.scope - 0.5, high=self.scope - 0.5, size=size
+                    low=-self.randomization_max - 0.5, high=self.randomization_max - 0.5, size=size
                 ).astype(dtype)
             )
         else:
             return np.random.uniform(
-                low=-self.scope - 1, high=self.scope + 1, size=size
+                low=-self.randomization_max - 1, high=self.randomization_max + 1, size=size
             ).astype(dtype)
 
     def eq_gemm_size(self, problem_size):
@@ -624,13 +631,15 @@ class Conv2dLauncher:
 ############################################################################################################
 
 
-def test_all_conv2d(operation: Conv2dOperation, conv_test_sizes=[], interleaved=False):
-    passed = True
-    #
-    # Testbed object
-    #
+def test_all_conv2d_from_compilation_mode(
+    operation: Conv2dOperation,
+    conv_test_sizes,
+    interleaved,
+    compilation_mode):
 
-    testbed = Conv2dLauncher(operation, interleaved=interleaved)
+    passed = True
+
+    testbed = Conv2dLauncher(operation, interleaved=interleaved, compilation_mode=compilation_mode)
 
     #
     # Get conv problem sizes to run conv operator
@@ -781,3 +790,18 @@ def test_all_conv2d(operation: Conv2dOperation, conv_test_sizes=[], interleaved=
                     )
 
     return passed
+
+
+def test_all_conv2d(
+    operation: Conv2dOperation,
+    conv_test_sizes=[],
+    interleaved=False,
+    compilation_modes=["nvcc", "nvrtc"]):
+
+    for compilation_mode in compilation_modes:
+        passed = test_all_conv2d_from_compilation_mode(operation, conv_test_sizes, interleaved, compilation_mode)
+
+        if not passed:
+            return False
+
+    return True

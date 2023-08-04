@@ -232,6 +232,8 @@ def library_layout(layout):
         return cutlass.LayoutType.RowMajor
     elif layout == cutlass_bindings.ColumnMajor:
         return cutlass.LayoutType.ColumnMajor
+    elif layout == cutlass_bindings.TensorNHWC:
+        return cutlass.LayoutType.TensorNHWC
     else:
         raise Exception(f"No conversion available for layout {layout} to library layout.")
 
@@ -251,6 +253,8 @@ def binding_layout(layout):
         return cutlass_bindings.RowMajor
     elif layout == cutlass.LayoutType.ColumnMajor:
         return cutlass_bindings.ColumnMajor
+    elif layout == cutlass.LayoutType.TensorNHWC:
+        return cutlass_bindings.TensorNHWC
     else:
         raise Exception(f"No conversion available for layout {layout} to Python-bound CUTLASS layout.")
 
@@ -279,6 +283,16 @@ def get_datatype_and_layout(tensor):
     else:
         raise Exception(f"Unable to convert tensor of type {type(tensor)} to Python-bound CUTLASS datatype and layout.")
 
+def get_tensor_shape(tensor):
+    if (numpy_available and isinstance(tensor, np.ndarray)) or (
+        cupy_available and isinstance(tensor, cp.ndarray)
+    ):
+        return tensor.shape
+    elif torch_available and isinstance(tensor, torch.Tensor):
+        size = tensor.size()
+        return (size[0], size[2], size[3], size[1])
+    else:
+        raise Exception(f"Unable to convert tensor of type {type(tensor)} to Python-bound CUTLASS datatype and layout.")
 
 def binding_opclass(opclass: cutlass.OpcodeClass):
     if opclass == cutlass.OpcodeClass.TensorOp:
@@ -299,7 +313,9 @@ def backend_math_operation(math_op: cutlass.MathOperation):
 
 
 def construct_backend_td(td: cutlass.TileDescription,
-                         kernel_schedule: cutlass.KernelScheduleType) -> TileDescription:
+                         kernel_schedule: cutlass.KernelScheduleType,
+                         epilogue_schedule: cutlass.EpilogueScheduleType,
+                         tile_scheduler: cutlass.TileSchedulerType) -> TileDescription:
     mi = td.math_instruction
     backend_mi = MathInstruction(
         mi.instruction_shape,
@@ -309,8 +325,9 @@ def construct_backend_td(td: cutlass.TileDescription,
         binding_opclass(mi.opcode_class),
         backend_math_operation(mi.math_operation)
     )
+    cluster_shape = td.cluster_shape if hasattr(td, "cluster_shape") else [1, 1, 1]
     return TileDescription(td.threadblock_shape, td.stages, td.warp_count,
-                           backend_mi, td.cluster_shape, kernel_schedule)
+                           backend_mi, cluster_shape, kernel_schedule, epilogue_schedule, tile_scheduler)
 
 
 def td_from_profiler_op(op) -> TileDescription:
@@ -322,8 +339,10 @@ def td_from_profiler_op(op) -> TileDescription:
     :returns: backend TileDescription
     :rtype: cutlass.backend.TileDescription
     """
-    schedule = op.kernel_schedule if hasattr(op, 'kernel_schedule') else None
-    return construct_backend_td(op.tile_description, schedule)
+    kschedule = op.kernel_schedule if hasattr(op, 'kernel_schedule') else None
+    eschedule = op.epilogue_schedule if hasattr(op, 'epilogue_schedule') else None
+    tschedule = op.tile_scheduler if hasattr(op, 'tile_scheduler') else None
+    return construct_backend_td(op.tile_description, kschedule, eschedule, tschedule)
 
 
 def td_from_profiler_td(td: cutlass.backend.TileDescription) -> TileDescription:
@@ -336,4 +355,16 @@ def td_from_profiler_td(td: cutlass.backend.TileDescription) -> TileDescription:
     :returns: backend TileDescription
     :rtype: cutlass.backend.TileDescription
     """
-    return construct_backend_td(td, kernel_schedule=None)
+    return construct_backend_td(td, kernel_schedule=None, epilogue_schedule=None, tile_scheduler=None)
+
+def to_camel_case(snake_str):
+    return "".join(x.capitalize() for x in snake_str.lower().split("_"))
+
+
+def getattr_enum(obj, attr_name):
+    # The attr_name is under the snake_case
+    camel_attr = to_camel_case(attr_name)
+    if hasattr(obj, camel_attr):
+        return getattr(obj, camel_attr)
+    else:
+        raise Exception(f"Invalid option: {attr_name}")

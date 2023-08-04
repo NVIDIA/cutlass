@@ -479,6 +479,12 @@ make_tiled_copy_C_atom(Copy_Atom<Args...> const& copy_atom,
   return make_tiled_copy_impl(copy_atom, layout_tv, tiler);
 }
 
+/** Produce a TiledCopy from logical thread and values layouts. 
+ * The thread and value layouts map coordinates to thr_idx and val_idx. 
+ *    The product of these layouts is taken to produce the TV layout and the Tiler.
+ * Useful when threads and values need very specific mappings onto coordinates 
+ *    in the target tensors.
+ */
 template <class... Args,
           class ThrLayout,
           class ValLayout = Layout<_1>>
@@ -486,7 +492,7 @@ CUTE_HOST_DEVICE
 auto
 make_tiled_copy(Copy_Atom<Args...> const& copy_atom,
                 ThrLayout          const& thr_layout = {},     // (m,n) -> thr_idx
-                ValLayout          const& val_layout = {})
+                ValLayout          const& val_layout = {})     // (m,n) -> val_idx
 {
   constexpr int R = cute::max(rank_v<ThrLayout>, rank_v<ValLayout>);
 
@@ -496,12 +502,80 @@ make_tiled_copy(Copy_Atom<Args...> const& copy_atom,
   // Take the raked_products to compute the Layout_MN
   auto layout_mn = raked_product(thr_layout_mn, val_layout_mn);
   auto layout_tv = right_inverse(layout_mn).with_shape(make_shape(size(thr_layout), size(val_layout)));
-  // print("thr_layout: "); print(thr_layout_mn); print("\n");
-  // print("val_layout: "); print(val_layout_mn); print("\n");
-  // print("layout_mn : "); print(layout_mn);     print("\n");
-  // print("layout_tv : "); print(layout_tv);     print("\n");
+  //   print("thr_layout: "); print(thr_layout_mn); print("\n");
+  //   print("val_layout: "); print(val_layout_mn); print("\n");
+  //   print("layout_mn : "); print(layout_mn);     print("\n");
+  //   print("layout_tv : "); print(layout_tv);     print("\n");
 
   return make_tiled_copy_impl(copy_atom, layout_tv, product_each(shape(layout_mn)));
+}
+
+/** Produce a TiledCopy from thread and value offset maps. 
+ * The TV Layout maps threads and values to the codomain of the data_layout.
+ * It is verified that the intended codomain is valid within data_layout. 
+ * Useful when threads and values don't care about owning specific coordinates, but
+ *   care more about the vector-width and offsets between them.
+ */
+template <class... Args, class AtomTVLayout, class DataLayout>
+CUTE_HOST_DEVICE constexpr
+auto
+make_cotiled_copy(Copy_Atom<Args...> const& copy_atom, 
+                  AtomTVLayout const& atom_tv_layout,   // atom (thr,val) -> data addr
+                  DataLayout   const& data_layout)      // coord          -> data addr    The target layout
+{
+  static_assert(is_static<AtomTVLayout>::value);
+  static_assert(is_static<DataLayout>::value);
+
+  // data addr -> data coord    Append 1:0 so off-the-ends get the stride-0
+  auto inv_data_layout = make_layout(left_inverse(data_layout), Layout<_1,_0>{});
+
+  // (tid,vid) -> data_coord
+  auto layout_tv_data = composition(inv_data_layout, atom_tv_layout);
+
+  // Check validity
+  CUTE_STATIC_ASSERT_V(coalesce(composition(data_layout, layout<1>(layout_tv_data))) == coalesce(layout<1>(atom_tv_layout)),
+                       "The memory pointed to by AtomTVLayout does not exist in the DataLayout.");
+
+#if 0
+  if (thread0()) {
+    print("data_layout        : "); print(data_layout); print("\n");
+    print("atom_tv_layout     : "); print(atom_tv_layout); print("\n");
+    print("layout_tv_data     : "); print(layout_tv_data); print("\n");
+  }
+#endif
+
+  //
+  // Tiler -- Find the active elements in the DATA tensor and generate a tiler to extract them
+  //
+
+  // Convert to the awkward by-mode tiler to preserve the modes of the tiled DATA
+  auto flat_data_shape = product_each(shape(data_layout));
+  auto flat_data_zeros = repeat<rank(flat_data_shape)>(Int<0>{});
+
+  auto tiler = transform(make_seq<rank(flat_data_shape)>{}, [&](auto i) {
+    return filter(composition(make_layout(flat_data_shape, replace<i>(flat_data_zeros, Int<1>{})), layout_tv_data));
+  });
+
+  //
+  // Layout_TV -- Find the (tid,vid) -> tile coord transformation
+  //
+
+  // Apply the tiler to a reference and transform the codomain
+  // tile_coord -> data_coord
+  auto tile2data = composition(make_layout(flat_data_shape), tiler);
+
+  // (tid,vid) -> tile_coord
+  auto layout_tv = composition(left_inverse(tile2data), layout_tv_data);
+
+#if 0
+  if (thread0()) {
+    print("tiler              : "); print(tiler); print("\n");
+    print("tile2data          : "); print(tile2data); print("\n");
+    print("layout_tv          : "); print(layout_tv); print("\n");
+  }
+#endif
+
+  return make_tiled_copy_impl(copy_atom, layout_tv, tiler);
 }
 
 // Make a TiledCopy out of the copy_atom that matches the Src-Layout of tiled_copy

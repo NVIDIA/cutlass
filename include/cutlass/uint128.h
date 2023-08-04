@@ -164,7 +164,6 @@ struct uint128_t {
     uint64_t overflow;
     y.hilo_.hi += _umul128(hilo_.hi, rhs, &overflow);
 #else
-    // TODO - not implemented
     CUTLASS_UNUSED(rhs);
     exception();
 #endif
@@ -182,7 +181,6 @@ struct uint128_t {
     uint64_t remainder = 0;
     quotient = _udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
-    // TODO - not implemented
     CUTLASS_UNUSED(divisor);
     exception();
 #endif
@@ -199,7 +197,6 @@ struct uint128_t {
     // implemented using MSVC's arithmetic intrinsics
     (void)_udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
-    // TODO - not implemented
     CUTLASS_UNUSED(divisor);
     exception();
 #endif
@@ -217,7 +214,6 @@ struct uint128_t {
     // implemented using MSVC's arithmetic intrinsics
     quotient = _udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
-    // TODO - not implemented
     CUTLASS_UNUSED(remainder);
     CUTLASS_UNUSED(divisor);
     exception();

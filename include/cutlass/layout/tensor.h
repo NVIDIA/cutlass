@@ -60,6 +60,9 @@ namespace layout {
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Tag used for 3-D NWC tensors for 1D conv, only used in 3.x API
+class TensorNWC {};
+
 /// Mapping function for 4-D NHWC tensors.
 class TensorNHWC {
 public:

@@ -103,7 +103,6 @@ struct FpropScaleBiasReluTransform {
         : "r"(ptr_scale_bias[0]), "r"(ptr_activations[0]),
           "r"(ptr_scale_bias[1]), "n"(cutlass::arch::OOB_NAN_F16x2));
 #else
-    // TODO: write emulation code
     assert(0);
 #endif
   }
@@ -198,7 +197,6 @@ struct WgradScaleBiasReluTransform {
           "r"(ptr_scale_bias[1]), "n"(cutlass::arch::OOB_NAN_F16), "n"(0xffff0000), "n"(0x0000ffff));
 #endif
 #else
-    // TODO: write emulation code
     assert(0);
 #endif
   }

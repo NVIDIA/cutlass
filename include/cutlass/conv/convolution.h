@@ -73,6 +73,7 @@ Map elements' data types (Conv -> ImplicitGemm): ConvToGemmElementMap
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/layout/tensor.h"
 #include "cutlass/tensor_coord.h"
 #include "cutlass/fast_math.h"
 #include "cutlass/gemm/gemm.h"
