@@ -179,6 +179,16 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     NumericConverterClamp<int32_t, float>
   >(manifest);
 
+  make_gemm_real_canonical_layouts<
+    int8_t,
+    int8_t,
+    int8_t,   
+    int32_t,
+    int32_t,
+    int8_t,
+    NumericConverterClamp<int8_t, int32_t>
+  >(manifest);
+
   make_gemm_interleaved_layouts<
     32,
     int8_t,
@@ -344,7 +354,6 @@ void initialize_gemm_reference_operations(Manifest &manifest) {
     complex<double>,
     complex<double>
   >(manifest);
-
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

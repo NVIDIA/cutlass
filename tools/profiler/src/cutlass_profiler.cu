@@ -130,7 +130,6 @@ int CutlassProfiler::operator()() {
     // Enumerates all operations
     enumerate_();
   }
-
   return 0;
 }
 

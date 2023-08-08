@@ -30,9 +30,11 @@
  **************************************************************************************************/
 #pragma once
 
+#if !defined(__CUDACC_RTC__)
 #include "cuda_runtime.h"
 
 #include "cutlass/trace.h"
+#endif
 
 namespace cutlass {
 
@@ -47,6 +49,7 @@ struct KernelHardwareInfo {
   // Methods
   //
 
+#if !defined(__CUDACC_RTC__)
   static int
   query_device_multiprocessor_count(int device_id = 0) {
     cudaError_t result = cudaGetDevice(&device_id);
@@ -67,6 +70,7 @@ struct KernelHardwareInfo {
     }
     return multiprocessor_count;
   }
+#endif
 };
 
 } // namespace cutlass

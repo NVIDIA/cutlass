@@ -262,7 +262,6 @@ struct Testbed {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(matrix_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -288,7 +287,6 @@ struct Testbed {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(matrix_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 

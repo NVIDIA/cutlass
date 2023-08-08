@@ -118,6 +118,7 @@ class GenericMainloopArguments3x_(ctypes.Structure):
         ("stride_A", StrideBatched_),
         ("ptr_B", ctypes.c_void_p),
         ("stride_B", StrideBatched_),
+        ("mma_promotion_interval", ctypes.c_int)
     ]
 
 
@@ -148,12 +149,14 @@ def get_mainloop_arguments_3x(
             ("stride_A", StrideBatched_),
             ("ptr_B", ctypes.c_void_p),
             ("stride_B", StrideBatched_),
+            ("mma_promotion_interval", ctypes.c_int)
         ]
 
         @staticmethod
         def from_generic_mainloop_args(args: GenericMainloopArguments3x_):
             return _MainloopArgumentsTma(
                 args.ptr_A, args.stride_A, args.ptr_B, args.stride_B,
+                args.mma_promotion_interval
             )
 
     class _MainloopArgumentsMultistage(ctypes.Structure):
@@ -203,15 +206,23 @@ def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor):
             ("stride_D", StrideBatched_),
         ]
 
+    class _HardwareInfo(ctypes.Structure):
+        _fields_ = [
+            ("device_id", ctypes.c_int),
+            ("sm_count", ctypes.c_int)
+        ]
+
     class _GemmArguments(ctypes.Structure):
         _fields_ = [
             ("mode", ctypes.c_int),
             ("problem_size", GemmCoordBatched_),
             ("mainloop", mainloop_arguments),
-            ("epilogue", _EpilogueArguments)
+            ("epilogue", _EpilogueArguments),
+            ("hw_info", _HardwareInfo),
+            ("splits", ctypes.c_int)
         ]
 
-    return _GemmArguments, _EpilogueArguments, _EpilogueOutputOpParams
+    return _GemmArguments, _EpilogueArguments, _EpilogueOutputOpParams, _HardwareInfo
 
 
 def get_gemm_arguments(epilogue_functor):

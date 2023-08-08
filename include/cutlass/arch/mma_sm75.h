@@ -1248,7 +1248,7 @@ struct Mma<
 
 #if defined(CUTLASS_ARCH_MMA_SM75_ENABLED)
 
-#if (__CUDA_ARCH__ >= 900) || (defined(CUTLASS_ARCH_WMMA_ENABLED))
+#if defined(CUTLASS_ARCH_WMMA_ENABLED)
   using WmmaFragmentA = nvcuda::wmma::fragment<
           nvcuda::wmma::matrix_a,
           Shape::kM,

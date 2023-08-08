@@ -322,7 +322,6 @@ void GemmOperationProfiler::GemmProblem::initialize_result(
   set_argument(result, "split_k_mode", problem_space, library::to_string(split_k_mode));
   set_argument(result, "split_k_slices", problem_space, split_k_slices);
   set_argument(result, "batch_count", problem_space, batch_count);
-
   set_argument(result, "alpha", problem_space,
     library::lexical_cast(alpha, operation_desc.element_epilogue));
 
@@ -377,7 +376,6 @@ Status GemmOperationProfiler::initialize_configuration(
   gemm_workspace_.arguments.alpha = problem_.alpha.data();
   gemm_workspace_.arguments.beta = problem_.beta.data();
   gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
-
   // initialize reduction operation for parallel splitKMode
   if (problem_.split_k_mode == library::SplitKMode::kParallel) {
     if (!initialize_reduction_configuration_(operation, problem)) {
@@ -492,7 +490,8 @@ Status GemmOperationProfiler::initialize_workspace(
     gemm_workspace_.problem_count = options.profiling.workspace_count;
   }
 
-  if (options.execution_mode != ExecutionMode::kDryRun) {
+  bool allocate_device_tensors = options.execution_mode != ExecutionMode::kDryRun;
+  if (allocate_device_tensors) {
     int seed_shift = 0;
     gemm_workspace_.A = device_context.allocate_tensor(
       options,
@@ -544,7 +543,9 @@ Status GemmOperationProfiler::initialize_workspace(
       {int(problem_.ldc)},
       problem_.batch_count * gemm_workspace_.problem_count
     );
+  }
 
+  if (options.execution_mode != ExecutionMode::kDryRun) {
     // NOTE: the leading non-batch strides are duplicated here for 3.0 API kernels
     gemm_workspace_.arguments.problem_size = {int(problem_.m), int(problem_.n), int(problem_.k)};
     gemm_workspace_.arguments.batch_count = problem_.batch_count;
@@ -552,10 +553,10 @@ Status GemmOperationProfiler::initialize_workspace(
     gemm_workspace_.arguments.ldb = problem_.ldb;
     gemm_workspace_.arguments.ldc = problem_.ldc;
     gemm_workspace_.arguments.ldd = problem_.ldc;
-    gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
-    gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
-    gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
-    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
+    gemm_workspace_.arguments.batch_stride_A = problem_.lda;
+    gemm_workspace_.arguments.batch_stride_B = problem_.ldb;
+    gemm_workspace_.arguments.batch_stride_C = problem_.ldc;
+    gemm_workspace_.arguments.batch_stride_D = problem_.ldc;
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
     gemm_workspace_.arguments.sm_count = options.device.properties.multiProcessorCount;
@@ -739,23 +740,36 @@ bool GemmOperationProfiler::verify_cutlass(
     }
 #endif // #if CUTLASS_ENABLE_CUBLAS
 
-    verify_with_reference_(options, report, device_context, operation, problem_space, problem);
+    bool verification_status = verify_with_reference_(options, report, device_context, operation, problem_space, problem);
     
     // Update disposition to worst case verification outcome among all 
     // verification providers which are supported
     bool is_any_verification_run_passed = false;
-    for(auto &m : results_.back().verification_map) {
-      if(m.second == Disposition::kFailed || m.second == Disposition::kIncorrect) {
+    for (auto &m : results_.back().verification_map) {
+      if (m.second == Disposition::kFailed || m.second == Disposition::kIncorrect) {
         results_.back().disposition = m.second;
         return true;
       }
-      if(!is_any_verification_run_passed && m.second == Disposition::kPassed) {
+      if (!is_any_verification_run_passed && m.second == Disposition::kPassed) {
         is_any_verification_run_passed = true;
       }
     }
 
-    if(is_any_verification_run_passed) {
+    if (is_any_verification_run_passed) {
       results_.back().disposition = Disposition::kPassed;
+    }
+  }
+
+  // if verification.required is set, then return success iff at least one ref-check was run
+  if (options.verification.required) {
+    bool did_any_verification_run = false;
+    for (auto provider : options.verification.providers) {
+      did_any_verification_run |= (Disposition::kNotRun != results_.back().verification_map[provider]);
+    }
+
+    if (not did_any_verification_run) {
+      results_.back().status = Status::kErrorNotSupported;
+      return false;
     }
   }
 
@@ -902,12 +916,7 @@ bool GemmOperationProfiler::verify_with_reference_(
   // Initialize state
   //
 
-  library::Provider references[] = {
-    library::Provider::kReferenceDevice,
-    library::Provider::kReferenceHost
-  };
-
-  for (auto provider : references) {
+  for (auto provider : options.verification.providers) {
 
     // Skip providers that are not enabled
     if (!options.verification.provider_enabled(provider)) {
@@ -994,7 +1003,7 @@ bool GemmOperationProfiler::verify_with_reference_(
 
     if (status != Status::kSuccess) {
       results_.back().verification_map[provider] = Disposition::kNotRun;
-      return true;
+      continue;
     }
 
     results_.back().status = status;

@@ -119,7 +119,7 @@ tma_test_device_cute(T const* g_in, T* g_out,
   for (int stage = 0; stage < size<1>(tAgA); ++stage)
   {
     // Set the bytes transferred in this TMA transaction (may involve multiple issues)
-    constexpr int kTmaTransactionBytes = size(sA) * sizeof(T);
+    constexpr int kTmaTransactionBytes = size(sA) * sizeof_bits_v<T> / 8;
 
     if (threadIdx.x == 0)
     {
@@ -140,6 +140,10 @@ tma_test_device_cute(T const* g_in, T* g_out,
     // Write out trivially smem -> gmem
     //
 
+    //if (thread0()) {
+    //  print_tensor(sA);
+    //}
+
     for (int i = threadIdx.x; i < size(sA); i += blockDim.x) {
       tBgB(i,stage) = sA(i);
     }
@@ -154,14 +158,13 @@ test_tma_load(GMEM_Layout const& gmem_layout,
               CTA_Tile    const& cta_tile)
 {
   thrust::host_vector<T> h_in(cosize(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i); }
+  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i % 13); }
   thrust::device_vector<T> d_in = h_in;
   thrust::device_vector<T> d_out(h_in.size(), T(-1));
 
   Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
   auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout, cta_tile, Int<1>{});
-  //print("TMA Box   size:  "); print(typename decltype(tma)::Tiler_MN{}); print("\n");
-  //print("TMA Instr size:  "); print(decltype(tma)::NumValSrc); print("\n");
+  //print(tma);
 
   int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
   tma_test_device_cute<<<1, 128, smem_size>>>(
@@ -185,6 +188,26 @@ test_tma_load(GMEM_Layout const& gmem_layout,
               SMEM_Layout const& smem_layout)
 {
   return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
+}
+
+TEST(SM90_CuTe_Hopper, Tma_Load_1D)
+{
+  Layout smem_layout = Layout<_256, _1>{};
+  {
+  Layout gmem_layout = smem_layout;
+  test_tma_load<int8_t>(gmem_layout, smem_layout);
+  test_tma_load<half_t>(gmem_layout, smem_layout);
+  test_tma_load< float>(gmem_layout, smem_layout);
+  test_tma_load<double>(gmem_layout, smem_layout);
+  }
+
+  {
+  Layout gmem_layout = make_layout(128, GenColMajor{});
+  test_tma_load<int8_t>(gmem_layout, smem_layout);
+  test_tma_load<half_t>(gmem_layout, smem_layout);
+  test_tma_load< float>(gmem_layout, smem_layout);
+  test_tma_load<double>(gmem_layout, smem_layout);
+  }
 }
 
 TEST(SM90_CuTe_Hopper, Tma_Load_32x32_Col)
@@ -343,45 +366,20 @@ TEST(SM90_CuTe_Hopper, Tma_Load_Swizzle_Tiles)
   test_tma_load_swizzle_tile_k<half_t, GMMA::Layout_K_INTER_Atom>();
 }
 
-
-TEST(SM90_CuTe_Hopper, Tma_Load_Metamode)
-{
-  {
-  auto smem_layout = Layout<Shape<_32,_32>, Stride<_1,_32>>{};
-    {
-    Layout gmem_layout = make_layout(make_shape(make_shape(8,4), 32), GenColMajor{});
-    test_tma_load<half_t>(gmem_layout, smem_layout);
-    }
-    {
-    Layout gmem_layout = make_layout(make_shape(make_shape(8,32), 32), GenColMajor{});
-    test_tma_load<half_t>(gmem_layout, smem_layout);
-    }
-    {
-    Layout gmem_layout = make_layout(make_shape(make_shape(64,32), 32), GenColMajor{});
-    test_tma_load<half_t>(gmem_layout, smem_layout);
-    }
-  }
-
-  {
-  auto smem_layout = Layout<Shape<_32,_32>, Stride<_32,_1>>{};
-    {
-    Layout gmem_layout = make_layout(make_shape(make_shape(8,4), 32), GenRowMajor{});
-    test_tma_load<half_t>(gmem_layout, smem_layout);
-    }
-    {
-    Layout gmem_layout = make_layout(make_shape(make_shape(8,32), 32), GenRowMajor{});
-    test_tma_load<half_t>(gmem_layout, smem_layout);
-    }
-    {
-    Layout gmem_layout = make_layout(make_shape(make_shape(64,32), 32), GenRowMajor{});
-    test_tma_load<half_t>(gmem_layout, smem_layout);
-    }
-  }
-}
-
+// Tensor by-mode
 TEST(SM90_CuTe_Hopper, Tma_Load_Tensor)
 {
-  // Tensor by-mode
+  // 3-mode TMA
+  {
+  Layout gmem_layout = make_layout(make_shape(128, 64, 5));
+  auto cta_tile      = Shape<_64, _32>{};                    // GMEM Tiling:
+                                                             //   Take 64-elem from m
+                                                             //   Take 32-elem from k
+  auto smem_layout = make_layout(Shape<_64,_32>{});
+  test_tma_load<half_t>(gmem_layout, smem_layout, cta_tile);
+  }
+
+  // 4-mode TMA
   {
   Layout gmem_layout = make_layout(make_shape(make_shape(80,40),make_shape(32,12)));
   auto cta_tile      = Shape<Shape<_16,_8>,Shape<_32,_2>>{}; // GMEM Tiling:
@@ -391,18 +389,20 @@ TEST(SM90_CuTe_Hopper, Tma_Load_Tensor)
   test_tma_load<half_t>(gmem_layout, smem_layout, cta_tile);
   }
 
-  // Tensor Metamode -- Tiler selects flat elements from a multimode
+  // 5-mode TMA
   {
-  Layout gmem_layout = make_layout(make_shape(make_shape(32,40),make_shape(make_shape(8,8),12)));
-  auto cta_tile      = Shape<_128, Shape<_32,_2>>{};         // GMEM Tiling:
-                                                             //   Take 128-elem from m: m0 must divide 128,
-                                                             //                         m-last may be predicated
+  Layout gmem_layout = make_layout(make_shape(make_shape(32,32,32),make_shape(32,12)));
+  auto cta_tile      = Shape<Shape<_16,_4,_2>,Shape<_16,_2>>{}; // GMEM Tiling:
+                                                             //   Take 4-elem from m0, 4-elem from m1, 5-elem from m2
                                                              //   Take 32-elem from k0, 2-elem from k1
-  auto smem_layout = make_layout(Shape<_128,_64>{});
+  auto smem_layout = make_layout(Shape<_128,_32>{});
   test_tma_load<half_t>(gmem_layout, smem_layout, cta_tile);
   }
+}
 
-  // Tensor Multimode -- TMA with more than 5 modes in GMEM (packs residual modes into last TMA mode)
+// Tensor Multimode -- TMA with more than 5 modes in GMEM (packs residual modes into last TMA mode)
+TEST(SM90_CuTe_Hopper, Tma_Load_Tensor_Multimode)
+{
   {
   Layout gmem_layout = make_layout(make_shape(make_shape(32,3,2,2),make_shape(32,4,2)));
   auto cta_tile      = Shape<Shape<_32>, Shape<_32,_2>>{};    // GMEM Tiling:
@@ -412,6 +412,23 @@ TEST(SM90_CuTe_Hopper, Tma_Load_Tensor)
   test_tma_load<half_t>(gmem_layout, smem_layout, cta_tile);
   }
 
+  {
+  Layout gmem_layout = make_layout(make_shape(make_shape(64,3,2,2),make_shape(32,4,2)));
+  auto cta_tile      = Shape<Shape<_32,_3>, Shape<_32,_2>>{}; // GMEM Tiling:
+                                                              //  Take 32-elem from m0, 3-elem from m1
+                                                              //  Take 32-elem from k0, 2-elem from k1
+  auto smem_layout = make_layout(Shape<_96,_64>{});
+  test_tma_load<half_t>(gmem_layout, smem_layout, cta_tile);
+  }
+
+  {
+  Layout gmem_layout = make_layout(make_shape(make_shape(64,3,2,3,2),make_shape(32,4,2,2)));
+  auto cta_tile      = Shape<Shape<_32>, Shape<_16,_2>>{};    // GMEM Tiling:
+                                                              //  Take 32-elem from m0
+                                                              //  Take 16-elem from k0, 2-elem from k1
+  auto smem_layout = make_layout(Shape<_32,_32>{});
+  test_tma_load<half_t>(gmem_layout, smem_layout, cta_tile);
+  }
 }
 
 #endif

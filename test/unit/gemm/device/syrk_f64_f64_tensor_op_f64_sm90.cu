@@ -48,7 +48,6 @@
 #include "testbed_rank_k_universal.h"
 
 #if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM90_Device_Syrk_f64n_f64t_l_tensor_op_f64, 128x64x16_64x32x16) {

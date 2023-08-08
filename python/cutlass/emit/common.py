@@ -117,16 +117,16 @@ cutlass::Status ${name}_kernel_run(
 
   typename DeviceKernel::Arguments arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
-      {M, N, K, L},                                                     // problem size
-      A,                                                                // ptrA
-      make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L)),    // stride A
-      B,                                                                // ptrB
-      make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L)),    // stride B
+      {M, N, K, L},                                                              // problem size
+      A,                                                                         // ptrA
+      cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(M, K, L)),    // stride A
+      B,                                                                         // ptrB
+      cutlass::make_cute_packed_stride(StrideB{}, cute::make_shape(N, K, L)),    // stride B
       {
-        C,                                                              // ptrC
-        make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L)),  // stride C
-        D,                                                              // ptrD
-        make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L)),  // stride D
+        C,                                                                       // ptrC
+        cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(M, N, L)),  // stride C
+        D,                                                                       // ptrD
+        cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(M, N, L)),  // stride D
         {alpha, beta},
       },
       hw_info
@@ -178,5 +178,88 @@ cutlass::Status ${name}_kernel_run(int problem_count, cutlass::gemm::GemmCoord* 
 
   status = gemm_op();
   return status;
+}
+"""
+
+
+_CUTLASS_KERNEL_RUN_CONV2D_2x = """
+
+using UnderlyingKernel = typename DeviceKernel::UnderlyingKernel;
+namespace {
+using TensorRefA = typename UnderlyingKernel::TensorRefA;
+using TensorRefB = typename UnderlyingKernel::TensorRefB;
+using TensorRefC = typename UnderlyingKernel::TensorRefC;
+using ElementCompute = typename UnderlyingKernel::EpilogueOutputOp::ElementCompute;
+}
+
+template<typename TensorRef, typename Element>
+TensorRef get_tensor_ref(cutlass::Tensor4DCoord tensor_coord, Element* ptr){
+  cutlass::layout::TensorNHWC layout = cutlass::layout::TensorNHWC::packed(tensor_coord);
+  TensorRef tensor_ref(ptr, layout);
+  return tensor_ref;
+}
+
+cutlass::Status ${name}_kernel_run(cutlass::conv::Conv2dProblemSize* problem_size,
+                        UnderlyingKernel::ElementA* A, UnderlyingKernel::ElementB* B,
+                        UnderlyingKernel::ElementC* C, UnderlyingKernel::ElementC* D,
+                        ElementCompute alpha, ElementCompute beta, std::string split_k_mode,
+                        cudaStream_t stream, int device_id=0) {
+  // create the tensor references
+  cutlass::Tensor4DCoord tensor_coord_A = cutlass::conv::implicit_gemm_tensor_a_extent(
+    cutlass::conv::Operator::k${conv_kind_name}, *problem_size
+  );
+  cutlass::Tensor4DCoord tensor_coord_B = cutlass::conv::implicit_gemm_tensor_b_extent(
+    cutlass::conv::Operator::k${conv_kind_name}, *problem_size
+  );
+  cutlass::Tensor4DCoord tensor_coord_C = cutlass::conv::implicit_gemm_tensor_c_extent(
+    cutlass::conv::Operator::k${conv_kind_name}, *problem_size
+  );
+  
+  TensorRefA tensor_ref_A = get_tensor_ref<TensorRefA, UnderlyingKernel::ElementA>(tensor_coord_A, A);
+  TensorRefB tensor_ref_B = get_tensor_ref<TensorRefB, UnderlyingKernel::ElementB>(tensor_coord_B, B);
+  TensorRefC tensor_ref_C = get_tensor_ref<TensorRefC, UnderlyingKernel::ElementC>(tensor_coord_C, C);
+  TensorRefC tensor_ref_D = get_tensor_ref<TensorRefC, UnderlyingKernel::ElementC>(tensor_coord_C, D);
+  
+  cutlass::conv::SplitKMode mode;
+  if (split_k_mode == "serial") {
+    mode = cutlass::conv::SplitKMode::kSerial;
+  } else if (split_k_mode == "parallel") {
+    mode = cutlass::conv::SplitKMode::kParallel;
+  } else {
+    throw std::runtime_error("Invalid split_k_mode: " + split_k_mode);
+  }
+  
+  typename DeviceKernel::Arguments arguments{
+    *problem_size,
+    tensor_ref_A,
+    tensor_ref_B,
+    tensor_ref_C,
+    tensor_ref_D,
+    {alpha, beta},
+    mode
+  };
+  
+  DeviceKernel implicit_gemm_op;
+  
+  size_t workspace_size = implicit_gemm_op.get_workspace_size(arguments);
+  
+  void* workspace_ptr = device_memory_allocation(workspace_size, device_id);
+  
+  cutlass::Status status = implicit_gemm_op.can_implement(arguments);
+  if (status != cutlass::Status::kSuccess) {
+    return status;
+  }
+  
+  status = implicit_gemm_op.initialize(arguments, workspace_ptr, stream);
+  if (status != cutlass::Status::kSuccess) {
+    return status;
+  }
+
+  //
+  // Launch initialized CUTLASS kernel
+  //
+  status = implicit_gemm_op(stream);
+
+  return status;                    
 }
 """

@@ -34,7 +34,6 @@
 
 #include <cute/arch/copy.hpp>
 #include <cute/arch/copy_sm90.hpp>
-
 namespace cute
 {
 
@@ -503,8 +502,7 @@ struct SM90_TMA_LOAD_MULTICAST
 struct SM90_TMA_LOAD_IM2COL_MULTICAST_3D
 {
   CUTE_HOST_DEVICE static void
-  copy(void const* const desc_ptr, uint64_t& smem_mbar,
-       uint16_t const& multicast_mask,
+  copy(void const* const desc_ptr, uint64_t& smem_mbar, uint16_t multicast_mask,
        void const* const smem_ptr,
        int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_n,
        uint16_t const& offset_w)
@@ -532,12 +530,10 @@ struct SM90_TMA_LOAD_IM2COL_MULTICAST_3D
 struct SM90_TMA_LOAD_IM2COL_MULTICAST_4D
 {
   CUTE_HOST_DEVICE static void
-  copy(void const* const desc_ptr, uint64_t& smem_mbar,
-       uint16_t const& multicast_mask,
+  copy(void const* const desc_ptr, uint64_t& smem_mbar, uint16_t multicast_mask,
        void const* const smem_ptr,
        int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_h, int32_t const& coord_n,
-       uint16_t const& offset_w,
-       uint16_t const& offset_h)
+       uint16_t const& offset_w, uint16_t const& offset_h)
   {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
@@ -545,7 +541,7 @@ struct SM90_TMA_LOAD_IM2COL_MULTICAST_4D
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     // Copy from global to shared::cluster.
     asm volatile (
-      "cp.async.bulk.tensor.4d.shared::cluster.global.im2col.mbarrier::complete_tx::bytes"
+      "cp.async.bulk.tensor.4d.shared::cluster.global.im2col.mbarrier::complete_tx::bytes.multicast::cluster"
       " [%0], [%1, {%3, %4, %5, %6}], [%2], {%7, %8}, %9;"
       :
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
@@ -562,13 +558,10 @@ struct SM90_TMA_LOAD_IM2COL_MULTICAST_4D
 struct SM90_TMA_LOAD_IM2COL_MULTICAST_5D
 {
   CUTE_HOST_DEVICE static void
-  copy(void const* const desc_ptr, uint64_t& smem_mbar,
-       uint16_t const& multicast_mask,
+  copy(void const* const desc_ptr, uint64_t& smem_mbar, uint16_t multicast_mask,
        void const* const smem_ptr,
        int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_h, int32_t const& coord_d, int32_t const& coord_n,
-       uint16_t const& offset_w,
-       uint16_t const& offset_h,
-       uint16_t const& offset_d)
+       uint16_t const& offset_w, uint16_t const& offset_h, uint16_t const& offset_d)
   {
 #if defined(CUTE_ARCH_TMA_SM90_ENABLED)
     uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
@@ -576,7 +569,7 @@ struct SM90_TMA_LOAD_IM2COL_MULTICAST_5D
     uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
     // Copy from global to shared::cluster.
     asm volatile (
-      "cp.async.bulk.tensor.5d.shared::cluster.global.im2col.mbarrier::complete_tx::bytes"
+      "cp.async.bulk.tensor.5d.shared::cluster.global.im2col.mbarrier::complete_tx::bytes.multicast::cluster"
       " [%0], [%1, {%3, %4, %5, %6, %7}], [%2], {%8, %9, %10}, %11;"
       :
       : "r"(smem_int_ptr), "l"(gmem_int_desc), "r"(smem_int_mbar),
@@ -593,45 +586,39 @@ struct SM90_TMA_LOAD_IM2COL_MULTICAST_5D
 struct SM90_TMA_LOAD_IM2COL_MULTICAST
 {
   CUTE_HOST_DEVICE static void
-  copy(void const* const desc_ptr, uint64_t& smem_mbar,
-       uint16_t const& multicast_mask,
+  copy(void const* const desc_ptr, uint64_t& smem_mbar, uint16_t multicast_mask,
        void const* const smem_ptr,
        int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_n,
        uint16_t const& offset_w)
   {
-    return SM90_TMA_LOAD_IM2COL_MULTICAST_3D::copy(desc_ptr, smem_mbar,
-						   multicast_mask, smem_ptr,
-						   coord_c, coord_w, coord_n,
-						   offset_w);
+    return SM90_TMA_LOAD_IM2COL_MULTICAST_3D::copy(desc_ptr, smem_mbar, multicast_mask, 
+                                                   smem_ptr,
+                                                   coord_c, coord_w, coord_n,
+                                                   offset_w);
   }
 
   CUTE_HOST_DEVICE static void
-  copy(void const* const desc_ptr, uint64_t& smem_mbar,
-       uint16_t const& multicast_mask,
+  copy(void const* const desc_ptr, uint64_t& smem_mbar, uint16_t multicast_mask,
        void const* const smem_ptr,
        int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_h, int32_t const& coord_n,
-       uint16_t const& offset_w,
-       uint16_t const& offset_h)
+       uint16_t const& offset_w, uint16_t const& offset_h)
   {
-    return SM90_TMA_LOAD_IM2COL_MULTICAST_4D::copy(desc_ptr, smem_mbar,
-						   multicast_mask, smem_ptr,
-						   coord_c, coord_w, coord_h, coord_n,
-						   offset_w, offset_h);
+    return SM90_TMA_LOAD_IM2COL_MULTICAST_4D::copy(desc_ptr, smem_mbar, multicast_mask, 
+                                                   smem_ptr,
+                                                   coord_c, coord_w, coord_h, coord_n,
+                                                   offset_w, offset_h);
   }
 
   CUTE_HOST_DEVICE static void
-  copy(void const* const desc_ptr, uint64_t& smem_mbar,
-       uint16_t const& multicast_mask,
+  copy(void const* const desc_ptr, uint64_t& smem_mbar, uint16_t multicast_mask,
        void const* const smem_ptr,
        int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_h, int32_t const& coord_d, int32_t const& coord_n,
-       uint16_t const& offset_w,
-       uint16_t const& offset_h,
-       uint16_t const& offset_d)
+       uint16_t const& offset_w, uint16_t const& offset_h, uint16_t const& offset_d)
   {
-    return SM90_TMA_LOAD_IM2COL_MULTICAST_5D::copy(desc_ptr, smem_mbar,
-                                                   multicast_mask, smem_ptr,
+    return SM90_TMA_LOAD_IM2COL_MULTICAST_5D::copy(desc_ptr, smem_mbar, multicast_mask, 
+                                                   smem_ptr,
                                                    coord_c, coord_w, coord_h, coord_d, coord_n,
-						   offset_w, offset_h, offset_d);
+                                                   offset_w, offset_h, offset_d);
   }
 };
 

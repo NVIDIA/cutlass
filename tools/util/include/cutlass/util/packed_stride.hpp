@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Utilities for packing a rank-X shape into a rank-(X-1) stride in CuTe.
+    \brief Utilities for packing constructing canonical CuTe stride types for 3.x mainloop params.
 */
 
 #pragma once
@@ -38,25 +38,29 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace cutlass {
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 // Strides without batch mode
 
-template <class StrideIntT>
-cute::Stride<StrideIntT, cute::Int<1>>
-make_cute_packed_stride(cute::Stride<StrideIntT, cute::Int<1>> s, cute::Shape<int,int,int> shape_MKL) {
-  static_assert(std::is_integral_v<StrideIntT>,
+template <class IntT>
+cute::Stride<IntT, cute::Int<1>>
+make_cute_packed_stride(cute::Stride<IntT, cute::Int<1>> s, cute::Shape<int,int,int> shape_MKL) {
+  static_assert(std::is_integral_v<IntT>,
     "Stride must have an integral type so it can be set dynamically. Static strides not supported.");
   auto s_copy = s;
-  cute::get<0>(s_copy) = static_cast<StrideIntT>(cute::get<1>(shape_MKL));
+  cute::get<0>(s_copy) = static_cast<IntT>(cute::get<1>(shape_MKL));
   return s_copy;
 }
 
-template <class StrideIntT>
-cute::Stride<cute::Int<1>, StrideIntT>
-make_cute_packed_stride(cute::Stride<cute::Int<1>, StrideIntT> s, cute::Shape<int,int,int> shape_MKL) {
-  static_assert(std::is_integral_v<StrideIntT>,
+template <class IntT>
+cute::Stride<cute::Int<1>, IntT>
+make_cute_packed_stride(cute::Stride<cute::Int<1>, IntT> s, cute::Shape<int,int,int> shape_MKL) {
+  static_assert(std::is_integral_v<IntT>,
     "Stride must have an integral type so it can be set dynamically. Static strides not supported.");
   auto s_copy = s;
-  cute::get<1>(s_copy) = static_cast<StrideIntT>(cute::get<0>(shape_MKL));
+  cute::get<1>(s_copy) = static_cast<IntT>(cute::get<0>(shape_MKL));
   return s_copy;
 }
 
@@ -64,38 +68,40 @@ make_cute_packed_stride(cute::Stride<cute::Int<1>, StrideIntT> s, cute::Shape<in
 
 // Strides with batch mode
 
-template <class StrideIntT>
-cute::Stride<StrideIntT, cute::Int<1>, int64_t>
-make_cute_packed_stride(cute::Stride<StrideIntT, cute::Int<1>, int64_t> s, cute::Shape<int,int,int> shape_MKL) {
-  static_assert(std::is_integral_v<StrideIntT>,
+template <class IntT>
+cute::Stride<IntT, cute::Int<1>, int64_t>
+make_cute_packed_stride(cute::Stride<IntT, cute::Int<1>, int64_t> s, cute::Shape<int,int,int> shape_MKL) {
+  static_assert(std::is_integral_v<IntT>,
     "Stride must have an integral type so it can be set dynamically. Static strides not supported.");
   auto s_copy = s;
-  cute::get<0>(s_copy) = static_cast<StrideIntT>(cute::get<1>(shape_MKL));
+  cute::get<0>(s_copy) = static_cast<IntT>(cute::get<1>(shape_MKL));
   int batch_count =  cute::get<2>(shape_MKL);
   if (batch_count > 1) {
-    cute::get<2>(s_copy) = static_cast<StrideIntT>(cute::get<0>(shape_MKL) * cute::get<1>(shape_MKL));
+    cute::get<2>(s_copy) = static_cast<IntT>(cute::get<0>(shape_MKL) * cute::get<1>(shape_MKL));
   }
   else {
-    cute::get<2>(s_copy) = static_cast<StrideIntT>(0);
+    cute::get<2>(s_copy) = static_cast<IntT>(0);
   }
   return s_copy;
 }
 
-template <class StrideIntT>
-cute::Stride<cute::Int<1>, StrideIntT, int64_t>
-make_cute_packed_stride(cute::Stride<cute::Int<1>, StrideIntT, int64_t> s, cute::Shape<int,int,int> shape_MKL) {
-  static_assert(std::is_integral_v<StrideIntT>,
+template <class IntT>
+cute::Stride<cute::Int<1>, IntT, int64_t>
+make_cute_packed_stride(cute::Stride<cute::Int<1>, IntT, int64_t> s, cute::Shape<int,int,int> shape_MKL) {
+  static_assert(std::is_integral_v<IntT>,
     "Stride must have an integral type so it can be set dynamically. Static strides not supported.");
   auto s_copy = s;
-  cute::get<1>(s_copy) = static_cast<StrideIntT>(cute::get<0>(shape_MKL));
+  cute::get<1>(s_copy) = static_cast<IntT>(cute::get<0>(shape_MKL));
   int batch_count =  cute::get<2>(shape_MKL);
   if (batch_count > 1) {
-    cute::get<2>(s_copy) = static_cast<StrideIntT>(cute::get<0>(shape_MKL) * cute::get<1>(shape_MKL));
+    cute::get<2>(s_copy) = static_cast<IntT>(cute::get<0>(shape_MKL) * cute::get<1>(shape_MKL));
   }
   else {
-    cute::get<2>(s_copy) = static_cast<StrideIntT>(0);
+    cute::get<2>(s_copy) = static_cast<IntT>(0);
   }
   return s_copy;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
+
+} // namespace cutlass

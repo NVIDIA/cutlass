@@ -232,7 +232,6 @@ struct TestbedPlanarComplex {
     } else if (init_A == cutlass::Distribution::Identity) {
       //cutlass::reference::host::TensorFillIdentity(matrix_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -270,7 +269,6 @@ struct TestbedPlanarComplex {
       //cutlass::reference::host::TensorFillIdentity(matrix_B.host_view());
 
     } else {
-      // TODO: Implement the rest
       return false;
     }
 

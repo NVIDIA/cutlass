@@ -316,7 +316,11 @@ int run(Options &options) {
   // <- Fill tensor_b_indices on host with unique random integers
   std::vector<int> to_fill(problem_size.n()) ; // vector with ints.
   std::iota (std::begin(to_fill), std::end(to_fill), 0); // Fill with 0, 1, ...., problem_size.n()
-  std::random_shuffle(to_fill.begin(), to_fill.end());
+  { // std::random_shuffle was deprecated in C++14 and removed in C++17
+    std::random_device make_seed;
+    std::mt19937 source_of_randomness(make_seed());
+    std::shuffle(to_fill.begin(), to_fill.end(), source_of_randomness);
+  }
   memcpy(tensor_indices.host_data(), to_fill.data(), options.index_size * sizeof(int));
 
   // Copy data from host to GPU

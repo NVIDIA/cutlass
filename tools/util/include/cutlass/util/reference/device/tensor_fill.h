@@ -354,19 +354,22 @@ template <
 void TensorFillRandomGaussian(
   TensorView<Element, Layout> view,       ///< destination tensor
   uint64_t seed,                          ///< seed for RNG
-  Element mean = Element(0),              ///< Gaussian distribution's mean
-  Element stddev = Element(1),            ///< Gaussian distribution's standard deviation
-  int bits = -1) {                        ///< If non-negative, specifies number of fractional bits that 
+  typename RealType<Element>::Type mean = Element(0),   ///< Gaussian distribution's mean
+  typename RealType<Element>::Type stddev = Element(1), ///< Gaussian distribution's standard deviation
+  int bits = -1,                          ///< If non-negative, specifies number of fractional bits that
                                           ///  are not truncated to zero. Permits reducing precision of
                                           ///  data.
-  
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomGaussianFunc<Element>;
   using Func = detail::TensorFillRandomGaussianFunc<Element, Layout>;
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, typename RandomFunc::Params(seed, mean, stddev, bits))
+    Params(view, typename RandomFunc::Params(seed, mean, stddev, bits)),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -380,15 +383,16 @@ void BlockFillRandomGaussian(
   uint64_t seed,                              ///< seed for RNG
   typename RealType<Element>::Type mean,      ///< Gaussian distribution's mean
   typename RealType<Element>::Type stddev,    ///< Gaussian distribution's standard deviation
-  int bits = -1) {                            ///< If non-negative, specifies number of fractional bits that 
+  int bits = -1,                              ///< If non-negative, specifies number of fractional bits that
                                               ///  are not truncated to zero. Permits reducing precision of
                                               ///  data.
-  
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomGaussianFunc<Element>;
 
   typename RandomFunc::Params params(seed, mean, stddev, bits);
 
-  BlockForEach<Element, RandomFunc>(ptr, capacity, params);
+  BlockForEach<Element, RandomFunc>(ptr, capacity, params, /*grid_size*/0, /*block_size*/0, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -686,12 +690,13 @@ template <
 void TensorFillRandomUniform(
   TensorView<Element, Layout> view,       ///< destination tensor
   uint64_t seed,                          ///< seed for RNG
-  Element max = Element(1),               ///< upper bound of distribution
-  Element min = Element(0),               ///< lower bound for distribution
-  int bits = -1) {                        ///< If non-negative, specifies number of fractional bits that 
+  typename RealType<Element>::Type max = Element(1), ///< upper bound of distribution
+  typename RealType<Element>::Type min = Element(0), ///< lower bound for distribution
+  int bits = -1,                          ///< If non-negative, specifies number of fractional bits that
                                           ///  are not truncated to zero. Permits reducing precision of
-                                          ///  data.                 
-  
+                                          ///  data.
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomUniformFunc<Element>;
   using Func = detail::TensorFillRandomUniformFunc<Element, Layout>;
   using Params = typename Func::Params;
@@ -700,7 +705,9 @@ void TensorFillRandomUniform(
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, random)
+    Params(view, random),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -714,15 +721,16 @@ void BlockFillRandomUniform(
   uint64_t seed,                          ///< seed for RNG
   typename RealType<Element>::Type max,   ///< upper bound of distribution
   typename RealType<Element>::Type min,   ///< lower bound for distribution
-  int bits = -1) {                        ///< If non-negative, specifies number of fractional bits that 
+  int bits = -1,                          ///< If non-negative, specifies number of fractional bits that
                                           ///  are not truncated to zero. Permits reducing precision of
-                                          ///  data.                 
-  
+                                          ///  data.
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomUniformFunc<Element>;
-  
+
   typename RandomFunc::Params params(seed, max, min, bits);
 
-  BlockForEach<Element, RandomFunc>(ptr, capacity, params);
+  BlockForEach<Element, RandomFunc>(ptr, capacity, params, /*grid_size*/0, /*block_size*/0, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -899,10 +907,9 @@ template <
 void TensorFillRandomSparseMeta(
   TensorView<Element, Layout> view,       ///< destination tensor
   uint64_t seed,                          ///< seed for RNG
-  int MetaSizeInBits = 2) {                        ///< If non-negative, specifies number of fractional bits that 
-                                          ///  are not truncated to zero. Permits reducing precision of
-                                          ///  data.                 
-  
+  int MetaSizeInBits = 2,                 ///< meta data size
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomSparseMetaFunc<Element>;
   using Func = detail::TensorFillRandomUniformFunc<Element, Layout>;
   using Params = typename Func::Params;
@@ -911,7 +918,9 @@ void TensorFillRandomSparseMeta(
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, random)
+    Params(view, random),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -923,13 +932,14 @@ void BlockFillRandomSparseMeta(
   Element *ptr,
   size_t capacity,
   uint64_t seed,                          ///< seed for RNG
-  int MetaSizeInBits = 2) {               ///< meta data size
-  
+  int MetaSizeInBits = 2,                 ///< meta data size
+  cudaStream_t stream = nullptr) {
+
   using RandomFunc = detail::RandomSparseMetaFunc<Element>;
-  
+
   typename RandomFunc::Params params(seed, MetaSizeInBits);
 
-  BlockForEach<Element, RandomFunc>(ptr, capacity, params);
+  BlockForEach<Element, RandomFunc>(ptr, capacity, params, /*grid_size*/0, /*block_size*/0, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1245,14 +1255,17 @@ template <
 void TensorFillDiagonal(
   TensorView<Element, Layout> view,       ///< destination tensor
   Element diag = Element(1),              ///< value to write in the diagonal
-  Element other = Element(0)) {           ///< value to write off the diagonal
-  
+  Element other = Element(0),             ///< value to write off the diagonal
+  cudaStream_t stream = nullptr) {
+
   typedef detail::TensorFillDiagonalFunc<Element, Layout> Func;
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, diag, other)
+    Params(view, diag, other),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -1264,18 +1277,20 @@ template <
 void TensorFillPartial(
   TensorView<Element, Layout> view,       ///< destination tensor
   Element element,
-  FillMode fill_mode) {
-  
+  FillMode fill_mode,
+  cudaStream_t stream = nullptr) {
+
   typedef detail::TensorFillPartialFunc<Element, Layout> Func;
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, element, fill_mode)
+    Params(view, element, fill_mode),
+    stream
   );
 }
 
-/// Clears a tensor partially depending on fill mode and alignment. Elements on the wrong-side 
+/// Clears a tensor partially depending on fill mode and alignment. Elements on the wrong-side
 /// of fillmode (upto the alignment) are overwritten with the user supplied element (typically zeros)
 template <
   typename Element,               ///< Element type
@@ -1284,14 +1299,17 @@ void TensorClearPartial(
   TensorView<Element, Layout> view,       ///< destination tensor
   Element element,
   FillMode fill_mode,
-  int alignment) {
-  
+  int alignment,
+  cudaStream_t stream = nullptr) {
+
   typedef detail::TensorClearPartialFunc<Element, Layout> Func;
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, element, fill_mode, alignment)
+    Params(view, element, fill_mode, alignment),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -1302,10 +1320,11 @@ template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
 void TensorFill(
-  TensorView<Element, Layout> view,         ///< destination tensor 
-  Element val = Element(0)) {               ///< value to uniformly fill it with
+  TensorView<Element, Layout> view,         ///< destination tensor
+  Element val = Element(0),                 ///< value to uniformly fill it with
+  cudaStream_t stream = nullptr) {
 
-  TensorFillDiagonal(view, val, val);
+  TensorFillDiagonal(view, val, val, stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1315,9 +1334,10 @@ template <
   typename Element,               ///< Element type
   typename Layout>                ///< Layout function
 void TensorFillIdentity(
-  TensorView<Element, Layout> view) {               ///< destination tensor
+  TensorView<Element, Layout> view,                 ///< destination tensor
+  cudaStream_t stream = nullptr) {
 
-  TensorFillDiagonal(view, Element(1), Element(0));
+  TensorFillDiagonal(view, Element(1), Element(0), stream);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1415,14 +1435,17 @@ template <
   typename Layout>                ///< Layout function
 void TensorUpdateDiagonal(
   TensorView<Element, Layout> view,                 ///< destination tensor
-  Element diag = Element(1)) {
+  Element diag = Element(1),
+  cudaStream_t stream = nullptr) {
 
   typedef detail::TensorUpdateDiagonalFunc<Element, Layout> Func;
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, diag)
+    Params(view, diag),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -1521,14 +1544,17 @@ template <
   typename Layout>                ///< Layout function
 void TensorUpdateOffDiagonal(
   TensorView<Element, Layout> view,      ///< destination tensor
-  Element other = Element(1)) {
+  Element other = Element(1),
+  cudaStream_t stream = nullptr) {
 
   typedef detail::TensorUpdateOffDiagonalFunc<Element, Layout> Func;
   typedef typename Func::Params Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, other)
+    Params(view, other),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -1602,11 +1628,30 @@ struct TensorFillLinearFunc {
   /// Compute random value and update RNG state
   CUTLASS_DEVICE
   void operator()(TensorCoord const &coord) {
+
     Element sum = params.s;
     
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < Layout::kRank; ++i) {
-      sum += params.v[i] * Element(coord[i]);
+      if constexpr (is_complex<Element>::value) {
+        if constexpr (sizeof_bits<Element>::value <= 32) {
+          sum = Element(static_cast<complex<float>>(sum) + 
+                  static_cast<complex<float>>(params.v[i]) * static_cast<complex<float>>(coord[i]));
+        }
+      }
+      else if constexpr (sizeof_bits<Element>::value <= 32) {
+        if constexpr (std::numeric_limits<Element>::is_integer) {
+          sum = Element(static_cast<int32_t>(sum) + 
+                  static_cast<int32_t>(params.v[i]) * static_cast<int32_t>(coord[i]));
+        }
+        else {
+          sum = Element(static_cast<float>(sum) + 
+                  static_cast<float>(params.v[i]) * static_cast<float>(coord[i]));
+        }
+      }
+      else {
+        sum += params.v[i] * coord[i];
+      }
     }
 
     params.view.at(coord) = sum;
@@ -1624,15 +1669,52 @@ template <
 void TensorFillLinear(
   TensorView<Element, Layout> view,      ///< destination tensor
   Array<Element, Layout::kRank> const & v,
-  Element s = Element(0)) {
+  Element s = Element(0),
+  cudaStream_t stream = nullptr) {
 
   using Func = detail::TensorFillLinearFunc<Element, Layout>;
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, v, s)
+    Params(view, v, s),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Fills a tensor with random values from a distribution.
+template <
+  typename Element,               ///< Element type
+  typename Layout>                ///< Layout function
+void TensorFillRandom(
+  TensorView<Element, Layout> view,       ///< destination tensor
+  uint64_t seed,
+  Distribution dist,
+  cudaStream_t stream = nullptr) {
+
+  using Real = typename RealType<Element>::Type;
+
+  if (dist.kind == Distribution::Gaussian) {
+    TensorFillRandomGaussian<Element, Layout>(
+      view,
+      seed,
+      static_cast<Real>(dist.gaussian.mean),
+      static_cast<Real>(dist.gaussian.stddev),
+      dist.int_scale,
+      stream);
+  } else if (dist.kind == Distribution::Uniform) {
+    TensorFillRandomUniform<Element, Layout>(
+      view,
+      seed,
+      static_cast<Real>(dist.uniform.max),
+      static_cast<Real>(dist.uniform.min),
+      dist.int_scale,
+      stream);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1670,27 +1752,30 @@ void BlockFillRandom(
   Element *ptr,
   size_t capacity,
   uint64_t seed,
-  Distribution dist) {
+  Distribution dist,
+  cudaStream_t stream = nullptr) {
 
   using Real = typename RealType<Element>::Type;
 
   if (dist.kind == Distribution::Gaussian) {
     BlockFillRandomGaussian<Element>(
-      ptr, 
-      capacity, 
-      seed, 
-      static_cast<Real>(dist.gaussian.mean), 
-      static_cast<Real>(dist.gaussian.stddev), 
-      dist.int_scale);
+      ptr,
+      capacity,
+      seed,
+      static_cast<Real>(dist.gaussian.mean),
+      static_cast<Real>(dist.gaussian.stddev),
+      dist.int_scale,
+      stream);
   }
   else if (dist.kind == Distribution::Uniform) {
     BlockFillRandomUniform<Element>(
-      ptr, 
-      capacity, 
-      seed, 
+      ptr,
+      capacity,
+      seed,
       static_cast<Real>(dist.uniform.max),
-      static_cast<Real>(dist.uniform.min), 
-      dist.int_scale);
+      static_cast<Real>(dist.uniform.min),
+      dist.int_scale,
+      stream);
   }
 }
 
@@ -1786,14 +1871,17 @@ template <
   typename Layout>                ///< Layout function
 void TensorCopyDiagonalIn(
   TensorView<Element, Layout> view,   ///< destination tensor
-  Element const *ptr) {                     ///< dense buffer of elements
+  Element const *ptr,                        ///< dense buffer of elements
+  cudaStream_t stream = nullptr) {
 
   using Func = detail::TensorCopyDiagonalInFunc<Element, Layout>;
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, ptr)
+    Params(view, ptr),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 
@@ -1890,14 +1978,17 @@ template <
   typename Layout>                ///< Layout function
 void TensorCopyDiagonalOut(
   Element *ptr,                               ///< dense buffer of elements
-  TensorView<Element, Layout> view) {    ///< source tensor
+  TensorView<Element, Layout> view,      ///< source tensor
+  cudaStream_t stream = nullptr) {
 
   using Func = detail::TensorCopyDiagonalOutFunc<Element, Layout>;
   using Params = typename Func::Params;
 
   TensorForEach<Func, Layout::kRank, Params>(
     view.extent(),
-    Params(view, ptr)
+    Params(view, ptr),
+    /*grid_size*/0, /*block_size*/0,
+    stream
   );
 }
 

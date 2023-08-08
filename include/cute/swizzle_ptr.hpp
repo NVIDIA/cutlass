@@ -34,7 +34,6 @@
 
 #include <cute/arch/util.hpp>
 
-#include <cute/swizzle.hpp>
 #include <cute/swizzle_layout.hpp>
 #include <cute/tensor.hpp>
 
@@ -119,9 +118,18 @@ struct is_smem<smem_ptr_swizzle<T,S>> : true_type {};
 template <class T, class Swizzle>
 CUTE_HOST_DEVICE constexpr
 auto
-make_smem_ptr(T* ptr, Swizzle const& swizzle)
+make_smem_ptr(T* ptr, Swizzle const&)
 {
   return smem_ptr_swizzle<T,Swizzle>{ptr};
+}
+
+// Specialization for immediate decay
+template <class T, int M, int S>
+CUTE_HOST_DEVICE constexpr
+auto
+make_smem_ptr(T* ptr, Swizzle<0,M,S> const&)
+{
+  return make_smem_ptr(ptr);
 }
 
 // A model of a nullptr smem_ptr<T> with B == sizeof_bits<T>::value
@@ -140,25 +148,8 @@ make_tensor(smem_ptr<T> const& ptr,
             ComposedLayout<Swizzle,smem_ptr_flag_bits<B>,Layout> const& layout)
 {
   static_assert(B == sizeof_bits<T>::value, "Expected a B-bit pointer type.");
-  return make_tensor(make_smem_ptr(ptr.get(), layout.swizzle_fn()),
-                     layout.layout_fn());
-}
-
-// Specialization for immediate decay
-template <class T, int M, int S, class LShape, class LStride>
-CUTE_HOST_DEVICE constexpr
-auto
-make_tensor(smem_ptr_swizzle<T,Swizzle<0,M,S>>& p, Layout<LShape,LStride> const& layout)
-{
-  return make_tensor(make_smem_ptr(p.ptr_), layout);
-}
-
-template <class T, int M, int S, class LShape, class LStride>
-CUTE_HOST_DEVICE constexpr
-auto
-make_tensor(smem_ptr_swizzle<T,Swizzle<0,M,S>> const& p, Layout<LShape,LStride> const& layout)
-{
-  return make_tensor(make_smem_ptr(p.ptr_), layout);
+  return make_tensor(make_smem_ptr(ptr.get(), layout.layout_a()),
+                     layout.layout_b());
 }
 
 // NOTE: To preserve smem_ptr_flag_bits under recast ops
@@ -167,7 +158,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 upcast(ComposedLayout<Swizzle,smem_ptr_flag_bits<B>,Layout> const& layout)
 {
-  return composition(layout.swizzle_fn(), smem_ptr_flag_bits<B*N>{}, upcast<N>(layout.layout_fn()));
+  return composition(layout.layout_a(), smem_ptr_flag_bits<B*N>{}, upcast<N>(layout.layout_b()));
 }
 
 template <int N, class Swizzle, int B, class Layout>
@@ -175,7 +166,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 downcast(ComposedLayout<Swizzle,smem_ptr_flag_bits<B>,Layout> const& layout)
 {
-  return composition(layout.swizzle_fn(), smem_ptr_flag_bits<B/N>{}, downcast<N>(layout.layout_fn()));
+  return composition(layout.layout_a(), smem_ptr_flag_bits<B/N>{}, downcast<N>(layout.layout_b()));
 }
 
 //
@@ -199,6 +190,13 @@ recast(smem_ptr_swizzle<T const,Swizzle> const& ptr)
   return smem_ptr_swizzle<NewT const,Swizzle>{recast<NewT const>(ptr.ptr_)};
 }
 
+template <class T, class Swizzle>
+CUTE_HOST_DEVICE constexpr
+T*
+raw_pointer_cast(smem_ptr_swizzle<T,Swizzle> ptr) {
+  return ptr.get();
+}
+
 //
 // Conversion with swizzle_layout
 //
@@ -208,7 +206,7 @@ CUTE_HOST_DEVICE
 auto
 as_position_independent_swizzle_layout(ComposedLayout<Swizzle,smem_ptr_flag_bits<B>,Layout> const& layout)
 {
-  return composition(recast<uint_bit_t<8>,uint_bit_t<B>>(layout.swizzle_fn()), Int<0>{}, layout.layout_fn());
+  return composition(recast<uint_bit_t<8>,uint_bit_t<B>>(layout.layout_a()), Int<0>{}, layout.layout_b());
 }
 
 template <class T, class Swizzle, class Layout>
@@ -231,8 +229,8 @@ auto
 as_position_independent_swizzle_tensor(Tensor<ViewEngine<smem_ptr_swizzle<T,Swizzle>>, Layout>& tensor)
 {
   {
-  uint32_t address = cast_smem_ptr_to_uint(tensor.data().get());
-  uint32_t mask    = ((uint32_t(1) << Swizzle::num_base) - 1) & (Swizzle::swizzle_code);
+  [[maybe_unused]] uint32_t address = cast_smem_ptr_to_uint(tensor.data().get());
+  [[maybe_unused]] uint32_t mask    = ((uint32_t(1) << Swizzle::num_base) - 1) & (Swizzle::swizzle_code);
   assert((address & mask) == 0);  // Alignment to the Base, Z, and Y of Swizzle
   }
   auto new_swizzle = recast<uint_bit_t<8>,uint_bit_t<sizeof_bits_v<T>>>(tensor.data().get_swizzle());
@@ -247,6 +245,24 @@ as_position_independent_swizzle_tensor(Tensor<ViewEngine<smem_ptr_swizzle<T,Swiz
   return as_position_independent_swizzle_tensor(tensor);
 }
 
+// Pass through everything else
+// Used if the tensor doesn't have a swizzled layout, e.g. Layout_MN_INTER_Atom, Layout_K_INTER_Atom
+template <class Engine, class Layout>
+CUTE_HOST_DEVICE constexpr 
+auto
+as_position_independent_swizzle_tensor(Tensor<Engine, Layout> const& tensor)
+{
+  return tensor;
+}
+
+template <class Engine, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+as_position_independent_swizzle_tensor(Tensor<Engine, Layout>&& tensor)
+{
+  return tensor;
+}
+
 //
 // Print
 //
@@ -257,8 +273,8 @@ CUTE_HOST_DEVICE
 void
 print_latex(ComposedLayout<Swizzle,smem_ptr_flag_bits<B>,Layout> const& layout)
 {
-  auto new_swizzle = recast<uint_bit_t<8>,uint_bit_t<B>>(layout.swizzle_fn());
-  print_latex(composition(new_swizzle, Int<0>{}, layout.layout_fn()));
+  auto new_swizzle = recast<uint_bit_t<8>,uint_bit_t<B>>(layout.layout_a());
+  print_latex(composition(new_swizzle, Int<0>{}, layout.layout_b()));
 }
 
 template <int B>

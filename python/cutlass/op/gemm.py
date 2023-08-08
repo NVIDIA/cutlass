@@ -287,108 +287,6 @@ class Gemm(OperationBase):
         if reset_epilogue:
             self._reset_epilogue_functor_activation(epilogue.identity)
 
-    def _reset_epilogue_functor_activation(self, activation):
-        if self.epilogue_functor is None:
-            if self.op_class == cutlass.OpcodeClass.Simt:
-                elements_per_access = 1
-            else:
-                elements_per_access = 128 // cutlass.DataTypeSize[self._element_c]
-        else:
-            elements_per_access = self.epilogue_functor.epilogue_vector_length
-
-        if not self.specified_kernel_cc:
-            if self.current_cc == 90 and activation != epilogue.identity:
-                # CUTLASS 3.0 kernels currently only support identity activation. If one requests a non-identity activation,
-                # revert to using a CUTLASS 2.x kernel by using SM80-tagged kernels.
-                cutlass.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")
-                self._reset_options(80)
-                self._reset_operations(reset_epilogue=False)
-            elif (self.cc == 90 and self.current_cc != 90 and activation == epilogue.identity):
-                # SM80 fallback kernels are currently used. Since an identity activation is requested,
-                # we can switch back to using SM90 kernels.
-                self._reset_options(90)
-                self._reset_operations(reset_epilogue=False)
-        else:
-            if self.current_cc == 90 and activation != epilogue.identity:
-                raise Exception("Epilogues with elementwise fusion are not currently supported "
-                                "in the Python interface for 3.x kernels. To use 2.x kernels "
-                                "with fused elementwise epilogues, do not set the `kernel_cc` "
-                                "parameter when constructing the Gemm object.")
-
-        self.epilogue_functor = epilogue.get_activation_epilogue(
-            activation,
-            datatypes.binding_type(self._element_c),
-            elements_per_access,
-            datatypes.binding_type(self._element_accumulator),
-            datatypes.binding_type(self._element_accumulator),
-        )
-
-    def _reset_epilogue_functor_alignment(self, alignment):
-        if self.epilogue_functor is None or not hasattr(self.epilogue_functor, 'activation_functor'):
-            activation = epilogue.identity
-        else:
-            activation = type(self.epilogue_functor.activation_functor)
-
-        self.epilogue_functor = epilogue.get_activation_epilogue(
-            activation,
-            datatypes.binding_type(self._element_c),
-            alignment,
-            datatypes.binding_type(self._element_accumulator),
-            datatypes.binding_type(self._element_accumulator),
-        )
-
-    @property
-    def activation(self):
-        """
-        Returns the type of the current activation function used
-        """
-        return type(self.epilogue_functor.activation_functor)
-
-    @activation.setter
-    def activation(self, act):
-        """
-        Sets the type of the activation function to use
-        """
-        self._reset_epilogue_functor_activation(act)
-
-    @property
-    def opclass(self) -> cutlass.OpcodeClass:
-        """
-        Returns the opcode class currently in use by the GEMM
-
-        :return: opcode class currently in use
-        :rtype: cutlass.OpcodeClass
-        """
-        return self.op_class
-
-    @opclass.setter
-    def opclass(self, oc: cutlass.OpcodeClass):
-        """
-        Sets the opcode class to use in the GEMM. If the opcode class is not supported under
-        the given compute capability and element/layout combinations of the GEMM, an exception is raised.
-        """
-        if oc in self.possible_op_classes:
-            self.op_class = oc
-        else:
-            raise Exception(
-                f'Unsupported operation class {oc} for CC {self.cc} and data type combination '
-                f'({self._element_a}, {self._element_b}, {self._element_accumulator}) and '
-                f'layout combination ({self._layout_a}, {self._layout_b}).')
-
-        # Changing the op class changes the elements per access in the epilogue. Reset this.
-        if self.op_class == cutlass.OpcodeClass.Simt:
-            elements_per_access = 1
-        else:
-            elements_per_access = 128 // cutlass.DataTypeSize[self._element_c]
-
-        if self.epilogue_functor is not None:
-            self._reset_epilogue_functor_alignment(elements_per_access)
-
-        # Changing the op class also changes the possible operations available. Reset these.
-        self.possible_operations = self.options.operations(
-            self.op_class, self._element_a, self._element_b,
-            self._element_accumulator, self._layout_a, self._layout_b)
-
     @property
     def swizzling_functor(self):
         """
@@ -430,7 +328,7 @@ class Gemm(OperationBase):
         """
         # Check stage count based on the CC to which we are compiling (self.cc), rather
         # than the CC from which we find kernels (self.current_cc)
-        valid, msg = check.valid_stage_count(self.cc, td)
+        valid, msg = check.valid_stage_count(self.cc, td, self._element_c, self._element_d)
         if not valid:
             return (valid, msg)
 
@@ -438,7 +336,7 @@ class Gemm(OperationBase):
         if not valid:
             return (valid, msg)
 
-        valid, msg = check.valid_kernel_schedule(self.current_cc, td.kernel_schedule)
+        valid, msg = check.valid_schedule(self.current_cc, td.kernel_schedule, td.epilogue_schedule, td.tile_scheduler)
         return valid, msg
 
     def tile_descriptions(self) -> list:
@@ -476,7 +374,7 @@ class Gemm(OperationBase):
         alignment_B = check.alignment_or_default(alignment_B, alignment_pref_B)
         alignment_C = check.alignment_or_default(alignment_C, alignment_pref_C)
 
-        self._reset_epilogue_functor_alignment(alignment_C)
+        self.epilogue_functor = self._reset_epilogue_functor_alignment(alignment_C, self.epilogue_functor)
 
         tensor_A = TensorDescription(
             datatypes.binding_type(self._element_a),
@@ -561,68 +459,6 @@ class Gemm(OperationBase):
             raise Exception(f'Tensor {name} with type and layout ({dtype}, {layout}) '
                             f'does not match the expected type and '
                             f'layout of ({ref_type}, {ref_layout}).')
-
-    def _verify_tensor(self, tensor, ref_tensor, ref_dtype, ref_layout, name):
-        """
-        Verifies the following properties:
-            1) Either ``tensor`` or ``ref_tensor`` must be set (i.e., not ``None``)
-            2) If ``tensor`` is not ``None``, its datatype and layout must match matches the current versions
-               set by the plan (i.e., those in ``ref_dtype`` and ``ref_layout``)
-
-        If either of these properties does not hold, an exception is raised. If these properties hold and
-        ``tensor`` is not ``None``, ``tensor`` is returned. Otherwise, ``ref_tensor`` is returned.
-
-        :param tensor: object representing a tensor passed in to verify, or ``None`` if no tensor was passed in
-        :type tensor: numpy/cupy/torch array/tensor object
-        :param ref_tensor: object representing a tensor passed in on construction of this object, or ``None`` if no tensor was passed in
-        :type ref_tensor: numpy/cupy/torch array/tensor object
-        :param ref_dtype: data type for the tensor that this object was initialized to
-        :param ref_layout: layout for the tensor that this object was initialized to
-        :param name: identifier of the tensor to verify. Used in raising exceptions
-        :type name: str
-
-        :return: valid tensor object to use
-        :rtype: numpy/cupy/torch array/tensor object
-        """
-        if tensor is None:
-            if ref_tensor is None:
-                raise Exception(f"Tensor {name} must be set.")
-            return ref_tensor
-
-        self._verify_type_and_layout(tensor, ref_dtype, ref_layout, name)
-        return tensor
-
-    def _verify_scalar(self, scalar, ref_scalar, ref_dtype, name):
-        """
-        Verifies the following properties:
-            1) Either ``scalar`` or ``ref_scakar`` must be set (i.e., not ``None``)
-            2) If ``scalar`` is not ``None``, its datatype must match matches the current version
-               set by the plan (i.e., those in ``ref_dtype``)
-
-        If either of these properties does not hold, an exception is raised. If these properties hold and
-        ``scalar`` is not ``None``, ``scalar`` is returned. Otherwise, ``ref_scalar`` is returned.
-
-        :param scalar: object representing a tensor passed in to verify, or ``None`` if no tensor was passed in
-        :type scalar: numpy/cupy/torch scalar
-        :param ref_scalar: object representing a tensor passed in on construction of this object, or ``None`` if no tensor was passed in
-        :type ref_scalar: numpy/cupy/torch scalar
-        :param ref_dtype: data type for the scalar that this object was initialized to
-        :param name: identifier of the scalar to verify. Used in raising exceptions
-        :type name: str
-
-        :return: valid scalar to use
-        :rtype: numpy/cupy/torch scalar
-        """
-        if scalar is None:
-            if ref_scalar is None:
-                raise Exception(f"Scalar {name} must be set.")
-            return ref_scalar
-        dtype = datatypes.library_type(scalar.dtype)
-        if dtype != ref_dtype:
-            raise Exception(
-                f"Tensor {name} with type {dtype} does not match expected type {ref_dtype}."
-            )
-        return scalar
 
     def run(self, A=None, B=None, C=None, D=None,
             alpha=None, beta=None, batch_count: int = 1,

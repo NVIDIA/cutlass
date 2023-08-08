@@ -65,10 +65,11 @@ struct CollectiveMma {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "sm70_mma_twostage.hpp"
-#include "sm80_mma_multistage.hpp"
-#include "sm90_mma_multistage_gmma_ss.hpp"
-#include "sm90_mma_tma_gmma_ss.hpp"
-#include "sm90_mma_tma_gmma_rs_warpspecialized.hpp"
-#include "sm90_mma_tma_gmma_ss_warpspecialized.hpp"
+#include "cutlass/gemm/collective/sm70_mma_twostage.hpp"
+#include "cutlass/gemm/collective/sm80_mma_multistage.hpp"
+#include "cutlass/gemm/collective/sm90_mma_multistage_gmma_ss.hpp"
+#include "cutlass/gemm/collective/sm90_mma_tma_gmma_ss.hpp"
+#include "cutlass/gemm/collective/sm90_mma_tma_gmma_rs_warpspecialized.hpp"
+#include "cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized.hpp"
+#include "cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized_fp8.hpp"
 /////////////////////////////////////////////////////////////////////////////////////////////////

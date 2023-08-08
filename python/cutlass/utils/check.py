@@ -39,29 +39,35 @@ import ctypes
 import cutlass_bindings
 import cutlass
 from cutlass.backend.library import DataTypeSize, TileDescription
+from cutlass.utils.datatypes import binding_type
 
 
-def calculate_smem_usage_per_stage(tile_description, operation_kind):
+def calculate_smem_usage_per_stage(td: TileDescription, operation_kind: cutlass.OperationKind) -> int:
     """
     Returns the amount of shared memory in bytes consumed in a single stage of a kernel.
+
+    :param td: tile description to compute shared memory of
+    :type td: TileDescription
+    :param operation_kind: identifier for the type of operation being performed
+    :type operation_kind: cutlass.OperationKind
 
     :return: number of bytes of shared memory consumed by a single stage
     :rtype: int
     """
-    m, n, k = tile_description.threadblock_shape
+    m, n, k = td.threadblock_shape
 
     if operation_kind == cutlass.OperationKind.Gemm:
         stage_barrier_bytes = 32
         return (
-            (DataTypeSize[tile_description.math_instruction.element_a] * m * k // 8)
-            + (DataTypeSize[tile_description.math_instruction.element_b] * k * n // 8)
+            (DataTypeSize[td.math_instruction.element_a] * m * k // 8)
+            + (DataTypeSize[td.math_instruction.element_b] * k * n // 8)
             + stage_barrier_bytes
         )
     else:
         raise Exception(f"No available shared memory calculation for operation kind {operation.operation_kind}")
 
 
-def calculate_smem_usage(operation):
+def calculate_smem_usage(operation) -> int:
     """
     Returns the amount of shared memory in bytes consumed by a kernel.
 
@@ -72,7 +78,11 @@ def calculate_smem_usage(operation):
     return _per_stage * operation.tile_description.stages
 
 
-def valid_stage_count(cc: int, td: TileDescription) -> tuple:
+def valid_stage_count(
+    cc: int,
+    td: TileDescription,
+    element_C: cutlass.DataType = None,
+    element_D: cutlass.DataType = None) -> tuple:
     """
     Checks whether a device with `cc` supports the number of stages within `tile_description`, both
     based on raw limits on the number of stages and based on shared memory capacity
@@ -81,15 +91,26 @@ def valid_stage_count(cc: int, td: TileDescription) -> tuple:
     :type cc: int
     :param td: tile description to check
     :type td: TileDescription
+    :param element_C: data type of operand C
+    :type element_C: cutlass.DataType
+    :param element_D: data type of operand D
+    :type element_D: cutlass.DataType
 
     :return: tuple with the first element indicating whether the provided tile description is
              valid for the provided device and the second element being an error message
     :rtype: tuple
     """
-    if cc == 90 and (td.stages is None or td.stages == 0):
-        # Stage count of None or 0 for SM90 indicates that the CollectiveBuilder automatically
-        # determines the stage count to use. Thus, all settings are valid in these scenarios.
-        return (True, "")
+    if cc == 90:
+        if (td.stages is None or td.stages == 0):
+            # Stage count of None or 0 for SM90 indicates that the CollectiveBuilder automatically
+            # determines the stage count to use. Thus, all settings are valid in these scenarios.
+            return (True, "")
+        else:
+            cutlass.logger.warning(
+                "Setting an explicit stage count for SM90 kernels currently may "
+                "result in compilation errors if the combination of tile shape, "
+                "stage count, and shared memory requirement of the epilogue exceeds "
+                "the available shared memory per SM.")
 
     if td.stages <= 0:
         return (False, f"Stage counts must be positive integers. Tile description has stage count of {td.stages}.")
@@ -98,14 +119,20 @@ def valid_stage_count(cc: int, td: TileDescription) -> tuple:
         return (False, f"Tile description has stage count of {td.stages}, "
                        f"but only 2 stages are supported on SM{cc}.")
 
+    # The calculation below does not consider shared memory used by the epilogue and, thus,
+    # only catches cases in which the mainloop exceeds the device's shared memory capacity.
+    # This is not a concern for CUTLASS 2.x kernels, for which the shared memory of the
+    # mainloop and epilogue is shared.
     smem_per_stage = calculate_smem_usage_per_stage(td, cutlass.OperationKind.Gemm)
+    smem_usage_mainloop = (smem_per_stage * td.stages)
     smem_arch = cutlass.SharedMemPerCC[cc] << 10
-    if (smem_per_stage * td.stages) > smem_arch:
+    if smem_usage_mainloop > smem_arch:
         return ( False,
             "Configuration uses too much shared memory. Consider reducing stage count or tile shape.\n"
-            f"Details: configuration uses {smem_per_stage} bytes of shared memory per stage, and "
-            f"{td.stages} stages for a total of {smem_per_stage * td.stages} bytes.\n"
-            f"The maxmium amoung of shared memory that can be used per block on CC {cc} is {smem_arch}.")
+            f"Details:\n"
+            f"Mainloop uses {smem_per_stage} bytes of shared memory per stage, and "
+            f"{td.stages} stages for a total of {smem_usage_mainloop} bytes.\n"
+            f"The maxmium amount of shared memory that can be used per block on CC {cc} is {smem_arch}.")
 
     return (True, "")
 
@@ -153,21 +180,40 @@ def valid_cluster_shape(cc: int, cluster_shape: list) -> tuple:
     return (True, "")
 
 
-def valid_kernel_schedule(cc: int, kernel_schedule: cutlass.KernelScheduleType) -> tuple:
+def valid_schedule(
+    cc: int,
+    kernel_schedule: cutlass.KernelScheduleType,
+    epilogue_schedule: cutlass.EpilogueScheduleType,
+    tile_scheduler: cutlass.TileSchedulerType) -> tuple:
     """
-    Checks whether a device with ``cc`` supports ``kernel_schedule``.
+    Checks that the kernel and epilogue schedules passed in are a valid combination for
+    a device of compute capability ``cc``.
 
     :param cc: compute capability of device in question
     :type cc: int
     :param kernel_schedule: kernel schedule type
-    :type KernelScheduleType: cutlass.KernelScheduleType
+    :type kernel_schedule: cutlass.KernelScheduleType
+    :param epilogue_schedule: epilogue schedule type
+    :type epilogue_schedule: cutlass.EpilogueScheduleType
+    :param tile_scheduler: tile scheduler type
+    :type tile_scheduler: cutlass.TileSchedulerType
 
-    :return: tuple with the first element indicating whether the provided kernel schedule is
+    :return: tuple with the first element indicating whether the provided schedules are
              valid for the provided device and the second element being an error message
     :rtype: tuple
     """
-    if kernel_schedule != cutlass.KernelScheduleType.ScheduleAuto and cc < 90:
-        return (False, "Non-default kernel schedules are only supported on SM90 and beyond")
+    kernel_auto = (kernel_schedule == cutlass.KernelScheduleType.ScheduleAuto)
+    epilogue_auto = (epilogue_schedule == cutlass.EpilogueScheduleType.ScheduleAuto)
+    tile_scheduler_default = (tile_scheduler == cutlass.TileSchedulerType.Default)
+    if cc < 90 and not (kernel_auto and epilogue_auto and tile_scheduler_default):
+        return (False, "Non-default schedules are only supported on SM90 and beyond")
+
+    if (kernel_auto and not epilogue_auto) or (not kernel_auto and epilogue_auto):
+        return (False, "Kernel and epilogue schedules must either both be auto or neither be auto")
+
+    if not tile_scheduler_default:
+        if (tile_scheduler == cutlass.TileSchedulerType.StreamK) and (kernel_schedule != cutlass.KernelScheduleType.TmaWarpSpecializedCooperative):
+            return (False, "Stream-K tile scheduler is currently only supported with the cooperative kernel schedule")
     return (True, "")
 
 
@@ -186,6 +232,29 @@ def alignment_or_default(alignment_provided: int, default_alignment: int) -> int
     """
     if alignment_provided is not None:
         if alignment_provided > default_alignment:
+            raise Exception(f"Alignment {alignment_provided} exceeds the maximum supported of {default_alignment}.")
+        return alignment_provided
+
+    return default_alignment
+
+
+def update_alignment(alignment_provided:int, default_alignment: int) -> int:
+    """
+    Returns `alignment_provided` if it is set, otherwise `default_alignment` and checks
+    that `alignment_provided` does not exceed `default_alignment`.
+
+    :param alignment_provided: alignment preference specified. Can be None.
+    :type alignment_provided: int
+    :param default_alignment: alignment to use if `alignment_provided` is None
+    :type default_alignment: int
+
+    :return: alignment to use
+    :rtype: int
+    """
+    if alignment_provided is not None:
+        if alignment_provided > default_alignment:
+            if alignment_provided % default_alignment == 0:
+                return default_alignment
             raise Exception(f"Alignment {alignment_provided} exceeds the maximum supported of {default_alignment}.")
         return alignment_provided
 

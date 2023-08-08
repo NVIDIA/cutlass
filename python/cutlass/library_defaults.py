@@ -43,6 +43,9 @@ _cuda_version = __version__.split("rc")[0]
 # Imports from CUTLASS profiler generator and manifest scripts
 import generator as prof_generator
 import manifest as prof_manifest
+from library import (
+    ConvKind, IteratorAlgorithm, StrideSupport, GroupMode
+)
 
 import cutlass
 from cutlass.utils.check import valid_stage_count
@@ -132,6 +135,8 @@ class KernelsForDataType:
             ld = shape[0]
         elif layout == cutlass.LayoutType.RowMajor:
             ld = shape[1]
+        elif layout == cutlass.LayoutType.TensorNHWC:
+            ld = shape[-1]
         else:
             raise Exception(f"Unexpected or unsupported layout {layout}")
 
@@ -222,8 +227,9 @@ class ArchOptions:
         # find available opclasses and data types
         for name, op_list in manifest.operations[operation_kind].items():
             for op in op_list:
-                if op.gemm_kind not in gemm_kinds:
-                    continue
+                if operation_kind == cutlass.OperationKind.Gemm:
+                    if op.gemm_kind not in gemm_kinds:
+                        continue
 
                 mi = op.tile_description.math_instruction
                 if mi.math_operation not in self.allowed_math_operations:
@@ -276,21 +282,36 @@ class ArchOptions:
         if cutlass.OpcodeClass.Simt not in self.operations_by_opclass:
             self.operations_by_opclass[cutlass.OpcodeClass.Simt] = {}
 
-        types = [
-            (cutlass.DataType.s8, cutlass.DataType.s8, cutlass.DataType.s8),
-            (cutlass.DataType.s8, cutlass.DataType.s8, cutlass.DataType.s32),
-            (cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f16),
-            (cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f32),
-            (cutlass.DataType.f32, cutlass.DataType.f32, cutlass.DataType.f32),
-            (cutlass.DataType.f64, cutlass.DataType.f64, cutlass.DataType.f64),
-        ]
+        if operation_kind == cutlass.OperationKind.Gemm:
+            types = [
+                (cutlass.DataType.s8, cutlass.DataType.s8, cutlass.DataType.s8),
+                (cutlass.DataType.s8, cutlass.DataType.s8, cutlass.DataType.s32),
+                (cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f16),
+                (cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f32),
+                (cutlass.DataType.f32, cutlass.DataType.f32, cutlass.DataType.f32),
+                (cutlass.DataType.f64, cutlass.DataType.f64, cutlass.DataType.f64),
+            ]
 
-        layouts = [
-            (cutlass.LayoutType.RowMajor, cutlass.LayoutType.RowMajor),
-            (cutlass.LayoutType.RowMajor, cutlass.LayoutType.ColumnMajor),
-            (cutlass.LayoutType.ColumnMajor, cutlass.LayoutType.RowMajor),
-            (cutlass.LayoutType.ColumnMajor, cutlass.LayoutType.ColumnMajor),
-        ]
+            layouts = [
+                (cutlass.LayoutType.RowMajor, cutlass.LayoutType.RowMajor),
+                (cutlass.LayoutType.RowMajor, cutlass.LayoutType.ColumnMajor),
+                (cutlass.LayoutType.ColumnMajor, cutlass.LayoutType.RowMajor),
+                (cutlass.LayoutType.ColumnMajor, cutlass.LayoutType.ColumnMajor),
+            ]
+        elif operation_kind == cutlass.OperationKind.Conv2d:
+            types = [
+                (cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f16),
+                (cutlass.DataType.f16, cutlass.DataType.f16, cutlass.DataType.f32),
+                (cutlass.DataType.f32, cutlass.DataType.f32, cutlass.DataType.f32),
+                (cutlass.DataType.f64, cutlass.DataType.f64, cutlass.DataType.f64),
+            ]
+
+            layouts = [
+                (cutlass.LayoutType.TensorNHWC, cutlass.LayoutType.TensorNHWC),
+            ]
+        else:
+            raise NotImplementedError(f"Operation kind {operation_kind} is currently unsupported.")
+
         alignment = 1
         epilogue_functor = cutlass.EpilogueFunctor.LinearCombination
         swizzling_functor = cutlass.SwizzlingFunctor.Identity8
@@ -319,12 +340,22 @@ class ArchOptions:
                 if not valid_stage_count(target_cc, td_from_profiler_td(td))[0]:
                     continue
 
-                new_operation = prof_manifest.GemmOperation(
-                    cutlass.GemmKind.Universal, td.minimum_compute_capability,
-                    td, A, B, C, type_comb[2], epilogue_functor, swizzling_functor)
-
                 new_kernels = KernelsForDataType(type_comb, layout_comb)
-                new_kernels.add(new_operation)
+
+                if operation_kind == cutlass.OperationKind.Gemm:
+                    new_operation = prof_manifest.GemmOperation(
+                        cutlass.GemmKind.Universal, td.minimum_compute_capability,
+                        td, A, B, C, type_comb[2], epilogue_functor, swizzling_functor)
+                    new_kernels.add(new_operation)
+                elif operation_kind == cutlass.OperationKind.Conv2d:
+                    for conv_kind in [ConvKind.Fprop, ConvKind.Dgrad, ConvKind.Wgrad]:
+                        new_operation = prof_manifest.Conv2dOperation(
+                            conv_kind, IteratorAlgorithm.Analytic, td.minimum_compute_capability, td,
+                            A, B, C, type_comb[2], StrideSupport.Strided, epilogue_functor, swizzling_functor,
+                            group_mode=GroupMode.SingleGroup
+                        )
+                        new_kernels.add(new_operation)
+
                 self.operations_by_opclass[cutlass.OpcodeClass.Simt][comb] = new_kernels
 
         # Sort all operations
@@ -437,9 +468,12 @@ class OptionRegistry:
         self.registry = {}
 
         gemm_kinds = [cutlass.GemmKind.Universal, cutlass.GemmKind.Universal3x]
+        operation_kinds = [cutlass.OperationKind.Gemm, cutlass.OperationKind.Conv2d]
         # Construct options for each CC
         for kernel_cc in _generator_ccs:
-            self.registry[kernel_cc] = ArchOptions(target_cc, kernel_cc, cutlass.OperationKind.Gemm, gemm_kinds)
+            self.registry[kernel_cc] = {}
+            for opkind in operation_kinds:
+                self.registry[kernel_cc][opkind] = ArchOptions(target_cc, kernel_cc, opkind, gemm_kinds)
 
-    def options_for_cc(self, cc: int) -> ArchOptions:
-        return self.registry.get(cc, None)
+    def options_for_cc(self, cc: int, op_kind=cutlass.OperationKind.Gemm) -> ArchOptions:
+        return self.registry.get(cc, None)[op_kind]

@@ -262,7 +262,6 @@ TEST(SM75_gemm_threadblock_wmma_tensor_op_row_col_col_s4, 64x64x64_64x64x64_8x8x
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
-
 TEST(SM75_gemm_threadblock_wmma_tensor_op_row_col_row_b1, 64x64x512_64x64x512_8x8x128) {
   using ElementA = cutlass::uint1b_t;
   using LayoutA = cutlass::layout::RowMajor;
@@ -332,6 +331,7 @@ TEST(SM75_gemm_threadblock_wmma_tensor_op_row_col_col_b1, 64x64x512_64x64x512_8x
                                             problem_size.k(), alpha, beta)
       .run(grid, block);
 }
+
 #endif //CUTLASS_SUBBYTE_INTEGER_MATRIX_MULTIPLY_ENABLED
 
 #endif //CUTLASS_ARCH_WMMA_SM75_ENABLED

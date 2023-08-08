@@ -40,6 +40,7 @@
 #include "cutlass/gemm/collective/collective_builder.hpp"
 #include "cutlass/epilogue/collective/default_epilogue.hpp"
 #include "cutlass/epilogue/thread/linear_combination.h"
+#include "cutlass/gemm/dispatch_policy.hpp"
 
 #include "../../common/cutlass_unit_test.h"
 
@@ -74,6 +75,76 @@ TEST(SM90_Device_Gemm_f32t_f32n_f32n_tensor_op_gmma_f32, 64x128x32_1x2x1) {
       float, LayoutC, 4,
       float, LayoutC, 4,
       cutlass::epilogue::collective::EpilogueScheduleAuto
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+}
+
+TEST(SM90_Device_Gemm_f32t_f32t_f32n_tensor_op_gmma_f32, 64x128x32_1x1x1_pingpong) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::RowMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_64,_128,_32>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      float, LayoutC, 4,
+      float, LayoutC, 4,
+      cutlass::gemm::EpilogueTransposed
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      float, LayoutA, 4,
+      float, LayoutB, 4,
+      float,
+      Shape<_64,_128,_32>, Shape<_1,_1,_1>,
+      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+      cutlass::gemm::KernelTmaWarpSpecializedPingpong
+    >::CollectiveOp;
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveMainloop,
+      CollectiveEpilogue
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+}
+
+TEST(SM90_Device_Gemm_f32t_f32t_f32n_tensor_op_gmma_f32, 128x128x32_1x1x1_cooperative) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::RowMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      Shape<_128,_128,_32>, Shape<_1,_1,_1>,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      float, float,
+      float, LayoutC, 4,
+      float, LayoutC, 4,
+      cutlass::gemm::EpilogueTransposed
+    >::CollectiveOp;
+
+  using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      float, LayoutA, 4,
+      float, LayoutB, 4,
+      float,
+      Shape<_128,_128,_32>, Shape<_1,_1,_1>,
+      cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename CollectiveEpilogue::SharedStorage)>,
+      cutlass::gemm::KernelTmaWarpSpecializedCooperative
     >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<

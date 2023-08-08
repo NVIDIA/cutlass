@@ -177,6 +177,7 @@ class GemmUniversalLauncher:
         profiling=False,
         warmup_iterations=500,
         iterations=500,
+        compiler_mode: str = "nvcc",
         **kwargs,
     ) -> None:
         # create the reduction kernel
@@ -209,13 +210,19 @@ class GemmUniversalLauncher:
         #
         # Compile the operator
         #
+        if compiler_mode == "nvcc":
+            compiler.nvcc()
+        elif compiler_mode == "nvrtc":
+            compiler.nvrtc()
+        else:
+            raise Exception(f"Unexpected compiler string {compiler_mode}")
 
         op_list = [operation]
         if operation.arch < 90:
             # Split K via Python is currently only supported for pre-SM90 kernels
             op_list.append(self.reduction_operation)
 
-        compiler.add_module(op_list)
+        compiler.add_module(op_list, bypass_cache=True)
 
         self.operation = operation
 
@@ -603,7 +610,7 @@ class GemmUniversalLauncher:
         return passed
 
 
-def test_all_gemm(operation: "GemmOperationUniversal", testcase="universal"):
+def test_all_gemm(operation: "GemmOperationUniversal", testcase="universal", compilation_mode="nvcc"):
     passed = True
 
     minimum_operand_element_size = min(
@@ -711,7 +718,7 @@ def test_all_gemm(operation: "GemmOperationUniversal", testcase="universal"):
         problem_alpha = [1.0]
         problem_beta = [2.0]
 
-    testbed = GemmUniversalLauncher(operation, interleaved=(testcase == "interleaved"))
+    testbed = GemmUniversalLauncher(operation, interleaved=(testcase == "interleaved"), compiler_mode=compilation_mode)
 
     for mode in modes:
         for m in problem_size_m:

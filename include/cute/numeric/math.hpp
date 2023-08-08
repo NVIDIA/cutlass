@@ -79,8 +79,8 @@ abs(T const& t) {
 
 // Greatest common divisor of two integers
 template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value &&
-                          CUTE_STL_NAMESPACE::is_integral<U>::value)>
+          __CUTE_REQUIRES(is_std_integral<T>::value &&
+                          is_std_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 gcd(T t, U u) {
@@ -94,8 +94,8 @@ gcd(T t, U u) {
 
 // Least common multiple of two integers
 template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value &&
-                          CUTE_STL_NAMESPACE::is_integral<U>::value)>
+          __CUTE_REQUIRES(is_std_integral<T>::value &&
+                          is_std_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 lcm(T const& t, U const& u) {
@@ -301,8 +301,8 @@ signum(T const& x) {
 // @pre t % u == 0
 // @result t / u
 template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value &&
-                          CUTE_STL_NAMESPACE::is_integral<U>::value)>
+          __CUTE_REQUIRES(is_std_integral<T>::value &&
+                          is_std_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 safe_div(T const& t, U const& u) {

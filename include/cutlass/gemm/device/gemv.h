@@ -77,12 +77,6 @@ public:
   static int const kThreadCount = GemvKernel::kThreadCount;
   static int const kThreadsPerRow = GemvKernel::kThreadsPerRow;
 
-  static int const kStages = GemvKernel::kStages;
-
-  static int const kAlignmentA = GemvKernel::kAlignmentA;
-  static int const kAlignmentB = GemvKernel::kAlignmentB;
-  static int const kAlignmentC = GemvKernel::kAlignmentC;
-
   using Arguments = typename GemvKernel::Arguments;
   using Params = typename GemvKernel::Params;
 

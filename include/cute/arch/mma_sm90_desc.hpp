@@ -89,6 +89,28 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, LayoutType const& t) {
 
 union GmmaDescriptor
 {
+
+  CUTE_HOST_DEVICE constexpr 
+  GmmaDescriptor() noexcept : desc_(0) {}
+  CUTE_HOST_DEVICE constexpr 
+  GmmaDescriptor(uint64_t desc) noexcept : desc_(desc) {}
+  CUTE_HOST_DEVICE constexpr 
+  GmmaDescriptor(GmmaDescriptor const& t) noexcept : desc_(t.desc_) {}
+  CUTE_HOST_DEVICE constexpr 
+  GmmaDescriptor(GmmaDescriptor && t) noexcept : desc_(t.desc_) {}
+  
+  CUTE_HOST_DEVICE constexpr 
+  GmmaDescriptor& operator=(GmmaDescriptor const& t) noexcept {
+    desc_ = t.desc_;
+    return *this;
+  }
+
+  CUTE_HOST_DEVICE constexpr 
+  GmmaDescriptor& operator=(GmmaDescriptor && t) noexcept {
+    desc_ = t.desc_;
+    return *this;
+  }
+
   uint64_t desc_;
   uint32_t reg32_[2];
   uint16_t reg16_[4];
@@ -112,7 +134,7 @@ union GmmaDescriptor
     // layout type, bit [62,64)
     // SWIZZLE_NONE = 0, SWIZZLE_32B = 3, SWIZZLE_64B = 2, SWIZZLE_128B = 1
     uint8_t : 6, layout_type_ : 2;            // 6 bits unused, 2 bits [6,8)
-  };
+  } bitfield;
 
   // Decay to a uint64_t
   CUTE_HOST_DEVICE constexpr
@@ -123,11 +145,11 @@ union GmmaDescriptor
   {
     #if !defined(__CUDACC_RTC__)
     printf("GmmaDescriptor: 0x%016" PRIx64 "\n",    t.desc_);
-    printf("  start_addr :  0x%04x\n",      t.start_address_);
-    printf("  leading_off:  0x%04x (%d)\n", t.leading_byte_offset_, t.leading_byte_offset_);
-    printf("  stride_off :  0x%04x (%d)\n", t.stride_byte_offset_, t.stride_byte_offset_);
-    printf("  base_offset:  0x%01x\n",      t.base_offset_);
-    printf("  layout_type:  0x%01x (%s)\n", t.layout_type_, to_string(static_cast<GMMA::LayoutType>(t.layout_type_)));
+    printf("  start_addr :  0x%04x\n",      t.bitfield.start_address_);
+    printf("  leading_off:  0x%04x (%d)\n", t.bitfield.leading_byte_offset_, t.bitfield.leading_byte_offset_);
+    printf("  stride_off :  0x%04x (%d)\n", t.bitfield.stride_byte_offset_, t.bitfield.stride_byte_offset_);
+    printf("  base_offset:  0x%01x\n",      t.bitfield.base_offset_);
+    printf("  layout_type:  0x%01x (%s)\n", t.bitfield.layout_type_, to_string(static_cast<GMMA::LayoutType>(t.bitfield.layout_type_)));
     #endif
   }
 };

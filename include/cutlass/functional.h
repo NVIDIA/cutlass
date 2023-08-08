@@ -94,6 +94,20 @@ struct multiplies {
   }
 };
 
+template <typename T>
+struct scale {
+  T const scaling_factor_;
+  
+  CUTLASS_HOST_DEVICE
+  scale(float scaling_factor) : scaling_factor_(scaling_factor) {
+  }
+
+  T operator()(T const &rhs) const {
+    T result = rhs * scaling_factor_;
+    return result;
+  }
+};
+
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 530
 /// Partial specializations needed when __CUDA_NO_HALF2_OPERATORS__ is set
 template<>
@@ -146,36 +160,6 @@ struct multiplies<__half> {
 };
 #endif // defined(__CUDA_ARCH__)
 
-
-// Maximum with nan propogation
-// To propgate the NANs, the "max" of a two element that contains NaNs should also return a NaN 
-template <typename T>
-struct maximum_with_nan_propogation {
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &lhs, T const &rhs) const {
-#if defined(__CUDA_ARCH__)
-    return lhs > rhs or isnan(lhs) ? lhs : rhs;
-#else
-    return lhs > rhs or std::isnan(lhs) ? lhs : rhs;
-#endif
-  }
-};
-
-template <>
-struct maximum_with_nan_propogation<float> {
-  CUTLASS_HOST_DEVICE
-  float operator()(float const lhs, float const rhs) const {
-    float res;
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
-    asm volatile("max.NaN.f32 %0, %1, %2;\n" : "=f"(res) : "f"(lhs), "f"(rhs));
-#elif defined(__CUDA_ARCH__)
-    res = lhs > rhs or isnan(lhs) ? lhs : rhs;
-#else
-    res = lhs > rhs or std::isnan(lhs) ? lhs : rhs;
-#endif
-    return res;
-  }
-};
 
 /// Squares with optional conversion
 template <typename T, typename Output = T>
@@ -280,37 +264,103 @@ struct less {
   }
 };
 
-template <typename T>
+template <typename T, bool PropogateNaN = false>
 struct maximum {
-
   CUTLASS_HOST_DEVICE
   T operator()(T const &lhs, T const &rhs) const {
     return (lhs < rhs ? rhs : lhs);
   }
 };
 
+// Maximum with nan propogation
+// To propgate the NANs, the "max" of a two element that contains NaNs should also return a NaN 
+template <typename T>
+struct maximum<T, true> {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &lhs, T const &rhs) const {
+#if defined(__CUDA_ARCH__)
+    return lhs > rhs or isnan(lhs) ? lhs : rhs;
+#else
+    return lhs > rhs or std::isnan(lhs) ? lhs : rhs;
+#endif
+  }
+};
+
 template <>
-struct maximum<float> {
+struct maximum<float, false> {
   CUTLASS_HOST_DEVICE
   float operator()(float const &lhs, float const &rhs) const {
     return fmaxf(lhs, rhs);
   }
 };
 
-template <typename T>
-struct minimum {
+template <>
+struct maximum<float, true> {
+  CUTLASS_HOST_DEVICE
+  float operator()(float const lhs, float const rhs) const {
+    float res;
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+    asm volatile("max.NaN.f32 %0, %1, %2;\n" : "=f"(res) : "f"(lhs), "f"(rhs));
+#elif defined(__CUDA_ARCH__)
+    res = lhs > rhs or isnan(lhs) ? lhs : rhs;
+#else
+    res = lhs > rhs or std::isnan(lhs) ? lhs : rhs;
+#endif
+    return res;
+  }
+};
 
+template <typename T>
+using maximum_with_nan_propogation = maximum<T, true>;
+
+template <typename T, bool PropogateNaN = false>
+struct minimum{
   CUTLASS_HOST_DEVICE
   T operator()(T const &lhs, T const &rhs) const {
     return (rhs < lhs ? rhs : lhs);
   }
 };
 
+template <typename T>
+struct minimum<T, true> {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &lhs, T const &rhs) const {
+#if defined(__CUDA_ARCH__)
+    return lhs < rhs or isnan(lhs) ? lhs : rhs;
+#else
+    return lhs < rhs or std::isnan(lhs) ? lhs : rhs;
+#endif
+  }
+};
+
 template <>
-struct minimum<float> {
+struct minimum<float, false> {
   CUTLASS_HOST_DEVICE
   float operator()(float const &lhs, float const &rhs) const {
     return fminf(lhs, rhs);
+  }
+};
+
+template <typename T, bool PropogateNaN = false>
+struct maximum_absolute_value {
+  CUTLASS_HOST_DEVICE
+  float operator()(T const &lhs, T const &rhs) const {
+    absolute_value_op<T> abs_op;
+    maximum<T, PropogateNaN> max_op;
+
+    return max_op(abs_op(lhs), abs_op(rhs));
+  }
+};
+
+// assumes the left operand is already an absolute value
+template <typename T, bool PropogateNaN = false>
+struct maximum_absolute_value_reduction {
+  CUTLASS_HOST_DEVICE
+  float operator()(T const &lhs, T const &rhs) const {
+    absolute_value_op<T> abs_op;
+    maximum<T, PropogateNaN> max_op;
+
+    return max_op(lhs, abs_op(rhs));
   }
 };
 
@@ -357,6 +407,14 @@ struct conjugate {
   CUTLASS_HOST_DEVICE
   T operator()(T const &a) const {
     return a;
+  }
+};
+
+template <typename T>
+struct first {
+  CUTLASS_HOST_DEVICE
+  T operator()(T const & first, T const &...) const {
+    return first;
   }
 };
 
@@ -423,22 +481,22 @@ struct bit_xor {
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
+/// Atomic reductions
 
-/// Reduces value into the data pointed to by ptr
 template <typename T>
-struct red
+struct atomic_add
 {
   CUTLASS_DEVICE
   void operator()(T *ptr, const T &data)
   {
+#if defined(__CUDA_ARCH__)
     atomicAdd(ptr, data);
+#endif
   }
 };
 
-
-/// Reduces value into the data pointed to by ptr (double specialization)
 template<>
-struct red<double>
+struct atomic_add<double>
 {
   CUTLASS_DEVICE
   void operator()(double *ptr, const double &data)
@@ -447,11 +505,8 @@ struct red<double>
       CUTLASS_UNUSED(ptr);
       CUTLASS_UNUSED(data);
 #elif (__CUDA_ARCH__ >= 600)
-
     atomicAdd(ptr, data);
-
 #else
-
     // Use CAS loop
     unsigned long long int* ptr_int = reinterpret_cast<unsigned long long int*>(ptr);
     unsigned long long int old_int = *ptr_int;
@@ -462,15 +517,12 @@ struct red<double>
       assumed_int = old_int;
       old_int = atomicCAS(ptr_int, assumed_int, __double_as_longlong(update));
     } while (assumed_int != old_int);
-
 #endif // (__CUDA_ARCH__ >= 600)
   }
 };
 
-
-/// Reduces value into the data pointed to by ptr (half2 specialization)
 template<>
-struct red<half2>
+struct atomic_add<half2>
 {
   CUTLASS_DEVICE
   void operator()(half2 *ptr, const half2 &data)
@@ -479,12 +531,45 @@ struct red<half2>
       CUTLASS_UNUSED(ptr);
       CUTLASS_UNUSED(data);
 #else
-
     // Vector-2 atomic reduction requires .target sm_60 or higher
     uint32_t word = reinterpret_cast<const uint32_t&>(data);
     asm volatile ("red.gpu.global.add.noftz.f16x2 [%0], %1;\n" : : "l"(ptr), "r"(word));
-
 #endif // (__CUDA_ARCH__ >= 600)
+  }
+};
+
+template <typename T>
+using red [[deprecated("use atomic_add instead")]] = atomic_add<T>;
+
+template <typename T>
+struct atomic_maximum {
+  CUTLASS_DEVICE
+  T operator()(T *ptr, T value) const {
+#if defined(__CUDA_ARCH__)
+    return atomicMax(ptr, value);
+#else
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_UNUSED(value);
+    CUTLASS_NOT_IMPLEMENTED();
+    return 0;
+#endif
+  }
+};
+
+template <>
+struct atomic_maximum<float> {
+  CUTLASS_DEVICE
+  float operator()(float *ptr, float value) const {
+#if defined(__CUDA_ARCH__)
+    return !signbit(value) ?
+      __int_as_float(atomicMax((int*)ptr, __float_as_int(value))) :
+      __uint_as_float(atomicMin((unsigned int*)ptr, __float_as_uint(value)));
+#else
+    CUTLASS_UNUSED(ptr);
+    CUTLASS_UNUSED(value);
+    CUTLASS_NOT_IMPLEMENTED();
+    return 0;
+#endif
   }
 };
 

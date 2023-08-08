@@ -134,7 +134,6 @@ public:
   /// Ctor
   CUTLASS_HOST_DEVICE
   Matrix(Diagonal const &diag) {
-    // Todo - construct from diagonal
   }
 
   /// Returns a TensorRef pointing to the first element of the tensor.

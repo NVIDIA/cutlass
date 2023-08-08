@@ -33,10 +33,10 @@
 */
 
 #pragma once
+
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
 #include "library_internal.h"
-
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -60,7 +60,7 @@ public:
   // assuming all tensors use same type for StrideIndex
   using StrideIndex = typename Operator::LayoutA::Index;
   using ElementAccumulator = typename Operator::ElementAccumulator;
-  using ElementCompute = typename Operator::CollectiveEpilogue::ElementCompute;
+  using ElementCompute = typename Operator::EpilogueOutputOp::ElementCompute;
 
 private:
 
@@ -130,6 +130,11 @@ public:
   virtual OperationDescription const & description() const {
     return description_;
   }
+
+  /// Returns the description of the GEMM operation
+  GemmDescription const& get_gemm_description() const {
+    return description_;
+  }
 };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -159,8 +164,7 @@ public:
 
   /// Constructor
   GemmUniversal3xOperation(char const *name = "unknown_gemm"):
-    GemmOperation3xBase<Operator_>(name, GemmKind::kUniversal) {
-  }
+    GemmOperation3xBase<Operator_>(name, GemmKind::kUniversal) {}
 
 protected:
 
@@ -175,23 +179,49 @@ protected:
     return Status::kSuccess;
   }
 
+  template<class FusionArgs, class = void>
+  struct UpdateFusionArgs {
+    static Status update_(FusionArgs const& fusion_args, GemmUniversalArguments const &arguments) {
+      // If a custom EVT is instantiated then it is the users's responsibility
+      // to ensure alpha and beta are updated appropriately
+      return Status::kSuccess;
+    }
+  };
+
+  template<class FusionArgs>
+  struct UpdateFusionArgs<FusionArgs, cute::void_t<decltype(FusionArgs{}.alpha)>> {
+    static Status update_(FusionArgs& fusion_args, GemmUniversalArguments const &arguments) {
+      if (arguments.pointer_mode == ScalarPointerMode::kHost) {
+        fusion_args.alpha = *static_cast<ElementCompute const *>(arguments.alpha);
+        fusion_args.beta = *static_cast<ElementCompute const *>(arguments.beta);
+        fusion_args.alpha_ptr = nullptr;
+        fusion_args.beta_ptr = nullptr;
+
+        return Status::kSuccess;
+      }
+      else if (arguments.pointer_mode == ScalarPointerMode::kDevice) {
+        fusion_args.alpha = 0;
+        fusion_args.beta = 0;
+        fusion_args.alpha_ptr = static_cast<ElementCompute const *>(arguments.alpha);
+        fusion_args.beta_ptr = static_cast<ElementCompute const *>(arguments.beta);
+
+        return Status::kSuccess;
+      }
+      else {
+        return Status::kErrorInvalidProblem;
+      }
+    }
+  };
+
   /// Constructs the arguments structure given the configuration and arguments
   static Status update_arguments_(
       OperatorArguments &operator_args, GemmUniversalArguments const *arguments) {
-    if (arguments->pointer_mode == ScalarPointerMode::kHost) {
-      typename ThreadEpilogueOp::Params params(
-          *static_cast<ElementCompute const *>(arguments->alpha),
-          *static_cast<ElementCompute const *>(arguments->beta));
-      operator_args.epilogue.thread = params;
-    }
-    else if (arguments->pointer_mode == ScalarPointerMode::kDevice) {
-      typename ThreadEpilogueOp::Params params(
-          static_cast<ElementCompute const *>(arguments->alpha),
-          static_cast<ElementCompute const *>(arguments->beta));
-      operator_args.epilogue.thread = params;
-    }
-    else {
-      return Status::kErrorInvalidProblem;
+    Status status = Status::kSuccess;
+
+    status = UpdateFusionArgs<decltype(operator_args.epilogue.thread)>::update_(
+      operator_args.epilogue.thread, *arguments);
+    if (status != Status::kSuccess) {
+      return status;
     }
 
     // TODO: type erase Arguments structure in 3.0 GEMM
@@ -218,7 +248,7 @@ protected:
     /* Query device SM count to pass onto the kernel as an argument, where needed */
     operator_args.hw_info.sm_count = arguments->sm_count;
 
-    return Status::kSuccess;
+    return status;
   }
 
 public:
@@ -297,7 +327,6 @@ public:
     return status;
   }
 };
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::library

@@ -72,8 +72,7 @@ struct Swizzle
 
   static constexpr uint32_t swizzle_code = uint32_t(yyy_msk{} | zzz_msk{});
 
-  template <class Offset,
-            __CUTE_REQUIRES(is_integral<Offset>::value)>
+  template <class Offset>
   CUTE_HOST_DEVICE constexpr static
   auto
   apply(Offset const& offset)
@@ -81,8 +80,7 @@ struct Swizzle
     return offset ^ shiftr(offset & yyy_msk{}, msk_sft{});   // ZZZ ^= YYY
   }
 
-  template <class Offset,
-            __CUTE_REQUIRES(is_integral<Offset>::value)>
+  template <class Offset>
   CUTE_HOST_DEVICE constexpr
   auto
   operator()(Offset const& offset) const
@@ -90,11 +88,6 @@ struct Swizzle
     return apply(offset);
   }
 };
-
-// Translation for legacy SwizzleXor
-// TODO: Deprecate
-template <uint32_t BBits, uint32_t MBase, uint32_t SShift = 0>
-using SwizzleXor = Swizzle<BBits, MBase, SShift+BBits>;
 
 //
 // make_swizzle<0b1000, 0b0100>()         ->  Swizzle<1,2,1>
@@ -129,6 +122,44 @@ composition(Swizzle<B0,M0,S0>, Swizzle<B1,M1,S1>)
   return make_swizzle<Y,Z>();
 
   //return ComposedFn<Swizzle<B0,M0,S0>, Swizzle<B1,M1,S1>>{};
+}
+
+//
+// Inverse
+//
+
+template <int B, int M, int S>
+CUTE_HOST_DEVICE constexpr
+Swizzle<B,M,S>
+right_inverse(Swizzle<B,M,S> const& sw)
+{
+  return sw;
+}
+
+template <int B, int M, int S>
+CUTE_HOST_DEVICE constexpr
+Swizzle<B,M,S>
+left_inverse(Swizzle<B,M,S> const& sw)
+{
+  return sw;
+}
+
+// Kludge -- Probably want an OffsetFn<T> here instead
+template <class T, __CUTE_REQUIRES(is_integral<T>::value)>
+CUTE_HOST_DEVICE constexpr
+auto
+right_inverse(T const& t)
+{
+  return -t;
+}
+
+// Kludge -- Probably want an OffsetFn<T> here instead
+template <class T, __CUTE_REQUIRES(is_integral<T>::value)>
+CUTE_HOST_DEVICE constexpr
+auto
+left_inverse(T const& t)
+{
+  return -t;
 }
 
 //
@@ -205,6 +236,8 @@ struct MixedBits
   // assert((dynamic_int_ & ~F) == 0);
 
   DynamicType dynamic_int_;
+
+  CUTE_HOST_DEVICE constexpr operator uint32_t() const noexcept { return StaticInt | dynamic_int_; }
 };
 
 template <class S, S s, class DynamicType, class F, F f>
@@ -223,28 +256,6 @@ make_mixed_bits(constant<S,s> const&, DynamicType const& d, constant<F,f> const&
   }
 
   CUTE_GCC_UNREACHABLE;
-}
-
-//
-// Explicit conversion for now -- consider casting on plus or minus
-//
-
-template <uint32_t S, class D, uint32_t F>
-CUTE_HOST_DEVICE constexpr
-auto
-to_integral(MixedBits<S,D,F> const& m)
-{
-  //return S | (m.dynamic_int_ & F);
-  return S | m.dynamic_int_;
-}
-
-// Any cute::is_integral
-template <class I, __CUTE_REQUIRES(cute::is_integral<I>::value)>
-CUTE_HOST_DEVICE constexpr
-auto
-to_integral(I const& i)
-{
-  return i;
 }
 
 //
@@ -383,6 +394,50 @@ operator^(constant<TS1,S1> const& s, MixedBits<S0,D0,F0> const& m)
   return m ^ s;
 }
 
+template <uint32_t S0, class D0, uint32_t F0, class TS1, TS1 S1>
+CUTE_HOST_DEVICE constexpr
+auto
+operator<<(MixedBits<S0,D0,F0> const& m, constant<TS1,S1> const&)
+{
+  return make_mixed_bits(constant<uint32_t,(S0 << S1)>{},
+                         m.dynamic_int_ << S1,
+                         constant<uint32_t,(F0 << S1)>{});
+}
+
+template <uint32_t S0, class D0, uint32_t F0, class TS1, TS1 S1>
+CUTE_HOST_DEVICE constexpr
+auto
+operator>>(MixedBits<S0,D0,F0> const& m, constant<TS1,S1> const&)
+{
+  return make_mixed_bits(constant<uint32_t,(S0 >> S1)>{},
+                         m.dynamic_int_ >> S1,
+                         constant<uint32_t,(F0 >> S1)>{});
+}
+
+template <uint32_t S0, class D0, uint32_t F0, class TS1, TS1 S1>
+CUTE_HOST_DEVICE constexpr
+auto
+shiftl(MixedBits<S0,D0,F0> const& m, constant<TS1,S1> const& s)
+{
+  if constexpr (S1 >= 0) {
+    return m << s;
+  } else {
+    return m >> -s;
+  }
+}
+
+template <uint32_t S0, class D0, uint32_t F0, class TS1, TS1 S1>
+CUTE_HOST_DEVICE constexpr
+auto
+shiftr(MixedBits<S0,D0,F0> const& m, constant<TS1,S1> const& s)
+{
+  if constexpr (S1 >= 0) {
+    return m >> s;
+  } else {
+    return m << -s;
+  }
+}
+
 //
 // upcast and downcast
 //
@@ -473,14 +528,14 @@ to_mixed_bits(Layout const& layout, Coord const& coord)
 template <uint32_t S, class D, uint32_t F>
 CUTE_HOST_DEVICE void print(MixedBits<S,D,F> const& m)
 {
-  printf("M_%u|(%u&%u)=%u", S, uint32_t(m.dynamic_int_), F, to_integral(m));
+  printf("M_%u|(%u&%u)=%u", S, uint32_t(m.dynamic_int_), F, uint32_t(m));
 }
 
 #if !defined(__CUDACC_RTC__)
 template <uint32_t S, class D, uint32_t F>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, MixedBits<S,D,F> const& m)
 {
-  return os << "M_" << S << "|(" << uint32_t(m.dynamic_int_) << "&" << F << ")=" << to_integral(m);
+  return os << "M_" << S << "|(" << uint32_t(m.dynamic_int_) << "&" << F << ")=" << uint32_t(m);
 }
 
 template <int B, int M, int S>

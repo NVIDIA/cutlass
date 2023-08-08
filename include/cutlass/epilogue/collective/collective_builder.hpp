@@ -31,6 +31,7 @@
 #pragma once
 
 #include "cutlass/detail/dependent_false.hpp"
+#include "cutlass/epilogue/fusion/callbacks.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -60,12 +61,50 @@ template <
   class GmemLayoutTagD,
   int AlignmentD,
   class Schedule,
+  class FusionOpOrCallbacks = cutlass::epilogue::fusion::LinearCombination<ElementD,ElementCompute>,
   class Enable = void
 >
 struct CollectiveBuilder {
   static_assert(cutlass::detail::dependent_false<ArchTag>,
       "Could not build a collective epilogue for given parameters.");
 };
+
+// helper sub-builder for epilogue fusion callbacks (for internal use by CollectiveBuilder only)
+namespace detail {
+
+// callbacks builder with operation tag
+template<
+  class DispatchPolicy,
+  class FusionOp,
+  class TileShape_MNK,
+  class EpilogueTile_MN,
+  class ElementAccumulator,
+  class = void
+>
+struct CallbacksBuilder {
+  using Callbacks = fusion::FusionCallbacks<DispatchPolicy, FusionOp, TileShape_MNK, EpilogueTile_MN>;
+};
+
+// callbacks builder with callbacks passthrough
+template <
+  class DispatchPolicy,
+  class FusionCallbacks,
+  class TileShape_MNK,
+  class EpilogueTile_MN,
+  class ElementAccumulator
+>
+struct CallbacksBuilder<
+  DispatchPolicy,
+  FusionCallbacks,
+  TileShape_MNK,
+  EpilogueTile_MN,
+  ElementAccumulator,
+  enable_if_t<not is_base_of_v<fusion::FusionOperation, FusionCallbacks>>
+> {
+  using Callbacks = FusionCallbacks;
+};
+
+} // namespace detail
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -41,6 +41,7 @@ import numpy as np
 from cutlass.backend.arguments import ArgumentBase
 from cutlass.backend.c_types import Conv2DProblemSize, TensorRef_, get_conv2d_arguments
 from cutlass.backend.library import (
+    EmissionType,
     ConvKindNames,
     ConvKindTag,
     DataTypeNames,
@@ -123,17 +124,17 @@ class Conv2dArguments(ArgumentBase):
         super().__init__(A, B, C, D, **kwargs)
         # preprocessing output ops
 
-        if "output_op" in kwargs.keys() and split_k_mode != cutlass_bindings.conv.SplitKMode.Parallel:
-            self.output_op = kwargs["output_op"]
-        else:
-            self.output_op = self.operation.epilogue_type(1.0, 0.0)
-
-        if "split_k_slices" in kwargs.keys():
+        if "split_k_slices" in kwargs.keys() and kwargs["split_k_slices"] > 1:
             self.split_k_mode = split_k_mode
             self.split_k_slices = kwargs["split_k_slices"]
         else:
             self.split_k_mode = cutlass_bindings.conv.SplitKMode.Serial
             self.split_k_slices = 1
+            
+        if "output_op" in kwargs.keys() and self.split_k_mode != cutlass_bindings.conv.SplitKMode.Parallel:
+            self.output_op = kwargs["output_op"]
+        else:
+            self.output_op = self.operation.epilogue_type(1.0, 0.0)
 
         #: problem_size
         self.problem_size: cutlass_bindings.conv.Conv2dProblemSize = problem_size
@@ -419,7 +420,9 @@ class Conv2dOperation:
         C: TensorDescription,
         stride_support,
         epilogue_functor,
-        swizzling_functor=cutlass_bindings.IdentitySwizzle1
+        swizzling_functor=cutlass_bindings.IdentitySwizzle1,
+        emission_type=EmissionType.Kernel,
+        **kwargs
     ):
         self.operation_kind: OperationKind = OperationKind.Conv2d
         self.arch: int = arch
@@ -432,6 +435,8 @@ class Conv2dOperation:
         self.iterator_algorithm = iterator_algorithm
         self.stride_support = stride_support
         self.swizzling_functor = swizzling_functor()
+        
+        self.emission_type = emission_type
 
         self.rt_module: Conv2dRT = Conv2dRT(self)
         self.argument_type = self.rt_module.argument_type
@@ -562,6 +567,18 @@ class Conv2dOperation:
 
         return accum
 
+    def device_op(self):
+        """
+        Returns a new Conv2dOperation object that is constructed with emission type
+        ``EmissionType.Device``. 
+        
+        :return: operation ready for device-level code emission
+        :rtype: Conv2dOperation
+        """
+        return Conv2dOperation(
+            self.conv_kind, self.iterator_algorithm, self.arch, self.tile_description,
+            self.A, self.B, self.C, self.stride_support, self.epilogue_functor, type(self.swizzling_functor),
+            emission_type=EmissionType.Device)
 
 ###################################################################################################
 #
@@ -596,7 +613,7 @@ typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}<
   cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k} >,
   cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
   ${epilogue_functor},
-  ${swizzling_functor}, // cutlass::gemm::threadblock::GemmSplitKIdentityThreadblockSwizzle<>,
+  ${swizzling_functor},
   ${stages},
   ${math_operator},
   ${iterator_algorithm},
@@ -608,6 +625,36 @@ typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}<
 struct ${operation_name}${operation_suffix}:
   public ${operation_name}_base { };
 
+"""
+
+        self.template_device = """
+// Conv2d operation ${operation_name}
+
+using Conv2d${conv_kind_name}Kernel = typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}<
+  ${element_a}, 
+  ${layout_a},
+  ${element_b}, 
+  ${layout_b},
+  ${element_c}, 
+  ${layout_c},
+  ${element_accumulator},
+  ${opcode_class},
+  ${arch},
+  cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
+  cutlass::gemm::GemmShape<${warp_shape_m}, ${warp_shape_n}, ${warp_shape_k} >,
+  cutlass::gemm::GemmShape<${instruction_shape_m}, ${instruction_shape_n}, ${instruction_shape_k}>,
+  ${epilogue_functor},
+  ${swizzling_functor},
+  ${stages},
+  ${math_operator},
+  ${iterator_algorithm},
+  ${stride_support},
+  ${align_a},
+  ${align_b}
+>::Kernel;
+
+using DeviceKernel =
+    typename cutlass::conv::device::ImplicitGemmConvolution<Conv2d${conv_kind_name}Kernel>;
 """
 
     def emit(self, operation):
@@ -651,5 +698,10 @@ struct ${operation_name}${operation_suffix}:
             "align_a": str(operation.A.alignment),
             "align_b": str(operation.B.alignment),
         }
+        
+        if operation.emission_type == EmissionType.Kernel:
+            conv2d_template = self.template
+        else:
+            conv2d_template = self.template_device
 
-        return SubstituteTemplate(self.template, values)
+        return SubstituteTemplate(conv2d_template, values)

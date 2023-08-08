@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2017 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,53 +29,43 @@
  *
  **************************************************************************************************/
 /*! \file
-    \brief Elementwise activation functors used only for testing purposes.
+    \brief Utilities for initializing workspaces
 */
-
 #pragma once
 
-#include <iostream>
-#include <fstream>
-#include <sstream>
+#if !defined(__CUDACC_RTC__)
+#include "cuda_runtime.h"
 
-#include "../../common/cutlass_unit_test.h"
+#include "cutlass/trace.h"
+#endif
 
-#include "cutlass/util/host_tensor.h"
-#include "cutlass/util/tensor_view_io.h"
-#include "cutlass/util/distribution.h"
-#include "cutlass/util/packed_stride.hpp"
-#include "cutlass/util/reference/host/tensor_fill.h"
-#include "cutlass/util/reference/host/tensor_copy.h"
-#include "cutlass/util/reference/host/tensor_compare.h"
-#include "cutlass/util/reference/host/tensor_norm.h"
-#include "cutlass/util/reference/host/gett.hpp"
+#include "cutlass.h"
 
-#include "testbed_utils.h"
+namespace cutlass {
 
-#include "cutlass/kernel_hardware_info.hpp"
-#include "cutlass/layout/matrix.h"
-#include "cutlass/matrix_coord.h"
-#include "cutlass/gemm/gemm.h"
+/////////////////////////////////////////////////////////////////////////////////////////////////
+#if !defined(__CUDACC_RTC__)
+static Status
+zero_workspace(void* workspace, int workspace_size, cudaStream_t stream = nullptr) {
+  if (workspace_size > 0) {
+    if (workspace == nullptr) {
+      CUTLASS_TRACE_HOST("  error: device workspace must not be null");
+      return Status::kErrorWorkspaceNull;
+    }
 
-#include "cute/int_tuple.hpp"
-
-namespace test {
-namespace gemm {
-namespace device {
-namespace detail{
-
-/// Simple activation function that negates the input.
-template <class T>
-struct Negate {
-  static constexpr T neg_one = T(-1);
-
-  CUTLASS_HOST_DEVICE
-  T operator()(const T& data) {
-      return data * neg_one;
+    CUTLASS_TRACE_HOST("  clearing barrier workspace");
+    cudaError_t result = cudaMemsetAsync(workspace, 0, workspace_size, stream);
+    if (cudaSuccess != result) {
+      result = cudaGetLastError(); // to clear the error bit
+      CUTLASS_TRACE_HOST("  cudaMemsetAsync() returned error " << cudaGetErrorString(result));
+      return Status::kErrorInternal;
+    }
   }
-};
 
-} // namespace detail
-} // namespace device
-} // namespace gemm
-} // namespace test
+  return Status::kSuccess;
+}
+#endif
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+} // namespace cutlass
