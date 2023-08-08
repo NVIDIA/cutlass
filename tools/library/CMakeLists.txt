@@ -30,11 +30,6 @@ include(GNUInstallDirs)
 
 find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
 
-# Set Python3_EXECUTABLE to be visible from global scope.
-# In CMake 3.24, this could be supported by adding the GLOBAL field
-# to find_package above (https://cmake.org/cmake/help/latest/command/find_package.html#id7)
-set(Python3_EXECUTABLE ${Python3_EXECUTABLE} CACHE INTERNAL "Path to python3 executable")
-
 add_library(cutlass_library_includes INTERFACE)
 add_library(nvidia::cutlass::library::includes ALIAS cutlass_library_includes)
 set_target_properties(cutlass_library_includes PROPERTIES EXPORT_NAME library::includes)
@@ -72,6 +67,7 @@ cutlass_add_library(
   src/util.cu
 
   src/reference/gemm.cu
+  src/reference/gemm_fp8.cu
   src/reference/initialize_reference_operations.cu
 
 
@@ -93,6 +89,7 @@ file(GLOB_RECURSE GENERATOR_PYTHON_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOU
 
 # set cutlass generator compiler version to filter kernels in the generator not supported by a specific toolkit. 
 set(CUTLASS_GENERATOR_CUDA_COMPILER_VERSION ${CMAKE_CUDA_COMPILER_VERSION})
+set(CUTLASS_LIBRARY_GENERATED_KERNEL_LIST_FILE ${CMAKE_CURRENT_BINARY_DIR}/generated_kernels.txt CACHE STRING "Generated kernel listing file")
 
 # --log-level is set to DEBUG to enable printing information about which kernels were excluded
 # from generation in /tools/library/scripts/manifest.py. To avoid having this information appear
@@ -107,6 +104,7 @@ execute_process(
     --architectures "${CUTLASS_NVCC_ARCHS_ENABLED}"
     --kernels "${CUTLASS_LIBRARY_KERNELS}"
     --ignore-kernels "${CUTLASS_LIBRARY_IGNORE_KERNELS}"
+    --selected-kernel-list "${CUTLASS_LIBRARY_GENERATED_KERNEL_LIST_FILE}"
     --cuda-version "${CUTLASS_GENERATOR_CUDA_COMPILER_VERSION}"
     --log-level DEBUG
   RESULT_VARIABLE cutlass_lib_INSTANCE_GENERATION_RESULT
@@ -197,3 +195,9 @@ install(
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
+
+install(
+  FILES ${CUTLASS_LIBRARY_GENERATED_KERNEL_LIST_FILE}
+  DESTINATION ${CMAKE_INSTALL_INFODIR}/cutlass/
+  )
+

@@ -71,12 +71,15 @@ from library import (
     DataType,
     DataTypeSize,
     EpilogueFunctor,
+    EpilogueScheduleSuffixes,
+    EpilogueScheduleTag,
+    EpilogueScheduleType,
     GemmKind,
     LayoutTag,
     LayoutType,
     KernelScheduleSuffixes,
-    KernelScheduleType,
     KernelScheduleTag,
+    KernelScheduleType,
     MathInstruction,
     MathOperation,
     OpcodeClass,
@@ -85,6 +88,9 @@ from library import (
     SwizzlingFunctor,
     TensorDescription,
     TileDescription,
+    TileSchedulerSuffixes,
+    TileSchedulerTag,
+    TileSchedulerType
 )
 
 this = sys.modules[__name__]
@@ -106,11 +112,12 @@ from cutlass.backend.utils.device import device_cc
 
 this.option_registry = OptionRegistry(device_cc())
 
-this.__version__ = '3.1.0'
+this.__version__ = '3.2.0'
 
 from cutlass.backend import get_memory_pool
 from cutlass.emit.pytorch import pytorch
 from cutlass.op.gemm import Gemm
+from cutlass.op.conv import Conv2d, Conv2dFprop, Conv2dDgrad, Conv2dWgrad
 from cutlass.op.gemm_grouped import GroupedGemm
 from cutlass.op.op import OperationBase
 

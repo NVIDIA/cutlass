@@ -239,10 +239,19 @@ void Options::Initialization::get_distribution(
     {"max", &dist.uniform.max},
     {"mean", &dist.gaussian.mean},
     {"stddev", &dist.gaussian.stddev},
+    {"pnzA", &dist.gaussian.pnzA},
+    {"pnzB", &dist.gaussian.pnzB},
+    {"pnzC", &dist.gaussian.pnzC},
     {"start", &dist.sequential.start},
     {"delta", &dist.sequential.delta},
     {0, 0}
   };
+
+  // Initalize pnz values to a default value of 100%
+  dist.gaussian.pnz = 100.0;
+  dist.gaussian.pnzA = 100.0;
+  dist.gaussian.pnzB = 100.0;
+  dist.gaussian.pnzC = 100.0;
 
   using KeyValueVector = std::vector<std::pair<std::string, std::string> >;
 
@@ -302,7 +311,7 @@ void Options::Initialization::print_usage(std::ostream &out) const {
     << "  --dist=<distribution>                        "
     << "    Data distribution of input tensors {uniform*, gaussian, identity, sequential}"  << end_of_line
     << "       --dist=uniform,min:<double>,max:<double>,scale:<integer>"  << end_of_line
-    << "       --dist=gaussian,mean:<double>,stddev:<double>,scale:<integer>"  << end_of_line
+    << "       --dist=gaussian,mean:<double>,stddev:<double>,scale:<integer>,pnzA:<double>,pnzB:<double>,pnzC:<double>"  << end_of_line
     << "       --dist=sequential,start:<double>,delta:<double>,scale:<integer>"  << end_of_line
     << "       --dist=identity\n\n"
 
@@ -340,7 +349,7 @@ Options::Library::Library(cutlass::CommandLine const &cmdline) {
 
     for (auto const & token : tokens) {
       if (token.find(":")) {
-        // todo - tokenized range
+        // TODO: tokenized range
       }
       else {
         int algo;
@@ -473,6 +482,9 @@ size_t Options::Profiling::index(library::Provider provider) const {
 Options::Verification::Verification(cutlass::CommandLine const &cmdline) {
   
   cmdline.get_cmd_line_argument("verification-enabled", enabled, true);
+  if (enabled) {
+    cmdline.get_cmd_line_argument("verification-required", required, false);
+  }
 
   cmdline.get_cmd_line_argument("epsilon", epsilon, 0.05);
 

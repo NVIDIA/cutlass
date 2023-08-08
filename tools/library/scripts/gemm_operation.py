@@ -24,7 +24,8 @@ class GemmOperation:
   #
   def __init__(self, gemm_kind, arch, tile_description, A, B, C, element_epilogue, \
       epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity8, D = None, 
-      kernel_schedule = KernelScheduleType.ScheduleAuto, epilogue_schedule = EpilogueScheduleType.ScheduleAuto):
+      kernel_schedule = KernelScheduleType.ScheduleAuto, epilogue_schedule = EpilogueScheduleType.ScheduleAuto,
+      tile_scheduler = TileSchedulerType.Default):
 
     self.prefix = "3x" if gemm_kind == GemmKind.Universal3x else ""
     self.operation_kind = OperationKind.Gemm
@@ -46,6 +47,7 @@ class GemmOperation:
     self.element_epilogue = element_epilogue
     self.epilogue_functor = epilogue_functor
     self.swizzling_functor = swizzling_functor
+    self.tile_scheduler = tile_scheduler
 
   #
   def is_complex(self):
@@ -86,6 +88,7 @@ class GemmOperation:
 
     math_operations_map = {
       MathOperation.xor_popc: 'xor',
+      MathOperation.and_popc: 'and'
     }
 
     if self.tile_description.math_instruction.opcode_class == OpcodeClass.TensorOp or \
@@ -176,7 +179,7 @@ class GemmOperation:
     ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
     if self.arch >= 90:
-      kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{k}{e}"
+      kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{k}{e}{t}"
       return kernel_name_template.format(
           p = self.prefix,
           ar = self.arch,
@@ -192,7 +195,8 @@ class GemmOperation:
           s = self.layout_name_3x(),
           al = str(max(self.A.alignment, self.B.alignment)),
           k = self.kernel_schedule_name_3x(),
-          e = self.epilogue_schedule_name_3x())
+          e = self.epilogue_schedule_name_3x(),
+          t = TileSchedulerSuffixes[self.tile_scheduler])
     else:
       threadblock = self.tile_description.procedural_name()
       return "cutlass{p}_{op}_{ex}_{tb}_{l}_align{a}".format(
@@ -666,7 +670,8 @@ using ${operation_name}_mainloop =
 using ${operation_name}_base = cutlass::gemm::kernel::GemmUniversal<
     cute::Shape<int,int,int,int>,
     ${operation_name}_mainloop,
-    ${operation_name}_epilogue>;
+    ${operation_name}_epilogue,
+    ${tile_scheduler}>;
 
 // Define named type
 struct ${operation_name} :
@@ -752,6 +757,7 @@ ${compile_guard_end}
       'math_operation': MathOperationTag[operation.tile_description.math_instruction.math_operation],
       'epilogue_vector_length': str(epilogue_vector_length),
       'element_epilogue': str(DataTypeTag[operation.element_epilogue]),
+      'tile_scheduler': str(TileSchedulerTag[operation.tile_scheduler])
     }
 
     return SubstituteTemplate(self.gemm_template, values)

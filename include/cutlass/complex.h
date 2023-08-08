@@ -199,7 +199,7 @@ class complex
   template <typename OtherT>
   CUTLASS_DEVICE void red(complex<OtherT> *ptr) const {
     static_assert(platform::is_same<T, OtherT>::value, "Component type must match");
-    cutlass::red<T> reduce;
+    cutlass::atomic_add<T> reduce;
     reduce(&ptr->_real, _real);
     reduce(&ptr->_imag, _imag);
   }
@@ -209,7 +209,7 @@ class complex
     static_assert(platform::is_same<T, half_t>::value, "Component type must match");
     half2 *h2_ptr = reinterpret_cast<half2*>(ptr);
     half2 h2_data = reinterpret_cast<half2&>(*this);
-    cutlass::red<half2> reduce;
+    cutlass::atomic_add<half2> reduce;
     reduce(h2_ptr, h2_data);
   }
 
@@ -514,7 +514,6 @@ CUTLASS_HOST_DEVICE complex<T> sin(complex<T> const &z) {
 /// Comparison 
 template <typename T>
 CUTLASS_HOST_DEVICE bool operator<(complex<T> const &lhs, complex<T> const &rhs) {
-  //TODO
   return true; 
 }
 
@@ -679,7 +678,7 @@ struct magnitude_squared_difference<complex<T>, Output> {
 
 /// Reduces value into the data pointed to by ptr (complex<T> specialization)
 template <typename T>
-struct red<complex<T>> {
+struct atomic_add<complex<T>> {
   CUTLASS_DEVICE
   void operator()(complex<T> *ptr, const complex<T> &data)
   {

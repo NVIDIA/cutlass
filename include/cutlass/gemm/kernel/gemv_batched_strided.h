@@ -149,7 +149,7 @@ CUTLASS_DEVICE void GemvBatchedStridedDevice(
   mma(problem_size.mnk(), accumulators, iterator_A, iterator_B, accumulators);
 
   //
-  // Epilogue (TODO: Epiloge as template argument)
+  // Epilogue
   //
   typename GemvKernel::FragmentCD fragment_CD;
 

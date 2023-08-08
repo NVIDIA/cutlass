@@ -45,7 +45,10 @@ template <typename Func, int Rank, typename Params>
 struct TensorForEach {
 
   /// Constructor performs the operation.
-  TensorForEach(Coord<Rank> size, Params params = Params(), int grid_size = 0, int block_size = 0) {
+  TensorForEach(
+    Coord<Rank> size, Params params = Params(),
+    int grid_size = 0, int block_size = 0,
+    cudaStream_t stream = nullptr) {
 
     if (!grid_size || !block_size) {
 
@@ -67,7 +70,7 @@ struct TensorForEach {
     dim3 grid(grid_size, 1, 1);
     dim3 block(block_size, 1, 1);
 
-    kernel::TensorForEach<Func, Rank, Params><<< grid, block >>>(size, params);
+    kernel::TensorForEach<Func, Rank, Params><<< grid, block, 0, stream >>>(size, params);
   }
 };
 
@@ -78,7 +81,10 @@ template <typename Func, int Rank, typename Params>
 struct TensorDiagonalForEach {
 
   /// Constructor performs the operation
-  TensorDiagonalForEach(Coord<Rank> size, Params params = Params(), int start = 0, int end = -1, int block_size = 128) { 
+  TensorDiagonalForEach(
+    Coord<Rank> size, Params params = Params(),
+    int start = 0, int end = -1,
+    int block_size = 128, cudaStream_t stream = nullptr) {
 
     if (end < 0) {
       end = size.min();
@@ -87,7 +93,8 @@ struct TensorDiagonalForEach {
     dim3 block(block_size, 1, 1);
     dim3 grid((end - start + block_size - 1) / block_size, 1, 1);
 
-    kernel::TensorDiagonalForEach<Func, Rank, Params><<< grid, block >>>(size, params, start, end);
+    kernel::TensorDiagonalForEach<Func, Rank, Params><<< grid, block, 0, stream >>>(
+      size, params, start, end);
   }
 };
 
@@ -99,11 +106,12 @@ struct BlockForEach {
 
   /// Constructor performs the operation.
   BlockForEach(
-    Element *ptr, 
+    Element *ptr,
     size_t capacity,
     typename Func::Params params = typename Func::Params(),
-    int grid_size = 0, 
-    int block_size = 0) {
+    int grid_size = 0,
+    int block_size = 0,
+    cudaStream_t stream = nullptr) {
 
     if (!grid_size || !block_size) {
 
@@ -125,7 +133,7 @@ struct BlockForEach {
     dim3 grid(grid_size, 1, 1);
     dim3 block(block_size, 1, 1);
 
-    kernel::BlockForEach<Element, Func><<< grid, block >>>(ptr, capacity, params);
+    kernel::BlockForEach<Element, Func><<< grid, block, 0, stream >>>(ptr, capacity, params);
   }
 };
 

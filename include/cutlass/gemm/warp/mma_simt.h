@@ -251,7 +251,6 @@ public:
   CUTLASS_DEVICE
   void transform(TransformedFragmentA &dst_A, TransformedFragmentB &dst_B,
                  FragmentA const &A, FragmentB const &B) const {
-    //TODO: Implement this
     dst_A = A;
     dst_B = B;
   }

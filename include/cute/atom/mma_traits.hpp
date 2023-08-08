@@ -127,7 +127,7 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
   using RegTypeC = typename remove_extent<typename MMA_Op::CRegisters>::type;
   using MMATraits = MMA_Traits<MMA_Op, MMA_Args...>;
 
-  constexpr int RegNumD = extent<typename MMA_Op::DRegisters>::value;
+  [[maybe_unused]] constexpr int RegNumD = extent<typename MMA_Op::DRegisters>::value;
   constexpr int RegNumA = extent<typename MMA_Op::ARegisters>::value;
   constexpr int RegNumB = extent<typename MMA_Op::BRegisters>::value;
   constexpr int RegNumC = extent<typename MMA_Op::CRegisters>::value;
@@ -184,6 +184,26 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
                   rC, make_int_sequence<RegNumC>{});
       }
   }
+}
+
+//
+// Accept mutable temporaries
+//
+
+template <class MMA_Op, class... MMA_Args,
+          class TD, class DLayout,
+          class TA, class ALayout,
+          class TB, class BLayout,
+          class TC, class CLayout>
+CUTE_HOST_DEVICE constexpr
+void
+mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
+           Tensor<TD, DLayout>      && D,
+           Tensor<TA, ALayout> const&  A,
+           Tensor<TB, BLayout> const&  B,
+           Tensor<TC, CLayout> const&  C)
+{
+  mma_unpack(traits, D, A, B, C);
 }
 
 namespace detail {

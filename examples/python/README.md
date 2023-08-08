@@ -12,3 +12,7 @@
 
     Shows how to declare, compile, and run a grouped GEMM operation via the Python interface,
     along with how the emitted kernel can be easily exported to a PyTorch CUDA extension.
+
+* [03_basic_conv2d](/examples/python/03_basic_conv2d.ipynb)
+
+    Shows how to declare, configure, compile, and run a CUTLASS Conv2d using the Python interface

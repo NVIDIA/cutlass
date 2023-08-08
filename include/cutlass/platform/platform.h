@@ -90,9 +90,6 @@
  *           - \p alignment_of
  *           - \p aligned_storage
  *
- *   (4) Functions and types that are STL-like (but aren't in the STL):
- *           - \p TODO: min and max functors?
- *
  * The idea is that, as we drop support for older compilers, we can simply #define
  * the \p __NV_STD_XYZ macros and \p platform namespace to alias their C++
  * counterparts (or trivially find-and-replace their occurrences in code text).
@@ -103,7 +100,11 @@
 //-----------------------------------------------------------------------------
 
 #if defined(__CUDACC_RTC__)
+#include <cuda/std/type_traits>
+#include <cuda/std/utility>
+#include <cuda/std/cstddef>
 #include <cuda/std/cstdint>
+#include <cuda/std/limits>
 #else
 #include <stdint.h>
 #endif
@@ -135,6 +136,24 @@
 /******************************************************************************
  * Macros
  ******************************************************************************/
+/// std
+#if !defined(CUTLASS_STL_NAMESPACE)
+#if defined(__CUDACC_RTC__)
+#define CUTLASS_STL_NAMESPACE cuda::std
+#else
+#define CUTLASS_STL_NAMESPACE std
+#endif
+#endif
+
+/// builtin_unreachable
+#if !defined(CUTLASS_GCC_UNREACHABLE)
+#  if defined(__clang__) || defined(__GNUC__)
+#    define CUTLASS_GCC_UNREACHABLE __builtin_unreachable()
+#  else
+#    define CUTLASS_GCC_UNREACHABLE
+#  endif
+#endif
+
 //-----------------------------------------------------------------------------
 // Keywords
 //-----------------------------------------------------------------------------
@@ -366,6 +385,9 @@ using std::conditional;
 
 #endif
 
+/// std::conditional_t
+using CUTLASS_STL_NAMESPACE::conditional_t;
+
 //-----------------------------------------------------------------------------
 // Const/volatility specifiers <type_traits>
 //-----------------------------------------------------------------------------
@@ -409,6 +431,23 @@ using std::remove_volatile;
 using std::remove_cv;
 
 #endif
+
+/// std::remove_cv_t
+using CUTLASS_STL_NAMESPACE::remove_cv_t;
+/// std::remove_reference_t
+using CUTLASS_STL_NAMESPACE::remove_reference_t;
+
+// C++20
+// using std::remove_cvref;
+template <class T>
+struct remove_cvref {
+  using type = remove_cv_t<remove_reference_t<T>>;
+};
+
+// C++20
+// using std::remove_cvref_t;
+template <class T>
+using remove_cvref_t = typename remove_cvref<T>::type;
 
 //-----------------------------------------------------------------------------
 // Type relationships <type_traits>
@@ -573,6 +612,11 @@ struct is_trivially_copyable
 using std::is_trivially_copyable;
 
 #endif
+
+/// std::is_unsigned_v
+using CUTLASS_STL_NAMESPACE::is_integral_v;
+/// std::is_unsigned_v
+using CUTLASS_STL_NAMESPACE::is_unsigned_v;
 
 //-----------------------------------------------------------------------------
 // bit_cast <bit>
@@ -888,6 +932,20 @@ struct numeric_limits<float> {
   static constexpr bool has_infinity = true;
 };
 #endif
+
+/// std::float_round_style
+using CUTLASS_STL_NAMESPACE::float_round_style;
+using CUTLASS_STL_NAMESPACE::round_indeterminate;
+using CUTLASS_STL_NAMESPACE::round_toward_zero;
+using CUTLASS_STL_NAMESPACE::round_to_nearest;
+using CUTLASS_STL_NAMESPACE::round_toward_infinity;
+using CUTLASS_STL_NAMESPACE::round_toward_neg_infinity;
+
+/// std::float_denorm_style
+using CUTLASS_STL_NAMESPACE::float_denorm_style;
+using CUTLASS_STL_NAMESPACE::denorm_indeterminate;
+using CUTLASS_STL_NAMESPACE::denorm_absent;
+using CUTLASS_STL_NAMESPACE::denorm_present;
 
 }  // namespace platform
 }  // namespace cutlass

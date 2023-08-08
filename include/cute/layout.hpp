@@ -367,7 +367,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 make_ordered_layout(Shape const& shape, Order const& order)
 {
-  static_assert(is_static<Shape>::value && is_static<Order>::value);
+  static_assert(is_static<Order>::value);
   return make_layout(shape, compact_order(shape, order));
 }
 
@@ -464,12 +464,34 @@ take(Layout<Shape,Stride> const& layout)
   return make_layout(take<B,E>(layout.shape()), take<B,E>(layout.stride()));
 }
 
+//
+// Select layout modes according to an index sequence.
+//
+
+template <int... I, class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+select(Layout<Shape,Stride> const& layout)
+{
+  return make_layout(select<I...>(layout.shape()),
+                     select<I...>(layout.stride()));
+}
+
 template <class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 flatten(Layout<Shape,Stride> const& layout)
 {
   return make_layout(flatten(layout.shape()), flatten(layout.stride()));
+}
+
+template <class Shape, class Stride, class TargetProfile>
+CUTE_HOST_DEVICE constexpr
+auto
+unflatten(Layout<Shape,Stride> const& layout, TargetProfile const& target_profile)
+{
+  return make_layout(unflatten(layout.shape(), target_profile),
+                     unflatten(layout.stride(), target_profile));
 }
 
 //
@@ -552,18 +574,33 @@ depth(Layout<Shape,Stride> const& layout)
   return depth(shape<Is...>(layout));
 }
 
+// Return the codomain shape of a mode
+// @post size(coshape(@a a)) == cosize(@a a)
+// @return C Coordinate with smallest elements such that that
+//           @a elem_less(sub_layout(c), C) for all c < size(@a sub_layout)
+//           where sub_layout = get<Is...>(layout).
+template <int... Is, class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+coshape(Layout<Shape,Stride> const& layout)
+{
+  // Protect against negative strides
+  auto abs_sub_layout = make_layout(shape<Is...>(layout),
+                                    transform_leaf(stride<Is...>(layout), abs_fn{}));
+  auto co_coord = as_arithmetic_tuple(abs_sub_layout(size(abs_sub_layout) - Int<1>{}));
+  return co_coord + repeat_like(co_coord, Int<1>{});
+}
+
 // Return the codomain size of a mode
-// @return M smallest integer such that @a sub_layout(c) < M for all c < size(@a sub_layout)
+// @return M smallest integer such that
+//           @a sub_layout(c) < M for all c < size(@a sub_layout)
 //           where sub_layout = get<Is...>(layout).
 template <int... Is, class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
 cosize(Layout<Shape,Stride> const& layout)
 {
-  // Protect against negative strides
-  auto abs_sub_layout = make_layout(shape<Is...>(layout),
-                                    transform_leaf(stride<Is...>(layout), abs_fn{}));
-  return abs_sub_layout(size(abs_sub_layout) - Int<1>{}) + Int<1>{};
+  return size(coshape<Is...>(layout));
 }
 
 template <class Layout>
@@ -620,6 +657,16 @@ dice(Coord const& c, Layout<Shape,Stride> const& layout)
 {
   return make_layout(dice(c, layout.shape()),
                      dice(c, layout.stride()));
+}
+
+// Compute a pointer offset and (potentially modified) layout from a coordinate
+// This exists so it can be overloaded for ComposedLayout
+template <class Coord, class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+domain_offset(Coord const& coord, Layout<Shape,Stride> const& layout)
+{
+  return cute::make_tuple(layout, layout(coord));
 }
 
 //
@@ -794,6 +841,16 @@ append(Layout<ShapeA,StrideA> const& layout,
                      append<N>(layout.stride(), x.stride()));
 }
 
+template <class ShapeA, class StrideA, class ShapeX = _1, class StrideX = _0>
+CUTE_HOST_DEVICE constexpr
+auto
+append(Layout<ShapeA,StrideA> const& layout,
+       Layout<ShapeX,StrideX> const& x = {})
+{
+  return make_layout(append(layout.shape(),  x.shape()),
+                     append(layout.stride(), x.stride()));
+}
+
 template <int N, class ShapeA, class StrideA, class ShapeX = _1, class StrideX = _0>
 CUTE_HOST_DEVICE constexpr
 auto
@@ -802,6 +859,16 @@ prepend(Layout<ShapeA,StrideA> const& layout,
 {
   return make_layout(prepend<N>(layout.shape(),  x.shape()),
                      prepend<N>(layout.stride(), x.stride()));
+}
+
+template <class ShapeA, class StrideA, class ShapeX = _1, class StrideX = _0>
+CUTE_HOST_DEVICE constexpr
+auto
+prepend(Layout<ShapeA,StrideA> const& layout,
+        Layout<ShapeX,StrideX> const& x = {})
+{
+  return make_layout(prepend(layout.shape(),  x.shape()),
+                     prepend(layout.stride(), x.stride()));
 }
 
 template <int N, class ShapeA, class StrideA, class ShapeX, class StrideX>
@@ -836,16 +903,16 @@ template <class LShape, class LStride,
           class RShape, class RStride>
 CUTE_HOST_DEVICE constexpr
 auto
-composition(Layout<LShape,LStride> const& lhs,
-            RShape const& rhs_shape, RStride const& rhs_stride)
+composition_impl(Layout<LShape,LStride> const& lhs,
+                 RShape const& rhs_shape, RStride const& rhs_stride)
 {
   if constexpr (is_tuple<RShape>::value) {
     // Apply the right-distributivity of Layout composition
-    return transform_layout(rhs_shape, rhs_stride, [&](auto const& s, auto const& d) { return composition(lhs, s, d); });
+    return transform_layout(rhs_shape, rhs_stride, [&](auto const& s, auto const& d) { return composition_impl(lhs, s, d); });
   } else
   if constexpr (is_scaled_basis<RStride>::value) {
     // Special case for a ScaledBasis stride
-    return composition(get<rhs_stride.mode()>(lhs), rhs_shape, rhs_stride.value());
+    return composition_impl(get<RStride::mode()>(lhs), rhs_shape, rhs_stride.value());
   } else
   if constexpr (is_integral<RStride>::value) {
     // Integral Rstride (and RShape)
@@ -871,7 +938,7 @@ composition(Layout<LShape,LStride> const& lhs,
       // Mod out the rhs_shape from the lhs.shape()
       auto const [result_shape_1, rest_shape]  = fold(result_shape_0, cute::make_tuple(cute::make_tuple(), rhs_shape),
         [] (auto const& init, auto const& si) {
-          return cute::make_tuple(append(get<0>(init), cute::min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
+          return cute::make_tuple(append(get<0>(init), shape_min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
         });
 
       // Jump into coalesce and append (rest_shape, get<R-1>(lhs.stride())
@@ -892,9 +959,9 @@ composition(Layout<LShape,LStride> const& lhs,
       auto result_stride_1 = elem_scale(result_stride_0, shape_div(result_shape_0, result_shape_1));
 
       // Mod out the rhs_shape from the lhs.shape()
-      auto const [result_shape_2, rest_shape]  = fold(result_shape_1, cute::make_tuple(cute::make_tuple(), rhs_shape),
+      auto const [result_shape_2, rest_shape] = fold(result_shape_1, cute::make_tuple(cute::make_tuple(), rhs_shape),
         [] (auto const& init, auto const& si) {
-          return cute::make_tuple(append(get<0>(init), cute::min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
+          return cute::make_tuple(append(get<0>(init), shape_min(abs(si), get<1>(init))), shape_div(get<1>(init), abs(si)));
         });
 
       // Jump into coalesce and append (rest_shape, rest_stride * get<R-1>(lhs.stride())
@@ -914,8 +981,8 @@ auto
 composition(Layout<LShape,LStride> const& lhs,
             Layout<RShape,RStride> const& rhs)
 {
-  //return detail::composition(flatten(lhs), rhs.shape(), rhs.stride());
-  return detail::composition(lhs, rhs.shape(), rhs.stride());
+  //return detail::composition_impl(flatten(lhs), rhs.shape(), rhs.stride());
+  return detail::composition_impl(lhs, rhs.shape(), rhs.stride());
 }
 
 template <class LShape, class LStride, class IntTuple>
@@ -968,10 +1035,7 @@ complement(Shape const& shape, Stride const& stride, CoSizeHi const& cosize_hi)
     // Should just be a sort and a fold...
     // Then we could even handle dynamic strides (but they would destroy all static strides)
     auto result = fold(make_seq<R-1>{},
-                       cute::make_tuple(shape,
-                                  stride,
-                                  cute::make_tuple(),
-                                  cute::make_tuple(Int<1>{})),
+                       cute::make_tuple(shape, stride, cute::make_tuple(), cute::make_tuple(Int<1>{})),
       [](auto const& init, auto i)
       {
         auto curr_stride = cute::min(get<1>(init));
@@ -979,9 +1043,9 @@ complement(Shape const& shape, Stride const& stride, CoSizeHi const& cosize_hi)
         auto curr_shape  = get<curr_idx>(get<0>(init));
 
         return cute::make_tuple(remove<curr_idx>(get<0>(init)),                     // Remove the curr shape
-                          remove<curr_idx>(get<1>(init)),                     // Remove the curr stride
-                          append(get<2>(init), curr_stride / get<3,i>(init)), // new shape  = curr_stride / last_stride
-                          append(get<3>(init), curr_shape  * curr_stride));   // new stride = curr_shape  * curr_stride
+                                remove<curr_idx>(get<1>(init)),                     // Remove the curr stride
+                                append(get<2>(init), curr_stride / get<3,i>(init)), // new shape  = curr_stride / last_stride
+                                append(get<3>(init), curr_shape  * curr_stride));   // new stride = curr_shape  * curr_stride
       });
 
     // Append the last shape mode
@@ -1025,22 +1089,24 @@ complement(Layout<Shape,Stride> const& layout)
 
 namespace detail {
 
-template <int I, class Shape, class Stride, int... Is>
+template <int NextStride, class Shape, class Stride, int... Is>
 CUTE_HOST_DEVICE constexpr
 auto
 inverse_seq(Shape const& shape, Stride const& stride, seq<Is...>)
 {
-  if constexpr (I == decltype(rank(stride))::value) {
+  auto next_I = find_if(stride, [](auto a) { return is_constant<NextStride, decltype(a)>{}; }); 
+
+  if constexpr (next_I == decltype(rank(stride))::value) {
     return seq<Is...>{};
   } else {
-    //auto next_stride = get<I>(shape) * get<I>(stride);
-    using next_stride = decltype(get<I>(shape) * get<I>(stride));  // NOTE: WAR for g++-7
+    // auto next_stride = get<next_I>(shape) * get<next_I>(stride);
+    // NOTE: Needed for g++-7
+    using next_stride = decltype(get<next_I>(shape) * get<next_I>(stride));
 
     if constexpr (is_static<next_stride>::value) {
-      auto next_idx  = find_if(stride, [](auto a) { return is_constant<next_stride::value, decltype(a)>{}; });
-      return inverse_seq<next_idx>(shape, stride, seq<Is..., I>{});
+      return inverse_seq<next_stride::value>(shape, stride, seq<Is..., next_I>{});
     } else {
-      return seq<Is..., I>{};
+      return seq<Is..., next_I>{};
     }
   }
 
@@ -1066,11 +1132,10 @@ right_inverse(Layout<Shape,Stride> const& layout)
   auto flat_layout = coalesce(layout);
   auto astride = transform_leaf(flat_layout.stride(), abs_fn{});
 
-  // Find Int<1>{}, the starting idx, and follow the strides to gen inverse_seq
-  auto next_I  = find_if(astride, [](auto a) { return is_constant<1, decltype(a)>{}; });
-  [[maybe_unused]] auto iseq    = detail::inverse_seq<next_I>(flat_layout.shape(), astride, seq<>{});
+  // Find Int<1>{}, the starting stride, and follow the strides to gen inverse_seq
+  [[maybe_unused]] auto iseq = detail::inverse_seq<1>(flat_layout.shape(), astride, seq<>{});
 
-  if constexpr (tuple_size<decltype(iseq)>::value == 0) {
+  if constexpr (iseq.size() == 0) {
     return Layout<_1,_0>{};     // Empty case, nothing found
   } else {
     // Generate the corresponding new strides and construct
@@ -1150,8 +1215,6 @@ max_common_layout(Layout<ShapeA,StrideA> const& a,
     //         (i.e. are large and multiples of the vector)
     return Layout<_1,_0>{};
   }
-
-  CUTE_GCC_UNREACHABLE;
 }
 
 /* Return Int<N> such that N is the maximum number of contiguous elements
@@ -1168,7 +1231,78 @@ auto
 max_common_vector(Layout<ShapeA,StrideA> const& a,
                   Layout<ShapeB,StrideB> const& b)
 {
-  return size(max_common_layout(a, b));
+  if constexpr (is_static<ShapeA>::value && is_static<StrideA>::value &&
+                is_static<ShapeB>::value && is_static<StrideB>::value)
+  {
+    Layout common = coalesce(composition(a, right_inverse(b)));
+
+    if constexpr (is_constant<1, decltype(stride<0>(common))>::value) {
+      // Truncate to the size of the contiguous vector (static stride-1 mode)
+      return shape<0>(common);
+    } else {
+      return Int<1>{};
+    }
+  } else {
+    // CASE: One of the layouts is dynamic, can't prove alignment+vectorization is valid
+    // NOTE: Could weaken if we assume dynamic shapes/strides obey alignment requirements
+    //         (i.e. are large and multiples of the vector)
+    return Int<1>{};
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+//
+// Kernel (Nullspace) of a Layout
+//
+
+namespace detail {
+
+template <int NextI, class Stride, int... Is>
+CUTE_HOST_DEVICE constexpr
+auto
+nullspace_seq(Stride const& stride, seq<Is...>)
+{
+  if constexpr (NextI == rank_v<Stride>) {
+    return seq<Is...>{};
+  } else
+  if constexpr (is_constant<0, decltype(get<NextI>(stride))>::value) {
+    return detail::nullspace_seq<NextI+1>(stride, seq<Is..., NextI>{});
+  } else {
+    return detail::nullspace_seq<NextI+1>(stride, seq<Is...>{});
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+} // end namespace detail
+
+//
+// Build the nullspace of a layout
+// @result A layout @a result such that
+//    size(@a result) == size(@a layout) / size(filter(@a layout))
+//    @a layout(@a result(i)) == 0 for all i < size(@a result)
+//
+
+template <class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+nullspace(Layout<Shape,Stride> const& layout)
+{
+  auto flat_layout = flatten(layout);
+
+  auto iseq = detail::nullspace_seq<0>(flat_layout.stride(), seq<>{});
+
+  if constexpr (iseq.size() == 0) {
+    return Layout<_1,_0>{};     // Empty case, nothing found
+  } else {
+    // Generate the corresponding new strides and construct
+    auto rstride = compact_col_major(flat_layout.shape());
+    return make_layout(unwrap(transform(iseq, [&](auto i) { return shape<i>(flat_layout); })),
+                       unwrap(transform(iseq, [&](auto i) { return get<i>(rstride); })));
+  }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 //

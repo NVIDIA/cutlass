@@ -79,7 +79,7 @@ void pipeline_device(uint32_t const NumIterations)
   using SharedStorage = SharedStorage<NumStages, ClusterShape>;
   SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
 
-  auto cta_layout = Layout<ClusterShape>{}; // (m,n) -> cta_id
+  [[maybe_unused]] auto cta_layout = Layout<ClusterShape>{}; // (m,n) -> cta_id
   int warp_idx = __shfl_sync(0xffffffff, threadIdx.x / 32, 0);
   int warp_group_thread_idx = threadIdx.x % 128;
   dim3 block_id_in_cluster = cute::block_id_in_cluster();
@@ -196,7 +196,7 @@ struct PipelineTest {
 
     float elapsed_ms = 0.0f;
     // Pipeline (multistage pipeline)
-    auto num_stages = Int<Stages>{};
+    [[maybe_unused]] auto num_stages = Int<Stages>{};
 
     auto cluster_shape = Shape<Int<ClusterShape::kM>, Int<ClusterShape::kN>, _1>{};
 

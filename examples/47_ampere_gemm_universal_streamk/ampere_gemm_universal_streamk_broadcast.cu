@@ -461,6 +461,11 @@ Result run(std::string description, Options &options)
     std::cout << "  GFLOPs: " << result.gflops << std::endl;
   }
 
+  // TODO: uncomment when results match
+  //if (!result.passed) {
+  //  exit(-1);
+  //}
+
   return result;
 }
 

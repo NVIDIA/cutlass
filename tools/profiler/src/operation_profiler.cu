@@ -386,6 +386,8 @@ int OperationProfiler::profile_all(
             operation, 
             problem_space,
             problem);
+
+          retval |= (not continue_profiling);
         }
 
         if (options.execution_mode == ExecutionMode::kDryRun) {

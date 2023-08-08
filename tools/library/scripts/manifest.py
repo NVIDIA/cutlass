@@ -337,7 +337,7 @@ class Manifest:
           enabled = False
 
 
-    # todo: filter based on compute data type
+    # TODO: filter based on compute data type
     return enabled
   #
 

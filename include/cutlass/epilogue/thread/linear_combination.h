@@ -72,6 +72,7 @@ public:
   using ElementSource = ElementSource_;
   using ElementAccumulator = ElementAccumulator_;
   using ElementCompute = ElementCompute_;
+  using ElementScalar = ElementCompute;
   using ElementC = ElementSource_;
   using ElementD = ElementOutput_;
 
@@ -161,49 +162,6 @@ public:
   void set_k_partition(int k_partition, int k_partition_count) {
     if (k_partition) {
       beta_ = ElementCompute(1);
-    }
-  }
-
-  /// Computes intermediate: X = beta * source
-  CUTLASS_HOST_DEVICE
-  FragmentCompute compute_intermediate(
-      FragmentSource const &source) const {
-
-    // Convert source to internal compute numeric type
-    NumericArrayConverter<ElementCompute, ElementSource, kCount, Round> source_converter;
-    FragmentCompute converted_source = source_converter(source);
-
-    if (Scale == ScaleType::NoBetaScaling) {
-      return converted_source;
-    }
-    else {
-      multiplies<FragmentCompute> mul_source;
-      return mul_source(beta_, converted_source);
-    }
-  }
-
-  /// Computes linear scaling with intermediate: D = alpha * accumulator + X
-  CUTLASS_HOST_DEVICE
-  FragmentOutput with_intermediate(
-      FragmentAccumulator const& accumulator,
-      FragmentCompute const& intermediate) const {
-
-    // Convert accumulator to internal compute numeric type
-    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
-
-    // Convert to destination numeric type
-    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
-    
-    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
-
-    if (Scale == ScaleType::Nothing) {
-      return destination_converter(converted_accumulator);
-    } else {
-      // Perform binary operations
-      multiply_add<FragmentCompute> mul_add_accumulator;
-      FragmentCompute computed_output = mul_add_accumulator(alpha_, converted_accumulator, intermediate);
-
-      return destination_converter(computed_output);
     }
   }
 
@@ -317,6 +275,196 @@ public:
     multiplies<ElementCompute> multiply;
 
     intermediate = multiply(alpha_, accumulator);    // D = alpha * Accum
+    return destination_converter(intermediate);
+  }
+};
+
+/// Applies a linear combination operator to an array of elements.
+///
+/// D = vector_alpha * accumulator + (optional) vector_beta/scalar_beta * source
+///
+template <
+  typename ElementOutput_,            ///< Data type used to load and store tensors
+  int Count,                          ///< Number of elements computed per operation.
+  typename ElementAccumulator_,       ///< Accumulator data type
+  typename ElementCompute_,           ///< Data type used to compute linear combination
+  FloatRoundStyle Round,
+  typename ElementSource_
+>
+class LinearCombination<ElementOutput_,
+                        Count,
+                        ElementAccumulator_,
+                        ElementCompute_,
+                        ScaleType::PerChannelScaling,
+                        Round,
+                        ElementSource_> {
+public:
+        
+  using ElementOutput = ElementOutput_;
+  using ElementSource = ElementSource_;
+  using ElementAccumulator = ElementAccumulator_;
+  using ElementCompute = ElementCompute_;
+  using ElementC = ElementSource_;
+  using ElementD = ElementOutput_;
+
+  static int const kCount = Count;
+  static const ScaleType::Kind kScale = ScaleType::PerChannelScaling;
+  static constexpr bool IsPerChannelScalingSupported = true;
+
+  using FragmentOutput = Array<ElementOutput, kCount>;
+  using FragmentSource = Array<ElementSource, kCount>;
+  using FragmentAccumulator = Array<ElementAccumulator, kCount>;
+  using FragmentCompute = Array<ElementCompute, kCount>;
+
+  static FloatRoundStyle const kRound = Round;
+
+  /// Host-constructable parameters structure
+  struct Params
+  {
+    ElementCompute const *alpha_ptr;       ///< pointer to accumulator vector
+    ElementCompute const *beta_ptr;        ///< pointer to source vector
+    ElementCompute beta;                   ///< scales source tensor
+
+    CUTLASS_HOST_DEVICE
+    Params():
+      alpha_ptr(nullptr),
+      beta_ptr(nullptr),
+      beta(ElementCompute(0)) { }
+
+    CUTLASS_HOST_DEVICE
+    Params(
+      ElementCompute const *alpha_ptr,
+      ElementCompute const *beta_ptr
+    ):
+      alpha_ptr(alpha_ptr), beta_ptr(beta_ptr), beta(ElementCompute(0)) { }
+
+    CUTLASS_HOST_DEVICE
+    Params(
+      ElementCompute const *alpha_ptr
+    ):
+      alpha_ptr(alpha_ptr), beta_ptr(nullptr), beta(ElementCompute(0)) { }
+
+    CUTLASS_HOST_DEVICE
+    Params(
+      ElementCompute const *alpha_ptr,
+      ElementCompute beta
+    ):
+      alpha_ptr(alpha_ptr), beta_ptr(nullptr), beta(beta) { }
+
+  };
+
+private:
+
+  //
+  // Data members
+  //
+
+  ElementCompute const* beta_ptr_ = nullptr;
+  ElementCompute beta_ = 0;
+
+public:
+
+  /// Constructs the function object
+  CUTLASS_HOST_DEVICE
+  LinearCombination(Params const& params) {
+    if (params.beta_ptr) {
+      beta_ptr_ = params.beta_ptr;
+    }
+    else {
+      beta_ = params.beta;
+    }
+  }
+
+  /// Returns true if source is needed
+  CUTLASS_HOST_DEVICE
+  bool is_source_needed() const {
+    return beta_ptr_ != nullptr || beta_ != ElementCompute(0);
+  }
+
+  CUTLASS_HOST_DEVICE
+  bool is_beta_vector() const {
+    return beta_ptr_ != nullptr;
+  }
+
+  /// Computes linear scaling with source: D = vector_alpha * accumulator + vector_beta * source
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(
+      FragmentAccumulator const& accumulator,
+      FragmentSource const& source,
+      FragmentCompute const& valpha,
+      FragmentCompute const& vbeta) const {
+    // Convert source to internal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementSource, kCount, Round> source_converter;
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
+
+    FragmentCompute converted_source = source_converter(source);
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
+
+    // Perform binary operations
+    FragmentCompute intermediate;
+
+    multiplies<FragmentCompute> mul_add_source;
+    multiply_add<FragmentCompute> mul_add_accumulator;
+
+    intermediate = mul_add_source(vbeta, converted_source);                             // X = vector_beta * C + uniform
+
+    intermediate = mul_add_accumulator(valpha, converted_accumulator, intermediate);    // D = vector_alpha * Accum + X
+
+    return destination_converter(intermediate);
+  }
+
+  /// Computes linear scaling with source: D = vector_alpha * accumulator + scalar_beta(from host) * source 
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(
+      FragmentAccumulator const& accumulator,
+      FragmentSource const& source,
+      FragmentCompute const& valpha) const {
+    // Convert source to internal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementSource, kCount, Round> source_converter;
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
+
+    FragmentCompute converted_source = source_converter(source);
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
+
+    // Perform binary operations
+    FragmentCompute intermediate;
+
+    multiplies<FragmentCompute> mul_add_source;
+    multiply_add<FragmentCompute> mul_add_accumulator;
+
+
+    intermediate = mul_add_source(beta_, converted_source);                           // X =  scalar_beta * C + uniform
+
+    intermediate = mul_add_accumulator(valpha, converted_accumulator, intermediate);    // D = vector_alpha * Accum + X
+
+    return destination_converter(intermediate);
+  }
+
+  /// Computes linear scaling: D = vector_alpha * accumulator
+  CUTLASS_HOST_DEVICE
+  FragmentOutput operator()(
+      FragmentAccumulator const& accumulator,
+      FragmentCompute const& valpha) const {
+    // Convert source to interal compute numeric type
+    NumericArrayConverter<ElementCompute, ElementAccumulator, kCount, Round> accumulator_converter;
+
+    // Convert to destination numeric type
+    NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
+
+    FragmentCompute converted_accumulator = accumulator_converter(accumulator);
+
+    // Perform binary operations
+    FragmentCompute intermediate;
+    multiplies<FragmentCompute> mul_accumulator;
+
+    intermediate = mul_accumulator(valpha, converted_accumulator);    // D = vector_alpha * Accum
+
     return destination_converter(intermediate);
   }
 };

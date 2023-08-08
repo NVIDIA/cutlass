@@ -55,6 +55,7 @@ enum class FloatRoundStyle {
   round_indeterminate,          ///< rounding mode unknown
   round_toward_zero,            ///< round toward zero
   round_to_nearest,             ///< round to nearest even
+  round_to_nearest_satfinite,   ///< round to nearest even, capping value to min and max of destination type 
   round_toward_infinity,        ///< round toward infinity
   round_toward_neg_infinity,    ///< round toward negative infinity
   round_half_ulp_truncate,      ///< add 0.5ulp to integer representation then round toward zero
@@ -774,8 +775,7 @@ struct NumericArrayConverter {
 
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N; ++i) {
-      if( platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value )
-      {
+      if (platform::is_same<Transform, cutlass::transform::thread::UnaryTransform::Identity>::value) {
         result[i] = convert_(s[i]);
       } else { // conjugate
         result[i] = conj(convert_(s[i]));
@@ -999,8 +999,6 @@ struct NumericArrayConverter<bfloat16_t, float, 2, FloatRoundStyle::round_to_nea
     return convert(s);
   }
 };
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for Array<bfloat16_t> <= Array<float>
 template <
@@ -2079,7 +2077,7 @@ public:
   }
 
   CUTLASS_HOST_DEVICE
-  result_type operator()(source_type const &s) const {
+  result_type operator()(source_type const &s) const{
     return convert(s);
   }
 };

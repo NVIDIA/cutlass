@@ -124,7 +124,7 @@ print(char const& c) {
 }
 
 template <class T,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value)>
+          __CUTE_REQUIRES(is_std_integral<T>::value)>
 CUTE_HOST_DEVICE
 void
 print(T const& a) {
@@ -136,6 +136,13 @@ CUTE_HOST_DEVICE
 void
 print(char const* format, T const&... t) {
   printf(format, t...);
+}
+
+template <class... T>
+CUTE_HOST_DEVICE
+void
+print(T const&... t) {
+  (print(t), ...);
 }
 
 } // end namespace cute

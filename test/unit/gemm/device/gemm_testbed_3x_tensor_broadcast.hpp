@@ -247,21 +247,33 @@ struct Testbed3xTensorBroadcast {
     auto dummy_C = cute::make_tensor(static_cast<ElementC*>(nullptr),
         cute::make_layout(cute::make_shape(M, N, L), impl_.stride_c));
     ElementCompute dummy_beta(0);
+    auto dummy_Aux = cute::make_tensor(static_cast<ElementD*>(nullptr),
+        cute::make_layout(cute::make_shape(M, N, L), impl_.stride_d));
+    auto dummy_Valpha = cute::make_tensor(static_cast<ElementCompute*>(nullptr),
+        cute::make_layout(cute::make_shape(M, 1)));
+    auto dummy_Vbeta = cute::make_tensor(static_cast<ElementCompute*>(nullptr),
+        cute::make_layout(cute::make_shape(M, 1)));
+
     cutlass::reference::host::GettEpilogueParams<
+        ElementScalar,
         ElementScalar,
         ElementAccumulator,
         ElementCompute,
         decltype(dummy_C),
         decltype(RefComputeOut),
         decltype(Bias),
-        decltype(dummy_C),
+        decltype(dummy_Aux),      
+        decltype(dummy_Valpha),
+        decltype(dummy_Vbeta),
         ActivationFunctor> epilogue_params{
           alpha,
           dummy_beta,
           dummy_C,
           RefComputeOut,
           Bias,
-          dummy_C
+          dummy_Aux,
+          dummy_Valpha,
+          dummy_Vbeta
         };
 
     cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
@@ -347,7 +359,8 @@ struct Testbed3xTensorBroadcast {
       cutlass::gemm::GemmUniversalMode::kGemm,
         problem_size,
         { impl_.tensor_A.device_data(), impl_.stride_a,
-          impl_.tensor_B.device_data(), impl_.stride_b
+          impl_.tensor_B.device_data(), impl_.stride_b,
+          impl_.mma_promotion_interval
         },
         { // Epilogue arguments
           { alpha, beta }, // ThreadOp arguments

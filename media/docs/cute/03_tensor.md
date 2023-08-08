@@ -127,7 +127,8 @@ This results in
 
 ### CuTe's provided `Engine` types
 
-CuTe comes with three `Engine` types.
+CuTe comes with a few `Engine` types.
+Here are the three that new users are most likely to encounter first.
 
 * `ArrayEngine<class T, int N>`: an owning `Engine`,
    representing an array of `N` elements of type `T`

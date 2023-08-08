@@ -978,9 +978,9 @@ print_latex_mma(Shape_MNK const& shape_mnk,
 
   printf(latex_header);
 
-  constexpr int M = size<0>(shape_mnk);
-  constexpr int N = size<1>(shape_mnk);
-  constexpr int K = size<2>(shape_mnk);
+  auto M = size<0>(shape_mnk);
+  auto N = size<1>(shape_mnk);
+  auto K = size<2>(shape_mnk);
 
   // C starting at 0,0
   bool c_filled[M][N] = {};

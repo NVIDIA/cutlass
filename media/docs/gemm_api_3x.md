@@ -379,7 +379,7 @@ may also change in the future as we adopt user feedback.
 
 If the builder is able to provide a collective mainloop type for the given set of parameters,
 it will be aliased within as `CollectiveOp`. For more information on how to
-parameterize kernels conveniently with the collective builder, please see example [49_hopper_gemm_schedules_with_collective_builder](49_hopper_gemm_schedules_with_collective_builder).
+parameterize kernels conveniently with the collective builder, please see example [49_hopper_gemm_with_collective_builder](/examples/49_hopper_gemm_with_collective_builder).
 
 ### Epilogue
 
@@ -387,7 +387,7 @@ The collective epilogue implements element-wise operations
 involving the output matrix.  Users can provide a custom
 epilogue, or use one of the standard epilogues.
 These live in the directory
-[include/cutlass/epilogue/collective/](../../include/cutlass/epilogue/collective/),
+[include/cutlass/epilogue/collective/](/include/cutlass/epilogue/collective/),
 and include classes like
 `cutlass::epilogue::collective::DefaultEpilogue`
 and
@@ -415,7 +415,7 @@ epilogues, and/or other operations.
 
 The entry point API for CUTLASS 3.0 kernel is the class
 `cutlass::gemm::kernel::GemmUniversal`, found in the header file
-[include/cutlass/gemm/kernel/gemm_universal.hpp](../../include/cutlass/gemm/kernel/gemm_universal.hpp).
+[include/cutlass/gemm/kernel/gemm_universal.hpp](/include/cutlass/gemm/kernel/gemm_universal.hpp).
 `GemmUniversal` is a stateless universal device kernel
 that implements GEMM as the composition of two parts:
 
@@ -442,7 +442,7 @@ template <
   class ProblemShapeOrThreadblockMma_, // (m, n, k) or (m, n, k, l)
   class CollectiveMainloopOrEpilogue_,
   class CollectiveEpilogueOrThreadblockSwizzle_,
-  class GridSwizzle_ = void,
+  class TileScheduler_ = void,
   class Enable = void
 >
 class GemmUniversal;
@@ -475,24 +475,24 @@ We will explain *collective* in more detail below.
 
 Specializations of `kernel::GemmUniversal` for 3.0 APIs live in 
 any of various `gemm_*.hpp` files in the directory
-[include/cutlass/gemm/kernel/](../../include/cutlass/gemm/kernel/).
+[include/cutlass/gemm/kernel/](/include/cutlass/gemm/kernel/).
 Specializations for 2.x APIs can be found in the header file
-[include/cutlass/gemm/kernel/gemm_universal.h](../../include/cutlass/gemm/kernel/gemm_universal.h).
+[include/cutlass/gemm/kernel/gemm_universal.h](/include/cutlass/gemm/kernel/gemm_universal.h).
 
 CUTLASS 3.x implements various embodiments of `kernel::GemmUniversal`.
 Each kernel layer schedule is specialized
 for a GEMM scheduling algorithm and GPU architecture.
 Specializations of `kernel::GemmUniversal` for 3.0 APIs live in 
 any of various `include/cutlass/gemm/kernel/{arch_tag}*.hpp` files in the directory
-[include/cutlass/gemm/kernel/](../../include/cutlass/gemm/kernel/).
+[include/cutlass/gemm/kernel/](/include/cutlass/gemm/kernel/).
 Which specialization to dispatch to is decided through the dispatch policy's `Schedule` type.
 
 For example, the header file
-[include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp](../../include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp)
+[include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp](/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp)
 has a specialization of `kernel::GemmUniversal` for Hopper
 that uses a warp-specialized mainloop with a persistent scheduling algorithm,
 while the header file
-[include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp](../../include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp)
+[include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp](/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized.hpp)
 has a specialization of `GemmUniversal` for Hopper
 that uses a warp-specialized but non-persistent algorithm.
 
@@ -510,13 +510,13 @@ template <
   class ProblemShape_,
   class CollectiveMainloop_,
   class CollectiveEpilogue_,
-  class GridSwizzle_
+  class TileScheduler_
 >
 class GemmUniversal<
   ProblemShape_,
   CollectiveMainloop_,
   CollectiveEpilogue_,
-  GridSwizzle_,
+  TileScheduler_,
   std::enable_if_t<std::is_base_of_v<KernelMultistage, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 ```
 

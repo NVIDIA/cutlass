@@ -68,7 +68,7 @@ initialize_barrier(uint64_t& smem_barrier,                 // 64 bits user-mange
 #endif
 }
 
-// Set the number of bytes transfered per transaction
+// Set the number of bytes transfered per transaction and perform an arrive operation as well
 CUTE_HOST_DEVICE
 void
 set_barrier_transaction_bytes(uint64_t& smem_barrier,      // 64 bits user-manged barrier in smem
@@ -134,27 +134,32 @@ enum class SmemSwizzleBits : uint8_t {
   B128 = 3,
 };
 
-#if !defined(__CUDACC_RTC__)
 #if (__CUDACC_VER_MAJOR__ >= 12)
 
+#if !defined(__CUDACC_RTC__)
+/// @return The TMA descriptor datatype enum corresponding to T.
 template <class T>
-inline CUtensorMapDataType to_CUtensorMapDataType() {
-  if constexpr (is_same<T,       int8_t>::value) { return CU_TENSOR_MAP_DATA_TYPE_UINT8;    } else
-  if constexpr (is_same<T,      uint8_t>::value) { return CU_TENSOR_MAP_DATA_TYPE_UINT8;    } else
-  if constexpr (is_same<T,     uint16_t>::value) { return CU_TENSOR_MAP_DATA_TYPE_UINT16;   } else
-  if constexpr (is_same<T,     uint32_t>::value) { return CU_TENSOR_MAP_DATA_TYPE_UINT32;   } else
-  if constexpr (is_same<T,     uint64_t>::value) { return CU_TENSOR_MAP_DATA_TYPE_UINT64;   } else
-  if constexpr (is_same<T,      int32_t>::value) { return CU_TENSOR_MAP_DATA_TYPE_INT32;    } else
-  if constexpr (is_same<T,      int64_t>::value) { return CU_TENSOR_MAP_DATA_TYPE_INT64;    } else
-  if constexpr (is_same<T,       half_t>::value) { return CU_TENSOR_MAP_DATA_TYPE_FLOAT16;  } else
-  if constexpr (is_same<T,        float>::value) { return CU_TENSOR_MAP_DATA_TYPE_FLOAT32;  } else
-  if constexpr (is_same<T,       double>::value) { return CU_TENSOR_MAP_DATA_TYPE_FLOAT64;  } else
-  if constexpr (is_same<T,   bfloat16_t>::value) { return CU_TENSOR_MAP_DATA_TYPE_BFLOAT16; } else
-  if constexpr (is_same<T,   tfloat32_t>::value) { return CU_TENSOR_MAP_DATA_TYPE_TFLOAT32; } else
+inline CUtensorMapDataType
+to_CUtensorMapDataType() {
+  if constexpr (is_same_v<T,       int8_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT8;    } else
+  if constexpr (is_same_v<T,      uint8_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT8;    } else
+  if constexpr (is_same_v<T, float_e4m3_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT8;    } else
+  if constexpr (is_same_v<T, float_e5m2_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT8;    } else
+  if constexpr (is_same_v<T,     uint16_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT16;   } else
+  if constexpr (is_same_v<T,     uint32_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT32;   } else
+  if constexpr (is_same_v<T,     uint64_t>) { return CU_TENSOR_MAP_DATA_TYPE_UINT64;   } else
+  if constexpr (is_same_v<T,      int32_t>) { return CU_TENSOR_MAP_DATA_TYPE_INT32;    } else
+  if constexpr (is_same_v<T,      int64_t>) { return CU_TENSOR_MAP_DATA_TYPE_INT64;    } else
+  if constexpr (is_same_v<T,       half_t>) { return CU_TENSOR_MAP_DATA_TYPE_FLOAT16;  } else
+  if constexpr (is_same_v<T,        float>) { return CU_TENSOR_MAP_DATA_TYPE_FLOAT32;  } else
+  if constexpr (is_same_v<T,       double>) { return CU_TENSOR_MAP_DATA_TYPE_FLOAT64;  } else
+  if constexpr (is_same_v<T,   bfloat16_t>) { return CU_TENSOR_MAP_DATA_TYPE_BFLOAT16; } else
+  if constexpr (is_same_v<T,   tfloat32_t>) { return CU_TENSOR_MAP_DATA_TYPE_TFLOAT32; } else
   { static_assert(sizeof(T) < 0, "Unknown TMA Format!"); }
 }
 
-inline CUtensorMapSwizzle to_CUtensorMapSwizzle(SmemSwizzleBits const& t) {
+inline CUtensorMapSwizzle
+to_CUtensorMapSwizzle(SmemSwizzleBits const& t) {
   switch (t) {
     default:                       assert(false && "Unknown SmemSwizzleBits!");
     case SmemSwizzleBits::DISABLE: return CU_TENSOR_MAP_SWIZZLE_NONE;
@@ -163,15 +168,16 @@ inline CUtensorMapSwizzle to_CUtensorMapSwizzle(SmemSwizzleBits const& t) {
     case SmemSwizzleBits::B128:    return CU_TENSOR_MAP_SWIZZLE_128B;
   }
 }
+#endif // !defined(__CUDACC_RTC__)
 
 #endif // (__CUDACC_VER_MAJOR__ >= 12)
-#endif // !defined(__CUDACC_RTC__)
+
 } // end namespace TMA
 
 #if (__CUDACC_VER_MAJOR__ >= 12) && !defined(__CUDACC_RTC__)
-using TmaDescriptor = CUtensorMap;
+  using TmaDescriptor = CUtensorMap;
 #else
-using TmaDescriptor = struct { char bytes[128]; };
+  using TmaDescriptor = struct { char bytes[128]; };
 #endif
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Initiates a TensorMap Prefetch

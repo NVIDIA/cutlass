@@ -416,7 +416,7 @@ public:
 
     AccessType *frag_ptr = reinterpret_cast<AccessType *>(&frag);
 
-    assert(0); // TODO
+    assert(0);
   }
 
   /// Load

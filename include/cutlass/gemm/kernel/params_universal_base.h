@@ -48,6 +48,18 @@ namespace kernel {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+namespace util {
+
+template <class LayoutA, class LayoutB>
+static inline bool 
+is_continous_k_aligned(GemmCoord problem_size, size_t alignmentA, size_t alignmentB) {
+  return (std::is_same<LayoutA, layout::RowMajor>::value && (problem_size.k() % alignmentA) == 0) ||
+         (std::is_same<LayoutB, layout::ColumnMajor>::value && (problem_size.k() % alignmentB) == 0);
+}
+
+}  // namespace util
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Argument structure
 struct UniversalArgumentsBase
@@ -95,7 +107,9 @@ template <
   typename ThreadblockShape,
   typename ElementA,
   typename ElementB,
-  typename ElementC>
+  typename ElementC,
+  typename LayoutA,
+  typename LayoutB>
 struct UniversalParamsBase
 {
   //
@@ -150,7 +164,18 @@ struct UniversalParamsBase
 
     if (args.mode == GemmUniversalMode::kGemm || args.mode == GemmUniversalMode::kGemmSplitKParallel)
     {
-      int const kAlignK = const_max(const_max(128 / sizeof_bits<ElementA>::value, 128 / sizeof_bits<ElementB>::value), 1);
+      static const uint32_t CACHELINE_BYTES = 128;
+      static const size_t element_bytes_a = sizeof(ElementA);
+      static const size_t element_bytes_b = sizeof(ElementB);
+      static const size_t cacheline_elements_a = CACHELINE_BYTES / element_bytes_a;
+      static const size_t cacheline_elements_b = CACHELINE_BYTES / element_bytes_b;
+
+      const bool cacheline_alignment_needed =
+          util::is_continous_k_aligned<LayoutA, LayoutB>(problem_size, cacheline_elements_a, cacheline_elements_b);
+
+      int const kAlignK = const_max(
+                                    const_max(128 / sizeof_bits<ElementA>::value, 128 / sizeof_bits<ElementB>::value),
+                                    cacheline_alignment_needed ? const_max(cacheline_elements_a, cacheline_elements_b) : 1);
 
       gemm_k_size = round_up(ceil_div(args.problem_size.k(), args.batch_count), kAlignK);
       if (gemm_k_size) {

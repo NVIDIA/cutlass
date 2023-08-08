@@ -38,6 +38,16 @@
 
 using namespace cute;
 
+template <class Layout, class InvLayout>
+void
+test_postconditions(Layout const& layout, InvLayout const& inv_layout)
+{
+  for (int i = 0; i < size(inv_layout); ++i) {
+    //printf("%3d: %3d  %3d\n", i, int(inv_layout(i)), int(layout(inv_layout(i))));
+    EXPECT_EQ(layout(inv_layout(i)),  i);
+  }
+}
+
 template <class Layout>
 void
 test_right_inverse(Layout const& layout)
@@ -47,10 +57,7 @@ test_right_inverse(Layout const& layout)
   CUTLASS_TRACE_HOST(layout << " ^ -1\n" << "  =>  \n" << inv_layout);
   CUTLASS_TRACE_HOST("Composition: " << coalesce(composition(layout, inv_layout)) << std::endl);
 
-  for (int i = 0; i < size(inv_layout); ++i) {
-    //printf("%3d: %3d  %3d\n", i, int(inv_layout(i)), int(layout(inv_layout(i))));
-    EXPECT_EQ(layout(inv_layout(i)),  i);
-  }
+  test_postconditions(layout, inv_layout);
 }
 
 TEST(CuTe_core, Inverse_right)

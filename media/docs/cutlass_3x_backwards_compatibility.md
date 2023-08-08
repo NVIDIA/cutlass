@@ -101,7 +101,7 @@ template <
   class ProblemShapeOrThreadblockMma_,
   class CollectiveMainloopOrEpilogue_,
   class CollectiveEpilogueOrThreadblockSwizzle_,
-  class GridSwizzle_ = void,
+  class TileScheduler_ = void,
   class Enable = void
 >
 class GemmUniversal;

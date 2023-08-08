@@ -52,25 +52,38 @@ make_int_tuple(Ts const&... t)
   return {t...};
 }
 
-/** if rank(int) == 1, then get<0>(int) should work too
- */
-template <size_t I, class T, __CUTE_REQUIRES(is_integral<remove_cvref_t<T>>::value)>
-CUTE_HOST_DEVICE constexpr
-decltype(auto)
+// CuTe does not treat integers as tuples.
+// For example, is_tuple is false, and tuple_size doesn't compile.
+// Nevertheless, CuTe defines rank(Integral) as 1
+// (where "Integral" is a shorthand for either run-time integers
+// or CuTe's compile-time integer constants),
+// so therefore get<0>(Integral) just returns its input.
+template <size_t I, class T, __CUTE_REQUIRES(cute::is_integral<cute::remove_cvref_t<T>>::value)>
+CUTE_HOST_DEVICE constexpr decltype(auto)
 get(T&& t) noexcept
 {
   static_assert(I == 0, "Index out of range");
   return static_cast<T&&>(t);
 }
 
-/** Custom recursive get for anything that implements get<I>(.)
- */
+// Custom recursive get for anything that implements get<I>(.) (for a single integer I).
 template <size_t I0, size_t I1, size_t... Is, class Tuple>
-CUTE_HOST_DEVICE constexpr
-decltype(auto)
+CUTE_HOST_DEVICE constexpr decltype(auto)
 get(Tuple&& t) noexcept
 {
-  return get<I1,Is...>(get<I0>(static_cast<Tuple&&>(t)));
+  using get_I0_result_t = cute::remove_cvref_t<decltype(cute::get<I0>(static_cast<Tuple&&>(t)))>;
+  if constexpr (cute::is_integral<get_I0_result_t>::value) {
+    // Help MSVC deduce that the inner get<I0>(...) call is not a "local variable or temporary."
+    // The above if constexpr test repeats the constraint on the above get(T&&) overload.
+    // get<0, 0, ..., 0>(t) for cute::integral (either one of the built-in integer types like int,
+    // or one of CuTe's compile-time constant types) t, and for one or more zeros, just returns t.
+    static_assert(I1 == 0, "Index I1 is out of range");
+    static_assert(((Is == 0) && ...), "At least one index in Is is out of range");
+    return get<I0>(static_cast<Tuple&&>(t));
+  }
+  else {
+    return get<I1, Is...>(get<I0>(static_cast<Tuple&&>(t)));
+  }
 }
 
 //
@@ -174,6 +187,26 @@ min(T0 const& t0, Ts const&... ts)
 }
 
 //
+// gcd
+//
+
+template <class T0, class... Ts>
+CUTE_HOST_DEVICE constexpr
+auto
+gcd(T0 const& t0, Ts const&... ts)
+{
+  if constexpr (is_tuple<T0>::value) {
+    return cute::gcd(cute::apply(t0, [](auto const&... a){ return cute::gcd(a...); }), ts...);
+  } else if constexpr (sizeof...(Ts) == 0) {
+    return t0;
+  } else {
+    return cute::gcd(t0, cute::gcd(ts...));
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+//
 // depth
 //
 
@@ -219,12 +252,22 @@ product(IntTuple const& a)
   CUTE_GCC_UNREACHABLE;
 }
 
+// Return a rank(t) tuple @a result such that get<i>(@a result) = product(get<i>(@a t))
 template <class Tuple>
 CUTE_HOST_DEVICE constexpr
 auto
 product_each(Tuple const& t)
 {
-  return transform(t, [](auto const& x) { return product(x); });
+  return transform(wrap(t), [](auto const& x) { return product(x); });
+}
+
+// Take the product of Tuple at the leaves of TupleG
+template <class Tuple, class TupleG>
+CUTE_HOST_DEVICE constexpr
+auto
+product_like(Tuple const& tuple, TupleG const& guide)
+{
+  return transform_leaf(guide, tuple, [](auto const& g, auto const& t) { return product(t); });
 }
 
 // Return the product of elements in a mode
@@ -347,6 +390,25 @@ shape_div(constant<T, t> const&, constant<U, u> const&)
   return {};
 }
 
+/** Minimum for Shapes
+ */
+template <class IntTupleA, class IntTupleB>
+CUTE_HOST_DEVICE constexpr
+auto
+shape_min(IntTupleA const& a, IntTupleB const& b)
+{
+  if constexpr (is_tuple<IntTupleA>::value || is_tuple<IntTupleB>::value) {
+    static_assert(dependent_false<IntTupleA>, "Not implemented.");
+  } else
+  if constexpr (is_constant<1, IntTupleA>::value || is_constant<1, IntTupleB>::value) {
+    return Int<1>{};            // _1 is less than all other shapes, preserve static
+  } else {
+    return cute::min(a, b);
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
 /** Return a tuple the same profile as A scaled by corresponding elements in B
  */
 template <class A, class B>
@@ -371,7 +433,7 @@ auto
 congruent(IntTupleA const& a, IntTupleB const& b)
 {
   return bool_constant<is_same<decltype(repeat_like(shape(a),_0{})),
-                                    decltype(repeat_like(shape(b),_0{}))>::value>{};
+                               decltype(repeat_like(shape(b),_0{}))>::value>{};
 }
 
 template <class A, class B>

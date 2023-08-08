@@ -46,6 +46,9 @@ struct sizeof_bits {
   static int const value = int(sizeof(T) * 8);
 };
 
+template <typename T>
+struct sizeof_bits<T const>: sizeof_bits<T> {};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 //
@@ -60,6 +63,15 @@ template <>
 struct sizeof_bits<bin1_t> {
   static int const value = 1;
 };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Returns the number of bytes required to hold a specified number of bits
+CUTLASS_HOST_DEVICE
+constexpr int
+bits_to_bytes(int bits) {
+  return (bits + 7) / 8;
+}
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -89,6 +101,5 @@ using make_index_sequence = typename index_sequence_helper<N>::type;
 #include "cutlass/bfloat16.h"
 #include "cutlass/tfloat32.h"
 #include "cutlass/float8.h"
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

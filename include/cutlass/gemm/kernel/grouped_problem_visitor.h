@@ -444,7 +444,6 @@ struct GroupedProblemVisitor<ProblemSizeHelper,
 private:
   CUTLASS_DEVICE
   void prefetch_tiles() {
-    // TODO: Consider changing to use async copies from global to shared mem
     CUTLASS_PRAGMA_UNROLL
     for (int32_t i = 0; i < kPrefetchTileCount; i += kThreadCount) {
       int32_t offset = threadIdx.x + i;

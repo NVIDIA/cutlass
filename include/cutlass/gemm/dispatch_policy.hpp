@@ -31,10 +31,10 @@
 #pragma once
 
 #include "cutlass/arch/arch.h"
+#include "cutlass/gemm/gemm.h"
 
 #include "cute/layout.hpp"
 #include "cute/numeric/integral_constant.hpp"
-
 //////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm {
@@ -50,6 +50,11 @@ struct KernelTma { };
 struct KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpong { };
 struct KernelTmaWarpSpecializedCooperative { };
+
+// FP8 related policies (including Fast Accumulation)
+struct KernelTmaWarpSpecializedFP8FastAccum : KernelTmaWarpSpecialized { };
+struct KernelTmaWarpSpecializedPingpongFP8FastAccum : KernelTmaWarpSpecializedPingpong { };
+struct KernelTmaWarpSpecializedCooperativeFP8FastAccum: KernelTmaWarpSpecializedCooperative { };
 
 // Policies for dispatch of epilogue
 struct EpilogueDefault { };
@@ -162,6 +167,22 @@ struct MainloopSm90TmaGmmaRmemAWarpSpecialized {
     cute::is_same_v<Schedule, KernelTmaWarpSpecialized> ||
     cute::is_same_v<Schedule, KernelTmaWarpSpecializedPingpong> ||
     cute::is_same_v<Schedule, KernelTmaWarpSpecializedCooperative>,
+    "KernelSchedule must be one of the warp specialized policies");
+};
+
+// n-buffer in smem (Hopper TMA), pipelined with Hopper GMMA and TMA, Warp specialized dynamic schedule
+// For FP8 kernels
+template<
+  int Stages_,
+  class ClusterShape_ = Shape<_1,_1,_1>,
+  class KernelSchedule = KernelTmaWarpSpecialized
+>
+struct MainloopSm90TmaGmmaWarpSpecializedFP8
+  : MainloopSm90TmaGmmaWarpSpecialized<Stages_, ClusterShape_, KernelSchedule> { 
+  static_assert(
+    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecialized> ||
+    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedPingpong> ||
+    cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperative>,
     "KernelSchedule must be one of the warp specialized policies");
 };
 

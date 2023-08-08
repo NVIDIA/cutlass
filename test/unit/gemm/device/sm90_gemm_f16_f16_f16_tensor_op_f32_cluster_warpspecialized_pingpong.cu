@@ -1144,7 +1144,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16n_tensor_op_gmma_f32_persistent_epilogue, 128
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1, 1));
 }
 
 TEST(SM90_Device_Gemm_f16t_f16n_f16t_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1) {
@@ -1187,7 +1187,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16t_tensor_op_gmma_f32_persistent_epilogue, 128
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1, 1));
 }
 
 TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1) {
@@ -1230,7 +1230,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32n_tensor_op_gmma_f32_persistent_epilogue, 128
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1, 1));
 }
 
 TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128x128x64_2x2x1) {
@@ -1273,7 +1273,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   >;
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
+  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>(1, 1));
 }
 
 #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)

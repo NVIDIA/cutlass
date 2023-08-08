@@ -78,6 +78,7 @@ class RankKOperation:
 
     math_operations_map = {
       MathOperation.xor_popc: 'xor',
+      MathOperation.and_popc: 'and'
     }
 
     if self.tile_description.math_instruction.opcode_class == OpcodeClass.TensorOp or \

@@ -209,7 +209,7 @@ void pipeline_device(KernelParams params)
   using SharedStorage = SharedStorage<Stages, ClusterShape, PingPongBarrier>;
   SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
 
-  auto cta_layout = Layout<ClusterShape>{};            // (m,n) -> cta_id
+  [[maybe_unused]] auto cta_layout = Layout<ClusterShape>{};            // (m,n) -> cta_id
   int warp_group_idx = __shfl_sync(0xffffffff, threadIdx.x / NumThreadsPerWarpGroup, 0);
   int warp_group_thread_idx = threadIdx.x % NumThreadsPerWarpGroup;
   dim3 block_id_in_cluster = cute::block_id_in_cluster();

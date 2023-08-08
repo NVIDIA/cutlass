@@ -326,7 +326,6 @@ struct cp_async<SizeInBytes, CacheOperation::Global> {
         "cp.async only supports CacheOperation::Global when access size is 16B.");
 
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
-
       asm volatile(
           "{\n"
           "  .reg .pred p;\n"
@@ -365,7 +364,6 @@ struct cp_async_zfill<SizeInBytes, CacheOperation::Global> {
 
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
       int src_in_bytes = (pred_guard ? SizeInBytes : 0);
-
       asm volatile(
 #if CUTLASS_ENABLE_L2_PREFETCH
         "cp.async.cg.shared.global.L2::128B [%0], [%1], %2, %3;\n" ::"r"(smem_int_ptr),
@@ -403,7 +401,6 @@ struct cp_async_nan<16, CacheOperation::Global> {
                                                  OOB_NAN_F16x2, OOB_NAN_F16x2};
 
       unsigned smem_int_ptr = cutlass_get_smem_pointer(smem_ptr);
-
       asm volatile(
           "{\n"
           "  .reg .pred p;\n"

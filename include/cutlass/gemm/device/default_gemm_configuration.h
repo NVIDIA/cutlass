@@ -496,7 +496,7 @@ struct DefaultGemmConfiguration<arch::OpClassTensorOp, arch::Sm80, double,
   static int const kStages = 3;
 
   using EpilogueOutputOp = epilogue::thread::LinearCombination<
-      ElementC, 128 / sizeof_bits<ElementC>::value, ElementAccumulator,
+      ElementC, 1, ElementAccumulator,
       ElementAccumulator>;
 
   using Operator = arch::OpMultiplyAdd;
@@ -777,7 +777,7 @@ struct DefaultGemmConfiguration<arch::OpClassTensorOp, arch::Sm90, double,
   static int const kStages = 3;
 
   using EpilogueOutputOp = epilogue::thread::LinearCombination<
-      ElementC, 128 / sizeof_bits<ElementC>::value, ElementAccumulator,
+      ElementC, 1, ElementAccumulator,
       ElementAccumulator>;
 
   using Operator = arch::OpMultiplyAdd;

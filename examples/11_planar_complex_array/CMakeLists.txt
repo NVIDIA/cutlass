@@ -27,18 +27,16 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
+#
+# This example depends on the CUTLASS Library
+#
+if (CUTLASS_ENABLE_LIBRARY)
 
 # Planar Complex Array GEMM example
 cutlass_example_add_executable(
   11_planar_complex_array
   planar_complex_array.cu
 )
-
-
-#
-# This example depends on the CUTLASS Library
-#
 
 target_link_libraries(
   11_planar_complex_array
@@ -48,3 +46,4 @@ target_link_libraries(
   cuda
 )
 
+endif()

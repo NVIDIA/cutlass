@@ -63,7 +63,7 @@ set(CUTLASS_TEST_UNIT_RESULTS_CACHE_DIR ${CMAKE_CURRENT_LIST_DIR}/data/hashes)
 
 function(cutlass_test_unit_add_executable NAME)
 
-  set(options)
+  set(options WITHOUT_CUDA)
   set(oneValueArgs)
   set(multiValueArgs)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
@@ -77,13 +77,22 @@ function(cutlass_test_unit_add_executable NAME)
     PRIVATE
     ${CUTLASS_UNIT_TEST_COMMON_DIR}
   )
-
-  target_link_libraries(
-    ${NAME}
-    PRIVATE
-    cutlass_test_unit_infra
-    cutlass_test_unit_infra_lib
-  )
+  if (__WITHOUT_CUDA)
+    # Avoid CUDA dependencies for host-only unit tests that provide the
+    # WITHOUT_CUDA argument.
+    target_link_libraries(
+      ${NAME}
+      PUBLIC
+      gtest
+    )
+  else()
+    target_link_libraries(
+      ${NAME}
+      PRIVATE
+      cutlass_test_unit_infra
+      cutlass_test_unit_infra_lib
+    )
+  endif()
 
   if (CUTLASS_ENABLE_OPENMP_TESTS AND OpenMP_CXX_FOUND)
     target_link_libraries(${NAME} PRIVATE OpenMP::OpenMP_CXX)

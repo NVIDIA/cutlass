@@ -30,6 +30,8 @@
  **************************************************************************************************/
 #pragma once
 
+#include "cutlass/gemm/kernel/tile_scheduler.hpp"
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::kernel {
@@ -54,7 +56,7 @@ template <
   class ProblemShapeOrThreadblockMma_, // (m, n, k) or (m, n, k, l)
   class CollectiveMainloopOrEpilogue_,
   class CollectiveEpilogueOrThreadblockSwizzle_,
-  class GridSwizzle_ = void,
+  class TileScheduler_ = void,
   class Enable = void
 >
 class GemmUniversal;

@@ -119,6 +119,7 @@ public:
   using ElementOutput = ElementOutput_;
   using ElementAccumulator = ElementAccumulator_;
   using ElementCompute = ElementCompute_;
+  using ElementScalar = ElementCompute;
   using ElementBias = ElementBias_;
   using ElementC = ElementSource_;
   using ElementD = ElementOutput_;

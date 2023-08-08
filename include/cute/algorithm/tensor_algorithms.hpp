@@ -112,12 +112,47 @@ transform(Tensor<EngineIn,LayoutIn>& tensor_in, Tensor<EngineOut,LayoutOut>& ten
 }
 
 // Accept mutable temporaries
-template <class EngineIn, class LayoutIn, class EngineOut, class LayoutOut, class UnaryOp>
+template <class EngineIn, class LayoutIn,
+          class EngineOut, class LayoutOut, class UnaryOp>
 CUTE_HOST_DEVICE constexpr
 void
 transform(Tensor<EngineIn,LayoutIn>&& tensor_in, Tensor<EngineOut,LayoutOut>&& tensor_out, UnaryOp&& op)
 {
-  return transform(tensor_in, tensor_out, std::forward<UnaryOp>(op));
+  return transform(tensor_in, tensor_out, op);
+}
+
+// Similar to std::transform with a binary operation
+// Takes two tensors as input and one tensor as output. 
+// Applies the binary_op to tensor_in1 and and tensor_in2 and
+// assigns it to tensor_out
+template <class EngineIn1, class LayoutIn1,
+          class EngineIn2, class LayoutIn2,
+          class EngineOut, class LayoutOut, class BinaryOp>
+CUTE_HOST_DEVICE constexpr
+void
+transform(Tensor<EngineIn1,LayoutIn1>& tensor_in1,
+          Tensor<EngineIn2,LayoutIn2>& tensor_in2,
+          Tensor<EngineOut,LayoutOut>& tensor_out, 
+          BinaryOp&& op)
+{
+  CUTE_UNROLL
+  for (int i = 0; i < size(tensor_in1); ++i) {
+    tensor_out(i) = static_cast<BinaryOp&&>(op)(tensor_in1(i), tensor_in2(i));
+  }
+}
+
+// Accept mutable temporaries
+template <class EngineIn1, class LayoutIn1,
+          class EngineIn2, class LayoutIn2,
+          class EngineOut, class LayoutOut, class BinaryOp>
+CUTE_HOST_DEVICE constexpr
+void
+transform(Tensor<EngineIn1,LayoutIn1>&& tensor_in1, 
+          Tensor<EngineIn2,LayoutIn2>&& tensor_in2,
+          Tensor<EngineOut,LayoutOut>&& tensor_out,
+          BinaryOp&& op)
+{
+  return transform(tensor_in1, tensor_in2, tensor_out, op);
 }
 
 } // end namespace cute

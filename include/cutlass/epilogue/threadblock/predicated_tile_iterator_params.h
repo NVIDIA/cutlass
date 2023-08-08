@@ -291,10 +291,20 @@ struct PredicatedTileIteratorDirect2dConvParams{
 
     // Fastdivmod for output O, P, Q
     if(threadblock_output_shape.row() != 0 && threadblock_output_shape.column() !=0 ){
+      // MSVC emits a "potential divide by 0" warning as error
+      // if the code just divides without a check and substitution.
+
+      CUTLASS_ASSERT(threadblock_output_shape.row() != 0);
+      const auto row_denom = threadblock_output_shape.row() != 0 ?
+        threadblock_output_shape.row() : cutlass::MatrixCoord::Index(1);
       int tiles_p =
-          (problem_size.P + (threadblock_output_shape.row() - 1)) / (threadblock_output_shape.row());
+          (problem_size.P + (threadblock_output_shape.row() - 1)) / row_denom;
+
+      CUTLASS_ASSERT(threadblock_output_shape.column() != 0);
+      const auto col_denom = threadblock_output_shape.column() != 0 ?
+        threadblock_output_shape.column() : cutlass::MatrixCoord::Index(1);
       int tiles_q = (problem_size.Q + (threadblock_output_shape.column() - 1)) /
-                    (threadblock_output_shape.column());
+                    col_denom;
 
       pq_divmod = FastDivmod(tiles_p * tiles_q);
       q_divmod = FastDivmod(tiles_q);

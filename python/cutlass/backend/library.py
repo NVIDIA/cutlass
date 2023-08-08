@@ -38,7 +38,7 @@ but uses the Pybind-bound CUTLASS data types as many keys to the dictionary.
 import enum
 
 import cutlass_bindings
-from cutlass import KernelScheduleType
+from cutlass import EpilogueScheduleType, KernelScheduleType, TileSchedulerType
 
 
 # The following block implements enum.auto() for Python 3.5 variants that don't include it such
@@ -554,7 +554,9 @@ class TileDescription:
         warp_count,
         math_instruction,
         cluster_shape=[1, 1, 1],
-        kernel_schedule: KernelScheduleType = None
+        kernel_schedule: KernelScheduleType = None,
+        epilogue_schedule: EpilogueScheduleType = None,
+        tile_scheduler: TileSchedulerType = None,
     ):
         """
         :param threadblock_shape: shape of a threadblock tyle
@@ -568,17 +570,60 @@ class TileDescription:
         :type math_instruction: MathInstruction
         :param cluster_shape: number of threadblocks in the [X, Y, Z] dimensions of a threadblock cluster
         :param kernel_schedule: type of kernel schedule to use (only available for SM90+)
-        :type kernel_schedule: cutlass.backend.KernelScheduleType
+        :type kernel_schedule: cutlass.KernelScheduleType
+        :param epilogue_schedule: type of epilogue schedule to use (only available for SM90+)
+        :type epilogue_schedule: cutlass.EpilogueScheduleType
+        :param tile_scheduler: type of tile scheduler to use (only available for SM90+)
+        :type tile_scheduler: cutlass.TileSchedulerType
         """
+        if ((kernel_schedule is None and epilogue_schedule is not None) or
+            (kernel_schedule is not None and epilogue_schedule is None)):
+            raise Exception("Kernel and epilogue schedule must either both be Auto or neither be Auto.")
+
         self.threadblock_shape = threadblock_shape
         self.cluster_shape = cluster_shape
         self.kernel_schedule = kernel_schedule
-        self.stages: int = stages
+        self.epilogue_schedule = epilogue_schedule
+        self.tile_scheduler = tile_scheduler
+        self.stages = stages
 
         self.math_instruction = math_instruction
+        self.instruction_shape = math_instruction.instruction_shape
 
         # Number of warps along x, y, z directions
         self.warp_count = warp_count
+
+    def clone_and_update(self, td: dict):
+        attrs = {
+            "cluster_shape": None,
+            "threadblock_shape": None,
+            "warp_count": None,
+            "stages": None,
+            "instruction_shape": None,
+            "kernel_schedule": None,
+            "epilogue_schedule": None,
+            "tile_scheduler": None
+        }
+        for key in attrs.keys():
+            if key in td.keys():
+                attrs[key] = td[key]
+            else:
+                attrs[key] = getattr(self, key)
+
+        mi = MathInstruction(
+            attrs["instruction_shape"],
+            self.math_instruction.element_a,
+            self.math_instruction.element_b,
+            self.math_instruction.element_accumulator,
+            self.math_instruction.opcode_class,
+            self.math_instruction.math_operation
+        )
+
+        return TileDescription(
+            attrs["threadblock_shape"], attrs["stages"],
+            attrs["warp_count"], mi, attrs["cluster_shape"],
+            attrs["kernel_schedule"], attrs["epilogue_schedule"]
+        )
 
     @property
     def num_threads(self):
@@ -622,16 +667,30 @@ class TileDescription:
         :return: contents of tile description
         :rtype: str
         """
-        schedule = KernelScheduleType.ScheduleAuto
         if self.kernel_schedule is not None:
-            schedule = self.kernel_schedule
+            kschedule = self.kernel_schedule
+        else:
+            kschedule = KernelScheduleType.ScheduleAuto
+
+        if self.epilogue_schedule is not None:
+            eschedule = self.epilogue_schedule
+        else:
+            eschedule = EpilogueScheduleType.ScheduleAuto
+
+        if self.tile_scheduler is not None:
+            tschedule = self.tile_scheduler.name
+        else:
+            tschedule = "None"
         return f"""
 {{
   ClusterShape: {self.cluster_shape}
   ThreadblockShape: {self.threadblock_shape}
   WarpCount: {self.warp_count}
   Stages: {self.stages if self.stages is not None else 'Auto'}
-  Kernel schedule: {schedule.name}
+  InstructionShape: {self.math_instruction.instruction_shape}
+  Kernel schedule: {kschedule.name}
+  Epilogue schedule: {kschedule.name}
+  TileScheduler: {tschedule}
 }}"""
 
 
@@ -712,3 +771,12 @@ def api_version(arch, opclass, datatype):
         return ApiVersion.v3x
     else:
         return ApiVersion.v2x
+
+
+class EmissionType(enum.Enum):
+    """
+    Tags for whether to emit a kernel- or device-level operation
+    """
+
+    Kernel = enum_auto()
+    Device = enum_auto()
