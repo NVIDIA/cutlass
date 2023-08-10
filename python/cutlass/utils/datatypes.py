@@ -150,6 +150,10 @@ try:
     import bfloat16
 
     bfloat16_available = True
+    if torch_available:
+        _torch_to_library_dict[torch.bfloat16] = cutlass.DataType.bf16
+        _library_to_torch_dict[cutlass.DataType.bf16] = torch.bfloat16
+    
 except ImportError:
     bfloat16_available = False
 
