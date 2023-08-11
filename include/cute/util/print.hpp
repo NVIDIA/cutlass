@@ -145,4 +145,10 @@ print(T const&... t) {
   (print(t), ...);
 }
 
+CUTE_HOST_DEVICE
+void
+print(char const* format) {
+  printf("%s", format);
+}
+
 } // end namespace cute
