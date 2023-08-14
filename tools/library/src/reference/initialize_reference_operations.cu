@@ -47,9 +47,10 @@ void initialize_gemm_reference_operations_int4(Manifest &manifest);
 void initialize_gemm_reference_operations_int8_interleaved_32(Manifest &manifest);
 void initialize_gemm_reference_operations_int8_interleaved_64(Manifest &manifest);
 void initialize_gemm_reference_operations_int8_canonical(Manifest &manifest);
-void initialize_gemm_reference_operations_fp8in_fp32c_e3m4out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp8in_otherc_e3m4out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp8in_e4m3out(Manifest &manifest);
+void initialize_gemm_reference_operations_e4m3a_e4m3out(Manifest &manifest);
+void initialize_gemm_reference_operations_e5m2a_e4m3out(Manifest &manifest);
+void initialize_gemm_reference_operations_e4m3a_e5m2out(Manifest &manifest);
+void initialize_gemm_reference_operations_e5m2a_e5m2out(Manifest &manifest);
 void initialize_gemm_reference_operations_fp8in_fp16out(Manifest &manifest);
 void initialize_gemm_reference_operations_fp8in_bf16out(Manifest &manifest);
 void initialize_gemm_reference_operations_fp8in_fp32out(Manifest &manifest);
@@ -71,9 +72,10 @@ void initialize_reference_operations(Manifest &manifest) {
   initialize_gemm_reference_operations_int8_interleaved_64(manifest);
   initialize_gemm_reference_operations_int8_canonical(manifest);
 
-  initialize_gemm_reference_operations_fp8in_fp32c_e3m4out(manifest);
-  initialize_gemm_reference_operations_fp8in_otherc_e3m4out(manifest);
-  initialize_gemm_reference_operations_fp8in_e4m3out(manifest);
+  initialize_gemm_reference_operations_e4m3a_e4m3out(manifest);
+  initialize_gemm_reference_operations_e5m2a_e4m3out(manifest);
+  initialize_gemm_reference_operations_e4m3a_e5m2out(manifest);
+  initialize_gemm_reference_operations_e5m2a_e5m2out(manifest);
   initialize_gemm_reference_operations_fp8in_fp16out(manifest);
   initialize_gemm_reference_operations_fp8in_bf16out(manifest);
   initialize_gemm_reference_operations_fp8in_fp32out(manifest);

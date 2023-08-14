@@ -29,7 +29,7 @@
  *
  **************************************************************************************************/
 /* \file
-   \brief Instantiates GEMM reference implementations.
+   \brief Instantiates GEMM reference implementations for FP8.
 */
 
 #include "cutlass/cutlass.h"
@@ -45,61 +45,69 @@ namespace library {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void initialize_gemm_reference_operations_fp32out(Manifest &manifest) {
+// FP8 GEMMs with FP8 E4M3 output
+void initialize_gemm_reference_operations_e5m2a_e4m3out(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
-    float,                                // ElementA
-    float,                                // ElementB
-    float,                                // ElementC
-    float,                                // ElementScalar
-    float                                 // ElementAccumulator
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
   >(manifest);
 
   make_gemm_real_canonical_layouts<
-    tfloat32_t,
-    tfloat32_t,
-    float,
-    float,
-    float
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
   >(manifest);
 
   make_gemm_real_canonical_layouts<
-    tfloat32_t,
-    tfloat32_t,
-    tfloat32_t,
-    float,
-    float
-  >(manifest);
- 
-  make_gemm_real_canonical_layouts<
-    half_t,
-    half_t,
-    float,
-    float,
-    float
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
   >(manifest);
 
   make_gemm_real_canonical_layouts<
-    half_t,
-    half_t,
-    half_t,
-    float,
-    float
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
   >(manifest);
 
   make_gemm_real_canonical_layouts<
-    bfloat16_t,
-    bfloat16_t,
-    float,
-    float,
-    float
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
   >(manifest);
 
   make_gemm_real_canonical_layouts<
-    bfloat16_t,
-    bfloat16_t,
-    bfloat16_t,
-    float,
-    float
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    float_e4m3_t,                           // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
   >(manifest);
 }
 

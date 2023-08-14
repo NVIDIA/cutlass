@@ -45,33 +45,15 @@ namespace library {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-// FP8 GEMMs with FP8 E3M4 output
-void initialize_gemm_reference_operations_fp8in_otherc_e3m4out(Manifest &manifest) {
-  make_gemm_real_canonical_layouts<
-    float_e4m3_t,                           // ElementA
-    float_e4m3_t,                           // ElementB
-    half_t,                                 // ElementC
-    float,                                  // ElementScalar
-    float ,                                 // ElementAccumulator
-    float_e4m3_t                            // ElementD
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    float_e4m3_t,                           // ElementA
-    float_e5m2_t,                           // ElementB
-    half_t,                                 // ElementC
-    float,                                  // ElementScalar
-    float,                                  // ElementAccumulator
-    float_e4m3_t                            // ElementD
-  >(manifest);
-
+// FP8 GEMMs with FP8 E5M2 output
+void initialize_gemm_reference_operations_e5m2a_e5m2out(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     float_e5m2_t,                           // ElementA
     float_e4m3_t,                           // ElementB
     half_t,                                 // ElementC
     float,                                  // ElementScalar
     float,                                  // ElementAccumulator
-    float_e4m3_t                            // ElementD
+    float_e5m2_t                            // ElementD
   >(manifest);
 
   make_gemm_real_canonical_layouts<
@@ -80,34 +62,7 @@ void initialize_gemm_reference_operations_fp8in_otherc_e3m4out(Manifest &manifes
     half_t,                                 // ElementC
     float,                                  // ElementScalar
     float,                                  // ElementAccumulator
-    float_e4m3_t                            // ElementD
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    float_e4m3_t,                           // ElementA
-    float_e4m3_t,                           // ElementB
-    bfloat16_t,                             // ElementC
-    float,                                  // ElementScalar
-    float,                                  // ElementAccumulator
-    float_e4m3_t                            // ElementD
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    float_e4m3_t,                           // ElementA
-    float_e5m2_t,                           // ElementB
-    bfloat16_t,                             // ElementC
-    float,                                  // ElementScalar
-    float,                                  // ElementAccumulator
-    float_e4m3_t                            // ElementD
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    float_e5m2_t,                           // ElementA
-    float_e4m3_t,                           // ElementB
-    bfloat16_t,                             // ElementC
-    float,                                  // ElementScalar
-    float,                                  // ElementAccumulator
-    float_e4m3_t                            // ElementD
+    float_e5m2_t                            // ElementD
   >(manifest);
 
   make_gemm_real_canonical_layouts<
@@ -125,25 +80,34 @@ void initialize_gemm_reference_operations_fp8in_otherc_e3m4out(Manifest &manifes
     bfloat16_t,                             // ElementC
     float,                                  // ElementScalar
     float,                                  // ElementAccumulator
-    float_e4m3_t                            // ElementD
+    float_e5m2_t                            // ElementD
   >(manifest);
 
   make_gemm_real_canonical_layouts<
     float_e5m2_t,                           // ElementA
-    float_e5m2_t,                           // ElementB
-    bfloat16_t,                             // ElementC
+    float_e4m3_t,                           // ElementB
+    float,                                  // ElementC
     float,                                  // ElementScalar
     float,                                  // ElementAccumulator
     float_e5m2_t                            // ElementD
   >(manifest);
 
   make_gemm_real_canonical_layouts<
-    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    float,                                  // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e5m2_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e5m2_t,                           // ElementA
     float_e4m3_t,                           // ElementB
     float_e4m3_t,                           // ElementC
     float,                                  // ElementScalar
     float,                                  // ElementAccumulator
-    float_e4m3_t                            // ElementD
+    float_e5m2_t                            // ElementD
   >(manifest);
 }
 

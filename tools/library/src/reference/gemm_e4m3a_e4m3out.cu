@@ -45,12 +45,39 @@ namespace library {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-// FP8 GEMMs with FP8 E3M4 output
-void initialize_gemm_reference_operations_fp8in_fp32c_e3m4out(Manifest &manifest) {
+// FP8 GEMMs with FP8 E4M3 output
+void initialize_gemm_reference_operations_e4m3a_e4m3out(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     float_e4m3_t,                           // ElementA
     float_e4m3_t,                           // ElementB
-    float,                                  // ElementC
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    half_t,                                 // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e4m3_t,                           // ElementB
+    bfloat16_t,                             // ElementC
+    float,                                  // ElementScalar
+    float,                                  // ElementAccumulator
+    float_e4m3_t                            // ElementD
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    float_e4m3_t,                           // ElementA
+    float_e5m2_t,                           // ElementB
+    bfloat16_t,                             // ElementC
     float,                                  // ElementScalar
     float,                                  // ElementAccumulator
     float_e4m3_t                            // ElementD
@@ -62,7 +89,7 @@ void initialize_gemm_reference_operations_fp8in_fp32c_e3m4out(Manifest &manifest
     float,                                  // ElementC
     float,                                  // ElementScalar
     float,                                  // ElementAccumulator
-    float_e5m2_t                            // ElementD
+    float_e4m3_t                            // ElementD
   >(manifest);
 
   make_gemm_real_canonical_layouts<
@@ -76,49 +103,11 @@ void initialize_gemm_reference_operations_fp8in_fp32c_e3m4out(Manifest &manifest
 
   make_gemm_real_canonical_layouts<
     float_e4m3_t,                           // ElementA
-    float_e5m2_t,                           // ElementB
-    float,                                  // ElementC
-    float,                                  // ElementScalar
-    float,                                  // ElementAccumulator
-    float_e5m2_t                            // ElementD
-  >(manifest);
-
-  //////////////////////////////////
-
-  make_gemm_real_canonical_layouts<
-    float_e5m2_t,                           // ElementA
     float_e4m3_t,                           // ElementB
-    float,                                  // ElementC
+    float_e4m3_t,                           // ElementC
     float,                                  // ElementScalar
     float,                                  // ElementAccumulator
     float_e4m3_t                            // ElementD
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    float_e5m2_t,                           // ElementA
-    float_e4m3_t,                           // ElementB
-    float,                                  // ElementC
-    float,                                  // ElementScalar
-    float,                                  // ElementAccumulator
-    float_e5m2_t                            // ElementD
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    float_e5m2_t,                           // ElementA
-    float_e5m2_t,                           // ElementB
-    float,                                  // ElementC
-    float,                                  // ElementScalar
-    float,                                  // ElementAccumulator
-    float_e4m3_t                            // ElementD
-  >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    float_e5m2_t,                           // ElementA
-    float_e5m2_t,                           // ElementB
-    float,                                  // ElementC
-    float,                                  // ElementScalar
-    float,                                  // ElementAccumulator
-    float_e5m2_t                            // ElementD
   >(manifest);
 }
 

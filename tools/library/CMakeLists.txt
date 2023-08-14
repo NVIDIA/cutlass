@@ -71,12 +71,12 @@ cutlass_add_library(
   src/reference/gemm_int8_canonical.cu
   src/reference/gemm_int8_interleaved_32.cu
   src/reference/gemm_int8_interleaved_64.cu
-  src/reference/gemm_fp8in_fp32c_e3m4out.cu
-  src/reference/gemm_fp8in_otherc_e3m4out.cu
-  src/reference/gemm_fp8in_e4m3out.cu
+  src/reference/gemm_e4m3a_e4m3out.cu
+  src/reference/gemm_e5m2a_e4m3out.cu
+  src/reference/gemm_e4m3a_e5m2out.cu
+  src/reference/gemm_e5m2a_e5m2out.cu
   src/reference/gemm_fp8in_fp16out.cu
   src/reference/gemm_fp8in_bf16out.cu
-  src/reference/gemm_fp8in_fp32out.cu
   src/reference/gemm_fp8in_fp32out.cu
   src/reference/gemm_fp32out.cu
   src/reference/gemm_fp_other.cu
