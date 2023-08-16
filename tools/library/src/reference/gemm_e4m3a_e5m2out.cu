@@ -100,15 +100,6 @@ void initialize_gemm_reference_operations_e4m3a_e5m2out(Manifest &manifest) {
     float,                                  // ElementAccumulator
     float_e5m2_t                            // ElementD
   >(manifest);
-
-  make_gemm_real_canonical_layouts<
-    float_e4m3_t,                           // ElementA
-    float_e4m3_t,                           // ElementB
-    float_e4m3_t,                           // ElementC
-    float,                                  // ElementScalar
-    float,                                  // ElementAccumulator
-    float_e5m2_t                            // ElementD
-  >(manifest);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

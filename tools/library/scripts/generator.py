@@ -4632,14 +4632,15 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
     else:
       assert False, "math inst is not supported"
 
+    # some schedules disabled to save on library size
     if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
       schedules = [
         [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
         [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized],
+        # [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized],
         [KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized],
         [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.TmaWarpSpecializedFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized]
+        # [KernelScheduleType.TmaWarpSpecializedFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized]
       ]
       stream_k_schedules = [[KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized],
                             [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized]]
@@ -4656,6 +4657,7 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
       # With No-SMEM epilogues
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)
 
+      # some schedules disabled to save on library size
       if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
         # Persistent kernels with TMA epilogues
         CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
