@@ -4635,7 +4635,7 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
     # some schedules disabled to save on library size
     if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
       schedules = [
-        [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
+        # [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
         [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized],
         # [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized],
         [KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized],
@@ -4646,7 +4646,7 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
                             [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized]]
     else:
       schedules = [
-        [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
+        # [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
         [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized]
         # TmaWarpSpecializedCooperative require CUDA version >= 12.1 for optimal performance.
       ]
@@ -4657,7 +4657,6 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
       # With No-SMEM epilogues
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)
 
-      # some schedules disabled to save on library size
       if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
         # Persistent kernels with TMA epilogues
         CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type,
