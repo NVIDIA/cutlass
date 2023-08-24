@@ -40,7 +40,7 @@
 #include <cute/atom/mma_atom.hpp>
 
 /** The gemm algorithm takes four (or three) tensors and computes
- *   D += A * B + C
+ *   D = A * B + C
  * It dispatches based on the number of modes each tensor has:
  *
  * 1. `(V) x (V) => (V)`.
