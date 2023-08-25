@@ -179,7 +179,7 @@ class GemmOperation:
     ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
     if self.arch >= 90:
-      kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{k}{e}{t}"
+      kernel_name_template = "cutlass{p}_sm{ar}_{op}_{ex}_{tbm}x{tbn}x{tbk}_{cm}x{cn}x{ck}_{l}_{s}_align{al}{t}{k}{e}"
       return kernel_name_template.format(
           p = self.prefix,
           ar = self.arch,
@@ -194,9 +194,9 @@ class GemmOperation:
           l = self.tile_description.stages,
           s = self.layout_name_3x(),
           al = str(max(self.A.alignment, self.B.alignment)),
+          t = TileSchedulerSuffixes[self.tile_scheduler],
           k = self.kernel_schedule_name_3x(),
-          e = self.epilogue_schedule_name_3x(),
-          t = TileSchedulerSuffixes[self.tile_scheduler])
+          e = self.epilogue_schedule_name_3x())
     else:
       threadblock = self.tile_description.procedural_name()
       return "cutlass{p}_{op}_{ex}_{tb}_{l}_align{a}".format(
@@ -661,8 +661,7 @@ using ${operation_name}_mainloop =
     ${element_accumulator},
     cute::Shape<cute::_${tile_shape_m}, cute::_${tile_shape_n}, cute::_${tile_shape_k}>,
     cute::Shape<cute::_${cluster_m},cute::_${cluster_n},cute::_${cluster_k}>,
-    cutlass::gemm::collective::StageCountAutoCarveout<
-      sizeof(typename ${operation_name}_epilogue::SharedStorage)>,
+    ${stages},
   ${kernel_schedule}
   >::CollectiveOp;
 
@@ -697,7 +696,7 @@ ${compile_guard_end}
     if operation.tile_description.stages > 0:
       stage_count_string = f"cutlass::gemm::collective::StageCount<{str(operation.tile_description.stages)}>"
     else:
-      stage_count_string = "cutlass::gemm::collective::StageCountAuto"
+      stage_count_string = f"cutlass::gemm::collective::StageCountAutoCarveout<sizeof(typename {str(operation.procedural_name())}_epilogue::SharedStorage)>"
     warp_shape = [tile_shape[idx] // warp_count[idx] for idx in range(3)]
 
     instance_layout_A, instance_layout_B, instance_layout_C , instance_layout_D = \

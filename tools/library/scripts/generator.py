@@ -4218,6 +4218,8 @@ def GenerateSM90_TensorOp_16b_WGMMA_gemm(manifest, cuda_version):
           layout[2][1] = 8
 
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed, schedules)
+      CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed, stream_k_schedules, tile_schedulers=[TileSchedulerType.StreamK])
+
       # persistent kernels with TMA epilogues
       if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
         CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type_mixed,

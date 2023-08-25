@@ -28,7 +28,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/*! 
+/*!
     \file
     \brief Boost-like numeric conversion operator for CUTLASS numeric types
 */
@@ -55,7 +55,7 @@ enum class FloatRoundStyle {
   round_indeterminate,          ///< rounding mode unknown
   round_toward_zero,            ///< round toward zero
   round_to_nearest,             ///< round to nearest even
-  round_to_nearest_satfinite,   ///< round to nearest even, capping value to min and max of destination type 
+  round_to_nearest_satfinite,   ///< round to nearest even, capping value to min and max of destination type
   round_toward_infinity,        ///< round toward infinity
   round_toward_neg_infinity,    ///< round toward negative infinity
   round_half_ulp_truncate,      ///< add 0.5ulp to integer representation then round toward zero
@@ -561,7 +561,7 @@ struct NumericConverter<tfloat32_t, float, FloatRoundStyle::round_to_nearest> {
 
       // Note, the following is intentionally commented out. TF32
       // does not define the low order bits, so they may be left in
-      // an undefined state. 
+      // an undefined state.
       //
       // By not truncating these bit explicitly, we avoid an extra logical
       // operation.
@@ -657,7 +657,7 @@ template <
 struct NumericConverterFastF32 {
 
   // result_type holds big tfloat32_t at idx(0) and small tfloat32_t at idx(1)
-  using result_type = Array<tfloat32_t, 2>; 
+  using result_type = Array<tfloat32_t, 2>;
 
   // source data type
   using source_type = float;
@@ -708,7 +708,7 @@ struct NumericConverterClamp {
     NumericConverter<result_type, source_type> convert_op;
     result_type const kClamp_max = platform::numeric_limits<result_type>::max();
     result_type const kClamp_min = platform::numeric_limits<result_type>::lowest();
-    if (s < (source_type)kClamp_min) 
+    if (s < (source_type)kClamp_min)
       return kClamp_min;
     if (s > (source_type)kClamp_max)
       return kClamp_max;
@@ -848,7 +848,7 @@ struct NumericArrayConverter<half_t, float, 2, FloatRoundStyle::round_to_nearest
       result[0] = convert_(source[0]);
       result[1] = convert_(source[1]);
     #endif
-    
+
     return result;
   }
 
@@ -878,7 +878,7 @@ struct NumericArrayConverter<float, half_t, 2, Round> {
       result[0] = convert_(source[0]);
       result[1] = convert_(source[1]);
     #endif
-    
+
     return result;
   }
 
@@ -1044,7 +1044,7 @@ struct NumericArrayConverter<bfloat16_t, float, N, Round> {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Conditional guards to enable partial specialization for packed integers 
+// Conditional guards to enable partial specialization for packed integers
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 720) && \
     ((__CUDACC_VER_MAJOR__ > 10) ||                     \
      ((__CUDACC_VER_MAJOR__ >= 10) && (__CUDACC_VER_MINOR__ >= 2)))
@@ -1066,7 +1066,7 @@ struct NumericArrayConverter<int8_t, int, 1, Round> {
     result_type result;
 
     result[0] = convert_element_(source[0]);
-   
+
     return result;
   }
 
@@ -1189,7 +1189,7 @@ struct NumericArrayConverter<uint8_t, int, 1, Round> {
     result_type result;
 
     result[0] = convert_element_(source[0]);
-   
+
     return result;
   }
 

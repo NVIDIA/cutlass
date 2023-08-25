@@ -54,6 +54,13 @@ struct SyncthreadsSync {
   }
 };
 
+struct SyncwarpSync {
+  CUTLASS_DEVICE
+  static void sync() {
+    __syncwarp();
+  }
+};
+
 template <
   int ThreadCount,
   int BarrierId
@@ -310,6 +317,60 @@ private:
     ((Idx == idx && (BarrierSync<Idx + Offset>::arrive_range_inc(lock_ptr, thread_idx, first_flag_idx, count, val), true)) || ...);
   }
 };
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/** Structure for synchronizing via contiguous barriers (e.g., __syncwarp, __syncthreads)
+ *  via an API that mirrors that of NamedBarrierManager
+ *
+ * @param Synchronizer Synchronization helper exposing a `sync()` method to perform synchronization
+**/
+template <
+  class Synchronizer,
+  uint32_t ThreadCount_
+>
+struct SyncManager {
+
+  // Number of threads participating in the barrier
+  static constexpr uint32_t ThreadCount = ThreadCount_;
+
+  using BarrierSync = cutlass::GenericBarrier<Synchronizer>;
+
+  // Underlying type used by all barriers for synchronization.
+  using T = typename BarrierSync::T;
+
+  CUTLASS_DEVICE
+  static
+  void wait_lt(uint32_t, void *lock_ptr, int thread_idx, int flag_idx, int count) {
+    BarrierSync::wait_lt_helper(lock_ptr, thread_idx, flag_idx, count);
+  }
+
+  CUTLASS_DEVICE
+  static void
+  wait_eq(uint32_t, void *lock_ptr, int thread_idx, int flag_idx, T val = 1) {
+    BarrierSync::wait_eq(lock_ptr, thread_idx, flag_idx, val);
+  }
+
+  CUTLASS_DEVICE
+  static void
+  wait_eq_reset(uint32_t, void *lock_ptr, int thread_idx, int flag_idx, T val = 1) {
+    BarrierSync::wait_eq_reset(lock_ptr, thread_idx, flag_idx, val);
+  }
+
+  CUTLASS_DEVICE
+  static void
+  arrive_inc(uint32_t, void *lock_ptr, int thread_idx, int flag_idx, int val = 1) {
+    BarrierSync::arrive_inc(lock_ptr, thread_idx, flag_idx, val);
+  }
+
+  CUTLASS_DEVICE
+  static void
+  arrive_range_inc(uint32_t idx, void *lock_ptr, int thread_idx, int first_flag_idx, int count = 1, int val = 1) {
+    BarrierSync::arrive_range_inc(lock_ptr, thread_idx, first_flag_idx, count, val);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass
 

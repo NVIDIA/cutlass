@@ -67,7 +67,7 @@ sm90_get_tma_dispatch_policy() {
 
   constexpr int EpiTiles = size(shape_div(take<0,2>(TileShapeMNK{}), EpilogueTileMN{}));
   constexpr int FragmentSize = size(EpilogueTileMN{}) / (detail::sm90_is_cooperative_v<Schedule> ? 256 : 128);
-  constexpr int ReuseSmemC = sizeof_bits_v<ElementC> == sizeof_bits_v<ElementD>;
+  constexpr int ReuseSmemC = (sizeof_bits_v<ElementC> == sizeof_bits_v<ElementD>) && (sizeof_bits_v<ElementD> > 8);
   constexpr int StagesD = 2;
   constexpr int StagesC = ReuseSmemC ? cute::max(EpiTiles, StagesD + 1) : EpiTiles;
 
@@ -98,7 +98,7 @@ sm90_get_epilogue_smem_swizzle_layout_atom() {
 }
 
 // Attempts to compute a reasonable epilogue tile based on block tile shape or allows the user to provide one.
-template <class Element, class EpilogueTileType, class Schedule>
+template <class ElementD, class EpilogueTileType, class Schedule>
 constexpr auto
 sm90_compute_tile_shape_or_override() {
   if constexpr (cute::is_same_v<EpilogueTileType, EpilogueTileAuto>) {
@@ -107,7 +107,12 @@ sm90_compute_tile_shape_or_override() {
       return Shape<_128,_32>{};
     }
     else if constexpr (detail::sm90_is_warp_specialized_v<Schedule>) {
-      return Shape<_64,_32>{};
+      if constexpr (sizeof_bits_v<ElementD> == 8) {
+        return Shape<_64,_64>{};
+      }
+      else {
+        return Shape<_64,_32>{};
+      }
     }
     else {
       static_assert(cutlass::detail::dependent_false<Schedule>, "Unsupported schedule.");

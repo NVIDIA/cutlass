@@ -32,12 +32,17 @@
     \brief Tests that the stream-K scheduler covers the entire problem space.
 */
 
+#include "cutlass/cluster_launch.hpp"
 #include "cutlass/kernel_hardware_info.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler_stream_k.hpp"
 #include "cutlass/util/device_memory.h"
 #include "cutlass/util/reference/device/tensor_fill.h"
 
 #include "../../common/cutlass_unit_test.h"
+
+// Grids are launched with clusters enabled in these tests,
+// so the CTK version must support cluster launching.
+#if defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
 
 using namespace cute;
 using ProblemShape_MNKL = Shape<int, int, int, int>;
@@ -60,7 +65,7 @@ run_scheduler(int* visit_counters, typename Scheduler::Params params, TileShape 
   while (work_tile_info.is_valid_tile) {
     // Increment counters to indicate coverage
     auto tile_idx = Scheduler::output_tile_index(params, work_tile_info);
-    auto offset = tile_idx * params.k_iter_per_tile_ + work_tile_info.K_idx;
+    auto offset = tile_idx * params.k_tiles_per_output_tile_ + work_tile_info.K_idx;
     for (auto i = 0; i < work_tile_info.k_tile_count; ++i) {
       // Use atomicAdd because the visit counters are shared by multiple thread blocks.
       // While having more than one block increment the same counter indicates failure,
@@ -103,7 +108,7 @@ test_scheduler(
 
   // Allocate counters indicating the number of times each k iteration of each output tile has been visited
   auto [blk_m, blk_n, blk_l] = Scheduler::get_tiled_cta_shape_mnl(problem_shape_mnkl, tile_shape, cluster_shape);
-  auto total_counters = blk_m * blk_n * blk_l * params.k_iter_per_tile_;
+  auto total_counters = blk_m * blk_n * blk_l * params.k_tiles_per_output_tile_;
   cutlass::DeviceAllocation<int> visit_counters(total_counters);
 
   // Initialize counters to zero
@@ -118,12 +123,55 @@ test_scheduler(
   // Set up the grid for the problem
   dim3 grid = Scheduler::get_grid_shape(problem_shape_mnkl, tile_shape, cluster_shape, hw_info, args);
 
+  // Set up cluster and cluster launch. This is needed even for this simple kernel because
+  // the SM90 scheduler needs to be able to query the CTA id within a cluster, which requires
+  // explicitly launching with clusters.
+  dim3 cluster{
+    static_cast<uint32_t>(cute::get<0>(ClusterShape{})),
+    static_cast<uint32_t>(cute::get<1>(ClusterShape{})),
+    static_cast<uint32_t>(cute::get<2>(ClusterShape{}))
+  };
+
+  cudaLaunchConfig_t launch_config;
+  launch_config.gridDim = grid;
+  launch_config.blockDim = {1, 1, 1};
+  launch_config.dynamicSmemBytes = 0;
+  launch_config.stream = NULL;
+
+  cudaLaunchAttribute launch_attribute[1];
+  launch_attribute[0].id = cudaLaunchAttributeClusterDimension;
+  launch_attribute[0].val.clusterDim.x = cluster.x;
+  launch_attribute[0].val.clusterDim.y = cluster.y;
+  launch_attribute[0].val.clusterDim.z = cluster.z;
+
+  launch_config.attrs = launch_attribute;
+  launch_config.numAttrs = 1;
+
+  void const* kernel = (void const*) run_scheduler<Scheduler, TileShape, ClusterShape>;
+  int* counters_ptr = visit_counters.get();
+  void* kernel_params[] = {
+    &counters_ptr,
+    &params,
+    &tile_shape,
+    &cluster_shape,
+    &problem_shape_mnkl
+  };
+
   // Run the scheduler to completion and log visits to each k iteration
-  run_scheduler<Scheduler, TileShape, ClusterShape><<<grid, 1>>>(
-    visit_counters.get(), params, tile_shape, cluster_shape, problem_shape_mnkl);
+  err = cudaLaunchKernelExC(&launch_config, kernel, kernel_params);
+
+  if (err != cudaSuccess) {
+    std::cerr << __FILE__ << ":" << __LINE__
+              << " cudaLaunchKernelExC failed with error: "
+              << cudaGetErrorString(err) << std::endl;
+    return false;
+  }
+
   err = cudaDeviceSynchronize();
   if (err != cudaSuccess) {
-    std::cerr << __FILE__ << ":" << __LINE__ << " scheduler kernel failed with error: " << cudaGetErrorString(err) << std::endl;
+    std::cerr << __FILE__ << ":" << __LINE__
+              << " scheduler kernel failed with error: "
+              << cudaGetErrorString(err) << std::endl;
     return false;
   }
 
@@ -143,11 +191,11 @@ test_scheduler(
                 << " and grid size " << grid.x << "x"
                 << grid.y << "x" << grid.z
                 << " splits=" << params.splits_
-                << " k_iter=" << params.k_iter_per_tile_
+                << " k_iter=" << params.k_tiles_per_output_tile_
                 << " big_units=" << params.big_units_
                 << " sk_tiles=" << params.sk_tiles_
                 << " sk_units=" << params.sk_units_
-                << " k_iter_per_sk_unit=" << params.k_iter_per_sk_unit_ << std::endl;
+                << " k_tiles_per_sk_unit=" << params.k_tiles_per_sk_unit_ << std::endl;
       std::cout << "Error at idx: " << i << ". Got count " << host_visit_counts[i] << std::endl;
       return false;
     }
@@ -273,5 +321,7 @@ TEST(SM90_Device_Gemm_stream_k_scheduler, 128x128x64_2x1x1) {
 
   EXPECT_TRUE(test_scheduler({128, 512, 2048, 1}, tile_shape, cluster_shape, 114));
 }
+
+#endif // defined(CUTLASS_SM90_CLUSTER_LAUNCH_ENABLED)
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
