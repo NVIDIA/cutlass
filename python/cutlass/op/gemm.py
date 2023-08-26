@@ -114,6 +114,8 @@
         args.sync()
 """
 
+from math import prod
+
 import cutlass_bindings
 
 import cutlass
@@ -442,6 +444,113 @@ class Gemm(OperationBase):
         compiler.add_module([self.operation,])
         return self.operation
 
+    def _verify_rank(self, tensor):
+        """
+        Verifies that ``tensor`` has rank greater than 1
+
+        :param tensor: object representing a tensor passed in to verify, or ``None`` if no tensor was passed in
+        :type tensor: numpy/cupy/torch array/tensor object
+        """
+        if len(tensor.shape) < 2:
+            raise Exception(f"Tensors must be of rank greater than 1. Received tensor of shape: {tensor.shape}")
+
+    def _get_batch_count(self, A, B, C, D) -> int:
+        """
+        Returns the batch count specified by the tensors A, B, C, and D and verifies that these
+        tensors match in batch size. Presence of a batch dimension is detected by one of the
+        tensors being rank 3. If a batch dimension is present, it must be present in one of
+        operands A, B, or C (but need not be in all), and must be present in D.
+
+        :param A: tensor A
+        :type A: numpy/cupy/torch array/tensor object
+        :param B: tensor B
+        :type B: numpy/cupy/torch array/tensor object
+        :param C: tensor C
+        :type C: numpy/cupy/torch array/tensor object
+        :param D: tensor D
+        :type D: numpy/cupy/torch array/tensor object
+
+        :return: tuple of batch count dimensions
+        :rtype: tuple
+        """
+        A_batch = A.shape[:-2] if len(A.shape) > 2 else tuple()
+        B_batch = B.shape[:-2] if len(B.shape) > 2 else tuple()
+        C_batch = C.shape[:-2] if len(C.shape) > 2 else tuple()
+        D_batch = D.shape[:-2] if len(D.shape) > 2 else tuple()
+
+        if len(D_batch) > 0 and D_batch not in [A_batch, B_batch, C_batch]:
+            raise Exception(f"Batch count in D must be present in one of operands A, B, and C. "
+                            f"Batch counts are: A={A_batch}, B={B_batch}, C={C_batch}, D={D_batch}")
+
+        for batch_shape in [A_batch, B_batch, C_batch]:
+            if len(batch_shape) > 0 and batch_shape != D_batch:
+                raise Exception(f"Batch count for all other operands must either match that of D or be zero."
+                                f"Received batch shape of {batch_shape}, which does not match that of D of {D_batch}.")
+
+        return D_batch
+
+    def _get_batch_stride(self, tensor) -> int:
+        """
+        Returns the batch stride of ``tensor``. If ``tensor`` is only rank-2, batch stride is 0.
+
+        :param tensor: tensor object to process
+        :type tensor: numpy/cupy/torch array/tensor object
+
+        :return: stride between each matrix in the batch
+        :rtype: int
+        """
+        if len(tensor.shape) > 2:
+            return tensor.shape[-2] * tensor.shape[-1]
+        else:
+            return 0
+
+    def _get_problem_args(self, A, B, C, D) -> tuple:
+        """
+        Returns the problem size and GEMM universal mode to use for the
+        given operands.
+
+        :param A: tensor A
+        :type A: numpy/cupy/torch array/tensor object
+        :param B: tensor B
+        :type B: numpy/cupy/torch array/tensor object
+        :param C: tensor C
+        :type C: numpy/cupy/torch array/tensor object
+        :param D: tensor D
+        :type D: numpy/cupy/torch array/tensor object
+
+        :return: tuple containing the problem size (cutlass_bindings.gemm.GemmCoord), the GEMM mode (cutlass_bindings.gemm.Mode), and the batch count (int)
+        :rtype: tuple
+        """
+        M, K = A.shape[-2:]
+        N = B.shape[-1]
+        mode = cutlass_bindings.gemm.Mode.Gemm
+
+        batch_count = self._get_batch_count(A, B, C, D)
+        returned_batch_count = prod(batch_count) if len(batch_count) > 0 else 1
+
+        # If we are running a batched GEMM in which there is a nonzero batch stride
+        # only for A, then we can fold the batched dimension of A into the M dimension
+        # (i.e., (b, m, k) x (k, n) -> (m*b, k) x (k, n)). This works only if both A
+        # and C are row major. A similar operation can be performed if only B has a nonzero
+        # batch dimension
+        if len(batch_count) > 0:
+            A_row = self._layout_a == cutlass.LayoutType.RowMajor
+            B_row = self._layout_b == cutlass.LayoutType.RowMajor
+            C_row = self._layout_c == cutlass.LayoutType.RowMajor
+
+            batched = lambda x : len(x.shape) == 2 + len(batch_count)
+
+            if batched(A) and not batched(B) and batched(C) and A_row and C_row:
+                M *= prod(batch_count)
+                returned_batch_count = 1
+            elif not batched(A) and batched(B) and batched(C) and not B_row and not C_row:
+                N *= prod(batch_count)
+                returned_batch_count = 1
+            else:
+                mode = cutlass_bindings.gemm.Mode.Batched
+
+        return cutlass_bindings.gemm.GemmCoord(M, N, K), mode, returned_batch_count
+
     def _verify_type_and_layout(self, tensor, ref_type, ref_layout, name):
         """
         Verifies that ``tensor`` has data type ``ref_type`` and layout ``ref_layout``. An exception
@@ -461,8 +570,7 @@ class Gemm(OperationBase):
                             f'layout of ({ref_type}, {ref_layout}).')
 
     def run(self, A=None, B=None, C=None, D=None,
-            alpha=None, beta=None, batch_count: int = 1,
-            sync: bool = True, print_module: bool = False) -> GemmArguments:
+            alpha=None, beta=None, sync: bool = True, print_module: bool = False) -> GemmArguments:
         """
         Runs the kernel currently specified. If it has not already been, the kernel is emitted and
         compiled. Tensors holding operands and outputs of the kernel are sourced either from the
@@ -481,8 +589,6 @@ class Gemm(OperationBase):
         :param D: tensor representing data type and layout of operand D
         :param alpha: scalar paramter alpha from GEMM computation that scales the product of operands A and B
         :param beta: scalar parameter beta from GEMM operation that scales operand C
-        :param batch_count: number of GEMMs in the batch
-        :type batch_count: int
         :param sync: whether the call should wait for the kernel to complete before returning
         :type sync: bool
         :param print_module: whether to print the emitted C++ code
@@ -491,9 +597,6 @@ class Gemm(OperationBase):
         :return: arguments passed in to the kernel
         :rtype: cutlass.backend.GemmArguments
         """
-        if batch_count < 1:
-            raise Exception(f"Invalid batch count {batch_count}. Value must be an integer >= 1.")
-
         A = self._verify_tensor(A, self.A, self._element_a, self._layout_a, "A")
         B = self._verify_tensor(B, self.B, self._element_b, self._layout_b, "B")
         C = self._verify_tensor(C, self.C, self._element_c, self._layout_c, "C")
@@ -501,20 +604,31 @@ class Gemm(OperationBase):
         alpha = self._verify_scalar(alpha, self.alpha, self._element_c, "alpha")
         beta = self._verify_scalar(beta, self.beta, self._element_c, "beta")
 
+        self._verify_rank(A)
+        self._verify_rank(B)
+        self._verify_rank(C)
+        self._verify_rank(D)
+
         alignment_a = self.possible_operations.find_alignment(A.shape, self._layout_a)
         alignment_b = self.possible_operations.find_alignment(B.shape, self._layout_b)
         alignment_c = self.possible_operations.find_alignment(C.shape, self._layout_c)
         self.compile(self.tile_description, alignment_A=alignment_a, alignment_B=alignment_b,
                      alignment_C=alignment_c, print_module=print_module)
 
-        problem_size = cutlass_bindings.gemm.GemmCoord(A.shape[0], B.shape[1], A.shape[1])
+        problem_size, mode, batch_count = self._get_problem_args(A, B, C, D)
 
-        if batch_count == 1:
-            mode = cutlass_bindings.gemm.Mode.Gemm
+        if mode == cutlass_bindings.gemm.Mode.Gemm or batch_count == 1:
             kwargs = {'split_k_slices': 1}
         else:
-            mode = cutlass_bindings.gemm.Mode.Batched
-            kwargs = {'batch': batch_count}
+            kwargs = {
+                'batch': batch_count,
+                'batch_strides': {
+                    'A': self._get_batch_stride(A),
+                    'B': self._get_batch_stride(B),
+                    'C': self._get_batch_stride(C),
+                    'D': self._get_batch_stride(D)
+                }
+            }
 
         arguments = GemmArguments(
             operation=self.operation, problem_size=problem_size,

@@ -132,9 +132,9 @@ class KernelsForDataType:
         """
         # Determine the leading dimension of the shape
         if layout == cutlass.LayoutType.ColumnMajor:
-            ld = shape[0]
+            ld = shape[-2]
         elif layout == cutlass.LayoutType.RowMajor:
-            ld = shape[1]
+            ld = shape[-1]
         elif layout == cutlass.LayoutType.TensorNHWC:
             ld = shape[-1]
         else:

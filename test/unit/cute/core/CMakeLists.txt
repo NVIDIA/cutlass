@@ -36,6 +36,7 @@ cutlass_test_unit_add_executable(
   compare.cpp
   complement.cpp
   composition.cpp
+  constant_arithmetic.cpp
   core_unit.cpp
   inverse_left.cpp
   inverse_right.cpp

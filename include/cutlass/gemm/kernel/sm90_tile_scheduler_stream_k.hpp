@@ -141,7 +141,7 @@ public:
     uint32_t splits_ = 1;
 
     // Number of tiled k iterations required to compute a single output tile.
-    uint32_t k_iter_per_tile_ = 0;
+    uint32_t k_tiles_per_output_tile_ = 0;
 
     // Number of stream-K or split-K work units that compute an extra k iteration.
     // This is done to handle residuals in dividing up the k iteration space.
@@ -160,7 +160,7 @@ public:
 
     // Number of tiled k iterations computed by each stream-K work unit. This
     // can potentially cover more than one output tile.
-    uint32_t k_iter_per_sk_unit_ = 0;
+    uint32_t k_tiles_per_sk_unit_ = 0;
   };
 
   // Sink scheduler params as a member
@@ -189,9 +189,9 @@ public:
 
     uint64_t output_tiles = problem_blocks_m * problem_blocks_n * problem_blocks_l;
 
-    // Number of k iterations each tile computes (this is just the number of k iterations
-    // in the problem's K dimension)
-    uint32_t k_iter_per_tile = (cute::size<2>(problem_shape_mnkl) + cute::size<2>(tile_shape) - 1) / cute::size<2>(tile_shape);
+    // Number of k tile iterations in each output tile
+    uint32_t k_tiles_per_output_tile = (cute::size<2>(problem_shape_mnkl) + cute::size<2>(tile_shape) - 1) /
+                               cute::size<2>(tile_shape);
 
     UnderlyingArguments underlying_args;
     underlying_args.max_swizzle_size = 1;
@@ -216,11 +216,11 @@ public:
       // splits is almost certainly nonnegative here (e.g., hw_info.sm_count,
       // despite being an int, is a count), so it can safely be converted to unsigned
       // in the comparison to avoid a signed-unsigned comparison warning-as-error.
-      splits = static_cast<decltype(k_iter_per_tile)>(splits) > k_iter_per_tile ? k_iter_per_tile : splits;
+      splits = static_cast<decltype(k_tiles_per_output_tile)>(splits) > k_tiles_per_output_tile ? k_tiles_per_output_tile : splits;
 
       return get_params_basic(
         underlying_params, problem_blocks_m, problem_blocks_n, problem_blocks_l, cluster_shape,
-        splits, k_iter_per_tile, reduction_workspace);
+        splits, k_tiles_per_output_tile, reduction_workspace);
     }
 
     // Calculate the maximum number of blocks from clusters of shape cluster_shape that we
@@ -229,7 +229,7 @@ public:
     uint64_t ctas_per_wave = grid.x * grid.y;
 
     // The number of output tiles to be computed in stream-K and data-parallel fashion, respectively.
-    uint32_t sk_tiles = get_num_sk_tiles(output_tiles, ctas_per_wave);
+    uint32_t sk_tiles = get_num_sk_tiles(output_tiles, ctas_per_wave, k_tiles_per_output_tile);
     uint64_t dp_tiles = output_tiles - sk_tiles;
 
     // Calculate the number of work units covering the data-parallel and stream-K tiles.
@@ -243,7 +243,7 @@ public:
     uint64_t dp_units = dp_tiles;
 
     // Number of k iterations computed by the stream-K units as a whole
-    uint64_t k_iter_sk_total = k_iter_per_tile * sk_tiles;
+    uint64_t k_tiles_sk_total = k_tiles_per_output_tile * sk_tiles;
 
     // If there are stream-K tiles to compute and a sufficiently large number of k iterations
     // across them, they will be covered by a single wave of persistent threadblocks. Thus, there
@@ -255,7 +255,7 @@ public:
 
     // Calculate the number of stream-K units that would be needed if each stream-K unit
     // computed the minimum allowable k iterations. Truncate this to be in units of clusters.
-    uint64_t min_sized_sk_units = (k_iter_sk_total / min_iters_per_sk_unit_);
+    uint64_t min_sized_sk_units = (k_tiles_sk_total / min_iters_per_sk_unit_);
     min_sized_sk_units = (min_sized_sk_units / cute::size(cluster_shape)) * cute::size(cluster_shape);
 
     uint64_t sk_units = min(ctas_per_wave, min_sized_sk_units);
@@ -264,7 +264,7 @@ public:
       // Short circuit to basic data-parallel decomposition
       return get_params_basic(
         underlying_params, problem_blocks_m, problem_blocks_n, problem_blocks_l, cluster_shape,
-        1, k_iter_per_tile, reduction_workspace);
+        1, k_tiles_per_output_tile, reduction_workspace);
     }
 
     // If the number of stream-K units is a multiple of the number of stream-K tiles, then
@@ -274,24 +274,24 @@ public:
       uint32_t sk_splits = static_cast<uint32_t>(sk_units / sk_tiles);
       return get_params_basic(
         underlying_params, problem_blocks_m, problem_blocks_n, problem_blocks_l, cluster_shape,
-        sk_splits, k_iter_per_tile, reduction_workspace);
+        sk_splits, k_tiles_per_output_tile, reduction_workspace);
     }
 
     // Number of k iterations computed per stream-K units
-    uint64_t k_iter_per_sk_unit = k_iter_sk_total / sk_units;
+    uint64_t k_tiles_per_sk_unit = k_tiles_sk_total / sk_units;
 
     // Number of stream-K units that need to compute extra iterations in order to cover
     // the residual k iterations. This assumes that each such unit computes one additional
     // iteration.
-    uint64_t sk_big_units = k_iter_sk_total - (k_iter_per_sk_unit * sk_units);
+    uint64_t sk_big_units = k_tiles_sk_total - (k_tiles_per_sk_unit * sk_units);
 
     // The division below is guaranteed to be exact because sk_big_units is guaranteed
     // to be a multiple of cluster_size (cute::size(cluster_shape)). This is useful because
     // it allows us to use a block's linearized cluster ID  to determine whether it is
     // a big block. The reasoning behind this guarnatee is explained as follows:
-    //     sk_big_units = k_iter_sk_total - (k_iter_per_sk_unit * sk_units);
+    //     sk_big_units = k_tiles_sk_total - (k_tiles_per_sk_unit * sk_units);
     //
-    // - k_iter_sk_total is a multiple of cluster_size because it is the product
+    // - k_tiles_sk_total is a multiple of cluster_size because it is the product
     //   of number of tail tiles and the number of k iterations per tile. Because
     //   both the number of output tiles and number of available SMs are rounded
     //   to be multiples of cluster shape, the number of tail tiles
@@ -313,12 +313,12 @@ public:
       underlying_params.raster_order_,
       cluster_shape,
       1,                                                   // Static k-splitting factor. Unused for stream-K.
-      k_iter_per_tile,
+      k_tiles_per_output_tile,
       static_cast<uint32_t>(sk_big_units_per_cluster),
       reduction_workspace,
       sk_tiles,
       static_cast<uint32_t>(sk_units),
-      static_cast<uint32_t>(k_iter_per_sk_unit)
+      static_cast<uint32_t>(k_tiles_per_sk_unit)
     };
   }
 
@@ -338,105 +338,32 @@ public:
   CUTLASS_DEVICE
   WorkTileInfo
   get_current_work() const {
-    return get_current_work_for_linear_idx(current_work_linear_idx_);
+    return get_current_work_for_linear_idx(current_work_linear_idx_, scheduler_params);
   }
 
   CUTLASS_DEVICE
-  WorkTileInfo
-  get_current_work_for_linear_idx(uint64_t linear_idx) const {
-    if (linear_idx >= scheduler_params.units_per_problem_) {
+  static WorkTileInfo
+  get_current_work_for_linear_idx(uint64_t linear_idx, Params const& params) {
+    if (linear_idx >= params.units_per_problem_) {
       // Invalid work. Return an empty result.
       return {0, 0, 0, 0, false, 0};
     }
 
     // Determine whether this work unit is a data-parallel or stream-K work unit
-    bool is_stream_k_unit = linear_idx < scheduler_params.sk_units_;
+    bool is_stream_k_unit = linear_idx < params.sk_units_;
 
-    bool is_split_k = scheduler_params.splits_ > 1;
+    bool is_split_k = params.splits_ > 1;
 
-    // Bypass the stream-K scheduling logic for basic data-parallel or split-K work
     if (is_split_k || !is_stream_k_unit) {
-      // The linearized ID space is in terms of work units, rather than tiles. However,
-      // to compute the correct block offset for a data-parallel tile, we must convert
-      // the current ID to the data-parallel tile it corresponds to. Each data-parallel
-      // unit maps to a single data-parallel tile, but each stream-K unit can map to more
-      // than one tile. Thus, we must offset the work-unit ID among the data-parallel units
-      // by the total number of output tiles that will be computed by stream-K units.
-      //
-      // The logic below also works for the split-K case, in which sk_units_ and sk_tiles_
-      // are each 0.
-      uint64_t linear_work_idx = linear_idx - scheduler_params.sk_units_ + scheduler_params.sk_tiles_;
-
-      // Map worker's linear index into the CTA-tiled problem shape to the corresponding MNL indices
-      uint64_t work_idx_l, remainder;
-      scheduler_params.divmod_batch_(work_idx_l, remainder, linear_work_idx);
-
-      uint64_t work_idx_k = 0;
-      if (is_split_k) {
-        scheduler_params.divmod_k_(work_idx_k, remainder, remainder);
-      }
-
-      uint64_t cta_per_grid_dim, dontcare;
-      scheduler_params.divmod_cluster_shape_minor_(cta_per_grid_dim, dontcare, remainder);
-
-      auto [work_idx_m, work_idx_n] = UnderlyingScheduler::get_work_idx_m_and_n(
-                                          cta_per_grid_dim,
-                                          scheduler_params.divmod_cluster_shape_major_,
-                                          scheduler_params.divmod_cluster_shape_minor_,
-                                          scheduler_params.divmod_cluster_blk_major_,
-                                          scheduler_params.log_swizzle_size_, 
-                                          scheduler_params.raster_order_);
-      
-      bool is_final_split = (work_idx_k == scheduler_params.splits_ - 1);
-
-      uint32_t k_iter = scheduler_params.k_iter_per_tile_;
-      if (is_split_k) {
-        // Determine the number of iterations and starting iteration of this split.
-        // Doing so requires accounting for residual iterations, which are handled
-        // by the first big_units_ splits (with big_units_ = tiles % sm_count).
-
-        // Offsets for "normal" units. No additional k iterations are performed,
-        // and big_units_ "big" units preceded us, each of which performed one
-        // additional iteration. Thus, we must increase our split starting offset
-        // by big_units_.
-        int additional_k_iter = 0;
-        int split_start_offset = scheduler_params.big_units_;
-
-        if (work_idx_k < scheduler_params.big_units_) {
-          // Offsets for "big" units. One additional k iteration is performed,
-          // and each split preceding us was a big unit, so we must increase
-          // our split starting offset by our split ID (work_idx_k).
-          additional_k_iter = 1;
-          split_start_offset = work_idx_k;
-        }
-
-        // Set up k iteration count and split starting iteration assuming the
-        // iteration space is evenly split.
-        k_iter /= scheduler_params.splits_;
-        work_idx_k *= k_iter;
-
-        // Apply any fixup needed to handle residuals
-        work_idx_k += split_start_offset;
-        k_iter += additional_k_iter;
-      }
-
-      return {
-        work_idx_m,
-        work_idx_n,
-        static_cast<int32_t>(work_idx_k),
-        static_cast<int32_t>(work_idx_l),
-        true,
-        scheduler_params.k_iter_per_tile_,
-        k_iter,
-        k_iter, // remaining iterations
-        is_final_split
-      };
+      // Bypass the stream-K scheduling logic for basic data-parallel or split-K work
+      return set_non_stream_k_work(linear_idx, params, is_split_k);
     }
-
-    // This is a stream-K work unit
-    WorkTileInfo work_tile_info;
-    set_stream_k_work(linear_idx, work_tile_info, /*new_unit = */ true);
-    return work_tile_info;
+    else {
+      // This is a stream-K work unit
+      WorkTileInfo work_tile_info;
+      set_stream_k_work(params, linear_idx, work_tile_info, /*new_unit = */ true);
+      return work_tile_info;
+    }
   }
 
   // Returns whether the current work_tile_info passed in should continue to be used. This
@@ -446,13 +373,24 @@ public:
   CUTLASS_DEVICE
   bool
   continue_current_work(WorkTileInfo& work_tile_info) const {
+    return continue_current_work_for_linear_idx(
+      current_work_linear_idx_, work_tile_info, scheduler_params);
+  }
+
+  CUTLASS_DEVICE static
+  bool
+  continue_current_work_for_linear_idx(
+    uint64_t linear_idx,
+    WorkTileInfo& work_tile_info,
+    Params const& params) {
+
     work_tile_info.k_tile_remaining -= work_tile_info.k_tile_count;
 
     if (work_tile_info.k_tile_remaining == 0) {
       return false;
     }
 
-    set_stream_k_work(current_work_linear_idx_, work_tile_info, /* new_unit = */ false);
+    set_stream_k_work(params, linear_idx, work_tile_info, /* new_unit = */ false);
     return true;
   }
 
@@ -495,6 +433,14 @@ public:
       /*truncate_by_problem_size=*/false);
   }
 
+  // Returns whether fixup is needed for `work_tile_info`.
+  CUTLASS_HOST_DEVICE
+  static bool
+  requires_fixup(Params const& params, WorkTileInfo const& work_tile_info) {
+    // Fixup is not needed for data-parallel tiles
+    return work_tile_info.k_tile_count != params.k_tiles_per_output_tile_;
+  }
+
   // Performs the reduction across splits for a given output tile.
   template <class FrgTensorC>
   CUTLASS_DEVICE
@@ -505,13 +451,25 @@ public:
     FrgTensorC& accumulators,
     uint32_t num_barriers,
     uint32_t barrier_idx) {
+    using BarrierManager = NamedBarrierManager<NumThreadsPerWarpGroup, 2>;
+    return fixup_helper<FrgTensorC, BarrierManager>(
+      params, work_tile_info, accumulators, num_barriers, barrier_idx);
+  }
+
+  // Helper for performing the reduction across splits for a given output tile.
+  template <class FrgTensorC, class BarrierManager>
+  CUTLASS_DEVICE
+  static void
+  fixup_helper(
+    Params const& params,
+    WorkTileInfo const& work_tile_info,
+    FrgTensorC& accumulators,
+    uint32_t num_barriers,
+    uint32_t barrier_idx) {
 
     using ElementAccumulator = typename FrgTensorC::value_type;
 
-    using BarrierManager = NamedBarrierManager<NumThreadsPerWarpGroup, 2>;
-
-    if (work_tile_info.k_tile_count == params.k_iter_per_tile_) {
-      // Fixup is not needed for data-parallel tiles
+    if (!requires_fixup(params, work_tile_info)) {
       return;
     }
 
@@ -619,21 +577,23 @@ public:
       }
     }
     else {
+      auto [cta_m_in_cluster, cta_n_in_cluster, _] = cute::block_id_in_cluster();
+
       uint64_t cta_per_grid_dim;
       uint64_t cluster_dim_idx;
       if (params.raster_order_ == RasterOrder::AlongN) {
-        uint64_t block_idx_m = (work_tile_info.M_idx - blockIdx.x) / gridDim.x;
+        uint64_t block_idx_m = (work_tile_info.M_idx - cta_m_in_cluster) / cute::size<0>(params.cluster_shape_);
         uint64_t block_idx_n = work_tile_info.N_idx;
         cta_per_grid_dim = (params.divmod_cluster_shape_major_.divisor * 
            params.divmod_cluster_blk_major_.divisor * block_idx_m) + block_idx_n;
-        cluster_dim_idx = blockIdx.x;
+        cluster_dim_idx = cta_m_in_cluster;
       }
       else {
         uint64_t block_idx_m = work_tile_info.M_idx;
-        uint64_t block_idx_n = (work_tile_info.N_idx - blockIdx.y) / gridDim.y;
+        uint64_t block_idx_n = (work_tile_info.N_idx - cta_n_in_cluster) / cute::size<1>(params.cluster_shape_);
         cta_per_grid_dim = (params.divmod_cluster_shape_major_.divisor * 
            params.divmod_cluster_blk_major_.divisor * block_idx_n) + block_idx_m;
-        cluster_dim_idx = blockIdx.y;
+        cluster_dim_idx = cta_n_in_cluster;
       }
 
       uint64_t tile_in_batch = params.divmod_cluster_shape_minor_.divisor * cta_per_grid_dim;
@@ -646,7 +606,7 @@ public:
   get_workspace_size(
     Arguments const& args,
     ProblemShape problem_shape,
-     KernelHardwareInfo const& hw_info,
+    KernelHardwareInfo const& hw_info,
     uint32_t mma_warp_groups) {
 
     int barrier_workspace_size = 0;
@@ -715,7 +675,7 @@ private:
 
     // Construct a layout for the indexed tensor. The main purpose of this new layout is to
     // override the k extent to support cases in which the split computes a number of iterations
-    // not equal to total_tile_k_iter / splits. A common example of this is in stream-K is when a
+    // not equal to total_k_tiles / splits. A common example of this is in stream-K is when a
     // unit computes the final 20 of the total 32 k iterations of the output tile. In this case,
     // set splits = 32 and the split index (K_idx) to 11. The zipped divide above results in each
     // of the splits computing only one k iteration.
@@ -728,12 +688,13 @@ private:
   // Returns the number of stream-K tiles that will be computed amongst `output_tiles` total
   // output tiles on a device with `ctas_per_wave` CTAs in each wave.
   static uint32_t
-  get_num_sk_tiles(uint64_t output_tiles, uint64_t ctas_per_wave) {
+  get_num_sk_tiles(uint64_t output_tiles, uint64_t ctas_per_wave, uint32_t k_tiles_per_output_tile) {
     uint32_t full_waves = static_cast<uint32_t>(output_tiles / ctas_per_wave);
     uint32_t total_waves = static_cast<uint32_t>((output_tiles + ctas_per_wave - 1) / ctas_per_wave);
 
-    if (full_waves == total_waves) {
-      // No quantization. All tiles will be data-parallel tiles.
+    if (full_waves == total_waves || k_tiles_per_output_tile == 1) {
+      // All tiles will be data-parallel tiles if there is either no quantization
+      // or if there is no work to be split.
       return 0;
     }
 
@@ -811,9 +772,12 @@ private:
         sm_count = KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
       }
 
+      uint32_t k_tiles_per_output_tile = (cute::size<2>(problem_shape_mnkl) + cute::size<2>(TileShape{}) - 1) /
+                                   cute::size<2>(TileShape{});
+
       dim3 grid = get_grid_shape(problem_shape_mnkl, TileShape{}, cluster_shape, {0, sm_count}, args);
       uint64_t ctas_per_wave = grid.x * grid.y;
-      uint32_t sk_tiles = get_num_sk_tiles(output_tiles, ctas_per_wave);
+      uint32_t sk_tiles = get_num_sk_tiles(output_tiles, ctas_per_wave, k_tiles_per_output_tile);
 
       barrier_workspace_size = get_barrier_workspace_size(sk_tiles, mma_warp_groups);
       reduction_workspace_size = get_reduction_workspace_size<ElementAccumulator>(sk_tiles);
@@ -829,10 +793,10 @@ private:
     uint32_t blocks_l,
     ClusterShape cluster_shape,
     uint32_t splits,
-    uint32_t k_iter_per_tile,
+    uint32_t k_tiles_per_output_tile,
     void* reduction_workspace) {
 
-    uint32_t big_units = k_iter_per_tile % splits;
+    uint32_t big_units = k_tiles_per_output_tile % splits;
 
     return {
       underlying_params.divmod_cluster_shape_major_,
@@ -845,7 +809,7 @@ private:
       underlying_params.raster_order_,
       cluster_shape,
       splits,
-      k_iter_per_tile,
+      k_tiles_per_output_tile,
       big_units,
       reduction_workspace
     };
@@ -855,8 +819,12 @@ private:
   // is populated as a new unit of work. Otherwise, state existing in work_tile_info (e.g., remaining
   // iterations) is used to find the next tile in the current work unit.
   CUTLASS_DEVICE
-  void
-  set_stream_k_work(uint64_t linear_idx, WorkTileInfo& work_tile_info, bool new_unit) const {
+  static void
+  set_stream_k_work(
+    Params const& params,
+    uint64_t linear_idx,
+    WorkTileInfo& work_tile_info,
+    bool new_unit) {
     // In the CUTLASS 2.x implementation of stream K, stream-K work is assigned to each stream-K
     // threadblock individually. For the most part, the set of K iterations corresponding to stream-K
     // work was divided amongst stream-K threadblocks, and a threadblock determined which tile
@@ -872,15 +840,15 @@ private:
     //
     // To do so, we divide up the linearized stream-K units into clusters and share the same K
     // offsets for work within clusters.
-    auto cluster_linear_work_idx = linear_idx / size(scheduler_params.cluster_shape_);
+    auto cluster_linear_work_idx = linear_idx / size(params.cluster_shape_);
 
     // Determine the starting k iteration computed by this stream-K work unit
-    uint32_t unit_iter_start = scheduler_params.k_iter_per_sk_unit_ * cluster_linear_work_idx;
+    uint32_t unit_iter_start = params.k_tiles_per_sk_unit_ * cluster_linear_work_idx;
 
     // Adjust the starting position and number of k iterations for "big units," which
     // compute one extra iteration. These are the first big_units_ units in the
     // linearized ID space.
-    bool is_big_unit = cluster_linear_work_idx < scheduler_params.big_units_;
+    bool is_big_unit = cluster_linear_work_idx < params.big_units_;
     if (is_big_unit) {
       // Since the "big units" are the first units in the linearized ID space, each
       // of the units preceding this big unit computed one extra iteration. Thus,
@@ -889,16 +857,16 @@ private:
       unit_iter_start += cluster_linear_work_idx;
     } else {
       // Increment by one for each of the big clusters (since all big units precede this unit)
-      unit_iter_start += scheduler_params.big_units_;
+      unit_iter_start += params.big_units_;
     }
 
     uint32_t unit_iters;
     if (new_unit) {
-      unit_iters = scheduler_params.k_iter_per_sk_unit_;
+      unit_iters = params.k_tiles_per_sk_unit_;
 
       // Only adjust iteration count for big unit if we are initializing this
       // work unit. For existing work units, the extra iteration for big units
-      // has already been accounted for in k_iter_reamaining
+      // has already been accounted for in k_tiles_reamaining
       if (is_big_unit) {
         ++unit_iters;
       }
@@ -917,22 +885,21 @@ private:
     // for them to be computed later, so as to reduce the likelihood of blocking
     // on other work.
     uint32_t unit_iter_end = unit_iter_start + unit_iters - 1;
-    uint32_t true_tile_id = unit_iter_end / scheduler_params.k_iter_per_tile_;
-    uint32_t true_tile_iter_start = true_tile_id * scheduler_params.k_iter_per_tile_;
-    uint32_t true_tile_iter_end = true_tile_iter_start + scheduler_params.k_iter_per_tile_;
+    uint32_t true_tile_id = unit_iter_end / params.k_tiles_per_output_tile_;
+    uint32_t true_tile_iter_start = true_tile_id * params.k_tiles_per_output_tile_;
+    uint32_t true_tile_iter_end = true_tile_iter_start + params.k_tiles_per_output_tile_;
 
     // Bring the linearized tile ID back into the space of tiles, rather than clusters
-    true_tile_id *= size(scheduler_params.cluster_shape_);
+    true_tile_id *= size(params.cluster_shape_);
 
-    auto cluster_dim0 = cute::size<0>(scheduler_params.cluster_shape_);
-    auto cluster_dim1 = cute::size<1>(scheduler_params.cluster_shape_);
+    auto [cta_m_in_cluster, cta_n_in_cluster, _] = cute::block_id_in_cluster();
 
     // The final linearized tile ID is in units of the cluster dimension over which we rasterize.
-    if (scheduler_params.raster_order_ == RasterOrder::AlongN) {
-      true_tile_id += (blockIdx.y % cluster_dim1) * cluster_dim0;
+    if (params.raster_order_ == RasterOrder::AlongN) {
+      true_tile_id += cta_n_in_cluster * cute::size<0>(params.cluster_shape_);
     }
     else {
-      true_tile_id += (blockIdx.x % cluster_dim0) * cluster_dim1;
+      true_tile_id += cta_m_in_cluster * cute::size<1>(params.cluster_shape_);
     }
 
     // The unit's starting k iteration in the current tile is either the starting
@@ -948,19 +915,18 @@ private:
     uint32_t tile_iters = tile_iter_end - tile_iter_start;
 
     uint64_t work_idx_l, remainder;
-    scheduler_params.divmod_batch_(work_idx_l, remainder, true_tile_id);
+    params.divmod_batch_(work_idx_l, remainder, true_tile_id);
 
     uint64_t cta_per_grid_dim, dontcare;
-    scheduler_params.divmod_cluster_shape_minor_(cta_per_grid_dim, dontcare, remainder);
-
+    params.divmod_cluster_shape_minor_(cta_per_grid_dim, dontcare, remainder);
 
     auto [work_idx_m, work_idx_n] = UnderlyingScheduler::get_work_idx_m_and_n(
                                           cta_per_grid_dim,
-                                          scheduler_params.divmod_cluster_shape_major_,
-                                          scheduler_params.divmod_cluster_shape_minor_,
-                                          scheduler_params.divmod_cluster_blk_major_,
-                                          scheduler_params.log_swizzle_size_, 
-                                          scheduler_params.raster_order_);
+                                          params.divmod_cluster_shape_major_,
+                                          params.divmod_cluster_shape_minor_,
+                                          params.divmod_cluster_blk_major_,
+                                          params.log_swizzle_size_, 
+                                          params.raster_order_);
 
     //
     // Update the work_tile_info
@@ -971,11 +937,11 @@ private:
     work_tile_info.N_idx = work_idx_n;
     work_tile_info.L_idx = static_cast<int32_t>(work_idx_l);
 
-    // Set the k offset to be the starting k iteration for this tile
+    // Set the k offset to be the starting k tile for this output tile
     work_tile_info.K_idx = static_cast<int32_t>(tile_iter_start - true_tile_iter_start);
 
-    // Set the split count to be the number of k iterations in the tile
-    work_tile_info.splits = scheduler_params.k_iter_per_tile_;
+    // Set the split count to be the number of k tiles in the output tile
+    work_tile_info.splits = params.k_tiles_per_output_tile_;
 
     // Any checks for invalid work units should be done prior to this call
     work_tile_info.is_valid_tile = true;
@@ -986,6 +952,89 @@ private:
     // Compute the epilogue if this unit of work contains the ending k iteration for
     // the output tile in question
     work_tile_info.is_final_split = (tile_iter_end == true_tile_iter_end);
+  }
+
+  // Returns a WorkTileInfo to be computed for either the data-parallel or split-K
+  // work unit identified by the provided linear ID.
+  CUTLASS_DEVICE
+  static WorkTileInfo
+  set_non_stream_k_work(uint64_t linear_idx, Params const& params, bool is_split_k) {
+
+    // The linearized ID space is in terms of work units, rather than tiles. However,
+    // to compute the correct block offset for a data-parallel tile, we must convert
+    // the current ID to the data-parallel tile it corresponds to. Each data-parallel
+    // unit maps to a single data-parallel tile, but each stream-K unit can map to more
+    // than one tile. Thus, we must offset the work-unit ID among the data-parallel units
+    // by the total number of output tiles that will be computed by stream-K units.
+    //
+    // The logic below also works for the split-K case, in which sk_units_ and sk_tiles_
+    // are each 0.
+    uint64_t linear_work_idx = linear_idx - params.sk_units_ + params.sk_tiles_;
+
+    // Map worker's linear index into the CTA-tiled problem shape to the corresponding MNL indices
+    uint64_t work_idx_l, remainder;
+    params.divmod_batch_(work_idx_l, remainder, linear_work_idx);
+
+    uint64_t work_idx_k = 0;
+    if (is_split_k) {
+      params.divmod_k_(work_idx_k, remainder, remainder);
+    }
+
+    uint64_t cta_per_grid_dim, dontcare;
+    params.divmod_cluster_shape_minor_(cta_per_grid_dim, dontcare, remainder);
+
+    auto [work_idx_m, work_idx_n] = UnderlyingScheduler::get_work_idx_m_and_n(
+                                        cta_per_grid_dim,
+                                        params.divmod_cluster_shape_major_,
+                                        params.divmod_cluster_shape_minor_,
+                                        params.divmod_cluster_blk_major_,
+                                        params.log_swizzle_size_,
+                                        params.raster_order_);
+
+    bool is_final_split = (work_idx_k == params.splits_ - 1);
+
+    uint32_t k_tiles = params.k_tiles_per_output_tile_;
+    if (is_split_k) {
+      // Determine the number of iterations and starting iteration of this split.
+      // Doing so requires accounting for residual iterations, which are handled
+      // by the first big_units_ splits (with big_units_ = tiles % sm_count).
+
+      // Offsets for "normal" units. No additional k iterations are performed,
+      // and big_units_ "big" units preceded us, each of which performed one
+      // additional iteration. Thus, we must increase our split starting offset
+      // by big_units_.
+      int additional_k_tiles = 0;
+      int split_start_offset = params.big_units_;
+
+      if (work_idx_k < params.big_units_) {
+        // Offsets for "big" units. One additional k iteration is performed,
+        // and each split preceding us was a big unit, so we must increase
+        // our split starting offset by our split ID (work_idx_k).
+        additional_k_tiles = 1;
+        split_start_offset = work_idx_k;
+      }
+
+      // Set up k iteration count and split starting iteration assuming the
+      // iteration space is evenly split.
+      k_tiles /= params.splits_;
+      work_idx_k *= k_tiles;
+
+      // Apply any fixup needed to handle residuals
+      work_idx_k += split_start_offset;
+      k_tiles += additional_k_tiles;
+    }
+
+    return {
+      work_idx_m,
+      work_idx_n,
+      static_cast<int32_t>(work_idx_k),
+      static_cast<int32_t>(work_idx_l),
+      true,
+      params.k_tiles_per_output_tile_,
+      k_tiles,
+      k_tiles, // remaining iterations
+      is_final_split
+    };
   }
 };
 
