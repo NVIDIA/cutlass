@@ -34,6 +34,7 @@
 #include "cutlass/kernel_hardware_info.hpp"
 #include "cute/layout.hpp"
 #include "cute/tensor.hpp"
+#include "cute/arch/cluster_sm90.hpp"
 
 namespace cutlass::gemm::kernel::detail {
 
@@ -205,18 +206,14 @@ public:
 
     uint64_t cluster_id, cluster_major_offset = 0, cluster_minor_offset = 0;
     divmod_cluster_shape_major(cluster_id, cluster_major_offset, blk_per_grid_dim);
-    // MSVC requires protecting use of CUDA-specific nonstandard syntax,
-    // like blockIdx and gridDim, with __CUDA_ARCH__.
-#if defined(__CUDA_ARCH__) 
+
+    auto [cta_m_in_cluster, cta_n_in_cluster, _] = cute::block_id_in_cluster();
     if (raster_order == RasterOrder::AlongN) {
-      cluster_minor_offset = blockIdx.x;
+      cluster_minor_offset = cta_m_in_cluster;
     }
     else {
-      cluster_minor_offset = blockIdx.y;
+      cluster_minor_offset = cta_n_in_cluster;
     }
-#else
-    CUTLASS_ASSERT(false && "This line should never be reached");
-#endif
 
     uint64_t cluster_idx_minor, cluster_idx_major;
     

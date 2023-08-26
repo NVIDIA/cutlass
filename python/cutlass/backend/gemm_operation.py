@@ -215,10 +215,17 @@ class GemmArguments2x(ArgumentBase):
             else:
                 self.batch_count = 1
 
-        self.batched_stride_A = self.problem_size.m() * self.problem_size.k()
-        self.batched_stride_B = self.problem_size.n() * self.problem_size.k()
-        self.batched_stride_C = self.problem_size.m() * self.problem_size.n()
-        self.batched_stride_D = self.problem_size.m() * self.problem_size.n()
+        if "batch_strides" in kwargs:
+            self.batched_stride_A = kwargs["batch_strides"]["A"]
+            self.batched_stride_B = kwargs["batch_strides"]["B"]
+            self.batched_stride_C = kwargs["batch_strides"]["C"]
+            self.batched_stride_D = kwargs["batch_strides"]["D"]
+        else:
+            self.batched_stride_A = self.problem_size.m() * self.problem_size.k()
+            self.batched_stride_B = self.problem_size.n() * self.problem_size.k()
+            self.batched_stride_C = self.problem_size.m() * self.problem_size.n()
+            self.batched_stride_D = self.problem_size.m() * self.problem_size.n()
+
         if self.bias:
             self.batched_stride_C = self.problem_size.n()
 
