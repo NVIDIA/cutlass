@@ -556,7 +556,7 @@ public:
   }
 
   // Returns the linearized index of the output tile corresponding to the tile with offset [L, M, K]
-  CUTLASS_HOST_DEVICE
+  CUTLASS_DEVICE
   static int
   output_tile_index(Params const& params, WorkTileInfo const& work_tile_info) {
     if (params.splits_ > 1) {
