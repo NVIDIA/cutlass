@@ -40,8 +40,8 @@ from cuda import cuda
 from cuda import nvrtc
 
 # CUTLASS imports
-from library import *
-from gemm_operation import EmitGemmUniversalInstance
+from .library import *
+from .gemm_operation import EmitGemmUniversalInstance
 
 #################################################################################################
 #
@@ -55,7 +55,7 @@ def MaxAlignment(fmt):
   for x in fmt:
     align = max(align, struct.calcsize(x))
   return align
-  
+
 #
 def AlignedOffset(offset, align):
   remainder = (offset % align)
@@ -66,7 +66,7 @@ def AlignedOffset(offset, align):
 #
 def PackInteger(host_workspace, offset, value):
   fmt = "i"
-  padding = AlignedOffset(offset, 4)  
+  padding = AlignedOffset(offset, 4)
   struct.pack_into(fmt, host_workspace, offset, value)
   return padding + struct.calcsize(fmt)
 
@@ -76,7 +76,7 @@ def PackDevicePointer(host_workspace, offset, value):
   offset = AlignedOffset(offset, 8)
   struct.pack_into(fmt, host_workspace, offset, value)
   return offset + struct.calcsize(fmt)
-  
+
 #
 def ceil_div(a, b):
   return -(a // -b)
@@ -111,13 +111,13 @@ class GemmCoord:
 
   #
   def pack_into(self, host_workspace, offset):
-    
+
     offset = AlignedOffset(offset, 4)
-  
+
     struct.pack_into(
-      self.fmt, 
-      host_workspace, 
-      offset, 
+      self.fmt,
+      host_workspace,
+      offset,
       self.m, self.n, self.k)
 
     return offset + self.size()
@@ -137,13 +137,13 @@ class TensorRef:
 class PredicatedTileAccessIteratorDesc:
   '''
   '''
-  
+
   def __init__(
-      self, 
-      element_size_bits, 
-      advance_rank, 
-      threadblock_shape, 
-      threadmap_iterations, 
+      self,
+      element_size_bits,
+      advance_rank,
+      threadblock_shape,
+      threadmap_iterations,
       threadmap_delta):
 
     self.element_size_bits = element_size_bits
@@ -192,9 +192,9 @@ class PredicatedTileAccessIteratorParams:
                       self.desc.element_size_bits // 8
 
     struct.pack_into(
-      self.fmt, 
-      host_workspace, 
-      offset, 
+      self.fmt,
+      host_workspace,
+      offset,
       stride, inc_strided, inc_next, inc_advance)
 
     return offset + self.size()
@@ -260,7 +260,7 @@ class EpilogueTileIteratorParams:
     increment_cluster = stride * self.desc.delta.cluster \
       - stride * self.desc.delta.group * (self.desc.iterations.group - 1) \
       - stride * self.desc.delta.row * (self.desc.iterations.row - 1)
-      
+
     advance_row = stride * self.desc.shape.row
 
     advance_group = stride *                   \
@@ -325,7 +325,7 @@ class Functor:
   def emit_definition(self):
     return self.definition
 
-  # 
+  #
   def size(self):
     '''
     Size of the packed Params structure
@@ -336,7 +336,7 @@ class Functor:
   def alignment(self):
     return MaxAlignment(self.fmt)
 
-  # 
+  #
   def initialize(self, host_workspace, offset, arguments):
     return offset + self.size()
 
@@ -365,7 +365,7 @@ class LinearCombinationFunctor(Functor):
     self.identifier = 'linear_combination'
     self.fmt = "ffPP"
 
-  # 
+  #
   def size(self):
     '''
     Size of the packed Params structure
@@ -376,14 +376,14 @@ class LinearCombinationFunctor(Functor):
   def alignment(self):
     return MaxAlignment(self.fmt)
 
-  # 
+  #
   def initialize(self, host_workspace, offset, arguments):
 
     offset = AlignedOffset(offset, self.alignment())
 
     struct.pack_into(
-      self.fmt, 
-      host_workspace, offset, 
+      self.fmt,
+      host_workspace, offset,
       arguments.alpha, arguments.beta, arguments.alpha_ptr, arguments.beta_ptr)
 
     return offset + self.size()
@@ -439,12 +439,12 @@ class ExecutableOperation:
     packed[0] = ctypes.addressof(cArg)
 
     err, = cuda.cuLaunchKernel(
-      self.kernel, 
-      launch_config.grid[0], launch_config.grid[1], launch_config.grid[2], 
-      launch_config.block[0], launch_config.block[1], launch_config.block[2], 
-      launch_config.shared_memory_capacity, 
-      stream, 
-      packed, 
+      self.kernel,
+      launch_config.grid[0], launch_config.grid[1], launch_config.grid[2],
+      launch_config.block[0], launch_config.block[1], launch_config.block[2],
+      launch_config.shared_memory_capacity,
+      stream,
+      packed,
       0)
 
     return err
@@ -472,8 +472,8 @@ class ThreadblockSwizzle:
 
   def grid_tiled_shape(self, problem_size):
     return GemmCoord(
-      ceil_div(problem_size.m, self.threadblock_shape.m), 
-      ceil_div(problem_size.n, self.threadblock_shape.n), 
+      ceil_div(problem_size.m, self.threadblock_shape.m),
+      ceil_div(problem_size.n, self.threadblock_shape.n),
       1)
 
 #
@@ -493,38 +493,38 @@ class Gemm(ExecutableOperation):
 
     self.params_A = PredicatedTileAccessIteratorParams(
         PredicatedTileAccessIteratorDesc(
-          32, 
-          1, 
-          PitchLinearCoord(128, 8), 
-          PitchLinearCoord(1, 4), 
+          32,
+          1,
+          PitchLinearCoord(128, 8),
+          PitchLinearCoord(1, 4),
           PitchLinearCoord(1, 2)), 'A')
 
     self.params_B = PredicatedTileAccessIteratorParams(
         PredicatedTileAccessIteratorDesc(
-          32, 
-          1, 
-          PitchLinearCoord(128, 8), 
-          PitchLinearCoord(1, 4), 
+          32,
+          1,
+          PitchLinearCoord(128, 8),
+          PitchLinearCoord(1, 4),
           PitchLinearCoord(1, 2)), 'B')
 
     self.params_C = EpilogueTileIteratorParams(
       EpilogueThreadMap(
-        256, 
-        1, 
+        256,
+        1,
         32,
-        EpilogueTileDesc(128, 1, 4, 4, 1), 
-        EpilogueTileDesc(4, 1, 2, 1, 1), 
-        EpilogueTileDesc(32, 1, 8, 1, 1), 
+        EpilogueTileDesc(128, 1, 4, 4, 1),
+        EpilogueTileDesc(4, 1, 2, 1, 1),
+        EpilogueTileDesc(32, 1, 8, 1, 1),
         EpilogueTileDesc(1, 4, 2, 1, 8)), 'C')
 
     self.params_D = EpilogueTileIteratorParams(
       EpilogueThreadMap(
-        256, 
+        256,
         1,
         32,
-        EpilogueTileDesc(128, 1, 4, 4, 1), 
-        EpilogueTileDesc(4, 1, 2, 1, 1), 
-        EpilogueTileDesc(32, 1, 8, 1, 1), 
+        EpilogueTileDesc(128, 1, 4, 4, 1),
+        EpilogueTileDesc(4, 1, 2, 1, 1),
+        EpilogueTileDesc(32, 1, 8, 1, 1),
         EpilogueTileDesc(1, 4, 2, 1, 8)), 'D')
 
     self.output_op = LinearCombinationFunctor()
@@ -552,7 +552,7 @@ class Gemm(ExecutableOperation):
 
   #
   def initialize(self, host_workspace, device_workspace, launch_config, arguments, stream = cuda.CUstream(0)):
-    
+
     offset = 0
 
     # Compute intermediate results
@@ -582,14 +582,14 @@ class Gemm(ExecutableOperation):
     offset = PackDevicePointer(host_workspace, offset, int(arguments.A.pointer))
     offset = PackDevicePointer(host_workspace, offset, int(arguments.B.pointer))
     offset = PackDevicePointer(host_workspace, offset, int(arguments.C.pointer))
-    offset = PackDevicePointer(host_workspace, offset, int(arguments.D.pointer))   
+    offset = PackDevicePointer(host_workspace, offset, int(arguments.D.pointer))
 
     return offset
 
 
 #################################################################################################
 #
-# Module represents a compilation unit 
+# Module represents a compilation unit
 #
 #################################################################################################
 
@@ -672,7 +672,7 @@ class Module:
     # Load module
     #
     self.load_()
-    
+
     # Done
     return
 
@@ -705,8 +705,8 @@ class Module:
   def compile_(self, compilation_options):
 
     err, program = nvrtc.nvrtcCreateProgram(
-      str.encode(self.source_buffer), 
-      bytes(str.encode(self.name)), 
+      str.encode(self.source_buffer),
+      bytes(str.encode(self.name)),
       0, [], [])
 
     if err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
@@ -724,26 +724,26 @@ class Module:
       err, logSize = nvrtc.nvrtcGetProgramLogSize(program)
       if err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
           raise RuntimeError('NVRTC Error: {}'.format(err))
-      
+
       self.log = b' ' * logSize
       err, = nvrtc.nvrtcGetProgramLog(program, self.log)
       if err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
           raise RuntimeError('NVRTC Error: {}'.format(err))
-      
+
       raise RuntimeError(error_string + self.log.decode() + self.source_buffer)
 
     # Get data from compilation
     err, dataSize = nvrtc.nvrtcGetCUBINSize(program)
     if err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
         raise RuntimeError('NVRTC Error: {}'.format(err))
-    
+
     self.cubin_image = b' ' * dataSize
     err, = nvrtc.nvrtcGetCUBIN(program, self.cubin_image)
     if err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
         raise RuntimeError('NVRTC Error: {}'.format(err))
 
     return
-    
+
   #
   def load_(self):
 
@@ -751,11 +751,11 @@ class Module:
     err, self.module = cuda.cuModuleLoadData(self.cubin_image)
     if err != cuda.CUresult.CUDA_SUCCESS:
         raise RuntimeError('Cuda Error: {}'.format(err))
-    
+
     # Get functions
     for operation in self.operations:
       err, operation.kernel = cuda.cuModuleGetFunction(
-        self.module, 
+        self.module,
         bytes(str.encode(operation.name())))
 
       if err != cuda.CUresult.CUDA_SUCCESS:
@@ -786,7 +786,7 @@ class Manifest:
     '''
     Appends a module and takes ownership of operations used to construct it.
     '''
-    
+
     self.modules.append(module)
 
     for operation in module.operations:

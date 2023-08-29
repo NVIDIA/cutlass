@@ -9,7 +9,7 @@ import enum
 import os.path
 import shutil
 
-from library import *
+from .library import *
 
 ###################################################################################################
 
@@ -40,7 +40,7 @@ class Conv2dOperation:
       MathOperation.multiply_add_complex_gaussian
       ]
     return self.tile_description.math_instruction.math_operation in complex_operators
-  
+
   #
   def accumulator_type(self):
     accum = self.tile_description.math_instruction.element_accumulator
@@ -96,7 +96,7 @@ class Conv2dOperation:
     ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
 
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
-    
+
     threadblock = self.tile_description.procedural_name()
 
     # grouped conv
@@ -137,13 +137,13 @@ class EmitConv2dInstance:
   def __init__(self):
     self.template = """
   // Conv2d${conv_kind_name} ${iterator_algorithm_name} kernel instance "${operation_name}"
-  using ${operation_name}_base = 
+  using ${operation_name}_base =
   typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}<
-    ${element_a}, 
+    ${element_a},
     ${layout_a},
-    ${element_b}, 
+    ${element_b},
     ${layout_b},
-    ${element_c}, 
+    ${element_c},
     ${layout_c},
     ${element_accumulator},
     ${opcode_class},
@@ -228,7 +228,7 @@ class EmitConv2dInstance:
           1,
           ${threadblock_output_shape_n},
           ${threadblock_output_shape_p},
-          ${threadblock_output_shape_q}>, 
+          ${threadblock_output_shape_q}>,
     ${stages},
     ${math_operator},
     ${iterator_algorithm},
@@ -254,7 +254,7 @@ class EmitConv2dInstance:
       'layout_b': LayoutTag[operation.B.layout],
       'element_c': DataTypeTag[operation.C.element],
       'layout_c': LayoutTag[operation.C.layout],
-      'element_accumulator': DataTypeTag[operation.accumulator_type()], 
+      'element_accumulator': DataTypeTag[operation.accumulator_type()],
       'opcode_class': OpcodeClassTag[operation.tile_description.math_instruction.opcode_class],
       'arch': "cutlass::arch::Sm%d" % operation.arch,
       'threadblock_shape_m': str(operation.tile_description.threadblock_shape[0]),
@@ -289,7 +289,7 @@ class EmitConv2dInstance:
       values['threadblock_output_shape_n'] = str(operation.tile_description.threadblock_output_shape[0])
       values['threadblock_output_shape_p'] = str(operation.tile_description.threadblock_output_shape[1])
       values['threadblock_output_shape_q'] = str(operation.tile_description.threadblock_output_shape[2])
-      
+
       values['groups_per_cta'] = str(operation.tile_description.threadblock_output_shape[3])
 
       values['filter_shape_r'] = str(operation.tile_description.filter_shape[0])
@@ -350,7 +350,7 @@ class EmitConv2dConfigurationLibrary:
 ${operation_instance}
 
 // Derived class
-struct ${operation_name} : 
+struct ${operation_name} :
   public ${operation_name}_base { };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -446,12 +446,12 @@ void initialize_${configuration_name}(Manifest &manifest) {
       if operation.group_mode == GroupMode.Depthwise:
         self.configuration_file.write(SubstituteTemplate(self.configuration_direct_conv_instance, {
           'configuration_name': self.configuration_name,
-          'operation_name': operation.procedural_name()  
+          'operation_name': operation.procedural_name()
         }))
-      else: 
+      else:
         self.configuration_file.write(SubstituteTemplate(self.configuration_instance, {
           'configuration_name': self.configuration_name,
-          'operation_name': operation.procedural_name()  
+          'operation_name': operation.procedural_name()
         }))
 
     self.configuration_file.write(self.configuration_epilogue)

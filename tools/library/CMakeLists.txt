@@ -42,8 +42,8 @@ target_include_directories(
   )
 
 target_link_libraries(
-  cutlass_library_includes 
-  INTERFACE 
+  cutlass_library_includes
+  INTERFACE
   CUTLASS
   cutlass_tools_util_includes
   )
@@ -74,7 +74,7 @@ cutlass_add_library(
   # cutlass reduction instances in cutlass library
   src/reduction/reduction_device.cu
   src/reduction/init_reduction_operations.cu
-  
+
   # cutlass conv reference instances in cutlass library
   src/reference/conv2d.cu
   src/reference/conv3d.cu
@@ -87,17 +87,21 @@ file(GLOB_RECURSE GENERATOR_PYTHON_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOU
 # auto-instantiation of CUTLASS kernels
 #
 
-# set cutlass generator compiler version to filter kernels in the generator not supported by a specific toolkit. 
+# set cutlass generator compiler version to filter kernels in the generator not supported by a specific toolkit.
 set(CUTLASS_GENERATOR_CUDA_COMPILER_VERSION ${CMAKE_CUDA_COMPILER_VERSION})
 set(CUTLASS_LIBRARY_GENERATED_KERNEL_LIST_FILE ${CMAKE_CURRENT_BINARY_DIR}/generated_kernels.txt CACHE STRING "Generated kernel listing file")
+
+# export ${CMAKE_CURRENT_SOURCE_DIR} to PYTHONPATH so that relative import in
+# files under ${CMAKE_CURRENT_SOURCE_DIR}/scripts/ works.
+set(ENV{PYTHONPATH} ${CMAKE_CURRENT_SOURCE_DIR}:$ENV{PYTHONPATH})
 
 # --log-level is set to DEBUG to enable printing information about which kernels were excluded
 # from generation in /tools/library/scripts/manifest.py. To avoid having this information appear
 # in ${CMAKE_CURRENT_BINARY_DIR}/library_instance_generation.log, set this parameter to INFO
 execute_process(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/scripts
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generator.py
-    --operations "${CUTLASS_LIBRARY_OPERATIONS}" 
+  COMMAND ${Python3_EXECUTABLE} -m scripts.generator
+    --operations "${CUTLASS_LIBRARY_OPERATIONS}"
     --build-dir ${PROJECT_BINARY_DIR}
     --curr-build-dir ${CMAKE_CURRENT_BINARY_DIR}
     --generator-target library
@@ -135,8 +139,8 @@ target_include_directories(
   )
 
 target_link_libraries(
-  cutlass_library_objs 
-  PUBLIC 
+  cutlass_library_objs
+  PUBLIC
   cutlass_library_includes
   )
 
@@ -148,7 +152,7 @@ function(cutlass_add_cutlass_library)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   cutlass_add_library(
-    ${__NAME} 
+    ${__NAME}
     ${__TYPE}
     EXPORT_NAME ${__EXPORT_NAME}
     $<TARGET_OBJECTS:cutlass_library_objs>
@@ -156,12 +160,12 @@ function(cutlass_add_cutlass_library)
 
   target_link_libraries(
     ${__NAME}
-    PUBLIC 
+    PUBLIC
     cutlass_library_includes
     )
 
   set_target_properties(${__NAME} PROPERTIES DEBUG_POSTFIX "${CUTLASS_LIBRARY_DEBUG_POSTFIX}")
-  
+
   set(OUTPUT_NAME cutlass)
 
   if (WIN32 AND ${__TYPE} STREQUAL "STATIC")
@@ -186,7 +190,7 @@ install(
   )
 
 install(
-  TARGETS 
+  TARGETS
     cutlass_lib
     cutlass_library_static
     cutlass_library_includes

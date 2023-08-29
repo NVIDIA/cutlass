@@ -3,7 +3,7 @@
 #
 # \brief Generates the CUTLASS Library's instances
 #
-# 
+#
 
 import enum
 import os.path
@@ -11,7 +11,7 @@ import shutil
 import functools
 import operator
 
-from library import *
+from .library import *
 
 
 ###################################################################################################
@@ -40,7 +40,7 @@ class TrmmOperation:
   #
   def is_complex(self):
     complex_operators = [
-      MathOperation.multiply_add_complex, 
+      MathOperation.multiply_add_complex,
       MathOperation.multiply_add_complex_gaussian,
       MathOperation.multiply_add_complex_fast_f32
     ]
@@ -71,7 +71,7 @@ class TrmmOperation:
   #
   def core_name(self):
     ''' The basic operation kind is prefixed with a letter indicating the accumulation type. '''
-    
+
     inst_shape = ''
     inst_operation = ''
     intermediate_type = ''
@@ -123,8 +123,8 @@ class TrmmOperation:
   def layout_name(self):
     if self.is_complex() or self.is_planar_complex():
       return "%s%s" % (
-        ShortComplexLayoutNames[(self.A.layout, self.A.complex_transform)], 
-        ShortComplexLayoutNames[(self.B.layout, self.B.complex_transform)] 
+        ShortComplexLayoutNames[(self.A.layout, self.A.complex_transform)],
+        ShortComplexLayoutNames[(self.B.layout, self.B.complex_transform)]
       )
     return "%s%s" % (ShortLayoutTypeNames[self.A.layout], ShortLayoutTypeNames[self.B.layout])
 
@@ -181,11 +181,11 @@ class EmitTrmmUniversalInstance:
   def __init__(self):
     self.trmm_template = """
 // Trmm operator ${operation_name}
-using Operation_${operation_name} = 
+using Operation_${operation_name} =
   typename cutlass::gemm::device::Trmm<
     ${element_a}, ${layout_a},
-    ${side_mode}, ${fill_mode}, ${diag_type}, 
-    ${element_b}, ${layout_b}, 
+    ${side_mode}, ${fill_mode}, ${diag_type},
+    ${element_b}, ${layout_b},
     ${element_c}, ${layout_c},
     ${element_accumulator},
     ${opcode_class},
@@ -210,11 +210,11 @@ using Operation_${operation_name} =
 """
     self.trmm_complex_template = """
 // Trmm operator ${operation_name}
-using Operation_${operation_name} = 
+using Operation_${operation_name} =
   typename cutlass::gemm::device::Trmm<
-    ${element_a}, ${layout_a}, 
-    ${side_mode}, ${fill_mode}, ${diag_type}, 
-    ${element_b}, ${layout_b}, 
+    ${element_a}, ${layout_a},
+    ${side_mode}, ${fill_mode}, ${diag_type},
+    ${element_b}, ${layout_b},
     ${element_c}, ${layout_c},
     ${element_accumulator},
     ${opcode_class},
@@ -235,7 +235,7 @@ using Operation_${operation_name} =
     ${align_b},
     ${split_k_serial},
     ${math_operation},
-    ${transform_a} 
+    ${transform_a}
 >;
 """
 
@@ -252,7 +252,7 @@ using Operation_${operation_name} =
       'operation_name': operation.procedural_name(),
       'element_a': DataTypeTag[operation.A.element],
       'layout_a': LayoutTag[operation.A.layout],
-      'side_mode' : SideModeTag[operation.A.side_mode], 
+      'side_mode' : SideModeTag[operation.A.side_mode],
       'fill_mode': FillModeTag[operation.A.fill_mode],
       'diag_type' : DiagTypeTag[operation.A.diag_type],
       'element_b': DataTypeTag[operation.B.element],
@@ -278,7 +278,7 @@ using Operation_${operation_name} =
       'stages': str(operation.tile_description.stages),
       'align_a': str(1),  # TRMM A's alignment is always 1 for no padding to work until we make zfill work with variable bytes
       'align_b': str(operation.B.alignment),
-      'split_k_serial': 'false', 
+      'split_k_serial': 'false',
       'math_operation': MathOperationTag[operation.tile_description.math_instruction.math_operation],
       'transform_a': ComplexTransformTag[operation.A.complex_transform]
     }
@@ -385,7 +385,7 @@ void initialize_${configuration_name}(Manifest &manifest) {
       'compile_guard_start': SubstituteTemplate(self.wmma_guard_start, {'sm_number': str(operation.arch)}) \
         if operation.tile_description.math_instruction.opcode_class == OpcodeClass.WmmaTensorOp else "",
       'compile_guard_end': "#endif" \
-        if operation.tile_description.math_instruction.opcode_class == OpcodeClass.WmmaTensorOp else "" 
+        if operation.tile_description.math_instruction.opcode_class == OpcodeClass.WmmaTensorOp else ""
       }))
 
   def __exit__(self, exception_type, exception_value, traceback):
@@ -398,9 +398,9 @@ void initialize_${configuration_name}(Manifest &manifest) {
     self.configuration_file.write(SubstituteTemplate(self.initialize_function_template, {
       'configuration_name': self.configuration_name
       }))
-   
+
     for instance_wrapper in self.instance_wrappers:
-      self.configuration_file.write(instance_wrapper) 
+      self.configuration_file.write(instance_wrapper)
 
     self.configuration_file.write(self.epilogue_template)
     self.configuration_file.close()

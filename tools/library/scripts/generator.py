@@ -10,8 +10,8 @@ import shutil
 import argparse
 import logging
 
-from library import *
-from manifest import *
+from .library import *
+from .manifest import *
 from itertools import product
 
 ###################################################################################################
@@ -4264,7 +4264,7 @@ def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
       DataType.tf32, DataType.tf32, DataType.f32,
       OpcodeClass.TensorOp,
       MathOperation.multiply_add)
-  
+
   min_cc = 90
   max_cc = 90
 
@@ -4289,7 +4289,7 @@ def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
     TileDescription([math_inst.instruction_shape[0]*2, math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
       0, [4, 1, 1], math_inst, min_cc, max_cc, [1,1,1]),
   ]
- 
+
   tile_descriptions_small = [
     TileDescription([math_inst.instruction_shape[0], math_inst.instruction_shape[1], math_inst.instruction_shape[2]*4],
       0, [4, 1, 1], math_inst, min_cc, max_cc, [2,1,1]),
@@ -4341,7 +4341,7 @@ def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
       [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.TmaWarpSpecialized],
       [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.NoSmemWarpSpecialized]
     ])
-    
+
     CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn_nt, tile_descriptions_medium, data_types, [
       [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.TmaWarpSpecialized],
       [KernelScheduleType.TmaWarpSpecializedPingpong, EpilogueScheduleType.NoSmemWarpSpecialized]
@@ -4367,7 +4367,7 @@ def GenerateSM90_TensorOp_tf32_WGMMA_gemm(manifest, cuda_version):
     ])
   else:
     CreateGemmUniversal3xOperator(manifest, layouts_tf32_tn_nn_nt, tile_descriptions, data_types, schedules_default)
-  
+
   CreateGemmUniversal3xOperator(manifest, layouts_tf32_tt, tile_descriptions, data_types, schedules_transposed_epilogue)
 
 #
@@ -4653,7 +4653,7 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
       ]
       stream_k_schedules = []
 
-    
+
     for data_type in data_types:
       # With No-SMEM epilogues
       CreateGemmUniversal3xOperator(manifest, layouts, tile_descriptions, data_type, schedules)

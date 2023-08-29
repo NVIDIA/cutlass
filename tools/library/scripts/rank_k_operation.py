@@ -3,7 +3,7 @@
 #
 # \brief Generates the CUTLASS Library's instances
 #
-# 
+#
 
 import enum
 import os.path
@@ -11,7 +11,7 @@ import shutil
 import functools
 import operator
 
-from library import *
+from .library import *
 
 
 ###################################################################################################
@@ -41,7 +41,7 @@ class RankKOperation:
   #
   def is_complex(self):
     complex_operators = [
-      MathOperation.multiply_add_complex, 
+      MathOperation.multiply_add_complex,
       MathOperation.multiply_add_complex_gaussian,
       MathOperation.multiply_add_complex_fast_f32
     ]
@@ -71,7 +71,7 @@ class RankKOperation:
   #
   def core_name(self):
     ''' The basic operation kind is prefixed with a letter indicating the accumulation type. '''
-    
+
     inst_shape = ''
     inst_operation = ''
     intermediate_type = ''
@@ -125,7 +125,7 @@ class RankKOperation:
   def layout_name(self):
     if self.is_complex() or self.is_planar_complex():
       return "%s" % (
-        ShortComplexLayoutNames[(self.A.layout, self.A.complex_transform)] 
+        ShortComplexLayoutNames[(self.A.layout, self.A.complex_transform)]
       )
     return "%s" % (ShortLayoutTypeNames[self.A.layout])
 
@@ -172,9 +172,9 @@ class EmitRankKUniversalInstance:
   def __init__(self):
     self.rank_k_template = """
 // Rank K operator ${operation_name}
-using Operation_${operation_name} = 
+using Operation_${operation_name} =
   typename cutlass::gemm::device::RankK<
-    ${element_a}, ${layout_a}, 
+    ${element_a}, ${layout_a},
     ${element_c}, ${layout_c}, ${fill_mode},
     ${element_accumulator},
     ${opcode_class},
@@ -197,9 +197,9 @@ using Operation_${operation_name} =
 """
     self.rank_k_complex_template = """
 // Rank K operator ${operation_name}
-using Operation_${operation_name} = 
+using Operation_${operation_name} =
   typename cutlass::gemm::device::RankK<
-    ${element_a}, ${layout_a}, 
+    ${element_a}, ${layout_a},
     ${element_c}, ${layout_c}, ${fill_mode},
     ${element_accumulator},
     ${opcode_class},
@@ -226,7 +226,7 @@ using Operation_${operation_name} =
   def emit(self, operation):
 
     threadblock_shape = operation.tile_description.threadblock_shape
-    
+
     warp_count = operation.tile_description.warp_count
     warp_shape = [threadblock_shape[idx] // warp_count[idx] for idx in range(3)]
 
@@ -257,7 +257,7 @@ using Operation_${operation_name} =
       'swizzling_functor': SwizzlingFunctorTag[operation.swizzling_functor],
       'stages': str(operation.tile_description.stages),
       'align_a': str(operation.A.alignment),
-      'split_k_serial': 'false', 
+      'split_k_serial': 'false',
       'math_operation': MathOperationTag[operation.tile_description.math_instruction.math_operation],
       'transform_a': ComplexTransformTag[operation.A.complex_transform],
       'blas_mode': BlasModeTag[operation.blas_mode]
@@ -365,7 +365,7 @@ void initialize_${configuration_name}(Manifest &manifest) {
       'compile_guard_start': SubstituteTemplate(self.wmma_guard_start, {'sm_number': str(operation.arch)}) \
         if operation.tile_description.math_instruction.opcode_class == OpcodeClass.WmmaTensorOp else "",
       'compile_guard_end': "#endif" \
-        if operation.tile_description.math_instruction.opcode_class == OpcodeClass.WmmaTensorOp else "" 
+        if operation.tile_description.math_instruction.opcode_class == OpcodeClass.WmmaTensorOp else ""
       }))
 
   def __exit__(self, exception_type, exception_value, traceback):
@@ -378,9 +378,9 @@ void initialize_${configuration_name}(Manifest &manifest) {
     self.configuration_file.write(SubstituteTemplate(self.initialize_function_template, {
       'configuration_name': self.configuration_name
       }))
-   
+
     for instance_wrapper in self.instance_wrappers:
-      self.configuration_file.write(instance_wrapper) 
+      self.configuration_file.write(instance_wrapper)
 
     self.configuration_file.write(self.epilogue_template)
     self.configuration_file.close()

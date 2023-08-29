@@ -3,7 +3,7 @@
 #
 # \brief Generates the CUTLASS Library's instances
 #
-# 
+#
 
 import enum
 import os.path
@@ -11,7 +11,7 @@ import shutil
 import functools
 import operator
 
-from library import *
+from .library import *
 
 
 ###################################################################################################
@@ -34,7 +34,7 @@ class SymmOperation:
     self.symm_kind = symm_kind
     # tensor A and B have same data type and layout
     self.A = A
-    self.B = B  
+    self.B = B
     self.C = C
     self.element_epilogue = element_epilogue
     self.epilogue_functor = epilogue_functor
@@ -43,7 +43,7 @@ class SymmOperation:
   #
   def is_complex(self):
     complex_operators = [
-      MathOperation.multiply_add_complex, 
+      MathOperation.multiply_add_complex,
       MathOperation.multiply_add_complex_gaussian,
       MathOperation.multiply_add_complex_fast_f32
     ]
@@ -73,7 +73,7 @@ class SymmOperation:
   #
   def core_name(self):
     ''' The basic operation kind is prefixed with a letter indicating the accumulation type. '''
-    
+
     inst_shape = ''
     inst_operation = ''
     intermediate_type = ''
@@ -127,7 +127,7 @@ class SymmOperation:
   def layout_name(self):
     if self.is_complex() or self.is_planar_complex():
       return "%s" % (
-        ShortComplexLayoutNames[(self.A.layout, self.A.complex_transform)] 
+        ShortComplexLayoutNames[(self.A.layout, self.A.complex_transform)]
       )
     return "%s" % (ShortLayoutTypeNames[self.A.layout])
 
@@ -179,10 +179,10 @@ class EmitSymmUniversalInstance:
   def __init__(self):
     self.symm_template = """
 // Symm operator ${operation_name}
-using Operation_${operation_name} = 
+using Operation_${operation_name} =
   typename cutlass::gemm::device::Symm<
-    ${element_a}, ${layout_a}, ${side_mode}, ${fill_mode}, 
-    ${element_b}, ${layout_b}, 
+    ${element_a}, ${layout_a}, ${side_mode}, ${fill_mode},
+    ${element_b}, ${layout_b},
     ${element_c}, ${layout_c},
     ${element_accumulator},
     ${opcode_class},
@@ -206,10 +206,10 @@ using Operation_${operation_name} =
 """
     self.symm_complex_template = """
 // Symm operator ${operation_name}
-using Operation_${operation_name} = 
+using Operation_${operation_name} =
   typename cutlass::gemm::device::Symm<
-    ${element_a}, ${layout_a}, ${side_mode}, ${fill_mode}, 
-    ${element_b}, ${layout_b}, 
+    ${element_a}, ${layout_a}, ${side_mode}, ${fill_mode},
+    ${element_b}, ${layout_b},
     ${element_c}, ${layout_c},
     ${element_accumulator},
     ${opcode_class},
@@ -236,7 +236,7 @@ using Operation_${operation_name} =
   def emit(self, operation):
 
     threadblock_shape = operation.tile_description.threadblock_shape
-    
+
     warp_count = operation.tile_description.warp_count
     warp_shape = [threadblock_shape[idx] // warp_count[idx] for idx in range(3)]
 
@@ -271,7 +271,7 @@ using Operation_${operation_name} =
       'stages': str(operation.tile_description.stages),
       'align_a': str(operation.A.alignment),
       'align_b': str(operation.B.alignment),
-      'split_k_serial': 'false', 
+      'split_k_serial': 'false',
       'math_operation': MathOperationTag[operation.tile_description.math_instruction.math_operation],
       'blas_mode': BlasModeTag[operation.blas_mode]
     }
@@ -378,7 +378,7 @@ void initialize_${configuration_name}(Manifest &manifest) {
       'compile_guard_start': SubstituteTemplate(self.wmma_guard_start, {'sm_number': str(operation.arch)}) \
         if operation.tile_description.math_instruction.opcode_class == OpcodeClass.WmmaTensorOp else "",
       'compile_guard_end': "#endif" \
-        if operation.tile_description.math_instruction.opcode_class == OpcodeClass.WmmaTensorOp else "" 
+        if operation.tile_description.math_instruction.opcode_class == OpcodeClass.WmmaTensorOp else ""
       }))
 
   def __exit__(self, exception_type, exception_value, traceback):
@@ -391,9 +391,9 @@ void initialize_${configuration_name}(Manifest &manifest) {
     self.configuration_file.write(SubstituteTemplate(self.initialize_function_template, {
       'configuration_name': self.configuration_name
       }))
-   
+
     for instance_wrapper in self.instance_wrappers:
-      self.configuration_file.write(instance_wrapper) 
+      self.configuration_file.write(instance_wrapper)
 
     self.configuration_file.write(self.epilogue_template)
     self.configuration_file.close()

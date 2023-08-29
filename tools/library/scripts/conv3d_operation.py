@@ -9,7 +9,7 @@ import enum
 import os.path
 import shutil
 
-from library import *
+from .library import *
 
 ###################################################################################################
 
@@ -74,7 +74,7 @@ class Conv3dOperation:
     ''' The full procedural name indicates architecture, extended name, tile size, and layout. '''
 
     opcode_class_name = OpcodeClassNames[self.tile_description.math_instruction.opcode_class]
-    
+
     threadblock = "%dx%d_%dx%d" % (
       self.tile_description.threadblock_shape[0],
       self.tile_description.threadblock_shape[1],
@@ -111,13 +111,13 @@ class EmitConv3dInstance:
   def __init__(self):
     self.template = """
   // Conv3d${conv_kind_name} ${iterator_algorithm_name} kernel instance "${operation_name}"
-  using ${operation_name}_base = 
+  using ${operation_name}_base =
   typename cutlass::conv::kernel::DefaultConv3d${conv_kind_name}<
-    ${element_a}, 
+    ${element_a},
     cutlass::layout::TensorNDHWC,
-    ${element_b}, 
+    ${element_b},
     cutlass::layout::TensorNDHWC,
-    ${element_c}, 
+    ${element_c},
     cutlass::layout::TensorNDHWC,
     ${element_accumulator},
     ${opcode_class},
@@ -223,7 +223,7 @@ class EmitConv3dConfigurationLibrary:
 ${operation_instance}
 
 // Derived class
-struct ${operation_name} : 
+struct ${operation_name} :
   public ${operation_name}_base { };
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -308,7 +308,7 @@ void initialize_${configuration_name}(Manifest &manifest) {
     for operation in self.operations:
       self.configuration_file.write(SubstituteTemplate(self.configuration_instance, {
         'configuration_name': self.configuration_name,
-        'operation_name': operation.procedural_name()  
+        'operation_name': operation.procedural_name()
       }))
 
     self.configuration_file.write(self.configuration_epilogue)

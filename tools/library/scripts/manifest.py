@@ -8,14 +8,14 @@ import enum
 import os.path
 import shutil
 
-from library import *
-from gemm_operation import *
-from rank_k_operation import *
-from rank_2k_operation import *
-from trmm_operation import *
-from symm_operation import *
-from conv2d_operation import *
-from conv3d_operation import *
+from .library import *
+from .gemm_operation import *
+from .rank_k_operation import *
+from .rank_2k_operation import *
+from .trmm_operation import *
+from .symm_operation import *
+from .conv2d_operation import *
+from .conv3d_operation import *
 import logging
 
 ###################################################################################################
@@ -241,7 +241,7 @@ class Manifest:
     else:
         self.kernel_filter_list = self.get_kernel_filters(args.kernel_filter_file)
         _LOGGER.info("Using {filter_count} kernel filters from {filter_file}".format(
-            filter_count = len(self.kernel_filter_list), 
+            filter_count = len(self.kernel_filter_list),
             filter_file = args.kernel_filter_file))
 
     self.operation_count = 0

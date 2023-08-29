@@ -11,7 +11,7 @@ import functools
 import operator
 import collections
 
-from library import *
+from .library import *
 
 ###################################################################################################
 #
