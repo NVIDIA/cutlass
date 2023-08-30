@@ -430,7 +430,7 @@ struct SiLu<Array<T, N>> {
 // Reference: https://pytorch.org/docs/stable/generated/torch.nn.Hardswish.html
 template <typename T>
 struct HardSwish {
-  static const bool kIsHeavy=true;
+  static const bool kIsHeavy=false;
   CUTLASS_HOST_DEVICE
   T operator()(T const &x) const {
     minimum<T> mn;
@@ -449,7 +449,7 @@ struct HardSwish {
 
 template <>
 struct HardSwish<float> {
-  static const bool kIsHeavy=true;
+  static const bool kIsHeavy=false;
   using T = float;
 
   CUTLASS_HOST_DEVICE
@@ -470,7 +470,7 @@ struct HardSwish<float> {
 
 template <typename T, int N>
 struct HardSwish<Array<T, N> > {
-  static const bool kIsHeavy=true;
+  static const bool kIsHeavy=false;
   CUTLASS_HOST_DEVICE
   Array<T, N> operator()(Array<T, N> const &value) const {
     Array<T, N> y;
@@ -494,7 +494,7 @@ struct HardSwish<Array<T, N> > {
 
 template <int N>
 struct HardSwish<Array<half_t, N> > {
-  static const bool kIsHeavy=true;
+  static const bool kIsHeavy=false;
   using T = half_t;
 
   CUTLASS_HOST_DEVICE
