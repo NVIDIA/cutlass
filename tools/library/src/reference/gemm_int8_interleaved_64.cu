@@ -29,59 +29,95 @@
  *
  **************************************************************************************************/
 /* \file
-   \brief
-
+   \brief Instantiates GEMM reference implementations.
 */
 
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
 #include "cutlass/library/manifest.h"
 
+#include "gemm_reference_operation.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace library {
 
-// note: init methods for the same op-class may be split into multiple to parallelize compilation
-void initialize_gemm_reference_operations_int4(Manifest &manifest);
-void initialize_gemm_reference_operations_int8_interleaved_32(Manifest &manifest);
-void initialize_gemm_reference_operations_int8_interleaved_64(Manifest &manifest);
-void initialize_gemm_reference_operations_int8_canonical(Manifest &manifest);
-void initialize_gemm_reference_operations_e4m3a_e4m3out(Manifest &manifest);
-void initialize_gemm_reference_operations_e5m2a_e4m3out(Manifest &manifest);
-void initialize_gemm_reference_operations_e4m3a_e5m2out(Manifest &manifest);
-void initialize_gemm_reference_operations_e5m2a_e5m2out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp8in_fp16out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp8in_bf16out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp8in_fp32out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp32out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp_other(Manifest &manifest);
-
-void initialize_conv2d_reference_operations(Manifest &manifest);
-void initialize_conv3d_reference_operations(Manifest &manifest);
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void initialize_reference_operations(Manifest &manifest) {
-  initialize_conv2d_reference_operations(manifest);
-  initialize_conv3d_reference_operations(manifest);
+void initialize_gemm_reference_operations_int8_interleaved_64(Manifest &manifest) {
+  make_gemm_interleaved_layouts<
+    64,
+    int4b_t,
+    int4b_t,
+    int32_t,
+    int32_t,
+    int32_t
+  >(manifest);
 
-  initialize_gemm_reference_operations_int4(manifest);
+  make_gemm_interleaved_layouts<
+    64,
+    int4b_t,
+    int4b_t,
+    int32_t,
+    float,
+    int32_t,
+    int32_t,
+    NumericConverterClamp<int32_t, float>
+  >(manifest);
 
-  initialize_gemm_reference_operations_int8_interleaved_32(manifest);
-  initialize_gemm_reference_operations_int8_interleaved_64(manifest);
-  initialize_gemm_reference_operations_int8_canonical(manifest);
+  make_gemm_interleaved_layouts<
+    64,
+    int4b_t,
+    int4b_t,
+    int4b_t,
+    float,
+    int32_t,
+    int4b_t,
+    NumericConverterClamp<int4b_t, float>
+  >(manifest);
 
-  initialize_gemm_reference_operations_e4m3a_e4m3out(manifest);
-  initialize_gemm_reference_operations_e5m2a_e4m3out(manifest);
-  initialize_gemm_reference_operations_e4m3a_e5m2out(manifest);
-  initialize_gemm_reference_operations_e5m2a_e5m2out(manifest);
-  initialize_gemm_reference_operations_fp8in_fp16out(manifest);
-  initialize_gemm_reference_operations_fp8in_bf16out(manifest);
-  initialize_gemm_reference_operations_fp8in_fp32out(manifest);
+  make_gemm_interleaved_layouts<
+    64,
+    uint4b_t,
+    uint4b_t,
+    int32_t,
+    int32_t,
+    int32_t
+  >(manifest);
 
-  initialize_gemm_reference_operations_fp32out(manifest);
-  initialize_gemm_reference_operations_fp_other(manifest);
+  make_gemm_interleaved_layouts<
+    64,
+    uint4b_t,
+    uint4b_t,
+    int32_t,
+    float,
+    int32_t,
+    int32_t,
+    NumericConverterClamp<int32_t, float>
+  >(manifest);
+
+  make_gemm_interleaved_layouts<
+    64,
+    uint4b_t,
+    uint4b_t,
+    uint4b_t,
+    float,
+    int32_t,
+    uint4b_t,
+    NumericConverterClamp<uint4b_t, float>
+  >(manifest);
+
+  make_gemm_interleaved_layouts<
+    64,
+    uint4b_t,
+    uint4b_t,
+    int4b_t,
+    float,
+    int32_t,
+    int4b_t,
+    NumericConverterClamp<int4b_t, float>
+  >(manifest);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

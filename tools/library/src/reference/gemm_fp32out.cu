@@ -29,59 +29,78 @@
  *
  **************************************************************************************************/
 /* \file
-   \brief
-
+   \brief Instantiates GEMM reference implementations.
 */
 
 #include "cutlass/cutlass.h"
 #include "cutlass/library/library.h"
 #include "cutlass/library/manifest.h"
 
+#include "gemm_reference_operation.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace library {
 
-// note: init methods for the same op-class may be split into multiple to parallelize compilation
-void initialize_gemm_reference_operations_int4(Manifest &manifest);
-void initialize_gemm_reference_operations_int8_interleaved_32(Manifest &manifest);
-void initialize_gemm_reference_operations_int8_interleaved_64(Manifest &manifest);
-void initialize_gemm_reference_operations_int8_canonical(Manifest &manifest);
-void initialize_gemm_reference_operations_e4m3a_e4m3out(Manifest &manifest);
-void initialize_gemm_reference_operations_e5m2a_e4m3out(Manifest &manifest);
-void initialize_gemm_reference_operations_e4m3a_e5m2out(Manifest &manifest);
-void initialize_gemm_reference_operations_e5m2a_e5m2out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp8in_fp16out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp8in_bf16out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp8in_fp32out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp32out(Manifest &manifest);
-void initialize_gemm_reference_operations_fp_other(Manifest &manifest);
-
-void initialize_conv2d_reference_operations(Manifest &manifest);
-void initialize_conv3d_reference_operations(Manifest &manifest);
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void initialize_reference_operations(Manifest &manifest) {
-  initialize_conv2d_reference_operations(manifest);
-  initialize_conv3d_reference_operations(manifest);
+void initialize_gemm_reference_operations_fp32out(Manifest &manifest) {
+  make_gemm_real_canonical_layouts<
+    float,                                // ElementA
+    float,                                // ElementB
+    float,                                // ElementC
+    float,                                // ElementScalar
+    float                                 // ElementAccumulator
+  >(manifest);
 
-  initialize_gemm_reference_operations_int4(manifest);
+  make_gemm_real_canonical_layouts<
+    tfloat32_t,
+    tfloat32_t,
+    float,
+    float,
+    float
+  >(manifest);
 
-  initialize_gemm_reference_operations_int8_interleaved_32(manifest);
-  initialize_gemm_reference_operations_int8_interleaved_64(manifest);
-  initialize_gemm_reference_operations_int8_canonical(manifest);
+  make_gemm_real_canonical_layouts<
+    tfloat32_t,
+    tfloat32_t,
+    tfloat32_t,
+    float,
+    float
+  >(manifest);
+ 
+  make_gemm_real_canonical_layouts<
+    half_t,
+    half_t,
+    float,
+    float,
+    float
+  >(manifest);
 
-  initialize_gemm_reference_operations_e4m3a_e4m3out(manifest);
-  initialize_gemm_reference_operations_e5m2a_e4m3out(manifest);
-  initialize_gemm_reference_operations_e4m3a_e5m2out(manifest);
-  initialize_gemm_reference_operations_e5m2a_e5m2out(manifest);
-  initialize_gemm_reference_operations_fp8in_fp16out(manifest);
-  initialize_gemm_reference_operations_fp8in_bf16out(manifest);
-  initialize_gemm_reference_operations_fp8in_fp32out(manifest);
+  make_gemm_real_canonical_layouts<
+    half_t,
+    half_t,
+    half_t,
+    float,
+    float
+  >(manifest);
 
-  initialize_gemm_reference_operations_fp32out(manifest);
-  initialize_gemm_reference_operations_fp_other(manifest);
+  make_gemm_real_canonical_layouts<
+    bfloat16_t,
+    bfloat16_t,
+    float,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    bfloat16_t,
+    bfloat16_t,
+    bfloat16_t,
+    float,
+    float
+  >(manifest);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
