@@ -4614,14 +4614,14 @@ def GenerateSM90_TensorOp_fp8_WGMMA_gemm(manifest, cuda_version):
     # some schedules disabled to save on library size
     if CudaToolkitVersionSatisfies(cuda_version, 12, 1):
       schedules = [
-        [KernelScheduleType.ScheduleAuto, EpilogueScheduleType.ScheduleAuto],
-        [KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized],
-        # [KernelScheduleType.TmaWarpSpecialized, EpilogueScheduleType.NoSmemWarpSpecialized],
-        [KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized],
+        #[KernelScheduleType.ScheduleAuto,                             EpilogueScheduleType.ScheduleAuto],
+        [KernelScheduleType.TmaWarpSpecializedCooperative,             EpilogueScheduleType.NoSmemWarpSpecialized],
+        [KernelScheduleType.TmaWarpSpecialized,                        EpilogueScheduleType.NoSmemWarpSpecialized],
+        [KernelScheduleType.TmaWarpSpecializedPingpongFP8FastAccum,    EpilogueScheduleType.NoSmemWarpSpecialized],
         [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized],
-        # [KernelScheduleType.TmaWarpSpecializedFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized]
+        [KernelScheduleType.TmaWarpSpecializedFP8FastAccum,            EpilogueScheduleType.NoSmemWarpSpecialized]
       ]
-      stream_k_schedules = [[KernelScheduleType.TmaWarpSpecializedCooperative, EpilogueScheduleType.NoSmemWarpSpecialized],
+      stream_k_schedules = [[KernelScheduleType.TmaWarpSpecializedCooperative,             EpilogueScheduleType.NoSmemWarpSpecialized],
                             [KernelScheduleType.TmaWarpSpecializedCooperativeFP8FastAccum, EpilogueScheduleType.NoSmemWarpSpecialized]]
     else:
       schedules = [
