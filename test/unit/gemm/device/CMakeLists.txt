@@ -342,6 +342,16 @@ cutlass_test_unit_add_executable(
 )
 
 cutlass_test_unit_add_executable(
+  cutlass_test_unit_gemm_device_mixed_input_tensorop_sm80
+
+  BATCH_SOURCES ON
+  BATCH_SIZE 4
+
+  gemm_universal_f16n_u8t_f16t_mixed_input_tensor_op_f16_sm80.cu
+  gemm_universal_f16n_s8t_f16t_mixed_input_tensor_op_f16_sm80.cu
+)
+
+cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_device_tensorop_f64
 
   BATCH_SOURCES ON
