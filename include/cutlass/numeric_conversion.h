@@ -2340,7 +2340,8 @@ struct NumericArrayConverter<uint4b_t, int, N, Round> {
 /// Conversion operator for Array.  See the comments before
 /// FastLinearCombinationClamp.
 template <typename T, typename S, int N,
-          FloatRoundStyle Round = FloatRoundStyle::round_to_nearest>
+          FloatRoundStyle Round = FloatRoundStyle::round_to_nearest,
+          typename Enable = void>
 struct FastNumericArrayConverter {
   using result_type = Array<T, N>;
   using source_type = Array<S, N>;
@@ -2439,6 +2440,97 @@ struct FastNumericArrayConverter<int8_t, float, N, Round> {
 
   CUTLASS_DEVICE
   result_type operator()(source_type const &s) const { return convert(s); }
+};
+
+
+/// Partial specialization for Array<cutlass::half_t, 4> <= Array<int8_t, 4>
+template <FloatRoundStyle Round>
+struct FastNumericArrayConverter<cutlass::half_t, int8_t, 4, Round> {
+  using result_type = Array<cutlass::half_t, 4>;
+  using source_type = Array<int8_t, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+    
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      int16_t tmp = source[i] + 26112 /* 0x6600 */;
+      result[i] = reinterpret_cast<cutlass::half_t const &>(tmp) - 1536.0_hf;
+    }
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+
+/// Partial specialization for Array<cutlass::half_t, 4> <= Array<uint8_t, 4>
+template <FloatRoundStyle Round>
+struct FastNumericArrayConverter<cutlass::half_t, uint8_t, 4, Round> {
+  using result_type = Array<cutlass::half_t, 4>;
+  using source_type = Array<uint8_t, 4>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+    
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < 4; ++i) {
+      uint16_t tmp = source[i] + 26112 /* 0x6600 */;
+      result[i] = reinterpret_cast<cutlass::half_t const &>(tmp) - 1536.0_hf;
+    }
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+
+/// Partial specialization for FastNumericArrayConverter to vectorize over 4 elements.
+/// source `S` as 8b integers (S8 or U8) -> 
+/// destination `T` as 16b floating-point (F16 or BF16)
+/// 
+template <typename T, typename S, int N, FloatRoundStyle Round>
+struct FastNumericArrayConverter<T, S, N, Round,
+    typename std::enable_if<(std::is_same<T, half_t>::value || std::is_same<T, bfloat16_t>::value) && 
+                            (std::is_same<S, int8_t>::value || std::is_same<S, uint8_t>::value)>::type> {
+  static_assert(!(N % 4), "N must be multiple of 4.");
+
+  using result_type = Array<T, N>;
+  using source_type = Array<S, N>;
+  static FloatRoundStyle const round_style = Round;
+
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    FastNumericArrayConverter<T, S, 4, Round> convert_vector_;
+
+    result_type result;
+
+    Array<T, 4> *result_ptr =
+        reinterpret_cast<Array<T, 4> *>(&result);
+    Array<S, 4> const *source_ptr =
+        reinterpret_cast<Array<S, 4> const *>(&source);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N / 4; ++i) {
+      result_ptr[i] = convert_vector_(source_ptr[i]);
+    }
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { return convert(s); }
+  
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
