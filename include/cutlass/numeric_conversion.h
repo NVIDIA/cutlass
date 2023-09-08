@@ -2480,11 +2480,26 @@ struct FastNumericArrayConverter<cutlass::half_t, uint8_t, 4, Round> {
   static result_type convert(source_type const &source) {
     result_type result;
     
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 4; ++i) {
-      uint16_t tmp = source[i] + 26112 /* 0x6600 */;
-      result[i] = reinterpret_cast<cutlass::half_t const &>(tmp) - 1536.0_hf;
-    }
+    uint32_t const* source_ptr = reinterpret_cast<uint32_t const*>(&source);
+    uint32_t* result_ptr = reinterpret_cast<uint32_t*>(&result);
+
+    result_ptr[0] = __byte_perm(source_ptr[0], 0x0, 0x4140);
+    result_ptr[1] = __byte_perm(source_ptr[0], 0x0, 0x4342);
+
+    asm volatile("add.u32 %0, %1, %2;\n" : 
+                     "=r"(result_ptr[0]) : 
+                     "r"(result_ptr[0]), "r"(0x66006600));
+    asm volatile("add.u32 %0, %1, %2;\n" : 
+                     "=r"(result_ptr[1]) : 
+                     "r"(result_ptr[1]), "r"(0x66006600));
+
+    asm volatile("sub.f16x2 %0, %1, %2;\n" : 
+                       "=r"(result_ptr[0]) : 
+                       "r"(result_ptr[0]), "r"(0x66006600));
+    asm volatile("sub.f16x2 %0, %1, %2;\n" : 
+                       "=r"(result_ptr[1]) : 
+                       "r"(result_ptr[1]), "r"(0x66006600));
+
     return result;
   }
 
