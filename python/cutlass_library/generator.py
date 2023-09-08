@@ -119,6 +119,44 @@ def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
   return operations
 
 
+# CreateMixedInputGemmOperator takes different alignments for A and B unlike CreateGemmOperator 
+# which takes the same alignment for A and B
+def CreateMixedInputGemmOperator(manifest, layouts, tile_descriptions, data_type, \
+  alignment_constraints, complex_transforms = None, epilogue_functor = EpilogueFunctor.LinearCombination, \
+  swizzling_functor = DefaultSwizzlingFunctor()):
+
+  if complex_transforms is None:
+    complex_transforms = [(ComplexTransform.none, ComplexTransform.none),]
+
+  element_a, element_b, element_c, element_epilogue = data_type
+
+  operations = []
+
+  # by default, only generate the largest tile and largest alignment
+  if manifest.kernel_filter == '':
+    tile_descriptions = [tile_descriptions[0],]
+
+  alignment_constraint = alignment_constraints[0]
+  alignment_a = alignment_constraint[0]
+  alignment_b = alignment_constraint[1]
+  alignment_c = 8
+
+  for layout in layouts:
+    for tile_description in tile_descriptions:
+      for complex_transform in complex_transforms:
+
+          A = TensorDescription(element_a, layout[0], alignment_a, complex_transform[0])
+          B = TensorDescription(element_b, layout[1], alignment_b, complex_transform[1])
+          C = TensorDescription(element_c, layout[2], alignment_c)
+
+          new_operation = GemmOperation(GemmKind.Universal, tile_description.minimum_compute_capability, \
+            tile_description, A, B, C, element_epilogue, epilogue_functor, swizzling_functor)
+
+          manifest.append(new_operation)
+          operations.append(new_operation)
+
+  return operations
+
 # Generates 3.0 API based GemmUniversal API kernels. Alignment constraints are folded in with layouts
 def CreateGemmUniversal3xOperator(
     manifest, layouts, tile_descriptions, data_types,
@@ -2150,6 +2188,50 @@ def GenerateSM80_PlanarComplexTensorOp_16816(manifest, cuda_version):
       CreateGemmPlanarComplexOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints, complex_transforms)
 
+
+#
+def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 0):
+    return
+
+  layouts = [
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+  ]
+
+  math_instructions = [
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.s8, DataType.f16, DataType.f16,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.u8, DataType.f16, DataType.f16,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input),
+  ]
+
+  min_cc = 80
+  max_cc = 1024
+
+  alignment_constraints = [[16, 8, 8],]
+
+  for math_inst in math_instructions:
+    tile_descriptions = [
+      TileDescription([128, 128, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+    ]
+
+    data_type = [
+      math_inst.element_a,
+      math_inst.element_b,
+      math_inst.element_accumulator,
+      math_inst.element_accumulator,
+    ]
+
+    CreateMixedInputGemmOperator(manifest, layouts, tile_descriptions, \
+      data_type, alignment_constraints)
+    
 #
 def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
 
@@ -4083,6 +4165,7 @@ def GenerateSM80(manifest, cuda_version):
   GenerateSM80_TensorOp_884_symm(manifest, cuda_version)
   GenerateSM80_TensorOp_884_symm_complex(manifest, cuda_version)
   GenerateSM80_TensorOp_884_symm_complex_gaussian(manifest, cuda_version)
+  GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version)
   GenerateSM80_TensorOp_16832_TN(manifest, cuda_version)
   GenerateSM80_SparseTensorOp_16864_TN(manifest, cuda_version)
   GenerateSM80_TensorOp_16832_Interleaved(manifest, cuda_version)
