@@ -174,6 +174,10 @@ template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddSaturate> {
   static MathOperationID const kId = MathOperationID::kMultiplyAddSaturate;
 };
 
+template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddMixedInputUpcast> {
+  static MathOperationID const kId = MathOperationID::kMultiplyAddMixedInputUpcast;
+};
+
 template <> struct MathOperationMap<cutlass::arch::OpMultiplyAddComplex> {
   static MathOperationID const kId = MathOperationID::kMultiplyAddComplex;
 };
