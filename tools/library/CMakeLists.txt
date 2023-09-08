@@ -216,18 +216,18 @@ cutlass_add_cutlass_library(
   src/util.cu
 
   # files split for parallel compilation
-  src/reference/gemm_int4.cu
-  src/reference/gemm_int8_canonical.cu
-  src/reference/gemm_int8_interleaved_32.cu
-  src/reference/gemm_int8_interleaved_64.cu
-  src/reference/gemm_e4m3a_e4m3out.cu
-  src/reference/gemm_e5m2a_e4m3out.cu
-  src/reference/gemm_e4m3a_e5m2out.cu
-  src/reference/gemm_e5m2a_e5m2out.cu
-  src/reference/gemm_fp8in_fp16out.cu
-  src/reference/gemm_fp8in_bf16out.cu
-  src/reference/gemm_fp8in_fp32out.cu
-  src/reference/gemm_fp32out.cu
+  #src/reference/gemm_int4.cu
+  #src/reference/gemm_int8_canonical.cu
+  #src/reference/gemm_int8_interleaved_32.cu
+  #src/reference/gemm_int8_interleaved_64.cu
+  #src/reference/gemm_e4m3a_e4m3out.cu
+  #src/reference/gemm_e5m2a_e4m3out.cu
+  #src/reference/gemm_e4m3a_e5m2out.cu
+  #src/reference/gemm_e5m2a_e5m2out.cu
+  #src/reference/gemm_fp8in_fp16out.cu
+  #src/reference/gemm_fp8in_bf16out.cu
+  #src/reference/gemm_fp8in_fp32out.cu
+  #src/reference/gemm_fp32out.cu
   src/reference/gemm_fp_other.cu
   src/reference/initialize_reference_operations.cu
 
