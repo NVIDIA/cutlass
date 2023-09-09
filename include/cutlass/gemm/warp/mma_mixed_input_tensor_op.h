@@ -55,7 +55,6 @@
 #include "cutlass/gemm/warp/mma_tensor_op_tile_iterator.h"
 #include "cutlass/gemm/warp/mma_tensor_op_tile_iterator_sm80.h"
 
-#define DEBUG_PRINTS 0
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -66,7 +65,9 @@ namespace warp {
 
 namespace detail {
 
-/// Shuffles the warp fragment registers to obtain the mma.sync operand layout
+////////////////////////////////////////////////////////////////////////////////
+// Shuffle registers for layout conversion
+////////////////////////////////////////////////////////////////////////////////
 template <
   /// Element type for the operand in registers for the mma.sync
   typename ElementMma_, 
@@ -101,6 +102,8 @@ struct FragmentShuffler {
 
 /// Partial specialization for `mma.sync` on 16b (F16/BF16) and `ldmatrix` on 8b (S8/U8)
 template <
+  /// Element type for the operand in registers for the mma.sync
+  typename ElementMma_, 
   /// Element type for the operand in shared memory for ldmatrix
   typename ElementLoad_,
   /// Number of mma.sync operations performed along rows or columns         
@@ -110,14 +113,14 @@ template <
   /// Number of elements in mma fragment
   int NumElementsInMmaFragment
 > 
-struct FragmentShuffler <cutlass::half_t, ElementLoad_,
-                             NumMmaInstructions, 
-                             NumElementsInWarpFragment, 
-                             NumElementsInMmaFragment,
-                             typename std::enable_if<std::is_same<ElementLoad_, int8_t>::value ||
-                                                     std::is_same<ElementLoad_, uint8_t>::value>::type> {
+struct FragmentShuffler <ElementMma_, ElementLoad_,
+                         NumMmaInstructions, 
+                         NumElementsInWarpFragment, 
+                         NumElementsInMmaFragment,
+                         typename std::enable_if<(sizeof_bits<ElementMma_>::value == 16) &&
+                                                 (sizeof_bits<ElementLoad_>::value == 8)>::type> {
 public:
-  using ElementMma = cutlass::half_t;
+  using ElementMma = ElementMma_;
   using ElementLoad = ElementLoad_;
 
   static int const kNumMmaInstructions = NumMmaInstructions;
@@ -169,16 +172,34 @@ public:
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+// Data type conversion
+////////////////////////////////////////////////////////////////////////////////
 template <
   /// Destination type
-  typename ElementDst, 
+  typename ElementDst_, 
   /// Source type
-  typename ElementSrc,
+  typename ElementSrc_,
   /// Number of elements
   int N,
   ///
   typename Enable = void> 
-struct FragmentConverter;
+struct FragmentConverter {
+  
+  using ElementDst = ElementDst_;
+  using ElementSrc = ElementSrc_;
+
+  // Operand fragment registers in destination and source types
+  using DestinationFragment = Array<ElementDst, N>;
+  using SourceFragment = Array<ElementSrc, N>;
+
+  FastNumericArrayConverter<ElementDst, ElementSrc, N> convert;
+  // NumericArrayConverter<ElementDst, ElementSrc, N> convert;
+
+  CUTLASS_DEVICE
+  DestinationFragment operator()(SourceFragment const &src) const {
+    return convert(src);
+  }
+};
 ////////////////////////////////////////////////////////////////////////////////
 
 // Partial specialization for when Destination type is the *same* as 
@@ -201,35 +222,7 @@ struct FragmentConverter<Element, Element, N, Enable> {
   }
 };
 
-
-/// Partial specialization for when Destination type is `half_t` and Source type
-/// is `int8_t` (half_t <= int8_t)
-template <
-  /// Source type
-  typename ElementSrc_,
-  /// Number of elements
-  int N
-  > struct FragmentConverter <cutlass::half_t, ElementSrc_, N, 
-                                typename std::enable_if<std::is_same<ElementSrc_, int8_t>::value ||
-                                                        std::is_same<ElementSrc_, uint8_t>::value>::type> {
-
-  using ElementDst = cutlass::half_t;
-  using ElementSrc = ElementSrc_;
-
-  // Operand fragment registers in destination and source types
-  using DestinationFragment = Array<ElementDst, N>;
-  using SourceFragment = Array<ElementSrc, N>;
-
-  FastNumericArrayConverter<ElementDst, ElementSrc, N> convert;
-
-  CUTLASS_DEVICE
-  DestinationFragment operator()(SourceFragment const &src) const {
-    return convert(src);
-  }
-};
-
-
-}
+} // namespace detail
 
 /// Structure to compute the matrix product targeting CUDA cores and SIMT math instructions.
 template <

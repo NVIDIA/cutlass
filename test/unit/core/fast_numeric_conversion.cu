@@ -103,7 +103,7 @@ void run_test_integer_range_all() {
 
   for (int i = 0; i < kN; ++i) {
     source.host_data()[i] = Source(kIntSourceMin + (i % kIntRange));
-    // printf("%d\n", int(source.host_data()[i]));
+
   }
 
   source.sync_device();
@@ -114,10 +114,25 @@ void run_test_integer_range_all() {
   );
 
   destination.sync_host();
-
+  
+  // Verify conversion
+  bool passed = true;
   for (int i = 0; i < kN; ++i) {
-    EXPECT_TRUE(float(destination.host_data()[i]) == float(source.host_data()[i]));
+    if(!(float(destination.host_data()[i]) == float(source.host_data()[i]))) {
+      passed = false;
+      break;
+    }
   }
+  EXPECT_TRUE(passed) << " FastNumericArrayConverter failed";
+   
+   // Print out results for the failed conversion.
+   if (!passed) {
+    for (int i = 0; i < kN; ++i) {
+        std::cout << "source(" << float(source.host_data()[i]) << ") -> "
+                  << "destination ("<< float(destination.host_data()[i]) << ")" << std::endl;
+    }
+   }
+   std::flush(std::cout);
 }
 
 } // namespace kernel
@@ -143,5 +158,12 @@ TEST(FastNumericConversion, u8_to_f16_array) {
   int const kN = 256;
   using Source = uint8_t;
   using Destination = cutlass::half_t;
+  test::core::kernel::run_test_integer_range_all<Destination, Source, kN>();
+}
+
+TEST(FastNumericConversion, u8_to_bf16_array) {
+  int const kN = 256;
+  using Source = uint8_t;
+  using Destination = cutlass::bfloat16_t;
   test::core::kernel::run_test_integer_range_all<Destination, Source, kN>();
 }
