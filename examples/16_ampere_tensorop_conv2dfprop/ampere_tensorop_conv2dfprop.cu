@@ -53,7 +53,7 @@ can be used to form warp tiles (the tile shape each warp computes),
 and multiple warp tiles can be used to compute threadblock tiles
 (the tile shape computed by a threadblock).
 
-In thie example, we split variable initialization into two parts.
+In this example, we split variable initialization into two parts.
 
 1. Setting up data properties: describes how tensors are laid out in the memory
    and how the kernel can view them (logical to physical mapping)
