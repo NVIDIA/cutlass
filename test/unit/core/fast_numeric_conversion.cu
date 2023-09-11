@@ -167,3 +167,10 @@ TEST(FastNumericConversion, u8_to_bf16_array) {
   using Destination = cutlass::bfloat16_t;
   test::core::kernel::run_test_integer_range_all<Destination, Source, kN>();
 }
+
+TEST(FastNumericConversion, s8_to_bf16_array) {
+  int const kN = 256;
+  using Source = int8_t;
+  using Destination = cutlass::bfloat16_t;
+  test::core::kernel::run_test_integer_range_all<Destination, Source, kN>();
+}

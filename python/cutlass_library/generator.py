@@ -2215,6 +2215,11 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
       DataType.u8, DataType.bf16, DataType.f32,       \
       OpcodeClass.TensorOp,                           \
       MathOperation.multiply_add_mixed_input),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.s8, DataType.bf16, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input),
   ]
 
   min_cc = 80

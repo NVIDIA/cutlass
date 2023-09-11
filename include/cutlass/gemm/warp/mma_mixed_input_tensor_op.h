@@ -193,7 +193,6 @@ struct FragmentConverter {
   using SourceFragment = Array<ElementSrc, N>;
 
   FastNumericArrayConverter<ElementDst, ElementSrc, N> convert;
-  // NumericArrayConverter<ElementDst, ElementSrc, N> convert;
 
   CUTLASS_DEVICE
   DestinationFragment operator()(SourceFragment const &src) const {
