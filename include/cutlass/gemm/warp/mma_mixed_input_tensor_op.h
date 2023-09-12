@@ -79,6 +79,8 @@ template <
   int NumElementsInWarpFragment,
   /// Number of elements in mma fragment
   int NumElementsInMmaFragment,
+  /// Identifies A or B multiplicand
+  Operand Operand_,
   ///
   typename Enable = void >
 struct FragmentShuffler {
@@ -89,6 +91,7 @@ struct FragmentShuffler {
   static int const kNumMmaInstructions = NumMmaInstructions;
   static int const kNumElementsInWarpFragment = NumElementsInWarpFragment;
   static int const kNumElementsInMmaFragment = NumElementsInMmaFragment;
+  static Operand const kOperand = Operand_;
 
   using WarpFragment = Array<ElementMma, kNumElementsInWarpFragment>;
   using MmaFragment = Array<ElementMma, kNumElementsInMmaFragment>;
@@ -101,6 +104,7 @@ struct FragmentShuffler {
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Partial specialization for `mma.sync` on 16b (F16/BF16) and `ldmatrix` on 8b (S8/U8)
+/// for operand A multiplicand going through upcasting. 
 template <
   /// Element type for the operand in registers for the mma.sync
   typename ElementMma_, 
@@ -117,6 +121,7 @@ struct FragmentShuffler <ElementMma_, ElementLoad_,
                          NumMmaInstructions, 
                          NumElementsInWarpFragment, 
                          NumElementsInMmaFragment,
+                         Operand::kA,
                          typename std::enable_if<(sizeof_bits<ElementMma_>::value == 16) &&
                                                  (sizeof_bits<ElementLoad_>::value == 8)>::type> {
 public:
@@ -126,6 +131,93 @@ public:
   static int const kNumMmaInstructions = NumMmaInstructions;
   static int const kNumElementsInWarpFragment = NumElementsInWarpFragment;
   static int const kNumElementsInMmaFragment = NumElementsInMmaFragment;
+  static Operand const kOperand = Operand::kA;
+  
+  using WarpFragment = Array<ElementMma, kNumElementsInWarpFragment>;
+  using MmaFragment = Array<ElementMma, kNumElementsInMmaFragment>;
+
+private:
+  int delta_up_;
+  int delta_down_;
+  int odd_even_lane_id_;
+
+public:
+  CUTLASS_DEVICE
+  FragmentShuffler() {
+    int lane_id = cutlass::arch::LaneId();
+    delta_up_ = (lane_id & 1) + ((lane_id & 2) >> 1);
+    delta_down_ = 2 - delta_up_;
+    odd_even_lane_id_ = static_cast<int>(lane_id & 1);
+  }
+
+  CUTLASS_DEVICE
+  void operator()(WarpFragment &dst, WarpFragment &src) {
+
+    MmaFragment *ptr_mma_frag_src = reinterpret_cast<MmaFragment *>(&src);
+    MmaFragment *ptr_mma_frag_dst = reinterpret_cast<MmaFragment *>(&dst);
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int n = 0; n < kNumMmaInstructions; n++) {
+
+        uint32_t *ptr_src = reinterpret_cast<uint32_t *>(&ptr_mma_frag_src[n]);
+        uint32_t *ptr_dst = reinterpret_cast<uint32_t *>(&ptr_mma_frag_dst[n]);
+
+        uint32_t even_thread_r0 = __shfl_up_sync(0xFFFFFFFF, ptr_src[0], delta_up_);
+        uint32_t odd_thread_r0 = __shfl_up_sync(0xFFFFFFFF, ptr_src[1], delta_up_);
+
+        uint32_t even_thread_r1 = __shfl_up_sync(0xFFFFFFFF, ptr_src[2], delta_up_);
+        uint32_t odd_thread_r1 = __shfl_up_sync(0xFFFFFFFF, ptr_src[3], delta_up_);
+
+        uint32_t even_thread_r2 = __shfl_down_sync(0xFFFFFFFF, ptr_src[0], delta_down_);
+        uint32_t odd_thread_r2 = __shfl_down_sync(0xFFFFFFFF, ptr_src[1], delta_down_);
+        
+        uint32_t even_thread_r3 = __shfl_down_sync(0xFFFFFFFF, ptr_src[2], delta_down_);
+        uint32_t odd_thread_r3 = __shfl_down_sync(0xFFFFFFFF, ptr_src[3], delta_down_);
+        
+        ptr_dst[0] = odd_even_lane_id_ * odd_thread_r0 +
+                  (1 - odd_even_lane_id_) * even_thread_r0;
+        ptr_dst[1] = odd_even_lane_id_ * odd_thread_r1 +
+                  (1 - odd_even_lane_id_) * even_thread_r1;
+        ptr_dst[2] = odd_even_lane_id_ * odd_thread_r2 +
+                  (1 - odd_even_lane_id_) * even_thread_r2;
+        ptr_dst[3] = odd_even_lane_id_ * odd_thread_r3 +
+                  (1 - odd_even_lane_id_) * even_thread_r3;
+
+    }
+  }
+
+};
+////////////////////////////////////////////////////////////////////////////////
+
+/// Partial specialization for `mma.sync` on 16b (F16/BF16) and `ldmatrix` on 8b (S8/U8)
+/// for operand B multiplicand going through upcasting. 
+template <
+  /// Element type for the operand in registers for the mma.sync
+  typename ElementMma_, 
+  /// Element type for the operand in shared memory for ldmatrix
+  typename ElementLoad_,
+  /// Number of mma.sync operations performed along rows or columns         
+  int NumMmaInstructions,
+  /// Number of elements in warp fragment
+  int NumElementsInWarpFragment,
+  /// Number of elements in mma fragment
+  int NumElementsInMmaFragment
+> 
+struct FragmentShuffler <ElementMma_, ElementLoad_,
+                         NumMmaInstructions, 
+                         NumElementsInWarpFragment, 
+                         NumElementsInMmaFragment,
+                         Operand::kB,
+                         typename std::enable_if<(sizeof_bits<ElementMma_>::value == 16) &&
+                                                 (sizeof_bits<ElementLoad_>::value == 8)>::type> {
+public:
+  using ElementMma = ElementMma_;
+  using ElementLoad = ElementLoad_;
+
+  static int const kNumMmaInstructions = NumMmaInstructions;
+  static int const kNumElementsInWarpFragment = NumElementsInWarpFragment;
+  static int const kNumElementsInMmaFragment = NumElementsInMmaFragment;
+  static Operand const kOperand = Operand::kB;
 
   using WarpFragment = Array<ElementMma, kNumElementsInWarpFragment>;
   using MmaFragment = Array<ElementMma, kNumElementsInMmaFragment>;
@@ -433,7 +525,7 @@ public:
 
     // Shuffle data within warp to obtain the mma.sync operand layout
     detail::FragmentShuffler<MmaElementA, ElementA, MmaIterations::kRow, 
-             FragmentA::kElements, MmaOperandA::kElements> shuffler_A;
+             FragmentA::kElements, MmaOperandA::kElements, Operand::kA> shuffler_A;
 
     // Shuffle the A operand, inplace, to the Mma Instruction operand layout
     shuffler_A(dst_A, dst_A);
@@ -444,7 +536,7 @@ public:
 
     // Shuffle data within warp to obtain the mma.sync operand layout
     detail::FragmentShuffler<MmaElementB, ElementB, MmaIterations::kColumn, 
-             FragmentB::kElements, MmaOperandB::kElements> shuffler_B;
+             FragmentB::kElements, MmaOperandB::kElements, Operand::kB> shuffler_B;
 
     // Shuffle the B operand, inplace, to the Mma Instruction operand layout 
     shuffler_B(dst_B, dst_B);
