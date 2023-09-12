@@ -126,7 +126,7 @@ struct integer_subbyte {
         return !(rhs.storage < storage);
       }
     }
-    return storage < rhs.storage;
+    return storage <= rhs.storage;
   }
 
   /// Less than
