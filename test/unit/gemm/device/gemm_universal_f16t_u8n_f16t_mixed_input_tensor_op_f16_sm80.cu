@@ -83,7 +83,7 @@ TEST(SM80_Device_GemmUniversal_f16t_u8t_f16t_mixed_input_tensor_op_f16, 128x128x
     4,  // Stages
     8,  // AlignmentA
     16, // AlignmentB
-    cutlass::arch::OpMultiplyAddMixedInput,
+    cutlass::arch::OpMultiplyAddMixedInputUpcast,
     cutlass::ComplexTransform::kNone,
     cutlass::ComplexTransform::kNone
   >;

@@ -289,7 +289,7 @@ class ComplexMultiplyOp(enum.Enum):
 class MathOperation(enum.Enum):
   multiply_add = enum_auto()
   multiply_add_saturate = enum_auto()
-  multiply_add_mixed_input = enum_auto()
+  multiply_add_mixed_input_upcast = enum_auto()
   xor_popc = enum_auto()
   and_popc = enum_auto()
   multiply_add_fast_bf16 = enum_auto()
@@ -303,7 +303,7 @@ class MathOperation(enum.Enum):
 MathOperationTag = {
   MathOperation.multiply_add: 'cutlass::arch::OpMultiplyAdd', 
   MathOperation.multiply_add_saturate: 'cutlass::arch::OpMultiplyAddSaturate',
-  MathOperation.multiply_add_mixed_input: 'cutlass::arch::OpMultiplyAddMixedInput',
+  MathOperation.multiply_add_mixed_input_upcast: 'cutlass::arch::OpMultiplyAddMixedInputUpcast',
   MathOperation.xor_popc: 'cutlass::arch::OpXorPopc',
   MathOperation.and_popc: 'cutlass::arch::OpAndPopc',
   MathOperation.multiply_add_fast_bf16: 'cutlass::arch::OpMultiplyAddFastBF16',

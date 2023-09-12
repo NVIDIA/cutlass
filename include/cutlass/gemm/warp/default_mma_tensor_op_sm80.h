@@ -252,20 +252,20 @@ template <
     bool AccumulatorsInRowMajor>
 struct DefaultMmaTensorOp<
   WarpShape_, 
-  GemmShape<16, 8, 16>,           // InstructionShape
-  ElementA,                       // Element type of A matrix in Global Memory
-  LayoutA,                        // Layout of A matrix in Global Memory 
-  ElementB,                       // Element type of B matrix in Global Memory
-  LayoutB,                        // Layout of B matrix in Global Memory
-  ElementC,                       // Element type of C matrix in Global Memory
-  LayoutC,                        // Layout of C matrix in Global Memory
-  arch::OpMultiplyAddMixedInput,  // Tag to indicate mixed-input datatype
+  GemmShape<16, 8, 16>,                 // InstructionShape
+  ElementA,                             // Element type of A matrix in Global Memory
+  LayoutA,                              // Layout of A matrix in Global Memory 
+  ElementB,                             // Element type of B matrix in Global Memory
+  LayoutB,                              // Layout of B matrix in Global Memory
+  ElementC,                             // Element type of C matrix in Global Memory
+  LayoutC,                              // Layout of C matrix in Global Memory
+  arch::OpMultiplyAddMixedInputUpcast,  // Tag to indicate mixed-input datatype, where narrower datatype is upcasted to wider datatype
   PartitionsK, AccumulatorsInRowMajor> {
 
 
   // Check if the ElementA and ElementB are of different data types
   static_assert(!std::is_same<ElementA, ElementB>::value, 
-    "DefaultMmaTensorOp with arch::OpMultiplyAddMixedInput ElementA and ElementB cannot be of the same data type");
+    "DefaultMmaTensorOp with arch::OpMultiplyAddMixedInputUpcast ElementA and ElementB cannot be of the same data type");
 
   // Data type used for internal computation - use the wider of the two data types for mma.sync operands
   using ElementOperand = typename std::conditional<(sizeof(ElementA) > sizeof(ElementB)), 

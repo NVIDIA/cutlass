@@ -68,7 +68,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_f16_i8, 128x128x64_64x64x64_
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 64> >()
@@ -89,7 +89,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_f16_i8, 64x64x64_64x64x64_16
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 64, 64> >()
@@ -112,7 +112,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_i8_f16, 128x128x64_64x64x64_
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 64> >()
@@ -133,7 +133,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_i8_f16, 64x64x64_64x64x64_16
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 64, 64> >()
@@ -157,7 +157,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_f16_u8, 64x64x64_64x64x64_16
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 64, 64> >()
@@ -177,7 +177,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_f16_u8, 128x128x64_64x64x64_
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 64> >()
@@ -200,7 +200,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_u8_f16, 64x64x64_64x64x64_16
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 64, 64> >()
@@ -220,7 +220,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_u8_f16, 128x128x64_64x64x64_
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<128, 128, 64> >()
@@ -243,7 +243,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_bf16_u8, 64x64x64_64x64x64_1
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 64, 64> >()
@@ -266,7 +266,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_u8_bf16, 64x64x64_64x64x64_1
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 64, 64> >()
@@ -289,7 +289,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_bf16_i8, 64x64x64_64x64x64_1
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 64, 64> >()
@@ -312,7 +312,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_i8_bf16, 64x64x64_64x64x64_1
 
   using MmaTensorOp = typename cutlass::gemm::warp::DefaultMmaTensorOp<
       Shape, InstructionShape, ElementA, LayoutA, ElementB, LayoutB, ElementC,
-      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInput>::Type;
+      cutlass::layout::RowMajor, cutlass::arch::OpMultiplyAddMixedInputUpcast>::Type;
 
   test::gemm::warp::TransformTestbed<MmaTensorOp,
                             cutlass::gemm::GemmShape<64, 64, 64> >()
