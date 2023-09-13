@@ -2199,7 +2199,13 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
     (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
   ]
 
+  # Upcast on Operand A
   math_instructions = [
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.s8, DataType.f16, DataType.f16,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
     MathInstruction(                                  \
       [16, 8, 16],                                    \
       DataType.s8, DataType.f16, DataType.f32,        \
@@ -2226,6 +2232,50 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
   max_cc = 1024
 
   alignment_constraints = [[16, 8, 8],]
+
+  for math_inst in math_instructions:
+    tile_descriptions = [
+      TileDescription([128, 128, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+    ]
+
+    data_type = [
+      math_inst.element_a,
+      math_inst.element_b,
+      math_inst.element_accumulator,
+      math_inst.element_accumulator,
+    ]
+
+    CreateMixedInputGemmOperator(manifest, layouts, tile_descriptions, \
+      data_type, alignment_constraints)
+    
+  # Upcast on Operand B
+  math_instructions = [
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.f16, DataType.s8, DataType.f32,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.bf16, DataType.s8, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.f16, DataType.u8, DataType.f32,        \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+    MathInstruction(                                  \
+      [16, 8, 16],                                    \
+      DataType.bf16, DataType.u8, DataType.f32,       \
+      OpcodeClass.TensorOp,                           \
+      MathOperation.multiply_add_mixed_input_upcast),
+  ]
+
+  min_cc = 80
+  max_cc = 1024
+
+  alignment_constraints = [[8, 16, 8],]
 
   for math_inst in math_instructions:
     tile_descriptions = [

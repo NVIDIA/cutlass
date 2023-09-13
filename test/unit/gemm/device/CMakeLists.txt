@@ -346,7 +346,12 @@ cutlass_test_unit_add_executable(
 
   BATCH_SOURCES ON
   BATCH_SIZE 4
+  
+  # Upcast on Operand A
+  gemm_universal_u8t_f16n_f16t_mixed_input_tensor_op_f16_sm80.cu
+  gemm_universal_s8t_f16n_f16t_mixed_input_tensor_op_f16_sm80.cu
 
+  # Upcast on Operand B
   gemm_universal_f16t_u8n_f16t_mixed_input_tensor_op_f16_sm80.cu
   gemm_universal_f16t_s8n_f16t_mixed_input_tensor_op_f16_sm80.cu
 )
