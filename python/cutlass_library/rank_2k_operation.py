@@ -80,6 +80,10 @@ class Rank2KOperation:
     return False
 
   #
+  def is_mixed_input(self):
+    return self.A.element != self.B.element
+  
+  #
   def is_planar_complex(self):
     return False
 

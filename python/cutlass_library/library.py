@@ -966,8 +966,13 @@ def CalculateSmemUsage(operation):
                      cta_shape[0] * (cta_shape[2] // 2) // elements_per_8b_md
   else:
     # Few BLAS3 operations only have A tensor
-    smem_per_stage = DataTypeSize[operation.A.element] * cta_shape[0] * cta_shape[2] // 8 + \
-                     DataTypeSize[operation.A.element] * cta_shape[1] * cta_shape[2] // 8
+    data_type_size_a = DataTypeSize[operation.A.element]
+    data_type_size_b = DataTypeSize[operation.A.element]
+    if operation.is_mixed_input():
+      data_type_size_b = DataTypeSize[operation.B.element]
+
+    smem_per_stage = data_type_size_a * cta_shape[0] * cta_shape[2] // 8 + \
+                     data_type_size_b * cta_shape[1] * cta_shape[2] // 8
 
   smem_usage = smem_per_stage * stages
   return (smem_usage >> 10)

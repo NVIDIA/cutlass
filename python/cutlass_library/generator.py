@@ -2235,7 +2235,7 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
 
   for math_inst in math_instructions:
     tile_descriptions = [
-      TileDescription([128, 128, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
     ]
 
     data_type = [
@@ -2280,6 +2280,7 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
   for math_inst in math_instructions:
     tile_descriptions = [
       TileDescription([128, 128, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 128, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
     ]
 
     data_type = [
