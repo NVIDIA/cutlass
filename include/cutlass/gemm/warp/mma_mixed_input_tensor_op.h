@@ -93,12 +93,12 @@ struct FragmentShuffler {
   static int const kNumElementsInMmaFragment = NumElementsInMmaFragment;
   static Operand const kOperand = Operand_;
 
-  using WarpFragment = Array<ElementMma, kNumElementsInWarpFragment>;
-  using MmaFragment = Array<ElementMma, kNumElementsInMmaFragment>;
+  using WarpFragment = Array<ElementLoad, kNumElementsInWarpFragment>;
+  using MmaFragment = Array<ElementLoad, kNumElementsInMmaFragment>;
 
   CUTLASS_DEVICE
-  void operator()(WarpFragment &dst, WarpFragment &src) {
-    dst = src;
+  WarpFragment operator()(WarpFragment const &src) {
+    return src;
   }
 };
 ////////////////////////////////////////////////////////////////////////////////
@@ -133,13 +133,17 @@ public:
   static int const kNumElementsInMmaFragment = NumElementsInMmaFragment;
   static Operand const kOperand = Operand::kA;
   
-  using WarpFragment = Array<ElementMma, kNumElementsInWarpFragment>;
-  using MmaFragment = Array<ElementMma, kNumElementsInMmaFragment>;
+  using WarpFragment = Array<ElementLoad, kNumElementsInWarpFragment>;
+  using MmaFragment = Array<ElementLoad, kNumElementsInMmaFragment>;
+  
+  static uint32_t const kSelectBytesEvenThread = 0x5410;
+  static uint32_t const kSelectBytesOddThread = 0x7632;
 
 private:
   int delta_up_;
   int delta_down_;
   int odd_even_lane_id_;
+  uint32_t byte_selector_;
 
 public:
   CUTLASS_DEVICE
@@ -148,42 +152,35 @@ public:
     delta_up_ = (lane_id & 1) + ((lane_id & 2) >> 1);
     delta_down_ = 2 - delta_up_;
     odd_even_lane_id_ = static_cast<int>(lane_id & 1);
+    byte_selector_ = odd_even_lane_id_ * kSelectBytesOddThread +
+                    (1 - odd_even_lane_id_) * kSelectBytesEvenThread;
   }
 
   CUTLASS_DEVICE
-  void operator()(WarpFragment &dst, WarpFragment &src) {
+  WarpFragment operator()(WarpFragment const &src) {
 
-    MmaFragment *ptr_mma_frag_src = reinterpret_cast<MmaFragment *>(&src);
-    MmaFragment *ptr_mma_frag_dst = reinterpret_cast<MmaFragment *>(&dst);
+    WarpFragment result;
+    MmaFragment const* mma_frag_src_ptr = reinterpret_cast<MmaFragment const*>(&src);
+    MmaFragment* mma_frag_dst_ptr = reinterpret_cast<MmaFragment*>(&result);
 
     CUTLASS_PRAGMA_UNROLL
     for (int n = 0; n < kNumMmaInstructions; n++) {
 
-        uint32_t *ptr_src = reinterpret_cast<uint32_t *>(&ptr_mma_frag_src[n]);
-        uint32_t *ptr_dst = reinterpret_cast<uint32_t *>(&ptr_mma_frag_dst[n]);
-
-        uint32_t even_thread_r0 = __shfl_up_sync(0xFFFFFFFF, ptr_src[0], delta_up_);
-        uint32_t odd_thread_r0 = __shfl_up_sync(0xFFFFFFFF, ptr_src[1], delta_up_);
-
-        uint32_t even_thread_r1 = __shfl_up_sync(0xFFFFFFFF, ptr_src[2], delta_up_);
-        uint32_t odd_thread_r1 = __shfl_up_sync(0xFFFFFFFF, ptr_src[3], delta_up_);
-
-        uint32_t even_thread_r2 = __shfl_down_sync(0xFFFFFFFF, ptr_src[0], delta_down_);
-        uint32_t odd_thread_r2 = __shfl_down_sync(0xFFFFFFFF, ptr_src[1], delta_down_);
+        uint32_t const* src_ptr = reinterpret_cast<uint32_t const *>(&mma_frag_src_ptr[n]);
+        uint32_t *dst_ptr = reinterpret_cast<uint32_t *>(&mma_frag_dst_ptr[n]);
         
-        uint32_t even_thread_r3 = __shfl_down_sync(0xFFFFFFFF, ptr_src[2], delta_down_);
-        uint32_t odd_thread_r3 = __shfl_down_sync(0xFFFFFFFF, ptr_src[3], delta_down_);
-        
-        ptr_dst[0] = odd_even_lane_id_ * odd_thread_r0 +
-                  (1 - odd_even_lane_id_) * even_thread_r0;
-        ptr_dst[1] = odd_even_lane_id_ * odd_thread_r1 +
-                  (1 - odd_even_lane_id_) * even_thread_r1;
-        ptr_dst[2] = odd_even_lane_id_ * odd_thread_r2 +
-                  (1 - odd_even_lane_id_) * even_thread_r2;
-        ptr_dst[3] = odd_even_lane_id_ * odd_thread_r3 +
-                  (1 - odd_even_lane_id_) * even_thread_r3;
+        // Shuffle data within the warp, pull from other threads within the warp
+        uint32_t tmp0 = __shfl_up_sync(0xFFFFFFFF, src_ptr[0], delta_up_);
+        uint32_t tmp1 = __shfl_down_sync(0xFFFFFFFF, src_ptr[0], delta_down_);
+        uint32_t tmp2 = __shfl_up_sync(0xFFFFFFFF, src_ptr[1], delta_up_);
+        uint32_t tmp3 = __shfl_down_sync(0xFFFFFFFF, src_ptr[1], delta_down_);
 
+        // Reorder the data within the 32-bit word (4x8b) required for mma.sync
+        dst_ptr[0] = __byte_perm(tmp0, tmp2, byte_selector_);
+        dst_ptr[1] = __byte_perm(tmp1, tmp3, byte_selector_);
     }
+
+    return result;
   }
 
 };
@@ -219,13 +216,17 @@ public:
   static int const kNumElementsInMmaFragment = NumElementsInMmaFragment;
   static Operand const kOperand = Operand::kB;
 
-  using WarpFragment = Array<ElementMma, kNumElementsInWarpFragment>;
-  using MmaFragment = Array<ElementMma, kNumElementsInMmaFragment>;
+  using WarpFragment = Array<ElementLoad, kNumElementsInWarpFragment>;
+  using MmaFragment = Array<ElementLoad, kNumElementsInMmaFragment>;
+  
+  static uint32_t const kSelectBytesEvenThread = 0x5410;
+  static uint32_t const kSelectBytesOddThread = 0x7632;
 
 private:
   int delta_up_;
   int delta_down_;
   int odd_even_lane_id_;
+  uint32_t byte_selector_;
 
 public:
   CUTLASS_DEVICE
@@ -234,31 +235,33 @@ public:
     delta_up_ = (lane_id & 1) + ((lane_id & 2) >> 1);
     delta_down_ = 2 - delta_up_;
     odd_even_lane_id_ = static_cast<int>(lane_id & 1);
+    byte_selector_ = odd_even_lane_id_ * kSelectBytesOddThread +
+                    (1 - odd_even_lane_id_) * kSelectBytesEvenThread;
   }
 
   CUTLASS_DEVICE
-  void operator()(WarpFragment &dst, WarpFragment &src) {
+  WarpFragment operator()(WarpFragment const &src) {
 
-    MmaFragment *ptr_mma_frag_src = reinterpret_cast<MmaFragment *>(&src);
-    MmaFragment *ptr_mma_frag_dst = reinterpret_cast<MmaFragment *>(&dst);
+    WarpFragment result;
+
+    MmaFragment const* mma_frag_src_ptr = reinterpret_cast<MmaFragment const *>(&src);
+    MmaFragment* mma_frag_dst_ptr = reinterpret_cast<MmaFragment *>(&result);
 
     CUTLASS_PRAGMA_UNROLL
     for (int n = 0; n < kNumMmaInstructions; n++) {
 
-        uint32_t *ptr_src = reinterpret_cast<uint32_t *>(&ptr_mma_frag_src[n]);
-        uint32_t *ptr_dst = reinterpret_cast<uint32_t *>(&ptr_mma_frag_dst[n]);
+        uint32_t const* src_ptr = reinterpret_cast<uint32_t const*>(&mma_frag_src_ptr[n]);
+        uint32_t* dst_ptr = reinterpret_cast<uint32_t*>(&mma_frag_dst_ptr[n]);
 
-        uint32_t even_thread_r0 = __shfl_up_sync(0xFFFFFFFF, ptr_src[0], delta_up_);
-        uint32_t odd_thread_r0 = __shfl_up_sync(0xFFFFFFFF, ptr_src[1], delta_up_);
-        uint32_t even_thread_r1 = __shfl_down_sync(0xFFFFFFFF, ptr_src[0], delta_down_);
-        uint32_t odd_thread_r1 = __shfl_down_sync(0xFFFFFFFF, ptr_src[1], delta_down_);
+        // Shuffle data within the warp, pull from other threads within the warp
+        uint32_t tmp0 = __shfl_up_sync(0xFFFFFFFF, src_ptr[0], delta_up_);
+        uint32_t tmp1 = __shfl_down_sync(0xFFFFFFFF, src_ptr[0], delta_down_);
 
-        ptr_dst[0] = odd_even_lane_id_ * odd_thread_r0 +
-                  (1 - odd_even_lane_id_) * even_thread_r0;
-        ptr_dst[1] = odd_even_lane_id_ * odd_thread_r1 +
-                  (1 - odd_even_lane_id_) * even_thread_r1;
-
+        // Reorder the data within the 32-bit word (4x8b) required for mma.sync
+        dst_ptr[0] = __byte_perm(tmp0, tmp1, byte_selector_);
     }
+    
+    return result;
   }
 
 };
@@ -519,27 +522,26 @@ public:
   void transform(TransformedFragmentA &dst_A, TransformedFragmentB &dst_B,
                  FragmentA const &A, FragmentB const &B) const {
 
-    // Convert the A operand to the Mma Instruction operand type
-    detail::FragmentConverter<MmaElementA, ElementA, FragmentA::kElements> convert_A;
-    dst_A = convert_A(A);
-
     // Shuffle data within warp to obtain the mma.sync operand layout
     detail::FragmentShuffler<MmaElementA, ElementA, MmaIterations::kRow, 
              FragmentA::kElements, MmaOperandA::kElements, Operand::kA> shuffler_A;
+    FragmentA tmp_A;
+    tmp_A = shuffler_A(A);
 
-    // Shuffle the A operand, inplace, to the Mma Instruction operand layout
-    shuffler_A(dst_A, dst_A);
+    // Convert the A operand to the Mma Instruction operand type
+    detail::FragmentConverter<MmaElementA, ElementA, FragmentA::kElements> convert_A;
+    dst_A = convert_A(tmp_A);
 
-    // Convert the B operand to the Mma Instruction operand type
-    detail::FragmentConverter<MmaElementB, ElementB, FragmentB::kElements> convert_B;
-    dst_B = convert_B(B);
 
     // Shuffle data within warp to obtain the mma.sync operand layout
     detail::FragmentShuffler<MmaElementB, ElementB, MmaIterations::kColumn, 
              FragmentB::kElements, MmaOperandB::kElements, Operand::kB> shuffler_B;
+    FragmentB tmp_B; 
+    tmp_B = shuffler_B(B);
 
-    // Shuffle the B operand, inplace, to the Mma Instruction operand layout 
-    shuffler_B(dst_B, dst_B);
+    // Convert the B operand to the Mma Instruction operand type
+    detail::FragmentConverter<MmaElementB, ElementB, FragmentB::kElements> convert_B;
+    dst_B = convert_B(tmp_B);
   }
 };
 
