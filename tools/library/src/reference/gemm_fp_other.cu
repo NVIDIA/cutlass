@@ -77,24 +77,6 @@ void initialize_gemm_reference_operations_fp_other(Manifest &manifest) {
     complex<double>,
     complex<double>
   >(manifest);
-
-  // Mixed-input (S8*F16)
-  make_gemm_real_canonical_layouts<
-    int8_t,
-    half_t,
-    half_t,
-    half_t,
-    half_t
-  >(manifest);
-
-  // Mixed-input (U8*F16)
-  make_gemm_real_canonical_layouts<
-    uint8_t,
-    half_t,
-    half_t,
-    half_t,
-    half_t
-  >(manifest);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
