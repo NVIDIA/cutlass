@@ -28,19 +28,19 @@
 
 cutlass_test_unit_add_executable(
   cutlass_test_unit_gemm_warp
-  #gemm_sm50.cu
-  #gemm_sm60.cu
-  #gemm_sm61.cu
-  #gemm_sm70.cu
-  #gemm_sm75.cu
-  #gemm_sm80.cu
-  #gemm_complex_sm80.cu
-  #gemm_sparse_sm80.cu
-  #gemm_gaussian_complex_sm80.cu
+  gemm_sm50.cu
+  gemm_sm60.cu
+  gemm_sm61.cu
+  gemm_sm70.cu
+  gemm_sm75.cu
+  gemm_sm80.cu
+  gemm_complex_sm80.cu
+  gemm_sparse_sm80.cu
+  gemm_gaussian_complex_sm80.cu
   gemm_mixed_input_sm80.cu
-  #gemm_sm90.cu
-  #gemm_complex_sm90.cu
-  #wmma_sm70.cu
-  #wmma_sm72.cu
-  #wmma_sm75.cu
+  gemm_sm90.cu
+  gemm_complex_sm90.cu
+  wmma_sm70.cu
+  wmma_sm72.cu
+  wmma_sm75.cu
 )
