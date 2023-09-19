@@ -84,6 +84,8 @@ get(Tuple&& t) noexcept
   else {
     return get<I1, Is...>(get<I0>(static_cast<Tuple&&>(t)));
   }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 //
