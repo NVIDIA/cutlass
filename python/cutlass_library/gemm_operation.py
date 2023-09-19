@@ -244,7 +244,7 @@ class GemmOperation:
           ex = self.extended_name(),
           tb = threadblock,
           l = self.layout_name(),
-          a = str(self.A.alignment))
+          a = str(max(self.A.alignment, self.B.alignment)))
 
   #
   def configuration_name(self):

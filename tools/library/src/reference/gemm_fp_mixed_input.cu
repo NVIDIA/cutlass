@@ -66,7 +66,7 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     uint8_t,
     half_t,
-    float,
+    half_t,
     float,
     float
   >(manifest);
@@ -74,7 +74,7 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     int8_t,
     half_t,
-    float,
+    half_t,
     float,
     float
   >(manifest);
@@ -82,7 +82,7 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     half_t,
     uint8_t,
-    float,
+    half_t,
     float,
     float
   >(manifest);
@@ -90,7 +90,7 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     half_t,
     int8_t,
-    float,
+    half_t,
     float,
     float
   >(manifest);
@@ -99,7 +99,7 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     uint8_t,
     bfloat16_t,
-    float,
+    bfloat16_t,
     float,
     float
   >(manifest);
@@ -107,7 +107,7 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     int8_t,
     bfloat16_t,
-    float,
+    bfloat16_t,
     float,
     float
   >(manifest);
@@ -115,7 +115,7 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     bfloat16_t,
     uint8_t,
-    float,
+    bfloat16_t,
     float,
     float
   >(manifest);
@@ -123,7 +123,7 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     bfloat16_t,
     int8_t,
-    float,
+    bfloat16_t,
     float,
     float
   >(manifest);
