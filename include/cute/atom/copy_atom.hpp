@@ -646,10 +646,14 @@ void
 print(TiledCopy<Atom, Args...> const& copy, char const* pad = "")
 {
   using Copy = TiledCopy<Atom, Args...>;
+  using Traits = typename Atom::Traits;
+  using ValType = typename Atom::ValType;
+  using CopyAtomT = Copy_Atom<Traits, ValType>;
+
   print("TiledCopy\n");
   print("  Tiler_MN:       "); print(typename Copy::Tiler_MN{});       print("\n");
   print("  TiledLayout_TV: "); print(typename Copy::TiledLayout_TV{}); print("\n");
-  print(static_cast<Atom const&>(copy));
+  print(static_cast<CopyAtomT const&>(copy));
 }
 
 template <class TiledCopy, class ThrIdx>
