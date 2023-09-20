@@ -140,7 +140,7 @@ union GmmaDescriptor
   CUTE_HOST_DEVICE friend void print(GmmaDescriptor const& t)
   {
     #if !defined(__CUDACC_RTC__)
-    printf("GmmaDescriptor: 0x%016 %lli\n", static_cast<long long>(t.desc_));
+    printf("GmmaDescriptor: 0x%016llx\n",   static_cast<unsigned long long>(t.desc_));
     printf("  start_addr :  0x%04x\n",      t.bitfield.start_address_);
     printf("  leading_off:  0x%04x (%d)\n", t.bitfield.leading_byte_offset_, t.bitfield.leading_byte_offset_);
     printf("  stride_off :  0x%04x (%d)\n", t.bitfield.stride_byte_offset_, t.bitfield.stride_byte_offset_);
