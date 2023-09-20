@@ -138,13 +138,6 @@ print(char const* format, T const&... t) {
   printf(format, t...);
 }
 
-template <class... T>
-CUTE_HOST_DEVICE
-void
-print(T const&... t) {
-  (print(t), ...);
-}
-
 CUTE_HOST_DEVICE
 void
 print(char const* format) {
