@@ -2631,8 +2631,8 @@ struct FastNumericArrayConverter<cutlass::bfloat16_t, int8_t, 4, Round> {
 /// source `S` as 8b integers (S8 or U8) -> destination `T` as 16b floating-point (F16 or BF16)
 template <typename T, typename S, int N, FloatRoundStyle Round>
 struct FastNumericArrayConverter<T, S, N, Round,
-    typename std::enable_if<(std::is_same<T, half_t>::value || std::is_same<T, bfloat16_t>::value) && 
-                            (std::is_same<S, int8_t>::value || std::is_same<S, uint8_t>::value)>::type> {
+    typename platform::enable_if<(platform::is_same<T, half_t>::value || platform::is_same<T, bfloat16_t>::value) && 
+                                 (platform::is_same<S, int8_t>::value || platform::is_same<S, uint8_t>::value)>::type> {
   static_assert(!(N % 4), "N must be multiple of 4.");
 
   using result_type = Array<T, N>;

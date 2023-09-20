@@ -264,11 +264,11 @@ struct DefaultMmaTensorOp<
 
 
   // Check if the ElementA and ElementB are of different data types
-  static_assert(!std::is_same<ElementA, ElementB>::value, 
+  static_assert(!platform::is_same<ElementA, ElementB>::value, 
     "DefaultMmaTensorOp with arch::OpMultiplyAddMixedInputUpcast ElementA and ElementB cannot be of the same data type");
 
   // Data type used for internal computation - use the wider of the two data types for mma.sync operands
-  using ElementOperand = typename std::conditional<(sizeof(ElementA) > sizeof(ElementB)), 
+  using ElementOperand = typename platform::conditional<(sizeof(ElementA) > sizeof(ElementB)), 
                                                     ElementA, ElementB>::type;
 
   // Operand datatypes in the internal MMA instruction - use the wider of the two data types

@@ -122,7 +122,7 @@ struct FragmentShuffler <ElementMma_, ElementLoad_,
                          NumElementsInWarpFragment, 
                          NumElementsInMmaFragment,
                          Operand::kA,
-                         typename std::enable_if<(sizeof_bits<ElementMma_>::value == 16) &&
+                         typename platform::enable_if<(sizeof_bits<ElementMma_>::value == 16) &&
                                                  (sizeof_bits<ElementLoad_>::value == 8)>::type> {
 public:
   using ElementMma = ElementMma_;
@@ -205,7 +205,7 @@ struct FragmentShuffler <ElementMma_, ElementLoad_,
                          NumElementsInWarpFragment, 
                          NumElementsInMmaFragment,
                          Operand::kB,
-                         typename std::enable_if<(sizeof_bits<ElementMma_>::value == 16) &&
+                         typename platform::enable_if<(sizeof_bits<ElementMma_>::value == 16) &&
                                                  (sizeof_bits<ElementLoad_>::value == 8)>::type> {
 public:
   using ElementMma = ElementMma_;
