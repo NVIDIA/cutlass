@@ -103,11 +103,14 @@ def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
     for tile_description in tile_descriptions:
       for alignment in alignment_constraints:
         for complex_transform in complex_transforms:
+            
+            # If alignment is a tuple or a list, then we have different alignments for A and B
+            alignment_a = alignment if isinstance(alignment, int) else alignment[0]
+            alignment_b = alignment if isinstance(alignment, int) else alignment[1]
+            alignment_c = min(8, alignment_a)
 
-            alignment_c = min(8, alignment)
-
-            A = TensorDescription(element_a, layout[0], alignment, complex_transform[0])
-            B = TensorDescription(element_b, layout[1], alignment, complex_transform[1])
+            A = TensorDescription(element_a, layout[0], alignment_a, complex_transform[0])
+            B = TensorDescription(element_b, layout[1], alignment_b, complex_transform[1])
             C = TensorDescription(element_c, layout[2], alignment_c)
 
             new_operation = GemmOperation(GemmKind.Universal, tile_description.minimum_compute_capability, \
@@ -118,44 +121,6 @@ def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
 
   return operations
 
-
-# CreateMixedInputGemmOperator takes different alignments for A and B unlike CreateGemmOperator 
-# which takes the same alignment for A and B
-def CreateMixedInputGemmOperator(manifest, layouts, tile_descriptions, data_type, \
-  alignment_constraints, complex_transforms = None, epilogue_functor = EpilogueFunctor.LinearCombination, \
-  swizzling_functor = DefaultSwizzlingFunctor()):
-
-  if complex_transforms is None:
-    complex_transforms = [(ComplexTransform.none, ComplexTransform.none),]
-
-  element_a, element_b, element_c, element_epilogue = data_type
-
-  operations = []
-
-  # by default, only generate the largest tile and largest alignment
-  if manifest.kernel_filter == '':
-    tile_descriptions = [tile_descriptions[0],]
-
-  alignment_constraint = alignment_constraints[0]
-  alignment_a = alignment_constraint[0]
-  alignment_b = alignment_constraint[1]
-  alignment_c = 8
-
-  for layout in layouts:
-    for tile_description in tile_descriptions:
-      for complex_transform in complex_transforms:
-
-          A = TensorDescription(element_a, layout[0], alignment_a, complex_transform[0])
-          B = TensorDescription(element_b, layout[1], alignment_b, complex_transform[1])
-          C = TensorDescription(element_c, layout[2], alignment_c)
-
-          new_operation = GemmOperation(GemmKind.Universal, tile_description.minimum_compute_capability, \
-            tile_description, A, B, C, element_epilogue, epilogue_functor, swizzling_functor)
-
-          manifest.append(new_operation)
-          operations.append(new_operation)
-
-  return operations
 
 # Generates 3.0 API based GemmUniversal API kernels. Alignment constraints are folded in with layouts
 def CreateGemmUniversal3xOperator(
@@ -2231,7 +2196,9 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
   min_cc = 80
   max_cc = 1024
 
-  alignment_constraints = [[16, 8, 8],]
+  # For mixed-input alignment constraints are a list of lists, where the inner list
+  # contains the alignment constraints for [operandA, operandB].
+  alignment_constraints = [[16, 8],]
 
   for math_inst in math_instructions:
     tile_descriptions = [
@@ -2246,7 +2213,7 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
       math_inst.element_accumulator,
     ]
 
-    CreateMixedInputGemmOperator(manifest, layouts, tile_descriptions, \
+    CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
     
   # Upcast on Operand B
@@ -2276,7 +2243,9 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
   min_cc = 80
   max_cc = 1024
 
-  alignment_constraints = [[8, 16, 8],]
+  # For mixed-input alignment constraints are a list of lists, where the inner list
+  # contains the alignment constraints for [operandA, operandB].
+  alignment_constraints = [[8, 16],]
 
   for math_inst in math_instructions:
     tile_descriptions = [
@@ -2291,7 +2260,7 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
       math_inst.element_accumulator,
     ]
 
-    CreateMixedInputGemmOperator(manifest, layouts, tile_descriptions, \
+    CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
     
 #
