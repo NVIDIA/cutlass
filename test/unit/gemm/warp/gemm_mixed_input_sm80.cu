@@ -53,7 +53,7 @@
 
 
 ////////////////////////////////////////////////////////////////////////////////
-/// F32 <= F16 * I8 + F32 (Upcast on Opernad B)
+/// F32 <= F16 * I8 + F32 (Upcast on Operand B)
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_f16_i8, 128x128x64_64x64x64_16x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;
@@ -97,7 +97,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_f16_i8, 64x64x64_64x64x64_16
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// F32 <= I8 * F16 + F32 (Upcast on Opernad A)
+/// F32 <= I8 * F16 + F32 (Upcast on Operand A)
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_i8_f16, 128x128x64_64x64x64_16x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;
@@ -142,7 +142,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_i8_f16, 64x64x64_64x64x64_16
 
 
 ////////////////////////////////////////////////////////////////////////////////
-/// F32 <= F16 * U8 + F32 (Upcast on Opernad B)
+/// F32 <= F16 * U8 + F32 (Upcast on Operand B)
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_f16_u8, 64x64x64_64x64x64_16x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;
@@ -185,7 +185,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_f16_u8, 128x128x64_64x64x64_
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// F32 <= U8 * F16 + F32 (Upcast on Opernad A)
+/// F32 <= U8 * F16 + F32 (Upcast on Operand A)
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_u8_f16, 64x64x64_64x64x64_16x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;
@@ -228,7 +228,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_u8_f16, 128x128x64_64x64x64_
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// F32 <= B16 * U8 + F32 (Upcast on Opernad B)
+/// F32 <= B16 * U8 + F32 (Upcast on Operand B)
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_bf16_u8, 64x64x64_64x64x64_16x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;
@@ -251,7 +251,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_bf16_u8, 64x64x64_64x64x64_1
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// F32 <= B16 * U8 + F32 (Upcast on Opernad B)
+/// F32 <= B16 * U8 + F32 (Upcast on Operand B)
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_u8_bf16, 64x64x64_64x64x64_16x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;
@@ -274,7 +274,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_u8_bf16, 64x64x64_64x64x64_1
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// F32 <= B16 * I8 + F32 (Upcast on Opernad B)
+/// F32 <= B16 * I8 + F32 (Upcast on Operand B)
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_bf16_i8, 64x64x64_64x64x64_16x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;
@@ -297,7 +297,7 @@ TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_bf16_i8, 64x64x64_64x64x64_1
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/// F32 <= B16 * I8 + F32 (Upcast on Opernad B)
+/// F32 <= B16 * I8 + F32 (Upcast on Operand B)
 ////////////////////////////////////////////////////////////////////////////////
 TEST(SM80_warp_gemm_mixed_input_tensor_op_crosswise_i8_bf16, 64x64x64_64x64x64_16x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;

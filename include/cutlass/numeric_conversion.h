@@ -2469,14 +2469,14 @@ struct FastNumericArrayConverter<cutlass::half_t, int8_t, 4, Round> {
 
     // Pack s8x2 (s8[1], s8[0]) -> s16x2 (sext.s8[1], sext.s8[0])
     // (See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-prmt)
-    // The inline ptx below uses `msb=0` and `msb=1` from the above link to sext the sign-bit in 0, 1, 2, 3 bytes of s8x4
+    // The inline ptx below uses `msb=0` and `msb=1` from the above link to sign extend the sign-bit in 0, 1, 2, 3 bytes of s8x4
     // into result_ptr[0] and result_ptr[1]'s 08-15 and 24-31 bits, respectively.
-    // Note that `__byte_perm(source_ptr[0], source_ptr[0], 0x9180);` won't acheive the same and doesn't sext the sign-bit.
-    // Thus, we use inline ptx `prmt.b32` instruction for the desired sext of s8x2 to s16x2.
+    // Note that `__byte_perm(source_ptr[0], source_ptr[0], 0x9180);` won't achieve the same and doesn't sign extend the sign-bit.
+    // Thus, we use inline ptx `prmt.b32` instruction for the desired sign extend from `s8x2` to `s16x2`.
     asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(result_ptr[0]) : "r"(source_ptr[0]), "n"(0x9180));
     asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(result_ptr[1]) : "r"(source_ptr[0]), "n"(0xB3A2));
 
-    // In the absense of add.s16x2 instruction, use bit-wise operation to execute signed addition with magic numbers to acheive
+    // In the absense of add.s16x2 instruction, use bit-wise operation to execute signed addition with magic numbers to achieve
     // the same result as add.s16x2 instruction.
     // (See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3)
     // For a logical operation F(a, b, c) the value of kImmLut can be computed by applying the same operation to 
