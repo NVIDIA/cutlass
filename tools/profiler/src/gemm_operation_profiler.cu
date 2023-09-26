@@ -382,6 +382,8 @@ Status GemmOperationProfiler::initialize_configuration(
   gemm_workspace_.arguments.alpha = problem_.alpha.data();
   gemm_workspace_.arguments.beta = problem_.beta.data();
   gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
+  gemm_workspace_.arguments.raster_order = problem_.raster_order;
+
   // initialize reduction operation for parallel splitKMode
   if (problem_.split_k_mode == library::SplitKMode::kParallel) {
     if (!initialize_reduction_configuration_(operation, problem)) {
