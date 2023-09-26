@@ -111,7 +111,7 @@ struct integer_subbyte
     if (sign_mask_ & storage) {
       return !(rhs.storage < storage);
     } else {
-      return storage < rhs.storage;
+      return storage <= rhs.storage;
     }
   }
 
