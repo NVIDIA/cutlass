@@ -157,14 +157,6 @@ protected:
         CUTLASS_TRACE_HOST("  cudaFuncSetAttribute() returned error " << cudaGetErrorString(cudart_result));
         return Status::kErrorInternal;
       }
-
-      cudart_result = cudaFuncSetAttribute(
-          Kernel2<GemmKernel>,
-          cudaFuncAttributePreferredSharedMemoryCarveout, 100); // 100% shared memory
-      if (cudart_result != cudaSuccess) {
-        CUTLASS_TRACE_HOST("  cudaFuncSetAttribute() returned error " << cudaGetErrorString(cudart_result));
-        return Status::kErrorInternal;
-      }
     }
 
     // Update SM occupancy member
@@ -227,12 +219,6 @@ public:
   static Status can_implement(Arguments const &args)
   {
     CUTLASS_TRACE_HOST("GemmUniversalBase::can_implement()");
-
-    // Initialize static kernel and device properties, if necessary.
-    Status result = init_device_props();
-    if (result != Status::kSuccess) {
-      return result;
-    }
 
     dim3 grid = get_grid_shape(args);
 

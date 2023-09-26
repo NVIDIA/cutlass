@@ -40,9 +40,8 @@
 
 #include "cutlass/core_io.h"
 
-#include "conv3d_operation_profiler.h"
-#include "gpu_timer.h"
-
+#include "cutlass/profiler/conv3d_operation_profiler.h"
+#include "cutlass/profiler/gpu_timer.h"
 /////////////////////////////////////////////////////////////////////////////////////////////////
 using namespace cutlass::library;
 

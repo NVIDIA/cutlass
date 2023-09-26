@@ -68,7 +68,14 @@ axpby(Alpha                    const& alpha,
       Beta                     const& beta,
       Tensor<YEngine, YLayout>      & y)
 {
-  auto isBetaZero = (beta == Int<0>{});
+  auto isBetaZero = [&] () {
+    if constexpr (is_complex<Beta>::value) {
+      return beta.real() == Int<0>{} && beta.imag() == Int<0>{};
+    }
+    else {
+      return beta == Int<0>{};
+    }
+  } ();
 
   CUTE_UNROLL
   for (int i = 0; i < size(x); ++i) {

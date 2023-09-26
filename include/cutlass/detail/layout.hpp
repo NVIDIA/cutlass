@@ -239,6 +239,23 @@ check_alignment(Shape const & shape, Stride const & stride) {
     : get_contiguous_shape(cute::get<1>(shape), cute::get<1>(stride)) % Alignment == 0;
 }
 
+// Check if tensor shape satisfies a given major alignment
+
+template<int B, int M, int S>
+CUTLASS_HOST_DEVICE constexpr
+size_t
+alignment_for_swizzle(cute::Swizzle<B, M, S>) {
+  static_assert(B >= 0 and M >= 0);
+  return size_t(1) << size_t(B + M + cute::abs(S));
+}
+
+template<class Layout>
+CUTLASS_HOST_DEVICE constexpr
+size_t
+alignment_for_swizzle(Layout layout) {
+  return alignment_for_swizzle(cute::detail::get_swizzle_portion(layout));
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace cutlass::detail

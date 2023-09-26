@@ -49,7 +49,6 @@
 #include "testbed.h"
 
 #if defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM75_Device_Gemm_s4t_s4n_s4n_tensor_op_s32, 128x256x128_64x64x128) {

@@ -99,7 +99,7 @@ public:
 
   static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
     "TMA warp-specialized kernel does not support specializing the tile scheduler.");
-  using TileScheduleTag = TileScheduler_;
+  using TileSchedulerTag = TileScheduler_;
   using TileScheduler = typename detail::TileSchedulerSelector<
     TileScheduler_, ArchTag, TileShape, ClusterShape>::Scheduler;
   using TileSchedulerArguments = typename TileScheduler::Arguments;
@@ -357,8 +357,6 @@ public:
     // Get pipeline iterators and increments from tensor shapes
     auto k_tile_iter  = cute::make_coord_iterator(shape<2>(gA));
     auto k_tile_count = size<2>(gA);
-    auto c_tile_count = CollectiveEpilogue::get_load_pipe_increment(blk_shape);
-    [[maybe_unused]] auto d_tile_count = CollectiveEpilogue::get_store_pipe_increment(blk_shape);
 
     // Wait for all thread blocks in the Cluster
     cluster_wait_fn();

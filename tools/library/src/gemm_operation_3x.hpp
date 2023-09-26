@@ -248,6 +248,20 @@ protected:
     /* Query device SM count to pass onto the kernel as an argument, where needed */
     operator_args.hw_info.sm_count = arguments->sm_count;
 
+    if constexpr (!std::is_const_v<decltype(operator_args.scheduler.raster_order)>) {
+      using Enum_t = decltype(operator_args.scheduler.raster_order);
+      switch (arguments->raster_order) {
+        case RasterOrder::kAlongN:
+          operator_args.scheduler.raster_order = Enum_t::AlongN;
+          break;
+        case RasterOrder::kAlongM:
+          operator_args.scheduler.raster_order = Enum_t::AlongM;
+          break;
+        default: 
+          operator_args.scheduler.raster_order = Enum_t::Heuristic;
+      }
+    }
+
     return status;
   }
 

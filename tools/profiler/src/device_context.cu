@@ -32,7 +32,7 @@
    \brief 
 */
 
-#include "device_context.h"
+#include "cutlass/profiler/device_context.h"
 
 namespace cutlass {
 namespace profiler {

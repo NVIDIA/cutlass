@@ -44,6 +44,15 @@
     Map tensor sizes (Conv3d -> ImplicitGemm)        : implicit_gemm_tensor_[a|b|c]_size(ConvolutionOperator)
     Map tensor problem sizes (Conv3d -> ImplicitGemm): implicit_gemm_problem_size(ConvolutionOperator)  
 */
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
 
 #pragma once
 
@@ -80,11 +89,11 @@ struct Conv3dProblemSize : public Conv2dProblemSize {
 public:
   CUTLASS_HOST_DEVICE
   Conv3dProblemSize(): 
+    Conv2dProblemSize(),
     D(0), T(0), Z(0), 
     pad_d(0), 
     stride_d(1), 
-    dilation_d(1),
-    Conv2dProblemSize() { }
+    dilation_d(1) { }
  
   /// Constructor for default padding, stride, dilation, and split-K
   CUTLASS_HOST_DEVICE
@@ -102,10 +111,10 @@ public:
     int R,
     int S,
     Mode mode
-  ): 
+  ):
+    Conv2dProblemSize(N, H, W, C, P, Q, K, R, S, mode),
     D(D), T(T), Z(Z), 
-    pad_d(T / 2), stride_d(1), dilation_d(1),
-    Conv2dProblemSize(N, H, W, C, P, Q, K, R, S, mode) { }
+    pad_d(T / 2), stride_d(1), dilation_d(1) { }
 
   /// Constructor
   CUTLASS_HOST_DEVICE
@@ -134,15 +143,15 @@ public:
     Mode mode,
     int split_k_slices = 1,
     int groups = 1
-  ): 
-    D(D), T(T), Z(Z), 
-    pad_d(pad_d), stride_d(stride_d), dilation_d(dilation_d),
+  ):
     Conv2dProblemSize(
-      N, H, W, C, K, R, S, P, Q, 
-      pad_h, pad_w, 
-      stride_h, stride_w, 
-      dilation_h, dilation_w,
-      mode, split_k_slices, groups) { }
+    N, H, W, C, K, R, S, P, Q, 
+    pad_h, pad_w, 
+    stride_h, stride_w, 
+    dilation_h, dilation_w,
+    mode, split_k_slices, groups),
+    D(D), T(T), Z(Z), 
+    pad_d(pad_d), stride_d(stride_d), dilation_d(dilation_d) { }
 
   /// Constructs convolution problem size from cutlass Tensor5DCoord and Coord3D 
   // set *user-defined* output size and sets Z, P, and Q (include all data members in ctor)
@@ -158,8 +167,6 @@ public:
     int split_k_slices = 1,
     int groups = 1
   ):
-    D(input_size.d()), T(filter_size.d()), Z(output_size.d()),
-    pad_d(padding[0]), stride_d(stride[0]), dilation_d(dilation[0]),
     Conv2dProblemSize(
       {input_size.n(), input_size.h(), input_size.w(), input_size.c()},
       {filter_size.n(), filter_size.h(), filter_size.w(), filter_size.c()},
@@ -167,8 +174,9 @@ public:
       {stride[1], stride[2]},
       {dilation[1], dilation[2]},
       {output_size.n(), output_size.h(), output_size.w(), output_size.c()},
-      mode, split_k_slices, groups
-    ) { }
+      mode, split_k_slices, groups),
+    D(input_size.d()), T(filter_size.d()), Z(output_size.d()),
+    pad_d(padding[0]), stride_d(stride[0]), dilation_d(dilation[0]) { }
 
   /// Constructs convolution problem size from cutlass Tensor5DCoord and Coord3D 
   // *computes* output size and sets Z, P and Q (include all data members in ctor)
@@ -183,18 +191,18 @@ public:
     int split_k_slices = 1,
     int groups = 1
   ):
-    D(input_size.d()), T(filter_size.d()),
-    pad_d(padding[0]), stride_d(stride[0]), dilation_d(dilation[0]),
     Conv2dProblemSize(
       {input_size.n(), input_size.h(), input_size.w(), input_size.c()},
       {filter_size.n(), filter_size.h(), filter_size.w(), filter_size.c()},
       {padding[1], padding[1], padding[2], padding[2]},
       {stride[1], stride[2]},
       {dilation[1], dilation[2]},
-      mode, split_k_slices, groups
-    ) { 
+      mode, split_k_slices, groups),
+    D(input_size.d()), T(filter_size.d()),
+    pad_d(padding[0]), stride_d(stride[0]), dilation_d(dilation[0])
+    {
       // set output Z
-      Z = ((D + pad_d * 2 - T * dilation_d) / stride_d) + 1;      
+      Z = ((D + pad_d * 2 - T * dilation_d) / stride_d) + 1;
     }
 
   /// Equality operator (ignores mode and split_k_slice)

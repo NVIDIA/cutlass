@@ -259,6 +259,95 @@ struct Sm90TmaBuilderImpl {
     >;
 };
 
+///////////////////////////////////////////////////////////////////////////////
+// Descriptor classes for defining EVT nodes
+// Some of the epilogue visitor nodes require non-intuitive template arguments
+// such as CopyOpS2R for AuxLoad node. Traditionaly, these are resolved by the
+// builder classes. Here we provide a set of descriptor classes that resolve
+// these template arguments from more intuitive types such as Stride, Layout
+
+// Get TileShape, EpilogueTile, Dispatch Policy, StagesC, and STagesD
+template<
+  typename TileShape_MNK,
+  typename EpilogueTileType, 
+  typename ElementC,
+  typename ElementD,
+  typename Schedule
+>
+struct EpilogueDescriptor {
+  using TileShape = TileShape_MNK;
+  using EpilogueTile = 
+    decltype(
+      detail::sm90_compute_tile_shape_or_override<
+        ElementD, EpilogueTileType, Schedule
+      >()
+    );
+  using DispatchPolicy = 
+    decltype(
+      detail::sm90_get_tma_dispatch_policy<
+        TileShape_MNK, EpilogueTile, 
+        ElementC, ElementD, Schedule
+      >()
+    );
+  constexpr static int StagesC = DispatchPolicy::StagesC;
+  constexpr static int StagesD = DispatchPolicy::StagesD;
+};
+
+// Get Stride, SmemLayout, and CopyOpS2R for AuxLoad node
+template<
+  typename EpilogueDescriptor,
+  typename StrideOrLayoutTag,
+  typename ElementAux
+>
+struct AuxLoadDescriptor {
+  constexpr static int Stages = EpilogueDescriptor::StagesC;
+  using EpilogueTile = typename EpilogueDescriptor::EpilogueTile;
+  using Element = ElementAux;
+  using Stride = cutlass::detail::TagToStrideC_t<StrideOrLayoutTag>;
+  using SmemLayoutAtom =
+    decltype(
+      detail::sm90_get_epilogue_smem_swizzle_layout_atom<
+        Stride, ElementAux, typename EpilogueDescriptor::EpilogueTile
+      >()
+    );
+  using CopyOpS2R =
+    decltype(detail::sm90_get_smem_load_op_for_source<Stride, ElementAux>());
+};
+
+// Get Stride, SmemLayout, and CopyOpS2R for AuxStore node
+template<
+  typename EpilogueDescriptor,
+  typename StrideOrLayoutTag,
+  typename ElementAux
+>
+struct AuxStoreDescriptor {
+  constexpr static int Stages = EpilogueDescriptor::StagesD;
+  using EpilogueTile = typename EpilogueDescriptor::EpilogueTile;
+  using Element = ElementAux;
+  using Stride = cutlass::detail::TagToStrideC_t<StrideOrLayoutTag>;
+  using SmemLayoutAtom =
+    decltype(
+      detail::sm90_get_epilogue_smem_swizzle_layout_atom<
+        Stride, ElementAux, typename EpilogueDescriptor::EpilogueTile
+      >()
+    );
+  using CopyOpR2S =
+    decltype(detail::sm90_get_smem_store_op_for_accumulator<Stride, ElementAux>());
+};
+
+template<
+  typename EpilogueDescriptor,
+  typename ElementVector
+>
+struct RowBroadcastDescriptor {
+  constexpr static int Stages = ceil_div(
+    EpilogueDescriptor::StagesC, 
+    size(shape_div(take<0, 2>(typename EpilogueDescriptor::TileShape{}), typename EpilogueDescriptor::EpilogueTile{}))
+  ) + 1;
+
+  using Element = ElementVector;
+};
+
 } // namespace detail
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -426,7 +515,8 @@ private:
     ElementD,
     GmemLayoutTagD,
     AlignmentD,
-    EpilogueSchedule
+    EpilogueSchedule,
+    FusionOperation
   >;
 
 public:

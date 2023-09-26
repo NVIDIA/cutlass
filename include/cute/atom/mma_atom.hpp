@@ -155,7 +155,7 @@ struct MMA_Atom<MMA_Traits<Args...>>
 
     if constexpr (has_dereference<FrgTypeA>::value) {
       // If the intended FrgTypeA is a view (of the current tensor), forward the whole
-      static_assert(is_same<ValTypeA, typename remove_cvref_t<ATensor>::value_type>::value, "Expecting ValTypeA type");
+      static_assert(is_same<get_raw_type_t<ValTypeA>, typename remove_cvref_t<ATensor>::value_type>::value, "Expecting ValTypeA type");
       return make_tensor<FrgTypeA>(std::forward<ATensor>(atensor));
     } else {
       // Else, the intended FrgTypeA is a value type, construct a new tensor with a fragment layout

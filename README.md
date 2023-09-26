@@ -43,7 +43,7 @@ In addition to GEMMs, CUTLASS implements high-performance convolution via the im
 
 # What's New in CUTLASS 3.2
 
-CUTLASS 3.2 is an update to CUTLASS adding:
+CUTLASS 3.2.0 is an update to CUTLASS adding:
 - New warp-specialized persistent FP8 GEMM kernel [kernel schedules](/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_cooperative.hpp) and [mainloops](/include/cutlass/gemm/collective/sm90_mma_tma_gmma_ss_warpspecialized_fp8.hpp)  targeting Hopper architecture that achieve great performance with TMA, WGMMA, and threadblock clusters. An example showcasing [Hopper warp-specialized FP8 GEMMs](/examples/54_hopper_fp8_warp_specialized_gemm).
 - New [Epilogue Visitor Tree (EVT)](/examples/49_hopper_gemm_with_collective_builder/49_collective_builder.cu) support for Hopper TMA epilogues. EVTs allows for user-defined customized epilogue fusion patterns without having to write a new epilogue.
 - [Stream-K](/include/cutlass/gemm/kernel/sm90_tile_scheduler_stream_k.hpp) feature for Hopper. Note that this is only a functional implementation of stream-K, and should not be used for performance comparison. Optimizations are expected in a future release.
@@ -53,6 +53,14 @@ CUTLASS 3.2 is an update to CUTLASS adding:
 - New CUTLASS 2D Convolution Python interface. New [example](/examples/python/03_basic_conv2d.ipynb) here.
 - Support for Windows (MSVC) builds.
 
+CUTLASS 3.2.1 is an update to CUTLASS adding:
+- Python support SM90 Epilogue Visitor Tree (EVT) on top of the C++ support released in 3.2.0.
+- SM80 EVT support in C++ and Python.
+- Splitting CUTLASS library into smaller units based on operation, arch and datatypes. See [1105](https://github.com/NVIDIA/cutlass/discussions/1105) for details.
+- Making `tools/library/scripts` packageable - `tools/library/scripts` is now moving to `python/cutlass_library`. See the Python [README](/python/README.md) for details.
+- SM90 TF32 kernel improvements for all layouts.
+- SM90 rasterization direction support in the CUTLASS profiler.
+- Improvement for CUTLASS profiler build times.
 
 Minimum requirements:
 
@@ -176,7 +184,8 @@ CUTLASS is a header-only template library and does not need to be built to be us
 projects. Client applications should target CUTLASS's `include/` directory in their include
 paths.
 
-CUTLASS unit tests, examples, and utilities can be build with CMake starting version 3.12. 
+CUTLASS unit tests, examples, and utilities can be build with CMake.
+The minimum version of CMake is given in the [Quickstart guide](media/docs/quickstart.md).
 Make sure the `CUDACXX` environment  variable points to NVCC in the CUDA Toolkit installed
 on your system.
 
@@ -512,7 +521,7 @@ reference_device: Passed
 ## More Details on Compiling CUTLASS Kernels and CUTLASS Profiler
 - Please follow the links for more CMake examples on selectively compiling CUTLASS kernels:
   - [GEMM CMake Examples](media/docs/quickstart.md#gemm-cmake-examples) 
-  - [Implicit GEMM conovlution CMake Examples](media/docs/quickstart.md#convolution-cmake-examples)
+  - [Implicit GEMM convolution CMake Examples](media/docs/quickstart.md#convolution-cmake-examples)
 - [Further details about the CUTLASS Profiler are described here.](media/docs/profiler.md)
 
 

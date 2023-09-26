@@ -78,6 +78,7 @@ public:
   /// Helper returns a layout to a tightly packed tensor
   CUTLASS_HOST_DEVICE
   static PackedVectorLayout packed(TensorCoord const &size) {
+    CUTLASS_UNUSED(size);
     return PackedVectorLayout();
   }
 

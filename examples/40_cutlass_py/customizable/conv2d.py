@@ -29,13 +29,18 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 ################################################################################
+
+import sys
+print("This example is deprecated. Please see examples/python for examples of using "
+      "the CUTLASS Python interface.")
+sys.exit(0)
+
 import numpy as np
 import cutlass.backend as pycutlass
 from cutlass.backend import *
 from cutlass.backend.utils.device import device_cc
 from cutlass.backend.conv2d_operation import *
 from cutlass.backend.utils.reference_model import Conv2dReferenceModule
-import sys
 import torch.nn.functional as F
 
 import argparse

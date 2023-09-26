@@ -219,7 +219,6 @@ public :
     ThreadCategory role = ThreadCategory::NonParticipant;
     uint32_t is_leader = 0;
     uint32_t num_consumers = 0;
-    cute::tuple<int, int> active_warps = {0, 0}; 
   };
 
   // Constructor
@@ -232,7 +231,7 @@ public :
     int warp_idx = canonical_warp_idx();
     int lane_predicate = cute::elect_one_sync();
     auto cluster_shape = ClusterShape{};
-    if (warp_idx == cute::get<0>(params.active_warps) && lane_predicate == 1) {
+    if (warp_idx == 0 && lane_predicate == 1) {
       // Barrier FULL init
       for (int i = 0; i < Stages; ++i) {
         full_barrier_ptr_[i].init(1);
@@ -351,6 +350,11 @@ public :
   }
 
   CUTLASS_DEVICE
+  ConsumerToken consumer_test_wait(PipelineState state, uint32_t skip_wait = false) {
+    return consumer_test_wait(state.index(), state.phase(), skip_wait);
+  }
+  
+  CUTLASS_DEVICE
   void consumer_wait(PipelineState state) {
     consumer_wait(state.index(), state.phase());
   }
@@ -440,6 +444,15 @@ private :
     return {static_cast<BarrierStatus>(barrier_status)};
   }
 
+  CUTLASS_DEVICE
+  ConsumerToken consumer_test_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    if (skip_wait) {
+      return {BarrierStatus::WaitDone};
+    }
+    uint32_t barrier_status = full_barrier_ptr_[stage].test_wait(phase);
+    return {static_cast<BarrierStatus>(barrier_status)};
+  }
+  
   // Wait for producer to commit transactions (done by TMA)
   CUTLASS_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase) {
@@ -621,7 +634,6 @@ public :
     uint32_t producer_arv_count = 1;
     uint32_t consumer_arv_count = 1;
     uint32_t dst_blockid = cute::block_rank_in_cluster();
-    cute::tuple<int, int> active_warps = {0, 0};
   };
 
   // Constructor
@@ -636,7 +648,7 @@ public :
 
     // Barrier FULL, EMPTY init
     // Init is done only by thread 0 of the block
-    if (warp_idx == cute::get<0>(params.active_warps) && lane_predicate == 1) {
+    if (warp_idx == 0 && lane_predicate == 1) {
       for (int i = 0; i < Stages; ++i) {
         full_barrier_ptr_[i].init(params.producer_arv_count);
         empty_barrier_ptr_[i].init(params.consumer_arv_count);
@@ -709,6 +721,11 @@ public :
   }
 
   CUTLASS_DEVICE
+  ConsumerToken consumer_test_wait(PipelineState state, uint32_t skip_wait = false) {
+    return consumer_test_wait(state.index(), state.phase(), skip_wait);
+  }
+  
+  CUTLASS_DEVICE
   void consumer_wait(PipelineState state, ConsumerToken barrier_token = {BarrierStatus::WaitAgain}) {
     consumer_wait(state.index(), state.phase(), barrier_token);
   }
@@ -765,6 +782,15 @@ private:
   }
 
   CUTLASS_DEVICE
+  ConsumerToken consumer_test_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    if (skip_wait) {
+      return {BarrierStatus::WaitDone};
+    }
+    uint32_t barrier_status = full_barrier_ptr_[stage].test_wait(phase);
+    return {static_cast<BarrierStatus>(barrier_status)};
+  }
+  
+  CUTLASS_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase, ConsumerToken barrier_token) {
     if (barrier_token == BarrierStatus::WaitAgain) {
       full_barrier_ptr_[stage].wait(phase);
@@ -809,7 +835,6 @@ public :
     uint32_t producer_arv_count = 1;
     uint32_t consumer_arv_count = 1;
     uint32_t dst_blockid = cute::block_rank_in_cluster();
-    cute::tuple<int, int> active_warps = {0, 0};
   };
 
   // Default assumption when only storage is passed is :
@@ -831,7 +856,7 @@ public :
 
     // Barrier FULL, EMPTY init
     // Init is done only by thread 0 of the block
-    if (warp_idx == cute::get<0>(params.active_warps) && lane_predicate == 1) {
+    if (warp_idx == 0 && lane_predicate == 1) {
       for (int i = 0; i < Stages; ++i) {
         full_barrier_ptr_[i].init(params.producer_arv_count);
         empty_barrier_ptr_[i].init(params.consumer_arv_count);
@@ -898,6 +923,11 @@ public :
   }
 
   CUTLASS_DEVICE
+  ConsumerToken consumer_test_wait(PipelineState state, uint32_t skip_wait = false) {
+    return consumer_test_wait(state.index(), state.phase(), skip_wait);
+  }
+  
+  CUTLASS_DEVICE
   void consumer_wait(PipelineState state, ConsumerToken barrier_token = {BarrierStatus::WaitAgain}) {
     consumer_wait(state.index(), state.phase(), barrier_token);
   }
@@ -948,6 +978,15 @@ private:
   }
 
   CUTLASS_DEVICE
+  ConsumerToken consumer_test_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
+    if (skip_wait) {
+      return {BarrierStatus::WaitDone};
+    }
+    uint32_t barrier_status = full_barrier_ptr_[stage].test_wait(phase);
+    return {static_cast<BarrierStatus>(barrier_status)};
+  }
+  
+  CUTLASS_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase) {
     uint32_t done = full_barrier_ptr_[stage].test_wait(phase);
     if (!done) {
@@ -967,6 +1006,7 @@ private:
     empty_barrier_ptr_[stage].arrive(params_.dst_blockid);
   }
 };
+
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -989,7 +1029,6 @@ public :
   struct Params {
     uint32_t group_id;
     uint32_t group_size;
-    cute::tuple<int, int> active_warps = {0, 0};
   };
 
 private :
@@ -1020,7 +1059,7 @@ public:
 
     // Barrier FULL, EMPTY init
     // Init is done only by the one elected thread of the block
-    if (warp_idx == cute::get<0>(params.active_warps) && lane_predicate == 1) {
+    if (warp_idx == 0 && lane_predicate == 1) {
       for (int d = 0; d < Depth; ++d) {
         for (int l = 0; l < Length; ++l) {
           barrier_ptr_[d * Length + l].init(params.group_size);

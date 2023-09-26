@@ -32,10 +32,10 @@
 
 from cutlass.utils.check import (
     alignment_or_default,
-    update_alignment,
     calculate_smem_usage,
     calculate_smem_usage_per_stage,
     valid_cluster_shape,
     valid_schedule,
     valid_stage_count,
+    update_alignment,
 )

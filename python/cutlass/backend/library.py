@@ -31,14 +31,21 @@
 #################################################################################################
 
 """
-Common data types and string names for them. This file is similar to /tools/library/scripts/library.py,
-but uses the Pybind-bound CUTLASS data types as many keys to the dictionary.
+Common data types and string names/tags for them
 """
 
 import enum
 
-import cutlass_bindings
-from cutlass import EpilogueScheduleType, KernelScheduleType, TileSchedulerType
+from cutlass import (
+    ComplexTransform,
+    DataType,
+    DataTypeSize,
+    EpilogueScheduleType,
+    KernelScheduleType,
+    MathOperation,
+    OpcodeClass,
+    TileSchedulerType
+)
 
 
 # The following block implements enum.auto() for Python 3.5 variants that don't include it such
@@ -56,121 +63,6 @@ except ImportError:
         i = __cutlass_library_auto_enum
         __cutlass_library_auto_enum += 1
         return i
-
-
-ShortDataTypeNames = {
-    cutlass_bindings.int32: "i",
-    cutlass_bindings.float16: "h",
-    cutlass_bindings.float32: "s",
-    cutlass_bindings.float64: "d",
-    cutlass_bindings.dtype.cf32: "c",
-    cutlass_bindings.dtype.cf64: "z",
-}
-
-
-DataTypeNames = {
-    cutlass_bindings.dtype.b1: "b1",
-    cutlass_bindings.dtype.u4: "u4",
-    cutlass_bindings.dtype.u8: "u8",
-    cutlass_bindings.dtype.u16: "u16",
-    cutlass_bindings.dtype.u32: "u32",
-    cutlass_bindings.dtype.u64: "u64",
-    cutlass_bindings.dtype.s4: "s4",
-    cutlass_bindings.int8: "s8",
-    cutlass_bindings.dtype.s16: "s16",
-    cutlass_bindings.int32: "s32",
-    cutlass_bindings.dtype.s64: "s64",
-    cutlass_bindings.float16: "f16",
-    cutlass_bindings.bfloat16: "bf16",
-    cutlass_bindings.float32: "f32",
-    cutlass_bindings.tfloat32: "tf32",
-    cutlass_bindings.float64: "f64",
-    cutlass_bindings.dtype.cf16: "cf16",
-    cutlass_bindings.dtype.cbf16: "cbf16",
-    cutlass_bindings.dtype.cf32: "cf32",
-    cutlass_bindings.dtype.ctf32: "ctf32",
-    cutlass_bindings.dtype.cf64: "cf64",
-    cutlass_bindings.dtype.cu4: "cu4",
-    cutlass_bindings.dtype.cu8: "cu8",
-    cutlass_bindings.dtype.cu16: "cu16",
-    cutlass_bindings.dtype.cu32: "cu32",
-    cutlass_bindings.dtype.cu64: "cu64",
-    cutlass_bindings.dtype.cs4: "cs4",
-    cutlass_bindings.dtype.cs8: "cs8",
-    cutlass_bindings.dtype.cs16: "cs16",
-    cutlass_bindings.dtype.cs32: "cs32",
-    cutlass_bindings.dtype.cs64: "cs64",
-}
-
-
-DataTypeTag = {
-    cutlass_bindings.dtype.b1: "cutlass::uint1b_t",
-    cutlass_bindings.dtype.u4: "cutlass::uint4b_t",
-    cutlass_bindings.dtype.u8: "uint8_t",
-    cutlass_bindings.dtype.u16: "uint16_t",
-    cutlass_bindings.dtype.u32: "uint32_t",
-    cutlass_bindings.dtype.u64: "uint64_t",
-    cutlass_bindings.dtype.s4: "cutlass::int4b_t",
-    cutlass_bindings.int8: "int8_t",
-    cutlass_bindings.dtype.s16: "int16_t",
-    cutlass_bindings.int32: "int32_t",
-    cutlass_bindings.dtype.s64: "int64_t",
-    cutlass_bindings.float16: "cutlass::half_t",
-    cutlass_bindings.bfloat16: "cutlass::bfloat16_t",
-    cutlass_bindings.float32: "float",
-    cutlass_bindings.tfloat32: "cutlass::tfloat32_t",
-    cutlass_bindings.float64: "double",
-    cutlass_bindings.dtype.cf16: "cutlass::complex<cutlass::half_t>",
-    cutlass_bindings.dtype.cbf16: "cutlass::complex<cutlass::bfloat16_t>",
-    cutlass_bindings.dtype.cf32: "cutlass::complex<float>",
-    cutlass_bindings.dtype.ctf32: "cutlass::complex<cutlass::tfloat32_t>",
-    cutlass_bindings.dtype.cf64: "cutlass::complex<double>",
-    cutlass_bindings.dtype.cu4: "cutlass::complex<cutlass::uint4b_t>",
-    cutlass_bindings.dtype.cu8: "cutlass::complex<cutlass::uint8_t>",
-    cutlass_bindings.dtype.cu16: "cutlass::complex<cutlass::uint16_t>",
-    cutlass_bindings.dtype.cu32: "cutlass::complex<cutlass::uint32_t>",
-    cutlass_bindings.dtype.cu64: "cutlass::complex<cutlass::uint64_t>",
-    cutlass_bindings.dtype.cs4: "cutlass::complex<cutlass::int4b_t>",
-    cutlass_bindings.dtype.cs8: "cutlass::complex<cutlass::int8_t>",
-    cutlass_bindings.dtype.cs16: "cutlass::complex<cutlass::int16_t>",
-    cutlass_bindings.dtype.cs32: "cutlass::complex<cutlass::int32_t>",
-    cutlass_bindings.dtype.cs64: "cutlass::complex<cutlass::int64_t>",
-}
-
-
-DataTypeSize = {
-    cutlass_bindings.dtype.b1: 1,
-    cutlass_bindings.dtype.u4: 4,
-    cutlass_bindings.dtype.u8: 8,
-    cutlass_bindings.dtype.u16: 16,
-    cutlass_bindings.dtype.u32: 32,
-    cutlass_bindings.dtype.u64: 64,
-    cutlass_bindings.dtype.s4: 4,
-    cutlass_bindings.int8: 8,
-    cutlass_bindings.dtype.s16: 16,
-    cutlass_bindings.int32: 32,
-    cutlass_bindings.dtype.s64: 64,
-    cutlass_bindings.float16: 16,
-    cutlass_bindings.bfloat16: 16,
-    cutlass_bindings.float32: 32,
-    cutlass_bindings.tfloat32: 32,
-    cutlass_bindings.float64: 64,
-    cutlass_bindings.dtype.cf16: 32,
-    cutlass_bindings.dtype.cbf16: 32,
-    cutlass_bindings.dtype.cf32: 64,
-    cutlass_bindings.dtype.ctf32: 32,
-    cutlass_bindings.dtype.cf64: 128,
-    cutlass_bindings.dtype.cu4: 8,
-    cutlass_bindings.dtype.cu8: 16,
-    cutlass_bindings.dtype.cu16: 32,
-    cutlass_bindings.dtype.cu32: 64,
-    cutlass_bindings.dtype.cu64: 128,
-    cutlass_bindings.dtype.cs4: 8,
-    cutlass_bindings.dtype.cs8: 16,
-    cutlass_bindings.dtype.cs16: 32,
-    cutlass_bindings.dtype.cs32: 64,
-    cutlass_bindings.dtype.cs64: 128,
-}
 
 
 class DataTypeSizeBytes:
@@ -193,191 +85,13 @@ class DataTypeSizeBytes:
         bits = DataTypeSize[datatype]
         if bits < 8:
             raise Exception(
-                "Data type {} is less than one byte in size.".format(datatype)
+                f"Data type {datatype} is less than one byte in size."
             )
         elif bits % 8 != 0:
             raise Exception(
-                "Data type {} is not an integer number of bytes.".format(datatype)
+                f"Data type datatype is not an integer number of bytes."
             )
         return bits // 8
-
-
-ComplexTransformTag = {
-    cutlass_bindings.complex_transform.none: "cutlass::ComplexTransform::kNone",
-    cutlass_bindings.complex_transform.conj: "cutlass::ComplexTransform::kConjugate",
-}
-
-
-RealComplexBijection = [
-    (cutlass_bindings.float16, cutlass_bindings.dtype.cf16),
-    (cutlass_bindings.float32, cutlass_bindings.dtype.cf32),
-    (cutlass_bindings.float64, cutlass_bindings.dtype.cf64),
-]
-
-
-def is_complex(data_type):
-    for r, c in RealComplexBijection:
-        if data_type == c:
-            return True
-    return False
-
-
-def get_complex_from_real(real_type):
-    for r, c in RealComplexBijection:
-        if real_type == r:
-            return c
-    return cutlass_bindings.dtype.invalid
-
-
-def get_real_from_complex(complex_type):
-    for r, c in RealComplexBijection:
-        if complex_type == c:
-            return r
-    return cutlass_bindings.dtype.invalid
-
-
-class ComplexMultiplyOp(enum.Enum):
-    multiply_add = enum_auto()
-    gaussian = enum_auto()
-
-
-class MathOperation(enum.Enum):
-    multiply_add = enum_auto()
-    multiply_add_saturate = enum_auto()
-    xor_popc = enum_auto()
-    multiply_add_fast_bf16 = enum_auto()
-    multiply_add_fast_f16 = enum_auto()
-    multiply_add_fast_f32 = enum_auto()
-    multiply_add_complex_fast_f32 = enum_auto()
-    multiply_add_complex = enum_auto()
-    multiply_add_complex_gaussian = enum_auto()
-
-
-MathOperationNames = {
-    MathOperation.multiply_add: "multiply_add",
-    MathOperation.multiply_add_saturate: "multiply_add_saturate",
-    MathOperation.xor_popc: "xor_popc",
-    MathOperation.multiply_add_fast_bf16: "multiply_add_fast_bf16",
-    MathOperation.multiply_add_fast_f16: "multiply_add_fast_f16",
-    MathOperation.multiply_add_fast_f32: "multiply_add_fast_f32",
-    MathOperation.multiply_add_complex_fast_f32: "multiply_add_complex_fast_f32",
-    MathOperation.multiply_add_complex: "multiply_add_complex",
-    MathOperation.multiply_add_complex_gaussian: "multiply_add_complex_gaussian",
-}
-
-
-MathOperationTag = {
-    MathOperation.multiply_add: "cutlass::arch::OpMultiplyAdd",
-    MathOperation.multiply_add_saturate: "cutlass::arch::OpMultiplyAddSaturate",
-    MathOperation.xor_popc: "cutlass::arch::OpXorPopc",
-    MathOperation.multiply_add_fast_bf16: "cutlass::arch::OpMultiplyAddFastBF16",
-    MathOperation.multiply_add_fast_f16: "cutlass::arch::OpMultiplyAddFastF16",
-    MathOperation.multiply_add_fast_f32: "cutlass::arch::OpMultiplyAddFastF32",
-    MathOperation.multiply_add_complex_fast_f32: "cutlass::arch::OpMultiplyAddComplexFastF32",
-    MathOperation.multiply_add_complex: "cutlass::arch::OpMultiplyAddComplex",
-    MathOperation.multiply_add_complex_gaussian: "cutlass::arch::OpMultiplyAddGaussianComplex",
-}
-
-
-LayoutTag = {
-    cutlass_bindings.ColumnMajor: "cutlass::layout::ColumnMajor",
-    cutlass_bindings.RowMajor: "cutlass::layout::RowMajor",
-    cutlass_bindings.layout.ColumnMajorInterleaved2: "cutlass::layout::ColumnMajorInterleaved<2>",
-    cutlass_bindings.layout.RowMajorInterleaved2: "cutlass::layout::RowMajorInterleaved<2>",
-    cutlass_bindings.ColumnMajorInterleaved32: "cutlass::layout::ColumnMajorInterleaved<32>",
-    cutlass_bindings.RowMajorInterleaved32: "cutlass::layout::RowMajorInterleaved<32>",
-    cutlass_bindings.layout.ColumnMajorInterleaved64: "cutlass::layout::ColumnMajorInterleaved<64>",
-    cutlass_bindings.layout.RowMajorInterleaved64: "cutlass::layout::RowMajorInterleaved<64>",
-    cutlass_bindings.TensorNHWC: "cutlass::layout::TensorNHWC",
-    cutlass_bindings.layout.TensorNDHWC: "cutlass::layout::TensorNDHWC",
-    cutlass_bindings.layout.TensorNCHW: "cutlass::layout::TensorNCHW",
-    cutlass_bindings.layout.TensorNGHWC: "cutlass::layout::TensorNGHWC",
-    cutlass_bindings.TensorNC32HW32: "cutlass::layout::TensorNCxHWx<32>",
-    cutlass_bindings.TensorC32RSK32: "cutlass::layout::TensorCxRSKx<32>",
-    cutlass_bindings.layout.TensorNC64HW64: "cutlass::layout::TensorNCxHWx<64>",
-    cutlass_bindings.layout.TensorC64RSK64: "cutlass::layout::TensorCxRSKx<64>",
-}
-
-
-TransposedLayout = {
-    cutlass_bindings.ColumnMajor: cutlass_bindings.RowMajor,
-    cutlass_bindings.RowMajor: cutlass_bindings.ColumnMajor,
-    cutlass_bindings.layout.ColumnMajorInterleaved2: cutlass_bindings.layout.RowMajorInterleaved2,
-    cutlass_bindings.layout.RowMajorInterleaved2: cutlass_bindings.layout.ColumnMajorInterleaved2,
-    cutlass_bindings.ColumnMajorInterleaved32: cutlass_bindings.RowMajorInterleaved32,
-    cutlass_bindings.RowMajorInterleaved32: cutlass_bindings.ColumnMajorInterleaved32,
-    cutlass_bindings.layout.ColumnMajorInterleaved64: cutlass_bindings.layout.RowMajorInterleaved64,
-    cutlass_bindings.layout.RowMajorInterleaved64: cutlass_bindings.layout.ColumnMajorInterleaved64,
-    cutlass_bindings.TensorNHWC: cutlass_bindings.TensorNHWC,
-}
-
-
-ShortLayoutTypeNames = {
-    cutlass_bindings.ColumnMajor: "n",
-    cutlass_bindings.layout.ColumnMajorInterleaved2: "n2",
-    cutlass_bindings.ColumnMajorInterleaved32: "n32",
-    cutlass_bindings.layout.ColumnMajorInterleaved64: "n64",
-    cutlass_bindings.RowMajor: "t",
-    cutlass_bindings.layout.RowMajorInterleaved2: "t2",
-    cutlass_bindings.RowMajorInterleaved32: "t32",
-    cutlass_bindings.layout.RowMajorInterleaved64: "t64",
-    cutlass_bindings.TensorNHWC: "nhwc",
-    cutlass_bindings.layout.TensorNDHWC: "ndhwc",
-    cutlass_bindings.layout.TensorNCHW: "nchw",
-    cutlass_bindings.layout.TensorNGHWC: "nghwc",
-    cutlass_bindings.TensorNC32HW32: "nc32hw32",
-    cutlass_bindings.layout.TensorNC64HW64: "nc64hw64",
-    cutlass_bindings.TensorC32RSK32: "c32rsk32",
-    cutlass_bindings.layout.TensorC64RSK64: "c64rsk64",
-}
-
-
-ShortComplexLayoutNames = {
-    (cutlass_bindings.ColumnMajor, cutlass_bindings.complex_transform.none): "n",
-    (cutlass_bindings.ColumnMajor, cutlass_bindings.complex_transform.conj): "c",
-    (cutlass_bindings.RowMajor, cutlass_bindings.complex_transform.none): "t",
-    (cutlass_bindings.RowMajor, cutlass_bindings.complex_transform.conj): "h",
-}
-
-
-OpcodeClassNames = {
-    cutlass_bindings.OpClass.Simt: "simt",
-    cutlass_bindings.OpClass.TensorOp: "tensorop",
-    cutlass_bindings.OpClass.WmmaTensorOp: "wmma_tensorop",
-    cutlass_bindings.OpClass.SparseTensorOp: "sptensorop",
-}
-
-
-OpcodeClassTag = {
-    cutlass_bindings.OpClass.Simt: "cutlass::arch::OpClassSimt",
-    cutlass_bindings.OpClass.TensorOp: "cutlass::arch::OpClassTensorOp",
-    cutlass_bindings.OpClass.WmmaTensorOp: "cutlass::arch::OpClassWmmaTensorOp",
-    cutlass_bindings.OpClass.SparseTensorOp: "cutlass::arch::OpClassSparseTensorOp",
-}
-
-
-class OperationKind(enum.Enum):
-    Gemm = enum_auto()
-    Conv2d = enum_auto()
-    Conv3d = enum_auto()
-
-
-OperationKindNames = {
-    OperationKind.Gemm: "gemm",
-    OperationKind.Conv2d: "conv2d",
-    OperationKind.Conv3d: "conv3d",
-}
-
-
-ArchitectureNames = {
-    50: "maxwell",
-    60: "pascal",
-    61: "pascal",
-    70: "volta",
-    75: "turing",
-    80: "ampere",
-    90: "hopper",
-}
 
 
 SharedMemPerCC = {
@@ -392,52 +106,8 @@ SharedMemPerCC = {
 }
 
 
-class GemmKind(enum.Enum):
-    Gemm = enum_auto()
-    Sparse = enum_auto()
-    Universal = enum_auto()
-    PlanarComplex = enum_auto()
-    PlanarComplexArray = enum_auto()
-    Grouped = enum_auto()
-
-
-GemmKindNames = {
-    GemmKind.Gemm: "gemm",
-    GemmKind.Sparse: "spgemm",
-    GemmKind.Universal: "gemm",
-    GemmKind.PlanarComplex: "gemm_planar_complex",
-    GemmKind.PlanarComplexArray: "gemm_planar_complex_array",
-    GemmKind.Grouped: "gemm_grouped",
-}
-
-
-class SwizzlingFunctor(enum.Enum):
-    Identity1 = enum_auto()
-    Identity2 = enum_auto()
-    Identity4 = enum_auto()
-    Identity8 = enum_auto()
-    Horizontal = enum_auto()
-    BatchedIdentity1 = enum_auto()
-    StridedDgradIdentity1 = enum_auto()
-    StridedDgradIdentity4 = enum_auto()
-    StridedDgradHorizontal = enum_auto()
-
-
-SwizzlingFunctorTag = {
-    cutlass_bindings.IdentitySwizzle1: "cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<1>",
-    SwizzlingFunctor.Identity2: "cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<2>",
-    SwizzlingFunctor.Identity4: "cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<4>",
-    SwizzlingFunctor.Identity8: "cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<8>",
-    SwizzlingFunctor.Horizontal: "cutlass::gemm::threadblock::GemmHorizontalThreadblockSwizzle",
-    SwizzlingFunctor.BatchedIdentity1: "cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle",
-    SwizzlingFunctor.StridedDgradIdentity1: "cutlass::conv::threadblock::StridedDgradIdentityThreadblockSwizzle<1>",
-    SwizzlingFunctor.StridedDgradIdentity4: "cutlass::conv::threadblock::StridedDgradIdentityThreadblockSwizzle<4>",
-    SwizzlingFunctor.StridedDgradHorizontal: "cutlass::conv::threadblock::StridedDgradHorizontalThreadblockSwizzle",
-}
-
-
 class SchedulerMode(enum.Enum):
-    Device = (enum_auto(),)
+    Device = enum_auto()
     Host = enum_auto()
 
 
@@ -450,61 +120,98 @@ SchedulerModeTag = {
 ShortSchedulerModeNames = {SchedulerMode.Device: "Device", SchedulerMode.Host: "Host"}
 
 
-ConvKindTag = {
-    cutlass_bindings.conv.Operator.fprop: "cutlass::conv::Operator::kFprop",
-    cutlass_bindings.conv.Operator.dgrad: "cutlass::conv::Operator::kDgrad",
-    cutlass_bindings.conv.Operator.wgrad: "cutlass::conv::Operator::kWgrad",
+class FunctionalOp(enum.Enum):
+    AtomicAdd = enum_auto()
+    AtomicMaximum = enum_auto()
+    Divides = enum_auto()
+    Maximum = enum_auto()
+    Minimum = enum_auto()
+    Minus = enum_auto()
+    Multiplies = enum_auto()
+    MultiplyAdd = enum_auto()
+    Plus = enum_auto()
+
+
+FunctionalOpTag = {
+    FunctionalOp.AtomicAdd: "cutlass::atomic_add",
+    FunctionalOp.AtomicMaximum: "cutlass::atomic_maximum",
+    FunctionalOp.Divides: "cutlass::divides",
+    FunctionalOp.Maximum: "cutlass::maximum",
+    FunctionalOp.Minimum: "cutlass::minimum",
+    FunctionalOp.Minus: "cutlass::minus",
+    FunctionalOp.Multiplies: "cutlass::multiplies",
+    FunctionalOp.MultiplyAdd: "cutlass::multiply_add",
+    FunctionalOp.Plus: "cutlass::plus",
 }
 
 
-ConvKindNames = {
-    cutlass_bindings.conv.Operator.fprop: "fprop",
-    cutlass_bindings.conv.Operator.dgrad: "dgrad",
-    cutlass_bindings.conv.Operator.wgrad: "wgrad",
+class ActivationOp(enum.Enum):
+    DGelu = enum_auto()
+    Gelu = enum_auto()
+    GeluTaylor = enum_auto()
+    HardSwish = enum_auto()
+    Identity = enum_auto()
+    LeakyReLU = enum_auto()
+    ReLU = enum_auto()
+    Sigmoid = enum_auto()
+    SiLU = enum_auto()
+    Tanh = enum_auto()
+
+
+ActivationOpTag = {
+    ActivationOp.DGelu: "cutlass::epilogue::thread::dGELU",
+    ActivationOp.Gelu: "cutlass::epilogue::thread::GELU",
+    ActivationOp.GeluTaylor: "cutlass::epilogue::thread::GELU_taylor",
+    ActivationOp.HardSwish: "cutlass::epilogue::thread::HardSwish",
+    ActivationOp.Identity: "cutlass::epilogue::thread::Identity",
+    ActivationOp.LeakyReLU: "cutlass::epilogue::thread::LeakyReLU",
+    ActivationOp.ReLU: "cutlass::epilogue::thread::ReLu",
+    ActivationOp.Sigmoid: "cutlass::epilogue::thread::Sigmoid",
+    ActivationOp.SiLU: "cutlass::epilogue::thread::SiLu",
+    ActivationOp.Tanh: "cutlass::epilogue::thread::Tanh",
 }
 
 
-IteratorAlgorithmTag = {
-    cutlass_bindings.conv.IteratorAlgorithm.analytic: "cutlass::conv::IteratorAlgorithm::kAnalytic",
-    cutlass_bindings.conv.IteratorAlgorithm.optimized: "cutlass::conv::IteratorAlgorithm::kOptimized",
-    cutlass_bindings.conv.IteratorAlgorithm.fixed_channels: "cutlass::conv::IteratorAlgorithm::kFixedChannels",
-    cutlass_bindings.conv.IteratorAlgorithm.few_channels: "cutlass::conv::IteratorAlgorithm::kFewChannels",
-}
+def op_tag(op) -> str:
+    """
+    Dispatches `op` to the appropriate *Tag dictionary depending on whether
+    `op` is an ActivationOp or FunctionalOp. This is useful for cases in which
+    either type can be used.
+
+    :param op: operation to emit a tag for
+    :type op: ActivationOp | FunctionalOp
+
+    :return: tag corresponding to op
+    :rtype: str
+    """
+    if isinstance(op, ActivationOp):
+        return ActivationOpTag[op]
+    elif isinstance(op, FunctionalOp):
+        return FunctionalOpTag[op]
+    else:
+        raise Exception(f"Unexpected op type {op}. Must be one of ActivationOp or FunctionalOp.")
 
 
-IteratorAlgorithmNames = {
-    cutlass_bindings.conv.IteratorAlgorithm.analytic: "analytic",
-    cutlass_bindings.conv.IteratorAlgorithm.optimized: "optimized",
-    cutlass_bindings.conv.IteratorAlgorithm.fixed_channels: "fixed_channels",
-    cutlass_bindings.conv.IteratorAlgorithm.few_channels: "few_channels",
-}
+class FloatRoundStyle(enum.Enum):
+    ToNearest = enum_auto()
+    ToNearestSatfinite = enum_auto()
+    Indeterminate = enum_auto()
+    TowardZero = enum_auto()
+    TowardInfinity = enum_auto()
+    TowardNegInfinity = enum_auto()
+    HalfUlpTruncDntz = enum_auto()
+    HalfUlpTruncate = enum_auto()
 
 
-class StrideSupport(enum.Enum):
-    Strided = enum_auto()
-    Unity = enum_auto()
-
-
-StrideSupportTag = {
-    StrideSupport.Strided: "cutlass::conv::StrideSupport::kStrided",
-    StrideSupport.Unity: "cutlass::conv::StrideSupport::kUnity",
-}
-
-
-StrideSupportNames = {
-    StrideSupport.Strided: "",
-    StrideSupport.Unity: "unity_stride",
-}
-
-
-class ConvMode(enum.Enum):
-    CrossCorrelation = enum_auto()
-    Convolution = enum_auto()
-
-
-ConvModeTag = {
-    ConvMode.CrossCorrelation: "cutlass::conv::Mode::kCrossCorrelation",
-    ConvMode.Convolution: "cutlass::conv::Mode::kConvolution",
+FloatRoundStyleTag = {
+    FloatRoundStyle.ToNearest: "cutlass::FloatRoundStyle::round_to_nearest",
+    FloatRoundStyle.ToNearestSatfinite: "cutlass::FloatRoundStyle::round_to_nearest_satfinite",
+    FloatRoundStyle.Indeterminate: "cutlass::FloatRoundStyle::round_indeterminate",
+    FloatRoundStyle.TowardZero: "cutlass::FloatRoundStyle::round_toward_zero",
+    FloatRoundStyle.TowardInfinity: "cutlass::FloatRoundStyle::round_toward_infinity",
+    FloatRoundStyle.TowardNegInfinity: "cutlass::FloatRoundStyle::round_toward_neg_infinity",
+    FloatRoundStyle.HalfUlpTruncDntz: "cutlass::FloatRoundStyle::round_half_ulp_trunc_dntz",
+    FloatRoundStyle.HalfUlpTruncate: "cutlass::FloatRoundStyle::round_half_ulp_truncate",
 }
 
 
@@ -519,7 +226,7 @@ class MathInstruction:
         element_a,
         element_b,
         element_accumulator,
-        opcode_class=cutlass_bindings.OpClass.Simt,
+        opcode_class=OpcodeClass.Simt,
         math_operation=MathOperation.multiply_add,
     ):
         """
@@ -529,7 +236,7 @@ class MathInstruction:
         :param element_b: data type of operand B
         :param element_accumulator: data type used in accumulation
         :param opcode_class: higher-level class of the instruction (e.g., SIMT or Tensor Core)
-        :type opcode_class: cutlass_bindings.OpClass
+        :type opcode_class: cutlass_library.library.OpcodeClass
         :param math_operation: the type of low-level operation to be performed (e.g., multiply accumulate)
         :type math_operation: MathOperation
         """
@@ -556,7 +263,7 @@ class TileDescription:
         cluster_shape=[1, 1, 1],
         kernel_schedule: KernelScheduleType = None,
         epilogue_schedule: EpilogueScheduleType = None,
-        tile_scheduler: TileSchedulerType = None,
+        tile_scheduler: TileSchedulerType = None
     ):
         """
         :param threadblock_shape: shape of a threadblock tyle
@@ -610,7 +317,7 @@ class TileDescription:
             else:
                 attrs[key] = getattr(self, key)
 
-        mi = MathInstruction(
+        attrs["math_instruction"] = MathInstruction(
             attrs["instruction_shape"],
             self.math_instruction.element_a,
             self.math_instruction.element_b,
@@ -619,11 +326,10 @@ class TileDescription:
             self.math_instruction.math_operation
         )
 
-        return TileDescription(
-            attrs["threadblock_shape"], attrs["stages"],
-            attrs["warp_count"], mi, attrs["cluster_shape"],
-            attrs["kernel_schedule"], attrs["epilogue_schedule"]
-        )
+        # Remove the instruction shape
+        del attrs["instruction_shape"]
+
+        return TileDescription(**attrs)
 
     @property
     def num_threads(self):
@@ -660,6 +366,15 @@ class TileDescription:
 
         return name
 
+    def procedural_name_2x(self):
+        """
+        Returns a name identifying the tile description
+
+        :return: name identifying the tile description
+        :rtype: int
+        """
+        return "%dx%d_%dx%d" % (self.threadblock_shape[0], self.threadblock_shape[1], self.threadblock_shape[2], self.stages)
+
     def __str__(self):
         """
         Returns a string with containing each of the tile description's values
@@ -695,8 +410,7 @@ class TileDescription:
 
 
 class TensorDescription:
-    def __init__(self, element, layout, alignment=1,
-                 complex_transform=cutlass_bindings.complex_transform.none):
+    def __init__(self, element, layout, alignment=1, complex_transform=ComplexTransform.none):
         self.element = element
         self.layout = layout
         self.alignment = min(128 // DataTypeSize[self.element], alignment)
@@ -751,7 +465,7 @@ class ApiVersion(enum.Enum):
     v3x = enum_auto()
 
 
-def api_version(arch, opclass, datatype):
+def api_version(arch, opclass, dtype):
     """
     Returns whether the architecture, opcode class, and datatype in question require using CUTLASS 2.x
     or 3.x for code emission.
@@ -759,15 +473,16 @@ def api_version(arch, opclass, datatype):
     :param arch: compute capability of device on which to run
     :type arch: int
     :param opclass: class of the operation being performed
-    :type opclass: cutlass_bindings.OpClass
-    :param datatype: data type to be used in operation (assumes that ElementA and ElementB are the same)
+    :type opclass: cutlass.OpcodeClass
+    :param dtype: data type to be used in operation (assumes that ElementA and ElementB are the same)
+    :type dtype: cutlass.DataType
 
     :return: API version to be used in code emission
     :rtype: ApiVersion
     """
     if (arch >= 90 and
-        opclass == cutlass_bindings.OpClass.TensorOp and
-        (datatype != cutlass_bindings.float64)):
+        opclass == OpcodeClass.TensorOp and
+        (dtype != DataType.f64)):
         return ApiVersion.v3x
     else:
         return ApiVersion.v2x

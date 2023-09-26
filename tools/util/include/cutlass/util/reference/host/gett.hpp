@@ -368,8 +368,8 @@ template <class TensorType>
 auto make_layout_rank3(const TensorType& tensor) {
   // append a batch mode of size 1 if we do not have tensors that are rank 3
   return make_layout(
-      make_shape(get<0>(tensor.shape()), get<1>(tensor.shape()), Int<1>{}),
-      make_stride(get<0>(tensor.stride()), get<1>(tensor.stride()), int64_t(cosize(tensor.layout()))));
+      make_shape(cute::get<0>(tensor.shape()), cute::get<1>(tensor.shape()), cute::Int<1>{}),
+      make_stride(cute::get<0>(tensor.stride()), cute::get<1>(tensor.stride()), int64_t(cosize(tensor.layout()))));
 }
 
 /// GEMM - General Matrix-Matrix contraction without conjugation options

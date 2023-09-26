@@ -76,6 +76,10 @@ namespace detail
 template <size_t N, class T, bool IsEmpty = is_empty<T>::value>
 struct EBO;
 
+template <class T, size_t N, bool B>
+CUTE_HOST_DEVICE constexpr C<N> findt(EBO<N, T, B> const&)
+{ return {}; }
+
 // Specialization for types T that have no data;
 // the "static tuple leaf."  Valid T here include
 // integral_constant<U, Value>, Int<Value>,
@@ -219,13 +223,27 @@ get(tuple<T...>&& t) noexcept
 }
 
 //
+// find a type X within a cute::tuple
+//   Requires X to be unique in tuple
+//   Returns a static integer
+//
+
+template <class X, class... T>
+CUTE_HOST_DEVICE constexpr
+auto
+find(tuple<T...> const& t) noexcept
+{
+  return detail::findt<X>(t);
+}
+
+//
 // Custom is_tuple trait simply checks the existence of tuple_size
 //      and assumes std::get<I>(.), std::tuple_element<I,.>
 //
 namespace detail {
 
 template <class T>
-auto has_tuple_size( T*) -> integral_constant<bool, 0 <= tuple_size<T>::value>;
+auto has_tuple_size( T*) -> bool_constant<(0 <= tuple_size<T>::value)>;
 auto has_tuple_size(...) -> false_type;
 
 } // end namespace detail
@@ -347,6 +365,14 @@ tuple_cat(T0 const& t0, T1 const& t1, T2 const& t2, T3 const& t3, T4 const& t4,
   return cute::make_tuple(get<I0>(t0)..., get<I1>(t1)..., get<I2>(t2)..., get<I3>(t3)..., get<I4>(t4)...);
 }
 
+template<class T0, class T1>
+struct tuple_cat_static;
+
+template<class... T0s, class... T1s>
+struct tuple_cat_static<tuple<T0s...>, tuple<T1s...>> {
+  using type = tuple<T0s..., T1s...>;
+};
+
 } // end namespace detail
 
 CUTE_HOST_DEVICE constexpr
@@ -370,9 +396,15 @@ CUTE_HOST_DEVICE constexpr
 auto
 tuple_cat(T0 const& t0, T1 const& t1)
 {
-  return detail::tuple_cat(t0, t1,
+  if constexpr (is_static<T0>::value && is_static<T1>::value &&
+		is_tuple<T0>::value && is_tuple<T1>::value) {
+    return typename detail::tuple_cat_static<T0, T1>::type{};
+  } else 
+  {
+    return detail::tuple_cat(t0, t1,
                            make_index_sequence<tuple_size<T0>::value>{},
                            make_index_sequence<tuple_size<T1>::value>{});
+  }
 }
 
 template <class T0, class T1, class T2>
@@ -416,7 +448,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 tuple_cat(T0 const& t0, T1 const& t1, T2 const& t2, T3 const& t3, T4 const& t4, T5 const& t5, Ts const&... ts)
 {
-  return cute::tuple_cat(cute::tuple_cat(t0,t1,t2,t3,t4), t5, ts...);
+  return cute::tuple_cat(cute::tuple_cat(t0,t1,t2,t3,t4), cute::tuple_cat(t5, ts...));
 }
 #endif
 

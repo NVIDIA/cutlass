@@ -35,7 +35,7 @@
 #include <stdexcept>
 
 #if CUTLASS_ENABLE_CUBLAS
-#include "cublas_helpers.h"
+#include "cutlass/profiler/cublas_helpers.h"
 
 namespace cutlass {
 namespace profiler {

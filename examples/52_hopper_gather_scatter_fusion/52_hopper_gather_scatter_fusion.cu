@@ -526,7 +526,8 @@ struct ExampleRunner
 
     // Forward calls via lambda to avoid specifying template arguments
     auto gather_call = [](auto&&... args){ gather(static_cast<decltype(args)&&>(args)...); };
-    auto scatter_call = [](auto&&... args){ scatter(static_cast<decltype(args)&&>(args)...); };
+    // MSVC doesn't count use inside a false "if constexpr" branch.
+    [[maybe_unused]] auto scatter_call = [](auto&&... args){ scatter(static_cast<decltype(args)&&>(args)...); };
 
     if constexpr (DoGatherA) {
       run_gather(gather_call, tensor_a, tensor_a_gathered, arguments.gather_A, problem_size.batch(), stride_A);

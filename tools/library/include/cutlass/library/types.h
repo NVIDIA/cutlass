@@ -250,6 +250,13 @@ enum class EpilogueKind {
   kInvalid
 };
 
+enum class RasterOrder {
+  kAlongN,
+  kAlongM,
+  kHeuristic,
+  kInvalid
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace library

@@ -32,23 +32,56 @@
 
 import ctypes
 
-from cuda import cuda, cudart
-import cutlass_bindings
 import numpy as np
 from scipy.special import erf
 
+from cutlass import DataType, DataTypeTag
 from cutlass.backend.c_types import MatrixCoord_
 from cutlass.backend.frontend import NumpyFrontend
-from cutlass.backend.library import DataTypeTag
+from cutlass.backend.library import ActivationOp, ActivationOpTag
 from cutlass.backend.utils.software import CheckPackages, SubstituteTemplate
 
 dtype2ctype = {
-    cutlass_bindings.int8: ctypes.c_int8,
-    cutlass_bindings.float16: ctypes.c_uint16,
-    cutlass_bindings.float32: ctypes.c_float,
-    cutlass_bindings.float64: ctypes.c_double,
-    cutlass_bindings.int32: ctypes.c_int32
+    DataType.f16: ctypes.c_uint16,
+    DataType.f32: ctypes.c_float,
+    DataType.f64: ctypes.c_double,
+    DataType.s8: ctypes.c_int8,
+    DataType.s32: ctypes.c_int32
 }
+
+torch_available = CheckPackages().check_torch()
+if torch_available:
+    import torch
+    import torch.nn.functional as F
+
+
+def get_scalar(value):
+    """
+    Returns a scalar value from a container (e.g., np.ndarray)
+    """
+    if isinstance(value, np.ndarray):
+        if value.size != 1:
+            raise Exception("Scalars used in epilogue must be of size 1")
+        return value.reshape(-1)[0]
+    elif CheckPackages().check_torch() and isinstance(value, torch.Tensor):
+        if value.size != 1:
+            raise Exception("Scalars used in epilogue must be of size 1")
+        return value.reshape(-1)[0]
+    else:
+        return value
+
+
+def to_ctype_value(value, dtype):
+    """
+    Converts ``value`` to the corresponding storage needed for the ctype that
+    will store ``value``.
+    """
+    scalar = get_scalar(value)
+    if dtype == DataType.f16:
+        # Convert f16 value into an integer
+        return int.from_bytes(np.float16(scalar).tobytes(), "little")
+    else:
+        return scalar
 
 
 #################################################################################################
@@ -121,7 +154,6 @@ class LinearCombination(EpilogueFunctorBase):
             DataTypeTag[element_epilogue],
         ]
 
-        # get epilogue output op type
         c_element_epilogue = dtype2ctype[self.element_epilogue]
         element_epilogue = self.element_epilogue
 
@@ -134,8 +166,8 @@ class LinearCombination(EpilogueFunctorBase):
             ]
 
             def __init__(self, alpha, beta, *args) -> None:
-                self.alpha = element_epilogue(alpha).storage
-                self.beta = element_epilogue(beta).storage
+                self.alpha = to_ctype_value(alpha, element_epilogue)
+                self.beta = to_ctype_value(beta, element_epilogue)
 
         self.epilogue_type = _EpilogueOutputOpParams
 
@@ -186,8 +218,8 @@ class LinearCombinationClamp(LinearCombination):
             ]
 
             def __init__(self, alpha, beta, *args) -> None:
-                self.alpha = element_epilogue(alpha).storage
-                self.beta = element_epilogue(beta).storage
+                self.alpha = to_ctype_value(alpha, element_epilogue)
+                self.beta = to_ctype_value(beta, element_epilogue)
 
         self.epilogue_type = _EpilogueOutputOpParams
 
@@ -219,8 +251,8 @@ class FastLinearCombinationClamp(EpilogueFunctorBase):
             DataTypeTag[element_output], str(epilogue_vector_length)
         ]
 
-        self.element_accumulator = cutlass_bindings.int32
-        self.element_epilogue = cutlass_bindings.float32
+        self.element_accumulator = DataType.s32
+        self.element_epilogue = DataType.f32
 
         # get epilogue output op
         c_element_epilogue = dtype2ctype[self.element_epilogue]
@@ -235,8 +267,8 @@ class FastLinearCombinationClamp(EpilogueFunctorBase):
             ]
 
             def __init__(self, alpha, beta, *args) -> None:
-                self.alpha = element_epilogue(alpha).storage
-                self.beta = element_epilogue(beta).storage
+                self.alpha = to_ctype_value(alpha, element_epilogue)
+                self.beta = to_ctype_value(beta, element_epilogue)
 
         self.epilogue_type = _EpilogueOutputOpParams
 
@@ -292,15 +324,13 @@ class ActivationFunctor:
     Base class for frequently used activation functions
     """
 
-    def __init__(self, element_compute) -> None:
-        pass
-
     @staticmethod
     def numpy(x: np.ndarray):
         raise NotImplementedError()
 
-    def emit(self):
-        return self.tag
+    @classmethod
+    def emit(cls):
+        return ActivationOpTag[cls.binding_type]
 
     @staticmethod
     def epilogue_output_op(element_epilogue):
@@ -315,70 +345,75 @@ class ActivationFunctor:
             ]
 
             def __init__(self, alpha, beta, *args) -> None:
-                self.alpha = element_epilogue(alpha).storage
-                self.beta = element_epilogue(beta).storage
+                self.alpha = to_ctype_value(alpha, element_epilogue)
+                self.beta = to_ctype_value(beta, element_epilogue)
 
         return _EpilogueOutputOpParams
 
+class ActivationMeta(type):
+    @classmethod
+    def __call__(cls, x, *args):
+        if isinstance(x, np.ndarray):
+            return cls.numpy(x, *args)
+        elif torch_available and isinstance(x, torch.Tensor):
+            return cls.torch(x, *args)
+        else:
+            raise NotImplementedError("Unsupported tensor type")
 
+    @classmethod
+    def numpy(cls, *args):
+        raise NotImplementedError(f"Numpy reference for {cls.__name__[:-4]} is not implemented.")
+
+    @classmethod
+    def torch(cls, *args):
+        raise NotImplementedError(f"PyTorch reference for {cls.__name__[:-4]} is not implemented.")
+
+##############################################################################
 # identity operator
-class identity(ActivationFunctor):
-    tag = "cutlass::epilogue::thread::Identity"
-
-    def numpy(x: np.ndarray):
+class identityMeta(ActivationMeta):
+    @classmethod
+    def numpy(cls, x):
         return x
 
+    @classmethod
+    def torch(cls, x):
+        return x
 
-# ReLu operator,
-class relu(ActivationFunctor):
-    tag = "cutlass::epilogue::thread::ReLu"
-
-    def __init__(self, element_compute):
-        super().__init__(element_compute)
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("threshold", dtype2ctype[element_compute])
-            ]
-
-            def __init__(self, threshold=0.0) -> None:
-                self.threshold = element_compute(threshold).storage
-
-        self.argument_type = _Arguments
-
-    def emit_visitor(self):
-        return "cutlass::ReLUVisitor"
-
-    @staticmethod
-    def numpy(x: np.ndarray):
-        return np.maximum(x, 0)
+class identity(ActivationFunctor, metaclass=identityMeta):
+    binding_type = ActivationOp.Identity
 
 
+##############################################################################
+# ReLu operator
+class reluMeta(ActivationMeta):
+    @classmethod
+    def numpy(cls, x):
+        return np.where(x > 0, x, 0)
+
+    @classmethod
+    def torch(cls, x):
+        return F.relu(x)
+
+class relu(ActivationFunctor, metaclass=reluMeta):
+    binding_type = ActivationOp.ReLU
+
+
+##############################################################################
 # Leaky ReLu operator
-class leaky_relu(ActivationFunctor):
-    tag = "cutlass::epilogue::thread::LeakyReLU"
-
-    def __init__(self, element_compute) -> None:
-        super().__init__(element_compute)
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("leaky_alpha", dtype2ctype[element_compute])
-            ]
-
-            def __init__(self, leaky_alpha) -> None:
-                self.leaky_alpha = element_compute(leaky_alpha).storage
-
-        self.argument_type = _Arguments
-
-    def emit_visitor(self):
-        return "cutlass::LeakyReLUVisitor"
-
-    @staticmethod
-    def numpy(x: np.ndarray, leaky_alpha):
+class leakyReLUMeta(ActivationMeta):
+    @classmethod
+    def numpy(cls, x, leaky_alpha):
         return np.maximum(x, 0) + np.minimum(x, 0) * leaky_alpha
 
-    def epilogue_output_op(self, element_epilogue):
+    @classmethod
+    def torch(cls, x, leaky_alpha):
+        return F.leaky_relu(x, leaky_alpha)
+
+class leaky_relu(ActivationFunctor, metaclass=leakyReLUMeta):
+    binding_type = ActivationOp.LeakyReLU
+
+    @staticmethod
+    def epilogue_output_op(element_epilogue):
         c_element_epilogue = dtype2ctype[element_epilogue]
 
         class _EpilogueOutputOpParams(ctypes.Structure):
@@ -391,700 +426,89 @@ class leaky_relu(ActivationFunctor):
             ]
 
             def __init__(self, alpha, beta, leaky_alpha=0.2, *args) -> None:
-                self.alpha = element_epilogue(alpha).storage
-                self.beta = element_epilogue(beta).storage
+                self.alpha = to_ctype_value(alpha, element_epilogue)
+                self.beta = to_ctype_value(beta, element_epilogue)
                 self.alpha_ptr = 0
                 self.beta_ptr = 0
-                self.leaky_alpha = element_epilogue(leaky_alpha).storage
+                self.leaky_alpha = to_ctype_value(leaky_alpha, element_epilogue)
 
         return _EpilogueOutputOpParams
 
 
+##############################################################################
 # Tanh operator
-class tanh(ActivationFunctor):
-    tag = "cutlass::epilogue::thread::Tanh"
-
-    def __init__(self, element_compute) -> None:
-        super().__init__(element_compute)
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [("tmp", ctypes.c_int)]
-
-            def __init__(self, *args) -> None:
-                self.tmp = 0
-
-        self.argument_type = _Arguments
-
-    def emit_visitor(self):
-        return "cutlass::TanhVisitor"
-
-    @staticmethod
-    def numpy(x: np.ndarray):
+class tanhMeta(ActivationMeta):
+    @classmethod
+    def numpy(cls, x):
         return np.tanh(x)
 
+    @classmethod
+    def torch(cls, x):
+        return torch.tanh(x)
 
-def sigmoid_op(x: np.ndarray):
-    return 1.0 / (1.0 + np.exp(-x))
+class tanh(ActivationFunctor, metaclass=tanhMeta):
+    binding_type = ActivationOp.Tanh
 
 
+##############################################################################
 # Sigmoid operator
-class sigmoid(ActivationFunctor):
-    tag = "cutlass::epilogue::thread::Sigmoid"
+class sigmoidMeta(ActivationMeta):
+    @classmethod
+    def numpy(cls, x):
+        return 1.0 / (1.0 + np.exp(-x))
 
-    @staticmethod
-    def numpy(x: np.ndarray):
-        return sigmoid_op(x)
+    @classmethod
+    def torch(cls, x):
+        return F.sigmoid(x)
+
+class sigmoid(ActivationFunctor, metaclass=sigmoidMeta):
+    binding_type = ActivationOp.Sigmoid
 
 
+##############################################################################
 # SiLu operator
-class silu(ActivationFunctor):
-    tag = "cutlass::epilogue::thread::SiLu"
+class siluMeta(ActivationMeta):
+    @classmethod
+    def numpy(cls, x):
+        return x * sigmoidMeta.numpy()
 
-    @staticmethod
-    def numpy(x: np.ndarray):
-        return x * sigmoid_op(x)
+    @classmethod
+    def silu(cls, x):
+        return F.silu(x)
 
 
+class silu(ActivationFunctor, metaclass=siluMeta):
+    binding_type = ActivationOp.SiLU
+
+
+##############################################################################
 # Hardswish operator
-class hardswish(ActivationFunctor):
-    tag = "cutlass::epilogue::thread::HardSwish"
-
-    @staticmethod
-    def numpy(x: np.ndarray):
+class hardswishMeta(ActivationMeta):
+    @classmethod
+    def numpy(cls, x):
         relu6 = np.minimum(np.maximum(x + 3.0, 0), 6.0)
         return x * relu6 / 6.0
 
+    @classmethod
+    def torch(cls, x):
+        return F.hardswish(x)
 
+
+class hardswish(ActivationFunctor, metaclass=hardswishMeta):
+    binding_type = ActivationOp.HardSwish
+
+
+##############################################################################
 # GELU operator
-class gelu(ActivationFunctor):
-    tag = "cutlass::epilogue::thread::GELU"
-
-    @staticmethod
-    def numpy(x: np.ndarray):
+class geluMeta(ActivationMeta):
+    @classmethod
+    def numpy(cls, x):
         return 0.5 * x * (1 + erf(x / np.sqrt(2.0)))
 
+    @classmethod
+    def torch(cls, x):
+        return F.gelu(x)
 
-# reduction operator
-def reduction_op(tensor, direction, math, factor):
-    batch, m, n = tensor.shape
-    if math == "Add":
-        if direction == "row":
-            num_cta_n = (n + factor - 1) // factor
-            reduction = np.transpose(
-                np.sum(tensor.reshape(batch, m, num_cta_n, factor), axis=-1),
-                axes=[0, 2, 1]).flatten()
-        elif direction == "column":
-            num_cta_m = (m + factor - 1) // factor
-            reduction = np.sum(
-                tensor.reshape(batch, num_cta_m, factor, n), axis=-2).flatten()
-        else:
-            raise NotImplementedError
-        return reduction
-    else:
-        raise NotImplementedError
 
-
-################################################################################
-# Epilogue Visitor
-################################################################################
-
-
-class LayerNorm(EpilogueFunctorBase):
-    """
-    Apply a linear combination operator to an array of elements
-    D = alpha * accumulator + beta * source
-
-    :param element_output: data type used to load and store tensors
-
-    :param epilogue_vector_length: number of elements computed per operation.
-    Usually it is 128/sizeof_bits<ElementOutput_>, but we use 64 and 32 sometimes
-    when there are not enough data to store
-
-    :param element_accumulator: Accumulator data type
-
-    :param element_epilogue: data type used to compute linear combination
-    """
-
-    KernelTemplate = """
-
-cutlass::epilogue::threadblock::EpilogueVisitorLayerNorm<
-    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
-    ${operation_name}_default::kThreadCount,
-    ${operation_name}_default::Epilogue::OutputTileIterator,
-    ${operation_name}_default::Epilogue::AccumulatorFragmentIterator::AccumulatorTile,
-    ${element_compute}, // element_compute
-    ${element_variance}, // element_variance
-    ${element_mean}, // element_mean
-    ${element_layer_norm_compute}, // element_layer_norm_compute
-    ${epilogue_functor},
-    ${shifted_k}>;
-"""
-    headers = [
-        "gemm/gemm_universal_with_visitor.h",
-        "epilogue/epilogue_visitor_with_layernorm.h"
-    ]
-
-    def __init__(
-        self, elementwise_functor,
-        element_variance=None, element_mean=None,
-        element_layer_norm_compute=None, shifted_k=True, ) -> None:
-        super().__init__()
-
-        self.elementwise_functor = elementwise_functor
-        self.element_compute = elementwise_functor.element_epilogue
-        self.element_output = elementwise_functor.element_output
-
-        if element_variance is None:
-            self.element_variance = self.element_output
-        if element_mean is None:
-            self.element_mean = self.element_output
-        if element_layer_norm_compute is None:
-            self.element_layer_norm_compute = self.element_compute
-        if shifted_k:
-            self.shifted_k = "true"
-        else:
-            self.shifted_k = "false"
-
-        # get epilogue output op
-        elementwise_params_type = self.elementwise_functor.epilogue_type
-
-        class _EpilogueVisitorParams(ctypes.Structure):
-            _fields_ = [
-                ("element_wise", elementwise_params_type),
-                ("ptr_Variance", ctypes.c_void_p),
-                ("ptr_Mean_", ctypes.c_void_p),
-                ("ptr_Shifted_K_", ctypes.c_void_p),
-                ("extent", MatrixCoord_),
-            ]
-
-            def __init__(self, elementwise_params, variance, mean, shift_k, extent) -> None:
-                self.element_wise = elementwise_params
-                if isinstance(variance, np.ndarray):
-                    self.buffer_variance = NumpyFrontend.argument(variance, False)
-                    self.buffer_mean = NumpyFrontend.argument(mean, False)
-                    self.buffer_shift_k = NumpyFrontend.argument(shift_k, False)
-                    self.ptr_Variance = int(self.buffer_variance.ptr)
-                    self.ptr_Mean_ = int(self.buffer_mean.ptr)
-                    self.ptr_Shifted_K_ = int(self.buffer_shift_k.ptr)
-                    self.extent = MatrixCoord_(extent[0], extent[1])
-
-                    self.host_variance = variance
-                    self.host_mean = mean
-                    self.host_shift_k = shift_k
-
-            def sync(self, stream_sync=True):
-                if stream_sync:
-                    err, = cudart.cudaDeviceSynchronize()
-                    if err != cuda.CUresult.CUDA_SUCCESS:
-                        raise RuntimeError("CUDA Error %s" % str(err))
-
-                err, = cuda.cuMemcpyDtoH(
-                    self.host_variance,
-                    cuda.CUdeviceptr(self.ptr_Variance),
-                    self.host_variance.size * self.host_variance.itemsize)
-                err, = cuda.cuMemcpyDtoH(
-                    self.host_mean,
-                    cuda.CUdeviceptr(self.ptr_Mean_),
-                    self.host_mean.size * self.host_mean.itemsize)
-                err, = cuda.cuMemcpyDtoH(
-                    self.host_shift_k,
-                    cuda.CUdeviceptr(self.ptr_Shifted_K_),
-                    self.host_shift_k.size * self.host_shift_k.itemsize)
-                if err != cuda.CUresult.CUDA_SUCCESS:
-                    raise RuntimeError("CUDA Error %s" % str(err))
-
-        self.epilogue_type = _EpilogueVisitorParams
-
-    def emit(self, operation):
-        values = {
-            "threadblock_shape_m": str(operation.tile_description.threadblock_shape[0]),
-            "threadblock_shape_n": str(operation.tile_description.threadblock_shape[1]),
-            "threadblock_shape_k": str(operation.tile_description.threadblock_shape[2]),
-            "operation_name": operation.procedural_name(),
-            "element_compute": DataTypeTag[self.element_compute],
-            "element_variance": DataTypeTag[self.element_variance],
-            "element_mean": DataTypeTag[self.element_mean],
-            "element_layer_norm_compute": DataTypeTag[self.element_layer_norm_compute],
-            "epilogue_functor": self.elementwise_functor.emit(),
-            "shifted_k": self.shifted_k,
-        }
-        return SubstituteTemplate(self.KernelTemplate, values)
-
-
-class AccumulatorOp:
-    Template = """
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpAccumulator<${element_accumulator}, ${elements_per_access}>;
-"""
-    counter = 0
-
-    def __init__(self, element_accumulator, elements_per_access) -> None:
-        self.element_accumulator = element_accumulator
-        self.elements_per_access = elements_per_access
-
-        self.instance_name = "AccumulatorOp%d" % AccumulatorOp.counter
-        AccumulatorOp.counter += 1
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [("tmp", ctypes.c_int)]
-
-            def __init__(self):
-                self.tmp = 0
-
-        self.argument_type = _Arguments
-
-    def emit(self, *args):
-        values = {
-            "instance_name": self.instance_name,
-            "element_accumulator": DataTypeTag[self.element_accumulator],
-            "elements_per_access": str(self.elements_per_access),
-        }
-        return SubstituteTemplate(self.Template, values)
-
-
-class LinearCombinationOp:
-    Template = """
-${visitor_a}
-
-${visitor_b}
-
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpLinearCombination<
-    ${element_accumulator}, ${element_compute}, 
-    ${elements_per_access}, ${visitor_a_name}, ${visitor_b_name}>;
-"""
-    counter = 0
-
-    def __init__(self, element_accumulator, element_compute, 
-        elements_per_access, visitor_a, visitor_b) -> None:
-        self.element_accumulator = element_accumulator
-        self.element_compute = element_compute
-        self.elements_per_access = elements_per_access
-        self.visitor_a = visitor_a
-        self.visitor_b = visitor_b
-
-        self.instance_name = "LinearCombinationOp%d" % LinearCombinationOp.counter
-        LinearCombinationOp.counter += 1
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("alpha", dtype2ctype[self.element_compute]),
-                ("beta", dtype2ctype[self.element_compute]),
-                ("visitor_a", self.visitor_a.argument_type),
-                ("visitor_b", self.visitor_b.argument_type)
-            ]
-
-            def __init__(self, alpha, beta, visitor_a_arg, visitor_b_arg) -> None:
-                self.alpha = element_compute(alpha).storage
-                self.beta = element_compute(beta).storage
-                self.visitor_a = visitor_a_arg
-                self.visitor_b = visitor_b_arg
-
-        self.argument_type = _Arguments
-
-    def emit(self, operation):
-        values = {
-            "instance_name": self.instance_name,
-            "element_accumulator": DataTypeTag[self.element_accumulator],
-            "element_compute": DataTypeTag[self.element_compute],
-            "elements_per_access": str(self.elements_per_access),
-            "visitor_a_name": self.visitor_a.instance_name,
-            "visitor_b_name": self.visitor_b.instance_name,
-            "visitor_a": self.visitor_a.emit(operation),
-            "visitor_b": self.visitor_b.emit(operation)
-        }
-        return SubstituteTemplate(self.Template, values)
-
-
-class VectorAdd:
-    def __init__(self, *args) -> None:
-        class _Arguments(ctypes.Structure):
-            _fields_ = [("tmp", ctypes.c_int)]
-
-            def __init__(self, *args) -> None:
-                self.tmp = 0
-
-        self.argument_type = _Arguments
-
-    def emit(self):
-        return "cutlass::VectorAdd"
-
-
-class VectorMult:
-    def __init__(self, *args) -> None:
-        class _Arguments(ctypes.Structure):
-            _fields_ = [("tmp", ctypes.c_int)]
-
-            def __init__(self, *args) -> None:
-                self.tmp = 0
-
-        self.argument_type = _Arguments
-
-    def emit(self):
-        return "cutlass::VectorMult"
-
-
-class BinaryOp:
-    Template = """
-${visitor_a}
-
-${visitor_b}
-
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpBinary<
-    ${element_accumulator}, ${element_compute}, 
-    ${elements_per_access}, ${visitor_a_name}, ${visitor_b_name}, ${binary_op}>;
-"""
-    counter = 0
-
-    def __init__(self, element_accumulator, element_compute,
-        elements_per_access, visitor_a, visitor_b, binary_op) -> None:
-        self.element_accumulator = element_accumulator
-        self.element_compute = element_compute
-        self.elements_per_access = elements_per_access
-        self.visitor_a = visitor_a
-        self.visitor_b = visitor_b
-        self.binary_op = binary_op
-
-        self.instance_name = "BinaryOp%d" % BinaryOp.counter
-        BinaryOp.counter += 1
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("binary_param", binary_op.argument_type),
-                ("visitor_a", self.visitor_a.argument_type),
-                ("visitor_b", self.visitor_b.argument_type)
-            ]
-
-            def __init__(self, binary_param, visitor_a_arg, visitor_b_arg) -> None:
-                self.binary_param = binary_param
-                self.visitor_a = visitor_a_arg
-                self.visitor_b = visitor_b_arg
-
-        self.argument_type = _Arguments
-
-    def emit(self, operation):
-        values = {
-            "instance_name": self.instance_name,
-            "element_accumulator": DataTypeTag[self.element_accumulator],
-            "element_compute": DataTypeTag[self.element_compute],
-            "elements_per_access": str(self.elements_per_access),
-            "visitor_a_name": self.visitor_a.instance_name,
-            "visitor_b_name": self.visitor_b.instance_name,
-            "visitor_a": self.visitor_a.emit(operation),
-            "visitor_b": self.visitor_b.emit(operation),
-            "binary_op": self.binary_op.emit()
-        }
-        return SubstituteTemplate(self.Template, values)
-
-
-class Mult:
-    def __init__(self, element_compute) -> None:
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("alpha", dtype2ctype[element_compute])
-            ]
-
-            def __init__(self, alpha) -> None:
-                self.alpha = element_compute(alpha).storage
-
-        self.argument_type = _Arguments
-
-    def emit_visitor(self):
-        return "cutlass::Mult"
-
-
-class UnaryOp:
-    Template = """
-${visitor}
-
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpUnary<
-    ${element_accumulator}, ${element_compute},
-    ${elements_per_access}, ${visitor_name}, ${unary_op}>;
-"""
-    counter = 0
-
-    def __init__(self, element_accumulator, element_compute,
-        elements_per_access, visitor, unary_op) -> None:
-        self.element_accumulator = element_accumulator
-        self.element_compute = element_compute
-        self.elements_per_access = elements_per_access
-        self.visitor = visitor
-        self.unary_op = unary_op
-
-        self.instance_name = "UnaryOp%d" % UnaryOp.counter
-        UnaryOp.counter += 1
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("unary_param", unary_op.argument_type),
-                ("visitor_arg", self.visitor.argument_type),
-            ]
-
-            def __init__(self, unary_param, visitor_arg) -> None:
-                self.unary_param = unary_param
-                self.visitor_arg = visitor_arg
-
-        self.argument_type = _Arguments
-
-    def emit(self, operation):
-        values = {
-            "instance_name": self.instance_name,
-            "element_accumulator": DataTypeTag[self.element_accumulator],
-            "element_compute": DataTypeTag[self.element_compute],
-            "elements_per_access": str(self.elements_per_access),
-            "visitor_name": self.visitor.instance_name,
-            "unary_op": self.unary_op.emit_visitor(),
-            "visitor": self.visitor.emit(operation),
-        }
-        return SubstituteTemplate(self.Template, values)
-
-
-class RowBroadcastOp:
-    Template = """
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpRowBroadcast<
-    ${element_accumulator}, ${element_fragment}, ${input_tile_iterator}>;
-"""
-    counter = 0
-
-    def __init__(self, element_accumulator, element_fragment) -> None:
-        self.element_accumulator = element_accumulator
-        self.element_fragment = element_fragment
-
-        self.instance_name = "RowBroadcastOp%d" % RowBroadcastOp.counter
-        RowBroadcastOp.counter += 1
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("broadcast_ptr", ctypes.c_void_p),
-                ("batch_stride", ctypes.c_longlong)
-            ]
-
-            def __init__(self, broadcast_ptr, batch_stride=0):
-                self.broadcast_ptr = int(broadcast_ptr)
-                self.batch_stride = batch_stride
-
-        self.argument_type = _Arguments
-
-    def emit(self, operation):
-        values = {
-            "instance_name": self.instance_name,
-            "element_accumulator": DataTypeTag[self.element_accumulator],
-            "element_fragment": DataTypeTag[self.element_fragment],
-            "input_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator"
-        }
-        return SubstituteTemplate(self.Template, values)
-
-
-class ColumnBroadcastOp:
-    Template = """
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpColumnBroadcast<
-    ${element_accumulator}, ${element_fragment}, ${input_tile_iterator}>;
-"""
-    counter = 0
-
-    def __init__(self, element_accumulator, element_fragment) -> None:
-        self.element_accumulator = element_accumulator
-        self.element_fragment = element_fragment
-
-        self.instance_name = "ColumnBroadcastOp%d" % ColumnBroadcastOp.counter
-        ColumnBroadcastOp.counter += 1
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("broadcast_ptr", ctypes.c_void_p),
-                ("batch_stride", ctypes.c_longlong)
-            ]
-
-            def __init__(self, broadcast_ptr, batch_stride=0):
-                self.broadcast_ptr = int(broadcast_ptr)
-                self.batch_stride = batch_stride
-
-        self.argument_type = _Arguments
-
-    def emit(self, operation):
-        values = {
-            "instance_name": self.instance_name,
-            "element_accumulator": DataTypeTag[self.element_accumulator],
-            "element_fragment": DataTypeTag[self.element_fragment],
-            "input_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator"
-        }
-        return SubstituteTemplate(self.Template, values)
-
-
-class TensorInputOp:
-    Template = """
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpTensorInput<
-    ${element_accumulator}, ${input_tile_iterator}>;
-"""
-    counter = 0
-
-    def __init__(self, element_accumulator) -> None:
-        self.element_accumulator = element_accumulator
-
-        self.instance_name = "TensorInputOp%d" % TensorInputOp.counter
-        TensorInputOp.counter += 1
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("input_ptr", ctypes.c_void_p),
-                ("ldt", ctypes.c_int),
-                ("batch_stride", ctypes.c_longlong)
-            ]
-
-            def __init__(self, input_ptr, ldt, batch_stride=0) -> None:
-                self.input_ptr = int(input_ptr)
-                self.ldt = ldt
-                self.batch_stride = batch_stride
-
-        self.argument_type = _Arguments
-
-    def emit(self, operation):
-        values = {
-            "instance_name": self.instance_name,
-            "element_accumulator": DataTypeTag[self.element_accumulator],
-            "input_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator"
-        }
-        return SubstituteTemplate(self.Template, values)
-
-
-class TensorOutputOp:
-    Template = """
-${visitor}
-
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpTensorOutput<
-    ${element_accumulator}, ${output_tile_iterator}, ${visitor_name}>;
-"""
-    counter = 0
-
-    def __init__(self, element_accumulator, visitor) -> None:
-        self.element_accumulator = element_accumulator
-        self.visitor = visitor
-
-        self.instance_name = "TensorOutputOp%d" % TensorOutputOp.counter
-        TensorOutputOp.counter += 1
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("output_ptr", ctypes.c_void_p),
-                ("ldt", ctypes.c_int),
-                ("batch_stride", ctypes.c_longlong),
-                ("visitor_arg", self.visitor.argument_type)
-            ]
-
-            def __init__(self, output_ptr, ldt, visitor_arg, batch_stride=0) -> None:
-                self.output_ptr = int(output_ptr)
-                self.ldt = int(ldt)
-                self.visitor_arg = visitor_arg
-                self.batch_stride = batch_stride
-
-        self.argument_type = _Arguments
-
-    def emit(self, operation):
-        values = {
-            "instance_name": self.instance_name,
-            "element_accumulator": DataTypeTag[self.element_accumulator],
-            "output_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator",
-            "visitor_name": self.visitor.instance_name,
-            "visitor": self.visitor.emit(operation),
-        }
-        return SubstituteTemplate(self.Template, values)
-
-
-class ColumnReductionOp:
-    Template = """
-${visitor}
-
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpColumnReduction<
-    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
-    ${element_accumulator}, ${element_reduction}, ${element_reduction_accumulator},
-    ${output_tile_iterator}, ${visitor_name}>;
-"""
-    counter = 0
-
-    def __init__(self, element_accumulator, element_reduction,
-        element_reduction_accumulator, visitor) -> None:
-        self.element_accumulator = element_accumulator
-        self.element_reduction = element_reduction
-        self.element_reduction_accumulator = element_reduction_accumulator
-        self.visitor = visitor
-
-        self.instance_name = "ColumnReductionOp%d" % ColumnReductionOp.counter
-        ColumnReductionOp.counter += 1
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("reduction_ptr", ctypes.c_void_p),
-                ("batch_stride", ctypes.c_longlong),
-                ("visitor_arg", self.visitor.argument_type)
-            ]
-
-            def __init__(self, reduction_ptr, visitor_arg, batch_stride=0) -> None:
-                self.reduction_ptr = reduction_ptr
-                self.batch_stride = batch_stride
-                self.visitor_arg = visitor_arg
-
-        self.argument_type = _Arguments
-
-    def emit(self, operation):
-        values = {
-            "instance_name": self.instance_name,
-            "threadblock_shape_m": str(operation.tile_description.threadblock_shape[0]),
-            "threadblock_shape_n": str(operation.tile_description.threadblock_shape[1]),
-            "threadblock_shape_k": str(operation.tile_description.threadblock_shape[2]),
-            "element_accumulator": DataTypeTag[self.element_accumulator],
-            "element_reduction": DataTypeTag[self.element_reduction],
-            "element_reduction_accumulator": DataTypeTag[self.element_reduction_accumulator],
-            "output_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator",
-            "visitor_name": self.visitor.instance_name,
-            "visitor": self.visitor.emit(operation),
-        }
-        return SubstituteTemplate(self.Template, values)
-
-
-class RowReductionOp:
-    Template = """
-${visitor}
-
-using ${instance_name} = cutlass::epilogue::threadblock::VisitorOpRowReduction<
-    cutlass::gemm::GemmShape<${threadblock_shape_m}, ${threadblock_shape_n}, ${threadblock_shape_k}>,
-    ${element_accumulator}, ${element_reduction}, ${element_reduction_accumulator},
-    ${output_tile_iterator}, ${visitor_name}>;
-"""
-    counter = 0
-
-    def __init__(self, element_accumulator, element_reduction,
-        element_reduction_accumulator, visitor) -> None:
-        self.element_accumulator = element_accumulator
-        self.element_reduction = element_reduction
-        self.element_reduction_accumulator = element_reduction_accumulator
-        self.visitor = visitor
-
-        self.instance_name = "RowReductionOp%d" % RowReductionOp.counter
-        RowReductionOp.counter += 1
-
-        class _Arguments(ctypes.Structure):
-            _fields_ = [
-                ("reduction_ptr", ctypes.c_void_p),
-                ("batch_stride", ctypes.c_longlong),
-                ("visitor_arg", self.visitor.argument_type)
-            ]
-
-            def __init__(self, reduction_ptr, visitor_arg, batch_stride=0) -> None:
-                self.reduction_ptr = reduction_ptr
-                self.visitor_arg = visitor_arg
-                self.batch_stride = batch_stride
-
-        self.argument_type = _Arguments
-
-    def emit(self, operation):
-        values = {
-            "instance_name": self.instance_name,
-            "threadblock_shape_m": str(operation.tile_description.threadblock_shape[0]),
-            "threadblock_shape_n": str(operation.tile_description.threadblock_shape[1]),
-            "threadblock_shape_k": str(operation.tile_description.threadblock_shape[2]),
-            "element_accumulator": DataTypeTag[self.element_accumulator],
-            "element_reduction": DataTypeTag[self.element_reduction],
-            "element_reduction_accumulator": DataTypeTag[self.element_reduction_accumulator],
-            "output_tile_iterator": operation.procedural_name() + "_default::Epilogue::OutputTileIterator",
-            "visitor_name": self.visitor.instance_name,
-            "visitor": self.visitor.emit(operation),
-        }
-        return SubstituteTemplate(self.Template, values)
+class gelu(ActivationFunctor, metaclass=geluMeta):
+    binding_type = ActivationOp.Gelu

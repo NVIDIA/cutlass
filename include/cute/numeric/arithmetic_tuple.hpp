@@ -387,8 +387,7 @@ abs(ScaledBasis<T,N> const& e) {
 }
 
 // Multiplication
-template <class A, int N, class T,
-          __CUTE_REQUIRES(cute::is_integral<A>::value)>
+template <class A, int N, class T>
 CUTE_HOST_DEVICE constexpr
 auto
 operator*(A const& a, ScaledBasis<T,N> const& e) {
@@ -396,8 +395,7 @@ operator*(A const& a, ScaledBasis<T,N> const& e) {
   return ScaledBasis<decltype(r),N>{r};
 }
 
-template <int N, class T, class B,
-          __CUTE_REQUIRES(cute::is_integral<B>::value)>
+template <int N, class T, class B>
 CUTE_HOST_DEVICE constexpr
 auto
 operator*(ScaledBasis<T,N> const& e, B const& b) {

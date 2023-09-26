@@ -42,8 +42,6 @@
 #include "conv2d_testbed_interleaved.h"
 
 #if defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
-
-
 TEST(SM75_Device_Conv2d_Fprop_Analytic_ImplicitGemm_s4ncxhwx_s4cxrskx_s4ncxhwx_tensor_op_s32,
   128x128_128x2_64x64x128) {
 

@@ -116,14 +116,18 @@
 
 from math import prod
 
-import cutlass_bindings
-
 import cutlass
-from cutlass import epilogue, swizzle
+from cutlass import (
+    epilogue,
+    swizzle,
+    GemmUniversalMode,
+)
 from cutlass.backend import compiler
+from cutlass.backend.evt import EpilogueFunctorVisitor
 from cutlass.backend.gemm_operation import GemmArguments, GemmOperationUniversal
 from cutlass.backend.library import TensorDescription, TileDescription
 from cutlass.op.op import OperationBase
+from cutlass.shape import GemmCoord
 from cutlass.utils import check, datatypes
 
 
@@ -245,7 +249,7 @@ class Gemm(OperationBase):
                 lay_to_set = lay if lay is not None else layout
 
             elements.append(datatypes.library_type(elt_to_set))
-            layouts.append(datatypes.library_layout(lay_to_set))
+            layouts.append(lay_to_set)
 
         self._element_a, self._element_b, self._element_c, self._element_d = elements
         self._layout_a, self._layout_b, self._layout_c, self._layout_d = layouts
@@ -265,6 +269,7 @@ class Gemm(OperationBase):
 
         self.epilogue_functor = None
         self.op_class = None
+        self._tile_description = None
 
         self._reset_operations()
 
@@ -311,6 +316,48 @@ class Gemm(OperationBase):
                 raise Exception('ThreadblockSwizzleStreamK is currently unsupported on SM90')
         self._swizzling_functor = swizzling_functor
 
+    #
+    # Tile description Related
+    #
+
+    @property
+    def tile_description(self) -> TileDescription:
+        """
+        Returns the tile description
+        """
+        return self._tile_description
+
+    @tile_description.setter
+    def tile_description(
+        self, td=None):
+        """
+        Set the tile description
+
+        :param td: tile description
+        :type td: cutlass.backend.TileDescription, or a dict with keys
+                  {
+                      "threadblock_shape": [int, int, int],
+                      "warp_count": [int, int, int],
+                      "stages": int,
+                      "instruction_shape": [int, int, int] (optional),
+                      "cluster_shape": [int, int, int] (optional)
+                  }
+        """
+        if td is None:
+            return
+        if isinstance(td, dict):
+            if self._tile_description is None:
+                alignment = list(self.possible_operations.kernels_by_alignment.keys())[0]
+                op = self.possible_operations.operations(alignment)[0]
+                self._tile_description = datatypes.td_from_profiler_op(op)
+            td = self._tile_description.clone_and_update(td)
+
+        valid, msg = self._valid_tile_description(td)
+        if valid:
+            self._tile_description = td
+        else:
+            raise Exception(msg)
+
     def _valid_tile_description(self, td: TileDescription) -> tuple:
         """
         Checks whether the provided tile description is valid for the given compute capability. At present,
@@ -328,9 +375,7 @@ class Gemm(OperationBase):
                  and the second element is a string providing an optional error message.
         :rtype: tuple
         """
-        # Check stage count based on the CC to which we are compiling (self.cc), rather
-        # than the CC from which we find kernels (self.current_cc)
-        valid, msg = check.valid_stage_count(self.cc, td, self._element_c, self._element_d)
+        valid, msg = check.valid_stage_count(self.cc, self.current_cc, td, self._element_c, self._element_d)
         if not valid:
             return (valid, msg)
 
@@ -378,30 +423,21 @@ class Gemm(OperationBase):
 
         self.epilogue_functor = self._reset_epilogue_functor_alignment(alignment_C, self.epilogue_functor)
 
-        tensor_A = TensorDescription(
-            datatypes.binding_type(self._element_a),
-            datatypes.binding_layout(self._layout_a),
-            alignment_A
-        )
-        tensor_B = TensorDescription(
-            datatypes.binding_type(self._element_b),
-            datatypes.binding_layout(self._layout_b),
-            alignment_B
-        )
-        tensor_C = TensorDescription(
-            datatypes.binding_type(self._element_c),
-            datatypes.binding_layout(self._layout_c),
-            alignment_C
-        )
+        tensor_A = TensorDescription(self._element_a, self._layout_a, alignment_A)
+        tensor_B = TensorDescription(self._element_b, self._layout_b, alignment_B)
+        tensor_C = TensorDescription(self._element_c, self._layout_c, alignment_C)
 
         if tile_description is None:
-            op = self.possible_operations.operations(alignment_A)[0]
-            tile_description = datatypes.td_from_profiler_op(op)
+            if self._tile_description is None:
+                op = self.possible_operations.operations(alignment_A)[0]
+                tile_description = datatypes.td_from_profiler_op(op)
+            else:
+                tile_description = self._tile_description
         else:
             valid, err_str = self._valid_tile_description(tile_description)
             if not valid:
                 raise Exception(f"Invalid tile description. {err_str}")
-            self.tile_description = tile_description
+            self._tile_description = tile_description
 
         operation = GemmOperationUniversal(
             arch=self.current_cc,
@@ -473,21 +509,13 @@ class Gemm(OperationBase):
         :return: tuple of batch count dimensions
         :rtype: tuple
         """
-        A_batch = A.shape[:-2] if len(A.shape) > 2 else tuple()
-        B_batch = B.shape[:-2] if len(B.shape) > 2 else tuple()
-        C_batch = C.shape[:-2] if len(C.shape) > 2 else tuple()
-        D_batch = D.shape[:-2] if len(D.shape) > 2 else tuple()
+        A_batch = prod(A.shape[:-2]) if len(A.shape) > 2 else 1
+        B_batch = prod(B.shape[:-2]) if len(B.shape) > 2 else 1
 
-        if len(D_batch) > 0 and D_batch not in [A_batch, B_batch, C_batch]:
-            raise Exception(f"Batch count in D must be present in one of operands A, B, and C. "
-                            f"Batch counts are: A={A_batch}, B={B_batch}, C={C_batch}, D={D_batch}")
-
-        for batch_shape in [A_batch, B_batch, C_batch]:
-            if len(batch_shape) > 0 and batch_shape != D_batch:
-                raise Exception(f"Batch count for all other operands must either match that of D or be zero."
-                                f"Received batch shape of {batch_shape}, which does not match that of D of {D_batch}.")
-
-        return D_batch
+        if 1 not in [A_batch, B_batch]:
+            if A_batch != B_batch:
+                raise Exception(f"Get invalid batch counts: A={A_batch}, B={B_batch}")
+        return max(A_batch, B_batch)
 
     def _get_batch_stride(self, tensor) -> int:
         """
@@ -518,38 +546,38 @@ class Gemm(OperationBase):
         :param D: tensor D
         :type D: numpy/cupy/torch array/tensor object
 
-        :return: tuple containing the problem size (cutlass_bindings.gemm.GemmCoord), the GEMM mode (cutlass_bindings.gemm.Mode), and the batch count (int)
+        :return: tuple containing the problem size (cutlass.shape.GemmCoord), the GEMM mode (cutlass.GemmUniversalMode), and the batch count (int)
         :rtype: tuple
         """
         M, K = A.shape[-2:]
         N = B.shape[-1]
-        mode = cutlass_bindings.gemm.Mode.Gemm
+        mode = GemmUniversalMode.Gemm
 
         batch_count = self._get_batch_count(A, B, C, D)
-        returned_batch_count = prod(batch_count) if len(batch_count) > 0 else 1
+        returned_batch_count = batch_count
 
         # If we are running a batched GEMM in which there is a nonzero batch stride
         # only for A, then we can fold the batched dimension of A into the M dimension
         # (i.e., (b, m, k) x (k, n) -> (m*b, k) x (k, n)). This works only if both A
         # and C are row major. A similar operation can be performed if only B has a nonzero
         # batch dimension
-        if len(batch_count) > 0:
+        if batch_count > 1:
             A_row = self._layout_a == cutlass.LayoutType.RowMajor
             B_row = self._layout_b == cutlass.LayoutType.RowMajor
             C_row = self._layout_c == cutlass.LayoutType.RowMajor
 
-            batched = lambda x : len(x.shape) == 2 + len(batch_count)
+            batched = lambda x : len(x.shape) > 2 and prod(x.shape[:-2]) == batch_count
 
             if batched(A) and not batched(B) and batched(C) and A_row and C_row:
-                M *= prod(batch_count)
+                M *= batch_count
                 returned_batch_count = 1
             elif not batched(A) and batched(B) and batched(C) and not B_row and not C_row:
-                N *= prod(batch_count)
+                N *= batch_count
                 returned_batch_count = 1
             else:
-                mode = cutlass_bindings.gemm.Mode.Batched
+                mode = GemmUniversalMode.Batched
 
-        return cutlass_bindings.gemm.GemmCoord(M, N, K), mode, returned_batch_count
+        return GemmCoord(M, N, K), mode, returned_batch_count
 
     def _verify_type_and_layout(self, tensor, ref_type, ref_layout, name):
         """
@@ -570,7 +598,7 @@ class Gemm(OperationBase):
                             f'layout of ({ref_type}, {ref_layout}).')
 
     def run(self, A=None, B=None, C=None, D=None,
-            alpha=None, beta=None, sync: bool = True, print_module: bool = False) -> GemmArguments:
+            alpha=None, beta=None, sync: bool = True, print_module: bool = False, visitor_args: dict = None) -> GemmArguments:
         """
         Runs the kernel currently specified. If it has not already been, the kernel is emitted and
         compiled. Tensors holding operands and outputs of the kernel are sourced either from the
@@ -612,12 +640,12 @@ class Gemm(OperationBase):
         alignment_a = self.possible_operations.find_alignment(A.shape, self._layout_a)
         alignment_b = self.possible_operations.find_alignment(B.shape, self._layout_b)
         alignment_c = self.possible_operations.find_alignment(C.shape, self._layout_c)
-        self.compile(self.tile_description, alignment_A=alignment_a, alignment_B=alignment_b,
+        self.compile(self._tile_description, alignment_A=alignment_a, alignment_B=alignment_b,
                      alignment_C=alignment_c, print_module=print_module)
 
         problem_size, mode, batch_count = self._get_problem_args(A, B, C, D)
 
-        if mode == cutlass_bindings.gemm.Mode.Gemm or batch_count == 1:
+        if mode == GemmUniversalMode.Gemm or batch_count == 1:
             kwargs = {'split_k_slices': 1}
         else:
             kwargs = {
@@ -630,10 +658,15 @@ class Gemm(OperationBase):
                 }
             }
 
+        if isinstance(self.epilogue_functor, EpilogueFunctorVisitor):
+            output_op = self.operation.epilogue_type(visitor_args)
+        else:
+            output_op = self.operation.epilogue_type(alpha, beta)
+
         arguments = GemmArguments(
             operation=self.operation, problem_size=problem_size,
             A=A, B=B, C=C, D=D,
-            output_op=self.operation.epilogue_type(alpha, beta),
+            output_op=output_op,
             gemm_mode=mode,
             **kwargs
         )

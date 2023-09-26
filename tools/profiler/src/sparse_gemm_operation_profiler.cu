@@ -38,9 +38,9 @@
 #include <iomanip>
 #include <ios>
 
-#include "cublas_helpers.h"
-#include "sparse_gemm_operation_profiler.h"
-#include "gpu_timer.h"
+#include "cutlass/profiler/cublas_helpers.h"
+#include "cutlass/profiler/sparse_gemm_operation_profiler.h"
+#include "cutlass/profiler/gpu_timer.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

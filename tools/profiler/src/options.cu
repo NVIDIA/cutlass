@@ -39,7 +39,7 @@
 
 #include "cutlass/library/util.h"
 
-#include "options.h"
+#include "cutlass/profiler/options.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -145,7 +145,7 @@ void Options::Device::print_device_info(std::ostream &out) const {
 
   out << "Device Name,SM,CUDA Device ID,Phy Device ID" << std::endl;
 
-  for(int device = 0; device < num_devices; device++) {
+  for (int device = 0; device < num_devices; device++) {
     result = cudaSetDevice(device);
     if (result != cudaSuccess) {
       throw std::runtime_error("cudaSetDevice() failed for device");
@@ -587,7 +587,7 @@ Options::Report::Report(cutlass::CommandLine const &cmdline) {
   cmdline.get_cmd_line_argument("append", append, false);
   cmdline.get_cmd_line_argument("output", output_path);
   cmdline.get_cmd_line_argument("junit-output", junit_output_path);
-
+ 
   if (cmdline.check_cmd_line_flag("tags")) {
     cmdline.get_cmd_line_argument_pairs("tags", pivot_tags);
   }
@@ -597,6 +597,8 @@ Options::Report::Report(cutlass::CommandLine const &cmdline) {
   cmdline.get_cmd_line_argument("verbose", verbose, true);
 
   cmdline.get_cmd_line_argument("sort-results", sort_results, false);
+
+  cmdline.get_cmd_line_argument("print-kernel-before-running", print_kernel_before_running, false);
 }
 
 void Options::Report::print_usage(std::ostream &out) const {
@@ -612,6 +614,10 @@ void Options::Report::print_usage(std::ostream &out) const {
 
     << "  --junit-output=<path>                        "
     << "    Path to junit output file for result reporting. Operation kind and '.junit.xml' is appended.\n\n"
+
+    << "  --print-kernel-before-running=<bool>                "
+    << "    Prints the name of the kernel being profiled before running the kernel." << end_of_line
+    << "      This is useful for determining which kernel is causing a run of the profiler to hang\n\n"
 
     << "  --report-not-run=<bool>                      "
     << "    If true, reports the status of all kernels including those that" << end_of_line
@@ -634,7 +640,8 @@ void Options::Report::print_options(std::ostream &out, int indent) const {
     << indent_str(indent) << "append: " << append << "\n"
     << indent_str(indent) << "output: " << output_path << "\n"
     << indent_str(indent) << "junit-output: " << junit_output_path << "\n"
-    << indent_str(indent) << "report_not_run: " << report_not_run << "\n"
+    << indent_str(indent) << "print-kernel-before-running: " << print_kernel_before_running << "\n"
+    << indent_str(indent) << "report-not-run: " << report_not_run << "\n"
     << indent_str(indent) << "tags:\n";
 
   for (auto const & tag : pivot_tags) {

@@ -71,7 +71,9 @@ struct Sm90AccFetch : Sm90VisitorImpl<> {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -129,7 +131,9 @@ struct Sm90SrcFetch : Sm90VisitorImpl<> {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -181,7 +185,8 @@ struct Sm90AuxLoad {
       cute::conditional_t<is_m_major, Step<_2,_1,_3>, Step<_1,_2,_3>>{} ));
 
   struct SharedStorage {
-    alignas(128) array_aligned<Element, size(SmemLayout{})> smem_aux;
+    alignas(cutlass::detail::alignment_for_swizzle(SmemLayout{}))
+    array_aligned<Element, size(SmemLayout{})> smem_aux;
   };
 
   struct Arguments {
@@ -222,9 +227,9 @@ struct Sm90AuxLoad {
   Sm90AuxLoad() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90AuxLoad(Params const& params, SharedStorage& shared_storage)
+  Sm90AuxLoad(Params const& params, SharedStorage const& shared_storage)
       : params_ptr(&params),
-        smem_aux(shared_storage.smem_aux.data()) { }
+        smem_aux(const_cast<Element*>(shared_storage.smem_aux.data())) { }
 
   Params const* params_ptr;
   Element* smem_aux;
@@ -273,7 +278,9 @@ struct Sm90AuxLoad {
   };
 
   template <
-    class TileShapeMNK
+    class ProblemShapeMNKL,
+    class TileShapeMNK,
+    class TileCoordMNKL
   >
   CUTLASS_DEVICE auto
   get_producer_load_callbacks(
@@ -284,8 +291,9 @@ struct Sm90AuxLoad {
       int thread_idx) {
 
     auto [M, N, K, L] = problem_shape_mnkl;
+    auto [m, n, k, l] = tile_coord_mnkl;
     Tensor mAux = params_ptr->tma_load_aux.get_tma_tensor(make_shape(M,N,L));                                // (M,N,L)
-    Tensor gAux = sm90_tensor_to_cta_tile(mAux, tile_shape_mnk, tile_coord_mnkl);                      // (CTA_M,CTA_N)
+    Tensor gAux = local_tile(mAux, take<0,2>(tile_shape_mnk), make_coord(m,n,l));                      // (CTA_M,CTA_N)
 
     Tensor gAux_epi = local_tile(gAux, epi_tile, _);                             // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
     Tensor sAux_epi = make_tensor(make_smem_ptr(smem_aux), SmemLayout{});        // (EPI_TILE_M,EPI_TILE_N,PIPE)
@@ -339,7 +347,9 @@ struct Sm90AuxLoad {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class TiledCopy,
     class SrcTensor
   >
@@ -363,7 +373,8 @@ struct Sm90AuxLoad {
       make_tiled_copy_S(Copy_Atom<CopyOpS2R,Element>{}, tiled_copy),
       make_tiled_copy_D(Copy_Atom<CopyOpS2R,Element>{}, tiled_copy)
     );
-    Tensor sAux_epi = make_tensor(make_smem_ptr(smem_aux), SmemLayout{});               // (EPI_TILE_M,EPI_TILE_N,PIPE)
+    Tensor sAux_epi = cute::as_position_independent_swizzle_tensor(
+                        make_tensor(make_smem_ptr(smem_aux), SmemLayout{}));            // (EPI_TILE_M,EPI_TILE_N,PIPE)
     auto tSR_sAux = tiled_s2r.get_slice(thread_idx).partition_S(sAux_epi);                    // (S2R,S2R_M,S2R_N,PIPE)
 
 
@@ -378,6 +389,7 @@ struct Sm90AuxLoad {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Scalar broadcast
+// Supports reduction over multiple broadcasts to support fusions such as fp8 scaling factors
 template<
   class Element,
   class StrideMNL = Stride<_0,_0,_0>,
@@ -387,7 +399,8 @@ template<
 struct Sm90ScalarBroadcast {
   static_assert(
     (cute::is_same_v<StrideMNL, Stride<_0,_0, _0>>) || // scalar broadcast, e.g. alpha
-    (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>));  // batched scalar broadcast, e.g. per-batch alpha
+    (cute::is_same_v<StrideMNL, Stride<_0,_0, _1>>) || // batched scalar broadcast, e.g. per-batch alpha
+    (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>)); 
 
   struct SharedStorage { };
 
@@ -419,7 +432,7 @@ struct Sm90ScalarBroadcast {
   Sm90ScalarBroadcast() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90ScalarBroadcast(Params const& params, SharedStorage& shared_storage)
+  Sm90ScalarBroadcast(Params const& params, SharedStorage const& shared_storage)
       : params_ptr(&params) {
     // Get the scalar for non-batched broadcast
     if constexpr (cute::is_same_v<StrideMNL, Stride<_0,_0,_0>>) {
@@ -431,7 +444,9 @@ struct Sm90ScalarBroadcast {
   Params const* params_ptr;
 
   template <
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile
   >
   CUTLASS_DEVICE auto
@@ -442,7 +457,9 @@ struct Sm90ScalarBroadcast {
       EpilogueTile epi_tile,
       int thread_idx) {
     // Get the scalar for batched broadcast
-    if constexpr (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>) {
+    if constexpr (
+      cute::is_same_v<StrideMNL, Stride<_0,_0,_1>> || 
+      cute::is_same_v<StrideMNL, Stride<_0,_0,int>>) {
       auto [m_coord, n_coord, k_coord, l_coord] = tile_coord_mnkl;
       update_scalar(l_coord);
     }
@@ -470,7 +487,9 @@ struct Sm90ScalarBroadcast {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -486,7 +505,9 @@ struct Sm90ScalarBroadcast {
       SrcTensor const& tCrC) {
 
     // Get the scalar for batched broadcast
-    if constexpr (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>) {
+    if constexpr (
+      cute::is_same_v<StrideMNL, Stride<_0,_0,_1>> || 
+      cute::is_same_v<StrideMNL, Stride<_0,_0,int>>) {
       auto [m_coord, n_coord, k_coord, l_coord] = tile_coord_mnkl;
       update_scalar(l_coord);
     }
@@ -541,7 +562,7 @@ struct Sm90RowBroadcast {
 
   // Accumulator doesn't distribute row elements evenly amongst threads so we must buffer in smem
   struct SharedStorage {
-    array_aligned<Element, size<1>(CtaTileShapeMNK{}) * Stages> smem_row;
+    alignas(16) array_aligned<Element, size<1>(CtaTileShapeMNK{}) * Stages> smem_row;
   };
 
   struct Arguments {
@@ -562,9 +583,9 @@ struct Sm90RowBroadcast {
   Sm90RowBroadcast() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90RowBroadcast(Params const& params, SharedStorage& shared_storage)
+  Sm90RowBroadcast(Params const& params, SharedStorage const& shared_storage)
       : params(params),
-        smem_row(shared_storage.smem_row.data()) { }
+        smem_row(const_cast<Element*>(shared_storage.smem_row.data())) { }
 
   Params params;
   Element* smem_row;
@@ -613,7 +634,9 @@ struct Sm90RowBroadcast {
   };
 
   template <
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile
   >
   CUTLASS_DEVICE auto
@@ -625,8 +648,9 @@ struct Sm90RowBroadcast {
       int thread_idx) {
 
     auto [M, N, K, L] = problem_shape_mnkl;
+    auto [m, n, k, l] = tile_coord_mnkl;
     Tensor mRow = make_tensor(make_gmem_ptr(params.ptr_row), make_shape(M,N,L), params.dRow);
-    Tensor gRow = sm90_tensor_to_cta_tile(mRow, tile_shape_mnk, tile_coord_mnkl);                 // (CTA_M,CTA_N)
+    Tensor gRow = local_tile(mRow, take<0,2>(tile_shape_mnk), make_coord(m,n,l));                      // (CTA_M,CTA_N)
     Tensor sRow = make_tensor(make_smem_ptr(smem_row),                                            // (CTA_M,CTA_N,PIPE)
                     make_shape(size<0>(CtaTileShapeMNK{}), size<1>(CtaTileShapeMNK{}), Stages),
                     make_stride(_0{},_1{},size<1>(CtaTileShapeMNK{})));
@@ -680,7 +704,9 @@ struct Sm90RowBroadcast {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -757,13 +783,15 @@ struct Sm90ColBroadcast {
   Sm90ColBroadcast() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90ColBroadcast(Params const& params, SharedStorage& shared_storage)
+  Sm90ColBroadcast(Params const& params, SharedStorage const& shared_storage)
       : params(params) { }
 
   Params params;
 
   template <
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile
   >
   CUTLASS_DEVICE auto
@@ -819,7 +847,9 @@ struct Sm90ColBroadcast {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor

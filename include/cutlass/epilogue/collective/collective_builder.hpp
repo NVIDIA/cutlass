@@ -45,6 +45,7 @@ struct EpilogueTileAuto {};
 // Used to let the builder pick the epilogue schedule automatically.
 // Can be overridden with kernel schedule tags in cutlass/gemm/dispatch_policy.hpp
 struct EpilogueScheduleAuto {};
+struct EpilogueIm2ColScheduleAuto {};
 
 template <
   class ArchTag,

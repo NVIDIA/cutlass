@@ -71,10 +71,10 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
   using EpilogueTileType = cutlass::epilogue::collective::EpilogueTileAuto;
 
-  using EpilogueDescriptor = cutlass::epilogue::collective::EpilogueDescriptor<
+  using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
     TileShape_MNK, EpilogueTileType, cutlass::half_t, cutlass::half_t, EpilogueSchedule
   >; 
-  using AuxLoadDescriptor = cutlass::epilogue::collective::AuxLoadDescriptor<
+  using AuxLoadDescriptor = cutlass::epilogue::collective::detail::AuxLoadDescriptor<
     EpilogueDescriptor, cutlass::layout::RowMajor, cutlass::half_t
   >;
 
@@ -127,10 +127,10 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
   using EpilogueTileType = cutlass::epilogue::collective::EpilogueTileAuto;
 
-  using EpilogueDescriptor = cutlass::epilogue::collective::EpilogueDescriptor<
+  using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
     TileShape_MNK, EpilogueTileType, cutlass::half_t, cutlass::half_t, EpilogueSchedule
   >; 
-  using AuxLoadDescriptor = cutlass::epilogue::collective::AuxLoadDescriptor<
+  using AuxLoadDescriptor = cutlass::epilogue::collective::detail::AuxLoadDescriptor<
     EpilogueDescriptor, cutlass::layout::ColumnMajor, cutlass::half_t
   >;
 
@@ -182,10 +182,10 @@ TEST(SM90_Device_Gemm_f16t_f16n_f32t_tensor_op_gmma_f32_persistent_epilogue, 128
   using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
   using EpilogueTileType = cutlass::epilogue::collective::EpilogueTileAuto;
 
-  using EpilogueDescriptor = cutlass::epilogue::collective::EpilogueDescriptor<
+  using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
     TileShape_MNK, EpilogueTileType, cutlass::half_t, cutlass::half_t, EpilogueSchedule
   >; 
-  using AuxLoadDescriptor = cutlass::epilogue::collective::AuxLoadDescriptor<
+  using AuxLoadDescriptor = cutlass::epilogue::collective::detail::AuxLoadDescriptor<
     EpilogueDescriptor, cutlass::layout::ColumnMajor, float
   >;
 

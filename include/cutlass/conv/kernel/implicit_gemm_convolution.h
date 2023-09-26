@@ -250,7 +250,7 @@ struct ImplicitGemmConvolution {
         ThreadblockShape::kN);
 
       gemm_k_iterations_per_channel = implicit_gemm_k_iterations_per_channel(
-          kConvolutionalOperator, ThreadblockShape::kK, args.problem_size, kIteratorAlgorithm);
+          kConvolutionalOperator, args.problem_size, kIteratorAlgorithm);
 
       ThreadblockSwizzle threadblock_swizzle;
 

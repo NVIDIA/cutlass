@@ -96,34 +96,6 @@ template <
   cutlass::gemm::kernel::GroupScheduleMode GroupScheduleMode_ = cutlass::gemm::kernel::GroupScheduleMode::kDeviceOnly,
   int PrefetchTileCount = 128,
   int ThreadCount = PrefetchTileCount>
-struct GemmGroupedThreadblockSwizzle : GroupedThreadblockSwizzle<
-                                          cutlass::gemm::kernel::GemmGroupedProblemVisitor<
-                                            ThreadblockShape,
-                                            GroupScheduleMode_,
-                                            PrefetchTileCount,
-                                            ThreadCount,
-                                            platform::is_same<LayoutC, cutlass::layout::ColumnMajor>::value
-                                          >
-                                        > {
-  using Base = GroupedThreadblockSwizzle<cutlass::gemm::kernel::GemmGroupedProblemVisitor<
-                                            ThreadblockShape,
-                                            GroupScheduleMode_,
-                                            PrefetchTileCount,
-                                            ThreadCount,
-                                            platform::is_same<LayoutC, cutlass::layout::ColumnMajor>::value>>;
-
-  CUTLASS_HOST_DEVICE
-  GemmGroupedThreadblockSwizzle(typename Base::ProblemVisitor::Params& params,
-                                typename Base::ProblemVisitor::SharedStorage& shared_storage,
-                                int block_idx) : Base(params, shared_storage, block_idx) {}
-};
-
-template <
-  typename ThreadblockShape,
-  typename LayoutC,
-  cutlass::gemm::kernel::GroupScheduleMode GroupScheduleMode_ = cutlass::gemm::kernel::GroupScheduleMode::kDeviceOnly,
-  int PrefetchTileCount = 128,
-  int ThreadCount = PrefetchTileCount>
 struct B2bGemmGroupedThreadblockSwizzle : GroupedThreadblockSwizzle<
                                             cutlass::gemm::kernel::B2bGemmGroupedProblemVisitor<
                                               ThreadblockShape,

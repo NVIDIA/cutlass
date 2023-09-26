@@ -42,8 +42,8 @@
 
 #include "cutlass/library/util.h"
 
-#include "performance_report.h"
-#include "debug.h"
+#include "cutlass/profiler/performance_report.h"
+#include "cutlass/profiler/debug.h"
 namespace cutlass {
 namespace profiler {
 
@@ -382,6 +382,7 @@ std::ostream & PerformanceReport::print_result_csv_(
       << "," << result.gbytes_per_sec()
       << "," << result.gflops_per_sec()
       ;
+
   }
   else {
     out << std::string(2

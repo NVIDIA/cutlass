@@ -33,6 +33,17 @@
     \brief Defines a proxy class for storing non-standard 16-bit floating point values with
           8 bits of exponent and 7 bit of mantissa.
 */
+
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
+
 #pragma once
 
 #if defined(__CUDACC_RTC__)

@@ -30,15 +30,14 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/util/type_traits.hpp>
-#include <cute/numeric/math.hpp>
+#include "cute/util/print.hpp"
+#include "cute/util/type_traits.hpp"
+#include "cute/numeric/math.hpp"
 
 namespace cute
 {
 
-// Short name for fast compilation
+// A constant value: short name and type-deduction for fast compilation
 template <auto v>
 struct C {
   using type = C<v>;
@@ -48,11 +47,9 @@ struct C {
   CUTE_HOST_DEVICE constexpr value_type operator()() const noexcept { return value; }
 };
 
+// Deprecate
 template <class T, T v>
 using constant = C<v>;
-
-template <class T, T v>
-using integral_constant = C<v>;
 
 template <bool b>
 using bool_constant = C<b>;
@@ -60,17 +57,30 @@ using bool_constant = C<b>;
 using true_type  = bool_constant<true>;
 using false_type = bool_constant<false>;
 
+// A more std:: conforming integral_constant that enforces type but interops with C<v>
+template <class T, T v>
+struct integral_constant : C<v> {
+  using type = integral_constant<T,v>;
+  static constexpr T value = v;
+  using value_type = T;
+  // Disambiguate C<v>::operator value_type()
+  //CUTE_HOST_DEVICE constexpr operator   value_type() const noexcept { return value; }  
+  CUTE_HOST_DEVICE constexpr value_type operator()() const noexcept { return value; }
+};
+
 //
 // Traits
 //
 
 // Use cute::is_std_integral<T> to match built-in integral types (int, int64_t, unsigned, etc)
-// Use cute::is_integral<T> to match both built-in integral types AND constant<T,t>
+// Use cute::is_integral<T> to match both built-in integral types AND static integral types.
 
 template <class T>
 struct is_integral : bool_constant<is_std_integral<T>::value> {};
 template <auto v>
-struct is_integral<C<v>> : true_type {};
+struct is_integral<C<v>                  > : true_type {};
+template <class T, T v>
+struct is_integral<integral_constant<T,v>> : true_type {};
 
 // is_static detects if an (abstract) value is defined completely by it's type (no members)
 
@@ -80,20 +90,22 @@ struct is_static : bool_constant<is_empty<T>::value> {};
 template <class T>
 constexpr bool is_static_v = is_static<T>::value;
 
-// is_constant detects if a type is a constant<T,v> and if v is equal to a value
+// is_constant detects if a type is a static integral type and if v is equal to a value
 
 template <auto n, class T>
 struct is_constant : false_type {};
+template <auto n, class T>
+struct is_constant<n, T const > : is_constant<n,T> {};
+template <auto n, class T>
+struct is_constant<n, T const&> : is_constant<n,T> {};
+template <auto n, class T>
+struct is_constant<n, T      &> : is_constant<n,T> {};
+template <auto n, class T>
+struct is_constant<n, T     &&> : is_constant<n,T> {};
 template <auto n, auto v>
-struct is_constant<n, C<v>       > : bool_constant<v == n> {};
-template <auto n, auto v>
-struct is_constant<n, C<v> const > : bool_constant<v == n> {};
-template <auto n, auto v>
-struct is_constant<n, C<v> const&> : bool_constant<v == n> {};
-template <auto n, auto v>
-struct is_constant<n, C<v>      &> : bool_constant<v == n> {};
-template <auto n, auto v>
-struct is_constant<n, C<v>     &&> : bool_constant<v == n> {};
+struct is_constant<n, C<v>                  > : bool_constant<v == n> {};
+template <auto n, class T, T v>
+struct is_constant<n, integral_constant<T,v>> : bool_constant<v == n> {};
 
 //
 // Specializations
@@ -403,9 +415,10 @@ conditional_return(TrueType const& t, FalseType const& f) {
 // Display utilities
 //
 
-template <auto t>
-CUTE_HOST_DEVICE void print(C<t> const&) {
-  printf("_%d", int(t));
+template <auto Value>
+CUTE_HOST_DEVICE void print(C<Value>) {
+  printf("_");
+  ::cute::print(Value);
 }
 
 #if !defined(__CUDACC_RTC__)

@@ -305,10 +305,10 @@ function(cutlass_add_library NAME)
 
   if(CUTLASS_NATIVE_CUDA OR CUDA_COMPILER MATCHES "clang")
     cutlass_correct_source_file_language_property(${TARGET_SOURCE_ARGS})
-    add_library(${NAME} ${TARGET_SOURCE_ARGS})
+    add_library(${NAME} ${TARGET_SOURCE_ARGS} "")
   else()
     set(CUDA_LINK_LIBRARIES_KEYWORD PRIVATE)
-    cuda_add_library(${NAME} ${TARGET_SOURCE_ARGS})
+    cuda_add_library(${NAME} ${TARGET_SOURCE_ARGS} "")
   endif()
 
   cutlass_apply_standard_compile_options(${NAME})

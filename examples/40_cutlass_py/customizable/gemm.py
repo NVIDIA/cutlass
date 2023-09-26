@@ -29,13 +29,18 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 ################################################################################
+
+import sys
+print("This example is deprecated. Please see examples/python for examples of using "
+      "the CUTLASS Python interface.")
+sys.exit(0)
+
 import numpy as np
 import cutlass.backend as pycutlass
 from cutlass.backend import *
 from cutlass.backend.utils.device import device_cc
 import cutlass_bindings
 from bfloat16 import bfloat16
-import sys
 
 import argparse
 
@@ -100,8 +105,6 @@ parser.add_argument("-te", "--element_epilogue", default="float32", type=str,
 parser.add_argument("-ep", "--epilogue_functor", default="LinearCombination",
                     type=str, choices=['LinearCombination', 'FastLinearCombinationClamp', 'LinearCombinationClamp'], 
                     help="This option describes the epilogue part of the kernel")
-parser.add_argument("-epv", "--epilogue_visitor", default=None,
-                    type=str, choices=['RowReduction', 'ColumnReduction', 'RowBroadcast', 'ColumnBroadcast'], help="epilogue visitor for more complex epilogues")
 # swizzling
 parser.add_argument("-sw", "--swizzling_functor", default="IdentitySwizzle1", type=str, choices=[
                     "IdentitySwizzle1", "IdentitySwizzle2", "IdentitySwizzle4", "IdentitySwizzle8", "HorizontalSwizzle", "BatchedIdentitySwizzle"],
@@ -193,71 +196,10 @@ else:
 
 swizzling_functor = getattr(cutlass_bindings, args.swizzling_functor)
 
-visitor = args.epilogue_visitor is not None
-
-if args.epilogue_visitor == "ColumnReduction":
-    class ColumnReduction_(EpilogueVisitTree):
-        def __call__(
-            self, accum: 'tensor',  c: 'tensor', 
-            alpha: 'scalar', beta: 'scalar'):
-            #
-            D = alpha * accum + beta * c
-            reduction = reduction_op(D, "column", "Add", args.threadblock_shape[0])
-            return D, reduction
-    epilogue_functor = ColumnReduction_(
-        epilogue_functor, tile_description, math_inst.element_accumulator, 
-        C.alignment, element_epilogue, C.element)
-    epilogue_functor.initialize()
-elif args.epilogue_visitor == "RowReduction":
-    class RowReduction_(EpilogueVisitTree):
-        def __call__(
-            self, accum: 'tensor',  c: 'tensor', 
-            alpha: 'scalar', beta: 'scalar'):
-            #
-            D = alpha * accum + tanh.numpy(beta * c)
-            reduction = reduction_op(D, "row", "Add", args.threadblock_shape[1])
-            return D, reduction
-    epilogue_functor = RowReduction_(
-        epilogue_functor, tile_description, math_inst.element_accumulator, 
-        C.alignment, element_epilogue, C.element)
-    epilogue_functor.initialize()
-
-elif args.epilogue_visitor == "RowBroadcast":
-    class RowBroadcast_(EpilogueVisitTree):
-        def __call__(
-            self, accum: 'tensor',  c: 'tensor', 
-            vector: 'row', alpha: 'scalar', beta: 'scalar'):
-            #
-            T = accum + vector
-            scale_T = alpha * T
-            Z = relu.numpy(scale_T + beta * c)
-            return Z, T
-    epilogue_functor = RowBroadcast_(
-        epilogue_functor, tile_description, math_inst.element_accumulator, 
-        C.alignment, element_epilogue, C.element)
-    epilogue_functor.initialize()
-elif args.epilogue_visitor == "ColumnBroadcast":
-    class ColumnBroadcast_(EpilogueVisitTree):
-        def __call__(
-            self, accum: 'tensor',  c: 'tensor', 
-            vector: 'column', alpha: 'scalar', beta: 'scalar'):
-            #
-            T = accum + vector
-            scale_T = leaky_relu.numpy(alpha * T, 0.2)
-            Z = scale_T + beta * c
-            return Z, T
-    epilogue_functor = ColumnBroadcast_(
-        epilogue_functor, tile_description, math_inst.element_accumulator, 
-        C.alignment, element_epilogue, C.element)
-    epilogue_functor.initialize()
-else:
-    epilogue_functor = epilogue_functor
-
 operation = GemmOperationUniversal(
     arch=args.compute_capability, tile_description=tile_description,
     A=A, B=B, C=C,
-    epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor,
-    visitor=visitor
+    epilogue_functor=epilogue_functor, swizzling_functor=swizzling_functor
 )
 
 if args.print_cuda:
@@ -347,38 +289,7 @@ tensor_D = np.zeros(
     shape=(args.batch * problem_size.m() * problem_size.n(),)
 ).astype(getattr(np, args.element_c))
 
-if args.epilogue_visitor == "RowReduction":
-    cta_n = args.threadblock_shape[1]
-    num_cta_n = (problem_size.n() + cta_n - 1) // cta_n
-    reduction = np.zeros(shape=(args.batch * problem_size.m() * num_cta_n,), dtype=getattr(np, args.element_c))
-    output_op = operation.epilogue_type(
-        D=tensor_D, alpha=args.alpha, beta=args.beta, c=tensor_C, reduction=reduction, problem_size=[problem_size.m(), problem_size.n()]
-    )
-elif args.epilogue_visitor == "ColumnReduction":
-    cta_m = args.threadblock_shape[0]
-    num_cta_m = (problem_size.m() + cta_m - 1) // cta_m
-    reduction = np.zeros(shape=(args.batch * problem_size.n() * num_cta_m,), dtype=getattr(np, args.element_c))
-    output_op = operation.epilogue_type(
-        D=tensor_D, alpha=args.alpha, beta=args.beta, c=tensor_C, reduction=reduction, problem_size=[problem_size.m(), problem_size.n()]
-    )
-elif args.epilogue_visitor == "RowBroadcast":
-    vector = np.ceil(
-            np.random.uniform(low=-8.5, high=7.5, size=(args.batch, 1, problem_size.n()))
-            ).astype(getattr(np, args.element_c))
-    tensor_t = np.empty_like(tensor_D)
-    output_op = operation.epilogue_type(
-        c=tensor_C, vector=vector, alpha=args.alpha, beta=args.beta, Z=tensor_D, T=tensor_t, problem_size=[problem_size.m(), problem_size.n()]
-    )
-elif args.epilogue_visitor == "ColumnBroadcast":
-    vector = np.ceil(
-            np.random.uniform(low=-8.5, high=7.5, size=(args.batch, problem_size.m(), 1))
-            ).astype(getattr(np, args.element_c))
-    tensor_t = np.empty_like(tensor_D)
-    output_op = operation.epilogue_type(
-        c=tensor_C, vector=vector, alpha=args.alpha, beta=args.beta, Z=tensor_D, T=tensor_t, problem_size=[problem_size.m(), problem_size.n()]
-    )
-else:
-    output_op = operation.epilogue_type(*([args.alpha, args.beta] + args.activation_args))
+output_op = operation.epilogue_type(*([args.alpha, args.beta] + args.activation_args))
 
 arguments = GemmArguments(
     operation=operation, problem_size=problem_size,
@@ -411,37 +322,7 @@ reference = ReferenceModule(A, B, C)
 tensor_D_ref = reference.run(
     tensor_A, tensor_B, tensor_C, problem_size, args.alpha, args.beta, args.bias, args.batch)
 
-if args.epilogue_visitor in ["RowBroadcast", "ColumnBroadcast"]:
-    tensor_D_ref = (tensor_D_ref.reshape((args.batch, problem_size.m(), problem_size.n())) + vector).flatten()
 tensor_D_ref = getattr(pycutlass, args.activation_function).numpy(*([tensor_D_ref,] + args.activation_args))
-
-if args.epilogue_visitor in ["RowReduction", "ColumnReduction"]:
-    output_op.sync()
-    accum_ref = reference.run(
-        tensor_A, tensor_B, tensor_C, problem_size, 1.0, 0.0, args.bias, args.batch)
-    tensor_D_ref, reduction_ref = epilogue_functor(
-        accum_ref.reshape((args.batch, problem_size.m(), problem_size.n())),
-        tensor_C.reshape((args.batch, problem_size.m(), problem_size.n())),
-        args.alpha, args.beta
-    )
-    tensor_D_ref = tensor_D_ref.flatten()
-    reduction_ref = reduction_ref.flatten()
-    assert np.allclose(reduction_ref, reduction, atol=1e-2)
-
-elif args.epilogue_visitor in ["RowBroadcast", "ColumnBroadcast"]:
-    output_op.sync()
-    accum_ref = reference.run(
-        tensor_A, tensor_B, tensor_C, problem_size, 1.0, 0.0, args.bias, args.batch)
-    
-    tensor_D_ref, tensor_T_ref = epilogue_functor(
-        accum_ref.reshape((args.batch, problem_size.m(), problem_size.n())),
-        tensor_C.reshape((args.batch, problem_size.m(), problem_size.n())), 
-        vector, args.alpha, args.beta)
-
-    tensor_D_ref = tensor_D_ref.flatten()
-    tensor_T_ref = tensor_T_ref.flatten()
-
-    assert np.array_equal(tensor_t, tensor_T_ref)
 
 try:
     assert np.array_equal(tensor_D, tensor_D_ref)

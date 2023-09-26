@@ -99,7 +99,7 @@ public:
 
   static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
     "Ping-pong kernel only supports the default scheduler.");
-  using TileScheduleTag = TileScheduler_;
+  using TileSchedulerTag = TileScheduler_;
   using TileScheduler = typename detail::TileSchedulerSelector<
     TileScheduler_, ArchTag, TileShape, ClusterShape>::Scheduler;
   using TileSchedulerArguments = typename TileScheduler::Arguments;
@@ -282,7 +282,7 @@ public:
 
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
-
+    
     int thread_idx = int(threadIdx.x);
     int lane_idx = canonical_lane_idx();
     int warp_idx = canonical_warp_idx_sync();

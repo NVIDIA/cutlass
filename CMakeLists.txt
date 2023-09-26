@@ -40,7 +40,7 @@ endif()
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 set(IMPLICIT_CMAKE_CXX_STANDARD OFF CACHE BOOL "Do not explicitly specify -std=c++11 if set")
 
-project(CUTLASS VERSION 3.2.0 LANGUAGES CXX)
+project(CUTLASS VERSION 3.2.1 LANGUAGES CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
 if (CUDA_VERSION VERSION_LESS 11.3)
@@ -85,6 +85,21 @@ message(STATUS "Default Install Location: ${CMAKE_INSTALL_PREFIX}")
 set(CUTLASS_TEST_LEVEL "0" CACHE STRING "Level of tests to compile.")
 # 0 - Sanity, 1 - Release-Quality, 2 - Exhaustive
 
+find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
+
+# Install cutlass_library Python package
+execute_process(
+  WORKING_DIRECTORY ${CUTLASS_DIR}/python
+  COMMAND ${Python3_EXECUTABLE} ${CUTLASS_DIR}/python/setup_library.py develop --user
+  RESULT_VARIABLE cutlass_lib_GENERATOR_INSTALL_RESULT
+  OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/cutlass_library_installation.log
+  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/cutlass_library_installation.log
+)
+
+if(NOT cutlass_lib_GENERATOR_INSTALL_RESULT EQUAL 0)
+  message(FATAL_ERROR "Error installing cutlass_library package. See ${CMAKE_CURRENT_BINARY_DIR}/cutlass_library_installation.log")
+endif()
+
 ################################################################################
 set(CUTLASS_ENABLE_HEADERS_ONLY OFF CACHE BOOL "Enable only the header library")
 
@@ -92,10 +107,16 @@ if(CUTLASS_ENABLE_HEADERS_ONLY)
   set(CUTLASS_ENABLE_EXAMPLES_INIT OFF)
   set(CUTLASS_ENABLE_TOOLS_INIT ON)
   set(CUTLASS_ENABLE_LIBRARY_INIT OFF)
+  set(CUTLASS_ENABLE_TESTS_INIT OFF)
 else()
   set(CUTLASS_ENABLE_EXAMPLES_INIT ON)
   set(CUTLASS_ENABLE_TOOLS_INIT ON)
   set(CUTLASS_ENABLE_LIBRARY_INIT ON)
+  if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
+    set(CUTLASS_ENABLE_TESTS_INIT ON)
+  else()
+    set(CUTLASS_ENABLE_TESTS_INIT OFF)
+  endif()
 endif()
 
 set(CUTLASS_TEST_UNIT_ENABLE_WARNINGS OFF CACHE BOOL "Enable warnings on waived unit tests.")
@@ -104,20 +125,10 @@ set(CUTLASS_ENABLE_EXAMPLES ${CUTLASS_ENABLE_EXAMPLES_INIT} CACHE BOOL "Enable C
 set(CUTLASS_ENABLE_TOOLS ${CUTLASS_ENABLE_TOOLS_INIT} CACHE BOOL "Enable CUTLASS Tools")
 set(CUTLASS_ENABLE_LIBRARY ${CUTLASS_ENABLE_LIBRARY_INIT} CACHE BOOL "Enable CUTLASS Library")
 set(CUTLASS_ENABLE_PROFILER ${CUTLASS_ENABLE_LIBRARY} CACHE BOOL "Enable CUTLASS Profiler")
-set(CUTLASS_ENABLE_PERFORMANCE ${CUTLASS_ENABLE_PROFILER} CACHE BOOL "Enable CUTLASS Proformance")
-
-if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
-  set(CUTLASS_ENABLE_TESTS_INIT ${CUTLASS_ENABLE_LIBRARY})
-else()
-  set(CUTLASS_ENABLE_TESTS_INIT OFF)
-endif()
+set(CUTLASS_ENABLE_PERFORMANCE ${CUTLASS_ENABLE_PROFILER} CACHE BOOL "Enable CUTLASS Performance")
 
 set(CUTLASS_ENABLE_TESTS ${CUTLASS_ENABLE_TESTS_INIT} CACHE BOOL "Enable CUTLASS Tests")
-
-if (CUTLASS_ENABLE_TESTS)
-  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake)
-endif()
-
+set(CUTLASS_ENABLE_GTEST_UNIT_TESTS ${CUTLASS_ENABLE_TESTS} CACHE BOOL "Enable CUTLASS GTest-based Unit Tests")
 ################################################################################
 
 set(CUTLASS_NVCC_ARCHS_SUPPORTED "")
@@ -285,6 +296,8 @@ if (CUTLASS_ENABLE_TENSOR_CORE_MMA)
 endif()
 
 
+
+
 if (NOT MSVC AND CUTLASS_NVCC_KEEP)
   # MSVC flow handles caching already, but for other generators we handle it here.
   set(CUTLASS_NVCC_KEEP_DIR ${CMAKE_CURRENT_BINARY_DIR}/tmp CACHE PATH "Location to store NVCC scratch files")
@@ -395,6 +408,7 @@ endif()
 # Some tests require this build option in order to link.
 if (MSVC)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler /bigobj")
 endif()
 
 function(cutlass_apply_cuda_gencode_flags TARGET)
@@ -572,9 +586,15 @@ target_include_directories(
   $<INSTALL_INTERFACE:include>
   $<BUILD_INTERFACE:${CUTLASS_INCLUDE_DIR}>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
-  $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include>
   $<BUILD_INTERFACE:${cute_SOURCE_DIR}/include>
   $<BUILD_INTERFACE:${cute_SOURCE_DIR}/examples>
+  )
+
+# Mark CTK headers as system to supress warnings from them
+target_include_directories(
+  CUTLASS
+  SYSTEM INTERFACE
+  $<BUILD_INTERFACE:${CUDA_TOOLKIT_ROOT_DIR}/include>
   )
 
 install(
@@ -633,6 +653,11 @@ endif()
 
 include(CTest)
 enable_testing()
+
+if (CUTLASS_ENABLE_GTEST_UNIT_TESTS)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/googletest.cmake)
+endif()
+
 if (NOT TARGET test_all)
   add_custom_target(test_all)
 endif()
@@ -818,7 +843,7 @@ function(cutlass_add_executable_tests NAME TARGET)
  
   set(CUTLASS_CTEST_GENERATED_FILES ${CUTLASS_CTEST_GENERATED_FILES};ctest/${TEST_NAME}/CTestTestfile.${TEST_NAME}.cmake CACHE INTERNAL "")
 
-  if (CUTLASS_INSTALL_TESTS)
+    if (CUTLASS_INSTALL_TESTS)
 
     file(GENERATE 
       OUTPUT "${TEST_GEN_DIR}/CTestTestfile.${TEST_NAME}.install.cmake" 
@@ -831,7 +856,7 @@ function(cutlass_add_executable_tests NAME TARGET)
       RENAME CTestTestfile.${TEST_NAME}.cmake
       )
 
-  endif()
+    endif()
 
 endfunction()
 
@@ -849,7 +874,9 @@ endif()
 
 if (CUTLASS_ENABLE_TESTS)
   add_subdirectory(test)
+  if (CUTLASS_ENABLE_GTEST_UNIT_TESTS)
   add_dependencies(test_all test_unit)
+  endif()
 endif()
 
 if (CUTLASS_INSTALL_TESTS)

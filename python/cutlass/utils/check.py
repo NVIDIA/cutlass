@@ -36,10 +36,9 @@ Utility functions for checking constraints on kernels and calculating kernel att
 
 import ctypes
 
-import cutlass_bindings
 import cutlass
-from cutlass.backend.library import DataTypeSize, TileDescription
-from cutlass.utils.datatypes import binding_type
+from cutlass import DataTypeSize
+from cutlass.backend.library import TileDescription
 
 
 def calculate_smem_usage_per_stage(td: TileDescription, operation_kind: cutlass.OperationKind) -> int:
@@ -80,6 +79,7 @@ def calculate_smem_usage(operation) -> int:
 
 def valid_stage_count(
     cc: int,
+    kernel_cc: int,
     td: TileDescription,
     element_C: cutlass.DataType = None,
     element_D: cutlass.DataType = None) -> tuple:
@@ -89,6 +89,8 @@ def valid_stage_count(
 
     :param cc: compute capability of device in question
     :type cc: int
+    :param kernel_cc: compute capability that the kernel targets (corresponding to the arch::SMxy tag in CUTLASS)
+    :type kernel_cc: int
     :param td: tile description to check
     :type td: TileDescription
     :param element_C: data type of operand C
@@ -100,7 +102,7 @@ def valid_stage_count(
              valid for the provided device and the second element being an error message
     :rtype: tuple
     """
-    if cc == 90:
+    if kernel_cc == 90:
         if (td.stages is None or td.stages == 0):
             # Stage count of None or 0 for SM90 indicates that the CollectiveBuilder automatically
             # determines the stage count to use. Thus, all settings are valid in these scenarios.

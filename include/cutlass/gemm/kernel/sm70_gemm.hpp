@@ -79,7 +79,7 @@ public:
 
   static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
     "SM70 kernel does not support specializing the tile scheduler.");
-  using TileScheduleTag = TileScheduler_;
+  using TileSchedulerTag = TileScheduler_;
   using TileScheduler = typename detail::TileSchedulerSelector<
     TileScheduler_, ArchTag, TileShape,
     cute::Shape<cute::Int<1>, cute::Int<1>, cute::Int<1>>>::Scheduler;

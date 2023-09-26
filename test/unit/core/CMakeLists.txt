@@ -43,3 +43,23 @@ cutlass_test_unit_add_executable(
   numeric_conversion.cu
   functional.cu
   )
+
+#
+# CUTLASS 3x increases the host compiler requirements to C++17. However, there are
+# certain existing integrations that will benefit from maintaining C++11 compatibility.
+#
+# This requirement only applies to select .h files which are explicitly annotated. It
+# does not apply to any .hpp file.
+#
+# `cutlass_test_unit_core_cpp11` enforces the C++11 requirement.
+#
+
+set(CMAKE_CUDA_STANDARD 11)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+
+add_executable(
+  cutlass_test_unit_core_cpp11
+
+  cpp11.cu
+)
+

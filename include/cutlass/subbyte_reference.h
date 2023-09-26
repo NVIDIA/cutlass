@@ -33,7 +33,8 @@
 */
 #pragma once
 
-#include "cutlass/numeric_types.h"
+#include "cutlass/cutlass.h"
+#include "cutlass/integer_subbyte.h"
 #include "cutlass/fast_math.h"
 
 namespace cutlass {
@@ -619,7 +620,7 @@ public:
   ///   Type element may be stored across 2 storage units, so need a storage vector to hold integer
   ///   number of objects of type Element.
   using StorageUnit = Storage_;
-  static int const kBitsStoredVec = cutlass::lcm(sizeof_bits<Element>::value, sizeof_bits<StorageUnit>::value); 
+  static int const kBitsStoredVec = cutlass::lcm_cxx11(sizeof_bits<Element>::value, sizeof_bits<StorageUnit>::value); 
   static int const kNumStorageUnitPerStoredVec = kBitsStoredVec / sizeof_bits<StorageUnit>::value;
 
   using StorageVec = StorageUnit[kNumStorageUnitPerStoredVec];
@@ -994,7 +995,7 @@ public:
   ///   Type element may be stored across 2 storage units, so need a storage vector to hold integer
   ///   number of objects of type Element.
   using StorageUnit = Storage_;
-  static int const kBitsStoredVec = cutlass::lcm(sizeof_bits<Element>::value, sizeof_bits<StorageUnit>::value); 
+  static int const kBitsStoredVec = cutlass::lcm_cxx11(sizeof_bits<Element>::value, sizeof_bits<StorageUnit>::value); 
   static int const kNumStorageUnitPerStoredVec = kBitsStoredVec / sizeof_bits<StorageUnit>::value;
 
   using StorageVec = StorageUnit[kNumStorageUnitPerStoredVec];

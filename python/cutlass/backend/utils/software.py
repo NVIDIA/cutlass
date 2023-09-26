@@ -1,3 +1,6 @@
+#################################################################################################
+#
+# Copyright (c) 2023 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Redistribution and use in source and binary forms, with or without
@@ -85,10 +88,7 @@ def SubstituteTemplate(template, values):
     return text
 
 
-# this._device_sm_count = None
 def device_sm_count():
-    # Query the number of SMs, if needed
-    # if this._device_sm_count is None:
     from cuda import cuda
 
     _device = 0
