@@ -62,10 +62,10 @@ struct GemmIdentityThreadblockSwizzle {
   /// Returns the shape of the problem in units of logical tiles
   /// *Gemm* problem size: gemm(M, N, K)
   CUTLASS_HOST_DEVICE
-  GemmCoord get_tiled_shape(
+  static GemmCoord get_tiled_shape(
     GemmCoord problem_size,
     GemmCoord tile_size,
-    int split_k_slices) const {
+    int split_k_slices) {
 
     return GemmCoord(
       (problem_size.m() + tile_size.m() - 1) / tile_size.m(),
@@ -76,11 +76,11 @@ struct GemmIdentityThreadblockSwizzle {
   /// Returns the shape of the problem in units of logical tiles
   /// *ImplicitGemm* Conv2d problem size: conv_operator(NPQK, NHWC, KRSC)
   CUTLASS_HOST_DEVICE
-  GemmCoord get_tiled_shape(
+  static GemmCoord get_tiled_shape(
     cutlass::conv::Operator conv_operator,
     cutlass::conv::Conv2dProblemSize const &problem_size,
     GemmCoord tile_size,
-    int split_k_slices) const {
+    int split_k_slices) {
 
     gemm::GemmCoord implicit_gemm_problem_size = 
     cutlass::conv::implicit_gemm_problem_size(conv_operator, problem_size);
@@ -92,11 +92,11 @@ struct GemmIdentityThreadblockSwizzle {
   /// Returns the shape of the problem in units of logical tiles
   /// *ImplicitGemm* Conv3d problem size: conv_operator(NZPQK, NDHWC, KTRSC)
   CUTLASS_HOST_DEVICE
-  GemmCoord get_tiled_shape(
+  static GemmCoord get_tiled_shape(
     cutlass::conv::Operator conv_operator,
     cutlass::conv::Conv3dProblemSize const &problem_size,
     GemmCoord tile_size,
-    int split_k_slices) const {
+    int split_k_slices) {
 
     gemm::GemmCoord implicit_gemm_problem_size = 
     cutlass::conv::implicit_gemm_problem_size(conv_operator, problem_size);
@@ -107,7 +107,7 @@ struct GemmIdentityThreadblockSwizzle {
 
   /// Computes CUDA grid dimensions given a size in units of logical tiles
   CUTLASS_HOST_DEVICE
-  dim3 get_grid_shape(GemmCoord tiled_shape) const {
+  static dim3 get_grid_shape(GemmCoord tiled_shape) {
     int tile = 1 << get_log_tile(tiled_shape);
     return dim3(tiled_shape.m() * tile, (tiled_shape.n() + tile - 1) / tile, tiled_shape.k());
   }
@@ -129,7 +129,7 @@ struct GemmIdentityThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset(int log_tile) const {
+  static GemmCoord get_tile_offset(int log_tile) {
     int block_idx_x = RematerializeBlockIdxX();
     int block_idx_y = RematerializeBlockIdxY();
     int block_idx_z = RematerializeBlockIdxZ();
@@ -141,7 +141,7 @@ struct GemmIdentityThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset(GemmCoord tiled_shape) const {
+  static GemmCoord get_tile_offset(GemmCoord tiled_shape) {
 
     int const kTile = N;
     int block_idx_x = RematerializeBlockIdxX();
@@ -168,10 +168,10 @@ struct GemmHorizontalThreadblockSwizzle {
 
   /// Returns the shape of the problem in units of logical tiles
   CUTLASS_HOST_DEVICE
-  GemmCoord get_tiled_shape(
+  static GemmCoord get_tiled_shape(
     GemmCoord problem_size,
     GemmCoord tile_size,
-    int split_k_slices) const {
+    int split_k_slices) {
 
     return GemmCoord(
       (problem_size.m() + tile_size.m() - 1) / tile_size.m(),
@@ -181,7 +181,7 @@ struct GemmHorizontalThreadblockSwizzle {
 
   /// Computes CUDA grid dimensions given a size in units of logical tiles
   CUTLASS_HOST_DEVICE
-  dim3 get_grid_shape(GemmCoord tiled_shape) const {
+  static dim3 get_grid_shape(GemmCoord tiled_shape) {
     return dim3(tiled_shape.n(), tiled_shape.m(), tiled_shape.k());
   }
 
@@ -193,7 +193,7 @@ struct GemmHorizontalThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset(GemmCoord tiled_shape) const {
+  static GemmCoord get_tile_offset(GemmCoord tiled_shape) {
     return GemmCoord{
       RematerializeBlockIdxY(),
       RematerializeBlockIdxX(),
@@ -209,10 +209,10 @@ struct GemmBatchedIdentityThreadblockSwizzle {
 
   /// Returns the shape of the problem in units of logical tiles
   CUTLASS_HOST_DEVICE
-  GemmCoord get_tiled_shape(
+  static GemmCoord get_tiled_shape(
     GemmCoord problem_size,
     GemmCoord tile_size,
-    int batch_count) const {
+    int batch_count) {
 
     return GemmCoord(
       (problem_size.m() + tile_size.m() - 1) / tile_size.m(),
@@ -222,7 +222,7 @@ struct GemmBatchedIdentityThreadblockSwizzle {
 
   /// Computes CUDA grid dimensions given a size in units of logical tiles
   CUTLASS_HOST_DEVICE
-  dim3 get_grid_shape(GemmCoord tiled_shape) const {
+  static dim3 get_grid_shape(GemmCoord tiled_shape) {
     return dim3(tiled_shape.m(), tiled_shape.n(), tiled_shape.k());
   }
 
@@ -234,7 +234,7 @@ struct GemmBatchedIdentityThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset(GemmCoord tiled_shape) const {
+  static GemmCoord get_tile_offset(GemmCoord tiled_shape) {
     return GemmCoord{
       RematerializeBlockIdxX(),
       RematerializeBlockIdxY(),
@@ -244,7 +244,7 @@ struct GemmBatchedIdentityThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset(int log_tile) const {
+  static GemmCoord get_tile_offset(int log_tile) {
     int block_idx_x = RematerializeBlockIdxX();
     int block_idx_y = RematerializeBlockIdxY();
     int block_idx_z = RematerializeBlockIdxZ();
@@ -256,7 +256,7 @@ struct GemmBatchedIdentityThreadblockSwizzle {
 
   /// Gets the batch index
   CUTLASS_DEVICE
-  int get_batch_idx() const {
+  static int get_batch_idx() {
     return RematerializeBlockIdxZ();
   }
 };
@@ -271,10 +271,10 @@ struct GemmSplitKIdentityThreadblockSwizzle {
 
   /// Returns the shape of the problem in units of logical tiles
   CUTLASS_HOST_DEVICE
-  GemmCoord get_tiled_shape(
+  static GemmCoord get_tiled_shape(
     GemmCoord problem_size,
     GemmCoord tile_size,
-    int partitions) const {
+    int partitions) {
 
     return GemmCoord(
       (problem_size.m() + tile_size.m() - 1) / tile_size.m(),
@@ -299,14 +299,14 @@ struct GemmSplitKIdentityThreadblockSwizzle {
 
   /// Computes CUDA grid dimensions given a size in units of logical tiles
   CUTLASS_HOST_DEVICE
-  dim3 get_grid_shape(GemmCoord tiled_shape) const {
+  static dim3 get_grid_shape(GemmCoord tiled_shape) {
     int tile = 1 << get_log_tile(tiled_shape);
     return dim3(tiled_shape.m() * tile, (tiled_shape.n() + tile - 1) / tile, tiled_shape.k());
   }
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset(int log_tile) const {
+  static GemmCoord get_tile_offset(int log_tile) {
     int block_idx_x = RematerializeBlockIdxX();
     int block_idx_y = RematerializeBlockIdxY();
     int block_idx_z = RematerializeBlockIdxZ();
@@ -318,7 +318,7 @@ struct GemmSplitKIdentityThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset(GemmCoord tiled_shape) const {
+  static GemmCoord get_tile_offset(GemmCoord tiled_shape) {
 
     int const kTile = N;
     int block_idx_x = RematerializeBlockIdxX();
@@ -342,10 +342,10 @@ struct GemmSplitKHorizontalThreadblockSwizzle {
 
   /// Returns the shape of the problem in units of logical tiles
   CUTLASS_HOST_DEVICE
-  GemmCoord get_tiled_shape(
+  static GemmCoord get_tiled_shape(
     GemmCoord problem_size,
     GemmCoord tile_size,
-    int partitions) const {
+    int partitions) {
 
     return GemmCoord(
       (problem_size.m() + tile_size.m() - 1) / tile_size.m(),
@@ -355,7 +355,7 @@ struct GemmSplitKHorizontalThreadblockSwizzle {
 
   /// Computes CUDA grid dimensions given a size in units of logical tiles
   CUTLASS_HOST_DEVICE
-  dim3 get_grid_shape(GemmCoord tiled_shape) const {
+  static dim3 get_grid_shape(GemmCoord tiled_shape) {
     return dim3(tiled_shape.n(), tiled_shape.m(), tiled_shape.k());
   }
 
@@ -367,7 +367,7 @@ struct GemmSplitKHorizontalThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset(int log_tile) const {
+  static GemmCoord get_tile_offset(int log_tile) {
     return GemmCoord{
       RematerializeBlockIdxY(),
       RematerializeBlockIdxX(),
@@ -377,7 +377,7 @@ struct GemmSplitKHorizontalThreadblockSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  GemmCoord get_tile_offset(GemmCoord tiled_shape) const {
+  static GemmCoord get_tile_offset(GemmCoord tiled_shape) {
     return GemmCoord{
       RematerializeBlockIdxY(),
       RematerializeBlockIdxX(),
@@ -393,9 +393,9 @@ struct GemvBatchedStridedThreadblockDefaultSwizzle {
 
   /// Returns the shape of the problem in units of logical tiles
   CUTLASS_HOST_DEVICE
-  BatchedGemmCoord get_tiled_shape(
+  static BatchedGemmCoord get_tiled_shape(
     BatchedGemmCoord problem_size,
-    BatchedGemmCoord tile_size) const {
+    BatchedGemmCoord tile_size) {
 
     return BatchedGemmCoord(
       1, // M is always 1
@@ -406,7 +406,7 @@ struct GemvBatchedStridedThreadblockDefaultSwizzle {
 
   /// Computes CUDA grid dimensions given a size in units of logical tiles
   CUTLASS_HOST_DEVICE
-  dim3 get_grid_shape(BatchedGemmCoord tiled_shape) const {
+  static dim3 get_grid_shape(BatchedGemmCoord tiled_shape) {
     return dim3(tiled_shape.n(), tiled_shape.batch(), tiled_shape.k());
   }
 
@@ -418,7 +418,7 @@ struct GemvBatchedStridedThreadblockDefaultSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  BatchedGemmCoord get_tile_offset(int log_tile) const {
+  static BatchedGemmCoord get_tile_offset(int log_tile) {
     return BatchedGemmCoord{
       0, // M is always 1
       RematerializeBlockIdxX(),
@@ -429,7 +429,7 @@ struct GemvBatchedStridedThreadblockDefaultSwizzle {
 
   /// Obtains the threadblock offset (in units of threadblock-scoped tiles)
   CUTLASS_DEVICE
-  BatchedGemmCoord get_tile_offset() const {
+  static BatchedGemmCoord get_tile_offset() {
     return BatchedGemmCoord{
       0, // M is always 1
       RematerializeBlockIdxX(),
@@ -440,13 +440,13 @@ struct GemvBatchedStridedThreadblockDefaultSwizzle {
 
   /// Gets the batch tile index
   CUTLASS_DEVICE
-  int get_batch_tile_idx() const {
+  static int get_batch_tile_idx() {
     return RematerializeBlockIdxY();
   }
 
   /// Gets the absolute batch index
   CUTLASS_DEVICE
-  int get_batch_idx() const {
+  static int get_batch_idx() {
     return RematerializeBlockDimY()*RematerializeBlockIdxY() + RematerializeThreadIdxY();
   }
 };

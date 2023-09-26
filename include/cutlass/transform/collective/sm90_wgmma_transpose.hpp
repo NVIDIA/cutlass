@@ -383,7 +383,7 @@ public:
         make_fragment_like(tmp_tCsB)
       };
 
-      int step = current_step * NumMathWarpGroup;
+      [[maybe_unused]] int step = current_step * NumMathWarpGroup;
       if constexpr (NumMathWarpGroup == 2) { 
         // For 2 math warpgroup, warp idx4~7 is 1st warp group and 8~9 is 2nd, so decide if 2nd warpgroup need warp idx divide 8. 
         step += warp_idx / (NumWarpsPerWarpGroup * 2);

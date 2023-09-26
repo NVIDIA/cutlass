@@ -291,8 +291,8 @@ int run() {
                                    LayoutInputB,
                                    ElementOutput,
                                    LayoutOutput,
-                                   ElementComputeEpilogue,
-                                   ElementComputeEpilogue>
+                                   int32_t,
+                                   int32_t>
       gemm_device;
 
   // Launch device reference gemm kernel
@@ -355,4 +355,3 @@ int main() {
 
   return run();
 }
-

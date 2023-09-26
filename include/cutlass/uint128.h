@@ -32,7 +32,15 @@
   \file
   \brief Defines an unsigned 128b integer with several operators to support 64-bit integer division.
 */
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
 
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
 #pragma once
 
 #if defined(__CUDACC_RTC__)
@@ -46,7 +54,6 @@
 #endif
 
 #include "cutlass/cutlass.h"
-#include "cutlass/numeric_types.h"
 
 /// Optionally enable GCC's built-in type
 #if (defined(__x86_64) || defined (__aarch64__)) && !defined(__CUDA_ARCH__) && defined(__GNUC__)

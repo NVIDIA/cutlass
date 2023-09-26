@@ -59,6 +59,19 @@ raw_pointer_cast(T* ptr) {
 }
 
 //
+// Extract the physical type from a logical elem type.
+// 
+template <class T>
+struct get_raw_type
+{
+    using type = T;
+};
+
+template <class T>
+using get_raw_type_t = typename get_raw_type<T>::type;
+
+
+//
 // Pointer categories
 //
 
@@ -79,6 +92,8 @@ template <class T, class DerivedType>
 struct device_ptr
 {
   using value_type = T;
+  
+  static const uint32_t ElementsPerStoredItem = sizeof(T) * 8 / sizeof_bits_v<T>;
 
   CUTE_HOST_DEVICE constexpr
   device_ptr(T* ptr) : ptr_(ptr) {}
@@ -91,11 +106,14 @@ struct device_ptr
 
   template <class Index>
   CUTE_HOST_DEVICE constexpr
-  T& operator[](Index const& i) const { return ptr_[i]; }
+  T& operator[](Index const& i) const { 
+    static_assert(sizeof_bits_v<T> >= 8, "Use subbyte_iterator to access the element");
+    return ptr_[i]; 
+  }
 
   template <class Index>
   CUTE_HOST_DEVICE constexpr
-  DerivedType operator+(Index const& i) const { return {ptr_ + i}; }
+  DerivedType operator+(Index const& i) const { return {ptr_ + i / ElementsPerStoredItem}; }
 
   CUTE_HOST_DEVICE constexpr friend
   ptrdiff_t operator-(device_ptr<T,DerivedType> const& a,
@@ -326,44 +344,44 @@ recast(rmem_ptr<T const> const& ptr) {
 template <class T>
 CUTE_HOST_DEVICE void print(T const* const ptr)
 {
-  printf("raw_ptr_%db(%p)", int(8*sizeof(T)), ptr);
+  printf("raw_ptr_%db(%p)", int(sizeof_bits<T>::value), ptr);
 }
 
 template <class T>
 CUTE_HOST_DEVICE void print(gmem_ptr<T> const& ptr)
 {
-  printf("gmem_ptr_%db(%p)", int(8*sizeof(T)), ptr.get());
+  printf("gmem_ptr_%db(%p)", int(sizeof_bits<T>::value), ptr.get());
 }
 
 template <class T>
 CUTE_HOST_DEVICE void print(smem_ptr<T> const& ptr)
 {
-  printf("smem_ptr_%db(%p)", int(8*sizeof(T)), ptr.get());
+  printf("smem_ptr_%db(%p)", int(sizeof_bits<T>::value), ptr.get());
 }
 
 template <class T>
 CUTE_HOST_DEVICE void print(rmem_ptr<T> const& ptr)
 {
-  printf("rmem_ptr_%db(%p)", int(8*sizeof(T)), ptr.get());
+  printf("rmem_ptr_%db(%p)", int(sizeof_bits<T>::value), ptr.get());
 }
 
 #if !defined(__CUDACC_RTC__)
 template <class T>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, gmem_ptr<T> const& ptr)
 {
-  return os << "gmem_ptr_" << int(8*sizeof(T)) << "b";
+  return os << "gmem_ptr_" << int(sizeof_bits<T>::value) << "b";
 }
 
 template <class T>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, smem_ptr<T> const& ptr)
 {
-  return os << "smem_ptr_" << int(8*sizeof(T)) << "b";
+  return os << "smem_ptr_" << int(sizeof_bits<T>::value) << "b";
 }
 
 template <class T>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, rmem_ptr<T> const& ptr)
 {
-  return os << "rmem_ptr_" << int(8*sizeof(T)) << "b";
+  return os << "rmem_ptr_" << int(sizeof_bits<T>::value) << "b";
 }
 
 #endif // !defined(__CUDACC_RTC__)

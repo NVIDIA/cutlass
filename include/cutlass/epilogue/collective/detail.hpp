@@ -126,14 +126,14 @@ public:
   CUTLASS_HOST_DEVICE
   static constexpr int
   get_load_pipe_increment([[maybe_unused]] TileShapeMNK) {
-    return 0;
+    return 1;
   }
 
   template<class TileShapeMNK>
   CUTLASS_HOST_DEVICE
   static constexpr int
   get_store_pipe_increment([[maybe_unused]] TileShapeMNK) {
-    return 0;
+    return 1;
   }
 
   CUTLASS_DEVICE

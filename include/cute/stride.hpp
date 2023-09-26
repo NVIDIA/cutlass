@@ -75,6 +75,9 @@ crd2idx_itt(CInt   const& coord,
 {
   if constexpr (sizeof...(Is) == 0) {  // Avoid recursion and mod on single/last iter
     return crd2idx(coord, get<I0>(shape), get<I0>(stride));
+  } else if constexpr (is_constant<0, CInt>::value) {
+    return crd2idx(_0{}, get<I0>(shape), get<I0>(stride))
+         + (_0{} + ... + crd2idx(_0{}, get<Is>(shape), get<Is>(stride)));
   } else {                             // General case
     return crd2idx(coord % product(get<I0>(shape)), get<I0>(shape), get<I0>(stride))
          + crd2idx_itt(coord / product(get<I0>(shape)), shape, stride, seq<Is...>{});

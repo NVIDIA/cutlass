@@ -220,7 +220,6 @@ bool run_fused_conv2d_fprop_optimized_s8_sm75_rf_res() {
 
   return pass;
 }
-
 int main() {
 
   std::vector<bool (*)()>funcs = {
@@ -229,10 +228,6 @@ int main() {
   };
 
   return testRun(75, funcs, "conv int8 RF residency");
-
 }
 
-
-
 ////////////////////////////////////////////////////////////////////////////////
-

@@ -51,33 +51,11 @@ using cute::tuple;
 
 namespace detail {
 
-// Convenience aliases
-using ProblemShapeMNKL = tuple<int,int,int,int>;
-using TileCoordMNKL = tuple<int,int,int,int>;
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Partitioning Helpers
 //
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <
-  class Engine, class LayoutMNL,
-  class TileShapeMNK
->
-CUTLASS_HOST_DEVICE
-constexpr auto
-sm90_tensor_to_cta_tile(
-    Tensor<Engine, LayoutMNL> mT,  // (M,N,L)
-    TileShapeMNK tile_shape_mnk,   // (CTA_M,CTA_N,CTA_K)
-    TileCoordMNKL tile_coord_mnkl) {
-  using _X = Underscore;
-
-  auto [m, n, k, l] = tile_coord_mnkl;
-  Tensor mT_mnl = local_tile(mT, tile_shape_mnk, make_coord(_,_,_), Step<_1,_1,_X>{});                 // (CTA_M,CTA_N)
-
-  return mT_mnl(_,_,m,n,l);
-}
 
 template <
   bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
@@ -106,6 +84,7 @@ template <
   bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
   class Engine, class LayoutMNL,
   class TileShapeMNK,
+  class TileCoordMNKL,
   class EpilogueTile,
   class TiledCopy
 >
@@ -118,7 +97,8 @@ sm90_partition_for_epilogue(
     EpilogueTile epi_tile,         // (EPI_TILE_M,EPI_TILE_N)
     TiledCopy tiled_copy,
     int thread_idx) {
-  Tensor cT = sm90_tensor_to_cta_tile(mT, tile_shape_mnk, tile_coord_mnkl);            // (CTA_M,CTA_N)
+  auto [m, n, k, l] = tile_coord_mnkl;
+  Tensor cT = local_tile(mT, take<0,2>(tile_shape_mnk), make_coord(m,n,l));                            // (CTA_M,CTA_N)
   Tensor tCcT =
     sm90_partition_for_epilogue<ReferenceSrc>(cT, epi_tile, tiled_copy, thread_idx);   // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
 
@@ -156,7 +136,7 @@ struct Sm90VisitorImplBase {
   Sm90VisitorImplBase() {}
 
   CUTLASS_HOST_DEVICE
-  Sm90VisitorImplBase(Params const& params, SharedStorage& shared_storage)
+  Sm90VisitorImplBase(Params const& params, SharedStorage const& shared_storage)
     : ops(transform_apply(tuple<Ops...>{}, params, shared_storage,
         [] (auto&& op, auto const& op_params, auto&& op_storage) {
           using Op = cute::remove_cvref_t<decltype(op)>;
@@ -262,7 +242,9 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
   // Producer load callbacks factory
   // All operations must redefine this, but most can just dispatch to the base impl
   template <
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile
   >
   CUTLASS_DEVICE auto
@@ -363,7 +345,9 @@ struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
   // All operations must redefine this
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -446,7 +430,9 @@ struct Sm90TreeVisitor : Sm90VisitorImpl<ChildOps..., NodeOp> {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -516,7 +502,9 @@ struct Sm90SplitTreeVisitor : Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputT
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -613,7 +601,9 @@ struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -651,9 +641,11 @@ namespace detail {
 template <class Op0>
 struct Sm90VisitorImplBase<Op0> {
 
-  struct SharedStorage {
-    typename Op0::SharedStorage op_0;
-  };
+  // Retain tuple for SharedStorage because empty structs have 1B alignment
+  // tuples use multiple inheritance, avoids this problem
+  using SharedStorage = tuple<
+    typename Op0::SharedStorage
+  >;
 
   struct Arguments {
     typename Op0::Arguments op_0;
@@ -675,9 +667,9 @@ struct Sm90VisitorImplBase<Op0> {
   Sm90VisitorImplBase() {}
 
   CUTLASS_HOST_DEVICE
-  Sm90VisitorImplBase(Params const& params, SharedStorage& shared_storage)
+  Sm90VisitorImplBase(Params const& params, SharedStorage const& shared_storage)
     : ops({
-        Op0(params.op_0, shared_storage.op_0)
+        Op0(params.op_0, get<0>(shared_storage))
       }) {}
 
   tuple<Op0> ops;
@@ -686,10 +678,10 @@ struct Sm90VisitorImplBase<Op0> {
 template <class Op0, class Op1>
 struct Sm90VisitorImplBase<Op0, Op1> {
 
-  struct SharedStorage {
-    typename Op0::SharedStorage op_0;
-    typename Op1::SharedStorage op_1;
-  };
+  using SharedStorage = tuple<
+    typename Op0::SharedStorage,
+    typename Op1::SharedStorage
+  >;
 
   struct Arguments {
     typename Op0::Arguments op_0;
@@ -714,10 +706,10 @@ struct Sm90VisitorImplBase<Op0, Op1> {
   Sm90VisitorImplBase() {}
 
   CUTLASS_HOST_DEVICE
-  Sm90VisitorImplBase(Params const& params, SharedStorage& shared_storage)
+  Sm90VisitorImplBase(Params const& params, SharedStorage const& shared_storage)
     : ops({
-        Op0(params.op_0, shared_storage.op_0),
-        Op1(params.op_1, shared_storage.op_1)
+        Op0(params.op_0, get<0>(shared_storage)),
+        Op1(params.op_1, get<1>(shared_storage))
       }) {}
 
   tuple<Op0, Op1> ops;
@@ -726,11 +718,11 @@ struct Sm90VisitorImplBase<Op0, Op1> {
 template <class Op0, class Op1, class Op2>
 struct Sm90VisitorImplBase<Op0, Op1, Op2> {
 
-  struct SharedStorage {
-    typename Op0::SharedStorage op_0;
-    typename Op1::SharedStorage op_1;
-    typename Op2::SharedStorage op_2;
-  };
+  using SharedStorage = tuple<
+    typename Op0::SharedStorage,
+    typename Op1::SharedStorage,
+    typename Op2::SharedStorage
+  >;
 
   struct Arguments {
     typename Op0::Arguments op_0;
@@ -758,11 +750,11 @@ struct Sm90VisitorImplBase<Op0, Op1, Op2> {
   Sm90VisitorImplBase() {}
 
   CUTLASS_HOST_DEVICE
-  Sm90VisitorImplBase(Params const& params, SharedStorage& shared_storage)
+  Sm90VisitorImplBase(Params const& params, SharedStorage const& shared_storage)
     : ops({
-        Op0(params.op_0, shared_storage.op_0),
-        Op1(params.op_1, shared_storage.op_1),
-        Op2(params.op_2, shared_storage.op_2)
+        Op0(params.op_0, get<0>(shared_storage)),
+        Op1(params.op_1, get<1>(shared_storage)),
+        Op2(params.op_2, get<2>(shared_storage))
       }) {}
 
   tuple<Op0, Op1, Op2> ops;
@@ -771,12 +763,12 @@ struct Sm90VisitorImplBase<Op0, Op1, Op2> {
 template <class Op0, class Op1, class Op2, class Op3>
 struct Sm90VisitorImplBase<Op0, Op1, Op2, Op3> {
 
-  struct SharedStorage {
-    typename Op0::SharedStorage op_0;
-    typename Op1::SharedStorage op_1;
-    typename Op2::SharedStorage op_2;
-    typename Op3::SharedStorage op_3;
-  };
+  using SharedStorage = tuple<
+    typename Op0::SharedStorage,
+    typename Op1::SharedStorage,
+    typename Op2::SharedStorage,
+    typename Op3::SharedStorage
+  >;
 
   struct Arguments {
     typename Op0::Arguments op_0;
@@ -807,12 +799,12 @@ struct Sm90VisitorImplBase<Op0, Op1, Op2, Op3> {
   Sm90VisitorImplBase() {}
 
   CUTLASS_HOST_DEVICE
-  Sm90VisitorImplBase(Params const& params, SharedStorage& shared_storage)
+  Sm90VisitorImplBase(Params const& params, SharedStorage const& shared_storage)
     : ops({
-        Op0(params.op_0, shared_storage.op_0),
-        Op1(params.op_1, shared_storage.op_1),
-        Op2(params.op_2, shared_storage.op_2),
-        Op3(params.op_3, shared_storage.op_3)
+        Op0(params.op_0, get<0>(shared_storage)),
+        Op1(params.op_1, get<1>(shared_storage)),
+        Op2(params.op_2, get<2>(shared_storage)),
+        Op3(params.op_3, get<3>(shared_storage))
       }) {}
 
   tuple<Op0, Op1, Op2, Op3> ops;

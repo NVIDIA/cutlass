@@ -30,47 +30,6 @@
  **************************************************************************************************/
 #pragma once
 
-#if !defined(__CUDACC_RTC__)
-#include "cuda_runtime.h"
-
-#include "cutlass/trace.h"
-#endif
-
-namespace cutlass {
-
-struct KernelHardwareInfo {
-  //
-  // Data members
-  //
-  int device_id = 0;
-  int sm_count = 0;
-
-  //
-  // Methods
-  //
-
-#if !defined(__CUDACC_RTC__)
-  static int
-  query_device_multiprocessor_count(int device_id = 0) {
-    cudaError_t result = cudaGetDevice(&device_id);
-    if (result != cudaSuccess) {
-      CUTLASS_TRACE_HOST(
-        "  cudaGetDevice() returned error "
-        << cudaGetErrorString(result));
-      return 0;
-    }
-    int multiprocessor_count;
-    result = cudaDeviceGetAttribute(&multiprocessor_count,
-      cudaDevAttrMultiProcessorCount, device_id);
-    if (result != cudaSuccess) {
-      CUTLASS_TRACE_HOST(
-        "  cudaDeviceGetAttribute() returned error "
-        << cudaGetErrorString(result));
-      return 0;
-    }
-    return multiprocessor_count;
-  }
-#endif
-};
-
-} // namespace cutlass
+// Simply import .h version of header so as to avoid breaking any existing CUTLASS builds
+// after .hpp was changed to .h
+#include "cutlass/kernel_hardware_info.h"

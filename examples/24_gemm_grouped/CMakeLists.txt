@@ -31,6 +31,7 @@
 
 cutlass_example_add_executable(
   24_gemm_grouped
-  gemm_grouped.cu 
+  gemm_grouped.cu
   )
+
 

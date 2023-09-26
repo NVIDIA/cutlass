@@ -44,13 +44,22 @@
     Map tensor sizes (Conv2d -> ImplicitGemm)        : implicit_gemm_tensor_[a|b|c]_size(ConvolutionOperator)
     Map tensor problem sizes (Conv2d -> ImplicitGemm): implicit_gemm_problem_size(ConvolutionOperator)
 */
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
 
 #pragma once
 
 #include "cutlass/cutlass.h"
 #include "cutlass/tensor_coord.h"
 #include "cutlass/fast_math.h"
-#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/gemm_enumerated_types.h"
 #include "cutlass/matrix_coord.h"
 #include "cutlass/conv/convolution.h"
 #include "cutlass/functional.h"
@@ -80,7 +89,7 @@ struct Conv2dProblemSize {
 
 public:
   CUTLASS_HOST_DEVICE
-  Conv2dProblemSize(): 
+  Conv2dProblemSize():
     N(0), H(0), W(0), C(0), P(0), Q(0), K(0), R(0), S(0),
     pad_h(0), pad_w(0), stride_h(1), stride_w(1), dilation_h(1), dilation_w(1),
     mode(Mode::kConvolution), split_k_slices(1), groups(1) { }
@@ -125,7 +134,7 @@ public:
     int split_k_slices = 1,
     int groups = 1
   ): 
-    N(N), H(H), W(W), C(C), K(K), R(R), S(S), P(P), Q(Q),
+    N(N), H(H), W(W), C(C), P(P), Q(Q), K(K), R(R), S(S),
     pad_h(pad_h), pad_w(pad_w), stride_h(stride_h), stride_w(stride_w), 
     dilation_h(dilation_h), dilation_w(dilation_w), 
     mode(mode), split_k_slices(split_k_slices), groups (groups) { }
@@ -145,11 +154,11 @@ public:
     int groups = 1
   ):
     N(input_size.n()), H(input_size.h()), W(input_size.w()), C(input_size.c()),
+    P(output_size.h()), Q(output_size.w()),
     K(filter_size.n()), R(filter_size.h()), S(filter_size.w()),
     pad_h(padding[0]), pad_w(padding[2]), 
     stride_h(stride.row()), stride_w(stride.column()), 
     dilation_h(dilation.row()), dilation_w(dilation.column()),
-    P(output_size.h()), Q(output_size.w()),     
     mode(mode), split_k_slices(split_k_slices), groups(groups) {}
 
   /// Constructs convolution problem size from cutlass Tensor4DCoord and MatrixCoord 
@@ -188,8 +197,8 @@ public:
     int groups = 1
   ):
     N(input_size.n()), H(input_size.h()), W(input_size.w()), C(input_size.c()),
+    P(output_size.h()), Q(output_size.w()),
     K(filter_size.n()), R(filter_size.h()), S(filter_size.w()),
-    P(output_size.h()), Q(output_size.w()), 
     pad_h(R / 2), pad_w(S / 2), stride_h(1), stride_w(1), 
     dilation_h(1), dilation_w(1),
     mode(mode), split_k_slices(split_k_slices), groups(groups) {}
@@ -486,7 +495,6 @@ int depthwise_gemm_k_iterations(
 CUTLASS_HOST_DEVICE
 int implicit_gemm_k_iterations_per_channel(
     Operator conv_operator,
-    int threadblock_K,
     Conv2dProblemSize const &problem_size,
     IteratorAlgorithm algorithm = IteratorAlgorithm::kAnalytic) {
 

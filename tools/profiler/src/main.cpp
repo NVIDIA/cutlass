@@ -34,9 +34,9 @@
 
 #include <iostream>
 
-#include "options.h"
+#include "cutlass/profiler/options.h"
 
-#include "cutlass_profiler.h"
+#include "cutlass/profiler/cutlass_profiler.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 

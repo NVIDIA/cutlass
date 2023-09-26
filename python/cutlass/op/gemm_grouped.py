@@ -51,19 +51,18 @@
         plan.run([A0, A1], [B0, B1], [C0, C1], [D0, D1])
 """
 
-import cutlass_bindings
-
+from cutlass import DataTypeSize
 from cutlass.backend.gemm_operation import (
     GemmGroupedArguments,
     GemmOperationGrouped,
 )
 from cutlass.backend.library import (
-    DataTypeSize,
     SchedulerMode,
     TensorDescription,
     TileDescription,
 )
 from cutlass.op.gemm import Gemm
+from cutlass.shape import GemmCoord
 from cutlass.utils import check, datatypes
 
 
@@ -170,21 +169,9 @@ class GroupedGemm(Gemm):
 
         self.epilogue_functor = self._reset_epilogue_functor_alignment(alignment_C, self.epilogue_functor)
 
-        tensor_A = TensorDescription(
-            datatypes.binding_type(self._element_a),
-            datatypes.binding_layout(self._layout_a),
-            alignment_A
-        )
-        tensor_B = TensorDescription(
-            datatypes.binding_type(self._element_b),
-            datatypes.binding_layout(self._layout_b),
-            alignment_B
-        )
-        tensor_C = TensorDescription(
-            datatypes.binding_type(self._element_c),
-            datatypes.binding_layout(self._layout_c),
-            alignment_C
-        )
+        tensor_A = TensorDescription(self._element_a, self._layout_b, alignment_A)
+        tensor_B = TensorDescription(self._element_b, self._layout_b, alignment_B)
+        tensor_C = TensorDescription(self._element_c, self._layout_c, alignment_C)
 
         if tile_description is None:
             op = self.possible_operations.operations(alignment_A)[0]
@@ -244,7 +231,7 @@ class GroupedGemm(Gemm):
             Bs[i] = self._verify_tensor(B[i], self.B, self._element_b, self._layout_b, "B")
             Cs[i] = self._verify_tensor(C[i], self.C, self._element_c, self._layout_c, "C")
             Ds[i] = self._verify_tensor(D[i], self.D, self._element_d, self._layout_d, "D")
-            problem_sizes.append(cutlass_bindings.gemm.GemmCoord(A[i].shape[0], B[i].shape[1], A[i].shape[1]))
+            problem_sizes.append(GemmCoord(A[i].shape[0], B[i].shape[1], A[i].shape[1]))
 
         alpha = self._verify_scalar(alpha, self.alpha, self._element_c, "alpha")
         beta = self._verify_scalar(beta, self.beta, self._element_c, "beta")

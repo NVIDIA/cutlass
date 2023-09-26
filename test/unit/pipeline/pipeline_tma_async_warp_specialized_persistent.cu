@@ -316,7 +316,6 @@ struct PipelineTest {
 
     float elapsed_ms = 0.0f;
     // Pipeline (multistage pipeline)
-    auto num_stages = Int<Stages>{}; 
     auto cluster_shape = Shape<Int<ClusterShape::kM>, Int<ClusterShape::kN>, _1>{};
 
     //

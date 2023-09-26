@@ -81,12 +81,10 @@ The module can later be used in Python via:
 import logging
 import os
 
-import cutlass_bindings
-
-from cutlass import CUTLASS_PATH, logger, swizzle
+from cutlass import CUTLASS_PATH, logger, swizzle, ConvKind, ConvKindNames, DataType
 from cutlass.backend.gemm_operation import GemmOperationGrouped, GemmOperationUniversal
 from cutlass.backend.conv2d_operation import Conv2dOperation
-from cutlass.backend.library import ApiVersion, ConvKindNames
+from cutlass.backend.library import ApiVersion
 from cutlass.backend.utils.software import CheckPackages, SubstituteTemplate
 from cutlass.emit import common
 
@@ -165,26 +163,26 @@ _PYTORCH_CONV2D_FPROP_CPP_TEMPLATE = common._CSTYLE_AUTOGEN_COMMENT + """
 
 // CUDA forward declarations
 at::Tensor ${name}_kernel(
-    const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt,  
+    const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt,
     std::tuple<int, int> stride={1, 1}, std::tuple<int, int> padding={0, 0}, std::tuple<int, int> dilation={1, 1},
     float alpha=1.f, float beta=0.f,
     std::string split_k_mode="serial", int split_k_slices=1);
 
 // C++ interface
 at::Tensor ${name}(
-    const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt, 
+    const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt,
     std::tuple<int, int> stride={1, 1}, std::tuple<int, int> padding={0, 0}, std::tuple<int, int> dilation={1, 1},
-    float alpha=1.f, float beta=0.f, 
+    float alpha=1.f, float beta=0.f,
     std::string split_k_mode="serial", int split_k_slices=1) {
-    return ${name}_kernel(A, B, C, stride, padding, dilation, alpha, beta, split_k_mode, split_k_slices);        
+    return ${name}_kernel(A, B, C, stride, padding, dilation, alpha, beta, split_k_mode, split_k_slices);
 }
- 
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run",
   py::overload_cast<
     const at::Tensor&, const at::Tensor&, at::optional<const at::Tensor>,
     std::tuple<int, int>, std::tuple<int, int>, std::tuple<int, int>, float, float,  std::string, int>(
-        &${name}), py::arg("A"), py::arg("B"), py::arg("C") = nullptr, 
+        &${name}), py::arg("A"), py::arg("B"), py::arg("C") = nullptr,
         py::arg("stride") = std::make_tuple(1, 1), py::arg("padding") = std::make_tuple(1, 1), py::arg("dilation") = std::make_tuple(1, 1),
         py::arg("alpha") = 1.f, py::arg("beta") = 0.f,
         py::arg("split_k_mode") = "serial", py::arg("split_k_slices") = 1);
@@ -198,26 +196,26 @@ _PYTORCH_CONV2D_GRAD_CPP_TEMPLATE = common._CSTYLE_AUTOGEN_COMMENT + """
 
 // CUDA forward declarations
 at::Tensor ${name}_kernel(
-    std::tuple<int, int, int, int> result_size, const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt, 
+    std::tuple<int, int, int, int> result_size, const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt,
     std::tuple<int, int> stride={1, 1}, std::tuple<int, int> padding={0, 0}, std::tuple<int, int> dilation={1, 1},
-    float alpha=1.f, float beta=0.f, 
+    float alpha=1.f, float beta=0.f,
     std::string split_k_mode="serial", int split_k_slices=1);
 
 // C++ interface
 at::Tensor ${name}(
-    std::tuple<int, int, int, int> result_size, const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt, 
+    std::tuple<int, int, int, int> result_size, const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt,
     std::tuple<int, int> stride={1, 1}, std::tuple<int, int> padding={0, 0}, std::tuple<int, int> dilation={1, 1},
-    float alpha=1.f, float beta=0.f, 
+    float alpha=1.f, float beta=0.f,
     std::string split_k_mode="serial", int split_k_slices=1) {
-    return ${name}_kernel(result_size, A, B, C, stride, padding, dilation, alpha, beta, split_k_mode, split_k_slices);        
+    return ${name}_kernel(result_size, A, B, C, stride, padding, dilation, alpha, beta, split_k_mode, split_k_slices);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run",
   py::overload_cast<
-    std::tuple<int, int, int, int>, const at::Tensor&, const at::Tensor&, at::optional<const at::Tensor>, 
+    std::tuple<int, int, int, int>, const at::Tensor&, const at::Tensor&, at::optional<const at::Tensor>,
     std::tuple<int, int>, std::tuple<int, int>, std::tuple<int, int>, float, float, std::string, int>(
-        &${name}), py::arg("result_size"), py::arg("A"), py::arg("B"), py::arg("C") = nullptr, 
+        &${name}), py::arg("result_size"), py::arg("A"), py::arg("B"), py::arg("C") = nullptr,
         py::arg("stride") = std::make_tuple(1, 1), py::arg("padding") = std::make_tuple(1, 1), py::arg("dilation") = std::make_tuple(1, 1),
         py::arg("alpha") = 1.f, py::arg("beta") = 0.f,
         py::arg("split_k_mode") = "serial", py::arg("split_k_slices") = 1);
@@ -251,11 +249,11 @@ _PYTORCH_CONV2D_INCLUDES = """
 """
 
 _CUTLASS_TYPE_TO_TORCH_TYPE = {
-    cutlass_bindings.float16: "torch::kF16",
-    cutlass_bindings.float32: "torch::kF32",
-    cutlass_bindings.float64: "torch::kF64",
-    cutlass_bindings.int8: "torch::I8",
-    cutlass_bindings.int32: "torch::I32",
+    DataType.f16: "torch::kF16",
+    DataType.f32: "torch::kF32",
+    DataType.f64: "torch::kF64",
+    DataType.s8: "torch::I8",
+    DataType.s32: "torch::I32",
 }
 
 _PYTORCH_GEMM_IMPL_TEMPLATE_2x = (
@@ -446,16 +444,16 @@ std::vector<at::Tensor> ${name}_kernel(const std::vector<at::Tensor>& A, const s
 
 _PYTORCH_CONV2D_IMPL_TEMPLATE_2x = """
     cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-    
+
     cutlass::Status status = ${name}_kernel_run(
-        &problem_size, 
+        &problem_size,
         reinterpret_cast<typename UnderlyingKernel::ElementA*>(A.data_ptr()),
         reinterpret_cast<typename UnderlyingKernel::ElementB*>(B.data_ptr()),
         ptrC,
         reinterpret_cast<typename UnderlyingKernel::ElementC*>(D.data_ptr()),
         alpha, beta,
         split_k_mode, stream, B.device().index());
-    
+
     TORCH_CHECK(status == cutlass::Status::kSuccess, "CUTLASS kernel failed");
     return D;
 }
@@ -464,19 +462,19 @@ _PYTORCH_CONV2D_IMPL_TEMPLATE_2x = """
 _PYTORCH_CONV2D_FPROP_IMPL_TEMPLATE_2x = (
     common._CUTLASS_KERNEL_RUN_CONV2D_2x
     + """
-at::Tensor ${name}_kernel(const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt, 
-    std::tuple<int, int> stride={1, 1}, std::tuple<int, int> padding={0, 0}, std::tuple<int, int> dilation={1, 1}, 
+at::Tensor ${name}_kernel(const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt,
+    std::tuple<int, int> stride={1, 1}, std::tuple<int, int> padding={0, 0}, std::tuple<int, int> dilation={1, 1},
     float alpha=1.f, float beta=0.f, std::string split_k_mode="serial", int split_k_slices=1) {
     int N, H, W, C_, K, R, S, P, Q;
     N = A.size(0);
     C_ = A.size(1);
     H = A.size(2);
     W = A.size(3);
-    
+
     K = B.size(0);
     R = B.size(2);
     S = B.size(3);
-    
+
     cutlass::conv::Conv2dProblemSize problem_size(
         cutlass::Tensor4DCoord(N, H, W, C_),
         cutlass::Tensor4DCoord(K, R, S, C_),
@@ -486,14 +484,14 @@ at::Tensor ${name}_kernel(const at::Tensor& A, const at::Tensor& B, at::optional
         cutlass::conv::Mode::kCrossCorrelation,
         split_k_slices
     );
-    
+
     P = problem_size.P;
     Q = problem_size.Q;
-    
+
     typename UnderlyingKernel::ElementC* ptrC = (C == at::nullopt) ?
                                             nullptr :
                                             reinterpret_cast<typename UnderlyingKernel::ElementC*>(C->data_ptr());
-    
+
     torch::TensorOptions options = torch::TensorOptions().dtype(${torch_type_C}).device(B.device()).memory_format(at::MemoryFormat::ChannelsLast);
     at::Tensor D = torch::zeros({N, K, P, Q}, options);
 """ + _PYTORCH_CONV2D_IMPL_TEMPLATE_2x
@@ -503,7 +501,7 @@ at::Tensor ${name}_kernel(const at::Tensor& A, const at::Tensor& B, at::optional
 _PYTORCH_CONV2D_DGRAD_IMPL_TEMPLATE_2x = (
     common._CUTLASS_KERNEL_RUN_CONV2D_2x
     + """
-at::Tensor ${name}_kernel(std::tuple<int, int, int, int> input_size, const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt,  
+at::Tensor ${name}_kernel(std::tuple<int, int, int, int> input_size, const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt,
     std::tuple<int, int> stride={1, 1}, std::tuple<int, int> padding={0, 0}, std::tuple<int, int> dilation={1, 1}, float alpha=1.f, float beta=0.f,
     std::string split_k_mode="serial", int split_k_slices=1) {
     int N, H, W, C_, K, R, S;
@@ -511,11 +509,11 @@ at::Tensor ${name}_kernel(std::tuple<int, int, int, int> input_size, const at::T
     C_ = std::get<1>(input_size);
     H = std::get<2>(input_size);
     W = std::get<3>(input_size);
-    
+
     K = B.size(0);
     R = B.size(2);
     S = B.size(3);
-    
+
     cutlass::conv::Conv2dProblemSize problem_size(
         cutlass::Tensor4DCoord(N, H, W, C_),
         cutlass::Tensor4DCoord(K, R, S, C_),
@@ -525,11 +523,11 @@ at::Tensor ${name}_kernel(std::tuple<int, int, int, int> input_size, const at::T
         cutlass::conv::Mode::kCrossCorrelation,
         split_k_slices
     );
-    
+
     typename UnderlyingKernel::ElementC* ptrC = (C == at::nullopt) ?
                                             nullptr :
                                             reinterpret_cast<typename UnderlyingKernel::ElementC*>(C->data_ptr());
-    
+
     torch::TensorOptions options = torch::TensorOptions().dtype(${torch_type_C}).device(B.device()).memory_format(at::MemoryFormat::ChannelsLast);
     at::Tensor D = torch::empty({N, C_, H, W}, options);
 """ + _PYTORCH_CONV2D_IMPL_TEMPLATE_2x
@@ -539,19 +537,19 @@ at::Tensor ${name}_kernel(std::tuple<int, int, int, int> input_size, const at::T
 _PYTORCH_CONV2D_WGRAD_IMPL_TEMPLATE_2x = (
     common._CUTLASS_KERNEL_RUN_CONV2D_2x
     + """
-at::Tensor ${name}_kernel(std::tuple<int, int, int, int> weight_size, const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt, 
-    std::tuple<int, int> stride={1, 1}, std::tuple<int, int> padding={0, 0}, std::tuple<int, int> dilation={1, 1}, float alpha=1.f, float beta=0.f, 
+at::Tensor ${name}_kernel(std::tuple<int, int, int, int> weight_size, const at::Tensor& A, const at::Tensor& B, at::optional<const at::Tensor> C=at::nullopt,
+    std::tuple<int, int> stride={1, 1}, std::tuple<int, int> padding={0, 0}, std::tuple<int, int> dilation={1, 1}, float alpha=1.f, float beta=0.f,
     std::string split_k_mode="serial", int split_k_slices=1) {
     int N, H, W, C_, K, R, S;
     K = std::get<0>(weight_size);
     C_ = std::get<1>(weight_size);
     R = std::get<2>(weight_size);
     S = std::get<3>(weight_size);
-    
+
     N = B.size(0);
     H = B.size(2);
     W = B.size(3);
-    
+
     cutlass::conv::Conv2dProblemSize problem_size(
         cutlass::Tensor4DCoord(N, H, W, C_),
         cutlass::Tensor4DCoord(K, R, S, C_),
@@ -561,11 +559,11 @@ at::Tensor ${name}_kernel(std::tuple<int, int, int, int> weight_size, const at::
         cutlass::conv::Mode::kCrossCorrelation,
         split_k_slices
     );
-    
+
     typename UnderlyingKernel::ElementC* ptrC = (C == at::nullopt) ?
                                             nullptr :
                                             reinterpret_cast<typename UnderlyingKernel::ElementC*>(C->data_ptr());
-    
+
     torch::TensorOptions options = torch::TensorOptions().dtype(${torch_type_C}).device(B.device()).memory_format(at::MemoryFormat::ChannelsLast);
     at::Tensor D = torch::empty({K, C_, R, S}, options);
 """ + _PYTORCH_CONV2D_IMPL_TEMPLATE_2x
@@ -726,7 +724,7 @@ def _pytorch_gemm(op, name: str, cc: int, jit: bool = False, sourcedir: str = ""
         impl_template = _PYTORCH_GEMM_IMPL_TEMPLATE_3x
     else:
         impl_template = _PYTORCH_GEMM_IMPL_TEMPLATE_2x
-        if isinstance(op.swizzling_functor, swizzle.ThreadblockSwizzleStreamK):
+        if op.swizzling_functor == swizzle.ThreadblockSwizzleStreamK:
             extra_kw["args"] = common._CUTLASS_KERNEL_ARGS_2x_STREAM_K
         else:
             extra_kw["args"] = common._CUTLASS_KERNEL_ARGS_2x
@@ -837,9 +835,9 @@ def _pytorch_conv2d(op, name: str, cc: int, jit: bool = False, sourcedir: str = 
     :type jit: bool
     :param sourcedir: directory to which generated source files should be written
     :type sourcedir: str
-    
+
     Note that the when conv kind is `dgrad` or `wgrad`, the size of the input `(N, C, H, W)` or
-    weight `(K, C, R, S)` should be provided. This is because there are multiple valid solutions 
+    weight `(K, C, R, S)` should be provided. This is because there are multiple valid solutions
     for H/W/R/S given the same P/Q.
 
     :return: loaded PyTorch module if ``jit=True`` or ``None`` otherwise
@@ -848,13 +846,13 @@ def _pytorch_conv2d(op, name: str, cc: int, jit: bool = False, sourcedir: str = 
         os.makedirs(sourcedir)
     cuda_file = os.path.join(sourcedir, name + "_kernel.cu")
     extra_kw = {}
-    if op.conv_kind == cutlass_bindings.conv.Operator.fprop:
+    if op.conv_kind == ConvKind.Fprop:
         impl_template = _PYTORCH_CONV2D_FPROP_IMPL_TEMPLATE_2x
         cpp_template = _PYTORCH_CONV2D_FPROP_CPP_TEMPLATE
-    elif op.conv_kind == cutlass_bindings.conv.Operator.dgrad:
+    elif op.conv_kind == ConvKind.Dgrad:
         impl_template = _PYTORCH_CONV2D_DGRAD_IMPL_TEMPLATE_2x
         cpp_template = _PYTORCH_CONV2D_GRAD_CPP_TEMPLATE
-    elif op.conv_kind == cutlass_bindings.conv.Operator.wgrad:
+    elif op.conv_kind == ConvKind.Wgrad:
         impl_template = _PYTORCH_CONV2D_WGRAD_IMPL_TEMPLATE_2x
         cpp_template = _PYTORCH_CONV2D_GRAD_CPP_TEMPLATE
     extra_kw["conv_kind_name"] = ConvKindNames[op.conv_kind].capitalize()

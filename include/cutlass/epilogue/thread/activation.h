@@ -50,38 +50,6 @@ namespace epilogue {
 namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-template <typename T>
-struct LinearCombinationGenericParams {
-  T alpha;                  ///< scales accumulators
-  T beta;                   ///< scales source tensor
-  T const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
-  T const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
-
-  //
-  // Methods
-  //
-
-  CUTLASS_HOST_DEVICE
-  LinearCombinationGenericParams():
-    alpha(T(1)),
-    beta(T(0)),
-    alpha_ptr(nullptr),
-    beta_ptr(nullptr) { }
-
-  CUTLASS_HOST_DEVICE
-  LinearCombinationGenericParams(
-    T alpha,
-    T beta = T(0)
-  ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) { }
-
-  CUTLASS_HOST_DEVICE
-  LinearCombinationGenericParams(
-    T const *alpha_ptr,
-    T const *beta_ptr = nullptr
-  ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) { }
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Identity operator
 template <typename T>
@@ -92,13 +60,6 @@ struct Identity {
   T operator()(T value) const {
     return value;
   }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &value, Params const &params_) const {
-    return this->operator()(value);
-  }
 };
 
 template <typename T, int N>
@@ -107,12 +68,59 @@ struct Identity<Array<T, N> > {
   Array<T, N> operator()(Array<T, N> const &value) const {
     return value;
   }
+};
 
-  using Params = LinearCombinationGenericParams<T>;
+/// Scale operator
+template <typename T>
+struct Scale {
+  struct Arguments {
+    T scale = T(1);
+  };
 
   CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value, Params const &params_) const {
-    return this->operator()(value);
+  T operator()(T const& value, T const& scale) const {
+    multiplies<T> mul;
+    return mul(scale, value);
+  }
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const& value, Arguments const& args = Arguments()) const {
+    return this->operator()(value, args.scale);
+  }
+};
+
+template <typename T, int N>
+struct Scale<Array<T, N>> {
+  using Arguments = typename Scale<T>::Arguments;
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& values, T const& scale) const {
+    multiplies<Array<T, N>> mul;
+    return mul(scale, values);
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& values, Arguments const& args = Arguments()) const {
+    return this->operator()(values, args.scale);
+  }
+};
+
+/// Specialization to compose other activations with a defined unary operator
+/// e.g. Scale<Identity<T>>
+template <template <class> class Activation, typename T>
+struct Scale<Activation<T>> {
+  using Arguments = typename Scale<T>::Arguments;
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const &value, decltype(Arguments{}.scale) const& scale) const {
+    multiplies<T> mul;
+    Activation<T> act;
+    return mul(scale, act(value));
+  }
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const& value, Arguments const& args = Arguments()) const {
+    return this->operator()(value, args.scale);
   }
 };
 
@@ -134,14 +142,6 @@ struct ReLu {
 
     return mx(value, T(0));
   }
-
-  /// Host-constructable parameters structure
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T value, Params const &params_) const {
-    return this->operator()(value);
-  }
 };
 
 template <typename T>
@@ -162,90 +162,87 @@ struct ReLu<Array<T, N>> {
     maximum<Array<T, N>> mx;
     return mx(frag, T(0));
   }
+};
 
-  /// Host-constructable parameters structure
-  using Params = LinearCombinationGenericParams<T>;
+// Generic clamp
+template <typename T>
+struct Clamp {
+  struct Arguments {
+    T lower_bound = cutlass::platform::numeric_limits<T>::min();
+    T upper_bound = cutlass::platform::numeric_limits<T>::max();
+  };
 
   CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &frag, Params const &params_) const {
-    return this->operator()(frag);
+  T operator()(T const& value, T const& lower_bound, T const& upper_bound) const {
+    maximum<T> mx;
+    minimum<T> mn;
+
+    return mn(mx(value, lower_bound), upper_bound);
+  }
+
+  CUTLASS_HOST_DEVICE
+  T operator()(T const& value, Arguments const& args = Arguments()) const {
+    return this->operator()(value, args.lower_bound, args.upper_bound);
+  }
+};
+
+template <typename T, int N>
+struct Clamp<Array<T,N>> {
+  using Arguments = typename Clamp<T>::Arguments;
+
+  CUTLASS_HOST_DEVICE
+  Array<T,N> operator()(Array<T,N> const& values, T const& lower_bound, T const& upper_bound) const {
+    maximum<Array<T,N>> mx;
+    minimum<Array<T,N>> mn;
+
+    return mn(mx(values, lower_bound), upper_bound);
+  }
+
+  CUTLASS_HOST_DEVICE
+  Array<T,N> operator()(Array<T,N> const& values, Arguments const& args = Arguments()) const {
+    return this->operator()(values, args.lower_bound, args.upper_bound);
   }
 };
 
 // Leaky Relu operator
 template <typename T>
 struct LeakyReLU {
-
-  struct Params: LinearCombinationGenericParams<T> {
-    T leaky_alpha;            ///< leaky_alpha
-
-    // Methods
-    using LinearCombinationGenericParams<T>::LinearCombinationGenericParams;
-
-    CUTLASS_HOST_DEVICE
-    Params():
-      LinearCombinationGenericParams<T>(),
-      leaky_alpha(T(1)) {}
- 
-    CUTLASS_HOST_DEVICE
-    Params(
-      T alpha,
-      T beta,
-      T leaky_alpha = T(1)
-    ): LinearCombinationGenericParams<T>(alpha, beta), leaky_alpha(leaky_alpha) {}
+  struct Arguments {
+    T leaky_alpha = T(0);
   };
 
   CUTLASS_HOST_DEVICE
-  T operator()(T const &value, T const & alpha_recip) const {
-    T res = value > T(0) ? value : value * alpha_recip;
+  T operator()(T const& value, T const& leaky_alpha) const {
+    T res = value > T(0) ? value : value * leaky_alpha;
     return res;
   }
 
   CUTLASS_HOST_DEVICE
-  T operator()(T const &value, Params const &params_) const {
-    this->operator()(value, params_.leaky_alpha);
+  T operator()(T const& value, Arguments const& args = Arguments()) const {
+    this->operator()(value, args.leaky_alpha);
   }
 };
 
 template <typename T, int N>
 struct LeakyReLU<Array<T, N> > {
-
-  struct Params: LinearCombinationGenericParams<T> {
-    T leaky_alpha;            ///< leaky_alpha
-    using LinearCombinationGenericParams<T>::LinearCombinationGenericParams;
-
-    // Methods
-
-    CUTLASS_HOST_DEVICE
-    Params():
-      LinearCombinationGenericParams<T>(),
-      leaky_alpha(T(1)) {}
-
-    CUTLASS_HOST_DEVICE
-    Params(
-      T alpha,
-      T beta,
-      T leaky_alpha = T(1)
-    ): LinearCombinationGenericParams<T>(alpha, beta), leaky_alpha(leaky_alpha) {}
-  };
-
+  using Arguments = typename LeakyReLU<T>::Arguments;
 
   CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value, T const & alpha_recip) const {
+  Array<T, N> operator()(Array<T, N> const& values, T const& leaky_alpha) const {
     Array<T, N> y;
     LeakyReLU<T> leaky_op;
 
     CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < int(value.size()); ++i) {
-      y[i] = leaky_op(value[i], alpha_recip);
+    for (int i = 0; i < int(values.size()); ++i) {
+      y[i] = leaky_op(values[i], leaky_alpha);
     }
 
     return y;
   }
 
   CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value, Params const &params_) const {
-    return this->operator()(value, params_.leaky_alpha);
+  Array<T, N> operator()(Array<T, N> const& values, Arguments const& args = Arguments()) const {
+    return this->operator()(values, args.leaky_alpha);
   }
 };
 
@@ -253,15 +250,8 @@ struct LeakyReLU<Array<T, N> > {
 template <typename T>
 struct Tanh {
   CUTLASS_HOST_DEVICE
-  T operator()(T const &scalar) const {
-    return fast_tanh(scalar);
-  }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &scalar, Params const &params_) const {
-    return this->operator()(scalar);
+  T operator()(T const &value) const {
+    return fast_tanh(value);
   }
 };
 
@@ -279,13 +269,6 @@ struct Tanh<Array<T, N> > {
 
     return y;
   }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value, Params const &params_) const {
-    return this->operator()(value);
-  }
 };
 
 template <int N>
@@ -296,14 +279,6 @@ struct Tanh<Array<half_t, N>> {
   Array<T, N> operator()(Array<T, N> const& z) const {
     fast_tanh_op<Array<T, N>> tanh;
     return tanh(z);
-
-  }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value, Params const &params_) const {
-    return this->operator()(value);
   }
 };
 
@@ -311,15 +286,8 @@ struct Tanh<Array<half_t, N>> {
 template <typename T>
 struct Sigmoid {
   CUTLASS_HOST_DEVICE
-  T operator()(T const &scalar) const {
-    return T(1) / (T(1) + fast_exp(-scalar));
-  }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &scalar, Params const &params_) const {
-    return this->operator()(scalar);
+  T operator()(T const &value) const {
+    return T(1) / (T(1) + fast_exp(-value));
   }
 };
 
@@ -336,13 +304,6 @@ struct Sigmoid<Array<T, N> > {
     }
 
     return y;
-  }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value, Params const &params_) const {
-    return this->operator()(value);
   }
 };
 
@@ -368,13 +329,6 @@ struct Sigmoid<Array<half_t, N>> {
                    fast_exp(neg(z))));
 #endif
   }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &z, Params const &params_) const {
-    return this->operator()(z);
-  }
 };
 
 // SiLu (swish) operator introduced by Elfwing et al. in the following paper
@@ -385,16 +339,9 @@ struct Sigmoid<Array<half_t, N>> {
 template <typename T>
 struct SiLu {
   CUTLASS_HOST_DEVICE
-  T operator()(T const &scalar) const {
+  T operator()(T const &value) const {
     Sigmoid<T> sigmoid;
-    return scalar * sigmoid(scalar);
-  }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &scalar, Params const &params_) const {
-    return this->operator()(scalar);
+    return value * sigmoid(value);
   }
 };
 
@@ -405,13 +352,6 @@ struct SiLu<Array<T, N>> {
     Sigmoid<Array<T, N>> sigmoid_op;
     multiplies<Array<T, N>>     mul;
     return mul(value, sigmoid_op(value));
-  }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value, Params const &params_) const {
-    return this->operator()(value);
   }
 };
 
@@ -429,13 +369,6 @@ struct HardSwish {
     T relu6 = mn(mx(x + T(3), T(0)), T(6));
     return x * relu6 / T(6);
   }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &x, Params const &params_) const {
-    return this->operator()(x);
-  }
 };
 
 template <>
@@ -448,13 +381,6 @@ struct HardSwish<float> {
     maximum<T> mx;
     T relu6 = mn(mx(x + T(3), T(0)), T(6));
     return x * relu6 * 0.16666667f;
-  }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &x, Params const &params_) const {
-    return this->operator()(x);
   }
 };
 
@@ -472,13 +398,6 @@ struct HardSwish<Array<T, N> > {
 
     return y;
   }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &x, Params const &params_) const {
-    return this->operator()(x);
-  }
 };
 
 template <int N>
@@ -493,13 +412,6 @@ struct HardSwish<Array<half_t, N> > {
     plus<Array<T, N> > add;
 
     return mul(mul(mn(mx(add(value, T(3)), T(0)), T(6)), value), T(0.16666667f));
-  }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &x, Params const &params_) const {
-    return this->operator()(x);
   }
 };
 
@@ -516,48 +428,27 @@ struct HardSwish<Array<half_t, N> > {
 template <typename T>
 struct GELU {
   CUTLASS_HOST_DEVICE
-  T operator()(T const &scalar) const {
-    return T(cutlass::constants::half<T>() * scalar *
-      (cutlass::constants::one<T>() + (T)erff((float)(scalar * cutlass::constants::half_root_two<T>()))));
-  }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &scalar, Params const &params_) const {
-    return this->operator()(scalar);
+  T operator()(T const &value) const {
+    return T(cutlass::constants::half<T>() * value *
+      (cutlass::constants::one<T>() + (T)erff((float)(value * cutlass::constants::half_root_two<T>()))));
   }
 };
 
 template <>
 struct GELU<float> {
   CUTLASS_HOST_DEVICE
-  float operator()(float const &scalar) const {
-    return cutlass::constants::half<float>() * scalar *
-      (cutlass::constants::one<float>() + erff(scalar * cutlass::constants::half_root_two<float>() ));
-  }
-
-  using Params = LinearCombinationGenericParams<float>;
-
-  CUTLASS_HOST_DEVICE
-  float operator()(float const &scalar, Params const &params_) const {
-    return this->operator()(scalar);
+  float operator()(float const &value) const {
+    return cutlass::constants::half<float>() * value *
+      (cutlass::constants::one<float>() + erff(value * cutlass::constants::half_root_two<float>() ));
   }
 };
 
 template <>
 struct GELU<double> {
   CUTLASS_HOST_DEVICE
-  double operator()(double const &scalar) const {
-    return cutlass::constants::half<double>() * scalar *
-      (cutlass::constants::one<double>() + erf( scalar * cutlass::constants::half_root_two<double>() ));
-  }
-
-  using Params = LinearCombinationGenericParams<double>;
-
-  CUTLASS_HOST_DEVICE
-  double operator()(double const &scalar, Params const &params_) const {
-    return this->operator()(scalar);
+  double operator()(double const &value) const {
+    return cutlass::constants::half<double>() * value *
+      (cutlass::constants::one<double>() + erf( value * cutlass::constants::half_root_two<double>() ));
   }
 };
 
@@ -575,14 +466,10 @@ struct GELU<Array<T, N> > {
 
     return y;
   }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value, Params const &params_) const {
-    return this->operator()(value);
-  }
 };
+
+template <typename T>
+using ScaledGELU = Scale<GELU<T>>;
 
 // GELU operator implemented using the Taylor series approximation
 template <typename T>
@@ -596,13 +483,6 @@ struct GELU_taylor {
 
     return T(cutlass::constants::half<T>() * z *
       (cutlass::constants::one<T>() + fast_tanh(k0 * z * (cutlass::constants::one<T>() + k1 * z * z))));
-  }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  T operator()(T const &scalar, Params const &params_) const {
-    return this->operator()(scalar);
   }
 };
 
@@ -630,13 +510,6 @@ struct GELU_taylor<Array<half_t, N> > {
 
     return y;
   }
-
-  using Params = LinearCombinationGenericParams<half_t>;
-
-  CUTLASS_HOST_DEVICE
-  Array<half_t, N> operator()(Array<half_t, N> const &value, Params const &params_) const {
-    return this->operator()(value);
-  }
 };
 
 template <typename T, int N>
@@ -654,14 +527,10 @@ struct GELU_taylor<Array<T, N> > {
 
     return y;
   }
-
-  using Params = LinearCombinationGenericParams<T>;
-
-  CUTLASS_HOST_DEVICE
-  Array<T, N> operator()(Array<T, N> const &value, Params const &params_) const {
-    return this->operator()(value);
-  }
 };
+
+template <typename T>
+using ScaledGELU_taylor = Scale<GELU_taylor<T>>;
 
 /// Computes backwards pass for GELU operator assuming d_t is the layer gradient and
 /// z is computed from the forward pass.

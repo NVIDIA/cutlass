@@ -97,7 +97,7 @@ public:
 
   static_assert(ArchTag::kMinComputeCapability >= 90);
 
-  using TileScheduleTag = TileScheduler_;
+  using TileSchedulerTag = TileScheduler_;
   using TileScheduler = typename detail::TileSchedulerSelector<
     TileScheduler_, ArchTag, TileShape, ClusterShape>::Scheduler;
   using TileSchedulerArguments = typename TileScheduler::Arguments;
@@ -238,6 +238,7 @@ public:
     if constexpr (!std::is_const_v<decltype(args.max_swizzle_size)>) {
       args.max_swizzle_size = 1 << params.scheduler.log_swizzle_size_;
     }
+    args.raster_order = params.scheduler.raster_order_ == TileScheduler::RasterOrder::AlongN ? TileScheduler::RasterOrderOptions::AlongN : TileScheduler::RasterOrderOptions::AlongM;
     return TileScheduler::get_grid_shape(params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
   }
 
@@ -390,8 +391,6 @@ public:
 
     // Get pipeline stage increments from tensor shapes
     auto k_tile_count = size<3>(gA_mkl);
-    auto c_tile_count = CollectiveEpilogue::get_load_pipe_increment(blk_shape);
-    auto d_tile_count = CollectiveEpilogue::get_store_pipe_increment(blk_shape);
 
     TileScheduler scheduler{params.scheduler};
     auto work_tile_info = scheduler.get_current_work();
@@ -417,15 +416,13 @@ public:
           auto blk_coord = make_coord(m_coord, n_coord, _, l_coord);
 
           // Slice with our work tile coordinates to construct mainloop tensor views
-          Tensor gA_presplit = gA_mkl(_,_,m_coord,_,l_coord);                                        // (BLK_M,BLK_K,k)
-          Tensor gB_presplit = gB_nkl(_,_,n_coord,_,l_coord);                                        // (BLK_N,BLK_K,k)
+          Tensor gA = gA_mkl(_,_,m_coord,_,l_coord);                                        // (BLK_M,BLK_K,k)
+          Tensor gB = gB_nkl(_,_,n_coord,_,l_coord);                                        // (BLK_N,BLK_K,k)
 
-          // Split operands A and B along the K dimension according to work_tile_info
-          Tensor gA = TileScheduler::split_MK(gA_presplit, work_tile_info);              // (BLK_N,BLK_K,k_split_iters)
-          Tensor gB = TileScheduler::split_NK(gB_presplit, work_tile_info);              // (BLK_N,BLK_K,k_split_iters)
-
-          auto work_k_tile_count = size<2>(gA);
-          auto k_tile_iter = cute::make_coord_iterator(shape<2>(gA_presplit));
+          // Get the number of K tiles to compute for this work as well as the starting K tile offset of the work.
+          auto work_k_tile_count = TileScheduler::get_work_k_tile_count(work_tile_info, problem_shape_MNKL, blk_shape);
+          auto work_k_tile_start = TileScheduler::get_work_k_tile_start(work_tile_info);
+          auto k_tile_iter = cute::make_coord_iterator(idx2crd(work_k_tile_start, shape<2>(gA)), shape<2>(gA));
 
           collective_mainloop.load(
             mainloop_pipeline,

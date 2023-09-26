@@ -42,7 +42,6 @@
 
 #include <cute/numeric/half.hpp>
 #include <cute/numeric/complex.hpp>
-
 #include <cutlass/layout/layout.h>
 
 // The computed infinity norm does not include
@@ -222,8 +221,10 @@ auto host_matrix_to_const_cute_tensor(CutlassHostTensorType& X)
 };
 
 
+// Returns EXIT_SUCCESS if the 2-norm relative error is exactly zero, else returns EXIT_FAILURE.
+// This makes the return value suitable as the return value of main().
 template <typename T1, typename T2>
-double
+int
 print_relative_error(
     std::size_t n,
     T1 const& data,
@@ -285,5 +286,5 @@ print_relative_error(
   if (print_error)
     printf("Maximum relative error: [%.5e]\n", max_ind_rel_err);
 
-  return tot_rel_err;
+  return (tot_rel_err == 0.0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

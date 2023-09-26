@@ -1316,7 +1316,7 @@ public:
     }
 
     typename Gemm::GemmKernel::TileScheduler::Arguments scheduler_args;
-    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileScheduleTag, cutlass::gemm::StreamKScheduler>) {
+    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
       scheduler_args = { splits };
     }
 

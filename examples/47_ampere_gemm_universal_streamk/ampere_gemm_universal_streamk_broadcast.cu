@@ -83,6 +83,10 @@
 #include "cutlass/util/reference/host/tensor_fill.h"
 #include "cutlass/util/tensor_view_io.h"
 
+#include "cutlass/epilogue/threadblock/fusion/visitors.hpp"
+#include "cutlass/gemm/kernel/default_gemm_universal_with_visitor.h"
+#include "cutlass/gemm/device/gemm_universal_adapter.h"
+
 #include "helper.h"
 
 
@@ -120,6 +124,7 @@ using ThreadblockShape    = cutlass::gemm::GemmShape<128, 128, 32>;   // Threadb
 using WarpShape           = cutlass::gemm::GemmShape<64, 64, 32>;     // Warp-level tile size (concept: GemmShape)
 using InstructionShape    = cutlass::gemm::GemmShape<16, 8, 16>;      // Instruction-level tile size (concept: GemmShape)
 constexpr int NumStages   = 4;                                        // Number of global->shared pipeline stages used in the GEMM mainloop
+constexpr int EVTEpilogueStages = 1;                                  // Number of epilogue stages in EVT
 
 // Residual block configuration
 
@@ -166,23 +171,93 @@ using DeviceGemmBasic = cutlass::gemm::device::GemmUniversalWithBroadcast<
     AlignmentA,
     AlignmentB>;
 
-// StreamK device GEMM implementation type
-using DeviceGemmStreamK = cutlass::gemm::device::GemmUniversalStreamkWithBroadcast<
-    ElementA, LayoutA,
-    ElementB, LayoutB,
-    ElementC, LayoutC,
+// StreamK device GEMM implementation type with EVT
+using namespace cute;
+
+using OutputTileThreadMap = cutlass::epilogue::threadblock::OutputTileThreadLayout<
+  ThreadblockShape, 
+  WarpShape, 
+  ElementC, 
+  AlignmentC, 
+  EVTEpilogueStages
+>;
+
+using Accum = cutlass::epilogue::threadblock::VisitorAccFetch;
+
+using Bias = cutlass::epilogue::threadblock::VisitorRowBroadcast<
+    OutputTileThreadMap, ElementC,
+    cute::Stride<_0, _1, int32_t>  // StrideMNL
+>;
+
+using C1 = cutlass::epilogue::threadblock::VisitorAuxLoad<
+    OutputTileThreadMap, ElementC, 
+    cute::Stride<int64_t, _1, int64_t> // StrideMNL
+>;
+
+using C2 = cutlass::epilogue::threadblock::VisitorAuxLoad<
+    OutputTileThreadMap, ElementC, 
+    cute::Stride<int64_t, _1, int64_t> // StrideMNL
+>;
+
+using Compute0 = cutlass::epilogue::threadblock::VisitorCompute<
+    cutlass::plus, ElementCompute, ElementCompute,
+    cutlass::FloatRoundStyle::round_to_nearest
+>;
+
+using EVTCompute0 = cutlass::epilogue::threadblock::Sm80EVT<
+    Compute0,
+    Accum,
+    Bias>;
+  
+using Compute1 = cutlass::epilogue::threadblock::VisitorCompute<
+    cutlass::plus, ElementCompute, ElementCompute,
+    cutlass::FloatRoundStyle::round_to_nearest
+>;
+
+using EVTCompute1 = cutlass::epilogue::threadblock::Sm80EVT<
+    Compute1,
+    EVTCompute0,
+    C1>;
+
+using Compute2 = cutlass::epilogue::threadblock::VisitorCompute<
+    cutlass::plus, ElementOutput, ElementCompute,
+    cutlass::FloatRoundStyle::round_to_nearest
+>;
+
+using EVTCompute2 = cutlass::epilogue::threadblock::Sm80EVT<
+    Compute2,
+    EVTCompute1,
+    C2>;
+
+using D = cutlass::epilogue::threadblock::VisitorAuxStore<
+    OutputTileThreadMap, ElementOutput, cutlass::FloatRoundStyle::round_to_nearest,
+    cute::Stride<int64_t, _1, int64_t> // StrideMNL
+>;
+
+using EVTD = cutlass::epilogue::threadblock::Sm80EVT<
+    D,
+    EVTCompute2>;
+
+using EVTKernelStreamK =
+    typename cutlass::gemm::kernel::DefaultGemmWithVisitor<
+    ElementA, LayoutA, cutlass::ComplexTransform::kNone, AlignmentA,
+    ElementB, LayoutB, cutlass::ComplexTransform::kNone, AlignmentB,
+    ElementC, LayoutC, AlignmentC,
     ElementAccumulator,
-    OperatorClass,
-    ArchTag,
+    ElementCompute,
+    cutlass::arch::OpClassTensorOp,
+    cutlass::arch::Sm80,
     ThreadblockShape,
     WarpShape,
     InstructionShape,
-    EpilogueOp,
+    EVTD,
     cutlass::gemm::threadblock::ThreadblockSwizzleStreamK,
     NumStages,
-    AlignmentA,
-    AlignmentB>;
+    cutlass::arch::OpMultiplyAdd,
+    EVTEpilogueStages
+>::GemmKernel;
 
+using DeviceGemmStreamK = cutlass::gemm::device::GemmUniversalAdapter<EVTKernelStreamK>;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
@@ -360,36 +435,41 @@ typename DeviceGemmStreamK::Arguments args_from_options(
     cutlass::HostTensor<ElementC, LayoutC> &tensor_Vector/*,
     cutlass::HostTensor<ElementC, LayoutC> &tensor_Tensor*/
     )
-{
+{ 
+  typename EVTD::Arguments callback_args{
+    {
+      {
+        {
+          {},                                                                                                          // Accum
+          {tensor_Vector.device_data(), ElementC(0), {_0{}, _1{}, int32_t(options.problem_size.n())}},                 // Bias
+          {}                                                                                                           // Compute0
+        },                                                                                                             // EVTCompute0
+        {tensor_c1.device_data(), ElementC(0), {options.problem_size.n(), _1{}, options.problem_size.mn().product()}}, // C1
+        {}                                                                                                             // Compute1
+      },                                                                                                               // EVTCompute1
+      {tensor_c2.device_data(), ElementC(0), {options.problem_size.n(), _1{}, options.problem_size.mn().product()}},   // C2
+      {}                                                                                                               // Compute2
+    },                                                                                                                 // EVTCompute2
+    {tensor_d.device_data(), {options.problem_size.n(), _1{}, options.problem_size.mn().product()}},                   // D
+  };                                                                                                                   // EVTD
+
   return typename DeviceGemmStreamK::Arguments(
     cutlass::gemm::GemmUniversalMode::kGemm,  // universal mode
     options.problem_size,                     // problem_size
     options.split_k_factor,                   // batch count / splitk slices
-    {                                         // epilogue parameters
-      ElementAccumulator(options.alpha),
-      ElementAccumulator(options.beta)
-    },
+    callback_args,                            // argument of EVT callbacks
     tensor_a.device_data(),                   // ptr_A
     tensor_b.device_data(),                   // ptr_B
-    tensor_c1.device_data(),                  // ptr_C1
-    tensor_c2.device_data(),                  // ptr_C2
-    tensor_d.device_data(),                   // ptr_D
-    tensor_Vector.device_data(),              // ptr_Vector
-    /* tensor_Tensor.device_data(), */nullptr,// ptr_Tensor    // We're not storing Tensor
+    nullptr,                                  // ptr_C (unused)
+    nullptr,                                  // ptr_D (unused)
     options.problem_size.mk().product(),      // batch_stride_A
     options.problem_size.nk().product(),      // batch_stride_B
-    options.problem_size.mn().product(),      // batch_stride_C1
-    options.problem_size.mn().product(),      // batch_stride_C2
-    options.problem_size.mn().product(),      // batch_stride_D
-    options.problem_size.mn().product(),      // batch_stride_Vector
-    options.problem_size.mn().product(),      // batch_stride_Tensor
+    0,                                        // batch_stride_C (unused)
+    0,                                        // batch_stride_D (unused)
     tensor_a.layout().stride(0),              // stride_a
     tensor_b.layout().stride(0),              // stride_b
-    tensor_c1.layout().stride(0),             // stride_c1
-    tensor_c2.layout().stride(0),             // stride_c2
-    tensor_d.layout().stride(0),              // stride_d
-    /*tensor_Vector.layout().stride(0)*/0,    // stride_Vector // Vector stride is always 0
-    /*tensor_Tensor.layout().stride(0)*/0,    // stride_Tensor // We're not storing Tensor
+    0,                                        // stride_c (unused)
+    0,                                        // stride_d (unused)
     options.avail_sms);                       // avail_sms
 }
 

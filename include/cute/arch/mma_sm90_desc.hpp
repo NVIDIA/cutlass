@@ -86,22 +86,22 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, LayoutType const& t) {
 union GmmaDescriptor
 {
 
-  CUTE_HOST_DEVICE constexpr 
+  CUTE_HOST_DEVICE constexpr
   GmmaDescriptor() noexcept : desc_(0) {}
-  CUTE_HOST_DEVICE constexpr 
+  CUTE_HOST_DEVICE constexpr
   GmmaDescriptor(uint64_t desc) noexcept : desc_(desc) {}
-  CUTE_HOST_DEVICE constexpr 
+  CUTE_HOST_DEVICE constexpr
   GmmaDescriptor(GmmaDescriptor const& t) noexcept : desc_(t.desc_) {}
-  CUTE_HOST_DEVICE constexpr 
+  CUTE_HOST_DEVICE constexpr
   GmmaDescriptor(GmmaDescriptor && t) noexcept : desc_(t.desc_) {}
-  
-  CUTE_HOST_DEVICE constexpr 
+
+  CUTE_HOST_DEVICE constexpr
   GmmaDescriptor& operator=(GmmaDescriptor const& t) noexcept {
     desc_ = t.desc_;
     return *this;
   }
 
-  CUTE_HOST_DEVICE constexpr 
+  CUTE_HOST_DEVICE constexpr
   GmmaDescriptor& operator=(GmmaDescriptor && t) noexcept {
     desc_ = t.desc_;
     return *this;

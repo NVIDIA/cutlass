@@ -43,16 +43,16 @@ namespace cute
 // Aliases
 
 template <class... Shapes>
-using Shape = IntTuple<Shapes...>;
+using Shape = cute::tuple<Shapes...>;
 
 template <class... Strides>
-using Stride = IntTuple<Strides...>;
+using Stride = cute::tuple<Strides...>;
 
 template <class... Strides>
-using Step = IntTuple<Strides...>;
+using Step = cute::tuple<Strides...>;
 
 template <class... Coords>
-using Coord = IntTuple<Coords...>;
+using Coord = cute::tuple<Coords...>;
 
 template <class... Ts>
 CUTE_HOST_DEVICE constexpr
@@ -1034,29 +1034,29 @@ complement(Shape const& shape, Stride const& stride, CoSizeHi const& cosize_hi)
 
     // Should just be a sort and a fold...
     // Then we could even handle dynamic strides (but they would destroy all static strides)
-    auto result = fold(make_seq<R-1>{},
-                       cute::make_tuple(shape, stride, cute::make_tuple(), cute::make_tuple(Int<1>{})),
-      [](auto const& init, auto i)
-      {
-        auto curr_stride = cute::min(get<1>(init));
-        auto curr_idx    = find(get<1>(init), curr_stride);
-        auto curr_shape  = get<curr_idx>(get<0>(init));
+    auto [shape_, stride_, result_shape_, result_stride] = 
+      fold(make_seq<R-1>{},
+           cute::make_tuple(shape, stride, cute::make_tuple(), cute::make_tuple(Int<1>{})),
+           [](auto const& init, auto i)
+           {
+              auto [shape, stride, result_shape, result_stride] = init;
+              auto min_stride = cute::min(stride);
+              auto min_idx    = find(stride, min_stride);
 
-        return cute::make_tuple(remove<curr_idx>(get<0>(init)),                     // Remove the curr shape
-                                remove<curr_idx>(get<1>(init)),                     // Remove the curr stride
-                                append(get<2>(init), curr_stride / get<3,i>(init)), // new shape  = curr_stride / last_stride
-                                append(get<3>(init), curr_shape  * curr_stride));   // new stride = curr_shape  * curr_stride
-      });
+              return cute::make_tuple(remove<min_idx>(shape),                                    // Remove the min_idx from shape
+                                      remove<min_idx>(stride),                                   // Remove the min_idx from stride
+                                      append(result_shape , min_stride / get<i>(result_stride)), // new shape  = min_stride / last_stride
+                                      append(result_stride, get<min_idx>(shape) * min_stride));  // new stride = curr_shape * min_stride
+            });
 
     // Append the last shape mode
-    auto result_stride = get<3>(result);
-    auto result_shape  = append(get<2>(result), get<1,0>(result) / back(result_stride)); // new shape  = curr_stride / last_stride
+    auto result_shape = append(result_shape_, get<0>(stride_) / get<R-1>(result_stride));        // new shape  = min_stride / last_stride
 
-    // Compute the rest_stride
-    auto rest_stride = get<0,0>(result) * get<1,0>(result);
-    //return make_layout(append(result_shape,  ceil_div(cosize_hi, rest_stride)), append(result_stride, rest_stride));
-    // Jump into coalesce and append (ceil_div(cosize_hi, rest_stride), rest_stride)
-    return detail::bw_coalesce<R-1>(result_shape, result_stride, ceil_div(cosize_hi, rest_stride), rest_stride);
+    // Compute the rest_shape and rest_stride
+    auto rest_stride = get<0>(shape_) * get<0>(stride_);
+    auto rest_shape  = ceil_div(cosize_hi, rest_stride);
+    // Jump into coalesce and append (rest_shape, rest_stride)
+    return detail::bw_coalesce<R-1>(result_shape, result_stride, rest_shape, rest_stride);
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -1608,16 +1608,15 @@ CUTE_HOST_DEVICE constexpr
 auto
 recast(Layout<Shape,Stride> const& layout)
 {
-  if constexpr (sizeof(NewType) == sizeof(OldType)) {
+  if constexpr (sizeof_bits<NewType>::value == sizeof_bits<OldType>::value) {
     return layout;
-  } else if constexpr (sizeof(NewType) > sizeof(OldType)) {
-    static_assert(sizeof(NewType) % sizeof(OldType) == 0, "NewType must be a multiple of OldType");
-    return upcast<sizeof(NewType)/sizeof(OldType)>(layout);
-  } else if constexpr (sizeof(NewType) < sizeof(OldType)) {
-    static_assert(sizeof(OldType) % sizeof(NewType) == 0, "NewType must be a divisor of OldType");
-    return downcast<sizeof(OldType)/sizeof(NewType)>(layout);
+  } else if constexpr (sizeof_bits<NewType>::value > sizeof_bits<OldType>::value) {
+    static_assert(sizeof_bits<NewType>::value % sizeof_bits<OldType>::value == 0, "NewType must be a multiple of OldType");
+    return upcast<sizeof_bits<NewType>::value/sizeof_bits<OldType>::value>(layout);
+  } else if constexpr (sizeof_bits<NewType>::value < sizeof_bits<OldType>::value) {
+    static_assert(sizeof_bits<OldType>::value % sizeof_bits<NewType>::value == 0, "NewType must be a divisor of OldType");
+    return downcast<sizeof_bits<OldType>::value/sizeof_bits<NewType>::value>(layout);
   }
-
   CUTE_GCC_UNREACHABLE;
 }
 

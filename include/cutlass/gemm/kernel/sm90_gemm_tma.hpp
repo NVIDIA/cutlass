@@ -105,14 +105,14 @@ public:
   using StrideC  = typename CollectiveEpilogue::StrideC;
   using ElementD = typename CollectiveEpilogue::ElementD;
   using StrideD  = typename CollectiveEpilogue::StrideD;
-  using EpilogueArguments = typename CollectiveEpilogue::Params;
+  using EpilogueArguments = typename CollectiveEpilogue::Arguments;
   using EpilogueParams = typename CollectiveEpilogue::Params;
   static_assert(cute::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
     "Mainloop and epilogue do not agree on accumulator value type.");
 
   static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
     "TMA kernel does not support specializing the tile scheduler.");
-  using TileScheduleTag = TileScheduler_;
+  using TileSchedulerTag = TileScheduler_;
   using TileScheduler = typename detail::TileSchedulerSelector<
     TileScheduler_, ArchTag, TileShape, ClusterShape>::Scheduler;
   using TileSchedulerArguments = typename TileScheduler::Arguments;

@@ -41,9 +41,9 @@
 
 #include "cutlass/core_io.h"
 
-#include "cublas_helpers.h"
-#include "trmm_operation_profiler.h"
-#include "gpu_timer.h"
+#include "cutlass/profiler/cublas_helpers.h"
+#include "cutlass/profiler/trmm_operation_profiler.h"
+#include "cutlass/profiler/gpu_timer.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

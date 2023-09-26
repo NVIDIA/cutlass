@@ -32,7 +32,7 @@
    \brief Provides several functions for filling tensors with data.
 */
 
-#include "enumerated_types.h"
+#include "cutlass/profiler/enumerated_types.h"
 
 namespace cutlass {
 namespace profiler {

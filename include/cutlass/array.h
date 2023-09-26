@@ -33,10 +33,24 @@
            and is safe to use in a union.
 */
 
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
+
 #pragma once
 #include "cutlass/cutlass.h"
 #include "cutlass/functional.h"
-#include "cutlass/numeric_types.h"
+#include "cutlass/numeric_size.h"
+#include "cutlass/half.h"
+#include "cutlass/integer_subbyte.h"
+#include "cutlass/tfloat32.h"
+#include "cutlass/bfloat16.h"
 #include "cutlass/half.h"
 namespace cutlass {
 

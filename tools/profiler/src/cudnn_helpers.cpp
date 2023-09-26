@@ -35,7 +35,7 @@
 
 #include <stdexcept>
 
-#include "cudnn_helpers.h"
+#include "cutlass/profiler/cudnn_helpers.h"
 
 namespace cutlass {
 namespace profiler {

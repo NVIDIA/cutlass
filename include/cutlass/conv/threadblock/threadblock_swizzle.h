@@ -95,11 +95,11 @@ struct StridedDgradHorizontalThreadblockSwizzle :
   /// Returns the shape of the problem in units of logical tiles
   /// For ImplicitGemmConvolution Conv2d problem size: conv_operator(NPQK, NHWC, KRSC)
   CUTLASS_HOST_DEVICE
-  gemm::GemmCoord get_tiled_shape(
+  static gemm::GemmCoord get_tiled_shape(
     cutlass::conv::Operator conv_operator,
     cutlass::conv::Conv2dProblemSize const &problem_size,
     gemm::GemmCoord tile_size,
-    int split_k_slices) const {
+    int split_k_slices) {
 
     gemm::GemmCoord implicit_gemm_problem_size = 
     cutlass::conv::implicit_gemm_problem_size(conv_operator, problem_size);
@@ -136,11 +136,11 @@ struct StridedDgradIdentityThreadblockSwizzle :
   /// Returns the shape of the problem in units of logical tiles
   /// For ImplicitGemmConvolution Conv2d problem size: conv_operator(NPQK, NHWC, KRSC)
   CUTLASS_HOST_DEVICE
-  gemm::GemmCoord get_tiled_shape(
+  static gemm::GemmCoord get_tiled_shape(
     cutlass::conv::Operator conv_operator,
     cutlass::conv::Conv2dProblemSize const &problem_size,
     gemm::GemmCoord tile_size,
-    int split_k_slices) const {
+    int split_k_slices) {
 
     gemm::GemmCoord implicit_gemm_problem_size = 
     cutlass::conv::implicit_gemm_problem_size(conv_operator, problem_size);
@@ -174,10 +174,10 @@ struct DepthwiseDirect2dConvIdentityThreadblockSwizzle
 
   /// Returns the shape of the problem in units of logical tiles
   CUTLASS_HOST_DEVICE
-  gemm::GemmCoord get_tiled_shape(cutlass::conv::Operator conv_operator,
+  static gemm::GemmCoord get_tiled_shape(cutlass::conv::Operator conv_operator,
                             cutlass::conv::Conv2dProblemSize const &problem_size,
                             gemm::GemmCoord tile_size,
-                            int split_k_slices) const {
+                            int split_k_slices) {
         
     gemm::GemmCoord implicit_gemm_problem_size =
         cutlass::conv::implicit_gemm_problem_size(conv_operator, problem_size);

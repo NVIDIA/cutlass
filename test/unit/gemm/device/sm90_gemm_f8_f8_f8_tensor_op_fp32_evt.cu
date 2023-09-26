@@ -139,9 +139,9 @@ TEST(SM90_Device_Gemm_f8t_f8n_f8t_tensor_op_gmma_f32_persistent_epilogue, 64x128
 
   using EpilogueSchedule = cutlass::epilogue::TmaWarpSpecialized;
   using EpilogueTileType = cutlass::epilogue::collective::EpilogueTileAuto;
-  using EpilogueDescriptor = cutlass::epilogue::collective::EpilogueDescriptor<
+  using EpilogueDescriptor = cutlass::epilogue::collective::detail::EpilogueDescriptor<
     TileShape_MNK, EpilogueTileType, cutlass::float_e4m3_t, cutlass::float_e4m3_t, EpilogueSchedule>;
-  using AuxStoreDescriptor = cutlass::epilogue::collective::AuxStoreDescriptor<
+  using AuxStoreDescriptor = cutlass::epilogue::collective::detail::AuxStoreDescriptor<
     EpilogueDescriptor, cutlass::layout::RowMajor, cutlass::float_e4m3_t>;
     
   using FusionCallbacks = cutlass::epilogue::fusion::Sm90ScaledLinCombPerRowBiasEltActAmaxAux<

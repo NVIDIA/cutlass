@@ -32,7 +32,6 @@
 
 from cutlass.backend.utils.datatypes import *
 from cutlass.backend.utils.device import check_cuda_errors, device_cc
-from cutlass.backend.utils.reference_model import ReferenceModule
 from cutlass.backend.utils.software import (
     CheckPackages,
     SubstituteTemplate,

@@ -99,7 +99,9 @@ struct Sm90Compute : Sm90VisitorImpl<> {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -114,6 +116,123 @@ struct Sm90Compute : Sm90VisitorImpl<> {
       int thread_idx,
       SrcTensor const& tCrC) {
     return ConsumerStoreCallbacks();
+  }
+
+};
+
+// partial specialization for compute fns that define an Arguments member, e.g. activation hyperparameters
+template<
+  template <class> class ComputeFn,
+  class ElementOutput,
+  class ElementCompute,
+  FloatRoundStyle RoundStyle
+>
+struct Sm90Compute<
+  ComputeFn,
+  ElementOutput,
+  ElementCompute,
+  RoundStyle,
+  cute::void_t<typename ComputeFn<ElementCompute>::Arguments>
+> {
+
+  struct SharedStorage { };
+
+  using Arguments = typename ComputeFn<ElementCompute>::Arguments;
+
+  using Params = Arguments;
+
+  template <class ProblemShape>
+  static constexpr Params
+  to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
+    return args;
+  }
+
+  CUTLASS_DEVICE bool
+  is_producer_load_needed() const {
+    return false;
+  }
+
+  CUTLASS_DEVICE bool
+  is_C_load_needed() const {
+    return false;
+  }
+
+  CUTLASS_HOST_DEVICE
+  Sm90Compute() { }
+
+  CUTLASS_HOST_DEVICE
+  Sm90Compute(Params const& params, SharedStorage const& shared_storage)
+      : params(params) {}
+
+  Params const params;
+
+  template <
+    class ProblemShapeMNKL,
+    class TileShapeMNK,
+    class TileCoordMNKL,
+    class EpilogueTile
+  >
+  CUTLASS_DEVICE auto
+  get_producer_load_callbacks(
+      ProblemShapeMNKL problem_shape_mnkl,
+      TileShapeMNK tile_shape_mnk,
+      TileCoordMNKL tile_coord_mnkl,
+      EpilogueTile epi_tile,
+      int thread_idx) {
+    return EmptyProducerLoadCallbacks{};
+  }
+
+  struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
+    CUTLASS_DEVICE
+    ConsumerStoreCallbacks(Params const& params)
+      : params(params) {}
+
+    Params const& params;
+
+    template <typename ElementAccumulator, typename... ElementInputs, int FragmentSize>
+    CUTLASS_DEVICE Array<ElementOutput, FragmentSize>
+    visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n,
+          Array<ElementInputs, FragmentSize> const&... frg_inputs) {
+      return transform_apply(cute::make_tuple(frg_inputs...),
+        [&] (auto&& frg_input) {
+          using ElementInput = typename cute::remove_cvref_t<decltype(frg_input)>::Element;
+          using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FragmentSize, RoundStyle>;
+          ConvertInput convert_input{};
+
+          return convert_input(frg_input);
+        },
+        [&] (auto&&... cvt_frg_inputs) {
+          using ComputeOutput = ComputeFn<Array<ElementCompute, FragmentSize>>;
+          using ConvertOutput = NumericArrayConverter<ElementOutput, ElementCompute, FragmentSize, RoundStyle>;
+          ComputeOutput compute_output{};
+          ConvertOutput convert_output{};
+
+          return convert_output(compute_output(cvt_frg_inputs..., params));
+        }
+      );
+    }
+
+  };
+
+  template <
+    bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
+    class TileShapeMNK,
+    class TileCoordMNKL,
+    class EpilogueTile,
+    class TiledCopy,
+    class SrcTensor
+  >
+  CUTLASS_DEVICE auto
+  get_consumer_store_callbacks(
+      ProblemShapeMNKL problem_shape_mnkl,
+      TileShapeMNK tile_shape_mnk,
+      TileCoordMNKL tile_coord_mnkl,
+      EpilogueTile epi_tile,
+      TiledCopy tiled_copy,
+      int thread_idx,
+      SrcTensor const& tCrC) {
+    return ConsumerStoreCallbacks(params);
   }
 
 };
@@ -215,7 +334,9 @@ struct Sm90TreeVisitor<
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor

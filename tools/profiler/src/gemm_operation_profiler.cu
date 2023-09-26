@@ -39,10 +39,9 @@
 
 #include "cutlass/core_io.h"
 
-#include "cublas_helpers.h"
-#include "gemm_operation_profiler.h"
-#include "gpu_timer.h"
-
+#include "cutlass/profiler/cublas_helpers.h"
+#include "cutlass/profiler/gemm_operation_profiler.h"
+#include "cutlass/profiler/gpu_timer.h"
 #include "cutlass/library/singleton.h"
 #include "cutlass/library/library.h"
 #include "cutlass/library/handle.h"
@@ -74,6 +73,7 @@ GemmOperationProfiler::GemmOperationProfiler(Options const &options):
       {ArgumentTypeID::kEnumerated, {"split_k_mode", "split-k-mode"}, "Variant of split K mode(serial, parallel)"},
       {ArgumentTypeID::kInteger, {"split_k_slices", "split-k-slices"}, "Number of partitions of K dimension"},
       {ArgumentTypeID::kInteger, {"batch_count", "batch-count"}, "Number of GEMMs computed in one batch"},
+      {ArgumentTypeID::kEnumerated, {"raster_order", "raster-order"}, "Raster order (heuristic, along_n, along_m)"},       
     },
     { library::Provider::kCUBLAS}
   ) {
@@ -174,7 +174,7 @@ Status GemmOperationProfiler::GemmProblem::parse(
   }
   
   this->mode = library::GemmUniversalMode::kGemm;
-  if(this->split_k_mode == library::SplitKMode::kParallel) {
+  if (this->split_k_mode == library::SplitKMode::kParallel) {
     this->mode = library::GemmUniversalMode::kGemmSplitKParallel;
   }
 
@@ -190,6 +190,11 @@ Status GemmOperationProfiler::GemmProblem::parse(
     this->mode = library::GemmUniversalMode::kBatched;
   }
 
+  if (!arg_as_RasterOrder(this->raster_order, "raster_order", problem_space, problem)) {
+    // default value
+    this->raster_order = library::RasterOrder::kHeuristic;
+  }
+  
   if (this->split_k_slices > 1 && this->batch_count > 1) {
     // At least one of these must be one
     return Status::kErrorInvalidProblem;
@@ -322,6 +327,7 @@ void GemmOperationProfiler::GemmProblem::initialize_result(
   set_argument(result, "split_k_mode", problem_space, library::to_string(split_k_mode));
   set_argument(result, "split_k_slices", problem_space, split_k_slices);
   set_argument(result, "batch_count", problem_space, batch_count);
+  set_argument(result, "raster_order", problem_space, library::to_string(raster_order)); 
   set_argument(result, "alpha", problem_space,
     library::lexical_cast(alpha, operation_desc.element_epilogue));
 
@@ -376,6 +382,8 @@ Status GemmOperationProfiler::initialize_configuration(
   gemm_workspace_.arguments.alpha = problem_.alpha.data();
   gemm_workspace_.arguments.beta = problem_.beta.data();
   gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
+  gemm_workspace_.arguments.raster_order = problem_.raster_order;
+
   // initialize reduction operation for parallel splitKMode
   if (problem_.split_k_mode == library::SplitKMode::kParallel) {
     if (!initialize_reduction_configuration_(operation, problem)) {
@@ -610,7 +618,7 @@ Status GemmOperationProfiler::initialize_workspace(
     results_.back().op_kind = library::OperationKind::kGemm;
     results_.back().disposition = Disposition::kNotRun;
 
-    for(auto provider : verification_providers_) {
+    for (auto provider : verification_providers_) {
       results_.back().verification_map[provider] = Disposition::kNotRun;
     }
   }
@@ -1102,7 +1110,6 @@ Status GemmOperationProfiler::profile_cutlass_(
   void *device_workspace) {
 
   GpuTimer timer;
-
   // initialize gemm underlying operation to handle parallel reduction
   library::Operation const * underlying_operation = operation;
 
@@ -1223,7 +1230,6 @@ Status GemmOperationProfiler::profile_cutlass_(
   //
 
   timer.stop_and_wait();
-
   //
   // Update performance result
   //

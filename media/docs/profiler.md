@@ -242,6 +242,8 @@ Test your changes to gemm kernels with a quick functional test and save results 
    --providers=cutlass --output=functional-test.csv
 ```
 
+The format of tensor argument is followed by `<type>:<layout>`. The type could be `f32` as 32-bit floating point, `s8` as 8-bit signed integer, etc. The available types can be referred to the `NumericTypeID_enumerants` in [util.cu](tools/library/src/util.cu). The layout could be `row` or `column`.
+
 ## Example CUDA Core GEMM Operation
 
 Example command line for profiling SGEMM kernels is as follows:

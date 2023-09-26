@@ -37,40 +37,15 @@
 #include "cutlass/coord.h"
 #include "cutlass/gemm_coord.h"
 #include "cutlass/layout/matrix.h"
+#include "cutlass/gemm/gemm_enumerated_types.h"
 #include "cute/layout.hpp"
 #include "cutlass/detail/layout.hpp"
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
 namespace gemm {
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// GEMM operand enumeration: D = A * B + C
-enum class Operand {
-  kA, /// A multiplicand
-  kB, /// B multiplicand
-  kC, /// Source accumulator
-  kD  /// Destination accumulator
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-enum class GemmUniversalMode {
-  kGemm,
-  kGemmSplitKParallel,
-  kBatched,
-  kArray,
-  kInvalid
-};
-
-////////////////////////////////////////////////////////////////////////////////
-
-/// Some options for clearing shared memory
-enum class SharedMemoryClearOption {
-  kNone,            ///< SMEM is in don't-care state
-  kZfill,           ///< Kernels fill out of bounds accesses with zeros
-  kClearLastStage   ///< Last SMEM stage is explicitly cleared. Mainloop uses 'kNone'
-};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

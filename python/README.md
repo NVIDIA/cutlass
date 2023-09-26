@@ -1,6 +1,12 @@
 ![ALT](/media/images/gemm-hierarchy-with-epilogue-no-labels.png "Complete CUDA GEMM decomposition")
 
-# CUTLASS Python Interface
+# Python packages associated with CUTLASS
+This directory contains Python packages that are associated with CUTLASS:
+
+* `cutlass`: the CUTLASS Python interface, which enables one to compile and run CUTLASS kernels from within Python
+* `cutlass_library`: utilities used for enumerating and emitting C++ code for CUTLASS kernels
+
+## CUTLASS Python Interface
 The CUTLASS Python interface enables one to compile and run CUTLASS operations from within Python.
 
 ```python
@@ -15,7 +21,7 @@ plan.run(A, B, C, D)
 **NOTE:** The CUTLASS Python interface is currently an experimental release. The API may change in the future.
 We welcome feedback from the community.
 
-## Overview
+### Overview
 The CUTLASS Python interface aims to provide an ease-of-use interface for using CUTLASS via Python. Toward this goal,
 the CUTLASS Python interface attempts to:
 
@@ -25,7 +31,7 @@ the CUTLASS Python interface attempts to:
 * Reduce the occurrence of C++ compile-time errors in favor of descriptive Python exceptions
 * Make it easy to export CUTLASS kernels to framework extensions (e.g., PyTorch CUDA extensions)
 
-### Non-goals
+#### Non-goals
 The CUTLASS Python interface does not intended to:
 
 **Select optimal kernel configurations.**
@@ -43,7 +49,7 @@ one of the CUTLASS emitters for automatically creating a framework extension for
 The CUTLASS Python interface intends to enable one to use CUTLASS via Python. It can be used by frameworks for JIT compiling
 Python to CUDA kernels, but does not set out to be such a framework.
 
-### Comparison to PyCUTLASS
+#### Comparison to PyCUTLASS
 The CUTLASS Python interface builds atop CUTLASS's [PyCUTLASS](https://github.com/NVIDIA/cutlass/tree/v3.0.0/tools/library/scripts/pycutlass) library. PyCUTLASS enables
 one to declare, compile, and run GEMMs, convolutions, and grouped GEMM operators with nearly the same configuration
 space as CUTLASS's C++ interface. While this flexibility enables one to achieve the similar levels of functionality
@@ -53,43 +59,14 @@ to operators -- similar to what one must do in specifying template parameters to
 In contrast, the CUTLASS Python interface aims to provide a higher-level API for declaring, emitting, and compiling
 kernels that does not require exhaustively defining template parameters.
 
-#### Transitioning from PyCUTLASS
-At present, existing PyCUTLASS functionality remains available via the CUTLASS Python interface. One can
-continue to use PyCUTLASS by replacing references to the PyCUTLASS `cutlass` module with `cutlass_bindings`
-and the PyCUTLASS `pycutlass` module with `cutlass.backend`.
-
-For example, the following code using PyCUTLASS:
-```python
-import pycutlass
-import cutlass
-
-math_inst = pycutlass.MathInstruction(
-    [1, 1, 1], cutlass.float32, cutlass.float32, cutlass.float32,
-    cutlass.OpClass.Simt, pycutlass.MathOperation.multiply_add
-)
-```
-
-can work with the Python interface via:
-```python
-import cutlass.backend as pycutlass
-import cutlass_bindings
-
-math_inst = pycutlass.MathInstruction(
-    [1, 1, 1], cutlass_bindings.float32, cutlass_bindings.float32, cutlass_bindings.float32,
-    cutlass_bindings.OpClass.Simt, pycutlass.MathOperation.multiply_add
-)
-```
-
-**NOTE:** backwards compatibility of `cutlass.backend` with `pycutlass` will not be maintained moving forward.
-
-## Current functionality
+### Current functionality
 The CUTLASS Python interface currently supports the following operations:
 * GEMMs
 * GEMMs with fused elementwise epilogues (e.g., ReLU) (for pre-SM90 kernels)
 * Stream K swizzling (for pre-SM90 kernels)
 * Grouped GEMM (for pre-SM90 kernels)
 
-## Getting started
+### Getting started
 We recommend using the CUTLASS Python interface via one of the Docker images located in the [docker](/python/docker) directory.
 
 ```bash
@@ -99,7 +76,7 @@ docker run --gpus all -it --rm cutlass-cuda12.1:latest
 
 The CUTLASS Python interface has been tested with CUDA 11.8, 12.0, and 12.1 on Python 3.8.10 and 3.9.7.
 
-### Optional environment variables
+#### Optional environment variables
 Prior to installing the CUTLASS Python interface, one may optionally set the following environment variables:
 * `CUTLASS_PATH`: the path to the cloned CUTLASS repository
 * `CUDA_INSTALL_PATH`: the path to the installation of CUDA
@@ -110,7 +87,7 @@ If these environment variables are not set, the installation process will infer 
 
 **NOTE:** The version of `cuda-python` installed must match the CUDA version in `CUDA_INSTALL_PATH`.
 
-### Installation
+#### Installation
 The CUTLASS Python interface can currently be installed via:
 ```bash
 python setup.py develop --user
@@ -119,7 +96,7 @@ This will allow changes to the Python interface source to be reflected when usin
 
 We plan to add support for installing via `python setup.py install` in a future release.
 
-## Examples
+### Examples
 Jupyter notebook examples of using the CUTLASS Python interface are located in [examples/python](/examples/python).
 
 To launch these notebooks from this directory, run:
@@ -127,7 +104,7 @@ To launch these notebooks from this directory, run:
 jupyter-lab ../examples/python
 ```
 
-## Building documentation
+### Building documentation
 The CUTLASS Python interface uses [Sphinx](https://www.sphinx-doc.org/en/master/) for documentation.
 
 Building the documentation requires additional packages. These can be installed via:
@@ -145,6 +122,22 @@ sphinx-apidoc -o docs_src/source/ cutlass/ cutlass/backend*
 cd docs_src
 make html
 mv _build/* ../docs
+```
+
+## CUTLASS library package
+[cutlass_library](/python/cutlass_library) contains utilities for enumerating and emitting CUTLASS C++ kernels.
+It is used by the CUTLASS CMake system to construct a library of kernels that can be profiled using the CUTLASS profiler.
+
+To install the `cutlass_library` package, run
+```bash
+python setup_library.py develop --user
+```
+
+Alternatively, `cutlass_library` will automatically be installed if you install the CUTLASS Python interface package.
+
+You can also use the [generator.py](/python/cutlass_library/generator.py) script directly without installing the module via:
+```bash
+python -m cutlass_library.generator
 ```
 
 # Copyright

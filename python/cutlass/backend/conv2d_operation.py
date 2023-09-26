@@ -29,19 +29,14 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 ################################################################################
-# from typeguard import typechecked
 
 import ctypes
 from typing import Union
 
 from cuda import cuda
-import cutlass_bindings
 import numpy as np
 
-from cutlass.backend.arguments import ArgumentBase
-from cutlass.backend.c_types import Conv2DProblemSize, TensorRef_, get_conv2d_arguments
-from cutlass.backend.library import (
-    EmissionType,
+from cutlass import (
     ConvKindNames,
     ConvKindTag,
     DataTypeNames,
@@ -50,29 +45,40 @@ from cutlass.backend.library import (
     IteratorAlgorithmNames,
     IteratorAlgorithmTag,
     LayoutTag,
+    LayoutType,
     MathOperation,
     MathOperationTag,
+    OpcodeClass,
     OpcodeClassNames,
     OpcodeClassTag,
     OperationKind,
     ShortDataTypeNames,
     ShortLayoutTypeNames,
+    SplitKMode,
     StrideSupport,
     StrideSupportTag,
+    SwizzlingFunctor,
+    SwizzlingFunctorTag,
+    get_complex_from_real,
+)
+
+from cutlass.backend.arguments import ArgumentBase
+from cutlass.backend.c_types import dim3_, get_conv2d_arguments
+from cutlass.backend.library import (
+    EmissionType,
     TensorDescription,
     TileDescription,
-    get_complex_from_real,
 )
 from cutlass.backend.memory_manager import device_mem_alloc
 from cutlass.backend.operation import ExecutableOperation, LaunchConfiguration
-from cutlass.backend.tensor_ref import TensorRef
+from cutlass.backend.utils.datatypes import to_device_ptr
 from cutlass.backend.utils.software import CheckPackages, SubstituteTemplate
+from cutlass.shape import GemmCoord
 
 if CheckPackages().check_torch():
     import torch
 
 
-# @typechecked
 class Conv2dArguments(ArgumentBase):
     """
     Argument wrapper for Conv2d. It encodes problem information and
@@ -81,7 +87,7 @@ class Conv2dArguments(ArgumentBase):
     :param operation: the Conv2d operation to take the argument
     :type operation: :class:`cutlass.backend.Conv2dOperation`
     :param problem_size: the Conv2d problem size
-    :type problem_size: :class:`cutlass_bindings.conv.Conv2dProblemSize`
+    :type problem_size: :class:`cutlass.shape.Conv2dProblemSize`
     :param A: tensor A
     :type A: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
     :param B: tensor B
@@ -90,135 +96,70 @@ class Conv2dArguments(ArgumentBase):
     :type C: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
     :param D: tensor D
     :type D: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
-    :param split_k_mode: conv2d split K mode, defaults to cutlass_bindings.conv.SplitKMode.Serial
-    :type split_k_mode: cutlass_bindings.conv.SplitKMode, optional
+    :param split_k_mode: conv2d split K mode, defaults to cutlass_library.library.SplitKMode.Serial
+    :type split_k_mode: cutlass_library.library.SplitKMode, optional
     :param output_op: output operator, optional
     :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
     """
 
-    def __init__(
-        self,
-        operation: "Conv2dOperation",
-        problem_size: "cutlass_bindings.conv.Conv2dProblemSize",
-        A: "Union[cuda.CUdeviceptr, np.ndarray, torch.Tensor]",
-        B: "Union[cuda.CUdeviceptr, np.ndarray, torch.Tensor]",
-        C: "Union[cuda.CUdeviceptr, np.ndarray, torch.Tensor]",
-        D: "Union[cuda.CUdeviceptr, np.ndarray, torch.Tensor]",
-        split_k_mode: "cutlass_bindings.conv.SplitKMode" = cutlass_bindings.conv.SplitKMode.Serial,
-        **kwargs,
-    ) -> None:
+    def __init__(self, operation, problem_size, A, B, C, D,
+        split_k_mode=SplitKMode.Serial, **kwargs, ) -> None:
         self.operation = operation
-        #: convolution kind
-        self.conv_kind: cutlass_bindings.conv.Operator = operation.conv_kind
-        self.layout_A: cutlass_bindings.layout = operation.A.layout
-        self.layout_B: cutlass_bindings.layout = operation.B.layout
-        self.layout_C: cutlass_bindings.layout = operation.C.layout
+        self.conv_kind = operation.conv_kind
+        self.layout_A = operation.A.layout
+        self.layout_B = operation.B.layout
+        self.layout_C = operation.C.layout
 
         self.element_A = operation.A.element
         self.element_B = operation.B.element
         self.element_C = operation.C.element
 
-        if self.layout_C == cutlass_bindings.TensorNC32HW32:
-            B = self.reorder_tensor_B(B, problem_size)
+        if self.layout_C == LayoutType.TensorNC32HW32:
+            raise Exception("Layout type TensorNC32HW32 is not currently supported")
 
         super().__init__(A, B, C, D, **kwargs)
-        # preprocessing output ops
 
         if "split_k_slices" in kwargs.keys() and kwargs["split_k_slices"] > 1:
             self.split_k_mode = split_k_mode
             self.split_k_slices = kwargs["split_k_slices"]
         else:
-            self.split_k_mode = cutlass_bindings.conv.SplitKMode.Serial
+            self.split_k_mode = SplitKMode.Serial
             self.split_k_slices = 1
-            
-        if "output_op" in kwargs.keys() and self.split_k_mode != cutlass_bindings.conv.SplitKMode.Parallel:
+
+        if "output_op" in kwargs.keys() and self.split_k_mode != SplitKMode.Parallel:
             self.output_op = kwargs["output_op"]
         else:
             self.output_op = self.operation.epilogue_type(1.0, 0.0)
 
-        #: problem_size
-        self.problem_size: cutlass_bindings.conv.Conv2dProblemSize = problem_size
+        self.problem_size = problem_size
         self.problem_size.split_k_slices = self.split_k_slices
 
-        if hasattr(self, "tensor_c_numel"):
-            c_coord = cutlass_bindings.conv.implicit_gemm_tensor_c_extent(
-                self.conv_kind, problem_size)
-            if self.tensor_c_numel == c_coord.at(3) and self.tensor_c_numel < c_coord.size():
-                self.bias = True
-
-        #
-        # initialize the argument
-        #
         self.initialize()
 
-    # @typechecked
-    def reorder_tensor_B(self, tensor_B: "np.ndarray",
-            problem_size: "cutlass_bindings.conv.Conv2dProblemSize"):
-        """
-        Reorder tensor_B for interleaved layout
-
-        :param tensor_B: input tensor B
-        :type tensor_B: numpy.ndarray
-        :param problem_size: Conv2d problem size
-        :type problem_size: :class:`cutlass_bindings.conv.Conv2dProblemSize`
-
-        :return: reordered tensor B
-        :rtype: numpy.ndarray
-        """
-        reordered_tensor_B = np.empty_like(tensor_B)
-        tensor_ref_B = self.get_tensor_ref(
-            tensor_B, self.element_B, self.layout_B, problem_size, "b")
-        reordered_tensor_ref_B = self.get_tensor_ref(
-            reordered_tensor_B, self.element_B, self.layout_B, problem_size, "b")
-        cutlass_bindings.conv.host.reorder_convK(
-            reordered_tensor_ref_B, tensor_ref_B, self.conv_kind, problem_size)
-
-        return reordered_tensor_B
-
-    def get_tensor_ref(
-        self, tensor, dtype, tensor_layout, problem_size, operand):
-        if operand == "a":
-            tensor_coord = cutlass_bindings.conv.implicit_gemm_tensor_a_extent(
-                self.conv_kind, problem_size)
-        elif operand == "b":
-            tensor_coord = cutlass_bindings.conv.implicit_gemm_tensor_b_extent(
-                self.conv_kind, problem_size)
-        elif operand in ["c", "d"]:
-            tensor_coord = cutlass_bindings.conv.implicit_gemm_tensor_c_extent(
-                self.conv_kind, problem_size)
-        else:
-            raise ValueError("unknown operand: " + operand)
-        # Zero stride trick
-        if operand == "c" and self.bias:
-            tensor_coord = cutlass_bindings.Tensor4DCoord(0, 0, 0, 0)
-
-        layout = tensor_layout.packed(tensor_coord)
-
-        return TensorRef(tensor, dtype, layout).tensor_ref
-
-    def get_arguments(self, semaphore):
-        ref_A = TensorRef_(self.get_tensor_ref(
-            self.ptr_A, self.element_A, self.layout_A, self.problem_size, "a"))
-        ref_B = TensorRef_(self.get_tensor_ref(
-            self.ptr_B, self.element_B, self.layout_B, self.problem_size, "b"))
-        ref_C = TensorRef_(self.get_tensor_ref(
-            self.ptr_C, self.element_C, self.layout_C, self.problem_size, "c"))
-        ref_D = TensorRef_(self.get_tensor_ref(
-            self.ptr_D, self.element_C, self.layout_C, self.problem_size, "d"))
+    def get_arguments(self):
+        tc_numel = -1
+        if hasattr(self, "tensor_c_numel"):
+            tc_numel = self.tensor_c_numel
 
         self.c_arguments = self.operation.argument_type(
-            Conv2DProblemSize(self.problem_size),
-            ref_A, ref_B, ref_C, ref_D, self.output_op, self.split_k_mode)
-
-        self.semaphore = semaphore
+            int(self.conv_kind),
+            self.problem_size.ctype,
+            int(to_device_ptr(self.ptr_A)),
+            int(to_device_ptr(self.ptr_B)),
+            int(to_device_ptr(self.ptr_C)),
+            int(to_device_ptr(self.ptr_D)),
+            tc_numel,
+            self.output_op,
+            int(self.split_k_mode)
+        )
 
     def initialize(self):
-        # Get launch configuration
         self.launch_config = self.operation.rt_module.plan(self)
 
-        # Allocate and initialize device workspace
-        device_workspace_size = self.operation.rt_module.get_device_workspace_size(self)
+        self.get_arguments()
 
+        # Allocate and initialize device workspace
+        device_workspace_size = self.operation.rt_module.get_workspace_size(self.c_arguments)
         if device_workspace_size > 0:
             self.workspace_buffer = device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
@@ -227,19 +168,16 @@ class Conv2dArguments(ArgumentBase):
         else:
             workspace_ptr = None
 
-        # Get kernel params as a bytearray
-        semaphore = 0
-        if (workspace_ptr is not None
-            and self.split_k_mode == cutlass_bindings.conv.SplitKMode.Parallel):
+        self.semaphore = 0
+        if workspace_ptr is not None and self.split_k_mode == SplitKMode.Parallel:
             self.ptr_D = workspace_ptr
-        elif (workspace_ptr is not None
-              and self.split_k_mode == cutlass_bindings.conv.SplitKMode.Serial):
-            semaphore = workspace_ptr
-
-        self.get_arguments(semaphore)
+            # Reset arguments now that ptr_D has been updated
+            self.get_arguments()
+        elif workspace_ptr is not None and self.split_k_mode == SplitKMode.Serial:
+            self.semaphore = workspace_ptr
 
         params_ = self.operation.rt_module.get_args(
-            ctypes.byref(self.c_arguments), ctypes.c_void_p(int(self.semaphore)))
+            self.c_arguments, ctypes.c_void_p(int(self.semaphore)))
         self.host_workspace = bytearray(params_.contents)
         self.device_workspace = None
 
@@ -251,7 +189,6 @@ class Conv2dArguments(ArgumentBase):
         return super().sync()
 
 
-# @typechecked
 class Conv2dRT(ExecutableOperation):
     """
     Conv2dRT manages the CUTLASS runtime components
@@ -287,17 +224,93 @@ extern "C" {
     return int(sizeof(${operation_name}${operation_suffix}::SharedStorage));
   }
 
+  using ElementA = typename ${operation_name}_base::ElementA;
+  using ElementB = typename ${operation_name}_base::ElementB;
+  using ElementC = typename ${operation_name}_base::ElementC;
+  using LayoutA = typename ${operation_name}_base::LayoutA;
+  using LayoutB = typename ${operation_name}_base::LayoutB;
+  using LayoutC = typename ${operation_name}_base::LayoutC;
+  using EpilogueOutputOp = typename ${operation_name}_base::EpilogueOutputOp;
+
+  struct ${operation_name}_TemporaryArgs {
+    int conv_kind;
+    cutlass::conv::Conv2dProblemSize problem_size;
+    ElementA* ptr_A;
+    ElementB* ptr_B;
+    ElementC* ptr_C;
+    ElementC* ptr_D;
+    int tensor_c_numel;
+    typename EpilogueOutputOp::Params epilogue_params;
+    int split_k_mode;
+  };
+
+  typename ${operation_name}${operation_suffix}::Arguments
+  construct_arguments(${operation_name}_TemporaryArgs args) {
+    cutlass::conv::Operator conv_operator = static_cast<cutlass::conv::Operator>(args.conv_kind);
+    auto tc_A = cutlass::conv::implicit_gemm_tensor_a_extent(conv_operator, args.problem_size);
+    auto tc_B = cutlass::conv::implicit_gemm_tensor_b_extent(conv_operator, args.problem_size);
+    auto tc_C = cutlass::conv::implicit_gemm_tensor_c_extent(conv_operator, args.problem_size);
+    auto tc_D = cutlass::conv::implicit_gemm_tensor_c_extent(conv_operator, args.problem_size);
+
+    auto size_C = tc_C.at(0) * tc_C.at(1) * tc_C.at(2) * tc_C.at(3);
+    if (args.tensor_c_numel >= 0 && args.tensor_c_numel == tc_C.at(3) && args.tensor_c_numel < size_C) {
+      // C is interpreted as bias
+      tc_C = {0, 0, 0, 0};
+    }
+
+    cutlass::TensorRef<ElementA, LayoutA> tref_A(args.ptr_A, LayoutA::packed(tc_A));
+    cutlass::TensorRef<ElementB, LayoutA> tref_B(args.ptr_B, LayoutB::packed(tc_B));
+    cutlass::TensorRef<ElementC, LayoutA> tref_C(args.ptr_C, LayoutC::packed(tc_C));
+    cutlass::TensorRef<ElementC, LayoutA> tref_D(args.ptr_D, LayoutC::packed(tc_D));
+
+    return {
+      args.problem_size,
+      tref_A,
+      tref_B,
+      tref_C,
+      tref_D,
+      args.epilogue_params,
+      static_cast<cutlass::conv::SplitKMode>(args.split_k_mode)
+    };
+  }
+
   // Get the params as byte array
-  char* ${operation_name}_get_params(${operation_name}${operation_suffix}::Arguments* arguments, int *semaphore=nullptr){
+  char* ${operation_name}_get_params(${operation_name}_TemporaryArgs args, int *semaphore=nullptr) {
+    auto arguments = construct_arguments(args);
     typename ${operation_name}${operation_suffix}::Params* params;
-    params = new ${operation_name}${operation_suffix}::Params(*arguments, semaphore);
+    params = new ${operation_name}${operation_suffix}::Params(arguments, semaphore);
 
     char *bytes = ((char*)(params));
     char *output = new char[sizeof(${operation_name}${operation_suffix}::Params)];
     for (unsigned int i = 0; i < sizeof(${operation_name}${operation_suffix}::Params); i ++)
-        output[i] = bytes[i];
+      output[i] = bytes[i];
 
     return output;
+  }
+
+  dim3 ${operation_name}_get_grid_shape(
+    int conv_kind,
+    cutlass::conv::Conv2dProblemSize problem_size,
+    cutlass::gemm::GemmCoord tile_size,
+    int split_k_slices
+  ) {
+
+    using Swizzle = typename ${operation_name}_base::ThreadblockSwizzle;
+    auto tiled_shape = Swizzle::get_tiled_shape(
+      static_cast<cutlass::conv::Operator>(conv_kind),
+      problem_size,
+      tile_size,
+      split_k_slices);
+
+    return Swizzle::get_grid_shape(tiled_shape);
+  }
+
+  size_t ${operation_name}_get_workspace_size(${operation_name}_TemporaryArgs args) {
+    auto arguments = construct_arguments(args);
+
+    // Temporarily define device::-level Conv2d so that we can call get_workspace_size
+    using DeviceConv = cutlass::conv::device::ImplicitGemmConvolution<${operation_name}_base>;
+    return DeviceConv::get_workspace_size(arguments);
   }
 }
 
@@ -305,6 +318,10 @@ extern "C" {
 
     def __init__(self, operation: "Conv2dOperation"):
         super().__init__(operation)
+        self.extra_funcs = {
+            "get_grid_shape": dim3_,
+            "get_workspace_size": ctypes.c_uint64
+        }
         self.argument_type, self.epilogue_type = get_conv2d_arguments(operation.epilogue_functor)
         self.argtype = [ctypes.POINTER(self.argument_type), ctypes.c_void_p]
         self.conv_kind = operation.conv_kind
@@ -313,47 +330,27 @@ extern "C" {
 
         self.emitter = EmitConv2dInstance("_type")
 
-        self.threads: int = operation.tile_description.num_threads
+        self.threads = operation.tile_description.num_threads
 
         self.swizzle_functor = operation.swizzling_functor
 
     def emit(self):
         return self.emitter.emit(self.operation)
 
-    def get_device_workspace_size(self, arguments: Conv2dArguments):
-        workspace_bytes = 0
-
-        launch_config = arguments.launch_config
-
-        self.conv_kind = self.operation.conv_kind
-
-        if arguments.split_k_mode == cutlass_bindings.conv.SplitKMode.Parallel:
-            problem_size = arguments.problem_size
-            workspace_bytes = DataTypeSize[self.operation.C.element] \
-            * launch_config.grid[2] * cutlass_bindings.conv.implicit_gemm_tensor_c_size(
-                self.conv_kind, problem_size
-            ) // 8
-
-        elif arguments.split_k_mode == cutlass_bindings.conv.SplitKMode.Serial and \
-            arguments.split_k_slices > 1:
-            workspace_bytes = launch_config.grid[0] * launch_config.grid[1] * 4
-
-        return workspace_bytes
-
-    # @typechecked
     def plan(self, arguments: Conv2dArguments):
-        tile_size = cutlass_bindings.gemm.GemmCoord(
+        tile_size = GemmCoord(
             self.operation.tile_description.threadblock_shape[0],
             self.operation.tile_description.threadblock_shape[1],
             self.operation.tile_description.threadblock_shape[2],
         )
 
-        grid = self.swizzle_functor.get_grid_shape(
-            self.swizzle_functor.get_tiled_shape(
-                self.conv_kind, arguments.problem_size,
-                tile_size, arguments.split_k_slices
-            )
+        grid = self.get_grid_shape(
+            int(self.conv_kind),
+            arguments.problem_size.ctype,
+            tile_size.ctype,
+            arguments.split_k_slices
         )
+
         return LaunchConfiguration(
             [grid.x, grid.y, grid.z], [self.threads, 1, 1],
             self.shared_memory_capacity)
@@ -364,7 +361,7 @@ extern "C" {
             attrib=cuda.CUfunction_attribute.CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
             value=self.shared_memory_capacity)
         if err != cuda.CUresult.CUDA_SUCCESS:
-            raise RuntimeError("Cuda Error: {}".format(err))
+            raise RuntimeError(f"CUDA Error: {err}")
 
 
 class Conv2dOperation:
@@ -372,11 +369,11 @@ class Conv2dOperation:
     CUTLASS Conv2d operation description.
 
     :param conv_kind: convolution operator
-    :type conv_kind: :class:`cutlass_bindings.conv.Operator`
+    :type conv_kind: :class:`cutlass_library.library.ConvKind`
 
-    :param iterator_algorithm: Selects among several implementation 
+    :param iterator_algorithm: Selects among several implementation
     variants trading off performance with simplicity
-    :type iterator_algorithm: :class:`cutlass_bindings.conv.IteratorAlgorithm`
+    :type iterator_algorithm: :class:`cutlass_library.library.IteratorAlgorithm`
 
     :param arch: GPU compute capability (sm_xx)
     :type arch: int
@@ -397,12 +394,11 @@ class Conv2dOperation:
     :type D: :class:`cutlass.backend.TensorDescription`
 
     :param element_epilogue: element type for computation in epilogue \
-    :type element_epilogue: cutlass_bindings.int8 | cutlass_bindings.int32 | cutlass_bindings.float16 | \
-    cutlass_bindings.bfloat16 | cutlass_bindings.float32 | cutlass_bindings.float64
+    :type element_epilogue: cutlass_library.library.DataType
 
     :param stride_support: distinguish among partial specializations that \
     accelerate certain problems where convolution stride is unit \
-    :type stride_support: :class:`cutlass_bindings.conv.StrideSupport`
+    :type stride_support: :class:`cutlass_library.library.StrideSupport`
 
     :param epilogue_functor: convolution epilogue functor
     :type epilogue_functor: :class:`EpilogueFunctor`
@@ -411,8 +407,8 @@ class Conv2dOperation:
     """
     def __init__(
         self,
-        conv_kind: cutlass_bindings.conv.Operator,
-        iterator_algorithm: cutlass_bindings.conv.IteratorAlgorithm,
+        conv_kind,
+        iterator_algorithm,
         arch: int,
         tile_description: TileDescription,
         A: TensorDescription,
@@ -420,7 +416,7 @@ class Conv2dOperation:
         C: TensorDescription,
         stride_support,
         epilogue_functor,
-        swizzling_functor=cutlass_bindings.IdentitySwizzle1,
+        swizzling_functor=SwizzlingFunctor.Identity1,
         emission_type=EmissionType.Kernel,
         **kwargs
     ):
@@ -434,8 +430,8 @@ class Conv2dOperation:
         self.epilogue_functor = epilogue_functor
         self.iterator_algorithm = iterator_algorithm
         self.stride_support = stride_support
-        self.swizzling_functor = swizzling_functor()
-        
+        self.swizzling_functor = swizzling_functor
+
         self.emission_type = emission_type
 
         self.rt_module: Conv2dRT = Conv2dRT(self)
@@ -458,7 +454,7 @@ class Conv2dOperation:
         )
 
         if err != cuda.CUresult.CUDA_SUCCESS:
-            raise RuntimeError("CUDA Error %s" % str(err))
+            raise RuntimeError(f"CUDA Error {err}")
 
         return err
 
@@ -469,8 +465,6 @@ class Conv2dOperation:
     def procedural_name(self):
         """The full procedural name indicates architecture, extended name, tile size, and layout."""
         return self.configuration_name()
-
-    #
 
     def configuration_name(self):
         """The full procedural name indicates architecture, extended name, tile size, and layout."""
@@ -503,7 +497,6 @@ class Conv2dOperation:
             },
         )
 
-    #
     def extended_name(self):
         """Append data types if they differ from compute type."""
         if self.C.element != self.tile_description.math_instruction.element_accumulator and \
@@ -523,17 +516,15 @@ class Conv2dOperation:
 
         return extended_name
 
-    #
     def layout_name(self):
         return "%s" % (ShortLayoutTypeNames[self.A.layout])
 
-    #
     def core_name(self):
         """The basic operation kind is prefixed with a letter indicating the accumulation type."""
 
         intermediate_type = ""
 
-        if self.tile_description.math_instruction.opcode_class == cutlass_bindings.OpClass.TensorOp:
+        if self.tile_description.math_instruction.opcode_class == OpcodeClass.TensorOp:
             inst_shape = "%dx%dx%d" % tuple(
                 self.tile_description.math_instruction.instruction_shape)
             if self.tile_description.math_instruction.element_a != self.A.element and \
@@ -550,7 +541,6 @@ class Conv2dOperation:
             IteratorAlgorithmNames[self.iterator_algorithm]
         )
 
-    #
     def is_complex(self):
         complex_operators = [
             MathOperation.multiply_add_complex,
@@ -558,7 +548,6 @@ class Conv2dOperation:
         ]
         return self.tile_description.math_instruction.math_operation in complex_operators
 
-    #
     def accumulator_type(self):
         accum = self.tile_description.math_instruction.element_accumulator
 
@@ -570,15 +559,16 @@ class Conv2dOperation:
     def device_op(self):
         """
         Returns a new Conv2dOperation object that is constructed with emission type
-        ``EmissionType.Device``. 
-        
+        ``EmissionType.Device``.
+
         :return: operation ready for device-level code emission
         :rtype: Conv2dOperation
         """
         return Conv2dOperation(
             self.conv_kind, self.iterator_algorithm, self.arch, self.tile_description,
-            self.A, self.B, self.C, self.stride_support, self.epilogue_functor, type(self.swizzling_functor),
+            self.A, self.B, self.C, self.stride_support, self.epilogue_functor, self.swizzling_functor,
             emission_type=EmissionType.Device)
+
 
 ###################################################################################################
 #
@@ -594,17 +584,18 @@ class EmitConv2dInstance:
             "cutlass/cutlass.h",
             "cutlass/conv/kernel/default_conv2d_fprop.h",
             "cutlass/conv/kernel/default_conv2d_dgrad.h",
-            "cutlass/conv/kernel/default_conv2d_wgrad.h"
+            "cutlass/conv/kernel/default_conv2d_wgrad.h",
+            "cutlass/conv/device/implicit_gemm_convolution.h"
         ]
         self.template = """
 // Conv2d${conv_kind_name} ${iterator_algorithm_name} kernel instance "${operation_name}"
-using ${operation_name}_base = 
+using ${operation_name}_base =
 typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}<
-  ${element_a}, 
+  ${element_a},
   ${layout_a},
-  ${element_b}, 
+  ${element_b},
   ${layout_b},
-  ${element_c}, 
+  ${element_c},
   ${layout_c},
   ${element_accumulator},
   ${opcode_class},
@@ -631,11 +622,11 @@ struct ${operation_name}${operation_suffix}:
 // Conv2d operation ${operation_name}
 
 using Conv2d${conv_kind_name}Kernel = typename cutlass::conv::kernel::DefaultConv2d${conv_kind_name}<
-  ${element_a}, 
+  ${element_a},
   ${layout_a},
-  ${element_b}, 
+  ${element_b},
   ${layout_b},
-  ${element_c}, 
+  ${element_c},
   ${layout_c},
   ${element_accumulator},
   ${opcode_class},
@@ -689,7 +680,7 @@ using DeviceKernel =
             "instruction_shape_k": str(operation.tile_description.math_instruction.instruction_shape[2]),
             "epilogue_vector_length": str(epilogue_vector_length),
             "epilogue_functor": operation.epilogue_functor.emit(),
-            "swizzling_functor": operation.swizzling_functor.tag(),
+            "swizzling_functor": SwizzlingFunctorTag[operation.swizzling_functor],
             "stages": str(operation.tile_description.stages),
             "iterator_algorithm": IteratorAlgorithmTag[operation.iterator_algorithm],
             "iterator_algorithm_name": IteratorAlgorithmNames[operation.iterator_algorithm].capitalize(),
@@ -698,7 +689,7 @@ using DeviceKernel =
             "align_a": str(operation.A.alignment),
             "align_b": str(operation.B.alignment),
         }
-        
+
         if operation.emission_type == EmissionType.Kernel:
             conv2d_template = self.template
         else:

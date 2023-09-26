@@ -47,9 +47,9 @@
 // sleep not supported
 #endif
 
-#include "options.h"
-#include "operation_profiler.h"
-#include "gpu_timer.h"
+#include "cutlass/profiler/options.h"
+#include "cutlass/profiler/operation_profiler.h"
+#include "cutlass/profiler/gpu_timer.h"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -100,12 +100,11 @@ OperationProfiler::OperationProfiler(
       verification_providers_.push_back(provider);
     }
   }
+
 }
 
 /// Destructor
-OperationProfiler::~OperationProfiler() {
-
-}
+OperationProfiler::~OperationProfiler() {}
 
 /// Gets the schema description
 std::string const & OperationProfiler::description() const {
@@ -348,6 +347,11 @@ int OperationProfiler::profile_all(
         }
 
         if (continue_profiling) {
+
+          if (options.report.print_kernel_before_running) {
+            std::cout << "Profiling kernel for JUnit test " << options.report.junit_output_path << ": "
+                      << operation_name << std::endl;
+          }
 
           status = this->initialize_workspace(
             options,
@@ -679,7 +683,7 @@ bool OperationProfiler::find_string_matches_(
 
   // Search filter_tokens in operation_name in order
   size_t start = 0, idx = 0;
-  for(auto & token : filter_tokens) {
+  for (auto & token : filter_tokens) {
     // Check if characters left to be parsed in operation_name
     if (start < operation_name.length()) {
       // Find token in operation_name[start:]

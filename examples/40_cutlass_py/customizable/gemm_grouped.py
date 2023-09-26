@@ -29,12 +29,17 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 ################################################################################
+
+import sys
+print("This example is deprecated. Please see examples/python for examples of using "
+      "the CUTLASS Python interface.")
+sys.exit(0)
+
 import numpy as np
 import cutlass.backend as pycutlass
 from cutlass.backend import *
 from cutlass.backend.utils.device import device_cc
 import csv
-import sys
 
 import argparse
 

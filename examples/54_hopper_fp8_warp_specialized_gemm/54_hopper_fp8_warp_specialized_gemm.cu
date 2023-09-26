@@ -161,7 +161,7 @@ using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
 using EpilogueOutputOp  = typename Gemm::EpilogueOutputOp;
 using ElementScalar     = typename EpilogueOutputOp::ElementScalar;
 using ElementAmax       = typename EpilogueOutputOp::ElementAmax;
-using ActivationFunctor = typename EpilogueOutputOp::ActivationFn<ElementCompute>;
+using ActivationFunctor = typename EpilogueOutputOp::ActivationFn;
 
 using StrideA = typename Gemm::GemmKernel::StrideA;
 using StrideB = typename Gemm::GemmKernel::StrideB;

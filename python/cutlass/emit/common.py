@@ -214,12 +214,12 @@ cutlass::Status ${name}_kernel_run(cutlass::conv::Conv2dProblemSize* problem_siz
   cutlass::Tensor4DCoord tensor_coord_C = cutlass::conv::implicit_gemm_tensor_c_extent(
     cutlass::conv::Operator::k${conv_kind_name}, *problem_size
   );
-  
+
   TensorRefA tensor_ref_A = get_tensor_ref<TensorRefA, UnderlyingKernel::ElementA>(tensor_coord_A, A);
   TensorRefB tensor_ref_B = get_tensor_ref<TensorRefB, UnderlyingKernel::ElementB>(tensor_coord_B, B);
   TensorRefC tensor_ref_C = get_tensor_ref<TensorRefC, UnderlyingKernel::ElementC>(tensor_coord_C, C);
   TensorRefC tensor_ref_D = get_tensor_ref<TensorRefC, UnderlyingKernel::ElementC>(tensor_coord_C, D);
-  
+
   cutlass::conv::SplitKMode mode;
   if (split_k_mode == "serial") {
     mode = cutlass::conv::SplitKMode::kSerial;
@@ -228,7 +228,7 @@ cutlass::Status ${name}_kernel_run(cutlass::conv::Conv2dProblemSize* problem_siz
   } else {
     throw std::runtime_error("Invalid split_k_mode: " + split_k_mode);
   }
-  
+
   typename DeviceKernel::Arguments arguments{
     *problem_size,
     tensor_ref_A,
@@ -238,18 +238,18 @@ cutlass::Status ${name}_kernel_run(cutlass::conv::Conv2dProblemSize* problem_siz
     {alpha, beta},
     mode
   };
-  
+
   DeviceKernel implicit_gemm_op;
-  
+
   size_t workspace_size = implicit_gemm_op.get_workspace_size(arguments);
-  
+
   void* workspace_ptr = device_memory_allocation(workspace_size, device_id);
-  
+
   cutlass::Status status = implicit_gemm_op.can_implement(arguments);
   if (status != cutlass::Status::kSuccess) {
     return status;
   }
-  
+
   status = implicit_gemm_op.initialize(arguments, workspace_ptr, stream);
   if (status != cutlass::Status::kSuccess) {
     return status;
@@ -260,6 +260,6 @@ cutlass::Status ${name}_kernel_run(cutlass::conv::Conv2dProblemSize* problem_siz
   //
   status = implicit_gemm_op(stream);
 
-  return status;                    
+  return status;
 }
 """

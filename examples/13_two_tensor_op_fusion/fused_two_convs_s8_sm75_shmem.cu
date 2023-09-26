@@ -39,7 +39,6 @@
 #include "device/b2b_implicit_gemm_convolution.h"
 #include "b2b_interleaved_conv2d_run.h"
 #include "test_run.h"
-
 ////////////////////////////////////////////////////////////////////////////////
 
 cutlass::conv::Conv2dProblemSize conv2d_s8_sm75_problem_size_0 (
@@ -219,20 +218,13 @@ bool run_fused_conv2d_fprop_optimized_s8_sm75_shmem() {
 
   return pass;
 }
-
-
 int main() {
-
   std::vector<bool (*)()>funcs = {
     &run_nonfused_conv2d_fprop_optimized_s8_sm75,
     &run_fused_conv2d_fprop_optimized_s8_sm75_shmem
   };
 
   return testRun(75, funcs, "conv int8 shmem staging");
-
 }
 
-
-
 ////////////////////////////////////////////////////////////////////////////////
-

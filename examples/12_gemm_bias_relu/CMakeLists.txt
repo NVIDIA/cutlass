@@ -31,6 +31,5 @@
 cutlass_example_add_executable(
   12_gemm_bias_relu
   gemm_bias_relu.cu
-  DISABLE_TESTS ON
   )
 

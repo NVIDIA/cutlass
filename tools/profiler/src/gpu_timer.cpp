@@ -34,7 +34,7 @@
 
 #include <stdexcept>
 
-#include "gpu_timer.h"
+#include "cutlass/profiler/gpu_timer.h"
 
 namespace cutlass {
 namespace profiler {

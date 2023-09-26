@@ -47,7 +47,6 @@
 #include "cutlass/layout/matrix.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/kernel/params_universal_base.h"
-
 #include "cutlass/trace.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -346,8 +345,8 @@ public:
 
       output_op = args.epilogue;
     }
-  };
 
+  };
 
   /// Shared memory storage structure
   union SharedStorage {
@@ -465,13 +464,14 @@ public:
 
   /// Executes one GEMM
   CUTLASS_DEVICE
-  void operator()(
-    Params const &params,
-    SharedStorage &shared_storage)
-  {
-
-    // Compute threadblock location
+  void operator()(Params const &params, SharedStorage &shared_storage) {
     ThreadblockSwizzle threadblock_swizzle;
+    run_with_swizzle(params, shared_storage, threadblock_swizzle);
+  }
+
+  /// Executes one GEMM with an externally-provided swizzling function
+  CUTLASS_DEVICE
+  void run_with_swizzle(Params const &params, SharedStorage &shared_storage, ThreadblockSwizzle& threadblock_swizzle) {
 
     cutlass::gemm::GemmCoord threadblock_tile_offset =
         threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);

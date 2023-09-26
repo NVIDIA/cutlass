@@ -291,6 +291,7 @@ struct GemmUniversalArguments {
   // Needed for some 3.x kernels
   int sm_count;
 
+  library::RasterOrder raster_order;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

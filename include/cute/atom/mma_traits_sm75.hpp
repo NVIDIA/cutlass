@@ -49,11 +49,11 @@ struct MMA_Traits<SM75_16x8x8_F32F16F16F32_TN>
   using Shape_MNK = Shape<_16,_8,_8>;
   using ThrID   = Layout<_32>;
   using ALayout = Layout<Shape <Shape < _4,_8>,Shape < _2,_2>>,
-                         Stride<Stride<_32,_2>,Stride<_16,_1>>>;
+                         Stride<Stride<_32,_1>,Stride<_16,_8>>>;
   using BLayout = Layout<Shape <Shape < _4,_8>,_2>,
                          Stride<Stride<_16,_1>,_8>>;
   using CLayout = Layout<Shape <Shape < _4,_8>,Shape < _2,_2>>,
-                         Stride<Stride<_32,_2>,Stride<_16,_1>>>;
+                         Stride<Stride<_32,_1>,Stride<_16,_8>>>;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

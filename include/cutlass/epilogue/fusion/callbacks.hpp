@@ -62,6 +62,7 @@ struct FusionCallbacksTraits {
   using Operation = T;
   using CtaTile_MNK = void;
   using EpilogueTile_MN = void;
+  using ElementCompute = void;
 };
 
 template <
@@ -78,6 +79,7 @@ struct FusionCallbacksTraits<
   using Operation = Operation_;
   using CtaTile_MNK = CtaTile_MNK_;
   using EpilogueTile_MN = EpilogueTile_MN_;
+  using ElementCompute = typename Operation::ElementCompute;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

@@ -31,6 +31,5 @@
 cutlass_example_add_executable(
   08_turing_tensorop_gemm
   turing_tensorop_gemm.cu
-  DISABLE_TESTS ON
   )
 
