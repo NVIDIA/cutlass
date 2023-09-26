@@ -221,8 +221,8 @@ public:
     }
 
     Operator *op = new (host_workspace) Operator;
-    //std::cout << "initialize library::Reduction" << std::endl;
-    //print_operator_args(args);
+    std::cout << "initialize library::Reduction" << std::endl;
+    print_operator_args(args);
     return op->initialize(args, device_workspace, stream);
   }
 
@@ -251,8 +251,8 @@ public:
       return status;
     }
 
-    //std::cout << "run library::Reduction" << std::endl;
-    //print_operator_args(args);
+    std::cout << "run library::Reduction" << std::endl;
+    print_operator_args(args);
     return op->run(stream);
   }
 
