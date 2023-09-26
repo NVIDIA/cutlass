@@ -122,9 +122,6 @@ public:
       output(output_),
       reduction(reduction_) {
 
-        printf("partition_stride: %d\n", (int)partition_stride);
-        printf("kElementsPerAccess: %d\n", (int)kElementsPerAccess);
-        printf("sizeof(FragmentWorkspace): %d\n", int(sizeof(FragmentWorkspace)));
     }
   };
 
