@@ -561,10 +561,10 @@ Status GemmOperationProfiler::initialize_workspace(
     gemm_workspace_.arguments.ldb = problem_.ldb;
     gemm_workspace_.arguments.ldc = problem_.ldc;
     gemm_workspace_.arguments.ldd = problem_.ldc;
-    gemm_workspace_.arguments.batch_stride_A = problem_.lda;
-    gemm_workspace_.arguments.batch_stride_B = problem_.ldb;
-    gemm_workspace_.arguments.batch_stride_C = problem_.ldc;
-    gemm_workspace_.arguments.batch_stride_D = problem_.ldc;
+    gemm_workspace_.arguments.batch_stride_A = gemm_workspace_.A->batch_stride();
+    gemm_workspace_.arguments.batch_stride_B = gemm_workspace_.B->batch_stride();
+    gemm_workspace_.arguments.batch_stride_C = gemm_workspace_.C->batch_stride();
+    gemm_workspace_.arguments.batch_stride_D = gemm_workspace_.Computed->batch_stride();
 
     /* Query device SM count to pass onto the kernel as an argument, where needed */
     gemm_workspace_.arguments.sm_count = options.device.properties.multiProcessorCount;
@@ -585,7 +585,6 @@ Status GemmOperationProfiler::initialize_workspace(
       workspace_size = underlying_operation->get_device_workspace_size(&gemm_workspace_.configuration,
                                                             &gemm_workspace_.arguments);
       gemm_workspace_.device_workspace.reset(library::NumericTypeID::kU8, workspace_size);
-
       status = underlying_operation->initialize(
         &gemm_workspace_.configuration,
         gemm_workspace_.host_workspace.data(),
