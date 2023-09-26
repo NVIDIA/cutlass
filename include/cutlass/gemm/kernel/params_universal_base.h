@@ -51,7 +51,8 @@ namespace kernel {
 namespace util {
 
 template <class LayoutA, class LayoutB>
-static inline bool 
+CUTLASS_HOST_DEVICE
+static bool 
 is_continous_k_aligned(GemmCoord problem_size, size_t alignmentA, size_t alignmentB) {
   return (std::is_same<LayoutA, layout::RowMajor>::value && (problem_size.k() % alignmentA) == 0) ||
          (std::is_same<LayoutB, layout::ColumnMajor>::value && (problem_size.k() % alignmentB) == 0);
@@ -149,41 +150,8 @@ struct UniversalParamsBase
     batch_stride_D(args.batch_stride_D),
     semaphore(nullptr)
   {
-    ThreadblockSwizzle swizzle;
-
-    // Get GEMM volume in thread block tiles
-    grid_tiled_shape = swizzle.get_tiled_shape(
-      args.problem_size,
-      {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
-      args.batch_count);
-
-    swizzle_log_tile = swizzle.get_log_tile(grid_tiled_shape);
-
-    // Determine extent of K-dimension assigned to each block
-    gemm_k_size = args.problem_size.k();
-
-    if (args.mode == GemmUniversalMode::kGemm || args.mode == GemmUniversalMode::kGemmSplitKParallel)
-    {
-      static const uint32_t CACHELINE_BYTES = 128;
-      static const size_t element_bytes_a = sizeof(ElementA);
-      static const size_t element_bytes_b = sizeof(ElementB);
-      static const size_t cacheline_elements_a = CACHELINE_BYTES / element_bytes_a;
-      static const size_t cacheline_elements_b = CACHELINE_BYTES / element_bytes_b;
-
-      const bool cacheline_alignment_needed =
-          util::is_continous_k_aligned<LayoutA, LayoutB>(problem_size, cacheline_elements_a, cacheline_elements_b);
-
-      int const kAlignK = const_max(
-                                    const_max(128 / sizeof_bits<ElementA>::value, 128 / sizeof_bits<ElementB>::value),
-                                    cacheline_alignment_needed ? const_max(cacheline_elements_a, cacheline_elements_b) : 1);
-
-      gemm_k_size = round_up(ceil_div(args.problem_size.k(), args.batch_count), kAlignK);
-      if (gemm_k_size) {
-        grid_tiled_shape.k() = ceil_div(args.problem_size.k(), gemm_k_size);
-      }
-    }
+    init_grid_tiled_shape();
   }
-
 
   /// Returns the workspace size (in bytes) needed for this problem geometry
   size_t get_workspace_size() const
@@ -259,6 +227,41 @@ struct UniversalParamsBase
     return ThreadblockSwizzle().get_grid_shape(grid_tiled_shape);
   }
 
+private:
+  CUTLASS_HOST_DEVICE
+  void init_grid_tiled_shape() {
+    // Get GEMM volume in thread block tiles
+    grid_tiled_shape = ThreadblockSwizzle::get_tiled_shape(
+      problem_size,
+      {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
+      batch_count);
+
+    swizzle_log_tile = ThreadblockSwizzle::get_log_tile(grid_tiled_shape);
+
+    // Determine extent of K-dimension assigned to each block
+    gemm_k_size = problem_size.k();
+
+    if (mode == GemmUniversalMode::kGemm || mode == GemmUniversalMode::kGemmSplitKParallel)
+    {
+      static const uint32_t CACHELINE_BYTES = 128;
+      static const size_t element_bytes_a = sizeof(ElementA);
+      static const size_t element_bytes_b = sizeof(ElementB);
+      static const size_t cacheline_elements_a = CACHELINE_BYTES / element_bytes_a;
+      static const size_t cacheline_elements_b = CACHELINE_BYTES / element_bytes_b;
+
+      const bool cacheline_alignment_needed =
+          util::is_continous_k_aligned<LayoutA, LayoutB>(problem_size, cacheline_elements_a, cacheline_elements_b);
+
+      int const kAlignK = const_max(
+                                    const_max(128 / sizeof_bits<ElementA>::value, 128 / sizeof_bits<ElementB>::value),
+                                    cacheline_alignment_needed ? const_max(cacheline_elements_a, cacheline_elements_b) : 1);
+
+      gemm_k_size = round_up(ceil_div(problem_size.k(), batch_count), kAlignK);
+      if (gemm_k_size) {
+        grid_tiled_shape.k() = ceil_div(problem_size.k(), gemm_k_size);
+      }
+    }
+  }
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

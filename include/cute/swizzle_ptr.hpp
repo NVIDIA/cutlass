@@ -70,6 +70,8 @@ struct smem_ptr_swizzle
 {
   static_assert(is_empty<Swizzle>::value, "Swizzle can't have state.");
 
+  static const uint32_t ElementsPerStoredItem = sizeof(T) * 8 / sizeof_bits_v<T>;
+
   CUTE_HOST_DEVICE constexpr
   T* get() const
   {
@@ -98,6 +100,7 @@ struct smem_ptr_swizzle
   CUTE_HOST_DEVICE constexpr
   T& operator[](Int const& i) const
   {
+    static_assert(sizeof_bits_v<T> >= 8, "Use subbyte_iterator to access the element");
     return *apply_swizzle(get() + i);
   }
 
@@ -105,7 +108,7 @@ struct smem_ptr_swizzle
   CUTE_HOST_DEVICE constexpr
   smem_ptr_swizzle operator+(Int const& i) const
   {
-    return {ptr_ + i};
+    return {ptr_ + i / ElementsPerStoredItem};
   }
 
   T* ptr_;
@@ -286,14 +289,14 @@ CUTE_HOST_DEVICE void print(smem_ptr_flag_bits<B> const& ptr)
 template <class T, int B, int M, int S>
 CUTE_HOST_DEVICE void print(smem_ptr_swizzle<T,Swizzle<B,M,S>> const& ptr)
 {
-  printf("smem_ptr_S<%d,%d,%d>_%db(%p)", B, M, S, int(8*sizeof(T)), ptr.get());
+  printf("smem_ptr_S<%d,%d,%d>_%db(%p)", B, M, S, int(sizeof_bits<T>::value), ptr.get());
 }
 
 #if !defined(__CUDACC_RTC__)
 template <class T, int B, int M, int S>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, smem_ptr_swizzle<T,Swizzle<B,M,S>> const&)
 {
-  return os << "smem_ptr_S<" << B << "," << M << "," << S << ">_" << int(8*sizeof(T)) << "b";
+  return os << "smem_ptr_S<" << B << "," << M << "," << S << ">_" << int(sizeof_bits<T>::value) << "b";
 }
 #endif
 

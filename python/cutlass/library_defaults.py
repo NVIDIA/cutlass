@@ -35,24 +35,20 @@ Classes containing valid operations for a given compute capability and data type
 """
 
 import logging
+
 from cuda import __version__
-
-# Strip any additional information from the CUDA version
-_cuda_version = __version__.split("rc")[0]
-
-# Imports from CUTLASS profiler generator and manifest scripts
-import generator as prof_generator
-import manifest as prof_manifest
-from library import (
-    ConvKind, IteratorAlgorithm, StrideSupport, GroupMode
-)
+import cutlass_library
+from cutlass_library.library import ConvKind, IteratorAlgorithm, StrideSupport, GroupMode
 
 import cutlass
 from cutlass.utils.check import valid_stage_count
-from cutlass.utils.datatypes import td_from_profiler_td, td_from_profiler_op, has_binding_type
+from cutlass.utils.datatypes import td_from_profiler_td, td_from_profiler_op
 
 
 _generator_ccs = [50, 60, 61, 70, 75, 80, 90]
+
+# Strip any additional information from the CUDA version
+_cuda_version = __version__.split("rc")[0]
 
 
 class KernelsForDataType:
@@ -202,10 +198,10 @@ class ArchOptions:
         # Identify the method within CUTLASS generator script that generates kernel
         # descriptions for the target CC
         generate_function_name = "GenerateSM" + str(kernel_cc)
-        if not hasattr(prof_generator, generate_function_name):
+        if not hasattr(cutlass_library.generator, generate_function_name):
             cutlass.logger.warning(f"No generator found for architecture {kernel_cc}")
             return
-        generate_function = getattr(prof_generator, generate_function_name)
+        generate_function = getattr(cutlass_library.generator, generate_function_name)
 
         # Initialize a default manifest and populate it with valid kernel descriptions
         # for the target CC
@@ -213,8 +209,8 @@ class ArchOptions:
             "--kernels=all",
             f"--log-level={logging.getLevelName(cutlass.logger.level)}"
         ]
-        manifest_args = prof_generator.define_parser().parse_args(args)
-        manifest = prof_manifest.Manifest(manifest_args)
+        manifest_args = cutlass_library.generator.define_parser().parse_args(args)
+        manifest = cutlass_library.manifest.Manifest(manifest_args)
         generate_function(manifest, _cuda_version)
 
         if operation_kind not in manifest.operations:
@@ -223,9 +219,15 @@ class ArchOptions:
             cutlass.logger.warning(f"No operations of type {operation_kind} found for CC {kernel_cc}")
             return
 
+        # Only one CC should be returned, given the setup above of calling only the generation scripts
+        # for a given CC
+        if len(manifest.operations[operation_kind].keys()) != 1 or kernel_cc not in manifest.operations[operation_kind]:
+            raise Exception(f"Error finding kernels for SM{kernel_cc}. Check that your CUDA toolkit version "
+                             "is sufficient for the architecture in question.")
+
         # Iterate through the available operations for this operation kind and
         # find available opclasses and data types
-        for name, op_list in manifest.operations[operation_kind].items():
+        for name, op_list in manifest.operations[operation_kind][kernel_cc].items():
             for op in op_list:
                 if operation_kind == cutlass.OperationKind.Gemm:
                     if op.gemm_kind not in gemm_kinds:
@@ -235,15 +237,15 @@ class ArchOptions:
                 if mi.math_operation not in self.allowed_math_operations:
                     continue
 
-                datatype_comb = (mi.element_a, mi.element_b, mi.element_accumulator)
-
-                # Skip any data types that do not currently have conversions via cutlass_bindings
-                if False in [has_binding_type(elt) for elt in datatype_comb]:
+                if op.C.element == cutlass.DataType.void:
+                    # The CUTLASS Python interface currently does not support void-C kernels
                     continue
+
+                datatype_comb = (mi.element_a, mi.element_b, mi.element_accumulator)
 
                 # Prune operations that don't fit in shared memory
                 td = td_from_profiler_op(op)
-                if not valid_stage_count(target_cc, td)[0]:
+                if not valid_stage_count(target_cc, kernel_cc, td)[0]:
                     continue
 
                 if mi.opcode_class not in self.operations_by_opclass:
@@ -337,19 +339,19 @@ class ArchOptions:
                     [128, 128, 8], 2, [4, 2, 1], math_inst, 50, 1024)
 
                 # Prune operations that don't fit in shared memory
-                if not valid_stage_count(target_cc, td_from_profiler_td(td))[0]:
+                if not valid_stage_count(target_cc, kernel_cc, td_from_profiler_td(td))[0]:
                     continue
 
                 new_kernels = KernelsForDataType(type_comb, layout_comb)
 
                 if operation_kind == cutlass.OperationKind.Gemm:
-                    new_operation = prof_manifest.GemmOperation(
+                    new_operation = cutlass_library.manifest.GemmOperation(
                         cutlass.GemmKind.Universal, td.minimum_compute_capability,
                         td, A, B, C, type_comb[2], epilogue_functor, swizzling_functor)
                     new_kernels.add(new_operation)
                 elif operation_kind == cutlass.OperationKind.Conv2d:
                     for conv_kind in [ConvKind.Fprop, ConvKind.Dgrad, ConvKind.Wgrad]:
-                        new_operation = prof_manifest.Conv2dOperation(
+                        new_operation = cutlass_library.manifest.Conv2dOperation(
                             conv_kind, IteratorAlgorithm.Analytic, td.minimum_compute_capability, td,
                             A, B, C, type_comb[2], StrideSupport.Strided, epilogue_functor, swizzling_functor,
                             group_mode=GroupMode.SingleGroup

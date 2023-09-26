@@ -544,7 +544,6 @@ struct TestbedImpl {
     // Initialize the GEMM operator
     //
 
-    typename Gemm::Arguments arguments;
     cutlass::KernelHardwareInfo hw_info;
     hw_info.device_id = 0;
     if (not profiling) {
@@ -557,12 +556,12 @@ struct TestbedImpl {
     }
 
     typename Gemm::GemmKernel::TileScheduler::Arguments scheduler_args;
-    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileScheduleTag, cutlass::gemm::StreamKScheduler>) {
+    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
       scheduler_args = { static_cast<int>(splits) };
     }
 
     // DefaultEpilogue
-    arguments = typename Gemm::Arguments{
+    auto arguments = typename Gemm::Arguments {
       cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
       {
@@ -741,7 +740,7 @@ struct Testbed3xFusionOperation {
   using ElementAux        = non_void_t<typename FusionOp::ElementAux>;
   using ElementAmax       = non_void_t<typename FusionOp::ElementAmax>;
   using LayoutTagAux      = non_void_t<typename FusionOp::GmemLayoutTagAux, LayoutTagD>;
-  using ActivationFunctor = non_void_t<typename FusionOp::ActivationFn<ElementCompute>,
+  using ActivationFunctor = non_void_t<typename FusionOp::ActivationFn,
                               cutlass::epilogue::thread::Identity<ElementCompute>>;
 
   static constexpr bool IsBiasEnabled        = FusionOp::IsPerRowBiasSupported;
@@ -1152,7 +1151,7 @@ struct Testbed3xFusionOperation {
     initialize(problem_size, alpha_, beta_);
 
     typename Gemm::GemmKernel::TileScheduler::Arguments scheduler_args;
-    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileScheduleTag, cutlass::gemm::StreamKScheduler>) {
+    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
       scheduler_args = { static_cast<int>(splits) };
     }
 
@@ -1206,6 +1205,13 @@ struct Testbed3xFusionOperation {
 
       if constexpr (IsBiasEnabled) {
         fusion_args.bias_ptr = bias.device_data();
+      }
+
+      // example of how to set kernel activation arguments
+      if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU_taylor<ElementCompute>>) {
+        // see ActivationFunctor::Arguments in activation.h for definition
+        // if Arguments doesn't exist then fusion_args.activation is empty
+        fusion_args.activation.scale = ElementCompute(1);
       }
 
       if constexpr (IsAbsMaxEnabled) {
@@ -1297,7 +1303,7 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, Testbed testbed = {}) {
   std::vector<int> problem_size_k = {max_alignment, TileShapeK * (Stages + 1) - max_alignment};
 
   std::vector<int> problem_splits = {1};
-  if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileScheduleTag, cutlass::gemm::StreamKScheduler>) {
+  if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
     problem_splits.push_back(2);
     problem_splits.push_back(3);
 

@@ -37,7 +37,18 @@
 // Config
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800))
 #  define CUTE_ARCH_MMA_SM80_ENABLED
+
+#if (__CUDA_ARCH__ <= 900)
+#define CUTE_ARCH_MMA_B1_AND_SM80_ENABLED
 #endif
+
+#if (__CUDA_ARCH__ <= 890)
+#define CUTE_ARCH_MMA_B1_XOR_SM80_ENABLED
+#endif
+
+#endif
+
+
 
 namespace cute {
 
@@ -2044,7 +2055,7 @@ struct SM80_8x8x128_S32U1U1S32_TN_XORPOPC
       uint32_t const& b0,
       uint32_t const& c0, uint32_t const& c1)
   {
-#if defined(CUTE_ARCH_MMA_SM80_ENABLED)
+#if defined(CUTE_ARCH_MMA_B1_XOR_SM80_ENABLED)
     asm volatile(
       "mma.sync.aligned.m8n8k128.row.col.s32.b1.b1.s32.xor.popc "
       "{%0, %1},"
@@ -2077,7 +2088,7 @@ struct SM80_16x8x128_S32U1U1S32_TN_XORPOPC
       uint32_t const& b0,
       uint32_t const& c0, uint32_t const& c1, uint32_t const& c2, uint32_t const& c3)
   {
-#if defined(CUTE_ARCH_MMA_SM80_ENABLED)
+#if defined(CUTE_ARCH_MMA_B1_XOR_SM80_ENABLED)
     asm volatile(
       "mma.sync.aligned.m16n8k128.row.col.s32.b1.b1.s32.xor.popc "
       "{%0,  %1,  %2,  %3},"
@@ -2110,7 +2121,7 @@ struct SM80_16x8x256_S32U1U1S32_TN_XORPOPC
       uint32_t const& b0, uint32_t const& b1,
       uint32_t const& c0, uint32_t const& c1, uint32_t const& c2, uint32_t const& c3)
   {
-#if defined(CUTE_ARCH_MMA_SM80_ENABLED)
+#if defined(CUTE_ARCH_MMA_B1_XOR_SM80_ENABLED)
     asm volatile(
       "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.xor.popc "
       "{%0,  %1,  %2,  %3},"

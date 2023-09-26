@@ -33,6 +33,16 @@
     \brief Defines a class for using IEEE half-precision floating-point types in host or
       device code.
 */
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
+
 #pragma once
 
 // FP8 types are available starting CUDA 11.8+
@@ -447,6 +457,9 @@ struct alignas(1) float_e4m3_t : float8_base<FloatEncoding::E4M3> {
     /// Constructor inheritance
     using Base::Base;
 
+    /// Default constructor
+    float_e4m3_t() = default;
+
 #ifdef CUDA_FP8_ENABLED
     /// Conversion from CUDA's FP8 type
     CUTLASS_HOST_DEVICE
@@ -648,6 +661,9 @@ struct alignas(1) float_e5m2_t : float8_base<FloatEncoding::E5M2> {
 
     /// Constructor inheritance
     using Base::Base;
+
+    /// Default constructor
+    float_e5m2_t() = default;
 
 #ifdef CUDA_FP8_ENABLED
     /// Conversion from CUDA's FP8 type

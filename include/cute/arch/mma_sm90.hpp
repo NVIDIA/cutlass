@@ -38,6 +38,7 @@
 // Config
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
 #    define CUTE_ARCH_MMA_SM90_ENABLED
+#    define CUTE_ARCH_MMA_F64_SM90_ENABLED
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -60,7 +61,7 @@ struct SM90_16x8x4_F64F64F64F64_TN
       double const& b0,
       double const& c0, double const& c1, double const& c2, double const& c3)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_F64_SM90_ENABLED)
     asm volatile(
       "mma.sync.aligned.m16n8k4.row.col.f64.f64.f64.f64"
       "{%0,  %1,  %2,  %3},"
@@ -93,7 +94,7 @@ struct SM90_16x8x8_F64F64F64F64_TN
       double const& b0, double const& b1,
       double const& c0, double const& c1, double const& c2, double const& c3)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_F64_SM90_ENABLED)
     asm volatile(
       "mma.sync.aligned.m16n8k8.row.col.f64.f64.f64.f64"
       "{%0,  %1,  %2,  %3},"
@@ -127,7 +128,7 @@ struct SM90_16x8x16_F64F64F64F64_TN
       double const& b0, double const& b1, double const& b2, double const& b3,
       double const& c0, double const& c1, double const& c2, double const& c3)
   {
-#if defined(CUTE_ARCH_MMA_SM90_ENABLED)
+#if defined(CUTE_ARCH_MMA_F64_SM90_ENABLED)
     asm volatile(
       "mma.sync.aligned.m16n8k16.row.col.f64.f64.f64.f64"
       "{%0,  %1,  %2,  %3},"

@@ -177,7 +177,7 @@ to_CUtensorMapSwizzle(SmemSwizzleBits const& t) {
 #if (__CUDACC_VER_MAJOR__ >= 12) && !defined(__CUDACC_RTC__)
   using TmaDescriptor = CUtensorMap;
 #else
-  using TmaDescriptor = struct { char bytes[128]; };
+  using TmaDescriptor = struct alignas(64) { char bytes[128]; };
 #endif
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Initiates a TensorMap Prefetch

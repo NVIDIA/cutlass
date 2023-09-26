@@ -58,7 +58,7 @@ public:
   // Type Aliases
   //
   using ProblemShape = ProblemShape_;
-  using TileScheduleTag = TileScheduler_;
+  using TileSchedulerTag = TileScheduler_;
   using TileScheduler = TileScheduler_;
   static_assert(rank(ProblemShape{}) == 3 or rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");

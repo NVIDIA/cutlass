@@ -38,11 +38,12 @@ from bisect import bisect_left
 
 import cutlass
 from cutlass import option_registry, epilogue
+from cutlass.backend.evt import EpilogueFunctorVisitor
 from cutlass.backend.utils.device import device_cc
 from cutlass.epilogue import get_activations
-from cutlass.library_defaults import _generator_ccs
+from cutlass.library_defaults import KernelsForDataType, _generator_ccs
 from cutlass.swizzle import get_swizzling_functors
-from cutlass.utils import datatypes
+from cutlass.utils import datatypes, check
 
 
 class OperationBase:
@@ -67,7 +68,7 @@ class OperationBase:
 
         if self.options is None:
             raise Exception(f"Invalid or unsupported compute capability: {self.current_cc}")
-        
+
         # Default activation function: identity
         self._activation = epilogue.identity
 
@@ -120,7 +121,7 @@ class OperationBase:
                 raise Exception(f'Invalid CC for CUTLASS kernels: {cc}.')
             self.current_cc = cc
             self.options = option_registry.options_for_cc(self.current_cc, self.operation_kind)
-    
+
     def _verify_scalar(self, scalar, ref_scalar, ref_dtype, name):
         """
         Verifies the following properties:
@@ -153,7 +154,7 @@ class OperationBase:
                     f"Tensor {name} with type {dtype} does not match expected type {ref_dtype}."
                 )
         return scalar
-    
+
     def _verify_tensor(self, tensor, ref_tensor, ref_dtype, ref_layout, name):
         """
         Verifies the following properties:
@@ -183,11 +184,11 @@ class OperationBase:
 
         self._verify_type_and_layout(tensor, ref_dtype, ref_layout, name)
         return tensor
-    
+
     #
     # Opcode Related
     #
-    
+
     @property
     def opclass(self) -> cutlass.OpcodeClass:
         """
@@ -197,7 +198,7 @@ class OperationBase:
         :rtype: cutlass.OpcodeClass
         """
         return self.op_class
-    
+
     @opclass.setter
     def opclass(self, oc: cutlass.OpcodeClass):
         if isinstance(oc, str):
@@ -223,11 +224,11 @@ class OperationBase:
         self.possible_operations = self.options.operations(
             self.op_class, self._element_a, self._element_b,
             self._element_accumulator, self._layout_a, self._layout_b)
-        
+
     #
     # Epilogue
     #
-    
+
     def _create_epilogue_functor_activation(self, activation):
         """
         Returns the epilogue functor with given activation function
@@ -261,44 +262,47 @@ class OperationBase:
 
         return epilogue.get_activation_epilogue(
             activation,
-            datatypes.binding_type(self._element_c),
+            self._element_c,
             elements_per_access,
-            datatypes.binding_type(self._element_accumulator),
-            datatypes.binding_type(self._element_accumulator),
+            self._element_accumulator,
+            self._element_accumulator,
         )
-    
+
     def _reset_epilogue_functor_activation(self, activation):
         """
         Set the epilogue functor based on the provided activation function
         """
         self.epilogue_functor = self._create_epilogue_functor_activation(activation)
-    
+
     def _reset_epilogue_functor_alignment(self, alignment, epilogue_functor):
         """
         Reset the alignment of the current epilogue functor based on alignment C
         """
+        if isinstance(epilogue_functor, EpilogueFunctorVisitor):
+            return epilogue_functor
+
         if epilogue_functor is None or not hasattr(epilogue_functor, 'activation_functor'):
             # Identity epilogue does not have 'activation_functor'
             activation = epilogue.identity
         else:
-            activation = type(epilogue_functor.activation_functor)
+            activation = epilogue_functor.activation_functor
 
         epilogue_functor = epilogue.get_activation_epilogue(
             activation,
-            datatypes.binding_type(self._element_c),
+            self._element_c,
             alignment,
-            datatypes.binding_type(self._element_accumulator),
-            datatypes.binding_type(self._element_accumulator),
+            self._element_accumulator,
+            self._element_accumulator,
         )
         return epilogue_functor
-    
+
     @property
     def activation(self):
         """
         Returns the type of the current activation function used
         """
         if hasattr(self.epilogue_functor, "activation_functor"):
-            return type(self.epilogue_functor.activation_functor)
+            return self.epilogue_functor.activation_functor
         else:
             return epilogue.identity
 
@@ -307,7 +311,7 @@ class OperationBase:
         """
         Sets the type of the activation function to use
         Activation can come with a set of arguments
-        
+
         :param act: type of activation function to use
         :type act: str or tuple. e.g. "relu", ("leaky_relu", 0.01)
 
@@ -325,4 +329,50 @@ class OperationBase:
                 act = getattr(cutlass.backend.epilogue, act)
             self._reset_epilogue_functor_activation(act)
             self._activation = act
-    
+
+    @property
+    def epilogue_visitor(self):
+        """
+        Return the epilogue functor
+        """
+        return self.epilogue_functor
+
+    @epilogue_visitor.setter
+    def epilogue_visitor(self, visitor):
+        """
+        Create the epilogue visitor
+        """
+        self.epilogue_functor = EpilogueFunctorVisitor(self.cc, visitor)
+
+        # The epilogue_functor may consume too much shared memory
+        # Reset the possible operations
+        if self.cc != 90:
+            # The shared memory is only a concern for sm90 epilogue
+            # In sm80, the epilogue and mainloop share the shared memory
+            return
+        datatype_comb = self.possible_operations.datatype_comb
+        layout_comb = self.possible_operations.layout_comb
+        new_possible_operations = KernelsForDataType(datatype_comb, layout_comb)
+        for operation in self.possible_operations.all_operations:
+            td = datatypes.td_from_profiler_op(operation)
+            # Filter invalid epilogue schedules
+            if td.epilogue_schedule not in [
+                cutlass.EpilogueScheduleType.TmaWarpSpecialized,
+                cutlass.EpilogueScheduleType.TmaWarpSpecializedCooperative]:
+                continue
+            epilogue_smem_bytes = self.epilogue_functor.get_smem_size(td)
+
+            # Verify the maximum number of mainloop stages
+            mainloop_smem_per_stage = check.calculate_smem_usage_per_stage(td, cutlass.OperationKind.Gemm)
+            smem_capacity_bytes = cutlass.SharedMemPerCC[self.cc] << 10
+            mainloop_stages = (smem_capacity_bytes - epilogue_smem_bytes) // mainloop_smem_per_stage
+            if mainloop_stages < 2:
+                # Mainloop stages must >= 2
+                continue
+
+            new_possible_operations.add(operation)
+        if len(new_possible_operations.all_operations) == 0:
+            raise RuntimeError(
+                "The epilogue consumes too much shared memory. "
+                "No valid tile description is found in the generator.")
+        self.possible_operations = new_possible_operations

@@ -83,7 +83,8 @@ struct Sm90AuxStore {
       cute::conditional_t<is_m_major, Step<_2,_1,_3>, Step<_1,_2,_3>>{} ));
 
   struct SharedStorage {
-    alignas(128) array_aligned<Element, size(SmemLayout{})> smem_aux;
+    alignas(cutlass::detail::alignment_for_swizzle(SmemLayout{}))
+    array_aligned<Element, size(SmemLayout{})> smem_aux;
   };
 
   struct Arguments {
@@ -125,9 +126,9 @@ struct Sm90AuxStore {
   Sm90AuxStore() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90AuxStore(Params const& params, SharedStorage& shared_storage)
+  Sm90AuxStore(Params const& params, SharedStorage const& shared_storage)
       : params_ptr(&params),
-        smem_aux(shared_storage.smem_aux.data()) { }
+        smem_aux(const_cast<Element*>(shared_storage.smem_aux.data())) { }
 
   Params const* params_ptr;
   Element* smem_aux;
@@ -143,7 +144,9 @@ struct Sm90AuxStore {
   }
 
   template <
-    class TileShapeMNK
+    class ProblemShapeMNKL,
+    class TileShapeMNK,
+    class TileCoordMNKL
   >
   CUTLASS_DEVICE auto
   get_producer_load_callbacks(
@@ -233,7 +236,9 @@ struct Sm90AuxStore {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class TiledCopy,
     class SrcTensor
   >
@@ -248,14 +253,16 @@ struct Sm90AuxStore {
       SrcTensor const& tCrC) {
 
     auto [M, N, K, L] = problem_shape_mnkl;
+    auto [m, n, k, l] = tile_coord_mnkl;
     Tensor mAux = params_ptr->tma_store_aux.get_tma_tensor(make_shape(M,N,L));                               // (M,N,L)
-    Tensor gAux = sm90_tensor_to_cta_tile(mAux, tile_shape_mnk, tile_coord_mnkl);                      // (CTA_M,CTA_N)
+    Tensor gAux = local_tile(mAux, take<0,2>(tile_shape_mnk), make_coord(m,n,l));                      // (CTA_M,CTA_N)
 
     Tensor tC_gAux = sm90_partition_for_epilogue<ReferenceSrc>(                        // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
                       gAux, epi_tile, tiled_copy, thread_idx);
     Tensor tC_rAux = make_tensor<Element>(take<0,3>(shape(tC_gAux)));                  // (CPY,CPY_M,CPY_N)
 
-    Tensor sAux_epi = make_tensor(make_smem_ptr(smem_aux), SmemLayout{});        // (EPI_TILE_M,EPI_TILE_N,PIPE)
+    Tensor sAux_epi = cute::as_position_independent_swizzle_tensor(
+                        make_tensor(make_smem_ptr(smem_aux), SmemLayout{}));     // (EPI_TILE_M,EPI_TILE_N,PIPE)
     Tensor gAux_epi = local_tile(gAux, epi_tile, _);                             // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
 
     auto tiled_r2s = conditional_return<ReferenceSrc>(
@@ -297,8 +304,8 @@ template <
 struct Sm90ScalarReduction {
   static_assert(
     (cute::is_same_v<StrideMNL, Stride<_0,_0, _0>>) || // scalar reduction, e.g. tensor max element
-    (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>));  // batched scalar reduction, e.g. per-batch max element
-
+    (cute::is_same_v<StrideMNL, Stride<_0,_0, _1>>) || // batched scalar reduction, e.g. per-batch max element
+    (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>));  
   struct SharedStorage { };
 
   struct Arguments {
@@ -329,13 +336,15 @@ struct Sm90ScalarReduction {
   Sm90ScalarReduction() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90ScalarReduction(Params const& params, SharedStorage& shared_storage)
+  Sm90ScalarReduction(Params const& params, SharedStorage const& shared_storage)
       : params(params) { }
 
   Params const params;
 
   template <
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile
   >
   CUTLASS_DEVICE auto
@@ -417,7 +426,9 @@ struct Sm90ScalarReduction {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -502,13 +513,15 @@ struct Sm90RowReduction {
   Sm90RowReduction() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90RowReduction(Params const& params, SharedStorage& shared_storage)
+  Sm90RowReduction(Params const& params, SharedStorage const& shared_storage)
       : params(params) { }
 
   Params params;
 
   template <
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile
   >
   CUTLASS_DEVICE auto
@@ -619,7 +632,9 @@ struct Sm90RowReduction {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor
@@ -707,13 +722,15 @@ struct Sm90ColReduction {
   Sm90ColReduction() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90ColReduction(Params const& params, SharedStorage& shared_storage)
+  Sm90ColReduction(Params const& params, SharedStorage const& shared_storage)
       : params(params) { }
 
   Params params;
 
   template <
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile
   >
   CUTLASS_DEVICE auto
@@ -765,10 +782,11 @@ struct Sm90ColReduction {
 
       Array frg_I = convert_input(frg_input);
       Tensor tCrCol_mn = tCrCol(_,_,_,epi_m,epi_n);
+      Tensor tCcCol_mn = tCcCol(_,_,_,epi_m,epi_n);
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
-        if (elem_less(tCcCol(i), residue_mn)) {
+        if (elem_less(tCcCol_mn(i), residue_mn)) {
           ElementCompute& tCrCol_vmn = tCrCol_mn(epi_v * FragmentSize + i);
           tCrCol_vmn = reduce_input(tCrCol_vmn, frg_I[i]);
         }
@@ -808,7 +826,9 @@ struct Sm90ColReduction {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
+    class ProblemShapeMNKL,
     class TileShapeMNK,
+    class TileCoordMNKL,
     class EpilogueTile,
     class TiledCopy,
     class SrcTensor

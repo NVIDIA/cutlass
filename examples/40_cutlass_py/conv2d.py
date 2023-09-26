@@ -33,10 +33,14 @@
 Basic example of using the CUTLASS Python interface to run a 2d convolution
 """
 
-import argparse
-import torch
-import numpy as np
 import sys
+print("This example is deprecated. Please see examples/python for examples of using "
+      "the CUTLASS Python interface.")
+sys.exit(0)
+
+import argparse
+import numpy as np
+import torch
 
 import cutlass_bindings
 import cutlass.backend as pycutlass

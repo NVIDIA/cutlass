@@ -31,182 +31,79 @@
 
 #include "cutlass_unit_test.h"
 
-#include <iostream>
-
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-
-#include <cute/tensor.hpp>
+#include "../hopper/tma_load_testbed.hpp"
 
 using namespace cute;
-
-template <class ElementType, class SmemLayout>
-struct SharedStorage
-{
-  cute::array_aligned<ElementType, cute::cosize_v<SmemLayout>> smem;
-  cute::uint64_t tma_load_mbar[1];
-};
+using namespace cutlass::test;
 
 #if CUDA_12_0_SM90_FEATURES_SUPPORTED
-template <class T, class TiledCopy, class CTA_Tiler, class GmemLayout, class SmemLayout>
-__global__ void
-tma_test_device_cute(T const* g_in, T* g_out,
-                     CUTE_GRID_CONSTANT TiledCopy const tma, CTA_Tiler cta_tiler,
-                     GmemLayout gmem_layout, SmemLayout smem_layout)
-{
-  CUTE_STATIC_ASSERT_V(product_each(shape(cta_tiler)) == product_each(shape(smem_layout)));
 
-  // Use Shared Storage structure to allocate and distribute aligned SMEM addresses
-  extern __shared__ char shared_memory[];
-  using SharedStorage = SharedStorage<T, SmemLayout>;
-  SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
-  // Construct SMEM tensor
-  Tensor sA = make_tensor(make_smem_ptr(shared_storage.smem.data()), smem_layout);  // (CTA_TILE_M,CTA_TILE_N,...)
-  // Shared memory barriers use 64bits in SMEM for synchronization
-  uint64_t* tma_load_mbar = shared_storage.tma_load_mbar;
-
-  // TMA requires special handling of strides to deal with coord codomain mapping
-  // Represent the full tensors -- get these from TMA
-  Tensor mA = tma.get_tma_tensor(shape(gmem_layout));
-  Tensor mB = make_tensor(make_gmem_ptr(g_out), gmem_layout);
-
-  constexpr int R = rank_v<CTA_Tiler>;
-  Tensor gA = local_tile(mA, cta_tiler, repeat<R>(_));               // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
-  Tensor gB = local_tile(mB, cta_tiler, repeat<R>(_));               // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
-
-  //
-  // Prepare the TMA_LOAD
-  //
-
-  auto cta_tma = tma.get_slice(Int<0>{});                            // CTA slice
-
-  Tensor tAgA_x = cta_tma.partition_S(gA);                           // (TMA,TMA_M,TMA_N,REST_M,REST_N)
-  Tensor tAsA_x = cta_tma.partition_D(sA);                           // (TMA,TMA_M,TMA_N)
-
-#if 0
-  if (thread0()) {
-    print(tma);
-    print("TILE  :  "); print(cta_tiler); print("\n");
-    print("  mA  :  "); print(  mA.data());   print(" o "); print(  mA.layout());   print("\n");
-    print("  gA  :  "); print(  gA.data());   print(" o "); print(  gA.layout());   print("\n");
-    print("tAgA_x:  "); print(tAgA_x.data()); print(" o "); print(tAgA_x.layout()); print("\n");
-    print("  sA  :  "); print(  sA.data());   print(" o "); print(  sA.layout());   print("\n");
-    print("tAsA_x:  "); print(tAsA_x.data()); print(" o "); print(tAsA_x.layout()); print("\n");
-  }
-#endif
-
-  //
-  // Perform the TMA_LOAD
-  //
-
-  // INPUT: Group the REST_X modes and the TMA_X modes to easily iterate through the tiles
-  Tensor tAgA = group_modes<1,rank(tAgA_x)>(tAgA_x);                 // (TMA,REST)
-  Tensor tAsA = group_modes<1,rank(tAsA_x)>(tAsA_x);                 // (TMA,REST)
-  static_assert(size<1>(tAsA) == 1);
-
-  // OUTPUT: Group the CTA_TILE_X modes and REST_X modes for output
-  Tensor tBgB = group_modes<0,R>(group_modes<R,rank(gB)>(gB));       // (CTA_TILE, REST)
-
-#if 0
-  if (thread0()) {
-    print("tAgA  :  "); print(tAgA.data()); print(" o "); print(tAgA.layout()); print("\n");
-    print("tAsA  :  "); print(tAsA.data()); print(" o "); print(tAsA.layout()); print("\n");
-    print("tBgB  :  "); print(tBgB.data()); print(" o "); print(tBgB.layout()); print("\n");
-  }
-#endif
-
-  // Loop over the TMA stages, using smem as our buffer
-  for (int stage = 0; stage < size<1>(tAgA); ++stage)
-  {
-    // Set the bytes transferred in this TMA transaction (may involve multiple issues)
-    constexpr int kTmaTransactionBytes = size(sA) * sizeof_bits_v<T> / 8;
-
-    if (threadIdx.x == 0)
-    {
-      /// Initialize shared memory barrier
-      tma_load_mbar[0] = 0;
-      cute::initialize_barrier(tma_load_mbar[0], 1 /*numThreads*/);
-      cute::set_barrier_transaction_bytes(tma_load_mbar[0], kTmaTransactionBytes);
-
-      copy(tma.with(tma_load_mbar[0]), tAgA(_,stage), tAsA(_,0));
-    }
-    __syncthreads();
-
-    /// Wait on the shared memory barrier until the phase bit flips from kPhaseBit value
-    constexpr int kPhaseBit = 0;
-    cute::wait_barrier(tma_load_mbar[0], kPhaseBit);
-
-    //
-    // Write out trivially smem -> gmem
-    //
-
-    //if (thread0()) {
-    //  print_tensor(sA);
-    //}
-
-    for (int i = threadIdx.x; i < size(sA); i += blockDim.x) {
-      tBgB(i,stage) = sA(i);
-    }
-    __syncthreads();
-  }
-}
-
-template <class T, class GMEM_Layout, class SMEM_Layout, class CTA_Tile>
-void
+template <class T, class TmaType = T, class GMEM_Layout, class SMEM_Layout, class CTA_Tile>
+auto
 test_tma_load(GMEM_Layout const& gmem_layout,
               SMEM_Layout const& smem_layout,
               CTA_Tile    const& cta_tile)
 {
-  thrust::host_vector<T> h_in(cosize(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i % 13); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
-
-  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
-  auto tma = make_tma_copy(SM90_TMA_LOAD{}, gA, smem_layout, cta_tile, Int<1>{});
-  //print(tma);
-
-  int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
-  tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
-    tma, cta_tile,
-    gmem_layout,
-    smem_layout);
-
-  thrust::host_vector<T> h_out = d_out;
-  Tensor hA_in  = make_tensor(h_in.data(),  gmem_layout);
-  Tensor hA_out = make_tensor(h_out.data(), gmem_layout);
-  for (int i = 0; i < size(gmem_layout); ++i) {
-    EXPECT_EQ(hA_in(i), hA_out(i));
-  }
+  using namespace cute;
+  return test_tma_load<T, TmaType>(SM90_TMA_LOAD{}, gmem_layout, smem_layout, cta_tile);
 }
 
-template <class T, class GMEM_Layout, class SMEM_Layout>
-void
+template <class T, class TmaType = T, class GMEM_Layout, class SMEM_Layout>
+auto
 test_tma_load(GMEM_Layout const& gmem_layout,
               SMEM_Layout const& smem_layout)
 {
-  return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
+  using namespace cute;
+  return test_tma_load<T, TmaType>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
 }
 
 TEST(SM90_CuTe_Hopper, Tma_Load_1D)
 {
-  Layout smem_layout = Layout<_256, _1>{};
   {
-  Layout gmem_layout = smem_layout;
-  test_tma_load<int8_t>(gmem_layout, smem_layout);
-  test_tma_load<half_t>(gmem_layout, smem_layout);
-  test_tma_load< float>(gmem_layout, smem_layout);
-  test_tma_load<double>(gmem_layout, smem_layout);
+    Layout smem_layout = Layout<_256, _1>{};
+    {
+    Layout gmem_layout = smem_layout;
+    test_tma_load<int8_t>(gmem_layout, smem_layout);
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    test_tma_load< float>(gmem_layout, smem_layout);
+    test_tma_load<double>(gmem_layout, smem_layout);
+    }
+
+    {
+    Layout gmem_layout = make_layout(128, GenColMajor{});
+    test_tma_load<int8_t>(gmem_layout, smem_layout);
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    test_tma_load< float>(gmem_layout, smem_layout);
+    test_tma_load<double>(gmem_layout, smem_layout);
+    }
+
+    {
+    Layout gmem_layout = make_layout(384, GenColMajor{});
+    test_tma_load<int8_t>(gmem_layout, smem_layout);
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    test_tma_load< float>(gmem_layout, smem_layout);
+    test_tma_load<double>(gmem_layout, smem_layout);
+    }
   }
 
   {
-  Layout gmem_layout = make_layout(128, GenColMajor{});
-  test_tma_load<int8_t>(gmem_layout, smem_layout);
-  test_tma_load<half_t>(gmem_layout, smem_layout);
-  test_tma_load< float>(gmem_layout, smem_layout);
-  test_tma_load<double>(gmem_layout, smem_layout);
+    Layout smem_layout = Layout<Shape<_8,_8>, Stride<_1,_8>>{};
+    {
+    Layout gmem_layout = smem_layout;
+    test_tma_load<int8_t>(gmem_layout, smem_layout);
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    test_tma_load< float>(gmem_layout, smem_layout);
+    test_tma_load<double>(gmem_layout, smem_layout);
+    }
+
+    // This doesn't result in a 1D TMA, even though it could/should...
+    {
+    Layout gmem_layout = tile_to_shape(smem_layout, Shape<_16,_16>{});
+    test_tma_load<int8_t>(gmem_layout, smem_layout);
+    test_tma_load<half_t>(gmem_layout, smem_layout);
+    test_tma_load< float>(gmem_layout, smem_layout);
+    test_tma_load<double>(gmem_layout, smem_layout);
+    }
   }
 }
 
@@ -270,18 +167,32 @@ template <class T, template <typename> typename SWIZZLE_ATOM>
 void
 test_tma_load_swizzle_atom_mn()
 {
-  auto   smem_layout = SWIZZLE_ATOM<T>{};
-  Layout gmem_layout = make_layout(shape(smem_layout), GenColMajor{});
-  return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
+  auto smem_layout = SWIZZLE_ATOM<T>{};
+  { // Static gmem
+  //Layout gmem_layout = make_layout(shape(smem_layout), GenColMajor{});
+  //test_tma_load<T>(gmem_layout, smem_layout);
+  }
+  { // Dynamic gmem
+  Layout gmem_layout = make_layout(make_shape(2*uint32_t(size<0>(smem_layout)), 2*uint32_t(size<1>(smem_layout))),
+                                   GenColMajor{});
+  test_tma_load<T>(gmem_layout, smem_layout);
+  }
 }
 
 template <class T, template <typename> typename SWIZZLE_ATOM>
 void
 test_tma_load_swizzle_atom_k()
 {
-  auto   smem_layout = SWIZZLE_ATOM<T>{};
-  Layout gmem_layout = make_layout(shape(smem_layout), GenRowMajor{});
-  return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
+  auto smem_layout = SWIZZLE_ATOM<T>{};
+  { // Static gmem
+  //Layout gmem_layout = make_layout(shape(smem_layout), GenRowMajor{});
+  //test_tma_load<T>(gmem_layout, smem_layout);
+  }
+  { // Dynamic gmem
+  Layout gmem_layout = make_layout(make_shape(2*uint32_t(size<0>(smem_layout)), 2*uint32_t(size<1>(smem_layout))),
+                                   GenRowMajor{});
+  test_tma_load<T>(gmem_layout, smem_layout);
+  }
 }
 
 TEST(SM90_CuTe_Hopper, Tma_Load_Swizzle_Atoms)
@@ -328,21 +239,21 @@ TEST(SM90_CuTe_Hopper, Tma_Load_Swizzle_Atoms)
 }
 
 template <class T, template <typename> typename SWIZZLE_ATOM>
-void
+auto
 test_tma_load_swizzle_tile_mn()
 {
   auto   smem_layout = tile_to_shape(SWIZZLE_ATOM<T>{}, Shape<_128,_128>{});
   Layout gmem_layout = make_layout(make_shape(int(size<0>(smem_layout)), int(size<1>(smem_layout))), GenColMajor{});
-  return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
+  return test_tma_load<T>(gmem_layout, smem_layout);
 }
 
 template <class T, template <typename> typename SWIZZLE_ATOM>
-void
+auto
 test_tma_load_swizzle_tile_k()
 {
   auto   smem_layout = tile_to_shape(SWIZZLE_ATOM<T>{}, Shape<_128,_128>{});
   Layout gmem_layout = make_layout(make_shape(int(size<0>(smem_layout)), int(size<1>(smem_layout))), GenRowMajor{});
-  return test_tma_load<T>(gmem_layout, smem_layout, product_each(shape(smem_layout)));
+  return test_tma_load<T>(gmem_layout, smem_layout);
 }
 
 TEST(SM90_CuTe_Hopper, Tma_Load_Swizzle_Tiles)
@@ -428,6 +339,90 @@ TEST(SM90_CuTe_Hopper, Tma_Load_Tensor_Multimode)
                                                               //  Take 16-elem from k0, 2-elem from k1
   auto smem_layout = make_layout(Shape<_32,_32>{});
   test_tma_load<half_t>(gmem_layout, smem_layout, cta_tile);
+  }
+}
+
+TEST(SM90_CuTe_Hopper, Tma_Load_Coalesce)
+{
+  // Interleaved ColMajor
+  {
+  Layout gmem_layout = make_layout(make_shape (  128, make_shape (_4{},  128)),
+                                   make_stride( _4{}, make_stride(_1{},  512)));
+  auto   smem_layout = make_layout(make_shape (_32{}, make_shape (_4{},  _32{})),
+                                   make_stride( _4{}, make_stride(_1{}, _128{})));
+
+  // By default, uses cta_tile = Shape<_32,_128>
+  auto tma = test_tma_load<int8_t>(gmem_layout, smem_layout);
+  // Check the TMA rank
+  EXPECT_EQ(rank(tma.get_tma_tensor(shape(gmem_layout))(0)), 2);
+  }
+
+  // Interleaved RowMajor
+  {
+  Layout gmem_layout = make_layout(make_shape (make_shape (_4{},   128),   128),
+                                   make_stride(make_stride(_1{},   512),   _4{}));
+  auto   smem_layout = make_layout(make_shape (make_shape (_4{},  _32{}), _32{}),
+                                   make_stride(make_stride(_1{}, _128{}),  _4{}));
+
+  // By default, uses cta_tile = Shape<_128,_32>
+  auto tma = test_tma_load<int8_t>(gmem_layout, smem_layout);
+  // Check the TMA rank
+  EXPECT_EQ(rank(tma.get_tma_tensor(shape(gmem_layout))(0)), 2);
+  }
+
+  // Account for stride-0 modes within the TMA tile
+  {
+  Layout gmem_layout = make_layout(make_shape (  128, make_shape (_32{},   4)),
+                                   make_stride( _1{}, make_stride( _0{}, 128)));
+  auto   smem_layout = make_layout(make_shape (_64{}, make_shape (_32{}     )),
+                                   make_stride( _1{}, make_stride( _0{}     )));
+
+  // By default, uses cta_tile = Shape<_64,_32>
+  auto tma = test_tma_load<uint16_t>(gmem_layout, smem_layout);
+  // Check the TMA rank
+  EXPECT_EQ(rank(tma.get_tma_tensor(shape(gmem_layout))(0)), 2);
+  }
+
+  // Coalesce many modes and account for stride-0 modes within the TMA tile
+  {
+  Layout gmem_layout = make_layout(make_shape (make_shape (_32{},_4{},     4), _32{}, make_shape (_4{},      4)),
+                                   make_stride(make_stride(_16{},_4{},  2048),  _0{}, make_stride(_1{}, _512{})));
+  auto   smem_layout = make_layout(make_shape (make_shape (_32{},_4{}       ), _32{}, make_shape (_4{}        )),
+                                   make_stride(make_stride(_16{},_4{}       ),  _0{}, make_stride(_1{}        )));
+
+  // By default, uses cta_tile = Shape<_128,_32,_4>
+  auto tma = test_tma_load<int8_t>(gmem_layout, smem_layout);
+  // Check the TMA rank (Could be 3 instead of 4 with even better coalescing...?)
+  EXPECT_EQ(rank(tma.get_tma_tensor(shape(gmem_layout))(0)), 4);
+  }
+}
+
+TEST(SM90_CuTe_Hopper, Tma_Load_InternalType)
+{
+  Layout smem_layout = Layout<Shape<_32,_32>, Stride<_1,_32>>{};
+  Layout gmem_layout = make_layout(make_shape(64, 64));
+
+  // Downcasted tensors to smaller TmaTypes
+  {
+  test_tma_load<int8_t, uint8_t>(gmem_layout, smem_layout);
+  test_tma_load<half_t, uint8_t>(gmem_layout, smem_layout);
+  test_tma_load< float, uint8_t>(gmem_layout, smem_layout);
+  test_tma_load<double, uint8_t>(gmem_layout, smem_layout);
+  }
+
+  // Upcasted tensors to larger TmaTypes
+  {
+  test_tma_load<int8_t, uint64_t>(gmem_layout, smem_layout);
+  test_tma_load<half_t, uint64_t>(gmem_layout, smem_layout);
+  test_tma_load< float, uint64_t>(gmem_layout, smem_layout);
+  test_tma_load<double, uint64_t>(gmem_layout, smem_layout);
+
+  }
+
+  // Complex<double> is 128bit, which the TMA has no concept of
+  {
+  test_tma_load<complex<double>, uint64_t>(gmem_layout, smem_layout);
+  test_tma_load<complex<double>, uint32_t>(gmem_layout, smem_layout);
   }
 }
 

@@ -16,3 +16,7 @@
 * [03_basic_conv2d](/examples/python/03_basic_conv2d.ipynb)
 
     Shows how to declare, configure, compile, and run a CUTLASS Conv2d using the Python interface
+
+* [04_epilogue_visitor](/examples/python/04_epilogue_visitor.ipynb)
+
+    Shows how to fuse elementwise activation functions to GEMMs via the Python Epilogue Visitor interface

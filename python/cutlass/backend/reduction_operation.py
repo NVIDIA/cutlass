@@ -30,24 +30,24 @@
 #
 ################################################################################
 
-
+import ctypes
 from typing import Union
 
-import ctypes
 from cuda import cuda, cudart
-import cutlass_bindings
 import numpy as np
 
-from cutlass.backend.c_types import MatrixCoord_, TensorRef2D_, get_reduction_params
-from cutlass.backend.frontend import NumpyFrontend, TorchFrontend
-from cutlass.backend.library import (
+from cutlass import (
     DataTypeNames,
     DataTypeSize,
     DataTypeTag,
-    TensorDescription,
+    LayoutType
 )
+from cutlass.backend.c_types import MatrixCoord_, TensorRef2D_, get_reduction_params
+from cutlass.backend.frontend import NumpyFrontend, TorchFrontend
+from cutlass.backend.library import TensorDescription
 from cutlass.backend.operation import ExecutableOperation, LaunchConfiguration
 from cutlass.backend.utils.software import CheckPackages, SubstituteTemplate
+from cutlass.shape import MatrixCoord
 
 if CheckPackages().check_torch():
     import torch
@@ -80,10 +80,9 @@ class ReductionArguments:
             self.bias = False
 
         self.operation = operation
-        #: pointer to the workspace
         self.ptr_workspace = workspace
 
-        #: number of split-k partitions
+        # number of split-k partitions
         self.partitions = partitions
 
         if isinstance(destination, np.ndarray):
@@ -112,19 +111,18 @@ class ReductionArguments:
         else:
             self.output_op = self.operation.epilogue_type(1.0, 0.0)
 
-        # get arguments
         self.get_arguments()
 
     @staticmethod
     def get_tensor_ref(
         extent: "tuple[int]",
         device_ptr: cuda.CUdeviceptr,
-        layout: cutlass_bindings.layout,
+        layout: LayoutType,
     ):
-        if layout == cutlass_bindings.RowMajor:
+        if layout == LayoutType.RowMajor:
             return TensorRef2D_(int(device_ptr), extent[1])
         else:
-            raise ValueError("unknown layout type")
+            raise ValueError(f"Unknown layout type {layout}")
 
     def get_arguments(self):
         ref_workspace = ReductionArguments.get_tensor_ref(
@@ -133,13 +131,13 @@ class ReductionArguments:
                 self.problem_size.column,
             ],
             device_ptr=self.ptr_workspace,
-            layout=cutlass_bindings.RowMajor,
+            layout=LayoutType.RowMajor,
         )
         if self.bias:
             ref_source = ReductionArguments.get_tensor_ref(
                 extent=[0, 0],
                 device_ptr=self.ptr_source,
-                layout=cutlass_bindings.RowMajor,
+                layout=LayoutType.RowMajor,
             )
         else:
             ref_source = ReductionArguments.get_tensor_ref(
@@ -148,7 +146,7 @@ class ReductionArguments:
                     self.problem_size.column,
                 ],
                 device_ptr=self.ptr_source,
-                layout=cutlass_bindings.RowMajor,
+                layout=LayoutType.RowMajor,
             )
 
         ref_destination = ReductionArguments.get_tensor_ref(
@@ -157,7 +155,7 @@ class ReductionArguments:
                 self.problem_size.column,
             ],
             device_ptr=self.ptr_destination,
-            layout=cutlass_bindings.RowMajor,
+            layout=LayoutType.RowMajor,
         )
 
         self.c_arguments = self.operation.argument_type(
@@ -176,7 +174,7 @@ class ReductionArguments:
     def sync(self):
         (err,) = cudart.cudaDeviceSynchronize()
         if err != cuda.CUresult.CUDA_SUCCESS:
-            raise RuntimeError("CUDA Error %s" % str(err))
+            raise RuntimeError(f"CUDA Error {str(err)}")
 
         if hasattr(self, "host_D"):
             (err,) = cuda.cuMemcpyDtoH(
@@ -258,15 +256,15 @@ extern "C" {
 
     def plan(self, arguments: ReductionArguments):
         block_shape = [
-            self.operation.shape.column() // self.elements_per_access,
-            self.operation.shape.row(),
+            self.operation.shape.column // self.elements_per_access,
+            self.operation.shape.row,
             1,
         ]
         grid_shape = [
-            (arguments.problem_size.row + self.operation.shape.row() - 1)
-            // self.operation.shape.row(),
-            (arguments.problem_size.column + self.operation.shape.column() - 1)
-            // self.operation.shape.column(),
+            (arguments.problem_size.row + self.operation.shape.row - 1)
+            // self.operation.shape.row,
+            (arguments.problem_size.column + self.operation.shape.column - 1)
+            // self.operation.shape.column,
             1,
         ]
         return LaunchConfiguration(
@@ -282,20 +280,17 @@ extern "C" {
             value=self.shared_memory_capacity,
         )
         if err != cuda.CUresult.CUDA_SUCCESS:
-            raise RuntimeError("Cuda Error: {}".format(err))
+            raise RuntimeError(f"CUDA Error: {err}")
 
 
 class ReductionOperation:
     """
-    CUTLASS Reduction Operation
-    shape: shape of CTA
-    outputop: output operator
-    r
+    CUTLASS reduction Operation
     """
 
     def __init__(
         self,
-        shape: cutlass_bindings.MatrixCoord,
+        shape: MatrixCoord,
         C: TensorDescription,
         element_accumulator,
         element_workspace=None,
@@ -304,45 +299,33 @@ class ReductionOperation:
         count: int = 1,
         partitions_per_stage: int = 4,
     ) -> None:
-        """Constructor"""
-
         self.shape = shape
-        #: epilogue functor (default: LinearCombination)
         self.epilogue_functor = epilogue_functor
-        #: datatype of accumulator
         self.element_accumulator = element_accumulator
 
         if element_workspace is None:
-            #: datatype of workspace
             self.element_workspace = element_accumulator
         else:
-            #: datatype of workspace
             self.element_workspace = element_workspace
 
         if element_compute is None:
-            #: datatype of workspace
             self.element_compute = element_accumulator
         else:
-            #: datatype of workspace
             self.element_compute = element_compute
 
-        #: datatype of output
         self.element_output = C.element
-
-        #: operand C
         self.C: TensorDescription = C
 
-        #: reduce op processing size
+        # Reduce op processing size
         self.count: int = count
 
-        #: number of partitions to reduce per stage
+        # Number of partitions to reduce per stage
         self.partitions_per_stage: int = partitions_per_stage
 
         self.rt_module: ReductionRT = ReductionRT(self)
         self.argument_type = self.rt_module.argument_type
         self.epilogue_type = self.rt_module.epilogue_type
 
-    #
     def extended_name(self):
         extend_name = "${element_workspace}_${element_accumulator}_${element_compute}_${element_output}"
 
@@ -356,15 +339,14 @@ class ReductionOperation:
             },
         )
 
-    #
     def configuration_name(self):
         """The full procedural name indicates architecture, extended name, tile size"""
 
         configuration_name = "cutlass_reduce_split_k_${extended_name}_${threadblock}"
 
         threadblock = "%dx%d" % (
-            self.shape.row(),
-            self.shape.column(),
+            self.shape.row,
+            self.shape.column,
         )
 
         return SubstituteTemplate(
@@ -375,7 +357,6 @@ class ReductionOperation:
             },
         )
 
-    #
     def procedural_name(self):
         """The full procedural name indicates architeture, extended name, tile size"""
         return self.configuration_name()
@@ -384,14 +365,11 @@ class ReductionOperation:
         """
         Configure and launch the cuda kernel with input arguments
         """
-        # get launch configuration
         launch_config = self.rt_module.plan(arguments)
 
-        # get the host and device workspace
         host_workspace = arguments.host_workspace
         device_workspace = None
 
-        # launch the kernel
         err = self.rt_module.run(
             host_workspace,
             device_workspace,
@@ -399,7 +377,7 @@ class ReductionOperation:
         )
 
         if err != cuda.CUresult.CUDA_SUCCESS:
-            raise RuntimeError("CUDA Error %s" % str(err))
+            raise RuntimeError(f"CUDA Error {str(err)}")
 
         return err
 
@@ -421,7 +399,7 @@ class EmitReductionInstance:
         ]
         self.template = """
 // Reduction kernel instance
-using ${operation_name}_base = 
+using ${operation_name}_base =
 typename cutlass::reduction::kernel::ReduceSplitK<
   cutlass::MatrixShape<${shape_row}, ${shape_column}>,
   ${epilogue_functor},
@@ -436,19 +414,14 @@ struct ${operation_name}${operation_suffix}:
       """
 
     def emit(self, operation: ReductionOperation):
-        epilogue_vector_length = int(
-            min(
-                operation.C.alignment * DataTypeSize[operation.C.element],
-                128,
-            )
-            / DataTypeSize[operation.C.element]
-        )
+        vector_length_bits = min(operation.C.alignment * DataTypeSize[operation.C.element], 128)
+        epilogue_vector_length = vector_length_bits // DataTypeSize[operation.C.element]
 
         values = {
             "operation_name": operation.configuration_name(),
             "operation_suffix": self.operation_suffix,
-            "shape_row": str(operation.shape.row()),
-            "shape_column": str(operation.shape.column()),
+            "shape_row": str(operation.shape.row),
+            "shape_column": str(operation.shape.column),
             "epilogue_functor": operation.epilogue_functor.emit(),
             "element_output": DataTypeTag[operation.element_output],
             "epilogue_vector_length": str(epilogue_vector_length),

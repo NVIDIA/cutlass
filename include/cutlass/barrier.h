@@ -342,7 +342,7 @@ struct SyncManager {
   CUTLASS_DEVICE
   static
   void wait_lt(uint32_t, void *lock_ptr, int thread_idx, int flag_idx, int count) {
-    BarrierSync::wait_lt_helper(lock_ptr, thread_idx, flag_idx, count);
+    BarrierSync::wait_lt(lock_ptr, thread_idx, flag_idx, count);
   }
 
   CUTLASS_DEVICE

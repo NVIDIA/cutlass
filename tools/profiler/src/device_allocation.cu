@@ -46,7 +46,7 @@
 
 #include "cutlass/library/util.h"
 
-#include "device_allocation.h"
+#include "cutlass/profiler/device_allocation.h"
 
 namespace cutlass {
 namespace profiler {

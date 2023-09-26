@@ -31,7 +31,15 @@
 /*! \file
     \brief Helpers for printing cutlass/core objects
 */
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
 
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
 #pragma once
 
 #include <iostream>
@@ -45,11 +53,10 @@
 #include "cutlass/matrix_shape.h"
 #include "cutlass/layout/pitch_linear.h"
 #include "cutlass/tensor_view.h"
-#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/gemm_enumerated_types.h"
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv2d_problem_size.h"
 #include "cutlass/conv/conv3d_problem_size.h"
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Output operator for CUDA built-in dim3 type

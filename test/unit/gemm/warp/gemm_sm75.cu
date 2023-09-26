@@ -326,7 +326,6 @@ TEST(SM75_warp_gemm_tensor_op_crosswise_f16, 128x128x64_16x16x64_16x8x8) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
 TEST(SM75_warp_gemm_tensor_op_crosswise_i8, 128x128x64_64x64x64_8x8x16) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 64>;
   using InstructionShape = cutlass::gemm::GemmShape<8, 8, 16>;
@@ -746,6 +745,7 @@ TEST(SM75_warp_gemm_tensor_op_interleaved_i4, 128x128x128_16x16x128_8x8x32) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
 TEST(SM75_warp_gemm_tensor_op_crosswise_b1, 128x128x512_64x64x512_8x8x128) {
   using Shape = cutlass::gemm::GemmShape<64, 64, 512>;
   using InstructionShape = cutlass::gemm::GemmShape<8, 8, 128>;

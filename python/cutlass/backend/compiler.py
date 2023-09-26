@@ -34,17 +34,16 @@ import ctypes
 import json
 import os
 import sqlite3
+import subprocess
 import tempfile
 
 from cuda import cuda, nvrtc
-import cutlass_bindings
 
 from cutlass import CACHE_FILE, CUDA_INSTALL_PATH, CUTLASS_PATH, logger
 from cutlass.backend.gemm_operation import GemmOperationUniversal
 from cutlass.backend.library import ApiVersion
 from cutlass.backend.utils.device import device_cc
 from cutlass.backend.utils.software import SubstituteTemplate
-import subprocess
 
 IncludeTemplate = r"""#include "${include}"
 """
@@ -157,8 +156,8 @@ class ArtifactManager:
             "-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored",
         ]
         self.nvcc()
-        self.compiled_cache_device = cutlass_bindings.CompileCache()
-        self.compiled_cache_host = cutlass_bindings.CompileCache()
+        self.compiled_cache_device = {}
+        self.compiled_cache_host = {}
 
     def nvrtc(self):
         self.backend = "nvrtc"
@@ -197,7 +196,7 @@ class ArtifactManager:
                 raise RuntimeError("Cuda Error: {}".format(err))
 
             err, kernel = cuda.cuModuleGetFunction(module, bytes(str.encode(operation_name)))
-            self.compiled_cache_device.insert(key, kernel)
+            self.compiled_cache_device[key] = kernel
 
             compiled_host_fns = {}
             host_lib = CDLLBin(host_binary)
@@ -222,7 +221,7 @@ class ArtifactManager:
 
                     compiled_host_fns[attr] = func
 
-            self.compiled_cache_host.insert(key, compiled_host_fns)
+            self.compiled_cache_host[key] = compiled_host_fns
         return True
 
     def emit_compile_(self, operation_list, compilation_options, host_compilation_options):
@@ -246,11 +245,10 @@ class ArtifactManager:
             )
 
         for incl in includes_host:
-            if "/device/" not in incl:
-                source_buffer_host += SubstituteTemplate(
-                    IncludeTemplate,
-                    {"include": incl},
-                )
+            source_buffer_host += SubstituteTemplate(
+                IncludeTemplate,
+                {"include": incl},
+            )
 
         # 2. Operations
         for operation in operation_list:
@@ -382,16 +380,16 @@ class ArtifactManager:
             # step 1: get kernel string as key
             key = operation.rt_module.emit() + operation.procedural_name() + self.backend
             # step 1: check if the operation is in cache
-            compiled_kernel = self.compiled_cache_device.at(key)
+            compiled_kernel = self.compiled_cache_device.get(key)
 
             if compiled_kernel is None and not bypass_cache:
                 hit = self.load_operation(key, getattr( operation.rt_module, "extra_funcs", {}))
                 if hit:
-                    compiled_kernel = self.compiled_cache_device.at(key)
+                    compiled_kernel = self.compiled_cache_device.get(key)
                     assert compiled_kernel is not None
             if compiled_kernel is not None:
                 operation.rt_module.kernel = compiled_kernel
-                compiled_host_fns = self.compiled_cache_host.at(key)
+                compiled_host_fns = self.compiled_cache_host.get(key)
                 assert compiled_host_fns is not None
                 for key in compiled_host_fns.keys():
                     setattr(operation.rt_module, key, compiled_host_fns[key])
@@ -417,7 +415,7 @@ class ArtifactManager:
                     bytes(str.encode(operation.name()))
                 )
                 operation_name.append(operation.name())
-                self.compiled_cache_device.insert(key, operation.kernel)
+                self.compiled_cache_device[key] = operation.kernel
                 # get host functions
                 compiled_host_fns = {}
                 op_attr = []
@@ -456,7 +454,7 @@ class ArtifactManager:
                         op_attr.append(suffix)
 
                 operation_attr.append(op_attr)
-                self.compiled_cache_host.insert(key, compiled_host_fns)
+                self.compiled_cache_host[key] = compiled_host_fns
 
             for (key, operation_name, operation_attr,) in zip(operation_key, operation_name, operation_attr):
                 self.insert_operation(

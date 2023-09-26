@@ -128,6 +128,7 @@ namespace detail {
 
 // Get just the Swizzle part of a composed layout.
 template <int B, int M, int S, class Offset, class LayoutB>
+CUTE_HOST_DEVICE constexpr
 auto
 get_swizzle_portion(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB>)
 {
@@ -136,6 +137,7 @@ get_swizzle_portion(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB>)
 
 // A non-swizzled layout's "Swizzle part" is the identity swizzle.
 template <class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
 auto
 get_swizzle_portion(Layout<Shape,Stride>)
 {

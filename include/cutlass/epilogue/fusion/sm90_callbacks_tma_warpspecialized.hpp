@@ -217,6 +217,9 @@ struct FusionCallbacks<
     ElementScalar const* alpha_ptr = nullptr;
     ElementScalar const* beta_ptr = nullptr;
 
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
+
     operator typename Impl::Arguments() const {
       return
         {    // unary op: activation(beta * C + (alpha * acc))
@@ -230,7 +233,7 @@ struct FusionCallbacks<
             },                    // end binary op
             {} // ternary args : multiply_add
           },   // end ternary op
-          {} // unary args: activation
+          activation // unary args: activation
         };   // end unary op
     }
   };
@@ -258,7 +261,7 @@ using Sm90LinCombPerRowBias =
     Sm90EVT<Sm90Compute<multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
       Sm90ScalarBroadcast<ElementScalar>, // alpha
       Sm90AccFetch, // acc
-      Sm90ColBroadcast<0, CtaTileShapeMNK, ElementBias, Stride<_1,_0,_0>, AlignmentBias> // bias
+      Sm90ColBroadcast<0, CtaTileShapeMNK, ElementBias, Stride<_1,_0,int>, AlignmentBias> // bias
     >
   >;
 
@@ -293,7 +296,10 @@ struct FusionCallbacks<
     ElementScalar beta = ElementScalar(0);
     ElementScalar const* alpha_ptr = nullptr;
     ElementScalar const* beta_ptr = nullptr;
+
+    using StrideBias = Stride<_1,_0,int>;
     ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
 
     operator typename Impl::Arguments() const {
       return
@@ -303,7 +309,7 @@ struct FusionCallbacks<
           {                     // ternary op : alpha * acc + bias
             {{alpha}, {alpha_ptr}}, // leaf args : alpha
             {},                     // leaf args : acc
-            {bias_ptr},             // leaf args : bias
+            {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
             {}                  // ternary args : multiply_add
           },                    // end ternary op
           {} // ternary args : multiply_add
@@ -373,7 +379,13 @@ struct FusionCallbacks<
     ElementScalar beta = ElementScalar(0);
     ElementScalar const* alpha_ptr = nullptr;
     ElementScalar const* beta_ptr = nullptr;
+
+    using StrideBias = Stride<_1,_0,int>;
     ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
 
     operator typename Impl::Arguments() const {
       return
@@ -384,12 +396,12 @@ struct FusionCallbacks<
             {                     // ternary op : alpha * acc + bias
               {{alpha}, {alpha_ptr}}, // leaf args : alpha
               {},                     // leaf args : acc
-              {bias_ptr},             // leaf args : bias
+              {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
               {}                  // ternary args : multiply_add
             },                    // end ternary op
             {} // ternary args : multiply_add
           },   // end ternary op
-          {} // unary args : activation
+          activation // unary args : activation
         };   // end unary op
     }
   };
@@ -461,10 +473,9 @@ struct FusionCallbacks<
       ElementOutput, ElementCompute, ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     > {
 
-  using StrideAux = cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>;
   using Impl =
     Sm90LinCombPerRowBiasEltActAux<
-      CtaTileShapeMNK, EpilogueTile, StagesD, StrideAux, SmemLayoutAtom, CopyOpR2S, ActivationFn,
+      CtaTileShapeMNK, EpilogueTile, StagesD, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpR2S, ActivationFn,
       ElementOutput, ElementCompute, ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >;
   using Operation =
@@ -478,7 +489,15 @@ struct FusionCallbacks<
     ElementScalar beta = ElementScalar(0);
     ElementScalar const* alpha_ptr = nullptr;
     ElementScalar const* beta_ptr = nullptr;
+
+    using StrideBias = Stride<_1,_0,int>;
     ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
+
+    using StrideAux = cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>;
     ElementAux* aux_ptr = nullptr;
     StrideAux dAux = {};
 
@@ -492,14 +511,14 @@ struct FusionCallbacks<
               {                     // ternary op : alpha * acc + bias
                 {{alpha}, {alpha_ptr}}, // leaf args : alpha
                 {},                     // leaf args : acc
-                {bias_ptr},             // leaf args : bias
+                {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
                 {}                  // ternary args : multiply_add
               },                    // end ternary op
               {}               // ternary args : multiply_add
             },                 // end ternary op
             {aux_ptr, dAux} // unary args : store
           },                // end unary op
-          {} // unary args : activation
+          activation // unary args : activation
         };   // end unary op
     }
   };
@@ -528,7 +547,7 @@ using Sm90PerRowLinCombPerRowBias =
     Sm90EVT<Sm90Compute<multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
       Sm90ColBroadcast<0, CtaTileShapeMNK, ElementScalar, Stride<_1,_0,_0>, AlignmentScalar>, // alpha
       Sm90AccFetch, // acc
-      Sm90ColBroadcast<0, CtaTileShapeMNK, ElementBias, Stride<_1,_0,_0>, AlignmentBias> // bias
+      Sm90ColBroadcast<0, CtaTileShapeMNK, ElementBias, Stride<_1,_0,int>, AlignmentBias> // bias
     >
   >;
 
@@ -591,7 +610,13 @@ struct FusionCallbacks<
     ElementScalar beta = ElementScalar(0);
     ElementScalar const* alpha_ptr = nullptr;
     ElementScalar const* beta_ptr = nullptr;
+
+    using StrideBias = Stride<_1,_0,int>;
     ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
 
     operator typename Impl::Arguments() const {
       return
@@ -600,14 +625,14 @@ struct FusionCallbacks<
             {beta_ptr, beta}, // leaf args : beta
             {},               // leaf args : C
             {                 // ternary op : alpha * acc + bias
-              {alpha_ptr, alpha}, // leaf args : alpha
-              {},                 // leaf args : acc
-              {bias_ptr},         // leaf args : bias
+              {alpha_ptr, alpha},   // leaf args : alpha
+              {},                   // leaf args : acc
+              {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
               {}              // ternary args : multiply_add
             },                // end ternary op
             {} // ternary args : multiply_add
           },   // end ternary op
-          {} // unary args : activation
+          activation // unary args : activation
         };   // end unary op
     }
   };
@@ -650,7 +675,7 @@ using Sm90ScaledLinCombPerRowBias =
     Sm90EVT<Sm90Compute<multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
       Sm90ScalarBroadcast<ElementScalar, Stride<_0,_0,_0>, 3>, // scale_a * scale_b * alpha
       Sm90AccFetch, // acc
-      Sm90ColBroadcast<0, CtaTileShapeMNK, ElementBias, Stride<_1,_0,_0>, AlignmentBias> // bias
+      Sm90ColBroadcast<0, CtaTileShapeMNK, ElementBias, Stride<_1,_0,int>, AlignmentBias> // bias
     >
   >;
 
@@ -728,7 +753,12 @@ struct FusionCallbacks<
     ElementScalar const* scale_c_ptr = nullptr;
     ElementScalar const* scale_d_ptr = nullptr;
 
+    using StrideBias = Stride<_1,_0,int>;
     ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
 
     operator typename Impl::Arguments() const {
       return
@@ -742,14 +772,14 @@ struct FusionCallbacks<
               {    // ternary op : (scale_a * scale_b * alpha) * acc + bias
                 {{scale_a, scale_b, alpha}, 
                  {scale_a_ptr, scale_b_ptr, alpha_ptr}
-                 },         // leaf args : (scale_a * scale_b * alpha)
-                {},         // leaf args : acc
-                {bias_ptr}, // leaf args : bias
+                 },                   // leaf args : (scale_a * scale_b * alpha)
+                {},                   // leaf args : acc
+                {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
                 {} // ternary args : multiply_add
               },   // end ternary op
               {} // ternary args : multiply_add
             },   // end ternary op
-            {} // unary args : activation
+            activation // unary args : activation
           },   // end unary op
           {{scale_d},
            {scale_d_ptr}
@@ -855,10 +885,10 @@ struct FusionCallbacks<
       ElementOutput, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     > {
 
-  using StrideAux = cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>;
   using Impl =
     Sm90ScaledLinCombPerRowBiasEltActAmaxAux<
-      CtaTileShapeMNK, EpilogueTile, StagesD, StrideAux, SmemLayoutAtom, CopyOpR2S, ActivationFn,
+      CtaTileShapeMNK, EpilogueTile, StagesD, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>,
+      SmemLayoutAtom, CopyOpR2S, ActivationFn,
       ElementOutput, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >;
   using Operation =
@@ -885,9 +915,17 @@ struct FusionCallbacks<
     ElementScalar scale_aux = ElementScalar(1);
     ElementScalar const* scale_aux_ptr = nullptr;
 
+    using StrideBias = Stride<_1,_0,int>;
     ElementBias const* bias_ptr = nullptr;
+    StrideBias dBias = {};
+
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
+
     ElementAmax* amax_D_ptr = nullptr;
     ElementAmax* amax_aux_ptr = nullptr;
+
+    using StrideAux = cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>;
     ElementAux* aux_ptr = nullptr;
     StrideAux dAux = {};
 
@@ -905,9 +943,9 @@ struct FusionCallbacks<
           {    // ternary op : (scale_a * scale_b * alpha) * acc + bias
             {{scale_a, scale_b, alpha}, 
              {scale_a_ptr, scale_b_ptr, alpha_ptr}
-             },         // leaf args : (scale_a * scale_b * alpha)
-            {},         // leaf args : acc
-            {bias_ptr}, // leaf args : bias
+             },                   // leaf args : (scale_a * scale_b * alpha)
+            {},                   // leaf args : acc
+            {bias_ptr, ElementBias(0), dBias}, // leaf args : bias
             {} // ternary args : multiply_add
           },   // end ternary op
           {} // ternary args : multiply_add
@@ -924,7 +962,7 @@ struct FusionCallbacks<
           {    // unary op : reduce(activation(Z))
             {             // unary op : activation(Z)
               {},             // leaf args : Z
-              {}              // unary args : activation
+              activation      // unary args : activation
             },                // end unary op
             {amax_D_ptr_} // unary args : reduce
           },              // end unary op

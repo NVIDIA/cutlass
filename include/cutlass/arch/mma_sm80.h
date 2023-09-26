@@ -53,7 +53,16 @@
 
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800))
 #define CUTLASS_ARCH_MMA_SM80_ENABLED
+
+#if (__CUDA_ARCH__ <= 900)
+#define CUTLASS_ARCH_MMA_B1_AND_SM80_ENABLED
 #endif
+#if (__CUDA_ARCH__ <= 890)
+#define CUTLASS_ARCH_MMA_B1_XOR_SM80_ENABLED
+#endif
+
+#endif
+
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2084,7 +2093,7 @@ struct Mma<
     FragmentC const &c
   ) const {
 
-#if defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_B1_AND_SM80_ENABLED)
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -2149,7 +2158,7 @@ struct Mma<
     FragmentC const &c
   ) const {
 
-#if defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_B1_AND_SM80_ENABLED)
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -2220,7 +2229,7 @@ struct Mma<
     FragmentC const &c
   ) const {
 
-#if defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_B1_XOR_SM80_ENABLED)
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -2244,7 +2253,7 @@ struct Mma<
     CUTLASS_UNUSED(d);
     assert(0);
 
-#endif // defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
+#endif // defined(CUTLASS_ARCH_MMA_B1_XOR_SM80_ENABLED)
   }
 };
 

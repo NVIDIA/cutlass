@@ -32,7 +32,6 @@
 
 import ctypes
 
-import cutlass_bindings
 from cutlass import (
     DataType,
     KernelScheduleType
@@ -47,9 +46,10 @@ class GemmCoord_(ctypes.Structure):
         ("k", ctypes.c_int)
     ]
 
-    def __init__(self, gemm_coord) -> None:
-        for field_name, _ in self._fields_:
-            setattr(self, field_name, getattr(gemm_coord, field_name)())
+    def __init__(self, m, n, k) -> None:
+        self.m = m
+        self.n = n
+        self.k = k
 
 
 class GemmCoordBatched_(ctypes.Structure):
@@ -66,9 +66,10 @@ class GemmCoordBatched_(ctypes.Structure):
     ]
 
     def __init__(self, gemm_coord, batch_count) -> None:
-        for field_name, _ in self._fields_[:-1]:
-            setattr(self, field_name, getattr(gemm_coord, field_name)())
-        setattr(self, "batch_count", batch_count)
+        self.m = gemm_coord.m
+        self.n = gemm_coord.n
+        self.k = gemm_coord.k
+        self.batch_count = batch_count
 
 
 class MatrixCoord_(ctypes.Structure):
@@ -96,14 +97,6 @@ class StrideBatched_(ctypes.Structure):
         ("major_stride", ctypes.c_int64),
         ("batch_stride", ctypes.c_int64)
     ]
-
-
-dtype2ctype = {
-    cutlass_bindings.float16: ctypes.c_uint16,
-    cutlass_bindings.float32: ctypes.c_float,
-    cutlass_bindings.float64: ctypes.c_double,
-    cutlass_bindings.int32: ctypes.c_int32,
-}
 
 
 class GenericMainloopArguments3x_(ctypes.Structure):
@@ -196,15 +189,28 @@ def get_mainloop_arguments_3x(
 
 def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor):
     _EpilogueOutputOpParams = epilogue_functor.epilogue_type
+    if hasattr(epilogue_functor, "visitor"):
+        class _EpilogueArguments(ctypes.Structure):
+            _fields_ = [
+                ("epilogue", _EpilogueOutputOpParams),
+                ("arg_C", epilogue_functor.arg_c_type),
+                ("arg_D", epilogue_functor.arg_d_type)
+            ]
 
-    class _EpilogueArguments(ctypes.Structure):
-        _fields_ = [
-            ("epilogue", _EpilogueOutputOpParams),
-            ("ptr_C", ctypes.c_void_p),
-            ("stride_C", StrideBatched_),
-            ("ptr_D", ctypes.c_void_p),
-            ("stride_D", StrideBatched_),
-        ]
+            def __init__(self, output_op, ptr_c, stride_c, ptr_d, stride_d) -> None:
+                self.epilogue = output_op
+                self.arg_C = epilogue_functor.arg_c_type(ptr_c)
+                self.arg_D = epilogue_functor.arg_d_type(ptr_d)
+    else:
+
+        class _EpilogueArguments(ctypes.Structure):
+            _fields_ = [
+                ("epilogue", _EpilogueOutputOpParams),
+                ("ptr_C", ctypes.c_void_p),
+                ("stride_C", StrideBatched_),
+                ("ptr_D", ctypes.c_void_p),
+                ("stride_D", StrideBatched_),
+            ]
 
     class _HardwareInfo(ctypes.Structure):
         _fields_ = [
@@ -324,7 +330,7 @@ def get_gemm_grouped_arguments(epilogue_functor):
 ############################################################################################
 
 
-class Conv2DProblemSize(ctypes.Structure):
+class Conv2DProblemSize_(ctypes.Structure):
     _fields_ = [
         ("N", ctypes.c_int),
         ("H", ctypes.c_int),
@@ -382,11 +388,13 @@ def get_conv2d_arguments(epilogue_functor):
 
     class _Conv2dArguments(ctypes.Structure):
         _fields_ = [
-            ("problem_size", Conv2DProblemSize),
-            ("ref_A", TensorRef_),
-            ("ref_B", TensorRef_),
-            ("ref_C", TensorRef_),
-            ("ref_D", TensorRef_),
+            ("conv_kind", ctypes.c_int),
+            ("problem_size", Conv2DProblemSize_),
+            ("ptr_A", ctypes.c_void_p),
+            ("ptr_B", ctypes.c_void_p),
+            ("ptr_C", ctypes.c_void_p),
+            ("ptr_D", ctypes.c_void_p),
+            ("tensor_C_numel", ctypes.c_int),
             ("output_op", _EpilogueOutputOpParams),
             ("split_k_mode", ctypes.c_int)
         ]
@@ -414,3 +422,189 @@ def get_reduction_params(epilogue_functor):
         ]
 
     return _ReductionParams, _EpilogueOutputParams
+
+
+###########################################################################################
+# Epilogue Visitor Type Factory
+###########################################################################################
+
+class Empty(ctypes.Structure):
+    _fields_ = []
+
+    def __init__(self, *arg) -> None:
+        pass
+
+class EmptyByte(ctypes.Structure):
+    _fields_ = [
+        ("byte", ctypes.c_byte)
+    ]
+
+    def __init__(self, *arg) -> None:
+        pass
+
+class EBO:
+    def __init__(self, index: int, type) -> None:
+        self.index = index
+        self.type = type
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, EBO):
+            return self.index == other.index and self.type == other.type
+        return False
+
+    def __hash__(self) -> int:
+        return hash((self.index, self.type))
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __str__(self) -> str:
+        return f"<{self.index}, {self.type}>"
+
+
+def tuple_factory_(input_tuple, dtype, constants=[0,1]):
+    """
+    The factory function generating cute::Tuple with input tuple
+    :param input_tuple: the input tuple
+    :type input_tuple: tuple
+    :param dtype: the data type for non-constant values
+    :type dtype: str, "int32_t", "int", "int64_t"
+    :param constant: the values that will be treated as constants
+    :type constant: list[int]
+
+    :return: ctype structure representing the cute::Tuple
+    :return: the empty base classes of the tuple
+    """
+
+    # The empty base classes of the current tuple
+    empty_bases = []
+    # The first non empty base class
+    first_non_empty_base = None
+    # The ctype fields of the current tuple
+    ctype_fields = []
+
+    for idx, entry in enumerate(input_tuple):
+        # For nested tuples
+        if isinstance(entry, tuple):
+            sub_tuple_ctype, sub_empty_bases = tuple_factory_(entry, dtype, constants)
+            if ctypes.sizeof(sub_tuple_ctype) == 0:
+                # The empty tuple base class is also an empty EBO
+                empty_bases.append(EBO(idx, entry))
+            else:
+                if first_non_empty_base is None:
+                    first_non_empty_base = sub_empty_bases
+            ctype_fields.append((f"entry_{idx}", sub_tuple_ctype))
+        else:
+            if entry in constants:
+                empty_bases.append(EBO(idx, entry))
+                ctype_fields.append((f"entry_{idx}", Empty))
+            else:
+                ctype_fields.append((f"entry_{idx}", dtype))
+                if first_non_empty_base is None:
+                    first_non_empty_base = []
+
+    # Determine whether or not add an additional byte for empty base classes
+    additional_byte = False
+    # Special case for constant tuple
+    if first_non_empty_base is None:
+        additional_byte = False
+    else:
+        for base in first_non_empty_base:
+            if base in empty_bases:
+                additional_byte = True
+                break
+
+    if additional_byte:
+        ctype_fields = [("empty_byte", EmptyByte), ] + ctype_fields
+
+    # Create the ctype tuple
+    class TupleType(ctypes.Structure):
+        _fields_ = ctype_fields
+
+        def __init__(self, args) -> None:
+            if additional_byte:
+                fields = self._fields_[1:]
+            else:
+                fields = self._fields_
+
+            assert len(fields) == len(args)
+            for field, arg in zip(fields, args):
+                name = field[0]
+                field_type = field[1]
+                setattr(self, name, field_type(arg))
+
+    return TupleType, empty_bases
+
+def tuple_factory(input_tuple, dtype: str, constants=[0,1]):
+    """
+    The factory function generating cute::Tuple with input tuple
+    :param input_tuple: the input tuple
+    :type input_tuple: tuple
+    :param dtype: the data type for non-constant values
+    :type dtype: str, "int32_t", "int", "int64_t"
+    :param constant: the values that will be treated as constants
+    :type constant: list[int]
+
+    :return: ctype structure representing the cute::Tuple
+    :return: the empty base classes of the tuple
+    """
+    # Step 1: convert the dtype
+    if dtype == "int64_t":
+        dtype = ctypes.c_longlong
+    elif dtype in ["int", "int32_t"]:
+        dtype = ctypes.c_int32
+    else:
+        raise NotImplementedError(f"Type {dtype} is not supported")
+
+    tuple_type, _ = tuple_factory_(input_tuple, dtype, constants)
+
+    if ctypes.sizeof(tuple_type) == 0:
+        return EmptyByte
+    return tuple_type
+
+
+def visitor_factory(node_types, node_names):
+    """
+    Creates the argument type of epilogue visitor type
+
+    :param node_types: list of argument types under ctypes
+    :param node_names: list of argument names under str
+
+    :return: tuple type in ctypes.Structure
+    """
+    ctypes_field = []
+    # Struct is used when number of nodes < 4
+    # Because the Sm90VisitorImplBase has specification up to 4 nodes
+    # in `include/cutlass/epilogue/fusion/sm90_visitor_tma_warpspecialized.hpp`
+    if len(node_types) <= 4:
+        for idx, node_type in enumerate(node_types):
+            if ctypes.sizeof(node_type) == 0:
+                # Special case for empty struct
+                # 1 byte placeholder is used for correct alignment
+                ctypes_field.append((node_names[idx], ctypes.c_byte))
+            else:
+                ctypes_field.append((node_names[idx], node_type))
+
+        class VisitorType(ctypes.Structure):
+            _fields_ = ctypes_field
+
+            def __init__(self, kwargs) -> None:
+                for field in self._fields_:
+                    fname, ftype = field
+                    if ftype != ctypes.c_byte:
+                        setattr(self, fname, ftype(kwargs))
+
+    # For cases with more than 4 nodes, tuple is used
+    else:
+        for idx, node_type in enumerate(node_types):
+            ctypes_field.append((node_names[idx], node_type))
+
+        class VisitorType(ctypes.Structure):
+            _fields_ = ctypes_field
+
+            def __init__(self, kwargs) -> None:
+                for field in self._fields_:
+                    fname, ftype = field
+                    setattr(self, fname, ftype(kwargs))
+
+    return VisitorType

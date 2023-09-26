@@ -47,10 +47,9 @@
 
 #include "testbed.h"
 
-#if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
 ////////////////////////////////////////////////////////////////////////////////
 
-////////////////////////////////////////////////////////////////////////////////
+#if defined(CUTLASS_ARCH_MMA_B1_XOR_SM80_ENABLED)
 
 CUTLASS_TEST_L1(SM80_Device_Gemm_XOR_b1t_b1n_s32t_tensor_op_s32, 128x256x1024_64x64x1024, {
   using ElementOutput = int32_t;
@@ -376,4 +375,4 @@ CUTLASS_TEST_L1(SM80_Device_Gemm_XOR_b1t_b1n_s32t_tensor_op_s32, 64x64x512_32x32
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#endif  // #if defined(CUTLASS_ARCH_MMA_SM80_SUPPORTED)
+#endif  // #if defined(CUTLASS_ARCH_MMA_B1_XOR_SM80_ENABLED)

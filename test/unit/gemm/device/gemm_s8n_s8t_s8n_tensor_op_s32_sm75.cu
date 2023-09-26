@@ -49,7 +49,6 @@
 #include "testbed_interleaved.h"
 
 #if defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
-
 ////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM75_Device_Gemm_s8n_s8t_s8n_tensor_op_s32, 32x64x64_16x32x64) {
@@ -289,5 +288,4 @@ TEST(SM75_Device_Gemm_s8n_s8t_s8n_tensor_op_s32, 128x256x64_64x64x64) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
 #endif

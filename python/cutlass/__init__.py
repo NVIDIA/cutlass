@@ -34,6 +34,8 @@ import logging
 import os
 import sys
 
+import cutlass_library
+
 
 def _cutlass_path_from_dir() -> str:
     cutlass_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../../')
@@ -62,19 +64,29 @@ CUTLASS_PATH = os.getenv("CUTLASS_PATH", _cutlass_path_from_dir())
 CUDA_INSTALL_PATH = os.getenv("CUDA_INSTALL_PATH", _cuda_install_path_from_nvcc())
 CACHE_FILE = "compiled_cache.db"
 
-# Add the path to the CUTLASS profiler generation/manifest scripts to PYTHONPATH
-sys.path.insert(0, os.path.join(CUTLASS_PATH, "tools/library/scripts/"))
-
 # Import types/methods from the CUTLASS utility libraries for profiler generation/emission under
-from library import (
+from cutlass_library.library import (
     ArchitectureNames,
+    ComplexTransform,
+    ComplexTransformTag,
+    ConvKind,
+    ConvKindNames,
+    ConvKindTag,
+    ConvMode,
     DataType,
+    DataTypeNames,
     DataTypeSize,
+    DataTypeTag,
     EpilogueFunctor,
     EpilogueScheduleSuffixes,
     EpilogueScheduleTag,
     EpilogueScheduleType,
     GemmKind,
+    GemmKindNames,
+    GemmUniversalMode,
+    IteratorAlgorithm,
+    IteratorAlgorithmNames,
+    IteratorAlgorithmTag,
     LayoutTag,
     LayoutType,
     KernelScheduleSuffixes,
@@ -82,15 +94,27 @@ from library import (
     KernelScheduleType,
     MathInstruction,
     MathOperation,
+    MathOperationTag,
     OpcodeClass,
+    OpcodeClassNames,
+    OpcodeClassTag,
     OperationKind,
     SharedMemPerCC,
+    ShortComplexLayoutNames,
+    ShortDataTypeNames,
+    ShortLayoutTypeNames,
+    SplitKMode,
+    StrideSupport,
+    StrideSupportNames,
+    StrideSupportTag,
     SwizzlingFunctor,
+    SwizzlingFunctorTag,
     TensorDescription,
     TileDescription,
     TileSchedulerSuffixes,
     TileSchedulerTag,
-    TileSchedulerType
+    TileSchedulerType,
+    get_complex_from_real,
 )
 
 this = sys.modules[__name__]
@@ -112,7 +136,7 @@ from cutlass.backend.utils.device import device_cc
 
 this.option_registry = OptionRegistry(device_cc())
 
-this.__version__ = '3.2.0'
+this.__version__ = '3.2.1'
 
 from cutlass.backend import get_memory_pool
 from cutlass.emit.pytorch import pytorch
@@ -120,5 +144,6 @@ from cutlass.op.gemm import Gemm
 from cutlass.op.conv import Conv2d, Conv2dFprop, Conv2dDgrad, Conv2dWgrad
 from cutlass.op.gemm_grouped import GroupedGemm
 from cutlass.op.op import OperationBase
+from cutlass.backend.evt.ir.tensor import Tensor
 
 get_memory_pool(init_pool_size=2 ** 30, max_pool_size=2 ** 32)

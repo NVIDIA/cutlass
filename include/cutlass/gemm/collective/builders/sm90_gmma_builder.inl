@@ -59,7 +59,7 @@ compute_stage_count_or_override(StageCount<stages> stage_count) {
 // Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count. 
 template<int CapacityBytes, class ElementA, class ElementB, class TileShapeMNK, int stages>
 constexpr int
-compute_stage_count_or_override(cute::integral_constant<int, stages> stage_count) {
+compute_stage_count_or_override(cute::Int<stages> stage_count) {
   return stages;
 }
 

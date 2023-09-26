@@ -36,15 +36,15 @@
 #include <stdexcept>
 
 // Profiler includes
-#include "cutlass_profiler.h"
-#include "gemm_operation_profiler.h"
-#include "rank_k_operation_profiler.h"
-#include "rank_2k_operation_profiler.h"
-#include "trmm_operation_profiler.h"
-#include "symm_operation_profiler.h"
-#include "conv2d_operation_profiler.h"          
-#include "conv3d_operation_profiler.h"          
-#include "sparse_gemm_operation_profiler.h"
+#include "cutlass/profiler/cutlass_profiler.h"
+#include "cutlass/profiler/gemm_operation_profiler.h"
+#include "cutlass/profiler/rank_k_operation_profiler.h"
+#include "cutlass/profiler/rank_2k_operation_profiler.h"
+#include "cutlass/profiler/trmm_operation_profiler.h"
+#include "cutlass/profiler/symm_operation_profiler.h"
+#include "cutlass/profiler/conv2d_operation_profiler.h"          
+#include "cutlass/profiler/conv3d_operation_profiler.h"          
+#include "cutlass/profiler/sparse_gemm_operation_profiler.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

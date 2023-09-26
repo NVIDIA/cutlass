@@ -33,6 +33,17 @@
     \brief Defines a class for using integer types smaller than one byte in host or
       device code.
 */
+
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
+
 #pragma once
 
 #if defined(__CUDACC_RTC__)
@@ -41,6 +52,8 @@
 #include <cstdint>
 #endif
 
+#include "cutlass/cutlass.h"
+#include "cutlass/numeric_size.h"
 #include "cutlass/platform/platform.h"
 
 namespace cutlass {
@@ -238,3 +251,4 @@ struct numeric_limits<cutlass::uint1b_t> {
 
 } // namespace platform
 } // namespace cutlass
+

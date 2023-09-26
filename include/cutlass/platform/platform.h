@@ -95,6 +95,16 @@
  * counterparts (or trivially find-and-replace their occurrences in code text).
  */
 
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
+
 //-----------------------------------------------------------------------------
 // Dependencies
 //-----------------------------------------------------------------------------
@@ -354,7 +364,7 @@ using std::nullptr_t;
 // Conditional metaprogramming <type_traits>
 //-----------------------------------------------------------------------------
 
-#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1600))
+#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201700L)) || (defined(_MSC_VER) && (_MSC_VER < 1600))
 
 /// std::enable_if (true specialization)
 template <bool C, typename T = void>
@@ -385,14 +395,16 @@ using std::conditional;
 
 #endif
 
+#if (201703L <=__cplusplus)
 /// std::conditional_t
 using CUTLASS_STL_NAMESPACE::conditional_t;
+#endif
 
 //-----------------------------------------------------------------------------
 // Const/volatility specifiers <type_traits>
 //-----------------------------------------------------------------------------
 
-#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
+#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201703L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
 
 /// std::remove_const (non-const specialization)
 template <typename T>
@@ -432,6 +444,8 @@ using std::remove_cv;
 
 #endif
 
+#if (201703L <=__cplusplus)
+
 /// std::remove_cv_t
 using CUTLASS_STL_NAMESPACE::remove_cv_t;
 /// std::remove_reference_t
@@ -448,6 +462,9 @@ struct remove_cvref {
 // using std::remove_cvref_t;
 template <class T>
 using remove_cvref_t = typename remove_cvref<T>::type;
+
+#endif
+
 
 //-----------------------------------------------------------------------------
 // Type relationships <type_traits>
@@ -613,10 +630,14 @@ using std::is_trivially_copyable;
 
 #endif
 
+#if (201703L <=__cplusplus)
+
 /// std::is_unsigned_v
 using CUTLASS_STL_NAMESPACE::is_integral_v;
 /// std::is_unsigned_v
 using CUTLASS_STL_NAMESPACE::is_unsigned_v;
+
+#endif
 
 //-----------------------------------------------------------------------------
 // bit_cast <bit>

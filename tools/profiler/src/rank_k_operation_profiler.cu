@@ -41,9 +41,9 @@
 
 #include "cutlass/core_io.h"
 
-#include "cublas_helpers.h"
-#include "rank_k_operation_profiler.h"
-#include "gpu_timer.h"
+#include "cutlass/profiler/cublas_helpers.h"
+#include "cutlass/profiler/rank_k_operation_profiler.h"
+#include "cutlass/profiler/gpu_timer.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

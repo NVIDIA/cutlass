@@ -170,6 +170,13 @@ char const *to_string(ConvKind type, bool pretty = false);
 template <>
 ConvKind from_string<ConvKind>(std::string const &str);
 
+/// Converts a RasterOrder enumerant to a string
+char const *to_string(RasterOrder type, bool pretty = false);
+
+/// Convers a RasterOrder enumerant from a string
+template<>
+RasterOrder from_string<RasterOrder>(std::string const &str);
+
 /// Lexical cast from int64_t to string
 std::string lexical_cast(int64_t int_value);
 

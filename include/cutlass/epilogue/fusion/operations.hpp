@@ -60,7 +60,7 @@ struct FusionOperation {
   using ElementBias = void;
   static constexpr int AlignmentBias = 0;
   static constexpr bool IsPerRowBiasSupported = false;
-  template <class> using ActivationFn = void;
+  using ActivationFn = void;
   static constexpr bool IsEltActSupported = false;
 
   using ElementAux = void;
@@ -108,8 +108,7 @@ template<
 >
 struct LinCombEltAct
     : LinearCombination<ElementOutput_, ElementCompute_, ElementScalar_, RoundStyle_> {
-  template <class T>
-  using ActivationFn = ActivationFn_<T>;
+  using ActivationFn = ActivationFn_<ElementCompute_>;
   static constexpr bool IsEltActSupported = true;
 };
 
@@ -142,8 +141,7 @@ template<
 struct LinCombPerRowBiasEltAct
     : LinCombPerRowBias<ElementOutput_, ElementCompute_,
         ElementBias_, ElementScalar_, AlignmentBias_, RoundStyle_> {
-  template <class T>
-  using ActivationFn = ActivationFn_<T>;
+  using ActivationFn = ActivationFn_<ElementCompute_>;
   static constexpr bool IsEltActSupported = true;
 };
 
