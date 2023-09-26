@@ -240,6 +240,7 @@ public:
     if constexpr (!std::is_const_v<decltype(args.max_swizzle_size)>) {
       args.max_swizzle_size = 1 << params.scheduler.log_swizzle_size_;
     }
+    args.raster_order = params.scheduler.raster_order_ == TileScheduler::RasterOrder::AlongN ? TileScheduler::RasterOrderOptions::AlongN : TileScheduler::RasterOrderOptions::AlongM;
     return TileScheduler::get_grid_shape(params.problem_shape, TileShape{}, ClusterShape{}, params.hw_info, args);
   }
 
