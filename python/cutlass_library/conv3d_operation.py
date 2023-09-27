@@ -60,7 +60,11 @@ class Conv3dOperation:
     self.iterator_algorithm = iterator_algorithm
     self.stride_support = stride_support
     self.swizzling_functor = swizzling_functor
-
+  
+  #
+  def is_mixed_input(self):
+    return self.A.element != self.B.element
+  
   #
   def core_name(self):
     ''' The basic operation kind is prefixed with a letter indicating the accumulation type. '''

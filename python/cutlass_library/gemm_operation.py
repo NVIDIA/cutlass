@@ -89,6 +89,10 @@ class GemmOperation:
     return self.tile_description.math_instruction.math_operation in complex_operators
 
   #
+  def is_mixed_input(self):
+    return self.A.element != self.B.element
+  
+  #
   def is_planar_complex(self):
     return self.gemm_kind in (GemmKind.PlanarComplex, GemmKind.PlanarComplexArray)
 
@@ -149,14 +153,19 @@ class GemmOperation:
       if self.C.element != self.tile_description.math_instruction.element_accumulator and \
         self.A.element != self.tile_description.math_instruction.element_accumulator:
         extended_name = "${element_c}_${core_name}_${element_a}"
+        if self.is_mixed_input():
+          extended_name += "_${element_b}"
       elif self.C.element == self.tile_description.math_instruction.element_accumulator and  \
         self.A.element != self.tile_description.math_instruction.element_accumulator:
         extended_name = "${core_name}_${element_a}"
+        if self.is_mixed_input():
+          extended_name += "_${element_b}"
       else:
         extended_name = "${core_name}"
 
     extended_name = SubstituteTemplate(extended_name, {
       'element_a': DataTypeNames[self.A.element],
+      'element_b': DataTypeNames[self.B.element],
       'element_c': DataTypeNames[self.C.element],
       'core_name': self.core_name()
       })
@@ -235,7 +244,7 @@ class GemmOperation:
           ex = self.extended_name(),
           tb = threadblock,
           l = self.layout_name(),
-          a = str(self.A.alignment))
+          a = str(max(self.A.alignment, self.B.alignment)))
 
   #
   def configuration_name(self):

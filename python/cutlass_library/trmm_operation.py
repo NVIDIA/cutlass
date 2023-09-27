@@ -82,6 +82,10 @@ class TrmmOperation:
     return False
 
   #
+  def is_mixed_input(self):
+    return self.A.element != self.B.element
+  
+  #
   def accumulator_type(self):
     accum = self.tile_description.math_instruction.element_accumulator
 

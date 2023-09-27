@@ -229,6 +229,7 @@ cutlass_add_cutlass_library(
   src/reference/gemm_fp8in_fp32out.cu
   src/reference/gemm_fp32out.cu
   src/reference/gemm_fp_other.cu
+  src/reference/gemm_fp_mixed_input.cu
   src/reference/initialize_reference_operations.cu
 
   # cutlass reduction instances in cutlass library

@@ -41,6 +41,7 @@ cutlass_test_unit_add_executable(
   tensor_view.cu
   matrix_coord.cu
   numeric_conversion.cu
+  fast_numeric_conversion.cu
   functional.cu
   )
 
