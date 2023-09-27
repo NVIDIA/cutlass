@@ -56,6 +56,7 @@ void initialize_gemm_reference_operations_fp8in_bf16out(Manifest &manifest);
 void initialize_gemm_reference_operations_fp8in_fp32out(Manifest &manifest);
 void initialize_gemm_reference_operations_fp32out(Manifest &manifest);
 void initialize_gemm_reference_operations_fp_other(Manifest &manifest);
+void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest);
 
 void initialize_conv2d_reference_operations(Manifest &manifest);
 void initialize_conv3d_reference_operations(Manifest &manifest);
@@ -82,6 +83,7 @@ void initialize_reference_operations(Manifest &manifest) {
 
   initialize_gemm_reference_operations_fp32out(manifest);
   initialize_gemm_reference_operations_fp_other(manifest);
+  initialize_gemm_reference_operations_fp_mixed_input(manifest);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

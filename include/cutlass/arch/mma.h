@@ -68,13 +68,23 @@ struct OpMultiplyAddFastF16 {};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+/// Tag indicating the input data types are mixed and the narrower type is 
+/// upcasted to the wider type
+struct OpMultiplyAddMixedInputUpcast {};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Tag indicating the input is converted to 2 (big and small) TF32 components
 //  Perform 3xTF32 or 4xTF32 for every F32 output element
 struct OpMultiplyAddFastF32 {};
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Tag indicating the input is converted to 2 (big and small) TF32 components
 //  Perform 3xTF32 or 4xTF32 for every complex<F32> output element
 struct OpMultiplyAddComplexFastF32 {};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Helper for determining whether staged accumulation should be used for a given operator
 template <typename Operator>

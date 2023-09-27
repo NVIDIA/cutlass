@@ -62,6 +62,11 @@ class Conv2dOperation:
     self.stride_support = stride_support
     self.swizzling_functor = swizzling_functor
     self.group_mode = group_mode
+
+  #
+  def is_mixed_input(self):
+    return self.A.element != self.B.element
+  
   #
   def is_complex(self):
     complex_operators = [

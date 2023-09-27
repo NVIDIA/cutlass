@@ -289,6 +289,7 @@ class ComplexMultiplyOp(enum.Enum):
 class MathOperation(enum.Enum):
   multiply_add = enum_auto()
   multiply_add_saturate = enum_auto()
+  multiply_add_mixed_input_upcast = enum_auto()
   xor_popc = enum_auto()
   and_popc = enum_auto()
   multiply_add_fast_bf16 = enum_auto()
@@ -302,6 +303,7 @@ class MathOperation(enum.Enum):
 MathOperationTag = {
   MathOperation.multiply_add: 'cutlass::arch::OpMultiplyAdd', 
   MathOperation.multiply_add_saturate: 'cutlass::arch::OpMultiplyAddSaturate',
+  MathOperation.multiply_add_mixed_input_upcast: 'cutlass::arch::OpMultiplyAddMixedInputUpcast',
   MathOperation.xor_popc: 'cutlass::arch::OpXorPopc',
   MathOperation.and_popc: 'cutlass::arch::OpAndPopc',
   MathOperation.multiply_add_fast_bf16: 'cutlass::arch::OpMultiplyAddFastBF16',
@@ -964,8 +966,13 @@ def CalculateSmemUsage(operation):
                      cta_shape[0] * (cta_shape[2] // 2) // elements_per_8b_md
   else:
     # Few BLAS3 operations only have A tensor
-    smem_per_stage = DataTypeSize[operation.A.element] * cta_shape[0] * cta_shape[2] // 8 + \
-                     DataTypeSize[operation.A.element] * cta_shape[1] * cta_shape[2] // 8
+    data_type_size_a = DataTypeSize[operation.A.element]
+    data_type_size_b = DataTypeSize[operation.A.element]
+    if operation.is_mixed_input():
+      data_type_size_b = DataTypeSize[operation.B.element]
+
+    smem_per_stage = data_type_size_a * cta_shape[0] * cta_shape[2] // 8 + \
+                     data_type_size_b * cta_shape[1] * cta_shape[2] // 8
 
   smem_usage = smem_per_stage * stages
   return (smem_usage >> 10)
