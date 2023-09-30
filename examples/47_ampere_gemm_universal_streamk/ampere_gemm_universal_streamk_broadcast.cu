@@ -85,7 +85,7 @@
 
 #include "cutlass/epilogue/threadblock/fusion/visitors.hpp"
 #include "cutlass/gemm/kernel/default_gemm_universal_with_visitor.h"
-#include "cutlass/gemm/device/gemm_universal_adapter.h"
+#include "cutlass/gemm/device/gemm_universal_base.h"
 
 #include "helper.h"
 
@@ -257,7 +257,7 @@ using EVTKernelStreamK =
     EVTEpilogueStages
 >::GemmKernel;
 
-using DeviceGemmStreamK = cutlass::gemm::device::GemmUniversalAdapter<EVTKernelStreamK>;
+using DeviceGemmStreamK = cutlass::gemm::device::GemmUniversalBase<EVTKernelStreamK>;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Testbed utility types
