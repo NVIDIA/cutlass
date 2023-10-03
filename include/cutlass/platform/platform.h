@@ -55,7 +55,7 @@
  *   (2) Re-implementations of STL functions and types:
  *       - C++ features that need the \p __device__ annotation.  These are
  *         placed into the \p platform namespace.
- *           - \p abs 
+ *           - \p abs
  *           - \p plus
  *           - \p less
  *           - \p greater
@@ -127,6 +127,7 @@
 #include <algorithm>   // Minimum/maximum operations
 #include <cstddef>     // nullptr_t
 #include <functional>  // Arithmetic operations
+#include <limits>      // float_round_style, float_denorm_style
 #include <utility>     // For methods on std::pair
 #if (!defined(_MSC_VER) && (__cplusplus >= 201103L)) || (defined(_MSC_VER) && (_MS_VER >= 1500))
 #include <type_traits>  // For integral constants, conditional metaprogramming, and type traits
