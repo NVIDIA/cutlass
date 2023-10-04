@@ -115,8 +115,8 @@ public:
   static ComplexTransform const kTransformB = ComplexTransform::kNone;
 
   // thread block shape (kThreadCount, 1, 1)
-  static int const kThreadCount = (kThreadCount_ == 0) ? 32 : kThreadCount_;
-  static int const kThreadsPerRow = kThreadsPerRow_;
+  static int const kThreadCount = (kThreadCount_ <= 0) ? 32 : kThreadCount_;
+  static int const kThreadsPerRow = (kThreadsPerRow_ <= 0) ? 1 : kThreadsPerRow_;
 
   static int const kStages = 1;
 
@@ -396,8 +396,8 @@ public:
   using FragmentCompute = Array<ElementAccumulator, kElementsPerAccess>;
 
   // thread block shape (kThreadsPerRow, kThreadCount / kThreadsPerRow, 1)
-  static int const kThreadCount = (kThreadCount_ == 0) ? 128 : kThreadCount_;
-  static int const kThreadsPerRow = (kThreadsPerRow_ == 0) ?
+  static int const kThreadCount = (kThreadCount_ <= 0) ? 128 : kThreadCount_;
+  static int const kThreadsPerRow = (kThreadsPerRow_ <= 0) ?
                                   std::min(static_cast<int>(kThreadCount / (kElementsPerAccess * sizeof(ElementA))), 16)
                                   : kThreadsPerRow_;
 
@@ -429,51 +429,51 @@ public:
     Arguments(): batch_count(0) { }
 
     Arguments(
-        MatrixCoord problem_size,
-        int32_t     batch_count,
-        typename EpilogueOutputOp::Params output_op,
-        TensorRefA  ref_A,
-        void const *ptr_B,
-        void const *ptr_C,
-        void       *ptr_D,
-        int64_t     batch_stride_A,
-        int64_t     batch_stride_B,
-        int64_t     batch_stride_C,
-        int64_t     batch_stride_D
-      ):
-        problem_size(problem_size),
-        batch_count(batch_count),
-        output_op(output_op),
-        ref_A(ref_A),
-        ptr_B(static_cast<ElementB const *>(ptr_B)),
-        ptr_C(static_cast<ElementC const *>(ptr_C)),
-        ptr_D(static_cast<ElementC       *>(ptr_D)),
-        batch_stride_A(batch_stride_A),
-        batch_stride_B(batch_stride_B),
-        batch_stride_C(batch_stride_C),
-        batch_stride_D(batch_stride_D)
+      MatrixCoord problem_size,
+      int32_t     batch_count,
+      typename EpilogueOutputOp::Params output_op,
+      TensorRefA  ref_A,
+      void const *ptr_B,
+      void const *ptr_C,
+      void       *ptr_D,
+      int64_t     batch_stride_A,
+      int64_t     batch_stride_B,
+      int64_t     batch_stride_C,
+      int64_t     batch_stride_D
+    ):
+      problem_size(problem_size),
+      batch_count(batch_count),
+      output_op(output_op),
+      ref_A(ref_A),
+      ptr_B(static_cast<ElementB const *>(ptr_B)),
+      ptr_C(static_cast<ElementC const *>(ptr_C)),
+      ptr_D(static_cast<ElementC       *>(ptr_D)),
+      batch_stride_A(batch_stride_A),
+      batch_stride_B(batch_stride_B),
+      batch_stride_C(batch_stride_C),
+      batch_stride_D(batch_stride_D)
     { }
 
     Arguments(
-        MatrixCoord problem_size,
-        typename EpilogueOutputOp::Params output_op,
-        TensorRefA  ref_A,
-        void const *ptr_B,
-        void const *ptr_C,
-        void       *ptr_D
-      ):
-        Arguments(
-          problem_size,
-          1,
-          output_op,
-          ref_A,
-          ptr_B,
-          ptr_C,
-          ptr_D,
-          1,
-          1,
-          1,
-          1)
+      MatrixCoord problem_size,
+      typename EpilogueOutputOp::Params output_op,
+      TensorRefA  ref_A,
+      void const *ptr_B,
+      void const *ptr_C,
+      void       *ptr_D
+    ):
+      Arguments(
+        problem_size,
+        1,
+        output_op,
+        ref_A,
+        ptr_B,
+        ptr_C,
+        ptr_D,
+        1,
+        1,
+        1,
+        1)
     { }
 
     Status update(Arguments const &args) {

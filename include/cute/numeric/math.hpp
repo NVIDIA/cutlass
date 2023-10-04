@@ -73,14 +73,29 @@ abs(T const& t) {
   CUTE_GCC_UNREACHABLE;
 }
 
+// Returns 1 if x > 0, -1 if x < 0, and 0 if x is zero.
+template <class T,
+          __CUTE_REQUIRES(is_arithmetic<T>::value)>
+CUTE_HOST_DEVICE constexpr
+int
+signum(T const& x) {
+  if constexpr (is_signed<T>::value) {
+    return (T(0) < x) - (x < T(0));
+  } else {
+    return T(0) < x;
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
 //
 // C++17 <numeric> operations
 //
 
-// Greatest common divisor of two integers
+// Greatest common divisor of two positive integers
 template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value &&
-                          CUTE_STL_NAMESPACE::is_integral<U>::value)>
+          __CUTE_REQUIRES(is_std_integral<T>::value &&
+                          is_std_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 gcd(T t, U u) {
@@ -92,10 +107,10 @@ gcd(T t, U u) {
   }
 }
 
-// Least common multiple of two integers
+// Least common multiple of two positive integers
 template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value &&
-                          CUTE_STL_NAMESPACE::is_integral<U>::value)>
+          __CUTE_REQUIRES(is_std_integral<T>::value &&
+                          is_std_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 lcm(T const& t, U const& u) {
@@ -280,29 +295,12 @@ shiftr(T x, int s) {
   return s >= 0 ? (x >> s) : (x << -s);
 }
 
-// Returns 1 if x > 0, -1 if x < 0, and 0 if x is zero.
-template <class T,
-          __CUTE_REQUIRES(is_unsigned<T>::value)>
-CUTE_HOST_DEVICE constexpr
-int
-signum(T const& x) {
-  return T(0) < x;
-}
-
-template <class T,
-          __CUTE_REQUIRES(not is_unsigned<T>::value)>
-CUTE_HOST_DEVICE constexpr
-int
-signum(T const& x) {
-  return (T(0) < x) - (x < T(0));
-}
-
 // Safe divide
 // @pre t % u == 0
 // @result t / u
 template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value &&
-                          CUTE_STL_NAMESPACE::is_integral<U>::value)>
+          __CUTE_REQUIRES(is_std_integral<T>::value &&
+                          is_std_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
 safe_div(T const& t, U const& u) {

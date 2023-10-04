@@ -304,14 +304,18 @@ public:
     ThreadblockShape,
     ElementA,
     ElementB,
-    ElementC>
+    ElementC,
+    LayoutA,
+    LayoutB>
   {
     using ParamsBase = UniversalParamsBase<
       ThreadblockSwizzle,
       ThreadblockShape,
       ElementA,
       ElementB,
-      ElementC>;
+      ElementC,
+      LayoutA,
+      LayoutB>;
 
     //
     // Data members

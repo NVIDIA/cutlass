@@ -283,8 +283,7 @@ struct Options {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-namespace detail
-{
+namespace { // (anonymous)
 
 /// Dimension-generic permutation loop
 template<int I, typename Element, typename Layout, typename PermuteOp, typename Coord>
@@ -305,7 +304,7 @@ void permute_host_impl(
   }
 }
 
-} // namespace detail
+} // namespace (anonymous)
 
 /// Perform a reference (host-based) permutation of an input tensor
 template<typename PermuteLayout, typename Element, typename Layout>
@@ -332,7 +331,7 @@ void permute_host(
   cutlass::TensorView<Element, TensorLayout> view_output(h_output.data(), TensorLayout::packed(shape_perm), shape_perm);
 
   decltype(shape_orig) coord;
-  detail::permute_host_impl<0>(view_input, view_output, Info::permute, coord);
+  permute_host_impl<0>(view_input, view_output, Info::permute, coord);
 
   cutlass::device_memory::copy_to_device(output.data(), h_output.data(), num_elems);
 }

@@ -79,7 +79,7 @@ TEST(SM80_Device_GemmUniversal_DirectStore_f16n_f16t_f32n_tensor_op_f32, 128x128
       cutlass::gemm::GemmShape<16, 8, 16>,
       cutlass::epilogue::thread::LinearCombination<
           ElementOutput, 
-          4,                            // This is the vector size of the epilogue. 
+          4,                            // This is the vector size of the epilogue.
           ElementAccumulator, 
           ElementAccumulator>,
       cutlass::gemm::threadblock::GemmBatchedIdentityThreadblockSwizzle, 

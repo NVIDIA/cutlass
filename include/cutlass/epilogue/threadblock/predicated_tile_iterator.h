@@ -640,12 +640,12 @@ public:
 
     ++state_[0];
 
-    if (!ScatterD && !PermuteD) {
-      store_byte_pointer_ += params_.advance_row;
-    }
-
     if (!ScatterD) {
       byte_pointer_ += params_.advance_row;
+    }
+
+    if (!ScatterD && !PermuteD) {
+      store_byte_pointer_ += params_.advance_row;
     }
 
     thread_start_row_ += ThreadMap::Shape::kRow;
@@ -654,9 +654,11 @@ public:
 
       state_[0] = 0;
       ++state_[1];
+
       if (!ScatterD) {
         byte_pointer_ += params_.advance_group;
       }
+
       if (!ScatterD && !PermuteD) {
         store_byte_pointer_ += params_.advance_group;
       }
@@ -668,9 +670,11 @@ public:
 
         state_[1] = 0;
         ++state_[2];
+
         if (!ScatterD) {
           byte_pointer_ += params_.advance_cluster;
         }
+
         if (!ScatterD && !PermuteD) {
           store_byte_pointer_ += params_.advance_cluster;
         }
@@ -680,9 +684,11 @@ public:
 
         if (state_[2] == ThreadMap::Count::kCluster) {
           state_[2] = 0;
+
           if (!ScatterD) {
             byte_pointer_ += params_.advance_tile;
           }
+
           if (!ScatterD && !PermuteD) {
             store_byte_pointer_ += params_.advance_tile;
           }

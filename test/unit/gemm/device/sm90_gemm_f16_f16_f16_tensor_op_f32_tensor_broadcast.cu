@@ -49,7 +49,6 @@
 #include "../../common/cutlass_unit_test.h"
 
 #include "gemm_testbed_3x_tensor_broadcast.hpp"
-#include "testing_elementwise.hpp"
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
@@ -129,7 +128,7 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_tensor_op_gmma_f32_tensor_broadcast, 64x128
         cutlass::epilogue::thread::ReLu,
         cutlass::plus,
         cutlass::plus,
-        test::gemm::device::detail::Negate
+        cutlass::negate
         >,
       cutlass::gemm::EpilogueDefault>>;
 
@@ -178,7 +177,7 @@ TEST(SM90_Device_Gemm_f16n_f16t_f16t_tensor_op_gmma_f32_tensor_broadcast, 64x128
         cutlass::epilogue::thread::ReLu,
         cutlass::multiplies,
         cutlass::plus,
-        test::gemm::device::detail::Negate
+        cutlass::negate
         >,
       cutlass::gemm::EpilogueDefault>>;
 
@@ -226,7 +225,7 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_tensor_op_gmma_f32_tensor_broadcast, 128x12
         cutlass::epilogue::thread::ReLu,
         cutlass::epilogue::thread::detail::NoOp,
         cutlass::plus,
-        test::gemm::device::detail::Negate
+        cutlass::negate
         >,
       cutlass::gemm::EpilogueDefault>>;
 
@@ -275,7 +274,7 @@ TEST(SM90_Device_Gemm_f16t_f16t_f32n_tensor_op_gmma_f32_warpspecialized_tensor_b
         cutlass::epilogue::thread::ReLu,
         cutlass::multiplies,
         cutlass::plus,
-        test::gemm::device::detail::Negate
+        cutlass::negate
         >,
       cutlass::gemm::EpilogueDefault>>;
 

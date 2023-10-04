@@ -434,14 +434,6 @@ class gen_device:
                 "    if (result != cudaSuccess) {\n" + \
                 "      return Status::kErrorInternal;\n" + \
                 "    }\n" + \
-                "\n" + \
-                "    result = cudaFuncSetAttribute(\n" + \
-                "        Kernel<B2bGemmKernel>,\n" + \
-                "        cudaFuncAttributePreferredSharedMemoryCarveout, 100);\n" + \
-                "\n" + \
-                "    if (result != cudaSuccess) {\n" + \
-                "      return Status::kErrorInternal;\n" + \
-                "    }\n" + \
                 "  }\n" + \
                 "  cutlass::Kernel<B2bGemmKernel><<<grid, block, smem_size, stream>>>(params_);\n" + \
                 "  result = cudaGetLastError();\n" + \

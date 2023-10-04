@@ -70,12 +70,23 @@ Map elements' data types (ImplicitGemm -> Conv): GemmToConvElementMap
 Map elements' data types (Conv -> ImplicitGemm): ConvToGemmElementMap
 */
 
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
+
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/layout/tensor.h"
 #include "cutlass/tensor_coord.h"
 #include "cutlass/fast_math.h"
-#include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/gemm_enumerated_types.h"
 #include "cutlass/matrix_coord.h"
 
 namespace cutlass {

@@ -1244,7 +1244,7 @@ struct DefaultMultistageMmaComplexCore<
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");
@@ -1411,7 +1411,7 @@ struct DefaultMultistageMmaComplexCore<
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");
@@ -1584,7 +1584,7 @@ struct DefaultMultistageMmaComplexCore<
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");
@@ -1754,7 +1754,7 @@ struct DefaultMultistageMmaComplexCore<
   //
 
   // Define the warp-level op
-  static const int WarpNumThreadsM = 4; // TODO need to extract these from template data
+  static const int WarpNumThreadsM = 4;
   static const int WarpNumThreadsN = 8;
   static_assert(!(WarpShape::kM % WarpNumThreadsM) && !(WarpShape::kN % WarpNumThreadsN),
       "WarpShape must be divisible by ThreadTile shape.");

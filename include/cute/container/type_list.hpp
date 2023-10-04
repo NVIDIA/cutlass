@@ -80,7 +80,7 @@ namespace CUTE_STL_NAMESPACE
 
 template <class... T>
 struct tuple_size<cute::type_list<T...>>
-    : cute::integral_constant<size_t, sizeof...(T)>
+    : CUTE_STL_NAMESPACE::integral_constant<size_t, sizeof...(T)>
 {};
 
 template <size_t I, class... T>
@@ -90,7 +90,7 @@ struct tuple_element<I, cute::type_list<T...>>
 
 template <class... T>
 struct tuple_size<const cute::type_list<T...>>
-    : cute::integral_constant<size_t, sizeof...(T)>
+    : CUTE_STL_NAMESPACE::integral_constant<size_t, sizeof...(T)>
 {};
 
 template <size_t I, class... T>
@@ -114,7 +114,7 @@ struct tuple_element;
 
 template <class... T>
 struct tuple_size<cute::type_list<T...>>
-    : cute::integral_constant<size_t, sizeof...(T)>
+    : CUTE_STL_NAMESPACE::integral_constant<size_t, sizeof...(T)>
 {};
 
 template <size_t I, class... T>
@@ -124,7 +124,7 @@ struct tuple_element<I, cute::type_list<T...>>
 
 template <class... T>
 struct tuple_size<const cute::type_list<T...>>
-    : cute::integral_constant<size_t, sizeof...(T)>
+    : CUTE_STL_NAMESPACE::integral_constant<size_t, sizeof...(T)>
 {};
 
 template <size_t I, class... T>

@@ -30,70 +30,89 @@
  **************************************************************************************************/
 #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/util/type_traits.hpp>
-#include <cute/numeric/math.hpp>
+#include "cute/util/print.hpp"
+#include "cute/util/type_traits.hpp"
+#include "cute/numeric/math.hpp"
 
 namespace cute
 {
 
-template <class T, T v>
-struct constant : CUTE_STL_NAMESPACE::integral_constant<T,v> {
-  static constexpr T value = v;
-  using value_type = T;
-  using type = constant<T,v>;
+// A constant value: short name and type-deduction for fast compilation
+template <auto v>
+struct C {
+  using type = C<v>;
+  static constexpr auto value = v;
+  using value_type = decltype(v);
   CUTE_HOST_DEVICE constexpr operator   value_type() const noexcept { return value; }
   CUTE_HOST_DEVICE constexpr value_type operator()() const noexcept { return value; }
 };
 
+// Deprecate
 template <class T, T v>
-using integral_constant = constant<T,v>;
+using constant = C<v>;
 
 template <bool b>
-using bool_constant = constant<bool,b>;
+using bool_constant = C<b>;
 
 using true_type  = bool_constant<true>;
 using false_type = bool_constant<false>;
+
+// A more std:: conforming integral_constant that enforces type but interops with C<v>
+template <class T, T v>
+struct integral_constant : C<v> {
+  using type = integral_constant<T,v>;
+  static constexpr T value = v;
+  using value_type = T;
+  // Disambiguate C<v>::operator value_type()
+  //CUTE_HOST_DEVICE constexpr operator   value_type() const noexcept { return value; }  
+  CUTE_HOST_DEVICE constexpr value_type operator()() const noexcept { return value; }
+};
 
 //
 // Traits
 //
 
-// Use std::is_integral<T> to match built-in integral types (int, int64_t, unsigned, etc)
-// Use cute::is_integral<T> to match both built-in integral types AND constant<T,t>
+// Use cute::is_std_integral<T> to match built-in integral types (int, int64_t, unsigned, etc)
+// Use cute::is_integral<T> to match both built-in integral types AND static integral types.
 
 template <class T>
-struct is_integral : bool_constant<CUTE_STL_NAMESPACE::is_integral<T>::value> {};
+struct is_integral : bool_constant<is_std_integral<T>::value> {};
+template <auto v>
+struct is_integral<C<v>                  > : true_type {};
 template <class T, T v>
-struct is_integral<constant<T,v>> : true_type {};
+struct is_integral<integral_constant<T,v>> : true_type {};
 
 // is_static detects if an (abstract) value is defined completely by it's type (no members)
 
 template <class T>
 struct is_static : bool_constant<is_empty<T>::value> {};
 
-// is_constant detects if a type is a constant<T,v> and if v is equal to a value
+template <class T>
+constexpr bool is_static_v = is_static<T>::value;
+
+// is_constant detects if a type is a static integral type and if v is equal to a value
 
 template <auto n, class T>
 struct is_constant : false_type {};
+template <auto n, class T>
+struct is_constant<n, T const > : is_constant<n,T> {};
+template <auto n, class T>
+struct is_constant<n, T const&> : is_constant<n,T> {};
+template <auto n, class T>
+struct is_constant<n, T      &> : is_constant<n,T> {};
+template <auto n, class T>
+struct is_constant<n, T     &&> : is_constant<n,T> {};
+template <auto n, auto v>
+struct is_constant<n, C<v>                  > : bool_constant<v == n> {};
 template <auto n, class T, T v>
-struct is_constant<n, constant<T,v>       > : bool_constant<v == n> {};
-template <auto n, class T, T v>
-struct is_constant<n, constant<T,v> const > : bool_constant<v == n> {};
-template <auto n, class T, T v>
-struct is_constant<n, constant<T,v> const&> : bool_constant<v == n> {};
-template <auto n, class T, T v>
-struct is_constant<n, constant<T,v>      &> : bool_constant<v == n> {};
-template <auto n, class T, T v>
-struct is_constant<n, constant<T,v>     &&> : bool_constant<v == n> {};
+struct is_constant<n, integral_constant<T,v>> : bool_constant<v == n> {};
 
 //
 // Specializations
 //
 
 template <int v>
-using Int = constant<int,v>;
+using Int = C<v>;
 
 using _m32    = Int<-32>;
 using _m24    = Int<-24>;
@@ -146,25 +165,21 @@ using _524288 = Int<524288>;
 /***************/
 
 #define CUTE_LEFT_UNARY_OP(OP)                                       \
-  template <class T, T t>                                            \
+  template <auto t>                                                  \
   CUTE_HOST_DEVICE constexpr                                         \
-  constant<decltype(OP t), (OP t)>                                   \
-  operator OP (constant<T,t>) {                                      \
+  C<(OP t)> operator OP (C<t>) {                                     \
     return {};                                                       \
   }
 #define CUTE_RIGHT_UNARY_OP(OP)                                      \
-  template <class T, T t>                                            \
+  template <auto t>                                                  \
   CUTE_HOST_DEVICE constexpr                                         \
-  constant<decltype(t OP), (t OP)>                                   \
-  operator OP (constant<T,t>) {                                      \
+  C<(t OP)> operator OP (C<t>) {                                     \
     return {};                                                       \
   }
-
 #define CUTE_BINARY_OP(OP)                                           \
-  template <class T, T t, class U, U u>                              \
+  template <auto t, auto u>                                          \
   CUTE_HOST_DEVICE constexpr                                         \
-  constant<decltype(t OP u), (t OP u)>                               \
-  operator OP (constant<T,t>, constant<U,u>) {                       \
+  C<(t OP u)> operator OP (C<t>, C<u>) {                             \
     return {};                                                       \
   }
 
@@ -203,99 +218,91 @@ CUTE_BINARY_OP(<=);
 // Mixed static-dynamic special cases
 //
 
-template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
+template <auto t, class U,
+          __CUTE_REQUIRES(is_std_integral<U>::value && t == 0)>
 CUTE_HOST_DEVICE constexpr
-constant<T, 0>
-operator*(constant<T, 0>, U) {
+C<0>
+operator*(C<t>, U) {
   return {};
 }
 
-template <class U, class T,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
+template <class U, auto t,
+          __CUTE_REQUIRES(is_std_integral<U>::value && t == 0)>
 CUTE_HOST_DEVICE constexpr
-constant<T, 0>
-operator*(U, constant<T, 0>) {
+C<0>
+operator*(U, C<t>) {
   return {};
 }
 
-template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
+template <auto t, class U,
+          __CUTE_REQUIRES(is_std_integral<U>::value && t == 0)>
 CUTE_HOST_DEVICE constexpr
-constant<T, 0>
-operator/(constant<T, 0>, U) {
+C<0>
+operator/(C<t>, U) {
   return {};
 }
 
-template <class U, class T,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
+template <class U, auto t,
+          __CUTE_REQUIRES(is_std_integral<U>::value && (t == 1 || t == -1))>
 CUTE_HOST_DEVICE constexpr
-constant<T, 0>
-operator%(U, constant<T, 1>) {
+C<0>
+operator%(U, C<t>) {
   return {};
 }
 
-template <class U, class T,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
+template <auto t, class U,
+          __CUTE_REQUIRES(is_std_integral<U>::value && t == 0)>
 CUTE_HOST_DEVICE constexpr
-constant<T, 0>
-operator%(U, constant<T,-1>) {
+C<0>
+operator%(C<t>, U) {
   return {};
 }
 
-template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
+template <auto t, class U,
+          __CUTE_REQUIRES(is_std_integral<U>::value && t == 0)>
 CUTE_HOST_DEVICE constexpr
-constant<T, 0>
-operator%(constant<T, 0>, U) {
+C<0>
+operator&(C<t>, U) {
   return {};
 }
 
-template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
+template <class U, auto t,
+          __CUTE_REQUIRES(is_std_integral<U>::value && t == 0)>
 CUTE_HOST_DEVICE constexpr
-constant<T, 0>
-operator&(constant<T, 0>, U) {
+C<0>
+operator&(U, C<t>) {
   return {};
 }
 
-template <class T, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
+template <auto t, class U,
+          __CUTE_REQUIRES(is_std_integral<U>::value && !bool(t))>
 CUTE_HOST_DEVICE constexpr
-constant<T, 0>
-operator&(U, constant<T, 0>) {
+C<false>
+operator&&(C<t>, U) {
   return {};
 }
 
-template <class T, T t, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value && !bool(t))>
+template <auto t, class U,
+          __CUTE_REQUIRES(is_std_integral<U>::value && !bool(t))>
 CUTE_HOST_DEVICE constexpr
-constant<bool, false>
-operator&&(constant<T, t>, U) {
+C<false>
+operator&&(U, C<t>) {
   return {};
 }
 
-template <class T, T t, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value && !bool(t))>
+template <class U, auto t,
+          __CUTE_REQUIRES(is_std_integral<U>::value && bool(t))>
 CUTE_HOST_DEVICE constexpr
-constant<bool, false>
-operator&&(U, constant<T, t>) {
+C<true>
+operator||(C<t>, U) {
   return {};
 }
 
-template <class T, class U, T t,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value && bool(t))>
+template <class U, auto t,
+          __CUTE_REQUIRES(is_std_integral<U>::value && bool(t))>
 CUTE_HOST_DEVICE constexpr
-constant<bool, true>
-operator||(constant<T, t>, U) {
-  return {};
-}
-
-template <class T, class U, T t,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value && bool(t))>
-CUTE_HOST_DEVICE constexpr
-constant<bool, true>
-operator||(U, constant<T, t>) {
+C<true>
+operator||(U, C<t>) {
   return {};
 }
 
@@ -304,34 +311,27 @@ operator||(U, constant<T, t>) {
 //
 
 #define CUTE_NAMED_UNARY_FN(OP)                                      \
-  template <class T, T t>                                            \
+  template <auto t>                                                  \
   CUTE_HOST_DEVICE constexpr                                         \
-  constant<decltype(OP(t)), OP(t)>                                   \
-  OP (constant<T,t>) {                                               \
+  C<OP(t)> OP (C<t>) {                                               \
     return {};                                                       \
   }
-
 #define CUTE_NAMED_BINARY_FN(OP)                                     \
-  template <class T, T t, class U, U u>                              \
+  template <auto t, auto u>                                          \
   CUTE_HOST_DEVICE constexpr                                         \
-  constant<decltype(OP(t,u)), OP(t,u)>                               \
-  OP (constant<T,t>, constant<U,u>) {                                \
+  C<OP(t,u)> OP (C<t>, C<u>) {                                       \
     return {};                                                       \
   }                                                                  \
-                                                                     \
-  template <class T, T t, class U,                                   \
-            __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>             \
+  template <auto t, class U,                                         \
+            __CUTE_REQUIRES(is_std_integral<U>::value)>              \
   CUTE_HOST_DEVICE constexpr                                         \
-  auto                                                               \
-  OP (constant<T,t>, U u) {                                          \
+  auto OP (C<t>, U u) {                                              \
     return OP(t,u);                                                  \
   }                                                                  \
-                                                                     \
-  template <class T, class U, U u,                                   \
-            __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value)>             \
+  template <class T, auto u,                                         \
+            __CUTE_REQUIRES(is_std_integral<T>::value)>              \
   CUTE_HOST_DEVICE constexpr                                         \
-  auto                                                               \
-  OP (T t, constant<U,u>) {                                          \
+  auto OP (T t, C<u>) {                                              \
     return OP(t,u);                                                  \
   }
 
@@ -353,32 +353,30 @@ CUTE_NAMED_BINARY_FN(lcm);
 // Other functions
 //
 
-template <class T, T t, class U, U u>
+template <auto t, auto u>
 CUTE_HOST_DEVICE constexpr
-constant<decltype(t / u), t / u>
-safe_div(constant<T, t>, constant<U, u>) {
+C<t / u>
+safe_div(C<t>, C<u>) {
   static_assert(t % u == 0, "Static safe_div requires t % u == 0");
   return {};
 }
 
-template <class T, T t, class U,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<U>::value)>
+template <auto t, class U,
+          __CUTE_REQUIRES(is_std_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
-safe_div(constant<T, t>, U u) {
+safe_div(C<t>, U u) {
   return t / u;
 }
 
-template <class T, class U, U u,
-          __CUTE_REQUIRES(CUTE_STL_NAMESPACE::is_integral<T>::value)>
+template <class T, auto u,
+          __CUTE_REQUIRES(is_std_integral<T>::value)>
 CUTE_HOST_DEVICE constexpr
 auto
-safe_div(T t, constant<U, u>) {
+safe_div(T t, C<u>) {
   return t / u;
 }
 
-// cute::true_type prefers standard conversion to std::true_type
-//   over user-defined conversion to bool
 template <class TrueType, class FalseType>
 CUTE_HOST_DEVICE constexpr
 decltype(auto)
@@ -386,8 +384,6 @@ conditional_return(true_type, TrueType&& t, FalseType&&) {
   return static_cast<TrueType&&>(t);
 }
 
-// cute::false_type prefers standard conversion to std::false_type
-//   over user-defined conversion to bool
 template <class TrueType, class FalseType>
 CUTE_HOST_DEVICE constexpr
 decltype(auto)
@@ -419,15 +415,16 @@ conditional_return(TrueType const& t, FalseType const& f) {
 // Display utilities
 //
 
-template <class T, T N>
-CUTE_HOST_DEVICE void print(integral_constant<T,N> const&) {
-  printf("_%d", N);
+template <auto Value>
+CUTE_HOST_DEVICE void print(C<Value>) {
+  printf("_");
+  ::cute::print(Value);
 }
 
 #if !defined(__CUDACC_RTC__)
-template <class T, T N>
-CUTE_HOST std::ostream& operator<<(std::ostream& os, integral_constant<T,N> const&) {
-  return os << "_" << N;
+template <auto t>
+CUTE_HOST std::ostream& operator<<(std::ostream& os, C<t> const&) {
+  return os << "_" << t;
 }
 #endif
 

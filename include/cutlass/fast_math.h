@@ -28,6 +28,15 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
 
 #pragma once
 
@@ -43,7 +52,7 @@
 #include "cutlass/array.h"
 #include "cutlass/uint128.h"
 #include "cutlass/coord.h"
-#include "cutlass/numeric_types.h"
+#include "cutlass/half.h"
 
 /**
  * \file
@@ -148,15 +157,23 @@ CUTLASS_HOST_DEVICE dividend_t round_nearest(dividend_t dividend, divisor_t divi
   return ((dividend + divisor - 1) / divisor) * divisor;
 }
 
+template <typename value_t>
+CUTLASS_HOST_DEVICE
+constexpr
+value_t abs_for_integer(value_t a) {
+  return ((a > 0) ? a : -a);
+}
 /**
  * Greatest common divisor
  */
 template <typename value_t>
-CUTLASS_HOST_DEVICE value_t gcd(value_t a, value_t b) {
+CUTLASS_HOST_DEVICE
+CUTLASS_CONSTEXPR_IF_CXX17
+value_t gcd(value_t a, value_t b) {
   for (;;) {
-    if (a == 0) return b;
+    if (a == 0) return cutlass::abs_for_integer(b);
     b %= a;
-    if (b == 0) return a;
+    if (b == 0) return cutlass::abs_for_integer(a);
     a %= b;
   }
 }
@@ -165,21 +182,44 @@ CUTLASS_HOST_DEVICE value_t gcd(value_t a, value_t b) {
  * Least common multiple
  */
 template <typename value_t>
-CUTLASS_HOST_DEVICE value_t lcm(value_t a, value_t b) {
+CUTLASS_HOST_DEVICE
+CUTLASS_CONSTEXPR_IF_CXX17
+value_t lcm(value_t a, value_t b) {
   value_t temp = gcd(a, b);
 
-  return temp ? (a / temp * b) : 0;
+  return temp ? (cutlass::abs_for_integer(a) / temp * cutlass::abs_for_integer(b)) : 0;
 }
 
+/**
+ * Greatest common divisor
+ */
+template <typename value_t>
+CUTLASS_HOST_DEVICE
+constexpr
+value_t gcd_cxx11(value_t a, value_t b) {
+  return (a == 0 || b == 0) ? cutlass::abs_for_integer(a | b) : gcd_cxx11(b, a % b);
+}
+
+/**
+ * Least common multiple
+ */
+template <typename value_t>
+CUTLASS_HOST_DEVICE
+constexpr
+value_t lcm_cxx11(value_t a, value_t b) {
+  return gcd_cxx11(a, b) ? (cutlass::abs_for_integer(a) / gcd_cxx11(a, b) * cutlass::abs_for_integer(b)) : 0;
+}
 /// Returns the smallest value in the half-open range [a, a+b) that is a multiple of b
 CUTLASS_HOST_DEVICE
-constexpr int round_up(int a, int b) {
+CUTLASS_CONSTEXPR_IF_CXX17
+int round_up(int a, int b) {
   return ((a + b - 1) / b) * b;
 }
 
 /// Returns the ceiling of (a / b)
 CUTLASS_HOST_DEVICE
-constexpr int ceil_div(int a, int b) {
+CUTLASS_CONSTEXPR_IF_CXX17
+int ceil_div(int a, int b) {
   return (a + b - 1) / b;
 }
 
@@ -459,7 +499,6 @@ struct FastDivmodU64 {
       }
       quotient = (x >> shift_right);
     #else
-      // TODO - use proper 'fast' division here also. No reason why x86-code shouldn't be optimized.
       quotient = dividend / divisor;
     #endif
 
@@ -640,12 +679,12 @@ struct Max {
 };
 
 CUTLASS_HOST_DEVICE
-constexpr int const_min(int a, int b) {
+CUTLASS_CONSTEXPR_IF_CXX17 int const_min(int a, int b) {
     return (b < a ? b : a);
 }
 
 CUTLASS_HOST_DEVICE
-constexpr int const_max(int a, int b) {
+CUTLASS_CONSTEXPR_IF_CXX17 int const_max(int a, int b) {
     return (b > a ? b : a);
 }
 

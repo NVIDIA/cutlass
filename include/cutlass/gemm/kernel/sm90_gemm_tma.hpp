@@ -39,6 +39,7 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
+#include "cutlass/trace.h"
 
 #include "cute/tensor.hpp"
 
@@ -65,13 +66,13 @@ template <
   class ProblemShape_,
   class CollectiveMainloop_,
   class CollectiveEpilogue_,
-  class GridSwizzle_
+  class TileScheduler_
 >
 class GemmUniversal<
   ProblemShape_,
   CollectiveMainloop_,
   CollectiveEpilogue_,
-  GridSwizzle_,
+  TileScheduler_,
   cute::enable_if_t<cute::is_base_of_v<KernelTma, typename CollectiveMainloop_::DispatchPolicy::Schedule>>>
 {
 public:
@@ -79,7 +80,6 @@ public:
   // Type Aliases
   //
   using ProblemShape = ProblemShape_;
-  using GridSwizzle = GridSwizzle_;
   static_assert(rank(ProblemShape{}) == 3 or rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
 
@@ -105,14 +105,21 @@ public:
   using StrideC  = typename CollectiveEpilogue::StrideC;
   using ElementD = typename CollectiveEpilogue::ElementD;
   using StrideD  = typename CollectiveEpilogue::StrideD;
-  using EpilogueArguments = typename CollectiveEpilogue::Params;
+  using EpilogueArguments = typename CollectiveEpilogue::Arguments;
   using EpilogueParams = typename CollectiveEpilogue::Params;
   static_assert(cute::is_same_v<ElementAccumulator, typename CollectiveEpilogue::ElementAccumulator>,
     "Mainloop and epilogue do not agree on accumulator value type.");
 
-  static constexpr int SharedStorageSize = cute::max(
+  static_assert(cute::is_void_v<TileScheduler_> or cute::is_same_v<TileScheduler_, PersistentScheduler>,
+    "TMA kernel does not support specializing the tile scheduler.");
+  using TileSchedulerTag = TileScheduler_;
+  using TileScheduler = typename detail::TileSchedulerSelector<
+    TileScheduler_, ArchTag, TileShape, ClusterShape>::Scheduler;
+  using TileSchedulerArguments = typename TileScheduler::Arguments;
+
+  static constexpr int SharedStorageSize = static_cast<int>(cute::max(
       sizeof(typename CollectiveMainloop::SharedStorage),
-      sizeof(typename CollectiveEpilogue::SharedStorage));
+      sizeof(typename CollectiveEpilogue::SharedStorage)));
 
   static constexpr uint32_t MaxThreadsPerBlock = size(TiledMma{});
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
@@ -124,6 +131,7 @@ public:
     MainloopArguments mainloop{};
     EpilogueArguments epilogue{};
     KernelHardwareInfo hw_info{};
+    TileSchedulerArguments scheduler{};
   };
 
   // Kernel entry point API
@@ -163,36 +171,11 @@ public:
     bool implementable = (args.mode == GemmUniversalMode::kGemm) or
         (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
     if (!implementable) {
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Arguments or Problem Size don't meet the requirements.\n");
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Arguments or Problem Shape don't meet the requirements.\n");
       return implementable;
     }
-    constexpr int tma_alignment_bits = 128;
-    constexpr int min_tma_aligned_elements = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
-    auto M = get<0>(args.problem_shape);
-    auto N = get<1>(args.problem_shape);
-    auto K = get<2>(args.problem_shape);
-    // Contiguous dimension for the TMA tensor should be 128b aligned
-    implementable = std::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> ?
-                        K % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0;
-    implementable = implementable && (std::is_same_v<gemm::detail::StrideToLayoutTagB_t<StrideB>, layout::RowMajor> ?
-                        N % min_tma_aligned_elements == 0 : K % min_tma_aligned_elements == 0);
-    implementable = implementable && (!cutlass::epilogue::collective::detail::IF_EPILOGUE_USES_TMA<CollectiveEpilogue>::value ||
-                        (cutlass::epilogue::collective::detail::IF_EPILOGUE_USES_TMA<CollectiveEpilogue>::value &&
-                        std::is_same_v<gemm::detail::StrideToLayoutTagC_t<StrideC>, layout::RowMajor> ?
-                        N % min_tma_aligned_elements == 0 : M % min_tma_aligned_elements == 0));
-    if (!implementable) {
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
-      return implementable;
-    }
-
-    constexpr bool is_beta_supported =
-      CollectiveEpilogue::ThreadEpilogueOp::kScale == cutlass::epilogue::thread::ScaleType::Default;
-    implementable = is_beta_supported || (args.epilogue.thread.beta == 0 && args.epilogue.thread.beta_ptr == nullptr);
-    if (!implementable) {
-      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Scaling params don't meet ThreadEpilogueOp requirements.\n");
-      return implementable;
-    }
-
+    implementable &= CollectiveMainloop::can_implement(args.problem_shape, args.mainloop);
+    implementable &= CollectiveEpilogue::can_implement(args.problem_shape, args.epilogue);
     return implementable;
   }
 
@@ -201,13 +184,18 @@ public:
     return 0;
   }
 
+  static cutlass::Status
+  initialize_workspace(Arguments const& args, void* workspace = nullptr, cudaStream_t stream = nullptr) {
+    return Status::kSuccess;
+  }
+
   // Computes the kernel launch grid shape based on runtime parameters
   static dim3
   get_grid_shape(Params const& params) {
     auto cluster_shape = ClusterShape{};
     auto tile_shape = TileShape{};
     auto problem_shape_MNKL = append<4>(params.problem_shape, Int<1>{});
-    return detail::PersistentTileSchedulerSm90::get_tiled_blk_shape_mnl(
+    return TileScheduler::get_tiled_cta_shape_mnl(
         problem_shape_MNKL, tile_shape, cluster_shape);
   }
 
@@ -237,8 +225,9 @@ public:
     static_assert(rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
 
     int thread_idx = int(threadIdx.x);
-    int warp_idx   = canonical_warp_idx();
+    int warp_idx   = canonical_warp_idx_sync();
     int lane_predicate = cute::elect_one_sync();
+    uint32_t block_rank_in_cluster = cute::block_rank_in_cluster();
 
     // Issue Tma Descriptor Prefetch from a single thread
     if ((warp_idx == 0) && lane_predicate) {
@@ -246,7 +235,7 @@ public:
     }
 
     // Separate out problem shape for convenience
-    // Optionally append _1s until problem shape is rank-4 in case its is only rank-3 (MNK)
+    // Optionally append 1s until problem shape is rank-4 in case its is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(params.problem_shape, Int<1>{});
     auto M = get<0>(problem_shape_MNKL);
     auto N = get<1>(problem_shape_MNKL);
@@ -291,6 +280,7 @@ public:
       accumulators,
       k_tile_iter, k_tile_count,
       thread_idx,
+      block_rank_in_cluster,
       smem_buf,
       params.mainloop
     );

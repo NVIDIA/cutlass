@@ -36,10 +36,27 @@
 #include <utility>
 
 #include <cute/container/array_subbyte.hpp>
+#include <cute/tensor.hpp>
 
 TEST(CuTe_core, ArraySubbyte)
 {
   using namespace cute;
+  {
+    array_subbyte<int4_t, 10> array0;
+    array_subbyte<int4_t,  5> array1;
+    fill(array0, int4_t(0));
+    fill(array1, int4_t(1));
+
+    for (int i = 0; i < array1.size(); ++i) {
+      array0[i+5] = array1[i];
+    }
+    
+    EXPECT_EQ(int4_t(array0.back()), int4_t(1));
+
+    for (int i = 0; i < array1.size(); ++i) {
+      EXPECT_EQ(int4_t(array0[i]), int4_t(i / 5));
+    }
+  }
 
   {
   array_subbyte<uint8_t, 14> a;
@@ -110,5 +127,117 @@ TEST(CuTe_core, ArraySubbyte)
     EXPECT_EQ(a[i], bool(i % 2));
   }
   //std::cout << std::endl;
+  }
+}
+
+TEST(CuTe_core, Subbyte_iterator)
+{
+  using namespace cute;
+
+  {
+  array_subbyte<uint8_t, 15> a;
+  auto tensor = make_tensor(subbyte_iterator<uint8_t>(a.raw_data()), make_shape(15));
+
+  fill(a, uint8_t(13));
+  for (int i = 0; i < int(a.size()); ++i) {
+    EXPECT_EQ(uint8_t(tensor(i)), 13);
+    tensor(i) = uint8_t(i);
+    EXPECT_EQ(a[i], uint8_t(tensor(i)));
+  }
+
+  }
+
+  {
+  array_subbyte<int4_t, 15> a;
+  auto tensor = make_tensor(subbyte_iterator<int4_t>(a.raw_data()), make_shape(15));
+
+  fill(a, int4_t(-5));
+  for (int i = 0; i < int(a.size()); ++i) {
+    EXPECT_EQ(int4_t(tensor(i)), int4_t(-5));
+    tensor(i) = int4_t(i);
+    EXPECT_EQ(int4_t(a[i]), int4_t(tensor(i)));
+  }
+
+  }
+
+  {
+  array_subbyte<uint2_t, 15> a;
+  auto tensor = make_tensor(subbyte_iterator<uint2_t>(a.raw_data()), make_shape(15));
+
+  fill(a, uint2_t(-5));
+  for (int i = 0; i < int(a.size()); ++i) {
+    EXPECT_EQ(uint2_t(tensor(i)), uint2_t(-5));
+    tensor(i) = uint2_t(i);
+    EXPECT_EQ(uint2_t(a[i]), uint2_t(tensor(i)));
+  }
+
+  }
+
+  {
+  array_subbyte<bool, 15> a;
+  auto tensor = make_tensor(subbyte_iterator<bool>(a.raw_data()), make_shape(15));
+
+  fill(a, bool(1));
+  for (int i = 0; i < int(a.size()); ++i) {
+    EXPECT_EQ(bool(tensor(i)), bool(1));
+    tensor(i) = bool(i % 2);
+    EXPECT_EQ(a[i], bool(tensor(i)));
+  }
+  }
+}
+
+TEST(CuTe_core, Const_subbyte_iterator)
+{
+  using namespace cute;
+
+  {
+  array_subbyte<uint8_t, 15> a;
+  auto tensor = make_tensor(subbyte_iterator<uint8_t const>(a.raw_data()), make_shape(15));
+
+  fill(a, uint8_t(13));
+  for (int i = 0; i < int(a.size()); ++i) {
+    EXPECT_EQ(uint8_t(tensor(i)), 13);
+    a[i] = uint8_t(i);
+    EXPECT_EQ(a[i], uint8_t(tensor(i)));
+  }
+
+  }
+
+  {
+  array_subbyte<int4_t, 15> a;
+  auto tensor = make_tensor(subbyte_iterator<int4_t const>(a.raw_data()), make_shape(15));
+
+  fill(a, int4_t(-5));
+  for (int i = 0; i < int(a.size()); ++i) {
+    EXPECT_EQ(int4_t(tensor(i)), int4_t(-5));
+    a[i] = int4_t(i);
+    EXPECT_EQ(int4_t(a[i]), int4_t(tensor(i)));
+  }
+
+  }
+
+  {
+  array_subbyte<uint2_t, 15> a;
+  auto tensor = make_tensor(subbyte_iterator<uint2_t const>(a.raw_data()), make_shape(15));
+
+  fill(a, uint2_t(-5));
+  for (int i = 0; i < int(a.size()); ++i) {
+    EXPECT_EQ(uint2_t(tensor(i)), uint2_t(-5));
+    a[i] = uint2_t(i);
+    EXPECT_EQ(uint2_t(a[i]), uint2_t(tensor(i)));
+  }
+
+  }
+
+  {
+  array_subbyte<bool, 15> a;
+  auto tensor = make_tensor(subbyte_iterator<bool const>(a.raw_data()), make_shape(15));
+
+  fill(a, bool(1));
+  for (int i = 0; i < int(a.size()); ++i) {
+    EXPECT_EQ(bool(tensor(i)), bool(1));
+    a[i] = bool(i % 2);
+    EXPECT_EQ(a[i], bool(tensor(i)));
+  }
   }
 }

@@ -130,7 +130,7 @@ struct Mma<
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -196,7 +196,7 @@ struct Mma<
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -257,13 +257,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -318,13 +317,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.u8.s8.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -379,14 +377,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k16.row.col.s8.u8 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -441,13 +437,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.u8.u8.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -461,7 +456,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = S8 * S8 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,16>,
+  gemm::GemmShape<8, 8, 16>,
   32,
   int8_t,
   layout::RowMajor,
@@ -471,7 +466,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAddSaturate> {
 
-  using Shape = gemm::GemmShape<8,8,16>;
+  using Shape = gemm::GemmShape<8, 8, 16>;
 
   using ElementA = int8_t;
   using LayoutA = layout::RowMajor;
@@ -508,13 +503,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k16.row.col.satfinite.s32.s8.s8.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -522,7 +516,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = U8 * S8 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,16>,
+  gemm::GemmShape<8, 8, 16>,
   32,
   uint8_t,
   layout::RowMajor,
@@ -532,7 +526,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAddSaturate> {
 
-  using Shape = gemm::GemmShape<8,8,16>;
+  using Shape = gemm::GemmShape<8, 8, 16>;
 
   using ElementA = uint8_t;
   using LayoutA = layout::RowMajor;
@@ -569,13 +563,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k16.row.col.satfinite.s32.u8.s8.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -583,7 +576,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = S8 * U8 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,16>,
+  gemm::GemmShape<8, 8, 16>,
   32,
   int8_t,
   layout::RowMajor,
@@ -593,7 +586,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAddSaturate> {
 
-  using Shape = gemm::GemmShape<8,8,16>;
+  using Shape = gemm::GemmShape<8, 8, 16>;
 
   using ElementA = int8_t;
   using LayoutA = layout::RowMajor;
@@ -630,13 +623,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k16.row.col.satfinite.s32.s8.u8.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -644,7 +636,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = U8 * U8 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,16>,
+  gemm::GemmShape<8, 8, 16>,
   32,
   uint8_t,
   layout::RowMajor,
@@ -654,7 +646,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAddSaturate> {
 
-  using Shape = gemm::GemmShape<8,8,16>;
+  using Shape = gemm::GemmShape<8, 8, 16>;
 
   using ElementA = uint8_t;
   using LayoutA = layout::RowMajor;
@@ -691,13 +683,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k16.row.col.satfinite.s32.u8.u8.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -711,7 +702,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = S4 * S4 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,32>,
+  gemm::GemmShape<8, 8, 32>,
   32,
   int4b_t,
   layout::RowMajor,
@@ -721,7 +712,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAdd> {
 
-  using Shape = gemm::GemmShape<8,8,32>;
+  using Shape = gemm::GemmShape<8, 8, 32>;
 
   using ElementA = int4b_t;
   using LayoutA = layout::RowMajor;
@@ -751,19 +742,19 @@ struct Mma<
 
   unsigned const & A = reinterpret_cast<unsigned const &>(a);
   unsigned const & B = reinterpret_cast<unsigned const &>(b);
+
   int const *C = reinterpret_cast<int const *>(&c);
   int *D = reinterpret_cast<int *>(&d);
 
   asm volatile("mma.sync.aligned.m8n8k32.row.col.s32.s4.s4.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -771,7 +762,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = U4 * S4 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,32>,
+  gemm::GemmShape<8, 8, 32>,
   32,
   uint4b_t,
   layout::RowMajor,
@@ -781,7 +772,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAdd> {
 
-  using Shape = gemm::GemmShape<8,8,32>;
+  using Shape = gemm::GemmShape<8, 8, 32>;
 
   using ElementA = uint4b_t;
   using LayoutA = layout::RowMajor;
@@ -818,13 +809,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k32.row.col.s32.u4.s4.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -832,7 +822,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = S4 * U4 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,32>,
+  gemm::GemmShape<8, 8, 32>,
   32,
   int4b_t,
   layout::RowMajor,
@@ -842,7 +832,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAdd> {
 
-  using Shape = gemm::GemmShape<8,8,32>;
+  using Shape = gemm::GemmShape<8, 8, 32>;
 
   using ElementA = int4b_t;
   using LayoutA = layout::RowMajor;
@@ -879,13 +869,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k32.row.col.s32.s4.u4.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -893,7 +882,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = U4 * U4 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,32>,
+  gemm::GemmShape<8, 8, 32>,
   32,
   uint4b_t,
   layout::RowMajor,
@@ -903,7 +892,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAdd> {
 
-  using Shape = gemm::GemmShape<8,8,32>;
+  using Shape = gemm::GemmShape<8, 8, 32>;
 
   using ElementA = uint4b_t;
   using LayoutA = layout::RowMajor;
@@ -940,13 +929,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k32.row.col.s32.u4.u4.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -960,7 +948,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = S4 * S4 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,32>,
+  gemm::GemmShape<8, 8, 32>,
   32,
   int4b_t,
   layout::RowMajor,
@@ -970,7 +958,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAddSaturate> {
 
-  using Shape = gemm::GemmShape<8,8,32>;
+  using Shape = gemm::GemmShape<8, 8, 32>;
 
   using ElementA = int4b_t;
   using LayoutA = layout::RowMajor;
@@ -1007,13 +995,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k32.row.col.satfinite.s32.s4.s4.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -1021,7 +1008,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = U4 * S4 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,32>,
+  gemm::GemmShape<8, 8, 32>,
   32,
   uint4b_t,
   layout::RowMajor,
@@ -1031,7 +1018,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAddSaturate> {
 
-  using Shape = gemm::GemmShape<8,8,32>;
+  using Shape = gemm::GemmShape<8, 8, 32>;
 
   using ElementA = uint4b_t;
   using LayoutA = layout::RowMajor;
@@ -1068,13 +1055,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k32.row.col.satfinite.s32.u4.s4.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -1082,7 +1068,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = S4 * U4 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,32>,
+  gemm::GemmShape<8, 8, 32>,
   32,
   int4b_t,
   layout::RowMajor,
@@ -1092,7 +1078,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAddSaturate> {
 
-  using Shape = gemm::GemmShape<8,8,32>;
+  using Shape = gemm::GemmShape<8, 8, 32>;
 
   using ElementA = int4b_t;
   using LayoutA = layout::RowMajor;
@@ -1129,13 +1115,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k32.row.col.satfinite.s32.s4.u4.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -1143,7 +1128,7 @@ struct Mma<
 /// Matrix multiply-add operation: S32 = U4 * U4 + S32
 template <>
 struct Mma<
-  gemm::GemmShape<8,8,32>,
+  gemm::GemmShape<8, 8, 32>,
   32,
   uint4b_t,
   layout::RowMajor,
@@ -1153,7 +1138,7 @@ struct Mma<
   layout::RowMajor,
   OpMultiplyAddSaturate> {
 
-  using Shape = gemm::GemmShape<8,8,32>;
+  using Shape = gemm::GemmShape<8, 8, 32>;
 
   using ElementA = uint4b_t;
   using LayoutA = layout::RowMajor;
@@ -1190,13 +1175,12 @@ struct Mma<
   asm volatile("mma.sync.aligned.m8n8k32.row.col.satfinite.s32.u4.u4.s32 {%0,%1}, {%2}, {%3}, {%4,%5};\n"
       : "=r"(D[0]), "=r"(D[1])
       : "r"(A), "r"(B), "r"(C[0]), "r"(C[1]));
-
 #else
     CUTLASS_UNUSED(a);
     CUTLASS_UNUSED(b);
     CUTLASS_UNUSED(c);
     CUTLASS_UNUSED(d);
-    assert(0);
+    CUTLASS_NOT_IMPLEMENTED();
 #endif
   }
 };
@@ -1248,7 +1232,7 @@ struct Mma<
 
 #if defined(CUTLASS_ARCH_MMA_SM75_ENABLED)
 
-#if (__CUDA_ARCH__ >= 900) || (defined(CUTLASS_ARCH_WMMA_ENABLED))
+#if defined(CUTLASS_ARCH_WMMA_ENABLED)
   using WmmaFragmentA = nvcuda::wmma::fragment<
           nvcuda::wmma::matrix_a,
           Shape::kM,
@@ -1287,7 +1271,7 @@ struct Mma<
   CUTLASS_UNUSED(b);
   CUTLASS_UNUSED(c);
   CUTLASS_UNUSED(d);
-  assert(0); // WMMA must be supported to issue binary matrix multiply-accumulate instructions.
+  CUTLASS_NOT_IMPLEMENTED(); // WMMA must be supported to issue binary matrix multiply-accumulate instructions.
 
 #endif // defined(CUTLASS_ARCH_WMMA_ENABLED)
 

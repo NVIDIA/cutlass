@@ -41,6 +41,7 @@
 #include "cute/tensor_predicate.hpp"
 #include "cute/numeric/arithmetic_tuple.hpp"
 #include "cutlass/pipeline/pipeline.hpp"
+#include "cutlass/trace.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -120,16 +121,15 @@ struct CollectiveMma<
   static_assert((size<1>(TileShape{}) % size<0>(SmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(SmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
 
-  // Tile along K mode first before tiling over MN. PIPE mode last as usual.
-  // This maximizes TMA boxes due to better smem-K vectorization, reducing total issued TMAs.
+  // Tile along modes in a way that maximizes the TMA box size.
   using SmemLayoutA = decltype(tile_to_shape(
       SmemLayoutAtomA{},
       make_shape(shape<0>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      Step<_2,_1,_3>{}));
+      conditional_t< ::cutlass::gemm::detail::is_major<0,StrideA>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
   using SmemLayoutB = decltype(tile_to_shape(
       SmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      Step<_2,_1,_3>{}));
+      conditional_t< ::cutlass::gemm::detail::is_major<0,StrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 1 or more.");
   static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
@@ -162,6 +162,7 @@ struct CollectiveMma<
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
+    uint32_t mma_promotion_interval = 4;
   };
 
   // Device side kernel params
@@ -193,12 +194,9 @@ struct CollectiveMma<
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     (void) workspace;
 
-    // Optionally append _1s until problem shape is rank-4 (MNKL), in case it is only rank-3 (MNK)
-    auto problem_shape_MNKL = append<4>(problem_shape, Int<1>{});
-    auto M = get<0>(problem_shape_MNKL);
-    auto N = get<1>(problem_shape_MNKL);
-    auto K = get<2>(problem_shape_MNKL);
-    auto L = get<3>(problem_shape_MNKL);
+    // Optionally append 1s until problem shape is rank-4 (MNKL), in case it is only rank-3 (MNK)
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
+    auto [M,N,K,L] = problem_shape_MNKL;
 
     auto ptr_A = reinterpret_cast<InternalElementA const*>(args.ptr_A);
     auto ptr_B = reinterpret_cast<InternalElementB const*>(args.ptr_B);
@@ -223,6 +221,27 @@ struct CollectiveMma<
     };
   }
 
+  template<class ProblemShape>
+  CUTLASS_HOST_DEVICE static bool
+  can_implement(
+      ProblemShape const& problem_shape,
+      [[maybe_unused]] Arguments const& args) {
+    constexpr int tma_alignment_bits = 128;
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
+    auto [M,N,K,L] = problem_shape_MNKL;
+    
+    bool implementable = true;
+    constexpr int min_tma_aligned_elements_A = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
+    implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), StrideA{});
+    constexpr int min_tma_aligned_elements_B = tma_alignment_bits / cutlass::sizeof_bits<ElementB>::value;
+    implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), StrideB{});
+
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
+    }
+    return implementable;
+  }
+
   /// Issue Tma Descriptor Prefetch -- ideally from a single thread for best performance
   CUTLASS_DEVICE
   static void prefetch_tma_descriptors(Params const& mainloop_params)
@@ -245,6 +264,7 @@ struct CollectiveMma<
       FrgTensorC& accum,
       KTileIterator k_tile_iter, int k_tile_count,
       int thread_idx,
+      uint32_t block_rank_in_cluster,
       char* shared_memory,
       Params const& mainloop_params)
   {
@@ -267,7 +287,10 @@ struct CollectiveMma<
     //
     // Prepare the TMA loads for A and B
     //
-    dim3 cluster_local_block_id = cute::block_id_in_cluster();
+
+    constexpr uint32_t cluster_shape_x = get<0>(DispatchPolicy::ClusterShape());
+    uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
+
     auto block_tma_a = tma_load_a.get_slice(cluster_local_block_id.y);
     auto block_tma_b = tma_load_b.get_slice(cluster_local_block_id.x);
 
@@ -303,7 +326,7 @@ struct CollectiveMma<
 
 
     // Obtain warp index
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
     int warp_group_thread_idx = thread_idx % NumThreadsPerWarpGroup;
 
     PipelineParams params;

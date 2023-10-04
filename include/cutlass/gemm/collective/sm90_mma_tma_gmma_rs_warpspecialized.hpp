@@ -36,6 +36,7 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/detail/dependent_false.hpp"
 #include "cutlass/gemm/dispatch_policy.hpp"
+#include "cutlass/detail/layout.hpp"
 
 #include "cute/algorithm/functional.hpp"
 #include "cute/atom/mma_atom.hpp"
@@ -44,6 +45,8 @@
 #include "cute/numeric/arithmetic_tuple.hpp"
 #include "cutlass/pipeline/pipeline.hpp"
 #include "cutlass/transform/collective/sm90_wgmma_transpose.hpp"
+#include "cutlass/trace.h"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass::gemm::collective {
@@ -106,7 +109,7 @@ struct CollectiveMma<
   using SmemCopyAtomA = SmemCopyAtomA_;
   using SmemCopyAtomB = SmemCopyAtomB_;
 
-  // Swap and transpose A/B for A k-major layout and B mn-major layout since WGMMA is k-major only (e.g. tf32, Fp32, Int8 WGMMA)
+  // Swap and transpose A/B for A k-major layout and B mn-major layout since WGMMA is k-major only (e.g. tf32, Fp32, Int8, Fp8 WGMMA)
   static constexpr bool IsLayoutAkBmn =
     cute::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::RowMajor> &&
     cute::is_same_v<gemm::detail::StrideToLayoutTagB_t<StrideB>, layout::RowMajor>;
@@ -117,7 +120,17 @@ struct CollectiveMma<
   using InternalSmemLayoutAtomB = cute::conditional_t<!SwapAB, SmemLayoutAtomB, SmemLayoutAtomA>;
   using InternalSmemCopyAtomA   = cute::conditional_t<!SwapAB, SmemCopyAtomA, SmemCopyAtomB>;
   using InternalSmemCopyAtomB   = cute::conditional_t<!SwapAB, SmemCopyAtomB, SmemCopyAtomA>;
-  
+  // TMA converts f32 input to tf32 when copying from GMEM to SMEM
+  // For all other types, cast to size equivalent uint type to avoid any rounding by TMA.
+  static constexpr bool ConvertF32toTF32A = cute::is_same_v<float, ElementA>;
+  static constexpr bool ConvertF32toTF32B = cute::is_same_v<float, ElementB>;
+  using ConvertedElementA = cute::conditional_t<ConvertF32toTF32A, tfloat32_t, uint_bit_t<sizeof_bits_v<ElementA>>>;
+  using ConvertedElementB = cute::conditional_t<ConvertF32toTF32B, tfloat32_t, uint_bit_t<sizeof_bits_v<ElementB>>>;
+  using InternalElementA = cute::conditional_t<!SwapAB, ConvertedElementA, ConvertedElementB>;
+  using InternalElementB = cute::conditional_t<!SwapAB, ConvertedElementB, ConvertedElementA>;
+  using InternalStrideA  = cute::conditional_t<!SwapAB, StrideA, StrideB>;
+  using InternalStrideB  = cute::conditional_t<!SwapAB, StrideB, StrideA>;
+
   using TransformA = TransformA_;
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
@@ -137,24 +150,26 @@ struct CollectiveMma<
   static_assert((size<1>(TileShape{}) % size<0>(InternalSmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(InternalSmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
 
-  // Tile along K mode first before tiling over MN. PIPE mode last as usual.
-  // This maximizes TMA boxes due to better smem-K vectorization, reducing total issued TMAs.
+  // Tile along modes in a way that maximizes the TMA box size.
   using SmemLayoutA = decltype(tile_to_shape(
       InternalSmemLayoutAtomA{},
       make_shape(shape<0>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      Step<_2,_1,_3>{}));
+      conditional_t< ::cutlass::gemm::detail::is_major<0,InternalStrideA>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
   using SmemLayoutB = decltype(tile_to_shape(
       InternalSmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      Step<_2,_1,_3>{}));
+      conditional_t< ::cutlass::gemm::detail::is_major<0,InternalStrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
   // If A mn-layout and B mn-layout, transposing B matrix since WGMMA is k-major only (e.g. tf32, fp32, fp8, int8).
   static constexpr bool IsLayoutAmnBmn =
     cute::is_same_v<gemm::detail::StrideToLayoutTagA_t<StrideA>, layout::ColumnMajor> &&
     cute::is_same_v<gemm::detail::StrideToLayoutTagB_t<StrideB>, layout::RowMajor>;
   static constexpr bool TransposeB = !IsInputSizeTwoBytes && IsLayoutAmnBmn;
+  using TransposeOperandB = decltype(cutlass::transform::collective::detail::make_transpose_operand_b(
+                                      0, 0, TiledMma{}, SmemLayoutB{}, InternalSmemLayoutAtomB{},
+                                      InternalElementB{}, cute::bool_constant<TransposeB>{})); 
 
-  static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 1 or more.");
+  static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 2 or more.");
   static_assert(not cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
                     cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeB>::value,
                 "MMA atom must source A from rmem and B operand from smem_desc for this mainloop.");
@@ -163,17 +178,6 @@ struct CollectiveMma<
   static_assert(cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD> || cute::is_same_v<GmemTiledCopyB, SM90_TMA_LOAD_MULTICAST>,
       "GmemTiledCopy - invalid SM90 TMA copy atom specified.");
 
-  // TMA converts f32 input to tf32 when copying from GMEM to SMEM
-  // For all other types, cast to size equivalent uint type to avoid any rounding by TMA.
-  static constexpr bool ConvertF32toTF32A = cute::is_same_v<float, ElementA>;
-  static constexpr bool ConvertF32toTF32B = cute::is_same_v<float, ElementB>;
-  using ConvertedElementA = cute::conditional_t<ConvertF32toTF32A, tfloat32_t, uint_bit_t<sizeof_bits_v<ElementA>>>;
-  using ConvertedElementB = cute::conditional_t<ConvertF32toTF32B, tfloat32_t, uint_bit_t<sizeof_bits_v<ElementB>>>;
-  using InternalElementA = cute::conditional_t<!SwapAB, ConvertedElementA, ConvertedElementB>;
-  using InternalElementB = cute::conditional_t<!SwapAB, ConvertedElementB, ConvertedElementA>;
-  using InternalStrideA  = cute::conditional_t<!SwapAB, StrideA,  StrideB>;
-  using InternalStrideB  = cute::conditional_t<!SwapAB, StrideB,  StrideA>;
-
   using GmmaSmemLayoutAtomB = decltype(transform::collective::detail::gmma_smem_transpose_or_passthrough<
       TransposeB, InternalSmemLayoutAtomB, InternalElementB>());
 
@@ -181,23 +185,27 @@ struct CollectiveMma<
   using GmmaSmemLayoutB = decltype(tile_to_shape(
       GmmaSmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{}),
-      Step<_2,_1,_3>{}));
+      conditional_t< ::cutlass::gemm::detail::is_major<0,InternalStrideB>(), Step<_2,_1,_3>, Step<_1,_2,_3>>{}));
 
   static_assert(!SwapAB || !TransposeB, "Cannot SwapAB and TransposeB at the same time.");
-  static_assert(TransposeB || (cute::is_same_v<SmemLayoutB, GmmaSmemLayoutB>),
+  static_assert(TransposeB xor (cute::is_same_v<SmemLayoutB, GmmaSmemLayoutB>),
     "Should be same layout if not TransposeB.");
   static_assert(!TransposeB || size<1>(SmemLayoutB{}) * sizeof(InternalElementB) == 128,
     "SmemLayoutB K must be 128bytes to be transposed.");
   static_assert(!transform::collective::detail::use_universal_transposition<InternalSmemLayoutAtomB, InternalElementB>(),
     "Warp specialized ARF kernels have not supported universal B transposition yet.");
-  static_assert(!TransposeB || !cute::is_same_v<KernelSchedule, KernelTmaWarpSpecializedCooperative>,
-    "Transpose RS kernel requires kernel schedule schmem is not KernelTmaWarpSpecializedCooperative.");
+  
+  static constexpr size_t SmemAlignmentA = cutlass::detail::alignment_for_swizzle(SmemLayoutA{}); 
+
+  static constexpr size_t SmemAlignmentB = cutlass::detail::alignment_for_swizzle(SmemLayoutB{});
+
+  static_assert(SmemAlignmentA >= 128 and SmemAlignmentB >= 128, "Require at least 128B alignment");
 
   struct SharedStorage
   {
-    struct TensorStorage : cute::aligned_struct<128> {
-      cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>> smem_A;
-      cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>> smem_B;
+    struct TensorStorage : cute::aligned_struct<cute::max(SmemAlignmentA, SmemAlignmentB)> { 
+      cute::array_aligned<typename TiledMma::ValTypeA, cute::cosize_v<SmemLayoutA>, SmemAlignmentA> smem_A;
+      cute::array_aligned<typename TiledMma::ValTypeB, cute::cosize_v<SmemLayoutB>, SmemAlignmentB> smem_B;
     } tensors;
 
     using PipelineStorage = typename MainloopPipeline::SharedStorage;
@@ -212,6 +220,7 @@ struct CollectiveMma<
     StrideA dA;
     ElementB const* ptr_B;
     StrideB dB;
+    uint32_t mma_promotion_interval = 4;
   };
 
   // Device side kernel params
@@ -220,14 +229,14 @@ struct CollectiveMma<
     using TMA_A = decltype(make_tma_copy(
         GmemTiledCopyA{},
         make_tensor(static_cast<InternalElementA const*>(nullptr), repeat_like(InternalStrideA{}, int32_t(0)), InternalStrideA{}),
-        SmemLayoutA{}(_,_,0),
+        SmemLayoutA{}(_,_,cute::Int<0>{}),
         make_shape(shape<0>(TileShape{}), shape<2>(TileShape{})),
         size<1>(ClusterShape{})));  // mcast along N mode for this M load, if any
     // Assumption: StrideB is congruent with Problem_NK
     using TMA_B = decltype(make_tma_copy(
         GmemTiledCopyB{},
         make_tensor(static_cast<InternalElementB const*>(nullptr), repeat_like(InternalStrideB{}, int32_t(0)), InternalStrideB{}),
-        SmemLayoutB{}(_,_,0),
+        SmemLayoutB{}(_,_,cute::Int<0>{}),
         make_shape(shape<1>(TileShape{}), shape<2>(TileShape{})),
         size<0>(ClusterShape{}))); // mcast along M mode for this N load, if any
     TMA_A tma_load_a;
@@ -243,12 +252,9 @@ struct CollectiveMma<
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     (void) workspace;
 
-    // Optionally append _1s until problem shape is rank-4 (MNKL), in case it is only rank-3 (MNK)
-    auto problem_shape_MNKL = append<4>(problem_shape, Int<1>{});
-    auto M = get<0>(problem_shape_MNKL);
-    auto N = get<1>(problem_shape_MNKL);
-    auto K = get<2>(problem_shape_MNKL);
-    auto L = get<3>(problem_shape_MNKL);
+    // Optionally append 1s until problem shape is rank-4 (MNKL), in case it is only rank-3 (MNK)
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
+    auto [M,N,K,L] = problem_shape_MNKL;
 
     if constexpr (SwapAB) {
       M = get<1>(problem_shape_MNKL);
@@ -293,6 +299,27 @@ struct CollectiveMma<
     };
   }
 
+  template<class ProblemShape>
+  CUTLASS_HOST_DEVICE static bool
+  can_implement(
+      ProblemShape const& problem_shape,
+      [[maybe_unused]] Arguments const& args) {
+    constexpr int tma_alignment_bits = 128;
+    auto problem_shape_MNKL = append<4>(problem_shape, 1);
+    auto [M,N,K,L] = problem_shape_MNKL;
+    
+    bool implementable = true;
+    constexpr int min_tma_aligned_elements_A = tma_alignment_bits / cutlass::sizeof_bits<ElementA>::value;
+    implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_A>(cute::make_shape(M,K,L), StrideA{});
+    constexpr int min_tma_aligned_elements_B = tma_alignment_bits / cutlass::sizeof_bits<ElementB>::value;
+    implementable = implementable && cutlass::detail::check_alignment<min_tma_aligned_elements_B>(cute::make_shape(N,K,L), StrideB{});
+
+    if (!implementable) {
+      CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Problem Size doesn't meet the minimum alignment requirements for TMA.\n");
+    }
+    return implementable;
+  }
+
   static constexpr int K_PIPE_MAX = DispatchPolicy::Stages;
   static constexpr int K_PIPE_MMAS = DispatchPolicy::PipelineAsyncMmaStages;
   static_assert(K_PIPE_MMAS == 0, "no MMA stage should be asynchronous for this mainloop for now.");
@@ -323,23 +350,28 @@ struct CollectiveMma<
       TensorB const& gB, TMA_LOAD_B& tma_load_b,
       KTileIterator k_tile_iter, int k_tile_count,
       int thread_idx,
+      uint32_t block_rank_in_cluster,
       TensorStorage& shared_tensors)
   {
 
     using namespace cute;
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
     int warp_idx_in_warp_group  = warp_idx % 4;
     int lane_predicate = cute::elect_one_sync();
 
     if (warp_idx_in_warp_group == 0 and lane_predicate) {
-      Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});        // (BLK_M,BLK_K,PIPE)
-      Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});        // (BLK_N,BLK_K,PIPE)
+      Tensor sA_ = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});       // (BLK_M,BLK_K,PIPE)
+      Tensor sB_ = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});       // (BLK_N,BLK_K,PIPE)
+      Tensor sA  = as_position_independent_swizzle_tensor(sA_);                                   // (BLK_M,BLK_K,PIPE)
+      Tensor sB  = as_position_independent_swizzle_tensor(sB_);                                   // (BLK_N,BLK_K,PIPE)
 
       //
       // Prepare the TMA loads for A and B
       //
+      
+      constexpr uint32_t cluster_shape_x = get<0>(DispatchPolicy::ClusterShape());
+      uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
 
-      dim3 cluster_local_block_id = cute::block_id_in_cluster();
       auto block_tma_a = tma_load_a.get_slice(cluster_local_block_id.y);
       auto block_tma_b = tma_load_b.get_slice(cluster_local_block_id.x);
 
@@ -397,7 +429,7 @@ struct CollectiveMma<
   CUTLASS_DEVICE void
   load_tail(MainloopPipeline pipeline, PipelineState smem_pipe_write)
   {
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
     int warp_idx_in_warp_group = warp_idx % 4;
     int lane_predicate = cute::elect_one_sync();
 
@@ -439,15 +471,19 @@ struct CollectiveMma<
       "SM90 GMMA mainloops cannot have a non-void copy atom for smem sourced instructions.");
 
     // Obtain warp index
-    int warp_idx = canonical_warp_idx();
-    int warp_idx_in_warp_group  = warp_idx % 4;
-    int warp_group_thread_idx = thread_idx % 128;
+    int warp_idx = canonical_warp_idx_sync();
+    [[maybe_unused]] int warp_group_thread_idx = thread_idx % 128;
     
-    Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});          // (BLK_M,BLK_K,PIPE)
-    Tensor sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});          // (BLK_N,BLK_K,PIPE)
+    Tensor sA_ = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});         // (BLK_M,BLK_K,PIPE)
+    Tensor sA = as_position_independent_swizzle_tensor(sA_);                                      // (BLK_M,BLK_K,PIPE)
+    
+    Tensor sB_ = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), SmemLayoutB{});         // (BLK_N,BLK_K,PIPE)
+    Tensor sB  = as_position_independent_swizzle_tensor(sB_);                                     // (BLK_M,BLK_K,PIPE)
 
     // If TransposeB, GMMA will read from transposed B layout SMEM
-    Tensor gmma_sB = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), GmmaSmemLayoutB{}); // (BLK_N,BLK_K,PIPE)
+    Tensor gmma_sB_position_dependent = make_tensor(make_smem_ptr(shared_tensors.smem_B.data()), 
+                                          GmmaSmemLayoutB{});                                     // (BLK_N,BLK_K,PIPE)
+    Tensor gmma_sB = as_position_independent_swizzle_tensor(gmma_sB_position_dependent);          // (BLK_N,BLK_K,PIPE)
 
     //
     // Define C accumulators and A/B partitioning
@@ -459,16 +495,19 @@ struct CollectiveMma<
     // Allocate fragments and descriptors
     Tensor tCsA = thread_mma.partition_A(sA);
     Tensor tCrA = thread_mma.partition_fragment_A(sA(_,_,Int<0>{}));                          // (MMA,MMA_M,MMA_K,PIPE)
-    Tensor tCsB = thread_mma.partition_B(gmma_sB);                                            // (MMA,MMA_N,MMA_K,PIPE)
+    Tensor tCsB = thread_mma.partition_B(gmma_sB_position_dependent);                         // (MMA,MMA_N,MMA_K,PIPE)
     Tensor tCrB = thread_mma.make_fragment_B(tCsB);                                           // (MMA,MMA_N,MMA_K,PIPE)
 
-     //
-     // Copy Atom A retiling
-     //
+    //
+    // Copy Atom A retiling
+    //
 
-     auto smem_tiled_copy_A = make_tiled_copy_A(InternalSmemCopyAtomA{}, tiled_mma);
-     auto smem_thr_copy_A   = smem_tiled_copy_A.get_thread_slice(thread_idx);
-     Tensor tCrA_copy_view  = smem_thr_copy_A.retile_D(tCrA);                                      // (CPY,CPY_M,CPY_K)
+
+    auto smem_tiled_copy_A = make_tiled_copy_A(InternalSmemCopyAtomA{}, tiled_mma);
+
+    auto smem_thr_copy_A   = smem_tiled_copy_A.get_thread_slice(thread_idx);
+
+    Tensor tCrA_copy_view  = smem_thr_copy_A.retile_D(tCrA);                                       // (CPY,CPY_M,CPY_K)
 
     CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(tCrA_copy_view));                                            // CPY_M
     CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCrA_copy_view));                                            // CPY_K
@@ -488,81 +527,148 @@ struct CollectiveMma<
     // We release buffers to producer warps(dma load) with some mmas in flight
     PipelineState smem_pipe_release = smem_pipe_read;
 
-    // Prologue GMMAs
-    int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
-
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
 
-    warpgroup_fence_operand(accum);
-    CUTLASS_PRAGMA_UNROLL
-    for (int k_tile_prologue = prologue_mma_count; k_tile_prologue > 0; --k_tile_prologue) {
-      // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
-      pipeline.consumer_wait(smem_pipe_read);
+    TransposeOperandB transpose = cutlass::transform::collective::detail::make_transpose_operand_b(
+                                    warp_idx, warp_group_thread_idx, tiled_mma, SmemLayoutB{}, 
+                                    InternalSmemLayoutAtomB{}, InternalElementB{}, 
+                                    cute::bool_constant<TransposeB>{});
 
-      // copy smem->rmem for A operand
-      copy(smem_tiled_copy_A, tCsA(_,_,_,smem_pipe_read.index()), tCrA_copy_view);
-      // transpose B operand in SMEM
-      if constexpr (TransposeB) {
-        transform::collective::detail::transpose_b_operand(
-          sB, gmma_sB, smem_pipe_read, warp_idx_in_warp_group, warp_group_thread_idx,
-          tiled_mma, SmemLayoutB{}, InternalSmemLayoutAtomB{}, InternalElementB{});
-      } // if TransposeB
+    warpgroup_fence_operand(accum);
+    
+    ConsumerToken barrier_token = {BarrierStatus::WaitAgain};
+    // first k tile
+    {
+      barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+      pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       int read_stage = smem_pipe_read.index();
-      warpgroup_arrive();
-      // Unroll the K mode manually to set scale D to 1
-      CUTLASS_PRAGMA_UNROLL
-      for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
-        // (V,M,K) x (V,N,K) => (V,M,N)
-        cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
-      }
-
-      warpgroup_commit_batch();
 
       ++smem_pipe_read;
+      barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+
+      // copy smem->rmem for A operand
+      copy(smem_tiled_copy_A, tCsA(_,_,0,read_stage), tCrA_copy_view(_,_,0));
+      // transpose B operand in SMEM
+      transpose(sB, gmma_sB, read_stage, 0);
+      
+      // Unroll the K mode manually to set scale D to 1
+      CUTLASS_PRAGMA_UNROLL
+      for (int k_block = 0; k_block < size<2>(tCrA) - 1; ++k_block) {
+        copy(smem_tiled_copy_A, tCsA(_,_,k_block + 1,read_stage), tCrA_copy_view(_,_,k_block + 1));
+        transpose.synchronize(k_block);
+        transpose(sB, gmma_sB, read_stage, k_block + 1);
+        warpgroup_arrive();
+        // (V,M) x (V,N) => (V,M,N)
+        cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
+        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        warpgroup_commit_batch();
+      }
+
+      warpgroup_wait<2>();
+      
+      --k_tile_count;
+      if (k_tile_count > 0) {
+        pipeline.consumer_wait(smem_pipe_read, barrier_token);
+        copy(smem_tiled_copy_A, tCsA(_,_,0,smem_pipe_read.index()), tCrA_copy_view(_,_,0));
+        transpose(sB, gmma_sB, smem_pipe_read.index(), 0);
+      }
+      warpgroup_arrive();
+      // (V,M) x (V,N) => (V,M,N)
+      cute::gemm(tiled_mma, tCrA(_,_,size<2>(tCrA) - 1), tCrB(_,_,size<2>(tCrA) - 1,read_stage), accum);
+      tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+      warpgroup_commit_batch();
+      warpgroup_wait<2>();
     }
+
+    if (k_tile_count == 0) {
+      return;
+    }
+
     warpgroup_fence_operand(accum);
     // Mainloop GMMAs
-    k_tile_count -= prologue_mma_count;
     CUTLASS_PRAGMA_NO_UNROLL
-    for ( ; k_tile_count > 0; --k_tile_count) {
-      // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
-      pipeline.consumer_wait(smem_pipe_read);
+    for ( ; k_tile_count > 1; --k_tile_count) {
 
       //
       // Compute on k_tile
       //
-      // copy smem->rmem for A operand
-      copy(smem_tiled_copy_A, tCsA(_,_,_,smem_pipe_read.index()), tCrA_copy_view);
-      // transpose B operand in SMEM
-      if constexpr (TransposeB) {
-        transform::collective::detail::transpose_b_operand(
-          sB, gmma_sB, smem_pipe_read, warp_idx_in_warp_group, warp_group_thread_idx,
-          tiled_mma, SmemLayoutB{}, InternalSmemLayoutAtomB{}, InternalElementB{});
-      } // if TransposeB
 
       int read_stage = smem_pipe_read.index();
+      ++smem_pipe_read;
+
       warpgroup_fence_operand(accum);
-      warpgroup_arrive();
       // Unroll the K mode manually to set scale D to 1
       CUTLASS_PRAGMA_UNROLL
       for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
-        // (V,M,K) x (V,N,K) => (V,M,N)
+        if (k_block == 0) {
+          barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+        }
+        if (k_block == size<2>(tCrA) - 1) {
+          pipeline.consumer_wait(smem_pipe_read, barrier_token);
+          copy(smem_tiled_copy_A, tCsA(_,_,0,smem_pipe_read.index()), tCrA_copy_view(_,_,0));
+          // transpose B operand in SMEM
+          transpose(sB, gmma_sB, smem_pipe_read.index(), 0);
+        } 
+        else {
+          copy(smem_tiled_copy_A, tCsA(_,_,k_block + 1,read_stage), tCrA_copy_view(_,_,k_block + 1));
+          // transpose B operand in SMEM
+          transpose.synchronize(k_block);                                      // make transpose of k_block available
+          transpose(sB, gmma_sB, read_stage, k_block + 1);
+        }
+        
+        warpgroup_arrive();
+        // (V,M) x (V,N) => (V,M,N)
         cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
         tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        warpgroup_commit_batch();
+        warpgroup_wait<2>();
+        if (k_block == 1) {
+          // release prior barrier
+          pipeline.consumer_release(smem_pipe_release);             // UNLOCK smem_pipe_release, done _computing_ on it
+          ++smem_pipe_release;
+        }
       }
-      warpgroup_commit_batch();
-
-      /// Wait on the GMMA barrier for K_PIPE_MMAS (or fewer) outstanding to ensure smem_pipe_write is consumed
-      warpgroup_wait<K_PIPE_MMAS>();
       warpgroup_fence_operand(accum);
 
-      pipeline.consumer_release(smem_pipe_release);                 // UNLOCK smem_pipe_release, done _computing_ on it
+    }
 
-      // Advance smem_pipe_read and smem_pipe_release
-      ++smem_pipe_read;
-      ++smem_pipe_release;
+    warpgroup_fence_operand(accum);
+
+    {
+      //
+      // Compute on k_tile
+      //
+
+      int read_stage = smem_pipe_read.index();
+
+      warpgroup_fence_operand(accum);
+      
+      // Unroll the K mode manually to set scale D to 1
+      CUTLASS_PRAGMA_UNROLL
+      for (int k_block = 0; k_block < size<2>(tCrA) - 1; ++k_block) {
+        
+        copy(smem_tiled_copy_A, tCsA(_,_,k_block + 1,read_stage), tCrA_copy_view(_,_,k_block + 1));
+        transpose.synchronize(k_block);                                           // make k_block transpose available
+        transpose(sB, gmma_sB, read_stage, k_block + 1);
+        warpgroup_arrive();
+        // (V,M) x (V,N) => (V,M,N)
+        cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
+        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        warpgroup_commit_batch();
+        warpgroup_wait<2>();
+        if (k_block == 1) {
+          // release prior barrier
+          pipeline.consumer_release(smem_pipe_release);             // UNLOCK smem_pipe_release, done _computing_ on it
+          ++smem_pipe_release;
+        }
+      }
+      
+      warpgroup_arrive();
+      // (V,M) x (V,N) => (V,M,N)
+      cute::gemm(tiled_mma, tCrA(_,_,size<2>(tCrA) - 1), tCrB(_,_,size<2>(tCrA) - 1,read_stage), accum);
+      tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+      warpgroup_commit_batch();
     }
 
     warpgroup_fence_operand(accum);
@@ -572,7 +678,7 @@ struct CollectiveMma<
   CUTLASS_DEVICE void
   mma_tail(MainloopPipeline pipeline, PipelineState smem_pipe_release, int k_tile_count) {
     // Prologue GMMAs
-    int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
+    int prologue_mma_count = 1;
     k_tile_count -= prologue_mma_count;
 
     smem_pipe_release.advance(k_tile_count);

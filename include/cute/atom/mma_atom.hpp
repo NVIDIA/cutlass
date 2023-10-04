@@ -155,7 +155,7 @@ struct MMA_Atom<MMA_Traits<Args...>>
 
     if constexpr (has_dereference<FrgTypeA>::value) {
       // If the intended FrgTypeA is a view (of the current tensor), forward the whole
-      static_assert(is_same<ValTypeA, typename remove_cvref_t<ATensor>::value_type>::value, "Expecting ValTypeA type");
+      static_assert(is_same<get_raw_type_t<ValTypeA>, typename remove_cvref_t<ATensor>::value_type>::value, "Expecting ValTypeA type");
       return make_tensor<FrgTypeA>(std::forward<ATensor>(atensor));
     } else {
       // Else, the intended FrgTypeA is a value type, construct a new tensor with a fragment layout
@@ -978,9 +978,9 @@ print_latex_mma(Shape_MNK const& shape_mnk,
 
   printf(latex_header);
 
-  constexpr int M = size<0>(shape_mnk);
-  constexpr int N = size<1>(shape_mnk);
-  constexpr int K = size<2>(shape_mnk);
+  auto M = size<0>(shape_mnk);
+  auto N = size<1>(shape_mnk);
+  auto K = size<2>(shape_mnk);
 
   // C starting at 0,0
   bool c_filled[M][N] = {};

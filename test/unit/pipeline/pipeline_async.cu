@@ -79,13 +79,9 @@ void pipeline_async_basic_device(uint32_t const num_iterations)
   using SharedStorage = SharedStorage<NumStages>;
   SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
 
-
-  auto cta_layout = Layout<ClusterShape>{}; // (m,n) -> cta_id
-
   int warp_idx = __shfl_sync(0xffffffff, threadIdx.x / 32, 0);
   int lane_predicate = cute::elect_one_sync();
   dim3 block_id_in_cluster = cute::block_id_in_cluster();
-  auto cluster_shape = ClusterShape{};
   
   // This example showcases 2 producer 1 consumer example 
   typename MainloopPipeline::Params params;
@@ -158,8 +154,6 @@ struct PipelineTest {
                   cudaStream_t stream = nullptr) {
 
     // Pipeline (multistage pipeline)
-    auto num_stages = Int<Stages>{};
-
     auto cluster_shape = Shape<Int<ClusterShape::kM>, Int<ClusterShape::kN>, _1>{};
 
     //

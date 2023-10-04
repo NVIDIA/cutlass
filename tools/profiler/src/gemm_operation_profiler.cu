@@ -39,10 +39,9 @@
 
 #include "cutlass/core_io.h"
 
-#include "cublas_helpers.h"
-#include "gemm_operation_profiler.h"
-#include "gpu_timer.h"
-
+#include "cutlass/profiler/cublas_helpers.h"
+#include "cutlass/profiler/gemm_operation_profiler.h"
+#include "cutlass/profiler/gpu_timer.h"
 #include "cutlass/library/singleton.h"
 #include "cutlass/library/library.h"
 #include "cutlass/library/handle.h"
@@ -74,6 +73,7 @@ GemmOperationProfiler::GemmOperationProfiler(Options const &options):
       {ArgumentTypeID::kEnumerated, {"split_k_mode", "split-k-mode"}, "Variant of split K mode(serial, parallel)"},
       {ArgumentTypeID::kInteger, {"split_k_slices", "split-k-slices"}, "Number of partitions of K dimension"},
       {ArgumentTypeID::kInteger, {"batch_count", "batch-count"}, "Number of GEMMs computed in one batch"},
+      {ArgumentTypeID::kEnumerated, {"raster_order", "raster-order"}, "Raster order (heuristic, along_n, along_m)"},       
     },
     { library::Provider::kCUBLAS}
   ) {
@@ -174,7 +174,7 @@ Status GemmOperationProfiler::GemmProblem::parse(
   }
   
   this->mode = library::GemmUniversalMode::kGemm;
-  if(this->split_k_mode == library::SplitKMode::kParallel) {
+  if (this->split_k_mode == library::SplitKMode::kParallel) {
     this->mode = library::GemmUniversalMode::kGemmSplitKParallel;
   }
 
@@ -190,6 +190,11 @@ Status GemmOperationProfiler::GemmProblem::parse(
     this->mode = library::GemmUniversalMode::kBatched;
   }
 
+  if (!arg_as_RasterOrder(this->raster_order, "raster_order", problem_space, problem)) {
+    // default value
+    this->raster_order = library::RasterOrder::kHeuristic;
+  }
+  
   if (this->split_k_slices > 1 && this->batch_count > 1) {
     // At least one of these must be one
     return Status::kErrorInvalidProblem;
@@ -322,7 +327,7 @@ void GemmOperationProfiler::GemmProblem::initialize_result(
   set_argument(result, "split_k_mode", problem_space, library::to_string(split_k_mode));
   set_argument(result, "split_k_slices", problem_space, split_k_slices);
   set_argument(result, "batch_count", problem_space, batch_count);
-
+  set_argument(result, "raster_order", problem_space, library::to_string(raster_order)); 
   set_argument(result, "alpha", problem_space,
     library::lexical_cast(alpha, operation_desc.element_epilogue));
 
@@ -377,6 +382,7 @@ Status GemmOperationProfiler::initialize_configuration(
   gemm_workspace_.arguments.alpha = problem_.alpha.data();
   gemm_workspace_.arguments.beta = problem_.beta.data();
   gemm_workspace_.arguments.pointer_mode = library::ScalarPointerMode::kHost;
+  gemm_workspace_.arguments.raster_order = problem_.raster_order;
 
   // initialize reduction operation for parallel splitKMode
   if (problem_.split_k_mode == library::SplitKMode::kParallel) {
@@ -492,7 +498,8 @@ Status GemmOperationProfiler::initialize_workspace(
     gemm_workspace_.problem_count = options.profiling.workspace_count;
   }
 
-  if (options.execution_mode != ExecutionMode::kDryRun) {
+  bool allocate_device_tensors = options.execution_mode != ExecutionMode::kDryRun;
+  if (allocate_device_tensors) {
     int seed_shift = 0;
     gemm_workspace_.A = device_context.allocate_tensor(
       options,
@@ -544,7 +551,9 @@ Status GemmOperationProfiler::initialize_workspace(
       {int(problem_.ldc)},
       problem_.batch_count * gemm_workspace_.problem_count
     );
+  }
 
+  if (options.execution_mode != ExecutionMode::kDryRun) {
     // NOTE: the leading non-batch strides are duplicated here for 3.0 API kernels
     gemm_workspace_.arguments.problem_size = {int(problem_.m), int(problem_.n), int(problem_.k)};
     gemm_workspace_.arguments.batch_count = problem_.batch_count;
@@ -576,7 +585,6 @@ Status GemmOperationProfiler::initialize_workspace(
       workspace_size = underlying_operation->get_device_workspace_size(&gemm_workspace_.configuration,
                                                             &gemm_workspace_.arguments);
       gemm_workspace_.device_workspace.reset(library::NumericTypeID::kU8, workspace_size);
-
       status = underlying_operation->initialize(
         &gemm_workspace_.configuration,
         gemm_workspace_.host_workspace.data(),
@@ -609,7 +617,7 @@ Status GemmOperationProfiler::initialize_workspace(
     results_.back().op_kind = library::OperationKind::kGemm;
     results_.back().disposition = Disposition::kNotRun;
 
-    for(auto provider : verification_providers_) {
+    for (auto provider : verification_providers_) {
       results_.back().verification_map[provider] = Disposition::kNotRun;
     }
   }
@@ -739,23 +747,36 @@ bool GemmOperationProfiler::verify_cutlass(
     }
 #endif // #if CUTLASS_ENABLE_CUBLAS
 
-    verify_with_reference_(options, report, device_context, operation, problem_space, problem);
+    bool verification_status = verify_with_reference_(options, report, device_context, operation, problem_space, problem);
     
     // Update disposition to worst case verification outcome among all 
     // verification providers which are supported
     bool is_any_verification_run_passed = false;
-    for(auto &m : results_.back().verification_map) {
-      if(m.second == Disposition::kFailed || m.second == Disposition::kIncorrect) {
+    for (auto &m : results_.back().verification_map) {
+      if (m.second == Disposition::kFailed || m.second == Disposition::kIncorrect) {
         results_.back().disposition = m.second;
         return true;
       }
-      if(!is_any_verification_run_passed && m.second == Disposition::kPassed) {
+      if (!is_any_verification_run_passed && m.second == Disposition::kPassed) {
         is_any_verification_run_passed = true;
       }
     }
 
-    if(is_any_verification_run_passed) {
+    if (is_any_verification_run_passed) {
       results_.back().disposition = Disposition::kPassed;
+    }
+  }
+
+  // if verification.required is set, then return success iff at least one ref-check was run
+  if (options.verification.required) {
+    bool did_any_verification_run = false;
+    for (auto provider : options.verification.providers) {
+      did_any_verification_run |= (Disposition::kNotRun != results_.back().verification_map[provider]);
+    }
+
+    if (not did_any_verification_run) {
+      results_.back().status = Status::kErrorNotSupported;
+      return false;
     }
   }
 
@@ -902,12 +923,7 @@ bool GemmOperationProfiler::verify_with_reference_(
   // Initialize state
   //
 
-  library::Provider references[] = {
-    library::Provider::kReferenceDevice,
-    library::Provider::kReferenceHost
-  };
-
-  for (auto provider : references) {
+  for (auto provider : options.verification.providers) {
 
     // Skip providers that are not enabled
     if (!options.verification.provider_enabled(provider)) {
@@ -994,7 +1010,7 @@ bool GemmOperationProfiler::verify_with_reference_(
 
     if (status != Status::kSuccess) {
       results_.back().verification_map[provider] = Disposition::kNotRun;
-      return true;
+      continue;
     }
 
     results_.back().status = status;
@@ -1093,7 +1109,6 @@ Status GemmOperationProfiler::profile_cutlass_(
   void *device_workspace) {
 
   GpuTimer timer;
-
   // initialize gemm underlying operation to handle parallel reduction
   library::Operation const * underlying_operation = operation;
 
@@ -1214,7 +1229,6 @@ Status GemmOperationProfiler::profile_cutlass_(
   //
 
   timer.stop_and_wait();
-
   //
   // Update performance result
   //

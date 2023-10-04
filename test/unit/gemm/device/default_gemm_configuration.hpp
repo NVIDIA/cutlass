@@ -1046,7 +1046,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   // A  (M,K)  K-Major
   using SmemLayoutAtomA = decltype(
-      composition(SwizzleXor<2,0,2>{},
+      composition(Swizzle<2,0,4>{},
                   Layout<Shape <_4,_16>,
                          Stride<_1, _4>>{})); // M, K
   using SmemCopyAtomA = Copy_Atom<DefaultCopy, double>;
@@ -1059,7 +1059,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   // B  (N,K)  K-Major
   using SmemLayoutAtomB = decltype(
-      composition(SwizzleXor<2,0,2>{},
+      composition(Swizzle<2,0,4>{},
                   Layout<Shape <_4,_16>,
                          Stride<_1, _4>>{})); // N, K
   using SmemCopyAtomB = Copy_Atom<DefaultCopy, double>;
@@ -1124,7 +1124,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   // A  (M,K)  M-Major
   using SmemLayoutAtomA = decltype(
-      composition(SwizzleXor<2,2,0>{},
+      composition(Swizzle<2,2,2>{},
                   Layout<Shape <_16, _4>,
                          Stride< _1,_16>>{})); // M, K
   using SmemCopyAtomA = Copy_Atom<DefaultCopy, double>;
@@ -1137,7 +1137,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   // B  (N,K)  K-Major
   using SmemLayoutAtomB = decltype(
-      composition(SwizzleXor<2,0,2>{},
+      composition(Swizzle<2,0,4>{},
                   Layout<Shape <_4,_16>,
                          Stride<_1, _4>>{}));// N, K
   using SmemCopyAtomB = Copy_Atom<DefaultCopy, double>;
@@ -1188,7 +1188,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   // A  (M,K)  M-Major
   using SmemLayoutAtomA = decltype(
-      composition(SwizzleXor<2,2,0>{},
+      composition(Swizzle<2,2,2>{},
                   Layout<Shape <_16, _4>,
                          Stride< _1,_16>>{})); // M, K
   using SmemCopyAtomA = Copy_Atom<DefaultCopy, double>;
@@ -1201,7 +1201,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   // B  (N,K)  N-Major
   using SmemLayoutAtomB = decltype(
-      composition(SwizzleXor<2,2,0>{},
+      composition(Swizzle<2,2,2>{},
                   Layout<Shape <_16, _4>,
                          Stride< _1,_16>>{})); // N, K
   using SmemCopyAtomB = Copy_Atom<DefaultCopy, double>;
@@ -1252,7 +1252,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   // A  (M,K)  K-Major
   using SmemLayoutAtomA = decltype(
-      composition(SwizzleXor<2,0,2>{},
+      composition(Swizzle<2,0,4>{},
                   Layout<Shape <_4,_16>,
                          Stride<_1, _4>>{})); // M, K
   using SmemCopyAtomA = Copy_Atom<DefaultCopy, double>;
@@ -1265,7 +1265,7 @@ struct DefaultGemmConfigurationToCutlass3Types<
 
   // B  (N,K)  N-Major
   using SmemLayoutAtomB = decltype(
-      composition(SwizzleXor<2,2,0>{},
+      composition(Swizzle<2,2,2>{},
                   Layout<Shape <_16, _4>,
                          Stride< _1,_16>>{})); // N, K
   using SmemCopyAtomB = Copy_Atom<DefaultCopy, double>;

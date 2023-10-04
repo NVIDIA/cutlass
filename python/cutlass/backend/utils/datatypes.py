@@ -34,8 +34,9 @@
 Utility functions for converting between frontend datatypes and CUTLASS datatypes
 """
 
-import cutlass_bindings
+from cuda import cuda
 
+from cutlass import DataType
 from cutlass.backend.utils.software import CheckPackages
 
 numpy_available = CheckPackages().check_numpy()
@@ -43,16 +44,16 @@ if numpy_available:
     import numpy as np
 
     numpy_to_cutlass_dict = {
-        np.float16: cutlass_bindings.float16,
-        np.float32: cutlass_bindings.float32,
-        np.float64: cutlass_bindings.float64,
-        np.int8: cutlass_bindings.int8,
-        np.int32: cutlass_bindings.int32,
-        np.dtype('float16'): cutlass_bindings.float16,
-        np.dtype('float32'): cutlass_bindings.float32,
-        np.dtype('float64'): cutlass_bindings.float64,
-        np.dtype('int8'): cutlass_bindings.int8,
-        np.dtype('int32'): cutlass_bindings.int32,
+        np.float16: DataType.f16,
+        np.float32: DataType.f32,
+        np.float64: DataType.f64,
+        np.int8: DataType.s8,
+        np.int32: DataType.s32,
+        np.dtype('float16'): DataType.f16,
+        np.dtype('float32'): DataType.f32,
+        np.dtype('float64'): DataType.f64,
+        np.dtype('int8'): DataType.s8,
+        np.dtype('int32'): DataType.s32,
     }
 
 
@@ -67,9 +68,9 @@ if cupy_available:
     import cupy as cp
 
     cupy_to_cutlass_dict = {
-        cp.float16: cutlass_bindings.float16,
-        cp.float32: cutlass_bindings.float32,
-        cp.float64: cutlass_bindings.float64,
+        cp.float16: DataType.f16,
+        cp.float32: DataType.f32,
+        cp.float64: DataType.f64,
     }
 
 
@@ -84,12 +85,12 @@ if torch_available:
     import torch
 
     torch_to_cutlass_dict = {
-        torch.half: cutlass_bindings.float16,
-        torch.float16: cutlass_bindings.float16,
-        torch.float: cutlass_bindings.float32,
-        torch.float32: cutlass_bindings.float32,
-        torch.double: cutlass_bindings.float64,
-        torch.float64: cutlass_bindings.float64,
+        torch.half: DataType.f16,
+        torch.float16: DataType.f16,
+        torch.float: DataType.f32,
+        torch.float32: DataType.f32,
+        torch.double: DataType.f64,
+        torch.float64: DataType.f64,
     }
 
 
@@ -102,7 +103,7 @@ try:
     import bfloat16
 
     bfloat16_available = True
-    numpy_to_cutlass_dict[np.dtype(bfloat16.bfloat16)] = cutlass_bindings.bfloat16
+    numpy_to_cutlass_dict[np.dtype(bfloat16.bfloat16)] = DataType.bf16
 except ImportError:
     bfloat16_available = False
 
@@ -110,7 +111,7 @@ except ImportError:
 def bfloat16_to_cutlass(inp):
     if bfloat16_available:
         if inp == bfloat16.bfloat16:
-            return cutlass_bindings.bfloat16
+            return DataType.bf16
 
 
 def to_cutlass(inp):
@@ -127,3 +128,29 @@ def to_cutlass(inp):
     raise Exception(
         "No available conversion from type {} to a CUTLASS type.".format(inp)
     )
+
+
+def to_device_ptr(tensor) -> cuda.CUdeviceptr:
+    """
+    Converts a tensor to a CUdeviceptr
+
+    :param tensor: tensor to convert
+    :type tensor: np.ndarray | torch.Tensor | cp.ndarray | int
+
+    :return: device pointer
+    :rtype: cuda.CUdeviceptr
+    """
+    if isinstance(tensor, np.ndarray):
+        ptr = cuda.CUdeviceptr(tensor.__array_interface__["data"][0])
+    elif torch_available and isinstance(tensor, torch.Tensor):
+        ptr = cuda.CUdeviceptr(tensor.data_ptr())
+    elif cupy_available and isinstance(tensor, cp.ndarray):
+        ptr = cuda.CUdeviceptr(int(tensor.data.ptr))
+    elif isinstance(tensor, cuda.CUdeviceptr):
+        ptr = tensor
+    elif isinstance(tensor, int):
+        ptr = cuda.CUdeviceptr(tensor)
+    else:
+        raise NotImplementedError(tensor)
+
+    return ptr

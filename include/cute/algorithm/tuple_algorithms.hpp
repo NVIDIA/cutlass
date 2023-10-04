@@ -38,11 +38,38 @@
 #include <cute/numeric/integer_sequence.hpp>
 #include <cute/numeric/integral_constant.hpp>
 
-/** Common algorithms on (hierarchical) tuples */
-/** Style choice:
- *    Forward params [using static_cast<T&&>(.)] for const/non-const/ref/non-ref args
- *    but don't bother forwarding functions as ref-qualified member fns are extremely rare
- */
+/// @file tuple_algorithms.hpp
+/// @brief Common algorithms on (hierarchical) tuples
+///
+/// Code guidelines and style preferences:
+///
+/// For perfect forwarding, don't use std::forward, because it may not
+/// be defined in device code when compiling with NVRTC.  Instead, use
+/// `static_cast<ParameterType&&>(parameter_name)`.
+///
+/// CuTe generally does not bother forwarding functions, as
+/// reference-qualified member functions are rare in this code base.
+///
+/// Throughout CUTLASS, cute::make_tuple always needs to be called
+/// namespace-qualified, EVEN If inside the cute namespace and/or in
+/// scope of a "using namespace cute" declaration.  Otherwise, the
+/// compiler may select std::make_tuple instead of cute::make_tuple,
+/// due to argument-dependent lookup.  Two problems may result from
+/// that.
+///
+/// 1. Functions have an unexpected return type (std::tuple instead of
+///    cute::tuple), so functions that take cute::tuple parameters
+///    fail to compile (generally inside functions that have template
+///    parameters expected to be cute::tuple).
+///
+/// 2. std::tuple does not have the required __host__ __device__
+///    markings, so the CUDA compiler complains if you use it in
+///    device code.
+///
+/// cute::make_tuple will occur more often than std::make_tuple would
+/// in modern C++ code, because cute::tuple's design deprioritizes
+/// correct operation of CTAD (constructor template argument
+/// deduction) in favor of implementation simplicity.
 
 namespace cute
 {
@@ -113,7 +140,11 @@ CUTE_HOST_DEVICE constexpr
 auto
 transform_apply(T&& t, F&& f, G&& g)
 {
-  return detail::tapply(static_cast<T&&>(t), f, g, tuple_seq<T>{});
+  if constexpr (is_tuple<remove_cvref_t<T>>::value) {
+    return detail::tapply(static_cast<T&&>(t), f, g, tuple_seq<T>{});
+  } else {
+    return g(f(static_cast<T&&>(t)));
+  }
 }
 
 template <class T0, class T1, class F, class G>
@@ -121,7 +152,11 @@ CUTE_HOST_DEVICE constexpr
 auto
 transform_apply(T0&& t0, T1&& t1, F&& f, G&& g)
 {
-  return detail::tapply(static_cast<T0&&>(t0), static_cast<T1&&>(t1), f, g, tuple_seq<T0>{});
+  if constexpr (is_tuple<remove_cvref_t<T0>>::value) {
+    return detail::tapply(static_cast<T0&&>(t0), static_cast<T1&&>(t1), f, g, tuple_seq<T0>{});
+  } else {
+    return g(f(static_cast<T0&&>(t0), static_cast<T1&&>(t1)));
+  }
 }
 
 template <class T0, class T1, class T2, class F, class G>
@@ -129,7 +164,11 @@ CUTE_HOST_DEVICE constexpr
 auto
 transform_apply(T0&& t0, T1&& t1, T2&& t2, F&& f, G&& g)
 {
-  return detail::tapply(static_cast<T0&&>(t0), static_cast<T1&&>(t1), static_cast<T2&&>(t2), f, g, tuple_seq<T0>{});
+  if constexpr (is_tuple<remove_cvref_t<T0>>::value) {
+    return detail::tapply(static_cast<T0&&>(t0), static_cast<T1&&>(t1), static_cast<T2&&>(t2), f, g, tuple_seq<T0>{});
+  } else {
+    return g(f(static_cast<T0&&>(t0), static_cast<T1&&>(t1), static_cast<T2&&>(t2)));
+  }
 }
 
 //
@@ -142,7 +181,13 @@ CUTE_HOST_DEVICE constexpr
 void
 for_each(T&& t, F&& f)
 {
-  detail::apply(t, [&](auto&&... a) { (f(static_cast<decltype(a)&&>(a)), ...); }, tuple_seq<T>{});
+  if constexpr (is_tuple<remove_cvref_t<T>>::value) {
+    return detail::apply(t, [&](auto&&... a) { (f(static_cast<decltype(a)&&>(a)), ...); }, tuple_seq<T>{});
+  } else {
+    return f(static_cast<T&&>(t));
+  }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 template <class T, class F>
@@ -160,6 +205,36 @@ for_each_leaf(T&& t, F&& f)
 }
 
 //
+// For Sequence
+// (s, t, f) => (f(t[s_0]),f(t[s_1]),...,f(t[s_n]))
+//
+
+namespace detail {
+
+template <int... I, class F>
+CUTE_HOST_DEVICE constexpr
+void
+for_sequence(seq<I...> const&, F&& f) {
+  (f(Int<I>{}), ...);
+}
+
+}; // end namespace detail
+
+template <int... I, class T, class F>
+CUTE_HOST_DEVICE constexpr
+void
+for_sequence(seq<I...> const& s, T&& t, F&& f) {
+  detail::for_sequence(s, [&](auto&& i){ f(get<remove_cvref_t<decltype(i)>::value>(static_cast<T&&>(t))); });
+}
+
+template <int I, class T, class F>
+CUTE_HOST_DEVICE constexpr
+void
+for_sequence(T&& t, F&& f) {
+  for_sequence(make_seq<I>{}, static_cast<T&&>(t), static_cast<F&&>(f));
+}
+
+//
 // Transform
 // (t, f) => (f(t_0),f(t_1),...,f(t_n))
 //
@@ -169,7 +244,13 @@ CUTE_HOST_DEVICE constexpr
 auto
 transform(T const& t, F&& f)
 {
-  return detail::tapply(t, f, [](auto const&... a){ return cute::make_tuple(a...); }, tuple_seq<T>{});
+  if constexpr (is_tuple<T>::value) {
+    return detail::tapply(t, f, [](auto const&... a){ return cute::make_tuple(a...); }, tuple_seq<T>{});
+  } else {
+    return f(t);
+  }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 template <class T0, class T1, class F>
@@ -177,8 +258,14 @@ CUTE_HOST_DEVICE constexpr
 auto
 transform(T0 const& t0, T1 const& t1, F&& f)
 {
-  static_assert(tuple_size<T0>::value == tuple_size<T1>::value, "Mismatched tuple_size");
-  return detail::tapply(t0, t1, f, [](auto const&... a){ return cute::make_tuple(a...); }, tuple_seq<T0>{});
+  if constexpr (is_tuple<T0>::value) {
+    static_assert(tuple_size<T0>::value == tuple_size<T1>::value, "Mismatched tuple_size");
+    return detail::tapply(t0, t1, f, [](auto const&... a){ return cute::make_tuple(a...); }, tuple_seq<T0>{});
+  } else {
+    return f(t0, t1);
+  }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 template <class T0, class T1, class T2, class F>
@@ -186,9 +273,15 @@ CUTE_HOST_DEVICE constexpr
 auto
 transform(T0 const& t0, T1 const& t1, T2 const& t2, F&& f)
 {
-  static_assert(tuple_size<T0>::value == tuple_size<T1>::value, "Mismatched tuple_size");
-  static_assert(tuple_size<T0>::value == tuple_size<T2>::value, "Mismatched tuple_size");
-  return detail::tapply(t0, t1, t2, f, [](auto const&... a){ return cute::make_tuple(a...); }, tuple_seq<T0>{});
+  if constexpr (is_tuple<T0>::value) {
+    static_assert(tuple_size<T0>::value == tuple_size<T1>::value, "Mismatched tuple_size");
+    static_assert(tuple_size<T0>::value == tuple_size<T2>::value, "Mismatched tuple_size");
+    return detail::tapply(t0, t1, t2, f, [](auto const&... a){ return cute::make_tuple(a...); }, tuple_seq<T0>{});
+  } else {
+    return f(t0, t1, t2);
+  }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 template <class T, class F>
@@ -225,21 +318,16 @@ transform_leaf(T0 const& t0, T1 const& t1, F&& f)
 
 namespace detail {
 
-template <class T, class F>
-CUTE_HOST_DEVICE constexpr
-auto
-find_if(T const& t, F&& f, seq<>)
-{
-  return cute::integral_constant<int, tuple_size<T>::value>{};
-}
-
 template <class T, class F, int I, int... Is>
 CUTE_HOST_DEVICE constexpr
 auto
 find_if(T const& t, F&& f, seq<I,Is...>)
 {
   if constexpr (decltype(f(get<I>(t)))::value) {
-    return cute::integral_constant<int, I>{};
+    return cute::C<I>{};
+  } else
+  if constexpr (sizeof...(Is) == 0) {
+    return cute::C<I+1>{};
   } else {
     return find_if(t, f, seq<Is...>{});
   }
@@ -257,7 +345,7 @@ find_if(T const& t, F&& f)
   if constexpr (is_tuple<T>::value) {
     return detail::find_if(t, f, tuple_seq<T>{});
   } else {
-    return cute::integral_constant<int, decltype(f(t))::value ? 0 : 1>{};
+    return cute::C<decltype(f(t))::value ? 0 : 1>{};
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -274,12 +362,12 @@ find(T const& t, X const& x)
 template <class T, class F>
 CUTE_HOST_DEVICE constexpr
 auto
-none_of(T const& t, F&& f)
+any_of(T const& t, F&& f)
 {
   if constexpr (is_tuple<T>::value) {
-    return cute::integral_constant<bool, decltype(find_if(t, f))::value == tuple_size<T>::value>{};
+    return detail::apply(cute::transform(t, f), [&] (auto const&... a) { return (false_type{} || ... || a); }, tuple_seq<T>{});
   } else {
-    return not f(t);
+    return f(t);
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -291,8 +379,7 @@ auto
 all_of(T const& t, F&& f)
 {
   if constexpr (is_tuple<T>::value) {
-    auto not_f = [&](auto const& a) { return not f(a); };
-    return cute::integral_constant<bool, decltype(find_if(t, not_f))::value == tuple_size<T>::value>{};
+    return detail::apply(t, [&] (auto const&... a) { return (true_type{} && ... && f(a)); }, tuple_seq<T>{});
   } else {
     return f(t);
   }
@@ -303,9 +390,9 @@ all_of(T const& t, F&& f)
 template <class T, class F>
 CUTE_HOST_DEVICE constexpr
 auto
-any_of(T const& t, F&& f)
+none_of(T const& t, F&& f)
 {
-  return not none_of(t, f);
+  return not any_of(t, f);
 }
 
 //
@@ -327,6 +414,14 @@ auto
 filter_tuple(T0 const& t0, T1 const& t1, F&& f)
 {
   return transform_apply(t0, t1, f, [](auto const&... a) { return cute::tuple_cat(a...); });
+}
+
+template <class T0, class T1, class T2, class F>
+CUTE_HOST_DEVICE constexpr
+auto
+filter_tuple(T0 const& t0, T1 const& t1, T2 const& t2, F&& f)
+{
+  return transform_apply(t0, t1, t2, f, [](auto const&... a) { return cute::tuple_cat(a...); });
 }
 
 //
@@ -399,7 +494,7 @@ fold_first(T&& t, F&& f)
 }
 
 //
-// front, back, take, unwrap
+// front, back, take, select, unwrap
 //
 
 // Get the first non-tuple element in a hierarchical tuple
@@ -425,7 +520,16 @@ back(T&& t)
 {
   if constexpr (is_tuple<remove_cvref_t<T>>::value) {
     constexpr int N = tuple_size<remove_cvref_t<T>>::value;
-    return back(get<N-1>(static_cast<T&&>(t)));
+
+    // MSVC needs a bit of extra help here deducing return types.
+    // We help it by peeling off the nonrecursive case a level "early."
+    if constexpr (! is_tuple<remove_cvref_t<decltype(get<N - 1>(static_cast<T&&>(t)))>>::value) {
+      return get<N - 1>(static_cast<T&&>(t));
+    }
+    else {
+      return back(get<N - 1>(static_cast<T&&>(t)));
+    }
+
   } else {
     return static_cast<T&&>(t);
   }
@@ -440,6 +544,47 @@ auto
 take(T const& t)
 {
   return detail::apply(t, [](auto const&... a) { return cute::make_tuple(a...); }, make_range<B,E>{});
+}
+
+//
+// Select tuple elements with given indices.
+//
+
+template <int... I, class T>
+CUTE_HOST_DEVICE constexpr
+auto
+select(T const & t)
+{
+  return cute::make_tuple(get<I>(t)...);
+}
+
+template <class T, typename Indices>
+CUTE_HOST_DEVICE constexpr
+auto
+select(T const & t, Indices const & indices)
+{
+  if constexpr (is_tuple<Indices>::value) {
+    return cute::transform(indices, [&t](auto i) { return select(t, i); });
+  }
+  else {
+    static_assert(is_static<Indices>::value, "Order must be static");
+    return get<Indices::value>(t);
+  }
+}
+
+// Wrap non-tuples into rank-1 tuples or forward
+template <class T>
+CUTE_HOST_DEVICE constexpr
+auto
+wrap(T const& t)
+{
+  if constexpr (is_tuple<T>::value) {
+    return t;
+  } else {
+    return cute::make_tuple(t);
+  }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 // Unwrap rank-1 tuples until we're left with a rank>1 tuple or a non-tuple
@@ -464,6 +609,13 @@ unwrap(T const& t)
 //
 // Flatten a hierarchical tuple to a tuple of depth one.
 //
+//
+
+template <class T>
+struct is_flat : true_type {};
+
+template <class... Ts>
+struct is_flat<tuple<Ts...>> : bool_constant<(true && ... && (not is_tuple<Ts>::value))> {};
 
 template <class T>
 CUTE_HOST_DEVICE constexpr
@@ -471,7 +623,12 @@ auto
 flatten_to_tuple(T const& t)
 {
   if constexpr (is_tuple<T>::value) {
-    return filter_tuple(t, [](auto const& a) { return flatten_to_tuple(a); });
+    if constexpr (is_flat<T>::value) {
+      return t;
+    } else
+    {
+      return filter_tuple(t, [](auto const& a) { return flatten_to_tuple(a); });
+    }
   } else {
     return cute::make_tuple(t);
   }
@@ -485,7 +642,12 @@ auto
 flatten(T const& t)
 {
   if constexpr (is_tuple<T>::value) {
-    return filter_tuple(t, [](auto const& a) { return flatten_to_tuple(a); });
+    if constexpr (is_flat<T>::value) {
+      return t;
+    } else
+    {
+      return filter_tuple(t, [](auto const& a) { return flatten_to_tuple(a); });
+    }
   } else {
     return t;
   }
@@ -576,7 +738,11 @@ CUTE_HOST_DEVICE constexpr
 auto
 repeat(X const& x)
 {
-  return detail::construct(0, x, seq<>{}, make_seq<N>{}, seq<>{});
+  if constexpr (N == 1) {
+    return x;
+  } else {
+    return detail::construct(0, x, seq<>{}, make_seq<N>{}, seq<>{});
+  }
 }
 
 //
@@ -605,7 +771,23 @@ CUTE_HOST_DEVICE constexpr
 auto
 group(T const& t)
 {
-  return detail::construct(t, take<B,E>(t), make_seq<B>{}, seq<0>{}, make_range<E,tuple_size<T>::value>{});
+  if constexpr (not is_tuple<T>::value) {
+    if constexpr (E == -1) {
+      return group<B,1>(t);
+    } else {
+      return detail::construct(t, take<B,E>(t), make_seq<B>{}, make_seq<(B < E)>{}, make_range<E,1>{});
+    }
+  } else
+  if constexpr (E == -1) {
+    return group<B,tuple_size<T>::value>(t);
+  } else
+  if constexpr (B <= E) {
+    return detail::construct(t, take<B,E>(t), make_seq<B>{}, make_seq<(B < E)>{}, make_range<E,tuple_size<T>::value>{});
+  } else {
+    static_assert(B <= E);
+  }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 //
@@ -684,6 +866,48 @@ prepend(T const& a, X const& x)
 
   CUTE_GCC_UNREACHABLE;
 }
+
+//
+// Unflatten a flat tuple into a hierarchical one
+// unflatten(x, flatten(x)) == x
+//
+
+namespace detail {
+
+template<class FlatTuple, class TargetProfile>
+CUTE_HOST_DEVICE constexpr
+auto
+unflatten_impl(FlatTuple const& flat_tuple, TargetProfile const& target_profile)
+{
+  if constexpr (is_tuple<TargetProfile>::value) {
+    return fold(target_profile, cute::make_tuple(cute::make_tuple(), flat_tuple), [](auto const& v, auto const& t) {
+      auto [result, remaining_tuple] = v;
+      auto [sub_result, sub_tuple] = unflatten_impl(remaining_tuple, t);
+      return cute::make_tuple(append(result, sub_result), sub_tuple);
+    });
+  } else {
+    return cute::make_tuple(get<0>(flat_tuple), take<1, decltype(rank(flat_tuple))::value>(flat_tuple));
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+}  // end namespace detail
+
+// @pre flatten(@a flat_tuple) == @a flat_tuple
+// @pre rank(flatten(@a target_profile)) == rank(@a flat_tuple)
+// @post congruent(@a result, @a target_profile)
+// @post flatten(@a result) == @a flat_tuple
+template<class FlatTuple, class TargetProfile>
+CUTE_HOST_DEVICE constexpr
+auto
+unflatten(FlatTuple const& flat_tuple, TargetProfile const& target_profile)
+{
+  auto [unflatten_tuple, flat_remainder] = detail::unflatten_impl(flat_tuple, target_profile);
+  CUTE_STATIC_ASSERT_V(rank(flat_remainder) == Int<0>{});
+  return unflatten_tuple;
+}
+
 
 //
 // Inclusive scan (prefix sum)
@@ -870,6 +1094,20 @@ zip2_by(T const& t, TG const& guide)
   }
 
   CUTE_GCC_UNREACHABLE;
+}
+
+/// @return A tuple of the elements of @c t in reverse order.
+template <class T>
+CUTE_HOST_DEVICE constexpr auto
+reverse(T const& t) {
+  if constexpr (is_tuple<T>::value) {
+    return detail::apply(t, [] (auto const&... a) {
+        return cute::make_tuple(a...);
+      }, tuple_rseq<T>{});
+  }
+  else {
+    return t;
+  }
 }
 
 } // end namespace cute

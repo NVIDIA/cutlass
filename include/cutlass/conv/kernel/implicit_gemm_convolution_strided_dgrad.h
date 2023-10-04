@@ -207,6 +207,7 @@ struct ImplicitGemmConvolutionStridedDgrad {
   struct Params {
     ConvProblemSize problem_size;
     cutlass::gemm::GemmCoord grid_tiled_shape;
+    int swizzle_log_tile;
     FastDivmod stride_h_divmod;
     FastDivmod stride_w_divmod;
     int gemm_k_iterations;
@@ -259,6 +260,8 @@ struct ImplicitGemmConvolutionStridedDgrad {
         args.problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
         args.problem_size.split_k_slices);
+      
+      swizzle_log_tile = threadblock_swizzle.get_log_tile(grid_tiled_shape);
     }
   };
 
@@ -283,7 +286,7 @@ struct ImplicitGemmConvolutionStridedDgrad {
     ThreadblockSwizzle threadblock_swizzle;
 
     cutlass::gemm::GemmCoord threadblock_tile_idx =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_idx.m() ||
@@ -335,7 +338,7 @@ struct ImplicitGemmConvolutionStridedDgrad {
 
     // Broadcast the warp_id computed by lane 0 to ensure dependent code
     // is compiled as warp-uniform.
-    int warp_idx = canonical_warp_idx();
+    int warp_idx = canonical_warp_idx_sync();
     int lane_idx = threadIdx.x % 32;
 
     // Check if CTA contributes valid MMA (Dy * w) and accumulator will be non-zero after MMA
@@ -393,7 +396,7 @@ struct ImplicitGemmConvolutionStridedDgrad {
 
     // Compute logical position within grid
     threadblock_tile_idx =
-        threadblock_swizzle.get_tile_offset(params.grid_tiled_shape);
+        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
 
     // If performing a reduction via split-K, fetch the initial synchronization
     if (params.split_k_mode == SplitKMode::kSerial && params.grid_tiled_shape.k() > 1) {

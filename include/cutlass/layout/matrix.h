@@ -37,9 +37,18 @@
     Layout functions must implement all members in the public interface of IdentityTensorLayout<>
     defined in cutlass/tensor_ref.h.
 */
-#pragma once
 
-#include "cute/layout.hpp"
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by this unit test: `cutlass_test_unit_core_cpp11`.
+*/
+
+#pragma once
 
 #include "cutlass/cutlass.h"
 #include "cutlass/fast_math.h"
@@ -145,15 +154,6 @@ public:
   LongIndex capacity(MatrixCoord const &extent) const {
     return LongIndex(extent.row()) * LongIndex(stride_[0]);
   }
-
-  CUTLASS_HOST_DEVICE
-  cute::Layout<cute::Shape<int, int>, cute::Stride<int64_t, cute::Int<1> > > 
-  to_cute_layout(MatrixCoord const &extent) const {
-    return cute::Layout<cute::Shape<int, int>, cute::Stride<int64_t, cute::Int<1> > >{
-      {extent[0], extent[1]},
-      {stride(0), cute::Int<1>{}}
-    };
-  }
 };
 
 /// Mapping function for column-major matrices.
@@ -246,15 +246,6 @@ public:
   CUTLASS_HOST_DEVICE
   LongIndex capacity(MatrixCoord const &extent) const {
     return LongIndex(extent.column()) * LongIndex(stride_[0]);
-  }
-
-  CUTLASS_HOST_DEVICE
-  cute::Layout<cute::Shape<int, int>, cute::Stride< cute::Int<1>, int64_t> > 
-  to_cute_layout(MatrixCoord const &extent) const {
-    return cute::Layout<cute::Shape<int, int>, cute::Stride<cute::Int<1>, int64_t> >{
-      {extent[0], extent[1]},
-      {cute::Int<1>{}, stride(0)}
-    };
   }
 };
 
@@ -558,7 +549,7 @@ public:
   /// Inverse of layout function, mapping linear offset to logical coordinate
   CUTLASS_HOST_DEVICE
   MatrixCoord inverse(LongIndex offset) const {
-    // TODO
+    CUTLASS_UNUSED(offset);
     return MatrixCoord(0, 0);
   }
 
@@ -709,7 +700,6 @@ public:
   /// Inverse of layout function, mapping linear offset to logical coordinate
   CUTLASS_HOST_DEVICE
   TensorCoord inverse(LongIndex offset) const {
-    // TODO
     return TensorCoord();
   }
 
@@ -818,7 +808,7 @@ public:
   /// Inverse of layout function, mapping linear offset to logical coordinate
   CUTLASS_HOST_DEVICE
   MatrixCoord inverse(LongIndex offset) const {
-    // TODO
+    CUTLASS_UNUSED(offset);
     return MatrixCoord(0, 0);
   }
 
@@ -924,7 +914,7 @@ public:
   /// Inverse of layout function, mapping linear offset to logical coordinate
   CUTLASS_HOST_DEVICE
   MatrixCoord inverse(LongIndex offset) const {
-    // TODO
+    CUTLASS_UNUSED(offset);
     return MatrixCoord(0, 0);
   }
 
@@ -1074,7 +1064,6 @@ public:
   CUTLASS_HOST_DEVICE
   MatrixCoord inverse(LongIndex offset) const {
 
-    // TODO
     return MatrixCoord(0, 0);
   }
 
@@ -1174,7 +1163,6 @@ public:
   /// Inverse of layout function, mapping linear offset to logical coordinate
   CUTLASS_HOST_DEVICE
   MatrixCoord inverse(LongIndex offset) const {
-    // TODO
     return MatrixCoord(0, 0);
   }
 

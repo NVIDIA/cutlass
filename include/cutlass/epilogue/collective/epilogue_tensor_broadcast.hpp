@@ -130,6 +130,14 @@ public:
     return args;
   }
 
+  template<class ProblemShape>
+  CUTLASS_HOST_DEVICE static bool
+  can_implement(
+      [[maybe_unused]] ProblemShape const& problem_shape,
+      [[maybe_unused]] Arguments const& args) {
+    return true;
+  }
+
   CUTLASS_HOST_DEVICE
   EpilogueTensorBroadcast(Params const& params_)
       : params(params_), epilogue_op(params_.thread) { }

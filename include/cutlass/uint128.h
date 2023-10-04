@@ -32,7 +32,15 @@
   \file
   \brief Defines an unsigned 128b integer with several operators to support 64-bit integer division.
 */
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
 
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
 #pragma once
 
 #if defined(__CUDACC_RTC__)
@@ -46,7 +54,6 @@
 #endif
 
 #include "cutlass/cutlass.h"
-#include "cutlass/numeric_types.h"
 
 /// Optionally enable GCC's built-in type
 #if (defined(__x86_64) || defined (__aarch64__)) && !defined(__CUDA_ARCH__) && defined(__GNUC__)
@@ -164,7 +171,6 @@ struct uint128_t {
     uint64_t overflow;
     y.hilo_.hi += _umul128(hilo_.hi, rhs, &overflow);
 #else
-    // TODO - not implemented
     CUTLASS_UNUSED(rhs);
     exception();
 #endif
@@ -182,7 +188,6 @@ struct uint128_t {
     uint64_t remainder = 0;
     quotient = _udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
-    // TODO - not implemented
     CUTLASS_UNUSED(divisor);
     exception();
 #endif
@@ -199,7 +204,6 @@ struct uint128_t {
     // implemented using MSVC's arithmetic intrinsics
     (void)_udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
-    // TODO - not implemented
     CUTLASS_UNUSED(divisor);
     exception();
 #endif
@@ -217,7 +221,6 @@ struct uint128_t {
     // implemented using MSVC's arithmetic intrinsics
     quotient = _udiv128(hilo_.hi, hilo_.lo, divisor, &remainder);
 #else
-    // TODO - not implemented
     CUTLASS_UNUSED(remainder);
     CUTLASS_UNUSED(divisor);
     exception();

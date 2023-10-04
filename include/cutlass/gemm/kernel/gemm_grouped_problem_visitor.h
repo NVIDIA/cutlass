@@ -39,7 +39,6 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/matrix_coord.h"
 #include "cutlass/gemm/kernel/grouped_problem_visitor.h"
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {

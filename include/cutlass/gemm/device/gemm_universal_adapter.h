@@ -38,10 +38,14 @@
 
 // common
 #include "cutlass/cutlass.h"
-#include "cutlass/trace.h"
-#include "cutlass/cluster_launch.hpp"
 #include "cutlass/device_kernel.h"
 #include "cutlass/gemm/gemm.h"
+#include "cutlass/detail/layout.hpp"
+
+#if !defined(__CUDACC_RTC__)
+#include "cutlass/cluster_launch.hpp"
+#include "cutlass/trace.h"
+#endif // !defined(__CUDACC_RTC__)
 
 // 2.x
 #include "cutlass/gemm/device/gemm_universal_base.h"
@@ -107,16 +111,14 @@ public:
   // Legacy: Assume MultiplyAdd only since we do not use this tag type in 3.0
   using MathOperator = cutlass::arch::OpMultiplyAdd;
 
-  // If our TiledMMA's instruction thread layout size is larger than 1, we know its a tensorop!
+  // All tensorop operations have atom shape's M >= 8
   using OperatorClass = cute::conditional_t<
-      (cute::size(typename GemmKernel::TiledMma::AtomThrID{}) > 1),
-      cutlass::arch::OpClassTensorOp, cutlass::arch::OpClassSimt>;
+        cute::size<0>(typename CollectiveMainloop::TiledMma::AtomShape_MNK{}) >= 8,
+        cutlass::arch::OpClassTensorOp, cutlass::arch::OpClassSimt>;
 
   using ArchTag = typename GemmKernel::ArchTag;
 
   // NOTE: Assume identity swizzle for now
-  static_assert(cute::is_void_v<typename GemmKernel::GridSwizzle>,
-    "CUTLASS 3.x kernel types do not support grid swizzle functors yet.");
   using ThreadblockSwizzle = cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>;
 
   // Assume TiledMma's ShapeMNK is the same as 2.x's ThreadblockShape
@@ -155,13 +157,13 @@ public:
   static int constexpr kStages = CollectiveMainloop::DispatchPolicy::Stages;
 
   // Inspect TiledCopy for A and B to compute the alignment size
-  static int constexpr kAlignmentA = gemm::detail::get_alignment_count_from_gmem_tiled_copy<
+  static int constexpr kAlignmentA = cutlass::detail::get_alignment_count_from_gmem_tiled_copy<
       typename CollectiveMainloop::GmemTiledCopyA, ElementA>();
-  static int constexpr kAlignmentB = gemm::detail::get_alignment_count_from_gmem_tiled_copy<
+  static int constexpr kAlignmentB = cutlass::detail::get_alignment_count_from_gmem_tiled_copy<
       typename CollectiveMainloop::GmemTiledCopyB, ElementB>();
-  static int constexpr kAlignmentC = gemm::detail::get_alignment_count_from_gmem_tiled_copy<
+  static int constexpr kAlignmentC = cutlass::detail::get_alignment_count_from_gmem_tiled_copy<
       typename CollectiveEpilogue::GmemTiledCopyC, ElementC>();
-  static int constexpr kAlignmentD = gemm::detail::get_alignment_count_from_gmem_tiled_copy<
+  static int constexpr kAlignmentD = cutlass::detail::get_alignment_count_from_gmem_tiled_copy<
       typename CollectiveEpilogue::GmemTiledCopyD, ElementD>();
 
   using EpilogueOutputOp = typename CollectiveEpilogue::ThreadEpilogueOp;
@@ -181,6 +183,11 @@ private:
   Params params_;
 
 public:
+
+  /// Access the Params structure
+  Params const& params() const {
+    return params_;
+  }
 
   /// Determines whether the GEMM can execute the given problem.
   static Status
@@ -268,24 +275,10 @@ public:
     CUTLASS_TRACE_HOST("GemmUniversal::initialize() - workspace "
       << workspace << ", stream: " << (stream ? "non-null" : "null"));
 
-    size_t workspace_bytes = GemmKernel::get_workspace_size(args);
-    CUTLASS_TRACE_HOST("  workspace_bytes: " << workspace_bytes);
-
-    if (workspace_bytes) {
-      if (!workspace) {
-        CUTLASS_TRACE_HOST("  error: device workspace must not be null");
-        return Status::kErrorWorkspaceNull;
-      }
-
-      if (args.mode == GemmUniversalMode::kGemm) {
-        CUTLASS_TRACE_HOST("  clearing device workspace");
-        cudaError_t result = cudaMemsetAsync(workspace, 0, workspace_bytes, stream);
-        if (cudaSuccess != result) {
-          result = cudaGetLastError(); // to clear the error bit
-          CUTLASS_TRACE_HOST("  cudaMemsetAsync() returned error " << cudaGetErrorString(result));
-          return Status::kErrorInternal;
-        }
-      }
+    // Initialize the workspace
+    Status status = GemmKernel::initialize_workspace(args, workspace, stream);
+    if (status != Status::kSuccess) {
+      return status;
     }
 
     // Initialize the Params structure

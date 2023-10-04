@@ -34,14 +34,13 @@
 Utility functions for converting between frontend datatypes and CUTLASS datatypes
 """
 
-import cutlass_bindings
-
 import cutlass
-from cutlass.backend.library import (
+from cutlass import (
     DataTypeSize,
+)
+from cutlass.backend.library import (
     MathInstruction,
     MathOperation,
-    ShortLayoutTypeNames,
     TileDescription,
 )
 
@@ -118,19 +117,27 @@ try:
     _torch_to_library_dict = {
         torch.half: cutlass.DataType.f16,
         torch.float16: cutlass.DataType.f16,
+        torch.bfloat16: cutlass.DataType.bf16,
         torch.float: cutlass.DataType.f32,
         torch.float32: cutlass.DataType.f32,
         torch.double: cutlass.DataType.f64,
         torch.float64: cutlass.DataType.f64,
+        torch.int8: cutlass.DataType.s8,
+        torch.int32: cutlass.DataType.s32,
+        torch.uint8: cutlass.DataType.u8,
     }
 
     _library_to_torch_dict = {
         cutlass.DataType.f16: torch.half,
         cutlass.DataType.f16: torch.float16,
+        cutlass.DataType.bf16: torch.bfloat16,
         cutlass.DataType.f32: torch.float,
         cutlass.DataType.f32: torch.float32,
         cutlass.DataType.f64: torch.double,
         cutlass.DataType.f64: torch.float64,
+        cutlass.DataType.s8: torch.int8,
+        cutlass.DataType.s32: torch.int32,
+        cutlass.DataType.u8: torch.uint8,
     }
 except ImportError:
     torch_available = False
@@ -160,49 +167,10 @@ def bfloat16_library_type(inp) -> cutlass.DataType:
             return cutlass.DataType.bf16
 
 
-def bfloat16_type(inp) -> bfloat16.bfloat16:
+def bfloat16_type(inp):
     if bfloat16_available:
         if inp == cutlass.DataType.bf16:
             return bfloat16.bfloat16
-
-
-# Mapping from library data type to Python-bound CUTLASS data type
-library_to_binding_dict = {
-    cutlass.DataType.s8: cutlass_bindings.int8,
-    cutlass.DataType.s32: cutlass_bindings.int32,
-    cutlass.DataType.f16: cutlass_bindings.float16,
-    cutlass.DataType.bf16: cutlass_bindings.bfloat16,
-    cutlass.DataType.f32: cutlass_bindings.float32,
-    cutlass.DataType.f64: cutlass_bindings.float64,
-    cutlass.DataType.tf32: cutlass_bindings.tfloat32,
-}
-
-# Mapping from Python-bound CUTLASS data type to library data type
-binding_to_library = {
-    cutlass_bindings.int8: cutlass.DataType.s8,
-    cutlass_bindings.int32: cutlass.DataType.s32,
-    cutlass_bindings.float16: cutlass.DataType.f16,
-    cutlass_bindings.bfloat16: cutlass.DataType.bf16,
-    cutlass_bindings.float32: cutlass.DataType.f32,
-    cutlass_bindings.float64: cutlass.DataType.f64,
-    cutlass_bindings.tfloat32: cutlass.DataType.tf32,
-}
-
-
-def binding_library_type(inp):
-    if inp in binding_to_library:
-        return binding_to_library[inp]
-    return None
-
-
-def has_binding_type(inp: cutlass.DataType):
-    return inp in library_to_binding_dict
-
-
-def library_to_binding(inp: cutlass.DataType):
-    if not has_binding_type(inp):
-        raise Exception(f"No available conversion from library type {inp} to Python-bound CUTLASS type")
-    return library_to_binding_dict[inp]
 
 
 def library_type(inp):
@@ -214,45 +182,12 @@ def library_type(inp):
         cupy_library_type,
         numpy_library_type,
         torch_library_type,
-        binding_library_type,
     ]:
         out = cvt_fn(inp)
         if out is not None:
             return out
 
     raise Exception(f"No available conversion from type {inp} to a library type.")
-
-
-def library_layout(layout):
-    if layout in cutlass.LayoutTag.keys():
-        return layout
-
-    # Convert Python-bound CUTLASS layout to profiler library layout
-    if layout == cutlass_bindings.RowMajor:
-        return cutlass.LayoutType.RowMajor
-    elif layout == cutlass_bindings.ColumnMajor:
-        return cutlass.LayoutType.ColumnMajor
-    else:
-        raise Exception(f"No conversion available for layout {layout} to library layout.")
-
-
-def binding_type(inp):
-    if inp in DataTypeSize.keys():
-        return inp
-
-    libtype = library_type(inp)
-    return library_to_binding(libtype)
-
-
-def binding_layout(layout):
-    if layout in ShortLayoutTypeNames.keys():
-        return layout
-    elif layout == cutlass.LayoutType.RowMajor:
-        return cutlass_bindings.RowMajor
-    elif layout == cutlass.LayoutType.ColumnMajor:
-        return cutlass_bindings.ColumnMajor
-    else:
-        raise Exception(f"No conversion available for layout {layout} to Python-bound CUTLASS layout.")
 
 
 def _tensor_from_numpy(np_tensor):
@@ -276,17 +211,27 @@ def get_datatype_and_layout(tensor):
         return _tensor_from_numpy(tensor)
     elif torch_available and isinstance(tensor, torch.Tensor):
         return _tensor_from_torch(tensor)
+    elif isinstance(tensor, float) or isinstance(tensor, int):
+        return (cutlass.DataType.f32, cutlass.LayoutType.RowMajor)
     else:
         raise Exception(f"Unable to convert tensor of type {type(tensor)} to Python-bound CUTLASS datatype and layout.")
 
-
-def binding_opclass(opclass: cutlass.OpcodeClass):
-    if opclass == cutlass.OpcodeClass.TensorOp:
-        return cutlass_bindings.OpClass.TensorOp
-    elif opclass == cutlass.OpcodeClass.Simt:
-        return cutlass_bindings.OpClass.Simt
+def get_tensor_shape(tensor, op="GEMM"):
+    if (numpy_available and isinstance(tensor, np.ndarray)) or (
+        cupy_available and isinstance(tensor, cp.ndarray)
+    ):
+        return tensor.shape
+    elif torch_available and isinstance(tensor, torch.Tensor):
+        size = tensor.size()
+        if op == "CONV":
+            # PyTorch Tensors have shape NCHW
+            return (size[0], size[2], size[3], size[1])
+        else:
+            return tuple(tensor.size())
+    elif isinstance(tensor, float) or isinstance(tensor, int):
+        return (1,)
     else:
-        raise Exception(f"Unable to convert opcode class of type {opclass} to Python-bound CUTLASS opcode class.")
+        raise Exception(f"Unable to convert tensor of type {type(tensor)} to Python-bound CUTLASS datatype and layout.")
 
 
 _math_operation_value_map = {x.value: x for x in MathOperation}
@@ -299,18 +244,21 @@ def backend_math_operation(math_op: cutlass.MathOperation):
 
 
 def construct_backend_td(td: cutlass.TileDescription,
-                         kernel_schedule: cutlass.KernelScheduleType) -> TileDescription:
+                         kernel_schedule: cutlass.KernelScheduleType,
+                         epilogue_schedule: cutlass.EpilogueScheduleType,
+                         tile_scheduler: cutlass.TileSchedulerType) -> TileDescription:
     mi = td.math_instruction
     backend_mi = MathInstruction(
         mi.instruction_shape,
-        binding_type(mi.element_a),
-        binding_type(mi.element_b),
-        binding_type(mi.element_accumulator),
-        binding_opclass(mi.opcode_class),
+        mi.element_a,
+        mi.element_b,
+        mi.element_accumulator,
+        mi.opcode_class,
         backend_math_operation(mi.math_operation)
     )
+    cluster_shape = td.cluster_shape if hasattr(td, "cluster_shape") else [1, 1, 1]
     return TileDescription(td.threadblock_shape, td.stages, td.warp_count,
-                           backend_mi, td.cluster_shape, kernel_schedule)
+                           backend_mi, cluster_shape, kernel_schedule, epilogue_schedule, tile_scheduler)
 
 
 def td_from_profiler_op(op) -> TileDescription:
@@ -322,11 +270,13 @@ def td_from_profiler_op(op) -> TileDescription:
     :returns: backend TileDescription
     :rtype: cutlass.backend.TileDescription
     """
-    schedule = op.kernel_schedule if hasattr(op, 'kernel_schedule') else None
-    return construct_backend_td(op.tile_description, schedule)
+    kschedule = op.kernel_schedule if hasattr(op, 'kernel_schedule') else None
+    eschedule = op.epilogue_schedule if hasattr(op, 'epilogue_schedule') else None
+    tschedule = op.tile_scheduler if hasattr(op, 'tile_scheduler') else None
+    return construct_backend_td(op.tile_description, kschedule, eschedule, tschedule)
 
 
-def td_from_profiler_td(td: cutlass.backend.TileDescription) -> TileDescription:
+def td_from_profiler_td(td: TileDescription) -> TileDescription:
     """
     Converts the profiler's TileDescription into the backend TileDescription
 
@@ -336,4 +286,17 @@ def td_from_profiler_td(td: cutlass.backend.TileDescription) -> TileDescription:
     :returns: backend TileDescription
     :rtype: cutlass.backend.TileDescription
     """
-    return construct_backend_td(td, kernel_schedule=None)
+    return construct_backend_td(td, kernel_schedule=None, epilogue_schedule=None, tile_scheduler=None)
+
+
+def to_camel_case(snake_str):
+    return "".join(x.capitalize() for x in snake_str.lower().split("_"))
+
+
+def getattr_enum(obj, attr_name):
+    # The attr_name is under the snake_case
+    camel_attr = to_camel_case(attr_name)
+    if hasattr(obj, camel_attr):
+        return getattr(obj, camel_attr)
+    else:
+        raise Exception(f"Invalid option: {attr_name}")

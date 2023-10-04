@@ -103,16 +103,16 @@ protected:
   //
 
   // Device ordinal
-  thread_local static int device_ordinal_;
+  CUTLASS_THREAD_LOCAL static int device_ordinal_;
 
   /// Device SM count
-  thread_local static int device_sms_;
+  CUTLASS_THREAD_LOCAL static int device_sms_;
 
   /// Kernel SM occupancy (in thread blocks)
-  thread_local static int sm_occupancy_;
+  CUTLASS_THREAD_LOCAL static int sm_occupancy_;
 
   /// Kernel dynamic shared memory allocation requirement
-  thread_local static int smem_size_;
+  CUTLASS_THREAD_LOCAL static int smem_size_;
 
   /// Initialize static thread-local members for the thread's current device,
   /// if necessary.
@@ -153,14 +153,6 @@ protected:
         Kernel2<GemmKernel>,
         cudaFuncAttributeMaxDynamicSharedMemorySize,
         smem_size_);
-      if (cudart_result != cudaSuccess) {
-        CUTLASS_TRACE_HOST("  cudaFuncSetAttribute() returned error " << cudaGetErrorString(cudart_result));
-        return Status::kErrorInternal;
-      }
-
-      cudart_result = cudaFuncSetAttribute(
-          Kernel2<GemmKernel>,
-          cudaFuncAttributePreferredSharedMemoryCarveout, 100); // 100% shared memory
       if (cudart_result != cudaSuccess) {
         CUTLASS_TRACE_HOST("  cudaFuncSetAttribute() returned error " << cudaGetErrorString(cudart_result));
         return Status::kErrorInternal;
@@ -227,12 +219,6 @@ public:
   static Status can_implement(Arguments const &args)
   {
     CUTLASS_TRACE_HOST("GemmUniversalBase::can_implement()");
-
-    // Initialize static kernel and device properties, if necessary.
-    Status result = init_device_props();
-    if (result != Status::kSuccess) {
-      return result;
-    }
 
     dim3 grid = get_grid_shape(args);
 
@@ -323,7 +309,11 @@ public:
     }
 
     // Assign and prepare workspace memory
-    return params_.init_workspace(workspace, stream);
+    if (args.mode == GemmUniversalMode::kGemm) {
+      return params_.init_workspace(workspace, stream);
+    }
+
+    return Status::kSuccess;
   }
 
 
@@ -394,19 +384,19 @@ public:
 
 /// Device ordinal
 template <typename GemmKernel_>
-thread_local int GemmUniversalBase<GemmKernel_>::device_ordinal_ = -1;
+CUTLASS_THREAD_LOCAL int GemmUniversalBase<GemmKernel_>::device_ordinal_ = -1;
 
 /// Device SM count
 template <typename GemmKernel_>
-thread_local int GemmUniversalBase<GemmKernel_>::device_sms_ = -1;
+CUTLASS_THREAD_LOCAL int GemmUniversalBase<GemmKernel_>::device_sms_ = -1;
 
 /// Kernel SM occupancy (in thread blocks)
 template <typename GemmKernel_>
-thread_local int GemmUniversalBase<GemmKernel_>::sm_occupancy_ = -1;
+CUTLASS_THREAD_LOCAL int GemmUniversalBase<GemmKernel_>::sm_occupancy_ = -1;
 
 /// Kernel dynamic shared memory allocation requirement
 template <typename GemmKernel_>
-thread_local int GemmUniversalBase<GemmKernel_>::smem_size_ = -1;
+CUTLASS_THREAD_LOCAL int GemmUniversalBase<GemmKernel_>::smem_size_ = -1;
 
 
 

@@ -140,7 +140,6 @@ struct TestbedTrmmUniversal {
         view.data(), view.capacity());
     } 
     else {
-      // TODO: Implement the rest
       EXPECT_TRUE(false) << "Not implemented";
       return false;
     }
@@ -186,7 +185,6 @@ struct TestbedTrmmUniversal {
         view, seed, Trmm::kFillMode, 0, 0.5, mantissa_in_bits);
     }
     else {
-      // TODO: Implement the rest
       EXPECT_TRUE(false) << "Not implemented";
       return false;
     }
@@ -230,7 +228,6 @@ struct TestbedTrmmUniversal {
       EXPECT_TRUE(false) << "Gaussian distribution for pad diagonal not implemented";
     }
     else {
-      // TODO: Implement the rest
       EXPECT_TRUE(false) << "Not implemented";
       return false;
     }

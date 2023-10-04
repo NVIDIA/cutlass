@@ -636,7 +636,7 @@ For example, the
 explains what to do if a matrix tiling
 doesn't perfectly divide the matrix.
 
-### Implement GEMM as generalized tensor constraction (GETT)
+### Implement GEMM as generalized tensor contraction (GETT)
 
 "GETT" here stands for "general(ized) tensor times tensor,"
 a tensor contraction.

@@ -34,12 +34,12 @@ import ctypes
 import json
 import os
 import sqlite3
+import subprocess
 import tempfile
 
 from cuda import cuda, nvrtc
-import cutlass_bindings
 
-from cutlass import CACHE_FILE, CUDA_INSTALL_PATH, CUTLASS_PATH
+from cutlass import CACHE_FILE, CUDA_INSTALL_PATH, CUTLASS_PATH, logger
 from cutlass.backend.gemm_operation import GemmOperationUniversal
 from cutlass.backend.library import ApiVersion
 from cutlass.backend.utils.device import device_cc
@@ -47,6 +47,26 @@ from cutlass.backend.utils.software import SubstituteTemplate
 
 IncludeTemplate = r"""#include "${include}"
 """
+
+
+def compile_with_nvcc(cmd, source, error_file):
+    succeed = True
+    try:
+        subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
+    except subprocess.CalledProcessError as e:
+        error_message = e.output.decode()
+        with open(error_file, "w") as error_out:
+            error_log = "Compilation error for the following kernel: \n"
+            error_log += source
+            error_log += "\nError Message:\n"
+            error_log += error_message
+            error_out.write(error_log)
+        succeed = False
+    if not succeed:
+        # Print the error log to stdout if log level is set to warning or higher
+        # verbosity. Otherwise, simply point to the error log file.
+        logger.warning(error_log)
+        raise Exception(f"Invalid Kernel. See '{error_file}' for details.")
 
 
 class CompilationOptions:
@@ -129,20 +149,24 @@ class ArtifactManager:
         connection.commit()
         cursor.close()
 
-        self.nvcc()
-        self.compiled_cache_device = cutlass_bindings.CompileCache()
-        self.compiled_cache_host = cutlass_bindings.CompileCache()
-
-    def nvrtc(self):
-        self.backend = "nvrtc"
-        self.default_compile_options = ["-std=c++17", "-default-device"]
-    def nvcc(self):
-        self.backend = "nvcc"
-        self.default_compile_options = [
+        self._nvrtc_compile_options = ["-std=c++17", "-default-device"]
+        self._nvcc_compile_options = [
             "-std=c++17",
             "--expt-relaxed-constexpr",
             "-Xcudafe --diag_suppress=esa_on_defaulted_function_ignored",
         ]
+        self.nvcc()
+        self.compiled_cache_device = {}
+        self.compiled_cache_host = {}
+
+    def nvrtc(self):
+        self.backend = "nvrtc"
+        self.default_compile_options = self._nvrtc_compile_options
+
+    def nvcc(self):
+        self.backend = "nvcc"
+        self.default_compile_options = self._nvcc_compile_options
+
     def insert_operation(self, op_key, cubin, hostfile, op_name, op_attrs):
         connection = sqlite3.connect(CACHE_FILE)
         cursor = connection.cursor()
@@ -172,7 +196,7 @@ class ArtifactManager:
                 raise RuntimeError("Cuda Error: {}".format(err))
 
             err, kernel = cuda.cuModuleGetFunction(module, bytes(str.encode(operation_name)))
-            self.compiled_cache_device.insert(key, kernel)
+            self.compiled_cache_device[key] = kernel
 
             compiled_host_fns = {}
             host_lib = CDLLBin(host_binary)
@@ -197,10 +221,10 @@ class ArtifactManager:
 
                     compiled_host_fns[attr] = func
 
-            self.compiled_cache_host.insert(key, compiled_host_fns)
+            self.compiled_cache_host[key] = compiled_host_fns
         return True
 
-    def emit_compile_(self, operation_list, compilation_options):
+    def emit_compile_(self, operation_list, compilation_options, host_compilation_options):
         """
         Compile a list of kernels and store them into database
         """
@@ -221,11 +245,10 @@ class ArtifactManager:
             )
 
         for incl in includes_host:
-            if "/device/" not in incl:
-                source_buffer_host += SubstituteTemplate(
-                    IncludeTemplate,
-                    {"include": incl},
-                )
+            source_buffer_host += SubstituteTemplate(
+                IncludeTemplate,
+                {"include": incl},
+            )
 
         # 2. Operations
         for operation in operation_list:
@@ -299,7 +322,7 @@ class ArtifactManager:
                 "tarfile": temp_cubin.name,
             }
             cmd = SubstituteTemplate(cmd_template, values)
-            os.system(cmd)
+            compile_with_nvcc(cmd, source_buffer_device, "./cutlass_python_compilation_device_error.txt")
 
             # load the cubin image
             with open(temp_cubin.name, "rb") as file:
@@ -314,7 +337,7 @@ class ArtifactManager:
             cmd_template,
             {
                 "cuda_install_path": CUDA_INSTALL_PATH,
-                "options": compilation_options.get_str(),
+                "options": host_compilation_options.get_str(),
             },
         )
 
@@ -323,29 +346,31 @@ class ArtifactManager:
             prefix="host_func", suffix=".so", delete=True)
 
         cmd += " - -shared -o %s -lcudart -lcuda" % temp.name
-        os.system(cmd)
+        compile_with_nvcc(cmd, source_buffer_host, error_file="./cutlass_python_compilation_host_error.txt")
         host_lib = ctypes.CDLL(temp.name)
 
         return cubin_image, host_lib, temp
 
-    def add_module(self, operations, compile_options=None):
+    def add_module(self, operations, compile_options=None, bypass_cache=False):
         """
         Insert a new compiled device module
         """
-        if compile_options is None:
-            include_paths = [
-                CUDA_INSTALL_PATH + "/include",
-                CUTLASS_PATH + "/include",
-                CUTLASS_PATH + "/tools/util/include",
-                CUTLASS_PATH + "/python/cutlass/cpp/include",
-            ]
+        include_paths = [
+            CUDA_INSTALL_PATH + "/include",
+            CUTLASS_PATH + "/include",
+            CUTLASS_PATH + "/tools/util/include",
+            CUTLASS_PATH + "/python/cutlass/cpp/include",
+        ]
 
-            if device_cc() is not None:
-                arch = device_cc()
-            else:
-                # Find the maximum arch tag among the provided operations and compile for that target.
-                # Since we are compiling to .cubin files, only one architecture may be specified.
-                arch = max([op.arch for op in operations])
+        if device_cc() is not None:
+            arch = device_cc()
+        else:
+            # Find the maximum arch tag among the provided operations and compile for that target.
+            # Since we are compiling to .cubin files, only one architecture may be specified.
+            arch = max([op.arch for op in operations])
+        host_compile_options = CompilationOptions(
+            self._nvcc_compile_options, arch, include_paths)
+        if compile_options is None:
             compile_options = CompilationOptions(
                 self.default_compile_options, arch, include_paths)
         # save the cubin
@@ -355,16 +380,16 @@ class ArtifactManager:
             # step 1: get kernel string as key
             key = operation.rt_module.emit() + operation.procedural_name() + self.backend
             # step 1: check if the operation is in cache
-            compiled_kernel = self.compiled_cache_device.at(key)
+            compiled_kernel = self.compiled_cache_device.get(key)
 
-            if compiled_kernel is None:
+            if compiled_kernel is None and not bypass_cache:
                 hit = self.load_operation(key, getattr( operation.rt_module, "extra_funcs", {}))
                 if hit:
-                    compiled_kernel = self.compiled_cache_device.at(key)
+                    compiled_kernel = self.compiled_cache_device.get(key)
                     assert compiled_kernel is not None
             if compiled_kernel is not None:
                 operation.rt_module.kernel = compiled_kernel
-                compiled_host_fns = self.compiled_cache_host.at(key)
+                compiled_host_fns = self.compiled_cache_host.get(key)
                 assert compiled_host_fns is not None
                 for key in compiled_host_fns.keys():
                     setattr(operation.rt_module, key, compiled_host_fns[key])
@@ -375,7 +400,7 @@ class ArtifactManager:
 
         if len(operation_list) > 0:
             cubin_image, host_lib, host_file = self.emit_compile_(
-                operation_list, compile_options)
+                operation_list, compile_options, host_compile_options)
 
             err, module = cuda.cuModuleLoadData(cubin_image)
             if err != cuda.CUresult.CUDA_SUCCESS:
@@ -390,7 +415,7 @@ class ArtifactManager:
                     bytes(str.encode(operation.name()))
                 )
                 operation_name.append(operation.name())
-                self.compiled_cache_device.insert(key, operation.kernel)
+                self.compiled_cache_device[key] = operation.kernel
                 # get host functions
                 compiled_host_fns = {}
                 op_attr = []
@@ -429,7 +454,7 @@ class ArtifactManager:
                         op_attr.append(suffix)
 
                 operation_attr.append(op_attr)
-                self.compiled_cache_host.insert(key, compiled_host_fns)
+                self.compiled_cache_host[key] = compiled_host_fns
 
             for (key, operation_name, operation_attr,) in zip(operation_key, operation_name, operation_attr):
                 self.insert_operation(

@@ -46,12 +46,13 @@ using namespace cute;
 TEST(CuTe_core, Bitfield)
 {
   for_each(make_int_range<1,65>{}, [&](auto NumBits) {
-    for_each(make_int_range<0,129>{}, [&](auto BitStart) {
-
-      using BF = bit_field<decltype(BitStart)::value, decltype(NumBits)::value>;
+    constexpr auto num_bits = cute::remove_cvref_t<decltype(NumBits)>::value;
+    for_each(make_int_range<0, 129>{}, [&](auto BitStart) {
+      constexpr auto bit_start = cute::remove_cvref_t<decltype(BitStart)>::value;
+      using BF = bit_field<bit_start, cute::remove_cvref_t<decltype(NumBits)>::value>;
 
 #if 0
-      printf("bit_field<%d,%d>:\n", decltype(BitStart)::value, decltype(NumBits)::value);
+      printf("bit_field<%d,%d>:\n", bit_start, num_bits);
       printf("  value_type_bits  : %d\n", BF::value_type_bits);
       printf("  storage_type_bits: %d\n", BF::storage_type_bits);
       printf("  N                : %d\n", BF::N);
@@ -64,7 +65,7 @@ TEST(CuTe_core, Bitfield)
 #endif
 
       // Test
-      uint64_t v = decltype(NumBits)::value == 64 ? uint64_t(-1) : ((uint64_t(1) << NumBits) - 1);
+      uint64_t v = num_bits == 64 ? uint64_t(-1) : ((uint64_t(1) << NumBits) - 1);
 
       BF bf{};
       bf = v;
@@ -74,7 +75,7 @@ TEST(CuTe_core, Bitfield)
 
   for_each(make_int_range<0,129>{}, [&](auto BitStart) {
 
-    using BF = bit_field<decltype(BitStart)::value, 32, float>;
+    using BF = bit_field<cute::remove_cvref_t<decltype(BitStart)>::value, 32, float>;
 
     BF bf{};
     bf = 3.14f;

@@ -51,7 +51,6 @@
 #include "testbed.h"
 
 #if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)
-
 TEST(SM90_warp_gemm_tensor_op_congruous_f64, 16x16x4_16x16x4_16x8x4) {
   using Shape = cutlass::gemm::GemmShape<16, 16, 4>;
   using InstructionShape = cutlass::gemm::GemmShape<16, 8, 4>;
@@ -202,5 +201,4 @@ TEST(SM90_warp_gemm_tensor_op_crosswise_f64, 32x64x16_32x64x16_16x8x4) {
       .run();
 }
 ////////////////////////////////////////////////////////////////////////////////
-
 #endif // if defined(CUTLASS_ARCH_MMA_SM90_F64_MMA_ENABLED)

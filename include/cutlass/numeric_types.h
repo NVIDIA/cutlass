@@ -32,34 +32,23 @@
     \file
     \brief Top-level include for all CUTLASS numeric types.
 */
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/numeric_size.h"
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Defines the size of an element in bits
-template <typename T>
-struct sizeof_bits {
-  static int const value = int(sizeof(T) * 8);
-};
-
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
-//
-// Definitions for 1-bit binary and 4-bit integer types
-//
-
-/// 1-bit binary type
-using bin1_t = bool;
-
-/// Defines the size of an element in bits - specialized for bin1_t
-template <>
-struct sizeof_bits<bin1_t> {
-  static int const value = 1;
-};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -89,6 +78,5 @@ using make_index_sequence = typename index_sequence_helper<N>::type;
 #include "cutlass/bfloat16.h"
 #include "cutlass/tfloat32.h"
 #include "cutlass/float8.h"
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

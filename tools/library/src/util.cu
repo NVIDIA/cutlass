@@ -1005,6 +1005,50 @@ ConvKind from_string<ConvKind>(std::string const &str) {
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+static struct {
+  char const *text;
+  char const *pretty;
+  RasterOrder enumerant;
+}
+RasterOrder_enumerants[] = {
+  {"along_n", "<along_n>", RasterOrder::kAlongN},
+  {"along_m", "<along_m>", RasterOrder::kAlongM},
+  {"heuristic", "<heuristic>", RasterOrder::kHeuristic},
+};
+
+/// Converts a RasterOrder enumerant to a string
+char const *to_string(RasterOrder type, bool pretty) {
+
+  for (auto const & possible : RasterOrder_enumerants) {
+    if (type == possible.enumerant) {
+      if (pretty) {
+        return possible.pretty;
+      }
+      else {
+        return possible.text;
+      }
+    }
+  }
+
+  return pretty ? "Invalid" : "invalid";
+}
+
+
+/// Converts a RasterOrder enumerant from a string
+template <>
+RasterOrder from_string<RasterOrder>(std::string const &str) {
+
+  for (auto const & possible : RasterOrder_enumerants) {
+    if ((str.compare(possible.text) == 0) ||
+        (str.compare(possible.pretty) == 0)) {
+      return possible.enumerant;
+    }
+  }
+
+  return RasterOrder::kInvalid;
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Lexical cast a string to a byte array. Returns true if cast is successful or false if invalid.
 bool lexical_cast(std::vector<uint8_t> &bytes, NumericTypeID type, std::string const &str) {
   int size_bytes = sizeof_bits(type) / 8;

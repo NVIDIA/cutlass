@@ -53,7 +53,16 @@
 
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800))
 #define CUTLASS_ARCH_MMA_SM80_ENABLED
+
+#if (__CUDA_ARCH__ <= 900)
+#define CUTLASS_ARCH_MMA_B1_AND_SM80_ENABLED
 #endif
+#if (__CUDA_ARCH__ <= 890)
+#define CUTLASS_ARCH_MMA_B1_XOR_SM80_ENABLED
+#endif
+
+#endif
+
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2039,6 +2048,77 @@ struct Mma<
   }
 };
 
+////////////////////////////////////////////////////////////////////////////////
+//
+// Matrix Multiply 168256 - B1 input, S32 accumulation - AND,POPC
+//
+////////////////////////////////////////////////////////////////////////////////
+
+/// Matrix multiply-add operation: S32 = B1 & B1 + S32
+template <>
+struct Mma<
+  gemm::GemmShape<16,8,256>,
+  32,
+  cutlass::uint1b_t,
+  layout::RowMajor,
+  cutlass::uint1b_t,
+  layout::ColumnMajor,
+  int32_t,
+  layout::RowMajor,
+  OpAndPopc> {
+
+  using Shape = gemm::GemmShape<16,8,256>;
+
+  using ElementA = cutlass::uint1b_t;
+  using LayoutA = layout::RowMajor;
+  using FragmentA = Array<cutlass::uint1b_t, 128>;
+
+  using ElementB = cutlass::uint1b_t;
+  using LayoutB = layout::ColumnMajor;
+  using FragmentB = Array<cutlass::uint1b_t, 64>;
+
+  using ElementC = int32_t;
+  using LayoutC = layout::RowMajor;
+  using FragmentC = Array<int32_t, 4>;
+
+  using Operator = OpAndPopc;
+  using ArchTag = arch::Sm80;
+
+  /// Computes multiply-add
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    FragmentC &d,
+    FragmentA const &a,
+    FragmentB const &b,
+    FragmentC const &c
+  ) const {
+
+#if defined(CUTLASS_ARCH_MMA_B1_AND_SM80_ENABLED)
+
+    uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
+    uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
+
+    int const *C = reinterpret_cast<int const *>(&c);
+    int *D = reinterpret_cast<int *>(&d);
+
+    asm volatile(
+        "mma.sync.aligned.m16n8k256.row.col.s32.b1.b1.s32.and.popc {%0,%1,%2,%3}, "
+        "{%4,%5,%6,%7}, "
+        "{%8,%9}, {%10,%11,%12,%13};\n"
+        : "=r"(D[0]), "=r"(D[1]), "=r"(D[2]), "=r"(D[3])
+        : "r"(A[0]), "r"(A[1]), "r"(A[2]), "r"(A[3]), "r"(B[0]), "r"(B[1]),
+          "r"(C[0]), "r"(C[1]), "r"(C[2]), "r"(C[3]));
+
+#else
+    CUTLASS_UNUSED(a);
+    CUTLASS_UNUSED(b);
+    CUTLASS_UNUSED(c);
+    CUTLASS_UNUSED(d);
+    assert(0);
+#endif
+  }
+};
+
 /// Matrix multiply-add operation: S32 = B1 & B1 + S32
 template <>
 struct Mma<
@@ -2078,7 +2158,7 @@ struct Mma<
     FragmentC const &c
   ) const {
 
-#if defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_B1_AND_SM80_ENABLED)
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -2149,7 +2229,7 @@ struct Mma<
     FragmentC const &c
   ) const {
 
-#if defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
+#if defined(CUTLASS_ARCH_MMA_B1_XOR_SM80_ENABLED)
 
     uint32_t const *A = reinterpret_cast<uint32_t const *>(&a);
     uint32_t const *B = reinterpret_cast<uint32_t const *>(&b);
@@ -2173,7 +2253,7 @@ struct Mma<
     CUTLASS_UNUSED(d);
     assert(0);
 
-#endif // defined(CUTLASS_ARCH_MMA_SM80_ENABLED)
+#endif // defined(CUTLASS_ARCH_MMA_B1_XOR_SM80_ENABLED)
   }
 };
 

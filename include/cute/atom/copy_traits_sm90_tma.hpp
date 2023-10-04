@@ -34,16 +34,20 @@
 #include <cuda.h>
 #endif
 
-#include <cute/arch/copy_sm90_desc.hpp>
-#include <cute/arch/copy_sm90_tma.hpp>
-
-#include <cute/tensor.hpp>
-
+#include <cute/atom/copy_traits_sm90_tma_swizzle.hpp>
 #include <cute/atom/copy_traits.hpp>
 #include <cute/atom/copy_atom.hpp>
 
+#include <cute/numeric/integral_ratio.hpp>
+
 namespace cute
 {
+
+template <class GmemStrides_, class TmaGBasis_, class TmaSwizzle_>
+struct AuxTmaParams {
+  using GmemStrides = GmemStrides_;
+  GmemStrides g_stride_;
+};
 
 //////////////////////////////////////////////////////////////////////////////
 ///////////////////////////// TMA_LOAD ///////////////////////////////////////
@@ -52,15 +56,15 @@ namespace cute
 struct SM90_TMA_LOAD_OP : SM90_TMA_LOAD {};
 
 // The executable SM90_TMA_LOAD with tma_desc and tma_mbar
-template <class NumBits>
-struct Copy_Traits<SM90_TMA_LOAD_OP, NumBits>
+template <class NumBitsPerTMA>
+struct Copy_Traits<SM90_TMA_LOAD_OP, NumBitsPerTMA>
 {
   using ThrID   = Layout<_1>;
 
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_1,NumBits>>;
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_1,NumBits>>;
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
 
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
@@ -75,21 +79,8 @@ struct Copy_Traits<SM90_TMA_LOAD_OP, NumBits>
   copy_unpack_(void const* const dst_ptr,
                Coord const& src_coord, seq<Is...>) const
   {
-#if 0
-    print("THR (%d,%d,%d) BLK (%d,%d,%d)\n",
-          threadIdx.x, threadIdx.y, threadIdx.z,
-          blockIdx.x, blockIdx.y, blockIdx.z);
-    print("  TMA Coord "); print(src_coord); print("\n");
-    print("  TMA Shape "); print(make_tuple(uint64_t(tma_desc_.size0_),
-                                            uint64_t(tma_desc_.size1_),
-                                            uint64_t(tma_desc_.size2_),
-                                            uint64_t(tma_desc_.size3_))); print("\n");
-#endif
-
-    SM90_TMA_LOAD::copy(&tma_desc_,
-                      tma_load_mbar_,
-                      dst_ptr,
-                      get<Is>(src_coord)...);
+    SM90_TMA_LOAD::copy(&tma_desc_, tma_load_mbar_,
+                        dst_ptr, get<Is>(src_coord)...);
   }
 
   // This is the copy_unpack dispatch for this Copy_Traits
@@ -103,31 +94,31 @@ struct Copy_Traits<SM90_TMA_LOAD_OP, NumBits>
               Tensor<TS,SLayout> const& src,
               Tensor<TD,DLayout>      & dst)
   {
-    //static_assert(is_gmem<TS>::value, "Expected gmem src for SM90_TMA_LOAD");  // TMA spoofed src tensor
     static_assert(is_smem<TD>::value, "Expected smem dst for SM90_TMA_LOAD");
 
-    traits.copy_unpack_(dst.data().get(), src.data().coord_, tuple_seq<decltype(src.data().coord_)>{});
+    traits.copy_unpack_(cute::raw_pointer_cast(dst.data()), src.data().coord_, tuple_seq<decltype(src.data().coord_)>{});
   }
 };
 
 // The non-executable SM90_TMA_LOAD with tma_desc and no tma_mbar
 // Use .with(tma_mbar) to construct an executable version
-template <class NumBits, class GmemStrides>
-struct Copy_Traits<SM90_TMA_LOAD, NumBits, GmemStrides>
+template <class NumBitsPerTMA, class AuxParams_>
+struct Copy_Traits<SM90_TMA_LOAD, NumBitsPerTMA, AuxParams_>
 {
   using ThrID   = Layout<_1>;
 
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_1,NumBits>>;
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_1,NumBits>>;
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
 
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
   // SM90_TMA_LOAD arguments
   TmaDescriptor tma_desc_;
-  GmemStrides g_stride_;
+  using AuxParams = AuxParams_;
+  AuxParams aux_params_;
 
   // Return TmaDescriptor/TensorMap
   CUTE_HOST_DEVICE constexpr
@@ -138,7 +129,7 @@ struct Copy_Traits<SM90_TMA_LOAD, NumBits, GmemStrides>
 
   // Construct an executable SM90_TMA_LOAD with tma_mbar
   CUTE_HOST_DEVICE constexpr
-  Copy_Traits<SM90_TMA_LOAD_OP, NumBits>
+  Copy_Traits<SM90_TMA_LOAD_OP, NumBitsPerTMA>
   with(uint64_t& tma_mbar, uint16_t const& multicast_mask = 0) const {
     // We accept multicast_mask here to keep the API for both atoms consistent
     // assert(multicast_mask == 0);
@@ -151,11 +142,8 @@ struct Copy_Traits<SM90_TMA_LOAD, NumBits, GmemStrides>
   CUTE_HOST_DEVICE constexpr
   auto
   get_tma_tensor(GShape const& g_shape) const {
-    static_assert(is_congruent<decltype(g_shape), decltype(g_stride_)>::value);
-    constexpr int tma_rank = decltype(cute::min(rank(flatten(g_stride_)), Int<5>{}))::value;
-    return make_tensor(ArithmeticTupleIterator(as_arithmetic_tuple(repeat<tma_rank>(Int<0>{}))),
-                       g_shape,
-                       g_stride_);
+    static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
+    return make_counting_tensor(make_layout(g_shape, aux_params_.g_stride_));
   }
 
   // Don't try to execute a copy with SM90_TMA_LOAD before calling .with()
@@ -173,15 +161,15 @@ struct Copy_Traits<SM90_TMA_LOAD, NumBits, GmemStrides>
 
 struct SM90_TMA_LOAD_MULTICAST_OP : SM90_TMA_LOAD_MULTICAST {};
 
-template <class NumBits>
-struct Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBits>
+template <class NumBitsPerTMA>
+struct Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
 {
   using ThrID   = Layout<_1>;
 
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_1,NumBits>>;
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_1,NumBits>>;
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
 
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
@@ -197,22 +185,8 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBits>
   copy_unpack_(void const* const dst_ptr,
                Coord const& src_coord, seq<Is...>) const
   {
-#if 0
-    print("THR (%d,%d,%d) BLK (%d,%d,%d)\n",
-          threadIdx.x, threadIdx.y, threadIdx.z,
-          blockIdx.x, blockIdx.y, blockIdx.z);
-    print("  TMA Coord "); print(src_coord); print("\n");
-    print("  TMA Shape "); print(make_tuple(uint64_t(tma_desc_.size0_),
-                                            uint64_t(tma_desc_.size1_),
-                                            uint64_t(tma_desc_.size2_),
-                                            uint64_t(tma_desc_.size3_))); print("\n");
-#endif
-
-    SM90_TMA_LOAD_MULTICAST::copy(&tma_desc_,
-                                tma_load_mbar_,
-                                multicast_mask_,
-                                dst_ptr,
-                                get<Is>(src_coord)...);
+    SM90_TMA_LOAD_MULTICAST::copy(&tma_desc_, tma_load_mbar_, multicast_mask_,
+                                  dst_ptr, get<Is>(src_coord)...);
   }
 
   template <class TS, class SLayout,
@@ -223,29 +197,29 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBits>
               Tensor<TS,SLayout> const& src,
               Tensor<TD,DLayout>      & dst)
   {
-    //static_assert(is_gmem<TS>::value, "Expected gmem src for SM90_TMA_LOAD");  // TMA spoofed src tensor
     static_assert(is_smem<TD>::value, "Expected smem dst for SM90_TMA_LOAD_MULTICAST");
 
-    traits.copy_unpack_(dst.data().get(), src.data().coord_, tuple_seq<decltype(src.data().coord_)>{});
+    traits.copy_unpack_(cute::raw_pointer_cast(dst.data()), src.data().coord_, tuple_seq<decltype(src.data().coord_)>{});
   }
 };
 
-template <class NumBits, class GmemStrides>
-struct Copy_Traits<SM90_TMA_LOAD_MULTICAST, NumBits, GmemStrides>
+template <class NumBitsPerTMA, class AuxParams_>
+struct Copy_Traits<SM90_TMA_LOAD_MULTICAST, NumBitsPerTMA, AuxParams_>
 {
   using ThrID   = Layout<_1>;
 
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_1,NumBits>>;
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_1,NumBits>>;
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
 
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
   // SM90_TMA_LOAD_MULTICAST arguments
   TmaDescriptor tma_desc_;
-  GmemStrides g_stride_;
+  using AuxParams = AuxParams_;
+  AuxParams aux_params_;
 
   // Return TmaDescriptor/TensorMap
   CUTE_HOST_DEVICE constexpr
@@ -256,7 +230,7 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST, NumBits, GmemStrides>
 
   // Construct an executable SM90_TMA_LOAD_MULTICAST with tma_mbar
   CUTE_HOST_DEVICE constexpr
-  Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBits>
+  Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
   with(uint64_t& tma_load_mbar, uint16_t const& multicast_mask) const {
     return {tma_desc_, tma_load_mbar, multicast_mask};
   }
@@ -266,11 +240,8 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST, NumBits, GmemStrides>
   CUTE_HOST_DEVICE constexpr
   auto
   get_tma_tensor(GShape const& g_shape) const {
-    static_assert(is_congruent<decltype(g_shape), decltype(g_stride_)>::value);
-    constexpr int tma_rank = decltype(cute::min(rank(flatten(g_stride_)), Int<5>{}))::value;
-    return make_tensor(ArithmeticTupleIterator(as_arithmetic_tuple(repeat<tma_rank>(Int<0>{}))),
-                       g_shape,
-                       g_stride_);
+    static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
+    return make_counting_tensor(make_layout(g_shape, aux_params_.g_stride_));
   }
 
   // Don't try to execute a copy with SM90_TMA_LOAD_MULTICAST before calling .with()
@@ -287,22 +258,23 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST, NumBits, GmemStrides>
 //////////////////////////////////////////////////////////////////////////////
 
 // The executable SM90_TMA_STORE with tma_desc
-template <class NumBits, class GmemStrides>
-struct Copy_Traits<SM90_TMA_STORE, NumBits, GmemStrides>
+template <class NumBitsPerTMA, class AuxParams_>
+struct Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, AuxParams_>
 {
   using ThrID   = Layout<_1>;
 
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_1,NumBits>>;
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_1,NumBits>>;
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
 
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
   // SM90_TMA_STORE arguments
   TmaDescriptor tma_desc_;
-  GmemStrides g_stride_;
+  using AuxParams = AuxParams_;
+  AuxParams aux_params_;
 
   // Return TmaDescriptor/TensorMap
   CUTE_HOST_DEVICE constexpr
@@ -316,11 +288,8 @@ struct Copy_Traits<SM90_TMA_STORE, NumBits, GmemStrides>
   CUTE_HOST_DEVICE constexpr
   auto
   get_tma_tensor(GShape const& g_shape) const {
-    static_assert(is_congruent<decltype(g_shape), decltype(g_stride_)>::value);
-    constexpr int tma_rank = decltype(cute::min(rank(flatten(g_stride_)), Int<5>{}))::value;
-    return make_tensor(ArithmeticTupleIterator(as_arithmetic_tuple(repeat<tma_rank>(Int<0>{}))),
-                       g_shape,
-                       g_stride_);
+    static_assert(is_congruent<decltype(g_shape), decltype(aux_params_.g_stride_)>::value);
+    return make_counting_tensor(make_layout(g_shape, aux_params_.g_stride_));
   }
 
   template <class Coord, int... Is>
@@ -329,20 +298,8 @@ struct Copy_Traits<SM90_TMA_STORE, NumBits, GmemStrides>
   copy_unpack_(void const* const src_ptr,
                Coord const& dst_coord, seq<Is...>) const
   {
-#if 0
-    print("THR (%d,%d,%d) BLK (%d,%d,%d)\n",
-          threadIdx.x, threadIdx.y, threadIdx.z,
-          blockIdx.x, blockIdx.y, blockIdx.z);
-    print("  TMA Coord "); print(dst_coord); print("\n");
-    print("  TMA Shape "); print(make_tuple(uint64_t(tma_desc_.size0_),
-                                            uint64_t(tma_desc_.size1_),
-                                            uint64_t(tma_desc_.size2_),
-                                            uint64_t(tma_desc_.size3_))); print("\n");
-#endif
-
     SM90_TMA_STORE::copy(&tma_desc_,
-                      src_ptr,
-                      get<Is>(dst_coord)...);
+                         src_ptr, get<Is>(dst_coord)...);
   }
 
   // This is the copy_unpack dispatch for this Copy_Traits
@@ -359,7 +316,7 @@ struct Copy_Traits<SM90_TMA_STORE, NumBits, GmemStrides>
     static_assert(is_smem<TS>::value, "Expected smem src for SM90_TMA_STORE");
     //static_assert(is_gmem<TD>::value, "Expected gmem dst for SM90_TMA_STORE");  // TMA spoofed src tensor
 
-    traits.copy_unpack_(src.data().get(), dst.data().coord_, tuple_seq<decltype(dst.data().coord_)>{});
+    traits.copy_unpack_(cute::raw_pointer_cast(src.data()), dst.data().coord_, tuple_seq<decltype(dst.data().coord_)>{});
   }
 };
 
@@ -367,17 +324,17 @@ struct Copy_Traits<SM90_TMA_STORE, NumBits, GmemStrides>
 ///////////////////////////// BULK COPY //////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 
-template <class NumBits, class... OpArgs>
-struct Copy_Traits<SM90_BULK_COPY_G2S, NumBits, OpArgs...>
+template <class NumBitsPerTMA, class... OpArgs>
+struct Copy_Traits<SM90_BULK_COPY_G2S, NumBitsPerTMA, OpArgs...>
 {
-  static_assert(int32_t(NumBits::value / 8) % 16 == 0,
+  static_assert(int32_t(NumBitsPerTMA::value / 8) % 16 == 0,
                 "Bulk Copy requires copy vector size align to 16B.");
 
   using ThrID = Layout<_1>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_1,NumBits>>;
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_1,NumBits>>;
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
@@ -398,28 +355,28 @@ struct Copy_Traits<SM90_BULK_COPY_G2S, NumBits, OpArgs...>
     static_assert(is_gmem<TS>::value, "Expected gmem src for SM90_BULK_COPY_G2S");
     static_assert(is_smem<TD>::value, "Expected smem dst for SM90_BULK_COPY_G2S");
     SM90_BULK_COPY_G2S::copy(src.data().get(), *get<0>(traits.bulk_load_mbar_),
-                             dst.data().get(), int32_t(NumBits::value / 8));
+                             dst.data().get(), int32_t(NumBitsPerTMA::value / 8));
   }
 
   // Record the memory barrier for the instruction
   CUTE_HOST_DEVICE constexpr
-  Copy_Traits<SM90_BULK_COPY_G2S, NumBits, uint64_t*>
+  Copy_Traits<SM90_BULK_COPY_G2S, NumBitsPerTMA, uint64_t*>
   with(uint64_t& bulk_mbar) const {
     return {{&bulk_mbar}};
   }
 };
 
-template <class NumBits>
-struct Copy_Traits<SM90_BULK_COPY_S2G, NumBits>
+template <class NumBitsPerTMA>
+struct Copy_Traits<SM90_BULK_COPY_S2G, NumBitsPerTMA>
 {
-  static_assert(int32_t(NumBits::value / 8) % 16 == 0,
+  static_assert(int32_t(NumBitsPerTMA::value / 8) % 16 == 0,
                 "Bulk Copy requires copy vector size align to 16B.");
 
   using ThrID = Layout<_1>;
   // Map from (src-thr,src-val) to bit
-  using SrcLayout = Layout<Shape<_1,NumBits>>;
+  using SrcLayout = Layout<Shape<_1,NumBitsPerTMA>>;
   // Map from (dst-thr,dst-val) to bit
-  using DstLayout = Layout<Shape<_1,NumBits>>;
+  using DstLayout = Layout<Shape<_1,NumBitsPerTMA>>;
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
 
@@ -433,7 +390,7 @@ struct Copy_Traits<SM90_BULK_COPY_S2G, NumBits>
   {
     static_assert(is_smem<TS>::value, "Expected smem src for SM90_BULK_COPY_S2G");
     static_assert(is_gmem<TD>::value, "Expected gmem dst for SM90_BULK_COPY_S2G");
-    SM90_BULK_COPY_S2G::copy(src.data().get(), dst.data().get(), int32_t(NumBits::value / 8));
+    SM90_BULK_COPY_S2G::copy(src.data().get(), dst.data().get(), int32_t(NumBitsPerTMA::value / 8));
   }
 };
 
@@ -469,112 +426,182 @@ struct Copy_Traits<SM90_BULK_COPY_AUTO, OpArgs...>
 // MAKE_TMA_COPY and related
 //
 
-namespace detail
-{
+namespace detail {
 
-template <int B, int M, int S, class Offset, class SLayout>
+// Custom version of coalesce that greedily combines modes only up to size-256
+// Look at each element and the back of the stack (in order of priority)
+// back(NewLayout)  get<I>(OldLayout)
+//      s0:d0           _1:d1     =>  continue
+//      _1:d0           s1:d1     =>  replace_back     s1:d1
+//      s0:d0           s1:s0*d0  =>  replace_back  s0*s1:d0   if s0*s1 <= 256
+//      s0:d0           s1:d1     =>  append           s1:d1
+//
+// @pre OldShape and OldStride are flat
+template <int I, class OldShape, class OldStride, class NewShape, class NewStride>
+CUTE_HOST_DEVICE constexpr
 auto
-get_swizzle_portion(ComposedLayout<Swizzle<B,M,S>,Offset,SLayout>)
+coalesce_256_impl(OldShape const& old_shape, OldStride const& old_stride,
+                  NewShape const& new_shape, NewStride const& new_stride)
 {
-  return Swizzle<B,M,S>{};
-}
-
-template <class Shape, class Stride>
-auto
-get_swizzle_portion(Layout<Shape,Stride>)
-{
-  return Swizzle<0,4,3>{};
-}
-
-template <int B, int M, int S, class Offset, class SLayout>
-auto
-get_nonswizzle_portion(ComposedLayout<Swizzle<B,M,S>,Offset,SLayout> const& slayout)
-{
-  return slayout.layout_fn();
-}
-
-template <class Shape, class Stride>
-auto
-get_nonswizzle_portion(Layout<Shape,Stride> const& slayout)
-{
-  return slayout;
-}
-
-template <int B, int M, int S>
-TMA::SmemSwizzleBits
-get_tma_swizzle_bits(Swizzle<B,M,S>)
-{
-  if constexpr (M == 4) {
-    switch (B) {
-      default:  static_assert(0 <= B && B <= 3, "Expected B = 0,1,2, or 3 when M == 4. Unsupported layout swizzle.");
-      case 3:   return TMA::SmemSwizzleBits::B128;
-      case 2:   return TMA::SmemSwizzleBits::B64;
-      case 1:   return TMA::SmemSwizzleBits::B32;
-      case 0:   return TMA::SmemSwizzleBits::DISABLE;
+  if constexpr (I == rank_v<OldShape>) {
+    // Base case, we're done
+    if constexpr (is_constant<1, NewShape>::value) {
+      return Layout<_1,_0>{};
+    } else {
+      return Layout<NewShape,NewStride>{new_shape,new_stride};
     }
-  } else
-  {
-    static_assert(M < 0, "Unsupported layout swizzle.");
+  } else if constexpr (is_constant<1, decltype(get<I>(old_shape))>::value) {
+    // shape<I>(layout) == _1, skip it and continue
+    return coalesce_256_impl<I+1>(old_shape, old_stride, new_shape, new_stride);
+  } else if constexpr (is_constant<1, NewShape>::value) {
+    // Replace our shape-1 with anything (Can only happen on input new_shape/new_stride)
+    return coalesce_256_impl<I+1>(old_shape, old_stride, get<I>(old_shape), get<I>(old_stride));
+  } else if constexpr (is_constant<true, decltype(back(new_shape) * back(new_stride) == get<I>(old_stride) &&
+                                                  get<I>(old_shape) * back(new_shape) <= Int<256>{})>::value) {
+    // Merge modes because the shapes and strides match and the merge is 256 or less
+    return coalesce_256_impl<I+1>(old_shape, old_stride,
+                                  replace_back(new_shape, get<I>(old_shape) * back(new_shape)),
+                                  new_stride);
+  } else {
+    // Can't replace or merge, so append a new mode
+    return coalesce_256_impl<I+1>(old_shape, old_stride,
+                                  append(new_shape,  get<I>(old_shape)),
+                                  append(new_stride, get<I>(old_stride)));
   }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
-template <class Layout>
-TMA::SmemSwizzleBits
-get_tma_swizzle_bits(Layout const& layout)
+// Combine all the modes that are possible to combine
+// Does not respect the profile of the layout, but does preserve total size
+template <class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+coalesce_256(Layout<Shape,Stride> const& layout)
 {
-  return get_tma_swizzle_bits(get_swizzle_portion(layout));
+  auto flat_shape  = flatten(layout.shape());
+  auto flat_stride = flatten(layout.stride());
+  return coalesce_256_impl<1>(flat_shape, flat_stride, get<0>(flat_shape), get<0>(flat_stride));
 }
 
-#if !defined(__CUDACC_RTC__)
-// Use a smem2gmode map to read through the GMEM tensor
-// and construct a TMA Descriptor for the resulting instruction
-template <class GEngine, class GLayout,
+template <class Engine, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
+coalesce_256(Tensor<Engine,Layout> const& tensor)
+{
+  return make_tensor(tensor.data(), coalesce_256(tensor.layout()));
+}
+
+
+// Use a smem_inv_h to read through the GMEM tensor
+//   and construct a TMA Descriptor for the resulting instruction
+// At the same time, construct the Tma Tensor's Stride to generate
+//   the TMA coordinates that the instruction consumes.
+// 
+template <class TmaInternalType,
+          class GEngine, class GLayout,
           class SShape, class SStride,
           int B, int M, int S>
-CUTE_HOST
+CUTE_HOST_RTC
 auto
 make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GMEM Tensor
-                   Layout<SShape,SStride>  const& smem_inv,   // smem_idx to flat gmode
+                   Layout<SShape,SStride>  const& smem_inv_h, // smem_idx to hier gmode
                    Swizzle<B,M,S>          const& swizzle)    // Swizzle fn on smem_idx
 {
-  using T = typename GEngine::value_type;
+  // The smem vector is the same units as gtensor, so compose first and then recast
+  // tma_val_idx:gmem_strides
+  Tensor tile_gstride = recast<TmaInternalType>(gtensor.compose(smem_inv_h));
+  // Coalesce modes up to size-256 (the maximum TMA box extent in units of TmaInternalType)
+  // tma_box_shape:gmem_strides
+  Tensor tma_gstride  = coalesce_256(tile_gstride);
 
-  auto flat_glayout = flatten(gtensor.layout());
-  CUTE_STATIC_ASSERT_V(rank(flat_glayout) == rank(smem_inv));
-  constexpr int rank_smem_inv = decltype(rank(smem_inv))::value;
+  // Perform the tiling to the gmem vector again, but with indirections to the gtensor modes
+  auto gbasis = make_identity_layout(shape(gtensor));
+  auto tile_gbasis_tmp = gbasis.compose(smem_inv_h);
+  
+  // Instead of the recast (gbasis doesn't have type info), replace the shape with the already-recasted shape
+  // tma_box_shape:gmem_mode
+  auto tile_gbasis = make_layout(shape(tile_gstride), stride(tile_gbasis_tmp));
 
-  auto tma_multimode = rank(flat_glayout) > Int<5>{};
-  constexpr uint32_t tma_dim = cute::min(rank(flat_glayout), 5);;
+  // Recast the original tensor for shape inspections
+  auto gtensor_T = recast<TmaInternalType>(gtensor);
+
+  // Find missing bases that don't appear in tile_gbasis
+  // NOTE This is essentially ArithmeticTuple complement...
+  // NOTE   in pursuit of implementing an ArithmeticTuple logical_divide for smem_inv_h
+  auto tile_gbasis_remaining_stride = filter_tuple(flatten(shape (gtensor_T)), flatten(stride(gtensor_T)),
+                                                   flatten(stride(gbasis)), 
+                                                   [&](auto s, auto d, auto e) 
+  {
+    if constexpr (is_constant<1, decltype(s)>::value || is_constant<0, decltype(d)>::value) {
+      return cute::tuple<>{};          // If size-1 or stride-0, then don't append
+    } else {
+      using E = decltype(e);
+      auto has_e = any_of(stride(tile_gbasis), [] (auto tb) { return tb == E{}; });
+      if constexpr (decltype(has_e)::value) {
+        return cute::tuple<>{};        // If d was found, then don't append
+      } else {
+        return cute::tuple<E>(e);      // Else, this is missing so append
+      }
+    }
+  });
+  auto tile_gbasis_remaining_rank = rank(tile_gbasis_remaining_stride);
+
+  // "Coalesce" the tile basis into a compatible shape with the tma
+  auto tma_gbasis_tile = tile_gbasis.compose(make_layout(wrap(shape(tma_gstride))));
+
+  // Append the remaining basis modes that contribute to the TMA with size-1
+  auto tma_gbasis_full = make_layout(tuple_cat(wrap( shape(tma_gbasis_tile)), wrap(repeat<tile_gbasis_remaining_rank>(Int<1>{}))), 
+                                     tuple_cat(wrap(stride(tma_gbasis_tile)), wrap(tile_gbasis_remaining_stride)));
+
+  // Group the trailing modes to make this max rank-5 -- TMA rank limitation
+  // tma_box_shape:gmem_mode
+  auto tma_gbasis = group<cute::min(rank(tma_gbasis_full),4),-1>(tma_gbasis_full);
+
+#if 0
+  print("smem_inv_h   : "); print(smem_inv_h); print("\n");
+  print("gtensor      : "); print(gtensor); print("\n");
+  print("tile_gstride : "); print(tile_gstride); print("\n");
+  print("tma_gstride  : "); print(tma_gstride); print("\n");
+  print("gbasis       : "); print(gbasis); print("\n");
+  print("tile_gbasis  : "); print(tile_gbasis); print("\n");
+  print("tma_gbasis   : "); print(tma_gbasis); print("\n");
+#endif
+
+  //
+  // TMA desc creation
+  // 
+
+  constexpr int tma_dim = decltype(rank(tma_gbasis))::value;
 
   //
   // TMA gmem desc info
   //
 
-  void* gmem_address = (void*) gtensor.data();
+  void* gmem_address = (void*) raw_pointer_cast(gtensor_T.data());
+  auto  gmem_layout = gtensor_T.layout();
 
   cute::array<uint64_t, 5> gmem_prob_shape  = {1,1,1,1,1};
   cute::array<uint64_t, 5> gmem_prob_stride = {0,0,0,0,0};
-  for_each(make_seq<rank_smem_inv>{}, [&](auto i) {
-    auto e = stride<i>(smem_inv);   // For g++-7.5, let it deduce e rather than fuse with below
-    constexpr int j = decltype(e.mode())::value;
-    constexpr int tma_i = i < 5 ? i : 4;
+  // Use the indirections in tma_gbasis in the values of flat_glayout to construct the gmem shapes/strides
+  for_each(make_seq<tma_dim>{}, [&](auto i) {
+    for_each(stride<i>(tma_gbasis), [&](auto ej) {
+      // Problem stride
+      uint64_t stride_j = ceil_div(basis_get(ej, stride(gmem_layout)) * sizeof_bits_v<TmaInternalType>, 8);
+      uint64_t old_stride = gmem_prob_stride[i];
+      gmem_prob_stride[i] = gcd(gmem_prob_stride[i], stride_j);
 
-    // Problem stride
-    uint64_t stride_j = stride<j>(flat_glayout) * sizeof(T);
-    uint64_t old_stride = gmem_prob_stride[tma_i];
-    gmem_prob_stride[tma_i] = gcd(gmem_prob_stride[tma_i], stride_j);
-
-    // Problem shape
-    uint64_t shape_j = shape<j>(flat_glayout);
-    if (gmem_prob_stride[tma_i] != 0) {
-      // We're "resetting" this TMA mode and using it as a "multimode"
-      // Recurrence: g_shape = (s_i - 1) * (d_i / gcd_j d_j) + 1
-      gmem_prob_shape[tma_i] = (gmem_prob_shape[tma_i]-1) * (old_stride / gmem_prob_stride[tma_i])
-                             +                (shape_j-1) * (stride_j   / gmem_prob_stride[tma_i])
-                             + 1;
-    } else {
-      gmem_prob_shape[tma_i] = shape_j;
-    }
+      // Problem shape
+      uint64_t shape_j = basis_get(ej, shape(gmem_layout));
+      if (gmem_prob_stride[i] != 0) {
+        // Recurrence: g_shape = (s_i - 1) * (d_i / gcd_j d_j) + 1
+        gmem_prob_shape[i] = (gmem_prob_shape[i]-1) * (old_stride / gmem_prob_stride[i])
+                           +            (shape_j-1) * (stride_j   / gmem_prob_stride[i])
+                           + 1;
+      } else {
+        gmem_prob_shape[i] = shape_j;
+      }
+    });
   });
 
   assert((reinterpret_cast<uint64_t>(gmem_address) & 0b1111) == 0);  // Address must be 16B-aligned
@@ -590,7 +617,9 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
   assert(gmem_prob_shape[4] >= (uint64_t(1)));               // Size must be min 1
   assert(gmem_prob_shape[4] <= (uint64_t(1) << 32));         // Size must be max 2^32
 
-  assert((gmem_prob_stride[0]) == sizeof(T));                // First stride is implicitly 1
+  // TMA descriptor does not store the zeroth stride and assumes it is 1 (TmaInternalType element).
+  assert(gmem_prob_stride[0] == sizeof(TmaInternalType) && "Majorness of smem doesn't match majorness of gmem");
+
   assert((gmem_prob_stride[1]) < (uint64_t(1) << 40));       // Stride must be max 2^40
   assert((gmem_prob_stride[1] & 0b1111) == 0);               // Stride must be multiple of 16B (128b)
   assert((gmem_prob_stride[2]) < (uint64_t(1) << 40));       // Stride must be max 2^40
@@ -606,118 +635,139 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
 
   cute::array<uint32_t, 5> smem_box_shape  = {1,1,1,1,1};
   cute::array<uint32_t, 5> smem_box_stride = {1,1,1,1,1};
-  for_each(make_seq<rank_smem_inv>{}, [&](auto i) {
-    uint32_t shape_i = shape<i>(smem_inv);
-    constexpr int tma_i = i < 5 ? i : 4;
-    if (tma_multimode && tma_i == 4) {
-      // We're "reusing" this TMA mode and using it as a "multimode"
-      smem_box_shape[tma_i] = 1;
+  // The smem box is simply given by the sizes of the modes in tma_gbasis
+  for_each(make_seq<tma_dim>{}, [&](auto i) {
+    smem_box_shape[i] *= size<i>(tma_gbasis);
+  });
+
+  assert(smem_box_shape[0] >= (uint32_t(1)));                // Size must be min 1
+  assert(smem_box_shape[0] <= (uint32_t(1) << 8));           // Size must be max 2^8 = 256
+  assert(smem_box_shape[1] >= (uint32_t(1)));                // Size must be min 1
+  assert(smem_box_shape[1] <= (uint32_t(1) << 8));           // Size must be max 2^8 = 256
+  assert(smem_box_shape[2] >= (uint32_t(1)));                // Size must be min 1
+  assert(smem_box_shape[2] <= (uint32_t(1) << 8));           // Size must be max 2^8 = 256
+  assert(smem_box_shape[3] >= (uint32_t(1)));                // Size must be min 1
+  assert(smem_box_shape[3] <= (uint32_t(1) << 8));           // Size must be max 2^8 = 256
+  assert(smem_box_shape[4] >= (uint32_t(1)));                // Size must be min 1
+  assert(smem_box_shape[4] <= (uint32_t(1) << 8));           // Size must be max 2^8 = 256
+
+  assert(smem_box_stride[0] >= (uint32_t(1)));               // Stride must be min 1
+  assert(smem_box_stride[0] <= (uint32_t(8)));               // Stride must be max 2^3 = 8
+  assert(smem_box_stride[1] >= (uint32_t(1)));               // Stride must be min 1
+  assert(smem_box_stride[1] <= (uint32_t(8)));               // Stride must be max 2^3 = 8
+  assert(smem_box_stride[2] >= (uint32_t(1)));               // Stride must be min 1
+  assert(smem_box_stride[2] <= (uint32_t(8)));               // Stride must be max 2^3 = 8
+  assert(smem_box_stride[3] >= (uint32_t(1)));               // Stride must be min 1
+  assert(smem_box_stride[3] <= (uint32_t(8)));               // Stride must be max 2^3 = 8
+  assert(smem_box_stride[4] >= (uint32_t(1)));               // Stride must be min 1
+  assert(smem_box_stride[4] <= (uint32_t(8)));               // Stride must be max 2^3 = 8
+
+    //
+    // Construct the descriptor
+    //
+  
+    TmaDescriptor tma_desc = {0};
+  
+    //
+    // TMA general info
+    //
+  
+  #if (__CUDACC_VER_MAJOR__ >= 12) && !defined(__CUDACC_RTC__)
+  
+    CUtensorMapDataType     tma_format      = TMA::to_CUtensorMapDataType<TmaInternalType>();
+    CUtensorMapInterleave   tma_interleave  = CU_TENSOR_MAP_INTERLEAVE_NONE;
+    CUtensorMapL2promotion  tma_l2Promotion = CU_TENSOR_MAP_L2_PROMOTION_L2_128B;
+    CUtensorMapFloatOOBfill tma_oobFill     = CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE;
+  
+    // TMA smem swizzle type
+    CUtensorMapSwizzle smem_swizzle = TMA::to_CUtensorMapSwizzle(get_tma_swizzle_bits(swizzle));
+    CUresult result = cuTensorMapEncodeTiled(
+        &tma_desc,
+        tma_format,
+        tma_dim,
+        gmem_address,
+        gmem_prob_shape.data(),
+        gmem_prob_stride.data() + 1,  // gmem_prob_stride[0] implicitly 1
+        smem_box_shape.data(),
+        smem_box_stride.data(),
+        tma_interleave,
+        smem_swizzle,
+        tma_l2Promotion,
+        tma_oobFill);
+  
+    if (result != CUDA_SUCCESS) {
+      std::cerr << "TMA Desc Addr:   " << &tma_desc
+                << "\nformat         " << tma_format
+                << "\ndim            " << tma_dim
+                << "\ngmem_address   " << gmem_address
+                << "\nglobalDim      " << gmem_prob_shape
+                << "\nglobalStrides  " << gmem_prob_stride
+                << "\nboxDim         " << smem_box_shape
+                << "\nelementStrides " << smem_box_stride
+                << "\ninterleave     " << tma_interleave
+                << "\nswizzle        " << smem_swizzle
+                << "\nl2Promotion    " << tma_l2Promotion
+                << "\noobFill        " << tma_oobFill << std::endl;
+      std::cerr << "Error: Failed to initialize the TMA descriptor " << result << std::endl;
+      assert(false);
+    }
+  
+  #endif // (__CUDACC_VER_MAJOR__ >= 12) && !defined(__CUDACC_RTC__)
+  // Finally, get the inverse permutation of the E<i> bases for the mocked gmem stride
+  // NOTE This is essentially ArithmeticTuple inverse...
+  auto gmem_stride_bases = transform_leaf(stride(gbasis), [&](auto ei) {
+    auto si = basis_get(ei,  shape(gmem_layout));
+    auto di = basis_get(ei, stride(gmem_layout));
+    if constexpr (is_constant<1, decltype(si)>::value || is_constant<0, decltype(di)>::value) {
+      return Int<0>{};                  // If size-1 or stride-0, return arithmetic identity -- no contribution to the TMA
     } else {
-      smem_box_shape[tma_i] = shape_i;
+      auto tma_gbasis_stride = stride(tma_gbasis);
+      // Find j such that E<i> is in stride<j>(tma_gbasis)
+      using EI = decltype(ei);
+      [[maybe_unused]] auto j = find_if(tma_gbasis_stride, [&](auto tma_stride_j) { return any_of(tma_stride_j, [&](auto dj) { return dj == EI{}; }); });
+      if constexpr (decltype(j == rank(tma_gbasis_stride))::value) {
+        return Int<0>{};               // If not-found, return arithmetic identity -- no contribution to the TMA
+      } else 
+      if constexpr (decltype(j == Int<0>{})::value) {
+        auto scale = ratio(size(tma_gstride), size(smem_inv_h)) * basis_get(ei, stride(gtensor));
+        return E<j>{} * scale;         // Return TMA Coord basis -- with a recast scale factor
+      } else
+      if constexpr (decltype(rank<j>(tma_gbasis_stride) == Int<1>{})::value) {
+        return E<j>{};                 // Return TMA Coord basis -- known scale of Int<1>{}
+      } else {
+        int32_t scale = ceil_div(int32_t(di * sizeof_bits_v<TmaInternalType> / cute::max(gmem_prob_stride[j], 16)), 8);
+        return E<j>{} * scale;         // Return TMA Coord basis -- with a dynamic scale factor
+      }
     }
   });
 
-  assert(smem_box_shape[0] >= (uint64_t(1)));                // Size must be min 1
-  assert(smem_box_shape[0] <= (uint64_t(1) << 8));           // Size must be max 2^8
-  assert(smem_box_shape[0] >= (uint64_t(1)));                // Size must be min 1
-  assert(smem_box_shape[0] <= (uint64_t(1) << 8));           // Size must be max 2^8
-  assert(smem_box_shape[0] >= (uint64_t(1)));                // Size must be min 1
-  assert(smem_box_shape[0] <= (uint64_t(1) << 8));           // Size must be max 2^8
-  assert(smem_box_shape[0] >= (uint64_t(1)));                // Size must be min 1
-  assert(smem_box_shape[0] <= (uint64_t(1) << 8));           // Size must be max 2^8
+  #if 0
+    print("tma_gbasis   : "); print(gmem_stride_bases); print("\n");
+  #endif
 
-  assert(smem_box_stride[0] >= (uint32_t(1)));               // Stride must be min 1
-  assert(smem_box_stride[0] <= (uint32_t(8)));               // Stride must be max 2^3
-  assert(smem_box_stride[1] >= (uint32_t(1)));               // Stride must be min 1
-  assert(smem_box_stride[1] <= (uint32_t(8)));               // Stride must be max 2^3
-  assert(smem_box_stride[2] >= (uint32_t(1)));               // Stride must be min 1
-  assert(smem_box_stride[2] <= (uint32_t(8)));               // Stride must be max 2^3
-  assert(smem_box_stride[3] >= (uint32_t(1)));               // Stride must be min 1
-  assert(smem_box_stride[3] <= (uint32_t(8)));               // Stride must be max 2^3
-  assert(smem_box_stride[4] >= (uint32_t(1)));               // Stride must be min 1
-  assert(smem_box_stride[4] <= (uint32_t(8)));               // Stride must be max 2^3
-
-  //
-  // Construct the descriptor
-  //
-
-  TmaDescriptor tma_desc = {0};
-
-  //
-  // TMA general info
-  //
-
-#if (__CUDACC_VER_MAJOR__ >= 12)
-
-  CUtensorMapDataType     tma_format      = TMA::to_CUtensorMapDataType<T>();
-  CUtensorMapInterleave   tma_interleave  = CU_TENSOR_MAP_INTERLEAVE_NONE;
-  CUtensorMapL2promotion  tma_l2Promotion = CU_TENSOR_MAP_L2_PROMOTION_NONE;
-  CUtensorMapFloatOOBfill tma_oobFill     = CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE;
-
-  // TMA smem swizzle type
-  CUtensorMapSwizzle smem_swizzle = TMA::to_CUtensorMapSwizzle(get_tma_swizzle_bits(swizzle));
-  CUresult result = cuTensorMapEncodeTiled(
-      &tma_desc,
-      tma_format,
-      tma_dim,
-      gmem_address,
-      gmem_prob_shape.data(),
-      gmem_prob_stride.data() + 1,  // gmem_prob_stride[0] implicitly 1
-      smem_box_shape.data(),
-      smem_box_stride.data(),
-      tma_interleave,
-      smem_swizzle,
-      tma_l2Promotion,
-      tma_oobFill);
-
-  if (result != CUDA_SUCCESS) {
-    std::cerr << "TMA Desc Addr:   " << &tma_desc
-              << "\nformat         " << tma_format
-              << "\ndim            " << tma_dim
-              << "\ngmem_address   " << gmem_address
-              << "\nglobalDim      " << gmem_prob_shape
-              << "\nglobalStrides  " << gmem_prob_stride
-              << "\nboxDim         " << smem_box_shape
-              << "\nelementStrides " << smem_box_stride
-              << "\ninterleave     " << tma_interleave
-              << "\nswizzle        " << smem_swizzle
-              << "\nl2Promotion    " << tma_l2Promotion
-              << "\noobFill        " << tma_oobFill << std::endl;
-    std::cerr << "Error: Failed to initialize the TMA descriptor " << result << std::endl;
-    assert(false);
-  }
-
-#endif // (__CUDACC_VER_MAJOR__ >= 12)
-  // Finally, get the inverse permutation of the E<i> bases for the mocked gmem stride
-  auto gmem_stride_bases_flat = transform(make_seq<rank_smem_inv>{}, [&](auto i) {
-    auto k = find(stride(smem_inv), E<i>{});
-    // For gcc 7.5 -- avoid 'if constexpr'
-    int32_t tma_coord_stride = int32_t(stride<i>(flat_glayout) * sizeof(T) / (gmem_prob_stride[4] != 0 ? gmem_prob_stride[4] : 16));
-    return conditional_return(tma_multimode && (k >= Int<4>{}),
-                              E<4>{} * tma_coord_stride,        // The 4th TMA mode is the multimode, use int32_t coord stride
-                              E<k>{});
-  });
-
-  // Give that the profile of gtensor and fold it
-  // NOTE: This is the only reason we want the original gtensor shape rather than the more intuitive flattened shape
-  auto gmem_stride_bases = stride(composition(make_layout(repeat_like(shape(flat_glayout), Int<2>{}), gmem_stride_bases_flat),
-                                              make_layout(repeat_like(shape(gtensor),      Int<2>{}))));
-
-  return make_tuple(tma_desc, gmem_stride_bases);
+  using AuxParams = AuxTmaParams<decltype(gmem_stride_bases),
+                                 decltype(tma_gbasis),
+                                 decltype(swizzle)>;
+  return cute::make_tuple(tma_desc, AuxParams{gmem_stride_bases});
 }
 
-template <class CopyOp,
+// The "logical TMA tid" is a map from the CTA rank to its logical id
+// within the instruction.  It works like a mask or ordering on the
+// CTAs.  For non-multicast TMA, all CTAs should map to 0.  For
+// multicast TMA of size 4, CTAs will be mapped to {0,1,2,3}.
+template <class TmaInternalType,
+          class CopyOp,
           class GEngine, class GLayout,
           class SLayout,
           class TShape, class TStride,
           class VShape, class VStride>
-CUTE_HOST
+CUTE_HOST_RTC
 auto
 make_tma_copy_tiled(CopyOp,
                     Tensor<GEngine,GLayout> const& gtensor,     // Full GMEM Tensor
                     SLayout                 const& slayout,     // CTA Tile of SMEM
                     Layout<TShape,TStride>  const& cta_t_map,   // T: CTA thr idx -> logical TMA tid
-                    Layout<VShape,VStride>  const& cta_v_map)   // V: CTA val idx -> gmem coord
+                    Layout<VShape,VStride>  const& cta_v_map)   // V: CTA val idx -> gmem mode
 {
   //
   // TMA parameter checking
@@ -732,41 +782,21 @@ make_tma_copy_tiled(CopyOp,
   // TMA slayout manipulation
   //
 
-  auto flat_glayout = flatten(gtensor.layout());
-
   // Invert the smem to get the largest contiguous vector in the smem layout
+  // smem idx -> smem coord
   auto inv_smem_layout = right_inverse(get_nonswizzle_portion(slayout));
-  // trunc_smem_idx -> trunc_smem_coord
 
-  // Map from smem idx to a gmem mode
+  // Compose with the V-Map to convert smem coord (CTA val idx) to gmem mode
+  // smem idx -> gmem mode
   auto sidx_to_gmode = coalesce(composition(cta_v_map, inv_smem_layout));
 
-  // Truncate any incompatibilities
-  auto smem_rank = find_if(stride(sidx_to_gmode), [](auto e) {
-    auto v = basis_value(e);
-    return not is_constant<1,decltype(v)>{};
-  });
-  static_assert(smem_rank > 0, "Could not find a common smem-gmem vectorization for TMA. Do they have a common majorness?");
-  // TMA uses a maximum of 5 modes
-  // If the gtensor has more than 5 modes, we need to reserve the last TMA-mode as a "multimode"
-  constexpr int smem_tma_rank = cute::min(int(smem_rank), (rank(flat_glayout) > Int<5>{} ? 4 : 5));
-
-  // Keep only the static-1 basis modes into gmem
-  auto sidx_to_gmode_trunc = take<0,smem_tma_rank>(sidx_to_gmode);
-
-  // Split according to the portion each multicast CTA will be responsible for
-  auto sidx_to_gmode_vt = logical_divide(sidx_to_gmode_trunc, shape_div(size(sidx_to_gmode_trunc), cosize(cta_t_map)));
-
 #if 0
-  print("g_layout      : "); print(gtensor.layout()); print("\n");
-  print("s_layout      : "); print(slayout); print("\n");
-  print("cta_t_map     : "); print(cta_t_map); print("\n");
-  print("cta_v_map     : "); print(cta_v_map); print("\n");
-  print("inv_smem      : "); print(inv_smem_layout); print("\n");
-  print("sidx_to_gmode : "); print(sidx_to_gmode); print("\n");
-
-  print("sidx_to_gmode_trunc : "); print(sidx_to_gmode_trunc); print("\n");
-  print("sidx_to_gmode_vt    : "); print(sidx_to_gmode_vt); print("\n");
+  print("g_tensor         : "); print(gtensor); print("\n");
+  print("s_layout         : "); print(slayout); print("\n");
+  print("cta_t_map        : "); print(cta_t_map); print("\n");
+  print("cta_v_map        : "); print(cta_v_map); print("\n");
+  print("inv_s_layout     : "); print(inv_smem_layout); print("\n");
+  print("sidx_to_gmode    : "); print(sidx_to_gmode); print("\n");
 #endif
 
   //
@@ -774,53 +804,57 @@ make_tma_copy_tiled(CopyOp,
   //
 
   // Generate a TupleBasis for the gtensor
-  auto flat_gbasis  = make_basis_like(shape(flat_glayout));
-
-  // Fold the flat_gbasis into the glayout
-  auto glayout_basis = make_layout(shape(gtensor),
-                                   stride(composition(make_layout(repeat_like(shape(flat_glayout), Int<2>{}), flat_gbasis),
-                                                      make_layout(repeat_like(shape(gtensor),      Int<2>{})))));
+  // gmem coord -> gmem coord
+  auto glayout_basis = make_identity_layout(shape(gtensor));
 
   // Tile the modes of gtensor with the truncated cta_v_map o inv_smem_layout_trunc
-  auto tma_layout_v_trunc = flatten(composition(glayout_basis, layout<0>(sidx_to_gmode_vt)));
+  // smem idx -> gmem coord
+  auto tma_layout_full = flatten(composition(glayout_basis, sidx_to_gmode));
 
-  // Append any missing basis on the end as size-1 modes b/c they got truncated
-  // NOTE This is essentially ArithmeticTuple complement...
-  auto missing_basis = fold(stride(tma_layout_v_trunc), flat_gbasis, [](auto init, auto e) {
-    auto k = find(init, e);
-    return remove<k>(init);
+  // Truncate any incompatibilities -- no starting in the middle of gmodes
+  auto smem_rank = find_if(stride(tma_layout_full), [](auto e) {
+    [[maybe_unused]] auto v = basis_value(e);
+    return not is_constant<1,decltype(v)>{};
   });
+  static_assert(smem_rank > 0, "Could not find a common tile-gmem vectorization. Does the Tile select out major GMEM modes?");
 
-  // The appended map from truncated smem codomain to gmem mode: trunc_smem_idx -> gmem_mode
-  auto tma_layout_v = make_layout(flatten(cute::make_tuple(tma_layout_v_trunc.shape(),  repeat<rank(missing_basis)>(Int<1>{}))),
-                                  flatten(cute::make_tuple(tma_layout_v_trunc.stride(), missing_basis)));
+  // Keep only the static-1 basis modes into gmem
+  auto tma_layout_trunc = take<0,smem_rank>(tma_layout_full);
+
+  // Keep only the portion each multicast CTA will be responsible for
+  auto tma_layout_v = composition(tma_layout_trunc, shape_div(size(tma_layout_trunc), cosize(cta_t_map)));
 
 #if 0
-  print("flat_gbasis  : "); print(flat_gbasis); print("\n");
-  print("missing_b    : "); print(missing_basis); print("\n");
-  print("tma_layout_v : "); print(tma_layout_v); print("\n");
+  print("glayout_basis   : "); print(glayout_basis); print("\n");
+  print("tma_layout_full : "); print(tma_layout_full); print("\n");
+
+  print("tma_layout_trunc: "); print(tma_layout_trunc); print("\n");
+  print("tma_layout_v   : "); print(tma_layout_v); print("\n");
 #endif
 
   //
-  // Construct the TMA Desc and GMEM mode ordering
+  // Construct the TMA Desc and the strides of the TMA Tensor
   //
 
-  auto [tma_desc, gmem_stride_bases] = detail::make_tma_copy_desc(gtensor, tma_layout_v, get_swizzle_portion(slayout));
+  auto [tma_desc, aux_params] = detail::make_tma_copy_desc<TmaInternalType>(gtensor,
+                                                                            tma_layout_v,
+                                                                            get_swizzle_portion(slayout));
 
   //
   // Construct the Copy_Traits
   //
 
   using T = typename GEngine::value_type;
-  constexpr int num_bits = decltype(size<0>(sidx_to_gmode_vt))::value * sizeof(T) * 8;
-  using Traits = Copy_Traits<CopyOp, Int<num_bits>, decltype(gmem_stride_bases)>;
+  constexpr int num_bits_per_tma = decltype(size(tma_layout_trunc))::value * sizeof_bits_v<T>;
+  using Traits = Copy_Traits<CopyOp, cute::C<num_bits_per_tma>, decltype(aux_params)>;
+  using Atom   = Copy_Atom<Traits, T>;
+
+  Traits tma_traits{tma_desc, aux_params};
 
 #if 0
-  print("num_bits      :  "); print(num_bits); print("\n");
-  print("g_stride_bases:  "); print(gmem_stride_bases); print("\n");
+  print("num_bits_per_tma :  "); print(num_bits_per_tma); print("\n");
+  print("g_stride_bases   :  "); print(tma_traits.aux_params_.g_stride_); print("\n");
 #endif
-
-  Traits tma_traits{tma_desc, gmem_stride_bases};
 
   //
   // Construct the TiledCopy
@@ -828,12 +862,15 @@ make_tma_copy_tiled(CopyOp,
 
   auto cta_tiler = product_each(shape(cta_v_map));
 
-  // (CTA V, CTA T) -> smem_coord
-  auto layout_vt = composition(inv_smem_layout, make_layout(shape(sidx_to_gmode_vt)));
-  // Scale that up to cover all of the smem_coords
-  auto layout_VT = tile_to_shape(layout_vt, make_shape(size(cta_v_map)/size<1>(layout_vt), size<1>(layout_vt)));
-  // Flip it and change the domain of the T from logical thr to thr_idx
-  auto layout_TV = make_layout(composition(layout<1>(layout_VT), cta_t_map), layout<0>(layout_VT));
+  // CTA V -> smem_coord
+  auto layout_v = composition(inv_smem_layout, size(tma_layout_trunc));
+  auto layout_V = tile_to_shape(make_layout(layout_v), size(cta_v_map));
+  // CTA T -> smem idx
+  auto layout_t = make_layout(cosize(cta_t_map), shape_div(size(tma_layout_trunc), cosize(cta_t_map)));
+  // CTA TID -> smem coord
+  auto layout_T = composition(inv_smem_layout, composition(layout_t, cta_t_map));
+  // Combine with the T mapping
+  auto layout_TV = make_layout(layout_T, layout_V);
 
 #if 0
   print("cta_tiler : "); print(cta_tiler); print("\n");
@@ -841,10 +878,8 @@ make_tma_copy_tiled(CopyOp,
   print("layout_TV : "); print(layout_TV); print("\n");
 #endif
 
-  using T = typename GEngine::value_type;
-  return TiledCopy<Copy_Atom<Traits,T>, decltype(layout_TV), decltype(cta_tiler)>{tma_traits};
+  return TiledCopy<Atom, decltype(layout_TV), decltype(cta_tiler)>{tma_traits};
 }
-#endif // !defined(__CUDACC_RTC__)
 
 } // end namespace detail
 
@@ -920,13 +955,13 @@ make_tma_copy_tiled(CopyOp,
 
      copy(tma.with(barrier, mcast_mask), tAgA, tAsA);          // copy with supporting TMA params
  */
-#if !defined(__CUDACC_RTC__)
-template <class CopyOp,
+template <class TmaInternalType,
+          class CopyOp,
           class GEngine, class GLayout,
           class SLayout,
           class CTA_Tile,
           class Cluster_Size>
-CUTE_HOST
+CUTE_HOST_RTC
 auto
 make_tma_copy(CopyOp                  const& copy_op,
               Tensor<GEngine,GLayout> const& gtensor,
@@ -934,19 +969,39 @@ make_tma_copy(CopyOp                  const& copy_op,
               CTA_Tile                const& cta_tile,
               Cluster_Size            const& cluster_size)
 {
-
-  return detail::make_tma_copy_tiled(copy_op,
-                                     gtensor,
-                                     slayout,
-                                     make_layout(cluster_size),
-                                     make_identity_layout(cta_tile));
+  return detail::make_tma_copy_tiled<TmaInternalType>(copy_op,
+                                                      gtensor,
+                                                      slayout,
+                                                      make_layout(cluster_size),
+                                                      make_identity_layout(cta_tile));
 }
 
 // Explicit defaulting
 template <class CopyOp,
           class GEngine, class GLayout,
+          class SLayout,
+          class CTA_Tile,
+          class Cluster_Size>
+CUTE_HOST_RTC
+auto
+make_tma_copy(CopyOp                  const& copy_op,
+              Tensor<GEngine,GLayout> const& gtensor,
+              SLayout                 const& slayout,
+              CTA_Tile                const& cta_tile,
+              Cluster_Size            const& cluster_size)
+{
+  using TmaInternalType = typename GEngine::value_type;
+  return make_tma_copy<TmaInternalType>(copy_op,
+                                        gtensor,
+                                        slayout,
+                                        cta_tile,
+                                        cluster_size);
+}
+
+template <class CopyOp,
+          class GEngine, class GLayout,
           class SLayout>
-CUTE_HOST
+CUTE_HOST_RTC
 auto
 make_tma_copy(CopyOp                  const& copy_op,
               Tensor<GEngine,GLayout> const& gtensor,
@@ -959,7 +1014,7 @@ template <class CopyOp,
           class GEngine, class GLayout,
           class SLayout,
           class Cluster_Size>
-CUTE_HOST
+CUTE_HOST_RTC
 auto
 make_tma_copy(CopyOp                  const& copy_op,
               Tensor<GEngine,GLayout> const& gtensor,
@@ -968,6 +1023,5 @@ make_tma_copy(CopyOp                  const& copy_op,
 {
   return make_tma_copy(copy_op, gtensor, slayout, product_each(shape(slayout)), cluster_size);
 }
-#endif // !defined(__CUDACC_RTC__)
 
 } // end namespace cute

@@ -74,12 +74,15 @@ using CUTE_STL_NAMESPACE::is_void_v;
 using CUTE_STL_NAMESPACE::is_base_of;
 using CUTE_STL_NAMESPACE::is_base_of_v;
 
+using CUTE_STL_NAMESPACE::is_const_v;
+
 // using CUTE_STL_NAMESPACE::true_type;
 // using CUTE_STL_NAMESPACE::false_type;
 
 using CUTE_STL_NAMESPACE::conditional;
 using CUTE_STL_NAMESPACE::conditional_t;
 
+using CUTE_STL_NAMESPACE::remove_const_t;
 using CUTE_STL_NAMESPACE::remove_cv_t;
 using CUTE_STL_NAMESPACE::remove_reference_t;
 
@@ -89,6 +92,9 @@ using CUTE_STL_NAMESPACE::remove_extent;
 using CUTE_STL_NAMESPACE::decay;
 using CUTE_STL_NAMESPACE::decay_t;
 
+using CUTE_STL_NAMESPACE::is_lvalue_reference;
+using CUTE_STL_NAMESPACE::is_lvalue_reference_v;
+
 using CUTE_STL_NAMESPACE::is_reference;
 using CUTE_STL_NAMESPACE::is_trivially_copyable;
 
@@ -97,8 +103,16 @@ using CUTE_STL_NAMESPACE::is_same_v;
 
 using CUTE_STL_NAMESPACE::is_arithmetic;
 using CUTE_STL_NAMESPACE::is_unsigned;
+using CUTE_STL_NAMESPACE::is_unsigned_v;
 using CUTE_STL_NAMESPACE::is_signed;
+using CUTE_STL_NAMESPACE::is_signed_v;
+
+using CUTE_STL_NAMESPACE::make_signed;
+using CUTE_STL_NAMESPACE::make_signed_t;
+
 // using CUTE_STL_NAMESPACE::is_integral;
+template <class T>
+using is_std_integral = CUTE_STL_NAMESPACE::is_integral<T>;
 
 using CUTE_STL_NAMESPACE::is_empty;
 
@@ -106,6 +120,26 @@ using CUTE_STL_NAMESPACE::invoke_result_t;
 
 // <utility>
 using CUTE_STL_NAMESPACE::declval;
+
+template< class T >
+constexpr T&& forward(remove_reference_t<T>& t) noexcept
+{
+  return static_cast<T&&>(t);
+}
+
+template< class T >
+constexpr T&& forward(remove_reference_t<T>&& t) noexcept
+{
+  static_assert(! is_lvalue_reference_v<T>,
+    "T cannot be an lvalue reference (e.g., U&).");
+  return static_cast<T&&>(t);
+}
+
+template< class T >
+constexpr remove_reference_t<T>&& move( T&& t ) noexcept
+{
+  return static_cast<remove_reference_t<T>&&>(t);
+}
 
 // <limits>
 using CUTE_STL_NAMESPACE::numeric_limits;

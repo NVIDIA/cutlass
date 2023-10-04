@@ -282,7 +282,7 @@ TEST(SM80_Device_Sparse_Gemm_Row_Broadcast_f16n_f16n_f16t_tensor_op_f32, 64x64x1
           ElementOutput, 128 / cutlass::sizeof_bits<ElementOutput>::value,
           ElementAccumulator, ElementAccumulator>,
       cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle<>, 6>;
-  
+
   EXPECT_TRUE(test::gemm::device::TestAllSparseGemm<Gemm>(true));
 }
 

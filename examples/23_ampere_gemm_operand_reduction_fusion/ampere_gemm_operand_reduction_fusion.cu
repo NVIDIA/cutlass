@@ -30,7 +30,7 @@
  **************************************************************************************************/
 
 /**
-The example demenstrates how to reduce one of the operands of the GEMM along the k-dimension when
+The example demonstrates how to reduce one of the operands of the GEMM along the k-dimension when
 computing GEMM.  So the output also contains either a Mx1 or 1XN vector.  It only works with Ampere
 16x8x16 FP16/BF16 tensor cores, though it is not difficult to apply to other Turing/Ampere tensor
 core instructions.

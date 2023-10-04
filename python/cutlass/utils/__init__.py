@@ -35,6 +35,7 @@ from cutlass.utils.check import (
     calculate_smem_usage,
     calculate_smem_usage_per_stage,
     valid_cluster_shape,
-    valid_kernel_schedule,
+    valid_schedule,
     valid_stage_count,
+    update_alignment,
 )

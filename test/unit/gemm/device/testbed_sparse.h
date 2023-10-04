@@ -155,7 +155,6 @@ struct SparseTestbed {
         view.data(), view.capacity());
     } 
     else {
-      // TODO: Implement the rest
       EXPECT_TRUE(false) << "Not implemented";
       return false;
     }
@@ -173,10 +172,10 @@ struct SparseTestbed {
     tensor_B.resize(problem_size.kn());
     if (tensor_C_row_broadcast) {
       tensor_C.resize({problem_size.m(), 1});
-    }
-    else {
+    } else {
       tensor_C.resize(problem_size.mn());
     }
+
     tensor_D.resize(problem_size.mn());
     reference_D.resize(problem_size.mn(), false);
     tensor_E.resize(cutlass::make_Coord(
@@ -197,7 +196,6 @@ struct SparseTestbed {
       cutlass::reference::host::TensorFill(tensor_E.host_view(),
                                            (ElementE)(content));
     } else {
-      // TODO: Implement the rest
       EXPECT_TRUE(false);
     }
 
@@ -215,8 +213,7 @@ struct SparseTestbed {
       for (int i = 0; i < problem_size.m(); ++i)
         for (int j = 0; j < problem_size.n(); ++j)
           reference_D.host_view().at({i, j}) = tensor_C.host_view().at({i, 0});
-    }
-    else {
+    } else {
       cutlass::reference::host::TensorCopy(reference_D.host_view(), tensor_C.host_view());
     }
 

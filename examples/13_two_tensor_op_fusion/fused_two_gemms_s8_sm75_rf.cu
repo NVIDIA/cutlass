@@ -195,7 +195,6 @@ bool run_fused_gemm_s8_rf_res() {
   return passed;
 
 }
-
 int main() {
 
   std::vector<bool (*)()>funcs = {
@@ -204,9 +203,6 @@ int main() {
   };
 
   return testRun(75, funcs, "gemm int8 RF residency");
-
-
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////

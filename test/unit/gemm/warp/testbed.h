@@ -259,7 +259,6 @@ struct Testbed {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -286,7 +285,6 @@ struct Testbed {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -492,7 +490,6 @@ struct TestbedComplex {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -506,7 +503,6 @@ struct TestbedComplex {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -814,7 +810,6 @@ struct TransformTestbed {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -839,7 +834,6 @@ struct TransformTestbed {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -1041,7 +1035,6 @@ struct TransformedTestbedComplex {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -1055,7 +1048,6 @@ struct TransformedTestbedComplex {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -1410,7 +1402,6 @@ struct SparseTestbed {
     } else if (init_A == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_A.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -1435,7 +1426,6 @@ struct SparseTestbed {
     } else if (init_B == cutlass::Distribution::Identity) {
       cutlass::reference::host::TensorFillIdentity(tensor_B.host_view());
     } else {
-      // TODO: Implement the rest
       return false;
     }
 
@@ -1463,7 +1453,6 @@ struct SparseTestbed {
       cutlass::reference::host::TensorFill(tensor_E.host_view(),
                                            (ElementE)(content));
     } else {
-      // TODO: Implement the rest
       return false;
     }
 

@@ -610,7 +610,6 @@ Quaternion<Element> operator/(Element s, Quaternion<Element> const &q) {
 template <typename Element>
 CUTLASS_HOST_DEVICE
 bool operator<(Quaternion<Element> const &lhs, Quaternion<Element> const &rhs) {
-  //TODO
   return true; 
 }
 

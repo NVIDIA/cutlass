@@ -121,14 +121,25 @@ template <class T>
 struct sizeof_bits {
   static constexpr size_t value = sizeof(T) * 8;
 };
+
+template <class T>
+struct sizeof_bits<T const>: sizeof_bits<T> {};
+
+template <>
+struct sizeof_bits<void> {
+  static constexpr size_t value = 0;
+};
+
 template <>
 struct sizeof_bits<bool> {
   static constexpr size_t value = 1;
 };
+
 template <int Bits, bool Signed>
 struct sizeof_bits<integer_subbyte<Bits,Signed>> {
   static constexpr size_t value = Bits;
 };
+
 template <class T>
 static constexpr int sizeof_bits_v = sizeof_bits<T>::value;
 

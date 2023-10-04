@@ -40,7 +40,7 @@
 #include <cute/atom/mma_atom.hpp>
 
 /** The gemm algorithm takes four (or three) tensors and computes
- *   D += A * B + C
+ *   D = A * B + C
  * It dispatches based on the number of modes each tensor has:
  *
  * 1. `(V) x (V) => (V)`.
@@ -218,7 +218,6 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<0>(A) == size<0>(C));  // AM == CM
   CUTE_STATIC_ASSERT_V(size<0>(B) == size<1>(C));  // BN == CN
   CUTE_STATIC_ASSERT_V(size<0>(C) == size<0>(D) && size<1>(C) == size<1>(D));
-
   gemm(mma,
        D,                                                       // (M,N)
        make_tensor(A.data(), append<2>(A.layout())),            // (M,1)
@@ -253,7 +252,7 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutC_TV{}) == Int<1>{});
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutA_TV{}) == Int<1>{});
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutB_TV{}) == Int<1>{});
-
+  
   gemm(mma,
        make_tensor(D.data(), prepend<3>(D.layout())),      // (1,M,N)
        make_tensor(A.data(), prepend<3>(A.layout())),      // (1,M,K)
@@ -282,7 +281,6 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<1>(A) == size<1>(C));  // AM == CM
   CUTE_STATIC_ASSERT_V(size<1>(B) == size<2>(C));  // BN == CN
   CUTE_STATIC_ASSERT_V(size<0>(C) == size<0>(D) && size<1>(C) == size<1>(D) && size<2>(C) == size<2>(D));
-
   auto M = size<1>(A);
   auto N = size<1>(B);
   // REGISTER .reuse OPTIMIZATIONS
@@ -409,7 +407,6 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<1>(B) == size<2>(C));  // BN == CN
   CUTE_STATIC_ASSERT_V(size<2>(A) == size<2>(B));  // AK == BK
   CUTE_STATIC_ASSERT_V(size<0>(C) == size<0>(D) && size<1>(C) == size<1>(D) && size<2>(C) == size<2>(D));
-
   auto K = size<2>(A);
 
   CUTE_UNROLL
@@ -454,7 +451,6 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutC_TV{}) == Int<1>{});
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutA_TV{}) == Int<1>{});
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutB_TV{}) == Int<1>{});
-
   gemm(mma,
        make_tensor(D.data(), prepend<3>(D.layout())),      // (1,M,N)
        make_tensor(A.data(), prepend<3>(A.layout())),      // (1,M,K)

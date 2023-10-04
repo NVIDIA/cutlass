@@ -33,7 +33,9 @@
 */
 #pragma once
 
-#include "cutlass/numeric_types.h"
+#include "cutlass/cutlass.h"
+#include "cutlass/integer_subbyte.h"
+#include "cutlass/fast_math.h"
 
 namespace cutlass {
 
@@ -60,8 +62,9 @@ namespace cutlass {
 ///
 template <
   typename Element_,              /// CUTLASS numeric element type.
-  typename Storage_ = uint8_t     /// Underlying storage type. Must be able to hold an integer 
+  typename Storage_ = uint8_t,    /// Underlying storage type. Must be able to hold an integer 
                                   ///   number of objects of type Element.
+  class = void
 >
 class ConstSubbyteReference {
 public:
@@ -306,6 +309,8 @@ template <
 #else
   uint8_t
 #endif
+  ,
+  class = void
 >
 class SubbyteReference {
 public:
@@ -566,6 +571,673 @@ public:
   /// Computes the difference in elements between references
   CUTLASS_HOST_DEVICE
   ptrdiff_t operator-(SubbyteReference ref) const {
+    return (ptr_ - ref.ptr_) * kElementsPerVector + (offset_ - ref.offset_);
+  }
+
+  /// Explicit cast to int
+  CUTLASS_HOST_DEVICE
+  explicit operator int() const {
+    return int(get());
+  }
+
+  /// Explicit cast to signed 64-bit integer
+  CUTLASS_HOST_DEVICE
+  explicit operator int64_t() const {
+    return int64_t(get());
+  }
+
+  /// Explicit cast to unsigned 64-bit integer
+  CUTLASS_HOST_DEVICE
+  explicit operator uint64_t() const {
+    return uint64_t(get());
+  }
+
+  /// Explicit cast to float
+  CUTLASS_HOST_DEVICE
+  explicit operator float() const {
+    return float(get());
+  }
+
+  /// Explicit cast to double
+  CUTLASS_HOST_DEVICE
+  explicit operator double() const {
+    return double(get());
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <
+  typename Element_,              /// CUTLASS numeric element type.
+  typename Storage_               /// Underlying basic storage type.
+>
+class SubbyteReference<Element_, Storage_, 
+    typename platform::enable_if<sizeof_bits<Storage_>::value % sizeof_bits<Element_>::value != 0>::type> {
+public:
+
+  using Element = Element_;
+  ///! Note: Storage unit could not be divisibale by Element,   
+  ///   Type element may be stored across 2 storage units, so need a storage vector to hold integer
+  ///   number of objects of type Element.
+  using StorageUnit = Storage_;
+  static int const kBitsStoredVec = cutlass::lcm_cxx11(sizeof_bits<Element>::value, sizeof_bits<StorageUnit>::value); 
+  static int const kNumStorageUnitPerStoredVec = kBitsStoredVec / sizeof_bits<StorageUnit>::value;
+
+  using StorageVec = StorageUnit[kNumStorageUnitPerStoredVec];
+  using StorageVecPointer = StorageVec *;
+  
+  using CudaAtomicType = typename platform::conditional<
+      sizeof_bits<StorageUnit>::value == 16,
+      uint32_t,
+      uint64_t
+    >::type;
+
+  static_assert(sizeof_bits<Element>::value <= sizeof_bits<StorageVec>::value,
+    "Size of Element must not be greater than StorageVec.");
+
+  static_assert(!(sizeof_bits<StorageVec>::value % sizeof_bits<Element>::value),
+    "StorageVec must be divisible by Element");
+
+private:
+
+  ///! Number of elements per storage vector
+  int const kElementsPerVector = sizeof_bits<StorageVec>::value / sizeof_bits<Element>::value;
+
+  ///! Bit mask for storage unit.
+  StorageUnit const kMask = (StorageUnit(1) << sizeof_bits<Element>::value) - StorageUnit(1);
+
+  /// Pointer to array containing element
+  StorageVecPointer ptr_;
+
+  /// Offset (in units of elements) from pointer.
+  ///
+  /// Invariant: must always be in range [0, kElementsPerVector)
+  int offset_;
+
+  /// Element may be stored across 2 storage unit.
+  ///   Low storage unit index in StorageVec
+  ///   High storage unit index in StorageVec
+  int low_storage_unit_idx_;
+  int high_storage_unit_idx_;
+
+  /// Full Mask to extract the entire element
+  uint64_t full_element_mask_;
+
+  /// Mask to extract the Element from Low storage unit and High storage unit.
+  StorageUnit low_storage_mask_;
+  StorageUnit high_storage_mask_;
+
+  /// Start bit index inside the storage unit.
+  int start_bit_idx_;
+
+private:
+
+  CUTLASS_HOST_DEVICE
+  void update_element_status() {
+    int num_bits = offset_ * sizeof_bits<Element>::value;
+
+    start_bit_idx_ = num_bits % sizeof_bits<StorageUnit>::value;
+    
+    low_storage_unit_idx_ = num_bits / sizeof_bits<StorageUnit>::value;
+    high_storage_unit_idx_ = sizeof_bits<StorageUnit>::value - (start_bit_idx_) < sizeof_bits<Element>::value 
+                              ? low_storage_unit_idx_ + 1 : low_storage_unit_idx_;
+    
+    full_element_mask_ = uint64_t(kMask) << start_bit_idx_;
+    low_storage_mask_ = StorageUnit(full_element_mask_ & ~StorageUnit(0));
+    high_storage_mask_ = StorageUnit((full_element_mask_ >> sizeof_bits<StorageUnit>::value) & ~StorageUnit(0));
+  }
+
+public:
+
+  CUTLASS_HOST_DEVICE
+  SubbyteReference(): ptr_(nullptr), offset_(0) { }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  SubbyteReference(
+    Element *ptr,           /// pointer to memory
+    int64_t offset          /// logical offset in units of Element
+  ): 
+    ptr_(reinterpret_cast<StorageVecPointer>(ptr)),
+    offset_(0) {
+    int64_t offset_in_vectors = offset / kElementsPerVector;
+    int64_t offset_in_elements = offset % kElementsPerVector;
+
+    ptr_ += offset_in_vectors;
+    offset_ = int(offset_in_elements);
+
+    update_element_status();
+  }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  SubbyteReference(
+    Element *ptr = nullptr
+  ): SubbyteReference(ptr, 0) { }
+
+  /// Gets StorageVec pointer
+  CUTLASS_HOST_DEVICE
+  StorageVecPointer storage_pointer() const {
+    return ptr_;
+  }
+
+  /// Gets StorageVec pointer
+  CUTLASS_HOST_DEVICE
+  Element * operator&() const {
+    return reinterpret_cast<Element *>(ptr_);
+  }
+
+  /// Gets element offset within StorageVec vector
+  CUTLASS_HOST_DEVICE
+  int element_offset() const {
+    return offset_;
+  }
+
+  /// Unpacks an element from memory
+  CUTLASS_HOST_DEVICE
+  Element get() const {
+    StorageUnit low_bits = (*ptr_)[low_storage_unit_idx_] & low_storage_mask_;
+    StorageUnit high_bits = low_storage_unit_idx_ != high_storage_unit_idx_ ? (*ptr_)[high_storage_unit_idx_] & high_storage_mask_ : 0;
+
+    uint64_t full_item = ((uint64_t)high_bits << sizeof_bits<StorageUnit>::value) | low_bits;
+    uint8_t result = uint8_t(full_item >> start_bit_idx_);
+
+    return reinterpret_cast<Element const &>(result);
+  }
+
+  /// Stores an element to memory
+  CUTLASS_HOST_DEVICE
+  SubbyteReference & set(Element const &x) {
+
+    uint64_t item = static_cast<uint64_t>((reinterpret_cast<uint8_t const &>(x) & kMask)) << start_bit_idx_;
+    
+    StorageUnit low_new_bits  = StorageUnit(item & ~StorageUnit(0));
+    StorageUnit high_new_bits = StorageUnit(item >> sizeof_bits<StorageUnit>::value);
+
+    StorageUnit const kLowUpdateMask  = StorageUnit((~full_element_mask_) & (~StorageUnit(0)));
+    StorageUnit const kHighUpdateMask = StorageUnit(((~full_element_mask_) >> sizeof_bits<StorageUnit>::value) & (~StorageUnit(0)));
+
+#if defined(__CUDA_ARCH__)
+    //
+    // Homebrew read-modify-write
+    //
+    if(high_storage_unit_idx_ != low_storage_unit_idx_){
+      /// Only need update 2 storage unit at once.
+      CudaAtomicType original, updated;
+      do {
+        StorageUnit original_low_bits  = ((*ptr_)[low_storage_unit_idx_]);
+        StorageUnit original_high_bits = ((*ptr_)[high_storage_unit_idx_]);
+
+        original = (CudaAtomicType(original_low_bits) << sizeof_bits<StorageUnit>::value) | original_low_bits;
+
+
+        StorageUnit update_low_bits  = (original_low_bits & kLowUpdateMask) | low_new_bits;
+        StorageUnit update_high_bits  = (original_high_bits & kHighUpdateMask) | high_new_bits;
+
+        updated = (CudaAtomicType(update_high_bits) << sizeof_bits<StorageUnit>::value) | update_low_bits;
+
+        original = atomicCAS(reinterpret_cast<CudaAtomicType *>(ptr_), original, updated);
+
+      } while (updated != original);
+    }
+    else {
+      /// Only need update 1 storage unit.
+      StorageUnit original, updated;
+      do {
+        original = ((*ptr_)[low_storage_unit_idx_]);
+
+        updated = (original & kLowUpdateMask) | low_new_bits;
+
+        original = atomicCAS(reinterpret_cast<StorageUnit *>(ptr_), original, updated);
+
+      } while (updated != original);
+    }
+#else
+
+    StorageUnit update_low_bits  = ((*ptr_)[low_storage_unit_idx_] & kLowUpdateMask) | low_new_bits;
+    StorageUnit update_high_bits = ((*ptr_)[high_storage_unit_idx_] & kHighUpdateMask) | high_new_bits;
+
+    (*ptr_)[low_storage_unit_idx_] = update_low_bits;
+
+    if(low_storage_unit_idx_ != high_storage_unit_idx_)
+      (*ptr_)[high_storage_unit_idx_] = update_high_bits;
+#endif
+
+    return *this;
+  }
+
+  ////
+
+  /// Unpacks an element from memory
+  CUTLASS_HOST_DEVICE
+  operator Element() const {
+    return get();
+  }
+
+  /// Stores an element to memory
+  CUTLASS_HOST_DEVICE
+  SubbyteReference &operator=(Element const & x) {
+    return set(x);
+  }
+
+  /// Stores an element to memory
+  CUTLASS_HOST_DEVICE
+  SubbyteReference &operator=(SubbyteReference const & x) {
+    return set(x.get());
+  }
+
+  /// Stores an element to memory
+  CUTLASS_HOST_DEVICE
+  SubbyteReference &operator=(
+      ConstSubbyteReference<Element, StorageVec> const &x) {
+    return set(x.get());
+  }
+
+  /// Adds an offset in units of elements to the reference
+  CUTLASS_HOST_DEVICE
+  SubbyteReference &operator+=(int offset) {
+
+    offset += offset_;
+    
+    int offset_in_vectors = offset / kElementsPerVector;
+    int offset_in_elements = offset % kElementsPerVector;
+
+    ptr_ += offset_in_vectors;
+    offset_ = offset_in_elements;
+
+    update_element_status();
+
+    return *this;
+  }
+
+  /// Adds an offset in units of elements to the reference
+  CUTLASS_HOST_DEVICE
+  SubbyteReference &operator+=(long long offset) {
+
+    offset += offset_;
+    
+    long long offset_in_vectors = offset / kElementsPerVector;
+    int offset_in_elements = int(offset % kElementsPerVector);
+
+    ptr_ += offset_in_vectors;
+    offset_ = offset_in_elements;
+
+    update_element_status();
+
+    return *this;
+  }
+
+  /// Adds an offset in units of elements to the reference
+  CUTLASS_HOST_DEVICE
+  SubbyteReference &operator-=(int offset) {
+    
+    int offset_in_vectors = offset / kElementsPerVector;
+    int offset_in_elements = offset % kElementsPerVector;
+
+    ptr_ -= offset_in_vectors;
+    offset_ -= offset_in_elements;
+
+    if (offset_ < 0) {
+      offset_ += kElementsPerVector;
+      --ptr_;
+    }
+
+    update_element_status();
+    return *this;
+  }
+
+  /// Adds an offset in units of elements to the reference
+  CUTLASS_HOST_DEVICE
+  SubbyteReference &operator-=(long long offset) {
+    
+    long long offset_in_vectors = offset / kElementsPerVector;
+    int offset_in_elements = int(offset % kElementsPerVector);
+
+    ptr_ -= offset_in_vectors;
+    offset_ -= offset_in_elements;
+
+    if (offset_ < 0) {
+      offset_ += kElementsPerVector;
+      --ptr_;
+    }
+
+    update_element_status();
+    return *this;
+  }
+
+  /// Returns a reference to an element with a given offset from the current reference
+  CUTLASS_HOST_DEVICE
+  SubbyteReference operator+(int offset) const {
+
+    SubbyteReference ref(ptr_, offset_);
+    ref += offset;
+
+    return ref;
+  }
+
+  /// Returns a reference to an element with a given offset from the current reference
+  CUTLASS_HOST_DEVICE
+  SubbyteReference operator+(long long offset) const {
+    
+    SubbyteReference ref(ptr_, offset_);
+    ref += offset;
+
+    return ref;
+  }
+
+  /// Returns a reference to an element with a given offset from the current reference
+  CUTLASS_HOST_DEVICE
+  SubbyteReference operator-(int offset) const {
+
+    SubbyteReference ref(ptr_, offset_);
+    ref -= offset;
+
+    return ref;
+  }
+
+  /// Returns a reference to an element with a given offset from the current reference
+  CUTLASS_HOST_DEVICE
+  SubbyteReference operator-=(long long offset) const {
+
+    SubbyteReference ref(ptr_, offset_);
+    ref -= offset;
+
+    return ref;
+  }
+
+  /// Computes the difference in elements between references
+  CUTLASS_HOST_DEVICE
+  ptrdiff_t operator-(SubbyteReference ref) const {
+    return (ptr_ - ref.ptr_) * kElementsPerVector + (offset_ - ref.offset_);
+  }
+
+  /// Explicit cast to int
+  CUTLASS_HOST_DEVICE
+  explicit operator int() const {
+    return int(get());
+  }
+
+  /// Explicit cast to signed 64-bit integer
+  CUTLASS_HOST_DEVICE
+  explicit operator int64_t() const {
+    return int64_t(get());
+  }
+
+  /// Explicit cast to unsigned 64-bit integer
+  CUTLASS_HOST_DEVICE
+  explicit operator uint64_t() const {
+    return uint64_t(get());
+  }
+
+  /// Explicit cast to float
+  CUTLASS_HOST_DEVICE
+  explicit operator float() const {
+    return float(get());
+  }
+
+  /// Explicit cast to double
+  CUTLASS_HOST_DEVICE
+  explicit operator double() const {
+    return double(get());
+  }
+};
+
+template <
+  typename Element_,              /// CUTLASS numeric element type.
+  typename Storage_               /// Underlying storage type. Must be able to hold an integer 
+>
+class ConstSubbyteReference<Element_, Storage_, 
+    typename platform::enable_if<sizeof_bits<Storage_>::value % sizeof_bits<Element_>::value != 0>::type> {
+public:
+
+  using Element = Element_;
+  ///! Note: Storage unit could not be divisibale by Element,   
+  ///   Type element may be stored across 2 storage units, so need a storage vector to hold integer
+  ///   number of objects of type Element.
+  using StorageUnit = Storage_;
+  static int const kBitsStoredVec = cutlass::lcm_cxx11(sizeof_bits<Element>::value, sizeof_bits<StorageUnit>::value); 
+  static int const kNumStorageUnitPerStoredVec = kBitsStoredVec / sizeof_bits<StorageUnit>::value;
+
+  using StorageVec = StorageUnit[kNumStorageUnitPerStoredVec];
+  using StorageVecPointer = StorageVec const *;
+  
+  using CudaAtomicType = typename platform::conditional<
+      sizeof_bits<StorageUnit>::value == 16,
+      uint32_t,
+      uint64_t
+    >::type;
+
+  static_assert(sizeof_bits<Element>::value <= sizeof_bits<StorageVec>::value,
+    "Size of Element must not be greater than StorageVec.");
+
+  static_assert(!(sizeof_bits<StorageVec>::value % sizeof_bits<Element>::value),
+    "StorageVec must be divisible by Element");
+
+private:
+
+  ///! Number of elements per storage vector
+  int const kElementsPerVector = sizeof_bits<StorageVec>::value / sizeof_bits<Element>::value;
+
+  ///! Bit mask for storage unit.
+  StorageUnit const kMask = (StorageUnit(1) << sizeof_bits<Element>::value) - StorageUnit(1);
+
+  /// Pointer to array containing element
+  StorageVecPointer ptr_;
+
+  /// Offset (in units of elements) from pointer.
+  ///
+  /// Invariant: must always be in range [0, kElementsPerVector)
+  int offset_;
+
+  /// Element may be stored across 2 storage unit.
+  ///   Low storage unit index in StorageVec
+  ///   High storage unit index in StorageVec
+  int low_storage_unit_idx_;
+  int high_storage_unit_idx_;
+
+  /// Full Mask to extract the entire element
+  uint64_t full_element_mask_;
+
+  /// Mask to extract the Element from Low storage unit and High storage unit.
+  StorageUnit low_storage_mask_;
+  StorageUnit high_storage_mask_;
+
+  /// Start bit index inside the storage unit.
+  int start_bit_idx_;
+
+private:
+
+  CUTLASS_HOST_DEVICE
+  void update_element_status() {
+    int num_bits = offset_ * sizeof_bits<Element>::value;
+
+    start_bit_idx_ = num_bits % sizeof_bits<StorageUnit>::value;
+    
+    low_storage_unit_idx_ = num_bits / sizeof_bits<StorageUnit>::value;
+    high_storage_unit_idx_ = sizeof_bits<StorageUnit>::value - (start_bit_idx_) < sizeof_bits<Element>::value 
+                              ? low_storage_unit_idx_ + 1 : low_storage_unit_idx_;
+    
+    full_element_mask_ = uint64_t(kMask) << start_bit_idx_;
+    low_storage_mask_ = StorageUnit(full_element_mask_ & ~StorageUnit(0));
+    high_storage_mask_ = StorageUnit((full_element_mask_ >> sizeof_bits<StorageUnit>::value) & ~StorageUnit(0));
+  }
+
+public:
+
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference(): ptr_(nullptr), offset_(0) { }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference(
+    Element const *ptr,           /// pointer to memory
+    int64_t offset          /// logical offset in units of Element
+  ): 
+    ptr_(reinterpret_cast<StorageVecPointer>(ptr)),
+    offset_(0) {
+
+    int64_t offset_in_vectors = offset / kElementsPerVector;
+    int64_t offset_in_elements = offset % kElementsPerVector;
+
+    ptr_ += offset_in_vectors;
+    offset_ = int(offset_in_elements);
+
+    update_element_status();
+  }
+
+  /// Constructor
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference(
+    Element *ptr = nullptr
+  ): ConstSubbyteReference(ptr, 0) { }
+
+  /// Gets storage pointer
+  CUTLASS_HOST_DEVICE
+  StorageVecPointer storage_pointer() const {
+    return ptr_;
+  }
+
+  /// Gets element offset within storage vector
+  CUTLASS_HOST_DEVICE
+  int element_offset() const {
+    return offset_;
+  }
+
+  /// Unpacks an element from memory
+  CUTLASS_HOST_DEVICE
+  Element get() const {
+    StorageUnit low_bits = (*ptr_)[low_storage_unit_idx_] & low_storage_mask_;
+    StorageUnit high_bits = low_storage_unit_idx_ != high_storage_unit_idx_ ? (*ptr_)[high_storage_unit_idx_] & high_storage_mask_ : 0;
+
+    uint64_t full_item = ((uint64_t)high_bits << sizeof_bits<StorageUnit>::value) | low_bits;
+    uint8_t result = uint8_t(full_item >> start_bit_idx_);
+
+    return reinterpret_cast<Element const &>(result);
+  }
+
+  /// Unpacks an element from memory
+  CUTLASS_HOST_DEVICE
+  operator Element() const {
+    return get();
+  }
+
+  /// Adds an offset in units of elements to the reference
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference &operator+=(int offset) {
+
+    offset += offset_;
+    
+    int offset_in_vectors = offset / kElementsPerVector;
+    int offset_in_elements = offset % kElementsPerVector;
+
+    ptr_ += offset_in_vectors;
+    offset_ = offset_in_elements;
+
+    update_element_status();
+
+    return *this;
+  }
+
+  /// Adds an offset in units of elements to the reference
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference &operator+=(long long offset) {
+
+    offset += offset_;
+    
+    long long offset_in_vectors = offset / kElementsPerVector;
+    int offset_in_elements = int(offset % kElementsPerVector);
+
+    ptr_ += offset_in_vectors;
+    offset_ = offset_in_elements;
+
+    update_element_status();
+
+    return *this;
+  }
+
+  /// Adds an offset in units of elements to the reference
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference &operator-=(int offset) {
+    
+    int offset_in_vectors = offset / kElementsPerVector;
+    int offset_in_elements = offset % kElementsPerVector;
+
+    ptr_ -= offset_in_vectors;
+    offset_ -= offset_in_elements;
+
+    if (offset_ < 0) {
+      offset_ += kElementsPerVector;
+      --ptr_;
+    }
+
+    update_element_status();
+
+    return *this;
+  }
+
+  /// Adds an offset in units of elements to the reference
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference &operator-=(long long offset) {
+    
+    long long offset_in_vectors = offset / kElementsPerVector;
+    int offset_in_elements = int(offset % kElementsPerVector);
+
+    ptr_ -= offset_in_vectors;
+    offset_ -= offset_in_elements;
+
+    if (offset_ < 0) {
+      offset_ += kElementsPerVector;
+      --ptr_;
+    }
+
+    update_element_status();
+
+    return *this;
+  }
+
+  /// Returns a reference to an element with a given offset from the current reference
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference operator+(int offset) const {
+
+    ConstSubbyteReference ref(ptr_, offset_);
+    ref += offset;
+
+    return ref;
+  }
+
+  /// Returns a reference to an element with a given offset from the current reference
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference operator+(long long offset) const {
+    
+    ConstSubbyteReference ref(ptr_, offset_);
+    ref += offset;
+
+    return ref;
+  }
+
+  /// Returns a reference to an element with a given offset from the current reference
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference operator-(int offset) const {
+
+    ConstSubbyteReference ref(ptr_, offset_);
+    ref -= offset;
+
+    return ref;
+  }
+
+  /// Returns a reference to an element with a given offset from the current reference
+  CUTLASS_HOST_DEVICE
+  ConstSubbyteReference operator-=(long long offset) const {
+
+    ConstSubbyteReference ref(ptr_, offset_);
+    ref -= offset;
+
+    return ref;
+  }
+
+  /// Computes the difference in elements between references
+  CUTLASS_HOST_DEVICE
+  ptrdiff_t operator-(ConstSubbyteReference ref) const {
     return (ptr_ - ref.ptr_) * kElementsPerVector + (offset_ - ref.offset_);
   }
 

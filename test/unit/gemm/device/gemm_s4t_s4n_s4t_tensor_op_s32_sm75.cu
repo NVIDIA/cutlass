@@ -49,7 +49,6 @@
 #include "testbed.h"
 
 #if defined(CUTLASS_ARCH_MMA_SM75_SUPPORTED)
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 TEST(SM75_Device_Gemm_s4t_s4n_s4t_tensor_op_s32, 128x256x128_64x64x128) {
@@ -243,6 +242,7 @@ TEST(SM75_Device_Gemm_s4t_s4n_s4t_tensor_op_s32, 256x64x128_64x64x128) {
 
   EXPECT_TRUE(test::gemm::device::TestAllGemmBasic<Gemm>());
 }
+
 TEST(SM75_Device_Gemm_s4t_s4n_s4t_tensor_op_s32, 64x128x128_32x64x128) {
 
   using ElementOutput = cutlass::int4b_t;
@@ -340,5 +340,4 @@ TEST(SM75_Device_Gemm_s4t_s4n_s4t_tensor_op_s32, 64x64x128_32x32x128) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
 #endif

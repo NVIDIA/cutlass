@@ -49,6 +49,51 @@ namespace thread {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+template <class Activation, class = void>
+struct GenericActivationTraits {
+  static constexpr bool IsArgumentsNeeded = false;
+  struct Arguments {};
+};
+
+template <class Activation>
+struct GenericActivationTraits<Activation, decltype(typename Activation::Arguments(), void())> {
+  static constexpr bool IsArgumentsNeeded = true;
+  using Arguments = typename Activation::Arguments;
+};
+
+template <typename T>
+struct LinearCombinationGenericParams {
+  T alpha;                  ///< scales accumulators
+  T beta;                   ///< scales source tensor
+  T const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
+  T const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
+
+  //
+  // Methods
+  //
+
+  CUTLASS_HOST_DEVICE
+  LinearCombinationGenericParams():
+    alpha(T(1)),
+    beta(T(0)),
+    alpha_ptr(nullptr),
+    beta_ptr(nullptr) { }
+
+  CUTLASS_HOST_DEVICE
+  LinearCombinationGenericParams(
+    T alpha,
+    T beta = T(0)
+  ): alpha(alpha), beta(beta), alpha_ptr(nullptr), beta_ptr(nullptr) { }
+
+  CUTLASS_HOST_DEVICE
+  LinearCombinationGenericParams(
+    T const *alpha_ptr,
+    T const *beta_ptr = nullptr
+  ): alpha(0), beta(0), alpha_ptr(alpha_ptr), beta_ptr(beta_ptr) { }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// Applies a linear combination operator followed by an activation function to an array of elements.
 ///
 /// D = activation(alpha * accumulator + beta * source + uniform)
@@ -84,7 +129,11 @@ public:
   static FloatRoundStyle const kRound = Round;
 
   /// Host-constructable parameters structure
-  using Params = typename ActivationFunctor<FragmentCompute>::Params;
+  struct Params
+    : LinearCombinationGenericParams<ElementCompute>,
+      GenericActivationTraits<ActivationFunctor<ElementCompute>>::Arguments {
+    using LinearCombinationGenericParams<ElementCompute>::LinearCombinationGenericParams;
+  };
 
 private:
 
@@ -161,7 +210,11 @@ public:
       intermediate = mul_add_accumulator(params_.alpha, converted_accumulator, intermediate);    // D = alpha * Accum + X
     }
 
-    intermediate = skip_elementwise_ ? intermediate : activation(intermediate, params_);
+    if constexpr (GenericActivationTraits<ActivationFunctor<ElementCompute>>::IsArgumentsNeeded) {
+      intermediate = skip_elementwise_ ? intermediate : activation(intermediate, params_);
+    } else {
+      intermediate = skip_elementwise_ ? intermediate : activation(intermediate);
+    }
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;
@@ -192,7 +245,11 @@ public:
       intermediate = mul_add_accumulator(params_.alpha, converted_accumulator);    // D = alpha * Accum
     }
 
-    intermediate = skip_elementwise_ ? intermediate : activation(intermediate, params_);
+    if constexpr (GenericActivationTraits<ActivationFunctor<FragmentCompute>>::IsArgumentsNeeded) {
+      intermediate = skip_elementwise_ ? intermediate : activation(intermediate, params_);
+    } else {
+      intermediate = skip_elementwise_ ? intermediate : activation(intermediate);
+    }
 
     // Convert to destination numeric type
     NumericArrayConverter<ElementOutput, ElementCompute, kCount, Round> destination_converter;

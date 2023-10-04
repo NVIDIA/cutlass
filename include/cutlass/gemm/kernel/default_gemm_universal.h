@@ -94,7 +94,7 @@ template <
     typename ThreadblockShape,
     /// Warp-level tile size (concept: GemmShape)
     typename WarpShape,
-    /// Warp-level tile size (concept: GemmShape)
+    /// Instruction tile size (concept: GemmShape)
     typename InstructionShape,
     /// Epilogue output operator
     typename EpilogueOutputOp,

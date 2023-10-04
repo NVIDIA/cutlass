@@ -34,18 +34,18 @@
 Registry of swizzling functions
 """
 
-import cutlass_bindings
+from cutlass import SwizzlingFunctor
 
-IdentitySwizzle1 = cutlass_bindings.IdentitySwizzle1
-IdentitySwizzle2 = cutlass_bindings.IdentitySwizzle2
-IdentitySwizzle4 = cutlass_bindings.IdentitySwizzle4
-IdentitySwizzle8 = cutlass_bindings.IdentitySwizzle8
-HorizontalSwizzle = cutlass_bindings.HorizontalSwizzle
-BatchedIdentitySwizzle = cutlass_bindings.BatchedIdentitySwizzle
-ThreadblockSwizzleStreamK = cutlass_bindings.ThreadblockSwizzleStreamK
-StridedDgradIdentitySwizzle1 = cutlass_bindings.StridedDgradIdentitySwizzle1
-StridedDgradIdentitySwizzle4 = cutlass_bindings.StridedDgradIdentitySwizzle4
-StridedDgradHorizontalSwizzle = cutlass_bindings.StridedDgradHorizontalSwizzle
+
+IdentitySwizzle1 = SwizzlingFunctor.Identity1
+IdentitySwizzle2 = SwizzlingFunctor.Identity2
+IdentitySwizzle4 = SwizzlingFunctor.Identity4
+IdentitySwizzle8 = SwizzlingFunctor.Identity8
+HorizontalSwizzle = SwizzlingFunctor.Horizontal
+ThreadblockSwizzleStreamK = SwizzlingFunctor.StreamK
+StridedDgradIdentitySwizzle1 = SwizzlingFunctor.StridedDgradIdentity1
+StridedDgradIdentitySwizzle4 = SwizzlingFunctor.StridedDgradIdentity4
+StridedDgradHorizontalSwizzle = SwizzlingFunctor.StridedDgradHorizontal
 
 
 _swizzling_functors = [
@@ -54,7 +54,6 @@ _swizzling_functors = [
     IdentitySwizzle4,
     IdentitySwizzle8,
     HorizontalSwizzle,
-    BatchedIdentitySwizzle,
     ThreadblockSwizzleStreamK,
     StridedDgradIdentitySwizzle1,
     StridedDgradIdentitySwizzle4,

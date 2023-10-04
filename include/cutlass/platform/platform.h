@@ -55,7 +55,7 @@
  *   (2) Re-implementations of STL functions and types:
  *       - C++ features that need the \p __device__ annotation.  These are
  *         placed into the \p platform namespace.
- *           - \p abs 
+ *           - \p abs
  *           - \p plus
  *           - \p less
  *           - \p greater
@@ -90,20 +90,31 @@
  *           - \p alignment_of
  *           - \p aligned_storage
  *
- *   (4) Functions and types that are STL-like (but aren't in the STL):
- *           - \p TODO: min and max functors?
- *
  * The idea is that, as we drop support for older compilers, we can simply #define
  * the \p __NV_STD_XYZ macros and \p platform namespace to alias their C++
  * counterparts (or trivially find-and-replace their occurrences in code text).
  */
+
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by `cutlass_test_unit_core_cpp11`.
+*/
 
 //-----------------------------------------------------------------------------
 // Dependencies
 //-----------------------------------------------------------------------------
 
 #if defined(__CUDACC_RTC__)
+#include <cuda/std/type_traits>
+#include <cuda/std/utility>
+#include <cuda/std/cstddef>
 #include <cuda/std/cstdint>
+#include <cuda/std/limits>
 #else
 #include <stdint.h>
 #endif
@@ -116,6 +127,7 @@
 #include <algorithm>   // Minimum/maximum operations
 #include <cstddef>     // nullptr_t
 #include <functional>  // Arithmetic operations
+#include <limits>      // float_round_style, float_denorm_style
 #include <utility>     // For methods on std::pair
 #if (!defined(_MSC_VER) && (__cplusplus >= 201103L)) || (defined(_MSC_VER) && (_MS_VER >= 1500))
 #include <type_traits>  // For integral constants, conditional metaprogramming, and type traits
@@ -135,6 +147,24 @@
 /******************************************************************************
  * Macros
  ******************************************************************************/
+/// std
+#if !defined(CUTLASS_STL_NAMESPACE)
+#if defined(__CUDACC_RTC__)
+#define CUTLASS_STL_NAMESPACE cuda::std
+#else
+#define CUTLASS_STL_NAMESPACE std
+#endif
+#endif
+
+/// builtin_unreachable
+#if !defined(CUTLASS_GCC_UNREACHABLE)
+#  if defined(__clang__) || defined(__GNUC__)
+#    define CUTLASS_GCC_UNREACHABLE __builtin_unreachable()
+#  else
+#    define CUTLASS_GCC_UNREACHABLE
+#  endif
+#endif
+
 //-----------------------------------------------------------------------------
 // Keywords
 //-----------------------------------------------------------------------------
@@ -335,7 +365,7 @@ using std::nullptr_t;
 // Conditional metaprogramming <type_traits>
 //-----------------------------------------------------------------------------
 
-#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1600))
+#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201700L)) || (defined(_MSC_VER) && (_MSC_VER < 1600))
 
 /// std::enable_if (true specialization)
 template <bool C, typename T = void>
@@ -366,11 +396,16 @@ using std::conditional;
 
 #endif
 
+#if (201703L <=__cplusplus)
+/// std::conditional_t
+using CUTLASS_STL_NAMESPACE::conditional_t;
+#endif
+
 //-----------------------------------------------------------------------------
 // Const/volatility specifiers <type_traits>
 //-----------------------------------------------------------------------------
 
-#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
+#if defined(__CUDACC_RTC__) || (!defined(_MSC_VER) && (__cplusplus < 201703L)) || (defined(_MSC_VER) && (_MSC_VER < 1500))
 
 /// std::remove_const (non-const specialization)
 template <typename T>
@@ -409,6 +444,28 @@ using std::remove_volatile;
 using std::remove_cv;
 
 #endif
+
+#if (201703L <=__cplusplus)
+
+/// std::remove_cv_t
+using CUTLASS_STL_NAMESPACE::remove_cv_t;
+/// std::remove_reference_t
+using CUTLASS_STL_NAMESPACE::remove_reference_t;
+
+// C++20
+// using std::remove_cvref;
+template <class T>
+struct remove_cvref {
+  using type = remove_cv_t<remove_reference_t<T>>;
+};
+
+// C++20
+// using std::remove_cvref_t;
+template <class T>
+using remove_cvref_t = typename remove_cvref<T>::type;
+
+#endif
+
 
 //-----------------------------------------------------------------------------
 // Type relationships <type_traits>
@@ -571,6 +628,15 @@ struct is_trivially_copyable
 #else
 
 using std::is_trivially_copyable;
+
+#endif
+
+#if (201703L <=__cplusplus)
+
+/// std::is_unsigned_v
+using CUTLASS_STL_NAMESPACE::is_integral_v;
+/// std::is_unsigned_v
+using CUTLASS_STL_NAMESPACE::is_unsigned_v;
 
 #endif
 
@@ -888,6 +954,20 @@ struct numeric_limits<float> {
   static constexpr bool has_infinity = true;
 };
 #endif
+
+/// std::float_round_style
+using CUTLASS_STL_NAMESPACE::float_round_style;
+using CUTLASS_STL_NAMESPACE::round_indeterminate;
+using CUTLASS_STL_NAMESPACE::round_toward_zero;
+using CUTLASS_STL_NAMESPACE::round_to_nearest;
+using CUTLASS_STL_NAMESPACE::round_toward_infinity;
+using CUTLASS_STL_NAMESPACE::round_toward_neg_infinity;
+
+/// std::float_denorm_style
+using CUTLASS_STL_NAMESPACE::float_denorm_style;
+using CUTLASS_STL_NAMESPACE::denorm_indeterminate;
+using CUTLASS_STL_NAMESPACE::denorm_absent;
+using CUTLASS_STL_NAMESPACE::denorm_present;
 
 }  // namespace platform
 }  // namespace cutlass

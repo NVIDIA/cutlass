@@ -199,7 +199,7 @@ class complex
   template <typename OtherT>
   CUTLASS_DEVICE void red(complex<OtherT> *ptr) const {
     static_assert(platform::is_same<T, OtherT>::value, "Component type must match");
-    cutlass::red<T> reduce;
+    cutlass::atomic_add<T> reduce;
     reduce(&ptr->_real, _real);
     reduce(&ptr->_imag, _imag);
   }
@@ -209,7 +209,7 @@ class complex
     static_assert(platform::is_same<T, half_t>::value, "Component type must match");
     half2 *h2_ptr = reinterpret_cast<half2*>(ptr);
     half2 h2_data = reinterpret_cast<half2&>(*this);
-    cutlass::red<half2> reduce;
+    cutlass::atomic_add<half2> reduce;
     reduce(h2_ptr, h2_data);
   }
 
@@ -300,6 +300,13 @@ class complex
   CUTLASS_HOST_DEVICE
   T &imag() { return _imag; }
 
+  /// Set the real part of the complex number
+  CUTLASS_HOST_DEVICE
+  void real(T real) { _real = real; }
+
+  /// Set the imaginary part of the complex number
+  CUTLASS_HOST_DEVICE
+  void imag(T imag) { _imag = imag; }
 
   #if !defined(__CUDACC_RTC__)
   /// Converts to cuFloatComplex
@@ -431,17 +438,47 @@ CUTLASS_HOST_DEVICE R norm_accumulate(T const &x, R const & accumulator) {
 /// Norm accumulate specialized for complex types
 template <typename T, typename R>
 CUTLASS_HOST_DEVICE R norm_accumulate(complex<T> const &z, R const &accumulator) {
-  return accumulator + static_cast<R>(real(z)) * static_cast<R>(real(z)) + 
+  return accumulator + static_cast<R>(real(z)) * static_cast<R>(real(z)) +
     static_cast<R>(imag(z)) * static_cast<R>(imag(z));
 }
 
-/// Returns the complex conjugate
 CUTLASS_HOST_DEVICE float conj(float const &z) {
   return z;
 }
 
-/// Returns the complex conjugate
 CUTLASS_HOST_DEVICE double conj(double const &z) {
+  return z;
+}
+
+CUTLASS_HOST_DEVICE half_t conj(half_t const& z) {
+  return z;
+}
+
+CUTLASS_HOST_DEVICE int32_t conj(int32_t const& z) {
+  return z;
+}
+
+CUTLASS_HOST_DEVICE uint32_t conj(uint32_t const& z) {
+  return z;
+}
+
+CUTLASS_HOST_DEVICE int4b_t conj(int4b_t const& z) {
+  return z;
+}
+
+CUTLASS_HOST_DEVICE uint4b_t conj(uint4b_t const& z) {
+  return z;
+}
+
+CUTLASS_HOST_DEVICE bfloat16_t conj(bfloat16_t const& z) {
+  return z;
+}
+
+CUTLASS_HOST_DEVICE uint1b_t conj(uint1b_t const& z) {
+  return z;
+}
+
+CUTLASS_HOST_DEVICE tfloat32_t conj(tfloat32_t const& z) {
   return z;
 }
 
@@ -449,15 +486,6 @@ CUTLASS_HOST_DEVICE double conj(double const &z) {
 template <typename T>
 CUTLASS_HOST_DEVICE complex<T> conj(complex<T> const &z) {
   return complex<T>(real(z), -imag(z));
-}
-/// Indentity transform for non-complex types
-template <typename T>
-CUTLASS_HOST_DEVICE T conj(T const &z) {
-    static_assert( !platform::is_same<T, cuComplex>::value &&
-                   !platform::is_same<T, cuDoubleComplex>::value &&
-                   !platform::is_same<T, cutlass::complex<double>>::value &&
-                   !platform::is_same<T, cutlass::complex<float>>::value, "May not be a complex data type");
-  return z;
 }
 
 /// Projects the complex number z onto the Riemann sphere
@@ -511,11 +539,10 @@ CUTLASS_HOST_DEVICE complex<T> sin(complex<T> const &z) {
   return (exp(-z) - exp(z)) * complex<T>(T(0), T(1) / T(2));
 }
 
-/// Comparison 
+/// Comparison
 template <typename T>
 CUTLASS_HOST_DEVICE bool operator<(complex<T> const &lhs, complex<T> const &rhs) {
-  //TODO
-  return true; 
+  return true;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -679,7 +706,7 @@ struct magnitude_squared_difference<complex<T>, Output> {
 
 /// Reduces value into the data pointed to by ptr (complex<T> specialization)
 template <typename T>
-struct red<complex<T>> {
+struct atomic_add<complex<T>> {
   CUTLASS_DEVICE
   void operator()(complex<T> *ptr, const complex<T> &data)
   {

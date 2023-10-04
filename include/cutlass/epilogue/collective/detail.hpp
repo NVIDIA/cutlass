@@ -33,11 +33,13 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/pipeline/pipeline.hpp"
+#include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/epilogue/dispatch_policy.hpp"
 
 #include "cute/tensor.hpp"
 #include "cute/numeric/int.hpp"
+#include "cute/util/type_traits.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -47,16 +49,32 @@ namespace collective {
 
 namespace detail {
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template <class Stride>
+constexpr bool
+is_m_major() {
+  return cutlass::gemm::detail::is_major<0,Stride>();
+}
+
+template <class Stride>
+constexpr bool
+is_n_major() {
+  return cutlass::gemm::detail::is_major<1,Stride>();
+}
+
+using cutlass::atomic_maximum;
+
 template <class T>
 static constexpr int elements_per_access_v = cutlass::sizeof_bits<uint32_t>::value / cutlass::sizeof_bits<T>::value;
 
 template <class EpilogueSchedule>
 static constexpr bool sm90_is_cooperative_v =
-  std::is_base_of_v<cutlass::epilogue::TmaWarpSpecializedCooperative, EpilogueSchedule>;
+  cute::is_base_of_v<cutlass::epilogue::TmaWarpSpecializedCooperative, EpilogueSchedule>;
 
 template <class EpilogueSchedule>
 static constexpr bool sm90_is_warp_specialized_v =
-  std::is_base_of_v<cutlass::epilogue::TmaWarpSpecialized, EpilogueSchedule>;
+  cute::is_base_of_v<cutlass::epilogue::TmaWarpSpecialized, EpilogueSchedule>;
 
 template <class T>
 struct EmptyStorage {
@@ -87,25 +105,19 @@ struct IsThreadEpilogueOpWithBias <ThreadEpilogueOp, cute::void_t<typename Threa
   using type = typename ThreadEpilogueOp::ElementBias; 
 };
 
-// IF_EPILOGUE_USES_TMA<T>::value will be true only if:
-//   class T has member CopyOpS2G and T::CopyOpS2G is true
-template <typename T, typename = void>
-struct IF_EPILOGUE_USES_TMA { static constexpr bool value = false; };
-
-template <typename T>
-struct IF_EPILOGUE_USES_TMA <T, void_t<typename T::CopyOpS2G>>
-{ static constexpr bool value = true; };
-
 // Wrapper class to use operator-style epilogues in sm90 TMA warp-specialized kernels
 template <class EpilogueOp>
 class Sm90TmaWarpSpecializedAdapter : public EpilogueOp {
 public:
-  using LoadPipeline = cutlass::PipelineTransactionAsync<0>; // 0 stage to disable smem alloc
+  using GmemTiledCopyC = void;
+  using GmemTiledCopyD = void;
+
+  using LoadPipeline = cutlass::PipelineTransactionAsync<0>;
   using LoadPipelineState = cutlass::PipelineState<0>;
   constexpr static uint32_t TmaTransactionBytes = 0;
 
-  using StorePipeline = cutlass::PipelineTmaStore<1>; // tma store pipe has no smem alloc
-  using StorePipelineState = cutlass::PipelineState<1>;
+  using StorePipeline = cutlass::PipelineTmaStore<0>;
+  using StorePipelineState = cutlass::PipelineState<0>;
 
   using TensorStorage = typename EpilogueOp::SharedStorage;
   using PipelineStorage = typename LoadPipeline::SharedStorage;
@@ -125,12 +137,23 @@ public:
   }
 
   CUTLASS_DEVICE
-  static void prefetch_tma_descriptors([[maybe_unused]] typename EpilogueOp::Params const&)
-  {
+  static void prefetch_tma_descriptors([[maybe_unused]] typename EpilogueOp::Params const&) {
   }
 
   // ctor inheritance
   using EpilogueOp::EpilogueOp;
+
+  CUTLASS_HOST_DEVICE
+  Sm90TmaWarpSpecializedAdapter(
+      typename EpilogueOp::Params const& params,
+      [[maybe_unused]] TensorStorage& shared_tensors)
+    : EpilogueOp(params) { }
+
+  CUTLASS_DEVICE
+  bool
+  is_producer_load_needed() const {
+    return false;
+  }
 
   template<
     class ProblemShapeMNKL,
@@ -138,10 +161,10 @@ public:
     class TileCoordMNKL,
     class TiledMma
   >
-  CUTLASS_DEVICE void
+  CUTLASS_DEVICE auto
   load(
       [[maybe_unused]] LoadPipeline load_pipeline,
-      [[maybe_unused]] LoadPipelineState load_pipe_producer_state,
+      LoadPipelineState load_pipe_producer_state,
       [[maybe_unused]] ProblemShapeMNKL problem_shape_mnkl,
       [[maybe_unused]] TileShapeMNK tile_shape_MNK,
       [[maybe_unused]] TileCoordMNKL tile_coord_mnkl,
@@ -149,14 +172,15 @@ public:
       [[maybe_unused]] int thread_idx,
       [[maybe_unused]] TensorStorage& shared_tensors)
   {
-    // source load is performed in epilogue operator
+    return load_pipe_producer_state;
   }
 
-  CUTLASS_DEVICE void
+  CUTLASS_DEVICE auto
   load_tail(
       [[maybe_unused]] LoadPipeline load_pipeline,
-      [[maybe_unused]] LoadPipelineState load_pipe_producer_state)
+      LoadPipelineState load_pipe_producer_state)
   {
+    return load_pipe_producer_state;
   }
 
   template<
@@ -166,12 +190,12 @@ public:
     class AccEngine, class AccLayout,
     class TiledMma
   >
-  CUTLASS_DEVICE void
+  CUTLASS_DEVICE auto
   store(
       [[maybe_unused]] LoadPipeline load_pipeline,
-      [[maybe_unused]] LoadPipelineState load_pipe_consumer_state,
+      LoadPipelineState load_pipe_consumer_state,
       [[maybe_unused]] StorePipeline store_pipeline,
-      [[maybe_unused]] StorePipelineState store_pipe_producer_state,
+      StorePipelineState store_pipe_producer_state,
       ProblemShapeMNKL problem_shape_mnkl,
       TileShapeMNK tile_shape_MNK,
       TileCoordMNKL tile_coord_mnkl,
@@ -201,6 +225,17 @@ public:
         residue_mnk,
         thread_idx,
         reinterpret_cast<char*>(&shared_tensors));
+
+    return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state);
+  }
+
+  CUTLASS_DEVICE auto
+  store_tail(
+      [[maybe_unused]] LoadPipeline load_pipeline,
+      LoadPipelineState load_pipe_consumer_state,
+      [[maybe_unused]] StorePipeline store_pipeline,
+      StorePipelineState store_pipe_producer_state) {
+    return cute::make_tuple(load_pipe_consumer_state, store_pipe_producer_state);
   }
 
 };
