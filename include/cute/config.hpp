@@ -123,7 +123,7 @@
 #define CUTE_STATIC_ASSERT_V(x,...) static_assert(decltype(x)::value, ##__VA_ARGS__)
 
 #if defined(__CUDA_ARCH__)
-#  define CUTE_RUNTIME_ASSERT(x) __brkpt()
+#  define CUTE_RUNTIME_ASSERT(x)  do { printf(x); __brkpt(); } while(0)
 #else
 #  define CUTE_RUNTIME_ASSERT(x) assert(0 && x)
 #endif
