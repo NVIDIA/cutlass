@@ -462,6 +462,14 @@ CUTLASS_HOST_DEVICE uint32_t conj(uint32_t const& z) {
   return z;
 }
 
+CUTLASS_HOST_DEVICE int64_t conj(int64_t const& z) {
+  return z;
+}
+
+CUTLASS_HOST_DEVICE uint64_t conj(uint64_t const& z) {
+  return z;
+}
+
 CUTLASS_HOST_DEVICE int4b_t conj(int4b_t const& z) {
   return z;
 }
