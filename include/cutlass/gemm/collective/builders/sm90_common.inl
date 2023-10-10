@@ -50,6 +50,36 @@ constexpr int tma_alignment_bytes = 16;
 constexpr int cp_async_min_alignment_bytes = 4;
 constexpr int sm90_smem_capacity_bytes = 232448;
 
+// Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count. 
+template<int CapacityBytes, class ElementA, class ElementB, class TileShapeMNK, int stages>
+constexpr int
+compute_stage_count_or_override(StageCount<stages> stage_count) {
+  return stages;
+}
+
+// Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count. 
+template<int CapacityBytes, class ElementA, class ElementB, class TileShapeMNK, int stages>
+constexpr int
+compute_stage_count_or_override(cute::Int<stages> stage_count) {
+  return stages;
+}
+
+// Returns the maximum number of smem tiles that can be used with a given smem capacity, or overrides with manual count. 
+template<int CapacityBytes, class ElementA, class ElementB, class TileShapeMNK, int carveout_bytes>
+constexpr int
+compute_stage_count_or_override(StageCountAutoCarveout<carveout_bytes> stage_count) {
+  // 32 bytes to account for barriers etc.
+  constexpr int stage_barrier_bytes = 32;
+  constexpr int a_bytes = static_cast<int>(sizeof(ElementA));
+  constexpr int b_bytes = static_cast<int>(sizeof(ElementB));
+  constexpr int stage_bytes =
+    (a_bytes * size<0>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
+    (b_bytes * size<1>(TileShapeMNK{}) * size<2>(TileShapeMNK{})) +
+    stage_barrier_bytes;
+
+  return (CapacityBytes - carveout_bytes) / stage_bytes;
+}
+
 // Maps 2.x A matrix layout tag to respective GMMA major mode enum
 template <class ElementA, class LayoutA>
 constexpr cute::GMMA::Major

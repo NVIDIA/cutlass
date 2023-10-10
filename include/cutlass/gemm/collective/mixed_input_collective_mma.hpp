@@ -30,32 +30,47 @@
  **************************************************************************************************/
 #pragma once
 
+#include "cutlass/detail/dependent_false.hpp"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
-#include "cutlass/gemm/collective/collective_builder_common.hpp"
-#include "cutlass/gemm/collective/collective_mma.hpp"
 
 namespace cutlass::gemm::collective {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+enum class MixedInputCastDirection {
+  NARROW_TO_WIDE, // Promote narrow type to wider type before mma
+  WIDE_TO_NARROW  // Demote wider type to narrow type before mma
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 template <
-  class ArchTag,
-  class OpClass,
+  class DispatchPolicy,
+  class TileShape,
   class ElementA,
-  class GmemLayoutA,
-  int AlignmentA,
+  class StrideA,
   class ElementB,
-  class GmemLayoutB,
-  int AlignmentB,
-  class ElementAccumulator,
-  class TileShape_MNK,
-  class ClusterShape_MNK,
-  class StageCountType,
-  class KernelScheduleType,
-  class Enable = void
+  class StrideB,
+  class ElementScale,
+  class StrideScale,
+  MixedInputCastDirection CastDirection,
+  class TiledMma,
+  class GmemTiledCopyA,
+  class SmemLayoutAtomA,
+  class SmemCopyAtomA,
+  class TransformA,
+  class GmemTiledCopyB,
+  class SmemLayoutAtomB,
+  class SmemCopyAtomB,
+  class TransformB,
+  class GmemTiledCopyScale,
+  class SmemLayoutAtomScale,
+  class SmemCopyAtomScale,
+  class TransformScale
 >
-struct CollectiveBuilder {
-  static_assert(sizeof(ElementA) == 0, "Could not build a collective for given parameters.");
+struct MixedInputCollectiveMma {
+  static_assert(cutlass::detail::dependent_false<ElementA> == 0, "Could not find a mainloop specialization.");
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -64,5 +79,6 @@ struct CollectiveBuilder {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "cutlass/gemm/collective/builders/sm90_gmma_builder.inl"
+#include "cutlass/gemm/collective/sm90_mixed_mma_tma_gmma_rs_warpspecialized.hpp"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////

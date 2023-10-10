@@ -32,7 +32,7 @@
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 #include "cutlass/gemm/collective/collective_builder_common.hpp"
-#include "cutlass/gemm/collective/collective_mma.hpp"
+#include "cutlass/gemm/collective/mixed_input_collective_mma.hpp"
 
 namespace cutlass::gemm::collective {
 
@@ -47,6 +47,10 @@ template <
   class ElementB,
   class GmemLayoutB,
   int AlignmentB,
+  class ElementScale,
+  class GmemLayoutScale,
+  int AlignmentScale,
+  MixedInputCastDirection Cast,
   class ElementAccumulator,
   class TileShape_MNK,
   class ClusterShape_MNK,
@@ -54,7 +58,7 @@ template <
   class KernelScheduleType,
   class Enable = void
 >
-struct CollectiveBuilder {
+struct MixedInputCollectiveBuilder {
   static_assert(sizeof(ElementA) == 0, "Could not build a collective for given parameters.");
 };
 
@@ -64,5 +68,6 @@ struct CollectiveBuilder {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "cutlass/gemm/collective/builders/sm90_gmma_builder.inl"
+#include "cutlass/gemm/collective/builders/sm90_mixed_gmma_builder.inl"
+
 /////////////////////////////////////////////////////////////////////////////////////////////////

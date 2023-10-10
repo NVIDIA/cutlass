@@ -194,7 +194,7 @@ public:
       args.mode,
       problem_shape,
       CollectiveMainloop::to_underlying_arguments(args.problem_shape, args.mainloop, workspace),
-      CollectiveEpilogue::to_underlying_arguments(args.problem_shape, args.epilogue, workspace),
+      CollectiveEpilogue::to_underlying_arguments(problem_shape_MNKL, args.epilogue, workspace),
       hw_info,
       scheduler,
       workspace
