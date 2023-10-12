@@ -2203,19 +2203,48 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
 
   for math_inst in math_instructions:
     tile_descriptions = [
+      # 128x128
       TileDescription([128, 128, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x64
+      TileDescription([128, 64, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 64, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 64, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x32
+      TileDescription([128, 32, 64],  9, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 32, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x16
+      TileDescription([128, 16, 64],  5, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 16, 64],  3, [2, 1, 1], math_inst, min_cc, max_cc),
     ]
 
     data_type = [
       math_inst.element_a,
       math_inst.element_b,
-      math_inst.element_b,
+      math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
 
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
+
+    # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
+    if math_inst.element_a != math_inst.element_accumulator:
+
+      data_type_mixed = [
+        math_inst.element_a,
+        math_inst.element_b,
+        math_inst.element_b,
+        math_inst.element_accumulator,
+      ]
+
+      operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
+        data_type_mixed, alignment_constraints) 
+    
+      for op in operations:
+        if op.tile_description.threadblock_shape[1] <= 32:
+          op.C.alignment = 4
+
 
 #
 def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
