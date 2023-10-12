@@ -75,6 +75,8 @@ axpby(Alpha                    const& alpha,
     else {
       return beta == Int<0>{};
     }
+
+    CUTE_GCC_UNREACHABLE;
   } ();
 
   CUTE_UNROLL

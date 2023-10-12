@@ -743,6 +743,8 @@ repeat(X const& x)
   } else {
     return detail::construct(0, x, seq<>{}, make_seq<N>{}, seq<>{});
   }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 //
