@@ -44,6 +44,7 @@ namespace library {
 ///////////////////////////////////////////////////////////////////////////////////////////////
 void initialize_reduce_add_linear_combination_f16_f16_f16(Manifest &manifest);
 void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest);
+void initialize_reduce_add_linear_combination_f32_f32_bf16(Manifest &manifest);
 void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest);
 void initialize_reduce_add_linear_combination_f64_f64_f64(Manifest &manifest);
 void initialize_reduce_add_linear_combination_cf32_cf32_cf32(Manifest &manifest);
@@ -55,6 +56,7 @@ void initialize_all_reduction_op(Manifest &manifest) {
 
   initialize_reduce_add_linear_combination_f16_f16_f16(manifest);
   initialize_reduce_add_linear_combination_f32_f32_f16(manifest);
+  initialize_reduce_add_linear_combination_f32_f32_bf16(manifest);
   initialize_reduce_add_linear_combination_f32_f32_f32(manifest);
   initialize_reduce_add_linear_combination_f64_f64_f64(manifest);
   initialize_reduce_add_linear_combination_cf32_cf32_cf32(manifest);

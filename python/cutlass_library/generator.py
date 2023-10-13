@@ -107,7 +107,7 @@ def CreateGemmOperator(manifest, layouts, tile_descriptions, data_type, \
             # If alignment is a tuple or a list, then we have different alignments for A and B
             alignment_a = alignment if isinstance(alignment, int) else alignment[0]
             alignment_b = alignment if isinstance(alignment, int) else alignment[1]
-            alignment_c = min(8, alignment_a)
+            alignment_c = min(8, alignment_a) if isinstance(alignment, int) else alignment[2]
 
             A = TensorDescription(element_a, layout[0], alignment_a, complex_transform[0])
             B = TensorDescription(element_b, layout[1], alignment_b, complex_transform[1])
@@ -2155,7 +2155,7 @@ def GenerateSM80_PlanarComplexTensorOp_16816(manifest, cuda_version):
 
 
 #
-def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
+def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
 
   if not CudaToolkitVersionSatisfies(cuda_version, 11, 0):
     return
@@ -2196,27 +2196,66 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
   min_cc = 80
   max_cc = 1024
 
-  # For mixed-input alignment constraints are a list of lists, where the inner list
-  # contains the alignment constraints for [operandA, operandB].
-  alignment_constraints = [[16, 8],]
+  # For mixed-input alignment constraints are a list of lists, where the 
+  # inner list contains the alignment constraints for operands/matrices 
+  # [[alignA, alignB, alignC],..]
+  alignment_constraints = [[16, 8, 8],]
 
   for math_inst in math_instructions:
     tile_descriptions = [
+      # 128x128
       TileDescription([128, 128, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x64
+      TileDescription([128, 64, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 64, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 64, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x32
+      TileDescription([128, 32, 64],  9, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 32, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x16
+      TileDescription([128, 16, 64],  5, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 16, 64],  3, [2, 1, 1], math_inst, min_cc, max_cc),
     ]
 
     data_type = [
       math_inst.element_a,
       math_inst.element_b,
-      math_inst.element_b,
+      math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
 
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
+
+    # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
+    if math_inst.element_a != math_inst.element_accumulator:
+
+      data_type_mixed = [
+        math_inst.element_a,
+        math_inst.element_b,
+        math_inst.element_b,
+        math_inst.element_accumulator,
+      ]
+
+      operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
+        data_type_mixed, alignment_constraints) 
     
-  # Upcast on Operand B
+      for op in operations:
+        if op.tile_description.threadblock_shape[1] <= 32:
+          op.C.alignment = 4
+
+
+#
+def GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version):
+
+  if not CudaToolkitVersionSatisfies(cuda_version, 11, 0):
+    return
+
+  layouts = [
+    (LayoutType.RowMajor, LayoutType.ColumnMajor, LayoutType.ColumnMajor),
+  ]
+
   math_instructions = [
     MathInstruction(                                  \
       [16, 8, 16],                                    \
@@ -2243,26 +2282,64 @@ def GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version):
   min_cc = 80
   max_cc = 1024
 
-  # For mixed-input alignment constraints are a list of lists, where the inner list
-  # contains the alignment constraints for [operandA, operandB].
-  alignment_constraints = [[8, 16],]
-
+  # For mixed-input alignment constraints are a list of lists, where the 
+  # inner list contains the alignment constraints for operands/matrices 
+  # [[alignA, alignB, alignC],..]
+  alignment_constraints = [[8, 16, 8],]
+  
+  
   for math_inst in math_instructions:
     tile_descriptions = [
+      # 128x128
       TileDescription([128, 128, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
       TileDescription([128, 128, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x64
+      TileDescription([128, 64, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 64, 64],  4, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 64, 64],  3, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x32
+      TileDescription([128, 32, 64],  9, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 32, 64],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 32, 32],  9, [2, 2, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 32, 32],  5, [2, 2, 1], math_inst, min_cc, max_cc),
+      # 128x16
+      TileDescription([128, 16, 64],  5, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 16, 64],  3, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 16, 32],  9, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 16, 32],  5, [2, 1, 1], math_inst, min_cc, max_cc),
+      TileDescription([128, 16, 32],  3, [2, 1, 1], math_inst, min_cc, max_cc),
+      # 256x16
+      TileDescription([256, 16, 32],  5, [2, 1, 1], math_inst, min_cc, max_cc), 
+      TileDescription([256, 16, 32],  3, [2, 1, 1], math_inst, min_cc, max_cc), 
     ]
 
     data_type = [
       math_inst.element_a,
       math_inst.element_b,
-      math_inst.element_a,
+      math_inst.element_accumulator,
       math_inst.element_accumulator,
     ]
 
     CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
+
+    # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
+    if math_inst.element_a != math_inst.element_accumulator:
+
+      data_type_mixed = [
+        math_inst.element_a,
+        math_inst.element_b,
+        math_inst.element_a,
+        math_inst.element_accumulator,
+      ]
+
+      operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
+        data_type_mixed, alignment_constraints) 
     
+      for op in operations:
+        if op.tile_description.threadblock_shape[1] <= 32:
+          op.C.alignment = 4
+       
 #
 def GenerateSM80_TensorOp_16832_TN(manifest, cuda_version):
 
@@ -2645,7 +2722,6 @@ def GenerateSM80_TensorOp_16864_Interleaved(manifest, cuda_version):
 
     for op in operations:
       op.C.alignment = 16
-#
 
 #
 def GenerateSM80_TensorOp_168256(manifest, cuda_version):
@@ -4196,7 +4272,8 @@ def GenerateSM80(manifest, cuda_version):
   GenerateSM80_TensorOp_884_symm(manifest, cuda_version)
   GenerateSM80_TensorOp_884_symm_complex(manifest, cuda_version)
   GenerateSM80_TensorOp_884_symm_complex_gaussian(manifest, cuda_version)
-  GenerateSM80_MixedInputTensorOp_16816(manifest, cuda_version)
+  GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version)
+  GenerateSM80_TensorOp_16816_mixed_input_upcast_b(manifest, cuda_version)
   GenerateSM80_TensorOp_16832_TN(manifest, cuda_version)
   GenerateSM80_SparseTensorOp_16864_TN(manifest, cuda_version)
   GenerateSM80_TensorOp_16832_Interleaved(manifest, cuda_version)

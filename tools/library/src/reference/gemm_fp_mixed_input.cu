@@ -107,7 +107,23 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
   make_gemm_real_canonical_layouts<
     int8_t,
     bfloat16_t,
+    float,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    int8_t,
     bfloat16_t,
+    bfloat16_t,
+    float,
+    float
+  >(manifest);
+
+  make_gemm_real_canonical_layouts<
+    bfloat16_t,
+    uint8_t,
+    float,
     float,
     float
   >(manifest);
