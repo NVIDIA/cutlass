@@ -172,6 +172,7 @@ enum class MathOperationID {
   kAdd,
   kMultiplyAdd,
   kMultiplyAddSaturate,
+  kMultiplyAddMixedInputUpcast,
   kMultiplyAddFastBF16,
   kMultiplyAddFastF16,
   kMultiplyAddFastF32,
