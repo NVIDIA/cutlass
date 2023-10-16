@@ -392,7 +392,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 none_of(T const& t, F&& f)
 {
-  return !any_of(t, f);
+  return not any_of(t, f);
 }
 
 //
@@ -612,7 +612,7 @@ template <class T>
 struct is_flat : true_type {};
 
 template <class... Ts>
-struct is_flat<tuple<Ts...>> : bool_constant<(true && ... && (!is_tuple<Ts>::value))> {};
+struct is_flat<tuple<Ts...>> : bool_constant<(true && ... && (not is_tuple<Ts>::value))> {};
 
 template <class T>
 CUTE_HOST_DEVICE constexpr
@@ -768,7 +768,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 group(T const& t)
 {
-  if constexpr (!is_tuple<T>::value) {
+  if constexpr (not is_tuple<T>::value) {
     if constexpr (E == -1) {
       return group<B,1>(t);
     } else {
