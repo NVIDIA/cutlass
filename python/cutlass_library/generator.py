@@ -2228,10 +2228,6 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
     operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
       data_type, alignment_constraints)
 
-    for op in operations:
-      if (data_type[2] == DataType.f16) and (op.tile_description.threadblock_shape[1] <= 32):
-        op.C.alignment = 4
-
     # Avoid emitting two kernels if the accumulator type does not differ from the input type (e.g. F16 accumulation)
     if math_inst.element_a != math_inst.element_accumulator:
 
@@ -2242,11 +2238,12 @@ def GenerateSM80_TensorOp_16816_mixed_input_upcast_a(manifest, cuda_version):
         math_inst.element_accumulator,
       ]
 
-      operations = CreateGemmOperator(manifest, layouts, tile_descriptions, \
+      operations += CreateGemmOperator(manifest, layouts, tile_descriptions, \
         data_type_mixed, alignment_constraints) 
     
       for op in operations:
-        if op.tile_description.threadblock_shape[1] <= 32:
+        if (DataTypeSize[op.C.element] == 16) and \
+           (op.tile_description.threadblock_shape[1] <= 32):
           op.C.alignment = 4
 
 
