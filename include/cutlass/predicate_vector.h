@@ -106,7 +106,7 @@ tile_traits_concept and a \ref predicate_vector_concept.
 
 /// Statically sized array of bits implementing @concept{predicate_vector_concept}.
 template <
-    /// Number of predicates conatined in predicate vector
+    /// Number of predicates contained in predicate vector
     int kPredicates_,
     /// Number of predicates contained in each byte of internal storage
     int kPredicatesPerByte_ = 4,
@@ -490,15 +490,20 @@ struct PredicateVector {
 
   /// Returns true if entire predicate array is zero.
   CUTLASS_HOST_DEVICE bool is_zero() const {
+    Storage byte_mask = (((1 << kPredicatesPerByte) - 1) << kPredicateStart);
     Storage mask(0);
     for (int byte = 0; byte < sizeof(Storage); ++byte) {
-      Storage byte_mask = (((1 << kPredicatesPerByte) - 1) << kPredicateStart);
       mask |= (byte_mask << (byte * 8));
     }
-    uint32_t result = 0;
-    for (int word = 0; word < kWordCount; ++word) {
-      result |= storage(word);
+    Storage result = 0;
+    for (int word = 0; word < kWordCount - 1; ++word) {
+      result |= (storage(word) & mask);
     }
+    Storage last_word_mask(0);
+    for (int byte = 0; byte < kBytes % sizeof(Storage); ++byte) {
+      last_word_mask |= (byte_mask << (byte * 8));
+    }
+    result |= (storage(kWordCount - 1) & last_word_mask);
     return result == 0;
   }
 
