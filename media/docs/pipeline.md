@@ -73,7 +73,7 @@ dozens of different kinds of asynchronously executing operations
 that synchronize using multiple barriers organized as a circular list.
 This complexity is too much for human programmers to manage by hand.
 As a result, we have developed
-[asynchronous Pipeline classes](/include/cutlass/pipeline.hpp).
+[asynchronous Pipeline classes](/include/cutlass/pipeline/).
 These classes help developers orchestrate a pipeline
 of asynchronous producer and consumer threads,
 without needing to worry about lower-level hardware details.
