@@ -93,8 +93,6 @@ struct device_ptr
 {
   using value_type = T;
   
-  static const uint32_t ElementsPerStoredItem = sizeof(T) * 8 / sizeof_bits_v<T>;
-
   CUTE_HOST_DEVICE constexpr
   device_ptr(T* ptr) : ptr_(ptr) {}
 
@@ -113,7 +111,7 @@ struct device_ptr
 
   template <class Index>
   CUTE_HOST_DEVICE constexpr
-  DerivedType operator+(Index const& i) const { return {ptr_ + i / ElementsPerStoredItem}; }
+  DerivedType operator+(Index const& i) const { return {ptr_ + i}; }
 
   CUTE_HOST_DEVICE constexpr friend
   ptrdiff_t operator-(device_ptr<T,DerivedType> const& a,
