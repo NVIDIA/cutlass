@@ -525,11 +525,9 @@ back(T&& t)
     // We help it by peeling off the nonrecursive case a level "early."
     if constexpr (! is_tuple<remove_cvref_t<decltype(get<N - 1>(static_cast<T&&>(t)))>>::value) {
       return get<N - 1>(static_cast<T&&>(t));
-    }
-    else {
+    } else {
       return back(get<N - 1>(static_cast<T&&>(t)));
     }
-
   } else {
     return static_cast<T&&>(t);
   }
@@ -565,8 +563,7 @@ select(T const & t, Indices const & indices)
 {
   if constexpr (is_tuple<Indices>::value) {
     return cute::transform(indices, [&t](auto i) { return select(t, i); });
-  }
-  else {
+  } else {
     static_assert(is_static<Indices>::value, "Order must be static");
     return get<Indices::value>(t);
   }
@@ -625,8 +622,7 @@ flatten_to_tuple(T const& t)
   if constexpr (is_tuple<T>::value) {
     if constexpr (is_flat<T>::value) {
       return t;
-    } else
-    {
+    } else {
       return filter_tuple(t, [](auto const& a) { return flatten_to_tuple(a); });
     }
   } else {
@@ -644,8 +640,7 @@ flatten(T const& t)
   if constexpr (is_tuple<T>::value) {
     if constexpr (is_flat<T>::value) {
       return t;
-    } else
-    {
+    } else {
       return filter_tuple(t, [](auto const& a) { return flatten_to_tuple(a); });
     }
   } else {
