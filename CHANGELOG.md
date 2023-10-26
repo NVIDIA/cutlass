@@ -1,5 +1,8 @@
 # NVIDIA CUTLASS Changelog
 
+## [3.2.2](https://github.com/NVIDIA/cutlass/releases/tag/v3.2.2) (2023-10-25)
+* Fixes illegal memory access issue [1138](https://github.com/NVIDIA/cutlass/issues/1138) hit by FlashAttention tests in PyTorch.
+
 ## [3.2.1](https://github.com/NVIDIA/cutlass/releases/tag/v3.2.1) (2023-09-22)
 * Python support SM90 Epilogue Visitor Tree (EVT) on top of the C++ support released in 3.2.0.
 * SM80 EVT support in C++ and Python.

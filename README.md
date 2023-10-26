@@ -62,6 +62,9 @@ CUTLASS 3.2.1 is an update to CUTLASS adding:
 - SM90 rasterization direction support in the CUTLASS profiler.
 - Improvement for CUTLASS profiler build times.
 
+CUTLASS 3.2.2 is a minor update to CUTLASS adding:
+- Bug fix for illegal memory access issue hit by Flash Attention tests in PyTorch. See [1138](https://github.com/NVIDIA/cutlass/issues/1138) for details.
+
 Minimum requirements:
 
 - Architecture: Volta
