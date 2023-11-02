@@ -1,7 +1,7 @@
 # NVIDIA CUTLASS Changelog
 
 ## [3.3](https://github.com/NVIDIA/cutlass/releases/tag/v3.3) (2023-10-31)
-* [Mixed Precision Hopper GEMMs](/examples/55_hopper_mixed_dtype_gemm) support covering 16-bit x {8-bit, 4-bit, 2-bit} and 8-bit x {4-bit, 2-bit}.
+* [Mixed Precision Hopper GEMMs](/examples/55_hopper_mixed_dtype_gemm) support covering 16-bit x 8-bit input operand types.
 * [Mixed Precision Ampere GEMMs](https://github.com/NVIDIA/cutlass/commit/7d8317a63e0a978a8dbb3c1fb7af4dbe4f286616) with support for canonical layouts (TN) and {fp16, bf16} x {s8/u8}.
 * [Copy Async based Hopper GEMMs](/test/unit/gemm/device/sm90_gemm_bf16_bf16_bf16_alignx_tensor_op_f32_warpspecialized_cooperative.cu) - which support lower than 16B aligned input tensors.
 * Kernel schedules and Builder support for mixed precision and Copy Async GEMMs with < 16B aligned input tensors.  
