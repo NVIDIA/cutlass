@@ -339,7 +339,7 @@ public:
     // The number of tiles for which reduction is required is either:
     //   (a) the total number of output tiles (in the case of split-K)
     //   (b) the number of stream-K tiles
-    // To calcualte the the total number of output tiles in the split-K case, we
+    // To calcualte the total number of output tiles in the split-K case, we
     // note that, in the split-K case, the units_per_problem_ member of Params will be
     // the total number of output tiles multiplied by the number of splits.
     auto reduction_tiles = params.splits_ > 1 ? (params.units_per_problem_ / params.splits_) : params.sk_tiles_;

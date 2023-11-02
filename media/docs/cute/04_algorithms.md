@@ -116,7 +116,7 @@ would include the following.
    access instructions (like `cp.async`), then dispatch to the
    custom instruction.
 
-2. The the two `Tensor`s have static layouts and it can be proven
+2. The two `Tensor`s have static layouts and it can be proven
    that element vectorization is valid -- for example, four `LDS.32`s
    can be combined into a single `LDS.128` -- then vectorize the source
    and destinations tensors.

@@ -37,7 +37,7 @@ and the `Layout`s of threads and values within the operation.
 The `MMA_Traits` struct takes the Operation as a template parameter.
 CuTe specializes `MMA_Traits` for each Operation type that it supports.
 
-Together, these two types comprise an "Atom" that decouples the complexity of thread and data layouts from the call site of of the PTX instruction.  The Atom's Traits struct exposes information that is relevant to a single MMA operation, no matter the granularity at which it operates.
+Together, these two types comprise an "Atom" that decouples the complexity of thread and data layouts from the call site of the PTX instruction.  The Atom's Traits struct exposes information that is relevant to a single MMA operation, no matter the granularity at which it operates.
 
 CuTe MMA atoms expose the semantics of a single MMA operation.
 This is true regardless of the hardware level at which the MMA operates.

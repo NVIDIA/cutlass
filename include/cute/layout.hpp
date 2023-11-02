@@ -576,7 +576,7 @@ depth(Layout<Shape,Stride> const& layout)
 
 // Return the codomain shape of a mode
 // @post size(coshape(@a a)) == cosize(@a a)
-// @return C Coordinate with smallest elements such that that
+// @return C Coordinate with smallest elements such that
 //           @a elem_less(sub_layout(c), C) for all c < size(@a sub_layout)
 //           where sub_layout = get<Is...>(layout).
 template <int... Is, class Shape, class Stride>
