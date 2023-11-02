@@ -32,6 +32,7 @@
 #include "cutlass_unit_test.h"
 
 #include <cutlass/trace.h>
+
 #include <cute/pointer.hpp>
 
 TEST(CuTe_core, Pointer)
@@ -45,7 +46,7 @@ TEST(CuTe_core, Pointer)
   // Test T* overloads (T can be nonconst or const)
   {
     using T = float;
-    using expected_type = cute::gmem_ptr<T>;
+    using expected_type = cute::gmem_ptr<T*>;
     T* p = nullptr;
 
     // explicit template argument
@@ -58,7 +59,7 @@ TEST(CuTe_core, Pointer)
   }
   {
     using T = float const;
-    using expected_type = cute::gmem_ptr<T>;
+    using expected_type = cute::gmem_ptr<T*>;
     T* p = nullptr;
 
     // explicit template argument
@@ -74,7 +75,7 @@ TEST(CuTe_core, Pointer)
   // (these require an explicit template argument)
   {
     using T = float;
-    using expected_type = cute::gmem_ptr<T>;
+    using expected_type = cute::gmem_ptr<T*>;
     void* p = nullptr;
 
     auto gmem_p0 = cute::make_gmem_ptr<T>(p);
@@ -82,7 +83,7 @@ TEST(CuTe_core, Pointer)
   }
   {
     using T = float const;
-    using expected_type = cute::gmem_ptr<T>;
+    using expected_type = cute::gmem_ptr<T*>;
     void const* p = nullptr;
 
     auto gmem_p0 = cute::make_gmem_ptr<T>(p);
@@ -92,14 +93,14 @@ TEST(CuTe_core, Pointer)
   // Test nullptr_t overload.
   {
     using T = float;
-    using expected_type = cute::gmem_ptr<T>;
+    using expected_type = cute::gmem_ptr<T*>;
 
     auto gmem_p0 = cute::make_gmem_ptr<T>(nullptr);
     static_assert(cute::is_same_v<decltype(gmem_p0), expected_type>);
   }
   {
     using T = float const;
-    using expected_type = cute::gmem_ptr<T>;
+    using expected_type = cute::gmem_ptr<T*>;
 
     auto gmem_p0 = cute::make_gmem_ptr<T>(nullptr);
     static_assert(cute::is_same_v<decltype(gmem_p0), expected_type>);

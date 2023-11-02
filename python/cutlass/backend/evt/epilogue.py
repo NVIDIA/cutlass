@@ -37,12 +37,13 @@ Epilogue Visitor interface for compiling, and running visitor-based epilogue.
 import ctypes
 
 from cuda import cuda
+from cutlass_library import DataType
 import numpy as np
 
-from cutlass import DataType
 from cutlass.backend.epilogue import EpilogueFunctorBase
 import cutlass.backend.evt.backend
 from cutlass.backend.frontend import TensorFrontend
+from cutlass.utils.datatypes import is_numpy_tensor
 
 
 class EpilogueFunctorVisitor(EpilogueFunctorBase):
@@ -125,7 +126,7 @@ class EpilogueFunctorVisitor(EpilogueFunctorBase):
                 # The tensor frontend returns a device buffer for np.ndarray
                 # and device ptr for other frontends
                 buffer_or_ptr = TensorFrontend.argument(tensor, is_output)
-                if isinstance(tensor, np.ndarray):
+                if is_numpy_tensor(tensor):
                     # Remember the host tensor for later synchronization
                     setattr(self, f"{tensor_name}_buffer", buffer_or_ptr)
                     setattr(self, f"{tensor_name}_host", tensor)

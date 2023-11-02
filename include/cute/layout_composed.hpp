@@ -573,7 +573,7 @@ template <class OldType, class NewType,
           class A, class O, class B>
 CUTE_HOST_DEVICE constexpr
 auto
-recast(ComposedLayout<A,O,B> const& layout)
+recast_layout(ComposedLayout<A,O,B> const& layout)
 {
   if constexpr (sizeof(NewType) == sizeof(OldType)) {
     return layout;

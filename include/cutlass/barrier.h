@@ -219,15 +219,17 @@ using Barrier = GenericBarrier<detail::SyncthreadsSync>;
  *
  * @param ThreadCount_ Number of threads that will wait on a NamedBarrier with a given ID
  * @param Offset Value added to the ID passed in by the user to determine the NamedBarrier ID to call into
+ * @param MaxNumNamedBarriers The maximum number of unique barrier IDs that will be requested on this type
 **/
 template <
   uint32_t ThreadCount_,
-  uint32_t Offset = 0
+  uint32_t Offset = 0,
+  uint32_t MaxNumNamedBarriers = 16
 >
 struct NamedBarrierManager {
-  static constexpr uint32_t MaxNumNamedBarriers = 16;
-  static_assert(Offset < MaxNumNamedBarriers, "Barrier IDs cannot exceed 15");
-  static constexpr uint32_t ValidBarrierIds = MaxNumNamedBarriers - Offset;
+  static constexpr uint32_t HardwareMaxNumNamedBarriers = 16;
+  static_assert(MaxNumNamedBarriers <= HardwareMaxNumNamedBarriers);
+  static_assert(MaxNumNamedBarriers + Offset <= HardwareMaxNumNamedBarriers, "Barrier IDs cannot exceed 15");
 
   // Number of threads participating in the barrier
   static constexpr uint32_t ThreadCount = ThreadCount_;
@@ -239,7 +241,7 @@ struct NamedBarrierManager {
   // template parameter BarrierId, so passing in 0 suffices.
   using T = typename BarrierSync<0>::T;
 
-  using IntegerSequence = cute::make_integer_sequence<uint32_t, ValidBarrierIds>;
+  using IntegerSequence = cute::make_integer_sequence<uint32_t, MaxNumNamedBarriers>;
 
   CUTLASS_DEVICE
   static
@@ -275,7 +277,7 @@ private:
   CUTLASS_DEVICE
   static void
   check_barrier_in_range(uint32_t idx) {
-    if (idx >= ValidBarrierIds) {
+    if (idx >= MaxNumNamedBarriers) {
       CUTE_RUNTIME_ASSERT("Index exceeds barrier count");
     }
   }

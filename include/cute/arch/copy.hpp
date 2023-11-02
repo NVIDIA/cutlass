@@ -48,11 +48,21 @@ struct UniversalCopy
   using SRegisters = S[1];
   using DRegisters = D[1];
 
+  template<class S_, class D_>
   CUTE_HOST_DEVICE static constexpr void
-  copy(S const& src,
-       D      & dst)
+  copy(S_ const& src,
+       D_      & dst)
   {
-    dst = src;
+    dst = static_cast<D>(static_cast<S>(src));
+  }
+
+  // Accept mutable temporaries
+  template<class S_, class D_>
+  CUTE_HOST_DEVICE static constexpr void
+  copy(S_ const& src,
+       D_     && dst)
+  {
+    copy(src, dst);
   }
 };
 

@@ -40,9 +40,9 @@ import unittest
 import cutlass
 from cutlass import Tensor
 import cutlass.backend.evt
-from cutlass.profiler import CUDAEventProfiler
 from cutlass.shape import GemmCoord
 from cutlass.utils.datatypes import torch_type
+from cutlass.utils.profiler import CUDAEventProfiler
 
 
 class EVTReferenceModule:

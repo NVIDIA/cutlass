@@ -140,6 +140,11 @@ struct sizeof_bits<integer_subbyte<Bits,Signed>> {
   static constexpr size_t value = Bits;
 };
 
+template <int Bits, bool Signed>
+struct sizeof_bits<cutlass::integer_subbyte<Bits,Signed>> {
+  static constexpr size_t value = Bits;
+};
+
 template <class T>
 static constexpr int sizeof_bits_v = sizeof_bits<T>::value;
 

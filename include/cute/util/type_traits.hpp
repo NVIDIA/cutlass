@@ -74,7 +74,10 @@ using CUTE_STL_NAMESPACE::is_void_v;
 using CUTE_STL_NAMESPACE::is_base_of;
 using CUTE_STL_NAMESPACE::is_base_of_v;
 
+using CUTE_STL_NAMESPACE::is_const;
 using CUTE_STL_NAMESPACE::is_const_v;
+using CUTE_STL_NAMESPACE::is_volatile;
+using CUTE_STL_NAMESPACE::is_volatile_v;
 
 // using CUTE_STL_NAMESPACE::true_type;
 // using CUTE_STL_NAMESPACE::false_type;
@@ -115,6 +118,7 @@ template <class T>
 using is_std_integral = CUTE_STL_NAMESPACE::is_integral<T>;
 
 using CUTE_STL_NAMESPACE::is_empty;
+using CUTE_STL_NAMESPACE::is_empty_v;
 
 using CUTE_STL_NAMESPACE::invoke_result_t;
 

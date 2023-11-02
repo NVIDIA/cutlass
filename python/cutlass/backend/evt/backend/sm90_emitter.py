@@ -34,7 +34,7 @@
 Emitter for Sm90 Epilogue Visitor
 """
 
-from cutlass import DataTypeTag, EpilogueScheduleTag
+from cutlass_library import DataTypeTag, EpilogueScheduleTag
 from cutlass.backend import GemmOperationUniversal
 from cutlass.backend.evt.backend.emitter_base import FusionCallbacks
 

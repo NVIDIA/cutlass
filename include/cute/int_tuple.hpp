@@ -40,7 +40,7 @@
 /** IntTuple is an integer or a tuple of IntTuples.
  * This file holds utilities for working with IntTuples,
  * but does not hold a concrete concept or class of IntTuple.
- */ 
+ */
 
 namespace cute
 {
@@ -49,7 +49,7 @@ namespace cute
 //   Even though is_tuple<Integral> is false and tuple_size<Integral> doesn't compile,
 //   CuTe defines rank(Integral) as 1, so it's useful for get<0>(Integral) to return its input
 template <size_t I, class T, __CUTE_REQUIRES(cute::is_integral<cute::remove_cvref_t<T>>::value)>
-CUTE_HOST_DEVICE constexpr 
+CUTE_HOST_DEVICE constexpr
 decltype(auto)
 get(T&& t) noexcept
 {
@@ -59,7 +59,7 @@ get(T&& t) noexcept
 
 // Custom recursive get for anything that implements get<I>(.) (for a single integer I).
 template <size_t I0, size_t I1, size_t... Is, class T>
-CUTE_HOST_DEVICE constexpr 
+CUTE_HOST_DEVICE constexpr
 decltype(auto)
 get(T&& t) noexcept
 {
@@ -218,19 +218,29 @@ static constexpr int depth_v = depth_t<Tuple>::value;
 // product
 //
 
-template <class IntTuple>
-CUTE_HOST_DEVICE constexpr
-auto
-product(IntTuple const& a)
+// Implementation of product (see below) as a function object
+struct Product
 {
-  if constexpr (is_tuple<IntTuple>::value) {
-    return cute::apply(a, [](auto const&... v){ return (Int<1>{} * ... * product(v)); });
-  } else {
-    return a;
-  }
+  template <class IntTuple>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  operator()(IntTuple const& a) const
+  {
+    if constexpr (is_tuple<IntTuple>::value) {
+      if constexpr (tuple_size<IntTuple>::value == 0) {
+        return Int<1>{};
+      } else {
+        return cute::transform_apply(a, Product{}, multiplies_unary_lfold{});
+      }
+    } else {
+      return a;
+    }
 
-  CUTE_GCC_UNREACHABLE;
-}
+    CUTE_GCC_UNREACHABLE;
+  }
+};
+// Callable product function object
+CUTE_INLINE_CONSTANT Product product;
 
 // Return a rank(t) tuple @a result such that get<i>(@a result) = product(get<i>(@a t))
 template <class Tuple>
@@ -259,7 +269,7 @@ size(IntTuple const& a)
   if constexpr (sizeof...(Is) == 0) {
     return product(a);
   } else {
-    return product(get<Is...>(a));
+    return size(get<Is...>(a));
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -361,7 +371,7 @@ shape_div(IntTupleA const& a, IntTupleB const& b)
   if constexpr (is_static<IntTupleA>::value && is_static<IntTupleB>::value) {
     static_assert(IntTupleA::value % IntTupleB::value == 0 || IntTupleB::value % IntTupleA::value == 0, "Static shape_div failure");
     return C<shape_div(IntTupleA::value, IntTupleB::value)>{};
-  } else {                                       // int int   
+  } else {                                       // int int
     //assert(a % b == 0 || b % a == 0);          // Wave dynamic assertion
     return a / b != 0 ? a / b : signum(a) * signum(b);  // Division with rounding away from zero
   }

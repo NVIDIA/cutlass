@@ -78,8 +78,8 @@ struct PersistentTileSchedulerSm90Params {
     AlongN
   };
 
-  FastDivmodU64 divmod_cluster_shape_major_{};
-  FastDivmodU64 divmod_cluster_shape_minor_{};
+  FastDivmodU64Pow2 divmod_cluster_shape_major_{};
+  FastDivmodU64Pow2 divmod_cluster_shape_minor_{};
   FastDivmodU64 divmod_batch_{};
   FastDivmodU64 divmod_cluster_blk_major_{};
 
@@ -143,13 +143,13 @@ struct PersistentTileSchedulerSm90Params {
     divmod_batch_ = FastDivmodU64(problem_blocks_m * problem_blocks_n);
 
     if (raster_order == RasterOrder::AlongN) {
-      divmod_cluster_shape_major_ = FastDivmodU64(cluster_shape.n());
-      divmod_cluster_shape_minor_ = FastDivmodU64(cluster_shape.m());
+      divmod_cluster_shape_major_ = FastDivmodU64Pow2(cluster_shape.n());
+      divmod_cluster_shape_minor_ = FastDivmodU64Pow2(cluster_shape.m());
       divmod_cluster_blk_major_ = FastDivmodU64(problem_blocks_n / cluster_shape.n());
     }
     else {
-      divmod_cluster_shape_major_ = FastDivmodU64(cluster_shape.m());
-      divmod_cluster_shape_minor_ = FastDivmodU64(cluster_shape.n());
+      divmod_cluster_shape_major_ = FastDivmodU64Pow2(cluster_shape.m());
+      divmod_cluster_shape_minor_ = FastDivmodU64Pow2(cluster_shape.n());
       divmod_cluster_blk_major_ = FastDivmodU64(problem_blocks_m / cluster_shape.m());
     }
   }
@@ -374,24 +374,28 @@ struct PersistentTileSchedulerSm90StreamKParams {
   using RasterOrder = UnderlyingParams::RasterOrder;
   using RasterOrderOptions = UnderlyingParams::RasterOrderOptions;
 
-  FastDivmodU64 divmod_cluster_shape_major_{};
-  FastDivmodU64 divmod_cluster_shape_minor_{};
+  // Cluster dimensions are typically always a power of 2, so use
+  // the power-of-two variants of FastDivmod for these.
+  FastDivmodU64Pow2 divmod_cluster_shape_major_{};
+  FastDivmodU64Pow2 divmod_cluster_shape_minor_{};
+
   FastDivmodU64 divmod_batch_{};
-  FastDivmodU64 divmod_k_{};
   FastDivmodU64 divmod_cluster_blk_major_{};
 
-  int32_t log_swizzle_size_ = 0;
+  // Total number of cluster-sized output tiles (i.e., not including any
+  // splitting factors). This is primarily used for split-K decompositions,
+  // and may be overridden in other decompositions.
+  FastDivmodU64 divmod_clusters_mnl_{};
 
   uint64_t units_per_problem_ = 0;
+  FastDivmod divmod_tiles_per_output_tile_{};
+  int32_t log_swizzle_size_ = 0;
   RasterOrder raster_order_ = RasterOrder::AlongN;
 
   // The splitting factor to be used in a split-K decomposition of the problem.
   // If this is set to a value greater than 1, stream-K decomposition logic
   // is bypassed in favor of a split-K decomposition.
   uint32_t splits_ = 1;
-
-  // Number of tiled k iterations required to compute a single output tile.
-  uint32_t k_tiles_per_output_tile_ = 0;
 
   // Number of stream-K or split-K work units that compute an extra k iteration.
   // This is done to handle residuals in dividing up the k iteration space.
@@ -475,10 +479,10 @@ struct PersistentTileSchedulerSm90StreamKParams {
       raster_order_option
     );
 
-    auto problem_blocks_m = problem_blocks.x;
-    auto problem_blocks_n = problem_blocks.y;
     auto problem_blocks_l = problem_blocks.z;
 
+    auto problem_blocks_m = round_up(problem_blocks.x, (1 << underlying_params.log_swizzle_size_) * cluster_shape.m());
+    auto problem_blocks_n = round_up(problem_blocks.y, (1 << underlying_params.log_swizzle_size_) * cluster_shape.n());
     uint64_t output_tiles = problem_blocks_m * problem_blocks_n * problem_blocks_l;
 
     // Reduction workspace is at the beginning of the workspace. Lock workspace follows.
@@ -620,13 +624,17 @@ struct PersistentTileSchedulerSm90StreamKParams {
     divmod_cluster_shape_major_ = underlying_params.divmod_cluster_shape_major_;
     divmod_cluster_shape_minor_ = underlying_params.divmod_cluster_shape_minor_;
     divmod_batch_ = underlying_params.divmod_batch_;
-    divmod_k_ = FastDivmodU64(problem_blocks_m * problem_blocks_n);  // Static k-splitting divmod. Unused for stream-K.
+    divmod_tiles_per_output_tile_ = FastDivmod(k_tiles_per_output_tile);
     divmod_cluster_blk_major_ = underlying_params.divmod_cluster_blk_major_;
+
+    // Override divmod_clusters_mnl_ to be the number of cluster-sized stream-K units.
+    // This setting ensures that the use of this divmod for stream-K decompositions
+    // is essentially a no-op.
+    divmod_clusters_mnl_ = FastDivmodU64(sk_units / cluster_size);
+    splits_ = 1;
     log_swizzle_size_ = underlying_params.log_swizzle_size_;
     units_per_problem_ = static_cast<uint32_t>(dp_units + sk_units);
     raster_order_ = underlying_params.raster_order_;
-    splits_ = 1;                                                   // Static k-splitting factor. Unused for stream-K.
-    k_tiles_per_output_tile_ = k_tiles_per_output_tile;
     big_units_ = static_cast<uint32_t>(sk_big_units_per_cluster);
     reduction_workspace_ = reduction_workspace;
     sk_tiles_ = sk_tiles;
@@ -754,6 +762,10 @@ struct PersistentTileSchedulerSm90StreamKParams {
     uint32_t mma_warp_groups,
     uint32_t barrier_bits,
     uint32_t accumulator_bits) {
+
+    auto log_swizzle_size = UnderlyingParams::get_log_swizzle_size(problem_blocks.x, problem_blocks.y, max_swizzle);
+    problem_blocks.x = round_up(problem_blocks.x, (1 << log_swizzle_size) * cluster_shape.m());
+    problem_blocks.y = round_up(problem_blocks.y, (1 << log_swizzle_size) * cluster_shape.n());
 
     // Workspace is needed only for output tiles that will be split. Thus, we first determine the number
     // of output tiles that will be split, and then calculate the workspace needed to cover these.
@@ -966,24 +978,25 @@ struct PersistentTileSchedulerSm90StreamKParams {
     void* reduction_workspace,
     ReductionMode reduction_mode) {
 
-    divmod_cluster_shape_major_ = underlying_params.divmod_cluster_shape_major_,
-    divmod_cluster_shape_minor_ = underlying_params.divmod_cluster_shape_minor_,
-    divmod_batch_ = FastDivmodU64(blocks_m * blocks_n * splits),
-    divmod_k_ = FastDivmodU64(blocks_m * blocks_n),
-    divmod_cluster_blk_major_ = underlying_params.divmod_cluster_blk_major_,
-    log_swizzle_size_ = underlying_params.log_swizzle_size_,
-    units_per_problem_ = blocks_m * blocks_n * blocks_l * splits,
-    raster_order_ = underlying_params.raster_order_,
-    splits_ = splits,
-    k_tiles_per_output_tile_ = k_tiles_per_output_tile,
-    big_units_ = k_tiles_per_output_tile % splits,
+    divmod_cluster_shape_major_ = underlying_params.divmod_cluster_shape_major_;
+    divmod_cluster_shape_minor_ = underlying_params.divmod_cluster_shape_minor_;
+    divmod_batch_ = FastDivmodU64(blocks_m * blocks_n);
+    divmod_tiles_per_output_tile_ = FastDivmod(k_tiles_per_output_tile);
+    auto cluster_size = underlying_params.divmod_cluster_shape_major_.divisor * underlying_params.divmod_cluster_shape_minor_.divisor;
+    divmod_clusters_mnl_ = FastDivmodU64((blocks_m * blocks_n * blocks_l) / cluster_size);
+    splits_ = splits;
+    divmod_cluster_blk_major_ = underlying_params.divmod_cluster_blk_major_;
+    log_swizzle_size_ = underlying_params.log_swizzle_size_;
+    units_per_problem_ = blocks_m * blocks_n * blocks_l;
+    raster_order_ = underlying_params.raster_order_;
+    big_units_ = k_tiles_per_output_tile % splits;
     reduction_workspace_ = reduction_workspace;
     reduction_mode_ = reduction_mode;
+    k_tiles_per_sk_unit_ = k_tiles_per_output_tile / splits;
 
     // No stream-K work is performed for "basic" data-parallel and split-K decompositions
     sk_tiles_ = 0;
     sk_units_ = 0;
-    k_tiles_per_sk_unit_ = 0;
   }
 
 private:

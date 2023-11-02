@@ -375,14 +375,17 @@ struct GemmStreamkWithFusedEpilogue<Mma_, Epilogue_, ThreadblockSwizzle_, false>
 
       // Initialize the block mapping structure
       block_mapping = ThreadblockSwizzle(
-        typename ThreadblockSwizzle::template KernelTraits<GemmStreamkWithFusedEpilogue>(),
         args.mode,
         args.problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
         args.batch_count,
         sm_occupancy,
         device_sms,
-        avail_sms);
+        avail_sms,
+        sizeof(ElementA),
+        sizeof(ElementB),
+        sizeof(ElementC),
+        Epilogue::kAccumulatorFragments);
     }
 
     /// Returns the workspace size (in bytes) needed for these parameters

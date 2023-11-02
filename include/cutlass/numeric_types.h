@@ -66,7 +66,21 @@ struct index_sequence_helper<0, 0, Next...> {
 template <size_t N>
 using make_index_sequence = typename index_sequence_helper<N>::type;
 
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// Get the register type used in kernel
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace detail {
+
+template<typename T>
+struct get_unpacked_element_type {
+  using type = T;
+};
+
+} // namespace detail
 
 }  // namespace cutlass
 

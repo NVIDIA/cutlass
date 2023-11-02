@@ -323,26 +323,26 @@ public:
     static_assert(rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
     static_assert(rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
 
-    // Separate out problem shape for convenience
-    // Optionally append 1s until problem shape is rank-4 in case its is only rank-3 (MNK)
+    // Optionally append 1s until problem shape is rank-4 in case it is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(params.problem_shape, Int<1>{});
-    auto M = get<0>(problem_shape_MNKL);
-    auto N = get<1>(problem_shape_MNKL);
-    auto K = get<2>(problem_shape_MNKL);
-    auto L = get<3>(problem_shape_MNKL);
-
-    // TMA requires special handling of strides to deal with coord codomain mapping
-    // Represent the full tensors -- get these from TMA
-    Tensor mA_mkl = params.mainloop.tma_load_a.get_tma_tensor(make_shape(M,K,L));                            // (m,k,l)
-    Tensor mB_nkl = params.mainloop.tma_load_b.get_tma_tensor(make_shape(N,K,L));                            // (n,k,l)
 
     // Get the appropriate blocks for this thread block -- potential for thread block locality
     auto blk_shape = TileShape{};                                                                // (BLK_M,BLK_N,BLK_K)
     TiledMma tiled_mma;
 
-    // Make tiled views, defer the slice
-    Tensor gA_mkl = local_tile(mA_mkl, blk_shape, make_coord(_,_,_), Step<_1, X,_1>{});          // (BLK_M,BLK_K,m,k,l)
-    Tensor gB_nkl = local_tile(mB_nkl, blk_shape, make_coord(_,_,_), Step< X,_1,_1>{});          // (BLK_N,BLK_K,n,k,l)
+    // In a warp specialized kernel, collectives expose data movement and compute operations separately
+    CollectiveMainloop collective_mainloop;
+    CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);
+
+    // Prepare and partition the input tensors. Expects a tuple of tensors where:
+    // get<0>(tiled_tensors) is the tma tensor A after local tiling so that it has shape (BLK_M,BLK_K,m,k,l)
+    // get<1>(tiled_tensors) is the tma tensor B after local tiling so that it has shape (BLK_N,BLK_K,n,k,l)
+    auto tiled_tensors = collective_mainloop.tile_input_tensors(problem_shape_MNKL, params.mainloop, blk_shape);
+    static_assert(tuple_size_v<decltype(tiled_tensors)> >= 2, "Output of tile_input_tensors must have at least two elements (A, B)");
+
+    // Extract out partitioned A and B.
+    Tensor gA_mkl = get<0>(tiled_tensors);
+    Tensor gB_nkl = get<1>(tiled_tensors);
 
     // Compute m_coord, n_coord, and l_coord with their post-tiled shapes
     auto m_coord = idx2crd(int(blockIdx.x), shape<2>(gA_mkl));
@@ -350,28 +350,21 @@ public:
     auto l_coord = idx2crd(int(blockIdx.z), shape<4>(gB_nkl));
     auto blk_coord = make_coord(m_coord, n_coord, _, l_coord);
 
-    // Slice with m_coord and n_coord
-    Tensor gA = gA_mkl(_,_,m_coord,_,l_coord);                                                       // (BLK_M,BLK_K,k)
-    Tensor gB = gB_nkl(_,_,n_coord,_,l_coord);                                                       // (BLK_N,BLK_K,k)
-
     // Get pipeline iterators and increments from tensor shapes
-    auto k_tile_iter  = cute::make_coord_iterator(shape<2>(gA));
-    auto k_tile_count = size<2>(gA);
+    auto k_tile_iter  = cute::make_coord_iterator(shape<3>(gA_mkl));
+    auto k_tile_count = size<3>(gA_mkl);
 
     // Wait for all thread blocks in the Cluster
     cluster_wait_fn();
 
-    // In a warp specialized kernel, collectives expose data movement and compute operations separately
-    CollectiveMainloop collective_mainloop;
-    CollectiveEpilogue collective_epilogue(params.epilogue, shared_storage.tensors.epilogue);
-
     if (warp_group_role == WarpGroupRole::Producer) {
       if (producer_warp_role == ProducerWarpRole::MainloopEpilogue) {
         collective_mainloop.load(
+          params.mainloop,
           mainloop_pipeline,
           mainloop_pipe_producer_state,
-          gA, params.mainloop.tma_load_a,
-          gB, params.mainloop.tma_load_b,
+          tiled_tensors,
+          blk_coord,
           k_tile_iter, k_tile_count,
           lane_idx,
           block_rank_in_cluster,
@@ -408,7 +401,7 @@ public:
         mainloop_pipe_consumer_state,
         accumulators,
         k_tile_count,
-        thread_idx,
+        warp_group_thread_idx,
         shared_storage.tensors.mainloop,
         params.mainloop
       );

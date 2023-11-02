@@ -38,12 +38,13 @@ import subprocess
 import tempfile
 
 from cuda import cuda, nvrtc
+from cutlass_library import SubstituteTemplate
 
-from cutlass import CACHE_FILE, CUDA_INSTALL_PATH, CUTLASS_PATH, logger
+import cutlass
+from cutlass import CACHE_FILE, CUTLASS_PATH, cuda_install_path, logger
 from cutlass.backend.gemm_operation import GemmOperationUniversal
 from cutlass.backend.library import ApiVersion
 from cutlass.backend.utils.device import device_cc
-from cutlass.backend.utils.software import SubstituteTemplate
 
 IncludeTemplate = r"""#include "${include}"
 """
@@ -316,7 +317,7 @@ class ArtifactManager:
             # compile with nvcc
             cmd_template = "${cuda_install_path}/bin/nvcc ${options} -cubin ${srcfile} -o ${tarfile}"
             values = {
-                "cuda_install_path": CUDA_INSTALL_PATH,
+                "cuda_install_path": cuda_install_path(),
                 "options": compilation_options.get_str(),
                 "srcfile": temp_cu.name,
                 "tarfile": temp_cubin.name,
@@ -336,7 +337,7 @@ class ArtifactManager:
         cmd = SubstituteTemplate(
             cmd_template,
             {
-                "cuda_install_path": CUDA_INSTALL_PATH,
+                "cuda_install_path": cuda_install_path(),
                 "options": host_compilation_options.get_str(),
             },
         )
@@ -356,18 +357,15 @@ class ArtifactManager:
         Insert a new compiled device module
         """
         include_paths = [
-            CUDA_INSTALL_PATH + "/include",
+            cuda_install_path() + "/include",
             CUTLASS_PATH + "/include",
             CUTLASS_PATH + "/tools/util/include",
             CUTLASS_PATH + "/python/cutlass/cpp/include",
         ]
 
-        if device_cc() is not None:
-            arch = device_cc()
-        else:
-            # Find the maximum arch tag among the provided operations and compile for that target.
-            # Since we are compiling to .cubin files, only one architecture may be specified.
-            arch = max([op.arch for op in operations])
+        cutlass.initialize_cuda_context()
+        arch = device_cc()
+
         host_compile_options = CompilationOptions(
             self._nvcc_compile_options, arch, include_paths)
         if compile_options is None:

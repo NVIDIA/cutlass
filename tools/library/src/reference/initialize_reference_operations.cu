@@ -84,6 +84,7 @@ void initialize_reference_operations(Manifest &manifest) {
   initialize_gemm_reference_operations_fp32out(manifest);
   initialize_gemm_reference_operations_fp_other(manifest);
   initialize_gemm_reference_operations_fp_mixed_input(manifest);
+
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

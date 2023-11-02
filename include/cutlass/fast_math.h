@@ -388,6 +388,12 @@ struct FastDivmod {
     return quotient;
   }
 
+  /// Alias for `div` to match the interface of FastDivmodU64
+  CUTLASS_HOST_DEVICE
+  int divide(int dividend) const {
+    return div(dividend);
+  }
+
   /// Computes integer division and modulus using precomputed values. This is computationally
   /// inexpensive.
   ///
@@ -516,6 +522,54 @@ struct FastDivmodU64 {
   uint64_t divmod(uint64_t &remainder, uint64_t dividend) const {
     uint64_t quotient = divide(dividend);
     remainder = modulus(quotient, dividend);
+    return quotient;
+  }
+
+  /// Computes integer division and modulus using precomputed values. This is computationally
+  /// inexpensive.
+  CUTLASS_HOST_DEVICE
+  void operator()(uint64_t &quotient, uint64_t &remainder, uint64_t dividend) const {
+    quotient = divmod(remainder, dividend);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Object to encapsulate the fast division+modulus operation for 64b integer division
+/// in which the divisor is a power of two.
+struct FastDivmodU64Pow2 {
+
+  uint64_t divisor;
+  unsigned int shift_right;
+
+  /// Default ctor
+  CUTLASS_HOST_DEVICE
+  FastDivmodU64Pow2(): divisor(0), shift_right(0) { }
+
+  /// Construct the FastDivmod object, in host code ideally.
+  ///
+  /// This precomputes some values based on the divisor and is computationally expensive.
+  CUTLASS_HOST_DEVICE
+  FastDivmodU64Pow2(uint64_t divisor_): divisor(divisor_), shift_right(FastDivmodU64::integer_log2(divisor_)) { }
+
+  /// Returns the quotient of floor(dividend / divisor)
+  CUTLASS_HOST_DEVICE
+  uint64_t divide(uint64_t dividend) const {
+    return dividend >> shift_right;
+  }
+
+  /// Computes the remainder given a computed quotient and dividend
+  CUTLASS_HOST_DEVICE
+  uint64_t modulus(uint64_t dividend) const {
+    // See https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#division-modulo-operations
+    return dividend & (divisor - 1);
+  }
+
+  /// Returns the quotient of floor(dividend / divisor) and computes the remainder
+  CUTLASS_HOST_DEVICE
+  uint64_t divmod(uint64_t &remainder, uint64_t dividend) const {
+    uint64_t quotient = divide(dividend);
+    remainder = modulus(dividend);
     return quotient;
   }
 

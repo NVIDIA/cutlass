@@ -99,7 +99,7 @@ TEST(SM90_Device_Gemm_tf32n_tf32n_f32n_tensor_op_gmma_f32, 64x128x32) {
 
   using CollectiveOp = typename cutlass::gemm::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-      cutlass::tfloat32_t, LayoutA, 1,
+      cutlass::tfloat32_t, LayoutA, 4,
       cutlass::tfloat32_t, LayoutB, 4,
       float,
       Shape<_64,_128,_32>, Shape<_1,_1,_1>,
@@ -136,8 +136,8 @@ TEST(SM90_Device_Gemm_tf32n_tf32t_f32n_tensor_op_gmma_f32, 64x128x32) {
 
   using CollectiveOp = typename cutlass::gemm::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-      cutlass::tfloat32_t, LayoutA, 1,
-      cutlass::tfloat32_t, LayoutB, 1,
+      cutlass::tfloat32_t, LayoutA, 4,
+      cutlass::tfloat32_t, LayoutB, 4,
       float,
       Shape<_64,_128,_32>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
@@ -149,8 +149,8 @@ TEST(SM90_Device_Gemm_tf32n_tf32t_f32n_tensor_op_gmma_f32, 64x128x32) {
       Shape<_64,_128,_32>, Shape<_1,_1,_1>,
       cutlass::epilogue::collective::EpilogueTileAuto,
       float, float,
-      float, LayoutC, 1,
-      float, LayoutC, 1,
+      float, LayoutC, 4,
+      float, LayoutC, 4,
       cutlass::epilogue::collective::EpilogueScheduleAuto
     >::CollectiveOp;
 
@@ -174,7 +174,7 @@ TEST(SM90_Device_Gemm_tf32t_tf32t_f32n_tensor_op_gmma_f32, 64x128x32) {
   using CollectiveOp = typename cutlass::gemm::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
       cutlass::tfloat32_t, LayoutA, 4,
-      cutlass::tfloat32_t, LayoutB, 1,
+      cutlass::tfloat32_t, LayoutB, 4,
       float,
       Shape<_64,_128,_32>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
@@ -188,7 +188,7 @@ TEST(SM90_Device_Gemm_tf32t_tf32t_f32n_tensor_op_gmma_f32, 64x128x32) {
       float, float,
       float, LayoutC, 4,
       float, LayoutC, 4,
-      cutlass::epilogue::collective::EpilogueScheduleAuto
+      cutlass::gemm::EpilogueTransposed
     >::CollectiveOp;
 
   using GemmKernel = cutlass::gemm::kernel::GemmUniversal<

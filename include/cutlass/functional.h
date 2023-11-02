@@ -228,6 +228,25 @@ struct divides {
   }
 };
 
+/// reciprocal_approximate 
+template <typename T>
+struct reciprocal_approximate {
+  CUTLASS_HOST_DEVICE
+  T operator()(T lhs) const {
+    return divide(T(1), lhs);
+  }
+};
+
+template <>
+struct reciprocal_approximate <float> {
+  CUTLASS_HOST_DEVICE
+  float operator()(float lhs) const { 
+    float ret;
+      ret = 1.0f / lhs;
+    return ret;
+  }
+};
+
 /// Negate
 template <typename T>
 struct negate {
@@ -273,7 +292,7 @@ struct less {
   }
 };
 
-template <typename T, bool PropogateNaN = false>
+template <typename T, bool PropagateNaN = false>
 struct maximum {
   CUTLASS_HOST_DEVICE
   T operator()(T const &lhs, T const &rhs) const {
@@ -281,8 +300,17 @@ struct maximum {
   }
 };
 
-// Maximum with nan propogation
-// To propgate the NANs, the "max" of a two element that contains NaNs should also return a NaN 
+// This is a subclass and not an alias
+// in order to work around a known Clang issue,
+// where a template template parameter with one template parameter
+// does not match classes that take multiple template parameters
+// but have defaults for all but the first.
+template<typename T>
+struct maximum_with_default_nan_propagation : public maximum<T>
+{};
+
+// Maximum with nan propagation
+// To propagate NANs, the "max" of a two element that contains NaNs should also return a NaN
 template <typename T>
 struct maximum<T, true> {
   CUTLASS_HOST_DEVICE
@@ -319,10 +347,21 @@ struct maximum<float, true> {
   }
 };
 
+// This is a subclass and not an alias
+// in order to work around a known Clang issue,
+// where a template template parameter with one template parameter
+// does not match classes that take multiple template parameters
+// but have defaults for all but the first.
 template <typename T>
-using maximum_with_nan_propogation = maximum<T, true>;
+struct maximum_with_nan_propagation : maximum<T, true>
+{};
 
-template <typename T, bool PropogateNaN = false>
+// This alias exists for backwards compatibility only.
+// Please use the correctly spelled class template above.
+template <typename T>
+using maximum_with_nan_propogation = maximum_with_nan_propagation<T>;
+
+template <typename T, bool PropagateNaN = false>
 struct minimum{
   CUTLASS_HOST_DEVICE
   T operator()(T const &lhs, T const &rhs) const {
@@ -350,24 +389,24 @@ struct minimum<float, false> {
   }
 };
 
-template <typename T, bool PropogateNaN = false>
+template <typename T, bool PropagateNaN = false>
 struct maximum_absolute_value {
   CUTLASS_HOST_DEVICE
   float operator()(T const &lhs, T const &rhs) const {
     absolute_value_op<T> abs_op;
-    maximum<T, PropogateNaN> max_op;
+    maximum<T, PropagateNaN> max_op;
 
     return max_op(abs_op(lhs), abs_op(rhs));
   }
 };
 
 // assumes the left operand is already an absolute value
-template <typename T, bool PropogateNaN = false>
+template <typename T, bool PropagateNaN = false>
 struct maximum_absolute_value_reduction {
   CUTLASS_HOST_DEVICE
   float operator()(T const &lhs, T const &rhs) const {
     absolute_value_op<T> abs_op;
-    maximum<T, PropogateNaN> max_op;
+    maximum<T, PropagateNaN> max_op;
 
     return max_op(lhs, abs_op(rhs));
   }
@@ -381,6 +420,15 @@ struct multiply_add {
     return C(a) * C(b) + c;
   }
 };
+
+// Fused multiply-add that takes exactly one template parameter.
+// This is useful for working around a known Clang issue,
+// where a template template parameter with one template parameter
+// does not match classes that take multiple template parameters
+// but have defaults for all but the first.
+template <typename A>
+struct homogeneous_multiply_add : public multiply_add<A, A, A>
+{};
 
 /// Fused multiply-add
 template <typename A, typename B = A, typename C = A>
@@ -581,6 +629,14 @@ struct atomic_maximum<float> {
 #endif
   }
 };
+
+// is_atomic
+template <class Fn>
+struct is_atomic : platform::false_type {};
+template <class T>
+struct is_atomic<atomic_add<T>> : platform::true_type {};
+template <class T>
+struct is_atomic<atomic_maximum<T>> : platform::true_type {};
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

@@ -83,6 +83,12 @@ bool relatively_equal_float(T a, T b, T epsilon, T nonzero_floor) {
 
 template <>
 CUTLASS_HOST_DEVICE
+bool relatively_equal<bool>(bool a, bool b, bool, bool) {
+  return (a == b);
+}
+
+template <>
+CUTLASS_HOST_DEVICE
 bool relatively_equal<uint1b_t>(uint1b_t a, uint1b_t b, uint1b_t, uint1b_t) {
   return (a == b);
 }

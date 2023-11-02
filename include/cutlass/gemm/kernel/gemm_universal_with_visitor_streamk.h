@@ -233,14 +233,17 @@ public:
 
       // Initialize the block mapping structure
       block_mapping = ThreadblockSwizzle(
-        typename ThreadblockSwizzle::template KernelTraits<GemmWithEpilogueVisitorStreamk>(),
         args.mode,
         args.problem_size,
         {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
         args.batch_count,
         sm_occupancy,
         device_sms,
-        avail_sms);
+        avail_sms,
+        sizeof(ElementA),
+        sizeof(ElementB),
+        sizeof(ElementC),
+        Epilogue::kAccumulatorFragments);
     }
 
 

@@ -132,10 +132,10 @@ public:
   static int const kNumElementsInWarpFragment = NumElementsInWarpFragment;
   static int const kNumElementsInMmaFragment = NumElementsInMmaFragment;
   static Operand const kOperand = Operand::kA;
-  
+
   using WarpFragment = Array<ElementLoad, kNumElementsInWarpFragment>;
   using MmaFragment = Array<ElementLoad, kNumElementsInMmaFragment>;
-  
+
   static uint32_t const kSelectBytesEvenThread = 0x5410;
   static uint32_t const kSelectBytesOddThread = 0x7632;
 
@@ -168,7 +168,7 @@ public:
 
         uint32_t const* src_ptr = reinterpret_cast<uint32_t const *>(&mma_frag_src_ptr[n]);
         uint32_t *dst_ptr = reinterpret_cast<uint32_t *>(&mma_frag_dst_ptr[n]);
-        
+
         // Shuffle data within the warp, pull from other threads within the warp
         uint32_t tmp0 = __shfl_up_sync(0xFFFFFFFF, src_ptr[0], delta_up_);
         uint32_t tmp1 = __shfl_down_sync(0xFFFFFFFF, src_ptr[0], delta_down_);
@@ -218,7 +218,7 @@ public:
 
   using WarpFragment = Array<ElementLoad, kNumElementsInWarpFragment>;
   using MmaFragment = Array<ElementLoad, kNumElementsInMmaFragment>;
-  
+
   static uint32_t const kSelectBytesEvenThread = 0x5410;
   static uint32_t const kSelectBytesOddThread = 0x7632;
 
@@ -260,7 +260,7 @@ public:
         // Reorder the data within the 32-bit word (4x8b) required for mma.sync
         dst_ptr[0] = __byte_perm(tmp0, tmp1, byte_selector_);
     }
-    
+
     return result;
   }
 
@@ -279,7 +279,7 @@ template <
   ///
   typename Enable = void> 
 struct FragmentConverter {
-  
+
   using ElementDst = ElementDst_;
   using ElementSrc = ElementSrc_;
 
@@ -523,17 +523,6 @@ public:
                  FragmentA const &A, FragmentB const &B) const {
 
     // Shuffle data within warp to obtain the mma.sync operand layout
-    detail::FragmentShuffler<MmaElementA, ElementA, MmaIterations::kRow, 
-             FragmentA::kElements, MmaOperandA::kElements, Operand::kA> shuffler_A;
-    FragmentA tmp_A;
-    tmp_A = shuffler_A(A);
-
-    // Convert the A operand to the Mma Instruction operand type
-    detail::FragmentConverter<MmaElementA, ElementA, FragmentA::kElements> convert_A;
-    dst_A = convert_A(tmp_A);
-
-
-    // Shuffle data within warp to obtain the mma.sync operand layout
     detail::FragmentShuffler<MmaElementB, ElementB, MmaIterations::kColumn, 
              FragmentB::kElements, MmaOperandB::kElements, Operand::kB> shuffler_B;
     FragmentB tmp_B; 
@@ -542,6 +531,27 @@ public:
     // Convert the B operand to the Mma Instruction operand type
     detail::FragmentConverter<MmaElementB, ElementB, FragmentB::kElements> convert_B;
     dst_B = convert_B(tmp_B);
+
+    FragmentA tmp_A;
+
+    Array<ElementA, FragmentA::kElements / 2> *
+        ptr_tmp_A = reinterpret_cast<Array<ElementA,
+                                             FragmentA::kElements / 2> *>(&tmp_A);
+    Array<MmaElementA, FragmentA::kElements / 2> *
+        ptr_dst_A = reinterpret_cast<Array<MmaElementA,
+                                             FragmentA::kElements / 2> *>(&dst_A);
+
+    // Shuffle data within warp to obtain the mma.sync operand layout
+    detail::FragmentShuffler<MmaElementA, ElementA, MmaIterations::kRow,
+             FragmentA::kElements, MmaOperandA::kElements, Operand::kA> shuffler_A;
+
+    // Convert the A operand to the Mma Instruction operand type
+    detail::FragmentConverter<MmaElementA, ElementA, FragmentA::kElements / 2> convert_A;
+
+    tmp_A = shuffler_A(A);
+    ptr_dst_A[0] = convert_A(ptr_tmp_A[0]);
+
+    ptr_dst_A[1] = convert_A(ptr_tmp_A[1]);
   }
 };
 

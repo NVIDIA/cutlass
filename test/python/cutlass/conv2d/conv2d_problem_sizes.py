@@ -36,8 +36,9 @@ Utilities for defining Conv2D problem sizes for testing.
 This file was ported from the C++ version in test/unit/conv/device/conv2d_problems.h
 """
 
+from cutlass_library import ConvMode
+
 import cutlass
-from cutlass import ConvMode
 from cutlass.shape import Conv2DProblemSize
 
 

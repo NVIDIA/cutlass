@@ -86,7 +86,7 @@
     CUTLASS builders make an attempt to pick the best schedule when `Auto` is provided such that the
     assembled collectives have the best performance, but this is not a guarantee. A user relying on `Auto`
     may get a free performance upgrade with newer CUTLASS releases in case we can provide more optimized
-    implementations that the builder can transparently assemble for `Auto`. But a user should not rely on 
+    implementations that the builder can transparently assemble for `Auto`. But a user should not rely on
     `Auto` if they require a specific scheduling policy and/or stage count to be used.
 
     If a user decides to let the builders pick the collective specialization via `Auto` schedules,
@@ -289,7 +289,7 @@ struct ExampleRunner {
   // EVTs can be constructed by composing the fundamental load/store/compute visitor operations defined in include/cutlass/epilogue/fusion
   // For more complex examples of EVT construction please refer to include/cutlass/epilogue/fusion/sm90_callbacks_tma_warpspecialized.hpp
   using CustomEVT =  // alpha * acc + beta * C
-    cutlass::epilogue::fusion::Sm90EVT<cutlass::epilogue::fusion::Sm90Compute<cutlass::multiply_add, ElementD, ElementCompute, RoundStyle>, // beta * C + (alpha * acc)
+    cutlass::epilogue::fusion::Sm90EVT<cutlass::epilogue::fusion::Sm90Compute<cutlass::homogeneous_multiply_add, ElementD, ElementCompute, RoundStyle>, // beta * C + (alpha * acc)
       cutlass::epilogue::fusion::Sm90ScalarBroadcast<ElementScalar>, // beta
       cutlass::epilogue::fusion::Sm90SrcFetch, // C
       cutlass::epilogue::fusion::Sm90EVT<cutlass::epilogue::fusion::Sm90Compute<cutlass::multiplies, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc
@@ -322,7 +322,7 @@ struct ExampleRunner {
       ElementAccumulator,
       Shape<_128,_128,_64>, Shape<_2,_1,_1>,
       cute::conditional_t<cute::is_same_v<StageCountType, cutlass::gemm::collective::StageCountAuto>,
-          cutlass::gemm::collective::StageCountAutoCarveout<(int)sizeof(typename CollectiveEpilogue::SharedStorage)>,
+          cutlass::gemm::collective::StageCountAutoCarveout<static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))>,
           StageCountType>,
       MainloopScheduleType
     >::CollectiveOp;

@@ -112,15 +112,18 @@
         args.sync()
 """
 
-import cutlass
-from cutlass import epilogue
-from cutlass import (
+from cutlass_library import (
     ConvKind,
     ConvMode,
+    DataTypeSize,
     IteratorAlgorithm,
+    OperationKind,
     SplitKMode,
     StrideSupport,
 )
+
+import cutlass
+from cutlass import epilogue
 from cutlass.backend import compiler
 from cutlass.backend.conv2d_operation import Conv2dArguments, Conv2dOperation
 from cutlass.backend.reduction_operation import ReductionOperation, ReductionArguments
@@ -202,7 +205,7 @@ class Conv2d(OperationBase):
         element_accumulator=None,
         cc: int = None, kernel_cc: int = None
     ):
-        super().__init__(cc=cc, kernel_cc=kernel_cc, operation_kind=cutlass.OperationKind.Conv2d)
+        super().__init__(cc=cc, kernel_cc=kernel_cc, operation_kind=OperationKind.Conv2d)
         # Verify the kernel cc
         if self.current_cc == 90:
             # The Conv2d kernel on Hopper (SM90) is currently unsupported
@@ -305,11 +308,11 @@ class Conv2d(OperationBase):
             self._reset_epilogue_functor_activation(epilogue.identity)
 
         self.alignment_pref_A = min(
-            128 // cutlass.DataTypeSize[self._element_a], max(self.possible_operations.alignments))
+            128 // DataTypeSize[self._element_a], max(self.possible_operations.alignments("A")))
         self.alignment_pref_B = min(
-            128 // cutlass.DataTypeSize[self._element_b], max(self.possible_operations.alignments))
+            128 // DataTypeSize[self._element_b], max(self.possible_operations.alignments("B")))
         self.alignment_pref_C = min(
-            128 // cutlass.DataTypeSize[self._element_c], max(self.possible_operations.alignments))
+            128 // DataTypeSize[self._element_c], max(self.possible_operations.alignments("C")))
 
     #
     # Tile description Related
@@ -342,8 +345,7 @@ class Conv2d(OperationBase):
             return
         if isinstance(td, dict):
             if self._tile_description is None:
-                alignment = list(self.possible_operations.kernels_by_alignment.keys())[0]
-                op = self.possible_operations.operations(alignment)[0]
+                op = self.possible_operations.default_operation()
                 self._tile_description = datatypes.td_from_profiler_op(op)
             if "cluster_shape" in td.keys():
                 if td["cluster_shape"] != [1, 1, 1]:
@@ -567,8 +569,7 @@ class Conv2d(OperationBase):
             if self.tile_description is not None:
                 tile_description = self.tile_description
             else:
-                min_alignment = min([alignment_A, alignment_B, alignment_C])
-                op = self.possible_operations.operations(min_alignment)[0]
+                op = self.possible_operations.operations(alignment_A, alignment_B, alignment_C)[0]
                 tile_description = datatypes.td_from_profiler_op(op)
         else:
             valid, err_str = self._valid_tile_description(tile_description)
@@ -753,6 +754,8 @@ class Conv2d(OperationBase):
         :return: arguments passed in to the kernel
         :rtype: cutlass.backend.Conv2dArguments
         """
+        super().run_setup()
+
         A = self._verify_tensor(A, self.A, self._element_a, self._layout_a, "A")
         B = self._verify_tensor(B, self.B, self._element_b, self._layout_b, "B")
         C = self._verify_tensor(C, self.C, self._element_c, self._layout_c, "C")
@@ -782,9 +785,9 @@ class Conv2d(OperationBase):
         shape_c = datatypes.get_tensor_shape(C, op="CONV")
 
         # Get the alignment
-        alignment_a = self.possible_operations.find_alignment(shape_a, self._layout_a)
-        alignment_b = self.possible_operations.find_alignment(shape_b, self._layout_b)
-        alignment_c = self.possible_operations.find_alignment(shape_c, self._layout_c)
+        alignment_a = self.possible_operations.find_alignment(shape_a, self._layout_a, operand="A")
+        alignment_b = self.possible_operations.find_alignment(shape_b, self._layout_b, operand="B")
+        alignment_c = self.possible_operations.find_alignment(shape_c, self._layout_c, operand="C")
 
         alignment_a = check.update_alignment(alignment_a, self.alignment_pref_A)
         alignment_b = check.update_alignment(alignment_b, self.alignment_pref_B)
@@ -858,6 +861,10 @@ class Conv2d(OperationBase):
         if sync:
             if split_k[0] == "parallel" and split_k[1] > 1:
                 reduction_arguments.sync()
+
+                # Free memory allocated by args because we are not
+                # calling `arguments.sync()` in this case (which will free memory)
+                arguments.free()
             else:
                 arguments.sync()
 

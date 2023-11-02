@@ -95,6 +95,28 @@ using has_int0 = has_elem<Tuple, Int<0>>;
 // Slice keeps only the elements of Tuple B that are paired with an Underscore
 //
 
+namespace detail {
+
+template <class A, class B>
+CUTE_HOST_DEVICE constexpr
+auto
+lift_slice(A const& a, B const& b)
+{
+  if constexpr (is_tuple<A>::value) {
+    static_assert(tuple_size<A>::value == tuple_size<B>::value, "Mismatched Ranks");
+    return filter_tuple(a, b, [](auto const& x, auto const& y) { return lift_slice(x,y); });
+  } else if constexpr (is_underscore<A>::value) {
+    return cute::tuple<B>{b};
+  } else {
+    return cute::tuple<>{};
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+} // end namespace detail
+
+// Entry point overrides the lifting so that slice(_,b) == b
 template <class A, class B>
 CUTE_HOST_DEVICE constexpr
 auto
@@ -102,9 +124,9 @@ slice(A const& a, B const& b)
 {
   if constexpr (is_tuple<A>::value) {
     static_assert(tuple_size<A>::value == tuple_size<B>::value, "Mismatched Ranks");
-    return filter_tuple(a, b, [](auto const& x, auto const& y) { return slice(x,y); });
+    return filter_tuple(a, b, [](auto const& x, auto const& y) { return detail::lift_slice(x,y); });
   } else if constexpr (is_underscore<A>::value) {
-    return cute::tuple<B>{b};
+    return b;
   } else {
     return cute::tuple<>{};
   }
@@ -116,6 +138,28 @@ slice(A const& a, B const& b)
 // Dice keeps only the elements of Tuple B that are paired with an Int
 //
 
+namespace detail {
+
+template <class A, class B>
+CUTE_HOST_DEVICE constexpr
+auto
+lift_dice(A const& a, B const& b)
+{
+  if constexpr (is_tuple<A>::value) {
+    static_assert(tuple_size<A>::value == tuple_size<B>::value, "Mismatched Ranks");
+    return filter_tuple(a, b, [](auto const& x, auto const& y) { return lift_dice(x,y); });
+  } else if constexpr (is_underscore<A>::value) {
+    return cute::tuple<>{};
+  } else {
+    return cute::tuple<B>{b};
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+} // end namespace detail
+
+// Entry point overrides the lifting so that dice(1,b) == b
 template <class A, class B>
 CUTE_HOST_DEVICE constexpr
 auto
@@ -123,11 +167,11 @@ dice(A const& a, B const& b)
 {
   if constexpr (is_tuple<A>::value) {
     static_assert(tuple_size<A>::value == tuple_size<B>::value, "Mismatched Ranks");
-    return filter_tuple(a, b, [](auto const& x, auto const& y) { return dice(x,y); });
+    return filter_tuple(a, b, [](auto const& x, auto const& y) { return detail::lift_dice(x,y); });
   } else if constexpr (is_underscore<A>::value) {
     return cute::tuple<>{};
   } else {
-    return cute::tuple<B>{b};
+    return b;
   }
 
   CUTE_GCC_UNREACHABLE;

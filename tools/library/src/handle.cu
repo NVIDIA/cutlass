@@ -1183,7 +1183,7 @@ Operation const* find_gemm_operation_for_parallel_reduction(Operation const *ope
     return nullptr;
   }
 
-  // return matching gemm operation (same tile shape, stages, warp count, and instruction)
+  // return matching gemm opertion (same tile shape, stages, warp count, and instruction)
   for (auto op : it->second) {
     if (op->description().tile_description == operation->description().tile_description) {
       return op;

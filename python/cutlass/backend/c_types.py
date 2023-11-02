@@ -32,7 +32,7 @@
 
 import ctypes
 
-from cutlass import (
+from cutlass_library import (
     DataType,
     KernelScheduleType
 )
@@ -125,7 +125,7 @@ def get_mainloop_arguments_3x(
     Returns the ctypes structure to be used for the 3.x kernel's mainloop parameters.
 
     :param kernel_schedule: type of kernel schedule to be used in the mainloop
-    :type kerel_schedule: cutlass.KernelScheduleType
+    :type kernel_schedule: cutlass_library.KernelScheduleType
     :param element_A: data type of operand A
     :param element_B: data type of operand B
     :param alignment_A: alignment of operand A
@@ -166,25 +166,10 @@ def get_mainloop_arguments_3x(
                 args.ptr_A, args.stride_A, args.ptr_B, args.stride_B,
             )
 
-    tma_alignment_bytes = 16
-    is_tma_aligned_A = ((DataTypeSizeBytes[element_A] * alignment_A) % tma_alignment_bytes) == 0
-    is_tma_aligned_B = ((DataTypeSizeBytes[element_B] * alignment_B) % tma_alignment_bytes) == 0
-    is_tma_aligned = is_tma_aligned_A and is_tma_aligned_B
-
-    if kernel_schedule == KernelScheduleType.Multistage:
-        return _MainloopArgumentsMultistage
-    elif kernel_schedule == KernelScheduleType.ScheduleAuto:
-        if is_tma_aligned:
-            return _MainloopArgumentsTma
-        else:
-            return _MainloopArgumentsMultistage
-    else:
-        if is_tma_aligned:
-            return _MainloopArgumentsTma
-        else:
-            raise Exception(f"Specified a kernel schedule using TMA ({kernel_schedule}), but "
-                            "the provided data types and alignments are not properly aligned for "
-                            "using TMA.")
+    # Currently all 3.x kernels (CpAsync and Tma) have the same argument structure.
+    # Should that become not the case, this is the place to return custom ctypes
+    # structures based on selected kernel schedule.
+    return _MainloopArgumentsTma
 
 
 def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor):

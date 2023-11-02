@@ -60,15 +60,21 @@ struct FusionOperation {
   using ElementBias = void;
   static constexpr int AlignmentBias = 0;
   static constexpr bool IsPerRowBiasSupported = false;
+  static constexpr bool IsDePerRowBiasSupported = false;
+
   using ActivationFn = void;
   static constexpr bool IsEltActSupported = false;
+  static constexpr bool IsDeEltActSupported = false;
 
   using ElementAux = void;
   using GmemLayoutTagAux = void;
   static constexpr int AlignmentAux = 0;
   static constexpr bool IsAuxOutSupported = false;
+  static constexpr bool IsAuxInSupported = false;
+
   using ElementAmax = void;
   static constexpr bool IsAbsMaxSupported = false;
+
 };
 
 // D = alpha * acc
@@ -240,6 +246,51 @@ struct ScaledLinCombPerRowBiasEltActAmaxAux
   using GmemLayoutTagAux = GmemLayoutTagAux_;
   static constexpr int AlignmentAux = AlignmentAux_;
   static constexpr bool IsAuxOutSupported = true;
+};
+
+// Z = Aux
+// dY = alpha * acc + beta * C
+// D = d_activation(dY, Z)
+template<
+  class GmemLayoutTagAux_,
+  template <class> class ActivationFn_,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementAux_ = ElementOutput_,
+  class ElementScalar_ = ElementCompute_,
+  int AlignmentAux_ = 128 / sizeof_bits_v<ElementAux_>,
+  FloatRoundStyle RoundStyle_ = FloatRoundStyle::round_to_nearest
+>
+struct LinCombDeEltAct
+    : LinCombEltAct<ActivationFn_, ElementOutput_, ElementCompute_, ElementScalar_, RoundStyle_> {
+  using ElementAux = ElementAux_;
+  using GmemLayoutTagAux = GmemLayoutTagAux_;
+  static constexpr int AlignmentAux = AlignmentAux_;
+  static constexpr bool IsAuxInSupported = true;
+};
+
+// Z = Aux
+// dY = alpha * acc + beta * C
+// D = d_activation(dY, Z)
+// dBias = sum of columns of D
+template<
+  class GmemLayoutTagAux_,
+  template <class> class ActivationFn_,
+  class ElementOutput_,
+  class ElementCompute_,
+  class ElementAux_ = ElementOutput_,
+  class ElementBias_ = ElementCompute_,
+  class ElementScalar_ = ElementCompute_,
+  int AlignmentAux_ = 128 / sizeof_bits_v<ElementAux_>,
+  int AlignmentBias_ = 128 / sizeof_bits_v<ElementBias_>,
+  FloatRoundStyle RoundStyle_ = FloatRoundStyle::round_to_nearest
+>
+struct LinCombDeEltActDePerRowBias
+    : LinCombDeEltAct<GmemLayoutTagAux_, ActivationFn_, ElementOutput_, ElementCompute_,
+        ElementAux_, ElementScalar_, AlignmentAux_, RoundStyle_> {
+  using ElementBias = ElementBias_;
+  static constexpr int AlignmentBias = AlignmentBias_;
+  static constexpr bool IsDePerRowBiasSupported = true;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

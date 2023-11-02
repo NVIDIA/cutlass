@@ -44,7 +44,7 @@ void rmsnorm_host(cutlass::MatrixCoord tensor_size,
 		  cutlass::TensorRef<ElementType, Layout> output,
 		  cutlass::TensorRef<ElementType, Layout> input,
 		  cutlass::TensorRef<ElementType, Layout> weight,
-		  float epsilon) {
+                  float epsilon) {
   const int M = tensor_size.row();
   const int N = tensor_size.column();
 
@@ -94,7 +94,7 @@ void run_test(int M, int N) {
 
   rmsnorm_host({M, N}, output_ref.host_ref(), input.host_ref(), weight.host_ref(), (float)1e-5);
   cutlass::rmsnorm({M, N}, output.device_ref(),
-		   input.device_ref(), weight.device_ref(), NULL, (float)1e-5);
+		   input.device_ref(), weight.device_ref(), NULL, (float)1e-5L);
 
   output.sync_host();
 

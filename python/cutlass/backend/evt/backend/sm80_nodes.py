@@ -30,7 +30,7 @@
 #
 #################################################################################################
 
-from cutlass import DataTypeTag
+from cutlass_library import DataTypeSize, DataTypeTag
 
 from cutlass.backend.evt.ir import (
     # Load Node

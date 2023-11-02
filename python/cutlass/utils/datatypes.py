@@ -35,33 +35,55 @@ Utility functions for converting between frontend datatypes and CUTLASS datatype
 """
 
 import cutlass
-from cutlass import (
+from cutlass_library import (
     DataTypeSize,
+    MathOperation,
+    MathInstruction
 )
 from cutlass.backend.library import (
-    MathInstruction,
-    MathOperation,
     TileDescription,
 )
 
-try:
-    import numpy as np
+bfloat16_available = None
+cupy_available = None
+numpy_available = None
+torch_available = None
+_library_to_cupy_dict = None
+_library_to_numpy_dict = None
+_library_to_torch_dict = None
+_torch_to_library_dict = None
 
-    numpy_available = True
-    _library_to_numpy_dict = {
-        cutlass.DataType.f16: np.float16,
-        cutlass.DataType.f32: np.float32,
-        cutlass.DataType.f64: np.float64,
-        cutlass.DataType.s8: np.int8,
-        cutlass.DataType.s32: np.int32,
-    }
-except ImportError:
-    numpy_available = False
-    _library_to_numpy_dict = {}
+
+def is_numpy_available():
+    global numpy_available, _library_to_numpy_dict
+    if numpy_available is None:
+        try:
+            import numpy as np
+
+            numpy_available = True
+            _library_to_numpy_dict = {
+                cutlass.DataType.f16: np.float16,
+                cutlass.DataType.f32: np.float32,
+                cutlass.DataType.f64: np.float64,
+                cutlass.DataType.s8: np.int8,
+                cutlass.DataType.s32: np.int32,
+            }
+        except ImportError:
+            numpy_available = False
+            _library_to_numpy_dict = {}
+    return numpy_available
+
+
+def is_numpy_tensor(inp) -> bool:
+    if is_numpy_available():
+        import numpy as np
+        return isinstance(inp, np.ndarray)
+    return False
 
 
 def numpy_library_type(inp) -> cutlass.DataType:
-    if numpy_available:
+    if is_numpy_available():
+        import numpy as np
         if inp == np.float16:
             return cutlass.DataType.f16
         elif inp == np.float32:
@@ -79,24 +101,36 @@ def numpy_type(inp):
     return _library_to_numpy_dict.get(inp, None)
 
 
-try:
-    import cupy as cp
+def is_cupy_available():
+    global cupy_available
+    if cupy_available is None:
+        try:
+            import cupy as cp
 
-    cupy_available = True
-    _library_to_cupy_dict = {
-        cutlass.DataType.f16: cp.float16,
-        cutlass.DataType.f32: cp.float32,
-        cutlass.DataType.f64: cp.float64,
-        cutlass.DataType.s8: cp.int8,
-        cutlass.DataType.s32: cp.int32,
-    }
-except ImportError:
-    cupy_available = False
-    _library_to_cupy_dict = {}
+            cupy_available = True
+            _library_to_cupy_dict = {
+                cutlass.DataType.f16: cp.float16,
+                cutlass.DataType.f32: cp.float32,
+                cutlass.DataType.f64: cp.float64,
+                cutlass.DataType.s8: cp.int8,
+                cutlass.DataType.s32: cp.int32,
+            }
+        except ImportError:
+            cupy_available = False
+            _library_to_cupy_dict = {}
+    return cupy_available
+
+
+def is_cupy_tensor(inp) -> bool:
+    if is_cupy_available():
+        import cupy as cp
+        return isinstance(inp, cp.ndarray)
+    return False
 
 
 def cupy_library_type(inp) -> cutlass.DataType:
-    if cupy_available:
+    if is_cupy_available():
+        import cupy as cp
         if inp == cp.float16:
             return cutlass.DataType.f16
         elif inp == cp.float32:
@@ -110,39 +144,50 @@ def cupy_type(inp):
     return _library_to_cupy_dict.get(inp, None)
 
 
-try:
-    import torch
+def is_torch_available():
+    global torch_available, _library_to_torch_dict, _torch_to_library_dict
+    if torch_available is None:
+        try:
+            import torch
 
-    torch_available = True
-    _torch_to_library_dict = {
-        torch.half: cutlass.DataType.f16,
-        torch.float16: cutlass.DataType.f16,
-        torch.bfloat16: cutlass.DataType.bf16,
-        torch.float: cutlass.DataType.f32,
-        torch.float32: cutlass.DataType.f32,
-        torch.double: cutlass.DataType.f64,
-        torch.float64: cutlass.DataType.f64,
-        torch.int8: cutlass.DataType.s8,
-        torch.int32: cutlass.DataType.s32,
-        torch.uint8: cutlass.DataType.u8,
-    }
+            torch_available = True
+            _torch_to_library_dict = {
+                torch.half: cutlass.DataType.f16,
+                torch.float16: cutlass.DataType.f16,
+                torch.bfloat16: cutlass.DataType.bf16,
+                torch.float: cutlass.DataType.f32,
+                torch.float32: cutlass.DataType.f32,
+                torch.double: cutlass.DataType.f64,
+                torch.float64: cutlass.DataType.f64,
+                torch.int8: cutlass.DataType.s8,
+                torch.int32: cutlass.DataType.s32,
+                torch.uint8: cutlass.DataType.u8,
+            }
 
-    _library_to_torch_dict = {
-        cutlass.DataType.f16: torch.half,
-        cutlass.DataType.f16: torch.float16,
-        cutlass.DataType.bf16: torch.bfloat16,
-        cutlass.DataType.f32: torch.float,
-        cutlass.DataType.f32: torch.float32,
-        cutlass.DataType.f64: torch.double,
-        cutlass.DataType.f64: torch.float64,
-        cutlass.DataType.s8: torch.int8,
-        cutlass.DataType.s32: torch.int32,
-        cutlass.DataType.u8: torch.uint8,
-    }
-except ImportError:
-    torch_available = False
-    _torch_to_library_dict = {}
-    _library_to_torch_dict = {}
+            _library_to_torch_dict = {
+                cutlass.DataType.f16: torch.half,
+                cutlass.DataType.f16: torch.float16,
+                cutlass.DataType.bf16: torch.bfloat16,
+                cutlass.DataType.f32: torch.float,
+                cutlass.DataType.f32: torch.float32,
+                cutlass.DataType.f64: torch.double,
+                cutlass.DataType.f64: torch.float64,
+                cutlass.DataType.s8: torch.int8,
+                cutlass.DataType.s32: torch.int32,
+                cutlass.DataType.u8: torch.uint8,
+            }
+        except ImportError:
+            torch_available = False
+            _torch_to_library_dict = {}
+            _library_to_torch_dict = {}
+    return torch_available
+
+
+def is_torch_tensor(inp) -> bool:
+    if is_torch_available():
+        import torch
+        return isinstance(inp, torch.Tensor)
+    return False
 
 
 def torch_library_type(inp) -> cutlass.DataType:
@@ -153,28 +198,35 @@ def torch_type(inp):
     return _library_to_torch_dict.get(inp, None)
 
 
-try:
-    import bfloat16
+def is_bfloat16_available():
+    global bfloat16_available
 
-    bfloat16_available = True
-except ImportError:
-    bfloat16_available = False
+    if bfloat16_available is None:
+        try:
+            import bfloat16
+
+            bfloat16_available = True
+        except ImportError:
+            bfloat16_available = False
+    return bfloat16_available
 
 
 def bfloat16_library_type(inp) -> cutlass.DataType:
-    if bfloat16_available:
+    if is_bfloat16_available():
+        import bfloat16
         if inp == bfloat16.bfloat16:
             return cutlass.DataType.bf16
 
 
 def bfloat16_type(inp):
-    if bfloat16_available:
+    if is_bfloat16_available():
+        import bfloat16
         if inp == cutlass.DataType.bf16:
             return bfloat16.bfloat16
 
 
 def library_type(inp):
-    if inp in cutlass.DataTypeSize.keys():
+    if inp in DataTypeSize:
         return inp
 
     for cvt_fn in [
@@ -205,23 +257,20 @@ def _tensor_from_torch(pt_tensor):
 
 
 def get_datatype_and_layout(tensor):
-    if (numpy_available and isinstance(tensor, np.ndarray)) or (
-        cupy_available and isinstance(tensor, cp.ndarray)
-    ):
+    if (is_numpy_tensor(tensor) or is_cupy_tensor(tensor)):
         return _tensor_from_numpy(tensor)
-    elif torch_available and isinstance(tensor, torch.Tensor):
+    elif is_torch_tensor(tensor):
         return _tensor_from_torch(tensor)
     elif isinstance(tensor, float) or isinstance(tensor, int):
         return (cutlass.DataType.f32, cutlass.LayoutType.RowMajor)
     else:
         raise Exception(f"Unable to convert tensor of type {type(tensor)} to Python-bound CUTLASS datatype and layout.")
 
+
 def get_tensor_shape(tensor, op="GEMM"):
-    if (numpy_available and isinstance(tensor, np.ndarray)) or (
-        cupy_available and isinstance(tensor, cp.ndarray)
-    ):
+    if (is_numpy_tensor(tensor) or is_cupy_tensor(tensor)):
         return tensor.shape
-    elif torch_available and isinstance(tensor, torch.Tensor):
+    elif is_torch_tensor(tensor):
         size = tensor.size()
         if op == "CONV":
             # PyTorch Tensors have shape NCHW
@@ -237,7 +286,7 @@ def get_tensor_shape(tensor, op="GEMM"):
 _math_operation_value_map = {x.value: x for x in MathOperation}
 
 
-def backend_math_operation(math_op: cutlass.MathOperation):
+def backend_math_operation(math_op: MathOperation):
     if math_op.value not in _math_operation_value_map.keys():
         raise Exception(f"Unable to convert math operation of type {math_op} to backend math operation.")
     return _math_operation_value_map[math_op.value]

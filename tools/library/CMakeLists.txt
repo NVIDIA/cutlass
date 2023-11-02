@@ -264,7 +264,8 @@ set(CUTLASS_LIBRARY_GENERATED_KERNEL_LIST_FILE ${CMAKE_CURRENT_BINARY_DIR}/gener
 # in ${CMAKE_CURRENT_BINARY_DIR}/library_instance_generation.log, set this parameter to INFO
 execute_process(
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../python/cutlass_library
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../../python/cutlass_library/generator.py
+  COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${CUTLASS_LIBRARY_PACKAGE_DIR}
+    ${Python3_EXECUTABLE} ${CUTLASS_SOURCE_DIR}/python/cutlass_library/generator.py
     --operations "${CUTLASS_LIBRARY_OPERATIONS}" 
     --build-dir ${PROJECT_BINARY_DIR}
     --curr-build-dir ${CMAKE_CURRENT_BINARY_DIR}
@@ -275,6 +276,7 @@ execute_process(
     --selected-kernel-list "${CUTLASS_LIBRARY_GENERATED_KERNEL_LIST_FILE}"
     --cuda-version "${CUTLASS_GENERATOR_CUDA_COMPILER_VERSION}"
     --log-level DEBUG
+    --disable-cutlass-package-imports
   RESULT_VARIABLE cutlass_lib_INSTANCE_GENERATION_RESULT
   OUTPUT_VARIABLE cutlass_lib_INSTANCE_GENERATION_OUTPUT
   OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/library_instance_generation.log
