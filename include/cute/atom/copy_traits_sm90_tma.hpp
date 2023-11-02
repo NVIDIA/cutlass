@@ -79,6 +79,14 @@ struct Copy_Traits<SM90_TMA_LOAD_OP, NumBitsPerTMA>
   copy_unpack_(void const* const dst_ptr,
                Coord const& src_coord, seq<Is...>) const
   {
+#if 0
+    auto [c0,c1,c2,c3,c4] = append<5>(src_coord, 0);
+    printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
+           threadIdx.x, threadIdx.y, threadIdx.z,
+           blockIdx.x, blockIdx.y, blockIdx.z,
+           int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), dst_ptr);
+#endif
+
     SM90_TMA_LOAD::copy(&tma_desc_, tma_load_mbar_,
                         dst_ptr, get<Is>(src_coord)...);
   }
@@ -185,6 +193,14 @@ struct Copy_Traits<SM90_TMA_LOAD_MULTICAST_OP, NumBitsPerTMA>
   copy_unpack_(void const* const dst_ptr,
                Coord const& src_coord, seq<Is...>) const
   {
+#if 0
+    auto [c0,c1,c2,c3,c4] = append<5>(src_coord, 0);
+    printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
+           threadIdx.x, threadIdx.y, threadIdx.z,
+           blockIdx.x, blockIdx.y, blockIdx.z,
+           int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), dst_ptr);
+#endif
+
     SM90_TMA_LOAD_MULTICAST::copy(&tma_desc_, tma_load_mbar_, multicast_mask_,
                                   dst_ptr, get<Is>(src_coord)...);
   }
@@ -298,6 +314,14 @@ struct Copy_Traits<SM90_TMA_STORE, NumBitsPerTMA, AuxParams_>
   copy_unpack_(void const* const src_ptr,
                Coord const& dst_coord, seq<Is...>) const
   {
+#if 0
+    auto [c0,c1,c2,c3,c4] = append<5>(dst_coord, 0);
+    printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",
+           threadIdx.x, threadIdx.y, threadIdx.z,
+           blockIdx.x, blockIdx.y, blockIdx.z,
+           int32_t(c0), int32_t(c1), int32_t(c2), int32_t(c3), int32_t(c4), src_ptr);
+#endif
+
     SM90_TMA_STORE::copy(&tma_desc_,
                          src_ptr, get<Is>(dst_coord)...);
   }
@@ -354,8 +378,8 @@ struct Copy_Traits<SM90_BULK_COPY_G2S, NumBitsPerTMA, OpArgs...>
                   "Extra arguments not set. Set .with() before use.");
     static_assert(is_gmem<TS>::value, "Expected gmem src for SM90_BULK_COPY_G2S");
     static_assert(is_smem<TD>::value, "Expected smem dst for SM90_BULK_COPY_G2S");
-    SM90_BULK_COPY_G2S::copy(src.data().get(), *get<0>(traits.bulk_load_mbar_),
-                             dst.data().get(), int32_t(NumBitsPerTMA::value / 8));
+    SM90_BULK_COPY_G2S::copy(raw_pointer_cast(src.data()), *get<0>(traits.bulk_load_mbar_),
+                             raw_pointer_cast(dst.data()), int32_t(NumBitsPerTMA::value / 8));
   }
 
   // Record the memory barrier for the instruction
@@ -390,7 +414,7 @@ struct Copy_Traits<SM90_BULK_COPY_S2G, NumBitsPerTMA>
   {
     static_assert(is_smem<TS>::value, "Expected smem src for SM90_BULK_COPY_S2G");
     static_assert(is_gmem<TD>::value, "Expected gmem dst for SM90_BULK_COPY_S2G");
-    SM90_BULK_COPY_S2G::copy(src.data().get(), dst.data().get(), int32_t(NumBitsPerTMA::value / 8));
+    SM90_BULK_COPY_S2G::copy(raw_pointer_cast(src.data()), raw_pointer_cast(dst.data()), int32_t(NumBitsPerTMA::value / 8));
   }
 };
 
@@ -497,7 +521,7 @@ coalesce_256(Tensor<Engine,Layout> const& tensor)
 //   and construct a TMA Descriptor for the resulting instruction
 // At the same time, construct the Tma Tensor's Stride to generate
 //   the TMA coordinates that the instruction consumes.
-// 
+//
 template <class TmaInternalType,
           class GEngine, class GLayout,
           class SShape, class SStride,
@@ -518,7 +542,7 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
   // Perform the tiling to the gmem vector again, but with indirections to the gtensor modes
   auto gbasis = make_identity_layout(shape(gtensor));
   auto tile_gbasis_tmp = gbasis.compose(smem_inv_h);
-  
+
   // Instead of the recast (gbasis doesn't have type info), replace the shape with the already-recasted shape
   // tma_box_shape:gmem_mode
   auto tile_gbasis = make_layout(shape(tile_gstride), stride(tile_gbasis_tmp));
@@ -530,8 +554,8 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
   // NOTE This is essentially ArithmeticTuple complement...
   // NOTE   in pursuit of implementing an ArithmeticTuple logical_divide for smem_inv_h
   auto tile_gbasis_remaining_stride = filter_tuple(flatten(shape (gtensor_T)), flatten(stride(gtensor_T)),
-                                                   flatten(stride(gbasis)), 
-                                                   [&](auto s, auto d, auto e) 
+                                                   flatten(stride(gbasis)),
+                                                   [&](auto s, auto d, auto e)
   {
     if constexpr (is_constant<1, decltype(s)>::value || is_constant<0, decltype(d)>::value) {
       return cute::tuple<>{};          // If size-1 or stride-0, then don't append
@@ -551,7 +575,7 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
   auto tma_gbasis_tile = tile_gbasis.compose(make_layout(wrap(shape(tma_gstride))));
 
   // Append the remaining basis modes that contribute to the TMA with size-1
-  auto tma_gbasis_full = make_layout(tuple_cat(wrap( shape(tma_gbasis_tile)), wrap(repeat<tile_gbasis_remaining_rank>(Int<1>{}))), 
+  auto tma_gbasis_full = make_layout(tuple_cat(wrap( shape(tma_gbasis_tile)), wrap(repeat<tile_gbasis_remaining_rank>(Int<1>{}))),
                                      tuple_cat(wrap(stride(tma_gbasis_tile)), wrap(tile_gbasis_remaining_stride)));
 
   // Group the trailing modes to make this max rank-5 -- TMA rank limitation
@@ -570,7 +594,7 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
 
   //
   // TMA desc creation
-  // 
+  //
 
   constexpr int tma_dim = decltype(rank(tma_gbasis))::value;
 
@@ -579,7 +603,7 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
   //
 
   void* gmem_address = (void*) raw_pointer_cast(gtensor_T.data());
-  auto  gmem_layout = gtensor_T.layout();
+  auto  gmem_layout  = gtensor_T.layout();
 
   cute::array<uint64_t, 5> gmem_prob_shape  = {1,1,1,1,1};
   cute::array<uint64_t, 5> gmem_prob_stride = {0,0,0,0,0};
@@ -665,20 +689,20 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
     //
     // Construct the descriptor
     //
-  
+
     TmaDescriptor tma_desc = {0};
-  
+
     //
     // TMA general info
     //
-  
+
   #if (__CUDACC_VER_MAJOR__ >= 12) && !defined(__CUDACC_RTC__)
-  
+
     CUtensorMapDataType     tma_format      = TMA::to_CUtensorMapDataType<TmaInternalType>();
     CUtensorMapInterleave   tma_interleave  = CU_TENSOR_MAP_INTERLEAVE_NONE;
     CUtensorMapL2promotion  tma_l2Promotion = CU_TENSOR_MAP_L2_PROMOTION_L2_128B;
     CUtensorMapFloatOOBfill tma_oobFill     = CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE;
-  
+
     // TMA smem swizzle type
     CUtensorMapSwizzle smem_swizzle = TMA::to_CUtensorMapSwizzle(get_tma_swizzle_bits(swizzle));
     CUresult result = cuTensorMapEncodeTiled(
@@ -694,7 +718,7 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
         smem_swizzle,
         tma_l2Promotion,
         tma_oobFill);
-  
+
     if (result != CUDA_SUCCESS) {
       std::cerr << "TMA Desc Addr:   " << &tma_desc
                 << "\nformat         " << tma_format
@@ -711,8 +735,11 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
       std::cerr << "Error: Failed to initialize the TMA descriptor " << result << std::endl;
       assert(false);
     }
-  
+
   #endif // (__CUDACC_VER_MAJOR__ >= 12) && !defined(__CUDACC_RTC__)
+  auto recast_ratio = cute::ratio(Int<sizeof_bits<typename GEngine::value_type>::value>{},
+                                  Int<sizeof_bits<             TmaInternalType>::value>{});
+
   // Finally, get the inverse permutation of the E<i> bases for the mocked gmem stride
   // NOTE This is essentially ArithmeticTuple inverse...
   auto gmem_stride_bases = transform_leaf(stride(gbasis), [&](auto ei) {
@@ -727,9 +754,9 @@ make_tma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,    // The original GM
       [[maybe_unused]] auto j = find_if(tma_gbasis_stride, [&](auto tma_stride_j) { return any_of(tma_stride_j, [&](auto dj) { return dj == EI{}; }); });
       if constexpr (decltype(j == rank(tma_gbasis_stride))::value) {
         return Int<0>{};               // If not-found, return arithmetic identity -- no contribution to the TMA
-      } else 
+      } else
       if constexpr (decltype(j == Int<0>{})::value) {
-        auto scale = ratio(size(tma_gstride), size(smem_inv_h)) * basis_get(ei, stride(gtensor));
+        auto scale = recast_ratio * basis_get(ei, stride(gtensor));
         return E<j>{} * scale;         // Return TMA Coord basis -- with a recast scale factor
       } else
       if constexpr (decltype(rank<j>(tma_gbasis_stride) == Int<1>{})::value) {
@@ -959,21 +986,23 @@ template <class TmaInternalType,
           class CopyOp,
           class GEngine, class GLayout,
           class SLayout,
-          class CTA_Tile,
+          class CTA_Tiler,
           class Cluster_Size>
 CUTE_HOST_RTC
 auto
 make_tma_copy(CopyOp                  const& copy_op,
               Tensor<GEngine,GLayout> const& gtensor,
               SLayout                 const& slayout,
-              CTA_Tile                const& cta_tile,
+              CTA_Tiler               const& cta_tiler,
               Cluster_Size            const& cluster_size)
 {
+  auto cta_v_tile = make_identity_layout(shape(gtensor)).compose(cta_tiler);
+  auto cta_t_tile = make_layout(cluster_size);
   return detail::make_tma_copy_tiled<TmaInternalType>(copy_op,
                                                       gtensor,
                                                       slayout,
-                                                      make_layout(cluster_size),
-                                                      make_identity_layout(cta_tile));
+                                                      cta_t_tile,
+                                                      cta_v_tile);
 }
 
 // Explicit defaulting

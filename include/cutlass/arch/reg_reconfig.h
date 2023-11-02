@@ -55,7 +55,6 @@ void warpgroup_reg_alloc(){
   asm volatile( "setmaxnreg.inc.sync.aligned.u32 %0;\n" : : "n"(RegCount) );
 #endif
 }
-
 template<uint32_t RegCount>
 CUTLASS_DEVICE
 void warpgroup_reg_dealloc(){

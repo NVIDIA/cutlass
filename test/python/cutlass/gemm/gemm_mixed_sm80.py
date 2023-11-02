@@ -17,7 +17,7 @@
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
 # DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
@@ -30,45 +30,43 @@
 #
 #################################################################################################
 
+"""
+Low-level functionality tests for GEMM with mixed operands on SM80
+"""
 
-import copy
-import os
-import setuptools
-from setuptools import setup
-from setuptools.command.build_ext import build_ext
+from functools import partial
+import logging
+import unittest
 
-import setup_pycute
-import setup_library
+import cutlass
+from cutlass.backend.utils.device import device_cc
 
-
-# Install cutlass_library package
-setup_library.perform_setup()
-
-
-# Install the PyCuTe package
-setup_pycute.perform_setup()
+from utils import LayoutCombination, add_test_gemm
 
 
-setup(
-    name='cutlass',
-    version='3.2.1',
-    description='CUTLASS Pythonic Interface',
-    package_dir={'': '.'},
-    packages=[
-        'cutlass',
-        'cutlass.emit',
-        'cutlass.op',
-        'cutlass.utils',
-        'cutlass.backend',
-        'cutlass.backend.utils'
-        ],
-    setup_requires=['pybind11'],
-    install_requires=[
-        'bfloat16',
-        'cuda-python>=11.8.0',
-        'pybind11',
-        'scikit-build',
-        'treelib',
-        'pydot'
-        ]
-)
+cutlass.set_log_level(logging.WARNING)
+cc = 80
+
+@unittest.skipIf(device_cc() < cc, 'Device compute capability is insufficient for SM80 tests.')
+class GemmMixedSm80(unittest.TestCase):
+    """
+    Wrapper class to which tests will be added dynamically in __main__
+    """
+    pass
+
+
+add_test_mixed = partial(add_test_gemm, cls=GemmMixedSm80, element=cutlass.DataType.f16, cc=cc, cluster_shape=[1, 1, 1],
+                         opclass=cutlass.OpcodeClass.TensorOp, threadblock_shape=[128, 128, 64],
+                         warp_count=[2, 2, 1], stages=3, element_accumulator=cutlass.DataType.f32)
+
+# Test with upcast on A
+add_test_mixed(element_A=cutlass.DataType.s8, alignments=[16, 8, 8], layouts=LayoutCombination.TNT)
+add_test_mixed(element_A=cutlass.DataType.s8, alignments=[16, 8, 8], layouts=LayoutCombination.TNN)
+
+# Test with upcast on B
+add_test_mixed(element_B=cutlass.DataType.s8, alignments=[8, 16, 8], layouts=LayoutCombination.TNT)
+add_test_mixed(element_B=cutlass.DataType.s8, alignments=[8, 16, 8], layouts=LayoutCombination.TNN)
+
+
+if __name__ == '__main__':
+    unittest.main()

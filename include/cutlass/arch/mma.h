@@ -92,6 +92,7 @@ struct UseStagedAccumulation {
   static bool const value = platform::is_same<Operator, OpMultiplyAddFastF32>::value ||
                             platform::is_same<Operator, OpMultiplyAddComplexFastF32>::value;
 };
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Tag indicating the complex multiply-add operation
@@ -128,7 +129,7 @@ struct OpClassWmmaTensorOp {};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Tag classifing operators as Tensor Core with structure sparse operations.
+/// Tag classifying operators as Tensor Core with structure sparse operations.
 struct OpClassSparseTensorOp {};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

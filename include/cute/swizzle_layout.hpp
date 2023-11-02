@@ -147,6 +147,7 @@ get_swizzle_portion(Layout<Shape,Stride>)
 // Get the "non-swizzle" part of a composed layout,
 // which is the underlying (non-composed) Layout.
 template <int B, int M, int S, class Offset, class LayoutB>
+CUTE_HOST_DEVICE constexpr
 auto
 get_nonswizzle_portion(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& slayout)
 {
@@ -155,6 +156,7 @@ get_nonswizzle_portion(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& slay
 
 // The non-swizzle part of a non-swizzled layout is just the Layout.
 template <class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
 auto
 get_nonswizzle_portion(Layout<Shape,Stride> const& slayout)
 {
@@ -358,6 +360,88 @@ left_inverse(ComposedLayout<Swizzle<B,M,S>,Offset,Layout> const& layout)
     return composition(left_inverse(layout.layout_b()), layout.layout_a());
   } else {
     return composition(left_inverse(layout.layout_b()), left_inverse(layout.offset()), left_inverse(layout.layout_a()));
+  }
+}
+
+template <int B, int M, int S>
+CUTE_HOST_DEVICE constexpr
+Swizzle<B,M,S>
+right_inverse(Swizzle<B,M,S> const& sw)
+{
+  return sw;
+}
+
+template <int B, int M, int S>
+CUTE_HOST_DEVICE constexpr
+Swizzle<B,M,S>
+left_inverse(Swizzle<B,M,S> const& sw)
+{
+  return sw;
+}
+
+// Kludge -- Probably want an OffsetFn<T> here instead
+template <class T, __CUTE_REQUIRES(is_integral<T>::value)>
+CUTE_HOST_DEVICE constexpr
+auto
+right_inverse(T const& t)
+{
+  return -t;
+}
+
+// Kludge -- Probably want an OffsetFn<T> here instead
+template <class T, __CUTE_REQUIRES(is_integral<T>::value)>
+CUTE_HOST_DEVICE constexpr
+auto
+left_inverse(T const& t)
+{
+  return -t;
+}
+
+//
+// Upcast and Downcast
+//
+
+template <int N, int B, int M, int S>
+CUTE_HOST_DEVICE constexpr
+auto
+upcast(Swizzle<B,M,S> const& swizzle)
+{
+  static_assert(has_single_bit(N), "N must be a power of two");
+  constexpr int log2_n = bit_width(uint32_t(N)) - 1;
+  constexpr int NewM   = M - log2_n;
+  if constexpr (NewM >= 0) {
+    return Swizzle<B,NewM,S>{};
+  } else {
+    return Swizzle<cute::max(B+NewM,0), 0, S>{};
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+template <int N, int B, int M, int S>
+CUTE_HOST_DEVICE constexpr
+auto
+downcast(Swizzle<B,M,S> const& swizzle)
+{
+  static_assert(has_single_bit(N), "N must be a power of two");
+  constexpr int log2_n = bit_width(uint32_t(N)) - 1;
+  return Swizzle<B,(M + log2_n),S>{};
+}
+
+template <class OldType, class NewType,
+          int B, int M, int S>
+CUTE_HOST_DEVICE constexpr
+auto
+recast_layout(Swizzle<B,M,S> const& swizzle)
+{
+  if constexpr (sizeof_bits<NewType>::value == sizeof_bits<OldType>::value) {
+    return swizzle;
+  } else if constexpr (sizeof_bits<NewType>::value > sizeof_bits<OldType>::value) {
+    static_assert(sizeof_bits<NewType>::value % sizeof_bits<OldType>::value == 0, "NewType must be a multiple of OldType");
+    return upcast<sizeof_bits<NewType>::value/sizeof_bits<OldType>::value>(swizzle);
+  } else if constexpr (sizeof_bits<NewType>::value < sizeof_bits<OldType>::value) {
+    static_assert(sizeof_bits<OldType>::value % sizeof_bits<NewType>::value == 0, "NewType must be a divisor of OldType");
+    return downcast<sizeof_bits<OldType>::value/sizeof_bits<NewType>::value>(swizzle);
   }
 }
 

@@ -93,13 +93,16 @@ class EVTErrorTests(unittest.TestCase):
         """
         Test when the epilogue consumes too much shared memory
         """
-        def evt_too_much_shared_memory(accum, C1, C2, C3, C4, C5):
+        def evt_too_much_shared_memory(accum, C1, C2, C3, C4, C5, C6, C7, C8):
             D1 = accum + C1
             D2 = D1 + C2
             D3 = D2 + C3
             D4 = D3 + C4
-            D = D4 + C5
-            return D, D1, D2, D3, D4
+            D5 = D4 + C5
+            D6 = D5 + C6
+            D7 = D6 + C7
+            D = D7 + C8
+            return D, D1, D2, D3, D4, D5, D6, D7
         
         example_tensors = {
             "accum": self.fake_tensor(np.float16, (6, 512, 512)),
@@ -108,10 +111,16 @@ class EVTErrorTests(unittest.TestCase):
             "C3": self.fake_tensor(np.float16, (6, 512, 512)),
             "C4": self.fake_tensor(np.float16, (6, 512, 512)),
             "C5": self.fake_tensor(np.float16, (6, 512, 512)),
+            "C6": self.fake_tensor(np.float16, (6, 512, 512)),
+            "C7": self.fake_tensor(np.float16, (6, 512, 512)),
+            "C8": self.fake_tensor(np.float16, (6, 512, 512)),
             "D1": self.fake_tensor(np.float16, (6, 512, 512)),
             "D2": self.fake_tensor(np.float16, (6, 512, 512)),
             "D3": self.fake_tensor(np.float16, (6, 512, 512)),
             "D4": self.fake_tensor(np.float16, (6, 512, 512)),
+            "D5": self.fake_tensor(np.float16, (6, 512, 512)),
+            "D6": self.fake_tensor(np.float16, (6, 512, 512)),
+            "D7": self.fake_tensor(np.float16, (6, 512, 512)),
             "D": self.fake_tensor(np.float16, (6, 512, 512))
         }
         

@@ -730,6 +730,24 @@ struct multiplies<Array<T, N>> {
   }
 };
 
+template <typename T, int N, bool PropogateNaN>
+struct maximum_absolute_value_reduction<Array<T, N>, PropogateNaN> {
+
+  CUTLASS_HOST_DEVICE
+  T operator() (T const& scalar, Array<T, N> const& rhs) const {
+
+    T result = scalar;
+    maximum_absolute_value_reduction<T, PropogateNaN> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result = scalar_op(result, rhs[i]);
+    }
+
+    return result;
+  }
+};
+
 template <typename T, int N>
 struct scale<Array<T, N>> {
   T const scaling_factor_;
@@ -791,6 +809,24 @@ struct divides<Array<T, N>> {
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < N; ++i) {
       result[i] = scalar_op(scalar, rhs[i]);
+    }
+
+    return result;
+  }
+};
+
+template <typename T, int N>
+struct reciprocal_approximate<Array<T, N>> {
+  
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const &lhs) const {
+
+    Array<T, N> result;
+    reciprocal_approximate<T> scalar_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      result[i] = scalar_op(lhs[i]);
     }
 
     return result;

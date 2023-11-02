@@ -400,6 +400,9 @@ ShortComplexLayoutNames = {
 class KernelScheduleType(enum.Enum):
   ScheduleAuto = enum_auto()
   Multistage = enum_auto()
+  CpAsyncWarpSpecialized = enum_auto()
+  CpAsyncWarpSpecializedPingpong = enum_auto()
+  CpAsyncWarpSpecializedCooperative = enum_auto()
   Tma = enum_auto()
   TmaWarpSpecialized = enum_auto()
   TmaWarpSpecializedPingpong = enum_auto()
@@ -411,6 +414,9 @@ class KernelScheduleType(enum.Enum):
 KernelScheduleTag = {
   KernelScheduleType.ScheduleAuto: 'cutlass::gemm::collective::KernelScheduleAuto',
   KernelScheduleType.Multistage: 'cutlass::gemm::KernelMultistage',
+  KernelScheduleType.CpAsyncWarpSpecialized: 'cutlass::gemm::KernelCpAsyncWarpSpecialized',
+  KernelScheduleType.CpAsyncWarpSpecializedPingpong: 'cutlass::gemm::KernelCpAsyncWarpSpecializedPingpong',
+  KernelScheduleType.CpAsyncWarpSpecializedCooperative: 'cutlass::gemm::KernelCpAsyncWarpSpecializedCooperative',
   KernelScheduleType.Tma: 'cutlass::gemm::KernelTma',
   KernelScheduleType.TmaWarpSpecialized: 'cutlass::gemm::KernelTmaWarpSpecialized',
   KernelScheduleType.TmaWarpSpecializedPingpong: 'cutlass::gemm::KernelTmaWarpSpecializedPingpong',
@@ -424,6 +430,9 @@ KernelScheduleTag = {
 KernelScheduleSuffixes = {
   KernelScheduleType.ScheduleAuto: '',
   KernelScheduleType.Multistage: '_cpasync',
+  KernelScheduleType.CpAsyncWarpSpecialized: '_cpasync_warpspecialized',
+  KernelScheduleType.CpAsyncWarpSpecializedPingpong: '_cpasync_warpspecialized_pingpong',
+  KernelScheduleType.CpAsyncWarpSpecializedCooperative: '_cpasync_warpspecialized_cooperative',
   KernelScheduleType.Tma: '_unspecialized',
   KernelScheduleType.TmaWarpSpecialized: '_warpspecialized',
   KernelScheduleType.TmaWarpSpecializedPingpong: '_warpspecialized_pingpong',
@@ -541,7 +550,6 @@ class OpcodeClass(enum.Enum):
   WmmaTensorOp = enum_auto()
   SparseTensorOp = enum_auto()
 
-
 OpcodeClassNames = {
   OpcodeClass.Simt: 'simt',
   OpcodeClass.TensorOp: 'tensorop',
@@ -628,19 +636,20 @@ class GemmKind(enum.Enum):
   Sparse = enum_auto()
   Universal = enum_auto()
   Universal3x = enum_auto()
+  SparseUniversal3x = enum_auto()
   PlanarComplex = enum_auto()
   PlanarComplexArray = enum_auto()
   Grouped = enum_auto()
-
 #
 GemmKindNames = {
   GemmKind.Gemm: "gemm",
   GemmKind.Sparse: "spgemm",
   GemmKind.Universal: "gemm",
   GemmKind.Universal3x: "gemm",
+  GemmKind.SparseUniversal3x: "spgemm",
   GemmKind.PlanarComplex: "gemm_planar_complex",
   GemmKind.PlanarComplexArray: "gemm_planar_complex_array",
-  GemmKind.Grouped: "gemm_grouped"
+  GemmKind.Grouped: "gemm_grouped",
 }
 
 #
@@ -797,7 +806,7 @@ class GroupMode(enum.Enum):
   NoneGroup = enum_auto()         # dense conv (G=1)
   SingleGroup = enum_auto()       # grouped convolution (single group per CTA)
   MultipleGroup = enum_auto()     # grouped convolution ( multiple groups per CTA)
-  Depthwise = enum_auto()    # Depthwise convolution ( C=K=G )
+  Depthwise = enum_auto()         # Depthwise convolution ( C=K=G )
 
 #
 GroupModeTag = {
@@ -818,14 +827,18 @@ GroupModeNames = {
 
 #
 class MathInstruction:
-  def __init__(self, instruction_shape, element_a, element_b, element_accumulator, opcode_class, math_operation = MathOperation.multiply_add):
+  def __init__(self, 
+      instruction_shape,                                            \
+      element_a, element_b, element_accumulator,                    \
+      opcode_class, math_operation = MathOperation.multiply_add     \
+    ): 
+
     self.instruction_shape = instruction_shape
     self.element_a = element_a
     self.element_b = element_b
     self.element_accumulator = element_accumulator
     self.opcode_class = opcode_class
     self.math_operation = math_operation
-
 #
 class TileDescription:
 

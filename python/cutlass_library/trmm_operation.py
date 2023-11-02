@@ -35,12 +35,18 @@ Utilities for emitting Trmm kernels
 """
 
 import enum
-import os.path
-import shutil
 import functools
 import operator
+import os.path
+import shutil
 
-from cutlass_library.library import *
+try:
+  import builtins
+  if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
+    raise ImportError("Disabling attempt to import cutlass_library")
+  from cutlass_library.library import *
+except ImportError:
+  from library import *
 
 
 ###################################################################################################
@@ -84,7 +90,7 @@ class TrmmOperation:
   #
   def is_mixed_input(self):
     return self.A.element != self.B.element
-  
+
   #
   def accumulator_type(self):
     accum = self.tile_description.math_instruction.element_accumulator

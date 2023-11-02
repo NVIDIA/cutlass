@@ -1034,7 +1034,7 @@ complement(Shape const& shape, Stride const& stride, CoSizeHi const& cosize_hi)
 
     // Should just be a sort and a fold...
     // Then we could even handle dynamic strides (but they would destroy all static strides)
-    auto [shape_, stride_, result_shape_, result_stride] = 
+    auto [shape_, stride_, result_shape_, result_stride] =
       fold(make_seq<R-1>{},
            cute::make_tuple(shape, stride, cute::make_tuple(), cute::make_tuple(Int<1>{})),
            [](auto const& init, auto i)
@@ -1094,7 +1094,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 inverse_seq(Shape const& shape, Stride const& stride, seq<Is...>)
 {
-  auto next_I = find_if(stride, [](auto a) { return is_constant<NextStride, decltype(a)>{}; }); 
+  auto next_I = cute::find_if(stride, [](auto a) { return is_constant<NextStride, decltype(a)>{}; });
 
   if constexpr (next_I == decltype(rank(stride))::value) {
     return seq<Is...>{};
@@ -1197,22 +1197,16 @@ auto
 max_common_layout(Layout<ShapeA,StrideA> const& a,
                   Layout<ShapeB,StrideB> const& b)
 {
-  if constexpr (is_static<ShapeA>::value && is_static<StrideA>::value &&
-                is_static<ShapeB>::value && is_static<StrideB>::value)
-  {
-    Layout inv_b  = right_inverse(b);
-    Layout common = coalesce(composition(a, inv_b));
+  Layout inv_b  = right_inverse(b);
+  Layout common = coalesce(composition(a, inv_b));
 
-    if constexpr (is_constant<1, decltype(stride<0>(common))>::value) {
-      // Truncate to the size of the contiguous vector (static stride-1 mode)
-      return composition(inv_b, layout<0>(common));
-    } else {
-      return Layout<_1,_0>{};
-    }
+  // NOTE: If one of the layouts is dynamic, we can't prove alignment+vectorization is valid
+  // We assume dynamic shapes/strides obey alignment requirements (i.e. are large and multiples of the vector)
+  if constexpr (is_static<decltype(shape<0>(common))>::value &&
+                is_constant<1, decltype(stride<0>(common))>::value) {
+    // Truncate to the size of the contiguous vector (static stride-1 mode)
+    return composition(inv_b, layout<0>(common));
   } else {
-    // CASE: One of the layouts is dynamic, can't prove alignment+vectorization is valid
-    // NOTE: Could weaken if we assume dynamic shapes/strides obey alignment requirements
-    //         (i.e. are large and multiples of the vector)
     return Layout<_1,_0>{};
   }
 }
@@ -1231,21 +1225,15 @@ auto
 max_common_vector(Layout<ShapeA,StrideA> const& a,
                   Layout<ShapeB,StrideB> const& b)
 {
-  if constexpr (is_static<ShapeA>::value && is_static<StrideA>::value &&
-                is_static<ShapeB>::value && is_static<StrideB>::value)
-  {
-    Layout common = coalesce(composition(a, right_inverse(b)));
+  Layout common = coalesce(composition(a, right_inverse(b)));
 
-    if constexpr (is_constant<1, decltype(stride<0>(common))>::value) {
-      // Truncate to the size of the contiguous vector (static stride-1 mode)
-      return shape<0>(common);
-    } else {
-      return Int<1>{};
-    }
+  // NOTE: If one of the layouts is dynamic, we can't prove alignment+vectorization is valid
+  // We assume dynamic shapes/strides obey alignment requirements (i.e. are large and multiples of the vector)
+  if constexpr (is_static<decltype(shape<0>(common))>::value &&
+                is_constant<1, decltype(stride<0>(common))>::value) {
+    // Truncate to the size of the contiguous vector (static stride-1 mode)
+    return shape<0>(common);
   } else {
-    // CASE: One of the layouts is dynamic, can't prove alignment+vectorization is valid
-    // NOTE: Could weaken if we assume dynamic shapes/strides obey alignment requirements
-    //         (i.e. are large and multiples of the vector)
     return Int<1>{};
   }
 
@@ -1410,6 +1398,21 @@ tiled_divide(Layout<LShape,LStride> const& layout,
 
   auto R = rank<1>(div);
   return div(_, repeat<R>(_));
+}
+
+// Same as zipped_divide, but unpacks both modes: (BLK_A,BLK_B,...,a,b,...,x,y)
+template <class LShape, class LStride,
+          class Tile>
+CUTE_HOST_DEVICE constexpr
+auto
+flat_divide(Layout<LShape,LStride> const& layout,
+            Tile                   const& tile)
+{
+  auto div = zipped_divide(layout, tile);
+
+  auto R0 = rank<0>(div);
+  auto R1 = rank<1>(div);
+  return div(repeat<R0>(_), repeat<R1>(_));
 }
 
 //
@@ -1606,7 +1609,7 @@ template <class OldType, class NewType,
           class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
-recast(Layout<Shape,Stride> const& layout)
+recast_layout(Layout<Shape,Stride> const& layout)
 {
   if constexpr (sizeof_bits<NewType>::value == sizeof_bits<OldType>::value) {
     return layout;

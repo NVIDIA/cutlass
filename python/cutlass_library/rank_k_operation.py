@@ -35,12 +35,18 @@ Utilities for emitting RankK kernels
 """
 
 import enum
-import os.path
-import shutil
 import functools
 import operator
+import os.path
+import shutil
 
-from cutlass_library.library import *
+try:
+  import builtins
+  if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
+    raise ImportError("Disabling attempt to import cutlass_library")
+  from cutlass_library.library import *
+except ImportError:
+  from library import *
 
 
 ###################################################################################################
@@ -80,7 +86,7 @@ class RankKOperation:
   #
   def is_mixed_input(self):
     return False
-  
+
   #
   def is_planar_complex(self):
     return False
@@ -259,7 +265,7 @@ using Operation_${operation_name} =
   def emit(self, operation):
 
     threadblock_shape = operation.tile_description.threadblock_shape
- 
+
     warp_count = operation.tile_description.warp_count
     warp_shape = [threadblock_shape[idx] // warp_count[idx] for idx in range(3)]
 

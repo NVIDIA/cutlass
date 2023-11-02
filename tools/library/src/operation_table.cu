@@ -47,9 +47,7 @@ void OperationTable::append(Manifest const &manifest) {
 
   // Insert operations into appropriate data structure
   for (auto const & operation : manifest) {
-
     OperationDescription const &desc = operation->description();
-
     // insert all gemm operation into operation table
     if (desc.kind == OperationKind::kGemm) {
       GemmDescription const &gemm_desc = static_cast<GemmDescription const &>(desc);

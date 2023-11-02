@@ -46,6 +46,16 @@
 
 namespace cutlass::reference::host {
 
+template<class T, class = void>
+struct ElementTraits {
+  using type = T;
+};
+
+template<class T>
+struct ElementTraits<T, std::enable_if_t<!std::is_same_v<decltype(std::declval<T>().get()), void> > >  {
+  using type = decltype(std::declval<T>().get());
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<
@@ -170,8 +180,8 @@ void gett_mainloop(
   static_assert(cute::rank(typename MainloopParams::LayoutA{}) == 3, "M, K, B");
   static_assert(cute::rank(typename MainloopParams::LayoutB{}) == 3, "N, K, B");
 
-  using ElementA = typename MainloopParams::TensorA::value_type;
-  using ElementB = typename MainloopParams::TensorB::value_type;
+  using ElementA = typename ElementTraits<typename MainloopParams::EngineA::value_type>::type;
+  using ElementB = typename ElementTraits<typename MainloopParams::EngineB::value_type>::type;
 
   using RingOp = multiply_add<ElementAccumulator, ElementAccumulator, ElementAccumulator>;
   RingOp fma_op;
@@ -189,7 +199,8 @@ void gett_mainloop(
     ElementAccumulator a_frag[kBlockM];
     for (int m_b = 0; m_b < kBlockM; ++m_b) {
       if (m + m_b < cute::size<0>(mainloop_params.A.layout())) {
-        a_frag[m_b] = static_cast<ElementAccumulator>(mainloop_params.A(m + m_b, k, l));
+        // Perform reference GEMM calculations at the accumulator's precision. Cast A value to accumulator type.
+        a_frag[m_b] = static_cast<ElementAccumulator>(ElementA(mainloop_params.A(m + m_b, k, l)));
         if (mainloop_params.transform_A == ComplexTransform::kConjugate) {
           a_frag[m_b] = conj(a_frag[m_b]);
         }
@@ -202,7 +213,8 @@ void gett_mainloop(
     ElementAccumulator b_frag[kBlockN];
     for (int n_b = 0; n_b < kBlockN; ++n_b) {
       if (n + n_b < cute::size<0>(mainloop_params.B.layout())) {
-        b_frag[n_b] = static_cast<ElementAccumulator>(mainloop_params.B(n + n_b, k, l));
+        // Perform reference GEMM calculations at the accumulator's precision. Cast A value to accumulator type.
+        b_frag[n_b] = static_cast<ElementAccumulator>(ElementB(mainloop_params.B(n + n_b, k, l)));
         if (mainloop_params.transform_B == ComplexTransform::kConjugate) {
           b_frag[n_b] = conj(b_frag[n_b]);
         }
@@ -252,10 +264,19 @@ void gett_epilogue(
       std::is_same_v<ElementAux, cutlass::float_e4m3_t> or
       std::is_same_v<ElementAux, cutlass::float_e5m2_t>;
 
+  constexpr bool IsReLUAuxNeeded =
+      cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ReLu<ElementCompute>> and 
+      cute::is_same_v<ElementAux, cutlass::uint1b_t>;
+
+  constexpr bool IsBackpropFusion =
+      cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::dGELU<ElementCompute>> or
+      cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::dReLU<ElementCompute>>;
+
   // Input related converter
   NumericConverter<ElementCompute, ElementAccumulator> accumulator_converter;
   NumericConverter<ElementCompute, ElementC> source_converter;
   NumericConverter<ElementCompute, ElementBias> bias_converter;
+  NumericConverter<ElementCompute, ElementAux> aux_source_converter;
 
   // Scale related converter
   NumericConverter<ElementCompute, ElementScalar> scale_converter;
@@ -267,10 +288,12 @@ void gett_epilogue(
   // Output related converter
   NumericConverter<ElementD, ElementCompute> destination_converter;
   NumericConverter<ElementAux, ElementCompute> aux_destination_converter;
+  NumericConverter<ElementBias, ElementCompute> dBias_converter;
 
   // Epilogue operations
   multiply_add<ElementCompute, ElementCompute, ElementCompute> epilogue_fma;
   multiplies<ElementCompute> mul;
+  plus<ElementCompute> add;
 
   // Activation operation
   ActivationFunctor activation;
@@ -294,23 +317,25 @@ void gett_epilogue(
   converted_alpha = mul(converted_alpha, mul(converted_scale_a, converted_scale_b));
   converted_beta = mul(converted_beta, converted_scale_c);
 
-  for (int n_b = 0; n_b < kBlockN; ++n_b) {
-    for (int m_b = 0; m_b < kBlockM; ++m_b) {
+  for (int m_b = 0; m_b < kBlockM; ++m_b) {
+    ElementCompute local_dBias = ElementCompute(0);
+
+    for (int n_b = 0; n_b < kBlockN; ++n_b) {
       if (m + m_b < cute::size<0>(epilogue_params.D.layout()) && n + n_b < cute::size<1>(epilogue_params.D.layout())) {
         // Convert every type to ElementCompute first, do compute, convert to output type, write it out
         ElementCompute converted_acc = accumulator_converter(acc[m_b][n_b]);
         // per-row alpha
-        if (epilogue_params.Valpha.data()) {
+        if (raw_pointer_cast(epilogue_params.Valpha.data())) {
           converted_alpha = scale_converter(epilogue_params.Valpha(m + m_b));
         }
         ElementCompute output = mul(converted_alpha, converted_acc);
 
-        if (epilogue_params.Bias.data()) {
+        if (raw_pointer_cast(epilogue_params.Bias.data()) && not IsBackpropFusion) {
           ElementCompute converted_bias = bias_converter(epilogue_params.Bias(m + m_b));
           output = bias_op(output, converted_bias);
         }
 
-        if (epilogue_params.C.data()) {
+        if (raw_pointer_cast(epilogue_params.C.data())) {
           ElementCompute converted_src = source_converter(epilogue_params.C(m + m_b, n + n_b, l));
           // per-row beta
           if (epilogue_params.Vbeta.data()) {
@@ -319,18 +344,33 @@ void gett_epilogue(
           output = epilogue_fma(converted_beta, converted_src, output);
         }
 
-        if (epilogue_params.Aux.data()) {
-          auto aux_output = output;
-          if constexpr (IsScalingAndAmaxAuxOutputNeeded) {
-            maximum_absolute_value_reduction<ElementCompute, true> amax_op;
-            local_abs_max_aux_output = amax_op(local_abs_max_aux_output, aux_output);
-            aux_output = epilogue_fma(converted_scale_aux, aux_output, ElementCompute(0));
+        if constexpr (IsBackpropFusion) {
+          ElementAux aux_input = ElementAux(0);
+          if (raw_pointer_cast(epilogue_params.Aux.data())) {
+            aux_input = epilogue_params.Aux(m + m_b, n + n_b, l);
           }
 
-          epilogue_params.Aux(m + m_b, n + n_b, l) = aux_destination_converter(aux_output);
+          output = activation(output, aux_source_converter(aux_input));
+          local_dBias = add(local_dBias, output);
         }
+        else {
+          if (raw_pointer_cast(epilogue_params.Aux.data())) {
+            auto aux_output = output;
+            if constexpr (IsScalingAndAmaxAuxOutputNeeded) {
+              maximum_absolute_value_reduction<ElementCompute, true> amax_op;
+              local_abs_max_aux_output = amax_op(local_abs_max_aux_output, aux_output);
+              aux_output = epilogue_fma(converted_scale_aux, aux_output, ElementCompute(0));
+            }
 
-        output = activation(output);
+            if constexpr (IsReLUAuxNeeded) {
+              epilogue_params.Aux(m + m_b, n + n_b, l) = not (aux_output < 0) ? uint1b_t(1) : uint1b_t(0);
+            } else {
+              epilogue_params.Aux(m + m_b, n + n_b, l) = aux_destination_converter(aux_output);
+            }
+          }
+
+          output = activation(output);
+        }
 
         if constexpr (IsScalingAndAmaxOutputNeeded) {
           maximum_absolute_value_reduction<ElementCompute, true> amax_op;
@@ -340,8 +380,16 @@ void gett_epilogue(
 
         epilogue_params.D(m + m_b, n + n_b, l) = destination_converter(output);
       }
+    } // n_b
+
+    if (m + m_b < cute::size<0>(epilogue_params.D.layout()) && n < cute::size<1>(epilogue_params.D.layout())) {
+      if (raw_pointer_cast(epilogue_params.Bias.data()) && IsBackpropFusion) {
+        ElementCompute converted_dBias = bias_converter(epilogue_params.Bias(m + m_b));
+        local_dBias = add(local_dBias, converted_dBias);
+        epilogue_params.Bias(m + m_b) = dBias_converter(local_dBias);
+      }
     }
-  }
+  } // m_b
 #if defined(_OPENMP)
   #pragma omp critical(Abs_Max_Data_Update)
 #endif

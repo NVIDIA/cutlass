@@ -50,6 +50,7 @@ class PersistentTileSchedulerSm90 {
 
 private:
   uint64_t current_work_linear_idx_;
+  uint64_t total_grid_size_;
 
 public:
   struct WorkTileInfo {
@@ -57,12 +58,29 @@ public:
     int32_t N_idx = 0;
     int32_t L_idx = 0;
     bool is_valid_tile = false;
+
+    CUTLASS_HOST_DEVICE
+    bool
+    is_valid() const {
+      return is_valid_tile;
+    }
+
+    CUTLASS_HOST_DEVICE
+    static WorkTileInfo
+    invalid_work_tile() {
+      return {-1, -1, -1, false};
+    }
+
+    CUTLASS_HOST_DEVICE
+    bool
+    is_final_split(uint32_t k_tiles_per_output_tile) const {
+      return true;
+    }
   };
 
   using Params = PersistentTileSchedulerSm90Params;
   using RasterOrder = typename Params::RasterOrder;
   using RasterOrderOptions = typename Params::RasterOrderOptions;
-
   struct Arguments {
     int max_swizzle_size = 1;
     RasterOrderOptions raster_order = RasterOrderOptions::Heuristic;
@@ -116,6 +134,8 @@ public:
     else {
       current_work_linear_idx_ = uint64_t(blockIdx.x) * uint64_t(gridDim.y) + uint64_t(blockIdx.y);
     }
+
+    total_grid_size_ = uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z);
 #else
     CUTLASS_ASSERT(false && "This line should never be reached");
 #endif
@@ -130,6 +150,10 @@ public:
   CUTLASS_DEVICE
   WorkTileInfo
   get_current_work_for_linear_idx(uint64_t linear_idx) const {
+    if (linear_idx >= scheduler_params.blocks_per_problem_) {
+      return WorkTileInfo::invalid_work_tile();
+    }
+
     // Map worker's linear index into the CTA tiled problem shape to the corresponding MNL indices
     uint64_t work_idx_l, remainder;
     scheduler_params.divmod_batch_(work_idx_l, remainder, linear_idx);
@@ -143,19 +167,13 @@ public:
                                                          scheduler_params.log_swizzle_size_, 
                                                          scheduler_params.raster_order_);
 
-    return {work_idx_m, work_idx_n, static_cast<int32_t>(work_idx_l), linear_idx < scheduler_params.blocks_per_problem_};
+    return {work_idx_m, work_idx_n, static_cast<int32_t>(work_idx_l), true};
   }
 
   CUTLASS_DEVICE
   void
   advance_to_next_work(uint32_t advance_count = 1) {
-    // MSVC requires protecting use of CUDA-specific nonstandard syntax,
-    // like blockIdx and gridDim, with __CUDA_ARCH__.
-#if defined(__CUDA_ARCH__)
-    current_work_linear_idx_ += uint64_t(gridDim.x) * uint64_t(gridDim.y) * uint64_t(gridDim.z) * uint64_t(advance_count);
-#else
-    CUTLASS_ASSERT(false && "This line should never be reached");
-#endif
+    current_work_linear_idx_ += total_grid_size_ * uint64_t(advance_count);
   }
 
   // get work_idx_m, work_idx_n from blk_per_grid_dim while applying swizzle
@@ -163,8 +181,8 @@ public:
   cute::tuple<int32_t, int32_t>
   get_work_idx_m_and_n(
       uint64_t blk_per_grid_dim, 
-      FastDivmodU64 const& divmod_cluster_shape_major,
-      FastDivmodU64 const& divmod_cluster_shape_minor,
+      FastDivmodU64Pow2 const& divmod_cluster_shape_major,
+      FastDivmodU64Pow2 const& divmod_cluster_shape_minor,
       FastDivmodU64 const& divmod_cluster_blk_major,
       int32_t log_swizzle_size, 
       RasterOrder raster_order) {
@@ -203,6 +221,46 @@ public:
       return {major_work_idx, minor_work_idx}; 
     }
 
+  }
+
+  // Computes the linear index within a batch given M and N tile offsets within the batch.
+  // This essentially inverts the mapping performed in get_work_idx_m_and_n
+  static CUTLASS_DEVICE
+  uint64_t
+  get_linear_idx_from_m_and_n(
+    int32_t tile_m,
+    int32_t tile_n,
+    FastDivmodU64Pow2 const& divmod_cluster_shape_major,
+    FastDivmodU64Pow2 const& divmod_cluster_shape_minor,
+    FastDivmodU64 const& divmod_cluster_blk_major,
+    int32_t log_swizzle_size,
+    RasterOrder raster_order) {
+
+    auto [cta_m_in_cluster, cta_n_in_cluster, _] = cute::block_id_in_cluster();
+
+    uint64_t minor_work_idx, major_work_idx, cluster_minor_offset;
+    if (raster_order == RasterOrder::AlongN) {
+      minor_work_idx = static_cast<uint64_t>(tile_m);
+      major_work_idx = static_cast<uint64_t>(tile_n);
+      cluster_minor_offset = cta_m_in_cluster;
+    }
+    else {
+      major_work_idx = static_cast<uint64_t>(tile_m);
+      minor_work_idx = static_cast<uint64_t>(tile_n);
+      cluster_minor_offset = cta_n_in_cluster;
+    }
+
+    uint64_t cluster_idx_minor, cluster_idx_major, cluster_major_offset;
+    cluster_idx_minor = divmod_cluster_shape_minor.divide(minor_work_idx - cluster_minor_offset);
+    divmod_cluster_shape_major(cluster_idx_major, cluster_major_offset, major_work_idx);
+
+    uint64_t cluster_idx_minor_div_swizzle = cluster_idx_minor >> log_swizzle_size;
+    uint64_t offset = cluster_idx_minor & ((1 << log_swizzle_size) - 1);
+
+    uint64_t extra = cluster_idx_minor_div_swizzle * divmod_cluster_blk_major.divisor + cluster_idx_major;
+
+    uint64_t cluster_id = (extra << log_swizzle_size) | offset;
+    return (cluster_id * divmod_cluster_shape_major.divisor + cluster_major_offset) * divmod_cluster_shape_minor.divisor + cluster_minor_offset;
   }
 
   // Given the inputs, computes the total number of output blocks this problem will compute over
@@ -250,7 +308,7 @@ public:
   // output tile. For the basic tile scheduler, this is always true.
   CUTLASS_HOST_DEVICE
   static bool
-  compute_epilogue(WorkTileInfo const&) {
+  compute_epilogue(WorkTileInfo const&, Params const&) {
     return true;
   }
 

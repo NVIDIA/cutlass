@@ -38,9 +38,11 @@ import random
 import tempfile
 import unittest
 
+from cutlass_library import ConvMode
+
 import cutlass
 
-if cutlass.utils.datatypes.torch_available:
+if cutlass.utils.datatypes.is_torch_available():
     import torch
 
 
@@ -88,7 +90,7 @@ def _generate_problems(dtype, num):
 def _generate_conv2d_problem(conv_kind, dtype, ps):
     """
     Utility function to generate conv2d inputs
-    
+
     :param conv_kind: kind of convolution
     :type conv_kind: str
     :param dtype: data type of tensors
@@ -114,7 +116,7 @@ def _generate_conv2d_problem(conv_kind, dtype, ps):
     return [torch.ceil(torch.empty(size, dtype=dtype, device='cuda').uniform_(-4.5, 3.5)).to(memory_format=torch.channels_last) for size in sizes]
 
 
-@unittest.skipIf(not cutlass.utils.datatypes.torch_available, 'PyTorch must be available to run PyTorch extension tests')
+@unittest.skipIf(not cutlass.utils.datatypes.is_torch_available(), 'PyTorch must be available to run PyTorch extension tests')
 class PyTorchExtensionTest(unittest.TestCase):
 
     def test_gemm(self):
@@ -183,18 +185,18 @@ class PyTorchExtensionTest(unittest.TestCase):
         Ds_ref = [(a @ b) * alpha + (beta * c) for a, b, c in zip(As, Bs, Cs)]
         Ds = mod.run(As, Bs, Cs, alpha, beta)
         check_all(Ds, Ds_ref)
-    
+
     def test_conv2d_fprop(self):
         torch.manual_seed(2023)
-        
+
         dtype = torch.float16
         plan = cutlass.op.Conv2d(kind="fprop", element=dtype, element_accumulator=torch.float32)
         plan.activation = "relu"
-        
+
         op = plan.construct()
         with tempfile.TemporaryDirectory() as tmpdir:
             mod = cutlass.emit.pytorch(op, name="conv2d_mod", cc=plan.cc, sourcedir=tmpdir, jit=True)
-        
+
         problem_size = cutlass.shape.Conv2DProblemSize(
             1, 4, 4, 16,
             8, 3, 3, 16,
@@ -202,50 +204,50 @@ class PyTorchExtensionTest(unittest.TestCase):
             3, 3,
             1, 1
         )
-        
+
         A, B, C = _generate_conv2d_problem("fprop", dtype, problem_size)
         stride = (problem_size.stride_h, problem_size.stride_w)
         padding = (problem_size.pad_h, problem_size.pad_w)
 
         alpha = 1.0
         beta = 0.5
-        
+
         D_ref = alpha * torch.ops.aten.conv2d(
             A, B, stride=stride, padding=padding
         ) + beta * C
         D_ref = torch.nn.functional.relu(D_ref)
         D = mod.run(A, B, C, stride, padding, alpha=alpha, beta=beta)
-        
-        assert torch.allclose(D, D_ref) 
-        
+
+        assert torch.allclose(D, D_ref)
+
         # Test serial split-K
         D_serial_split_k = mod.run(A, B, C, stride, padding, alpha=alpha, beta=beta, split_k_mode="serial", split_k_slices=3)
         assert torch.allclose(D, D_serial_split_k)
-        
+
         # Test parallel split-K
         D_parallel_split_k = mod.run(A, B, C, stride, padding, alpha=alpha, beta=beta, split_k_mode="parallel", split_k_slices=7)
         assert torch.allclose(D, D_parallel_split_k)
-        
-    
+
+
     def test_conv2d_dgrad(self):
         torch.manual_seed(2023)
         dtype = torch.float16
         plan = cutlass.op.Conv2d(kind="dgrad", element=dtype, element_accumulator=torch.float32)
-        
+
         op = plan.construct()
         with tempfile.TemporaryDirectory() as tmpdir:
             mod = cutlass.emit.pytorch(op, name="conv2d_dgrad_mod", cc=plan.cc, sourcedir=tmpdir, jit=True)
-        
+
         problem_size = cutlass.shape.Conv2DProblemSize(
             1, 4, 4, 16,
             8, 3, 3, 16,
             0, 0,
             3, 3,
             1, 1,
-            cutlass.ConvMode.CrossCorrelation,
+            ConvMode.CrossCorrelation,
             1, 1
         )
-        
+
         A, B, C = _generate_conv2d_problem("dgrad", dtype, problem_size)
         stride = (problem_size.stride_h, problem_size.stride_w)
         padding = (problem_size.pad_h, problem_size.pad_w)
@@ -254,32 +256,32 @@ class PyTorchExtensionTest(unittest.TestCase):
         beta = 0.5
         input_size = (problem_size.N, problem_size.C, problem_size.H, problem_size.W)
         D_ref = alpha * torch.nn.grad.conv2d_input(
-            input_size, B, A, 
+            input_size, B, A,
             stride=stride, padding=padding
         ) + beta * C
         D = mod.run(input_size, A, B, C, stride, padding, alpha=alpha, beta=beta, )
-        
-        assert torch.allclose(D, D_ref) 
-    
+
+        assert torch.allclose(D, D_ref)
+
     def test_conv2d_wgrad(self):
         torch.manual_seed(2023)
         dtype = torch.float16
         plan = cutlass.op.Conv2d(kind="wgrad", element=dtype, element_accumulator=torch.float32)
-        
+
         op = plan.construct()
         with tempfile.TemporaryDirectory() as tmpdir:
             mod = cutlass.emit.pytorch(op, name="conv2d_wgrad_mod", cc=plan.cc, sourcedir=tmpdir, jit=True)
-        
+
         problem_size = cutlass.shape.Conv2DProblemSize(
             1, 4, 4, 16,
             8, 3, 3, 16,
             0, 0,
             3, 3,
             1, 1,
-            cutlass.ConvMode.CrossCorrelation,
+            ConvMode.CrossCorrelation,
             1, 1
         )
-        
+
         A, B, C = _generate_conv2d_problem("wgrad", dtype, problem_size)
         stride = (problem_size.stride_h, problem_size.stride_w)
         padding = (problem_size.pad_h, problem_size.pad_w)
@@ -288,17 +290,17 @@ class PyTorchExtensionTest(unittest.TestCase):
         beta = 0.5
         weight_size = (problem_size.K, problem_size.C, problem_size.R, problem_size.S)
         D_ref = alpha * torch.nn.grad.conv2d_weight(
-            B, weight_size, A, 
+            B, weight_size, A,
             stride=stride, padding=padding
         ) + beta * C
         D = mod.run(weight_size, A, B, C, stride, padding, alpha=alpha, beta=beta)
-        
-        assert torch.allclose(D, D_ref) 
-        
+
+        assert torch.allclose(D, D_ref)
+
         # Test serial split-K
         D_serial_split_k = mod.run(weight_size, A, B, C, stride, padding, alpha=alpha, beta=beta, split_k_mode="serial", split_k_slices=3)
         assert torch.allclose(D, D_serial_split_k)
-        
+
         # Test parallel split-K
         D_parallel_split_k = mod.run(weight_size, A, B, C, stride, padding, alpha=alpha, beta=beta, split_k_mode="parallel", split_k_slices=7)
         assert torch.allclose(D, D_parallel_split_k)

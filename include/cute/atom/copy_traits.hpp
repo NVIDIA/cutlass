@@ -92,6 +92,21 @@ struct Copy_Traits<DefaultCopy>
   using RefLayout = SrcLayout;
 };
 
+namespace detail {
+
+template <class Operation,
+          class PtrS, int... Is,
+          class PtrD, int... Id>
+CUTE_HOST_DEVICE constexpr
+void
+copy_explode(PtrS&& s, int_sequence<Is...>,
+             PtrD&& d, int_sequence<Id...>)
+{
+  return Operation::copy(s[Is]..., d[Id]...);
+}
+
+} // end namespace detail
+
 //
 // Generic copy_unpack for any Copy_Traits
 //
@@ -123,9 +138,8 @@ copy_unpack(Copy_Traits<Operation, Args...> const&,
   CUTE_STATIC_ASSERT_V(size(rD) == Int<RegNumDst>{},
     "In CopyAtom, dst layout doesn't vectorize into registers. This dst layout is incompatible with this tiled copy.");
 
-  detail::explode(Operation::copy,
-                  rS, make_int_sequence<RegNumSrc>{},
-                  rD, make_int_sequence<RegNumDst>{});
+  detail::copy_explode<Operation>(rS, make_int_sequence<RegNumSrc>{},
+                                  rD, make_int_sequence<RegNumDst>{});
 }
 
 //

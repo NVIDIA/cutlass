@@ -763,22 +763,18 @@ public:
     //
     if(high_storage_unit_idx_ != low_storage_unit_idx_){
       /// Only need update 2 storage unit at once.
-      CudaAtomicType original, updated;
+      /// consider misaligned address issue, we need to do atomicCAS twice 
+      StorageUnit original_low_bits, original_high_bits, update_low_bits, update_high_bits;
       do {
-        StorageUnit original_low_bits  = ((*ptr_)[low_storage_unit_idx_]);
-        StorageUnit original_high_bits = ((*ptr_)[high_storage_unit_idx_]);
-
-        original = (CudaAtomicType(original_low_bits) << sizeof_bits<StorageUnit>::value) | original_low_bits;
-
-
-        StorageUnit update_low_bits  = (original_low_bits & kLowUpdateMask) | low_new_bits;
-        StorageUnit update_high_bits  = (original_high_bits & kHighUpdateMask) | high_new_bits;
-
-        updated = (CudaAtomicType(update_high_bits) << sizeof_bits<StorageUnit>::value) | update_low_bits;
-
-        original = atomicCAS(reinterpret_cast<CudaAtomicType *>(ptr_), original, updated);
-
-      } while (updated != original);
+        original_low_bits  = ((*ptr_)[low_storage_unit_idx_]);
+        update_low_bits  = (original_low_bits & kLowUpdateMask) | low_new_bits;
+        original_low_bits = atomicCAS(&((*ptr_)[low_storage_unit_idx_]), original_low_bits, update_low_bits);
+      } while (update_low_bits != original_low_bits);
+      do {
+        original_high_bits = ((*ptr_)[high_storage_unit_idx_]);
+        update_high_bits  = (original_high_bits & kHighUpdateMask) | high_new_bits;
+        original_high_bits = atomicCAS(&((*ptr_)[high_storage_unit_idx_]), original_high_bits, update_high_bits);
+      } while (update_high_bits != original_high_bits);
     }
     else {
       /// Only need update 1 storage unit.
@@ -788,11 +784,12 @@ public:
 
         updated = (original & kLowUpdateMask) | low_new_bits;
 
-        original = atomicCAS(reinterpret_cast<StorageUnit *>(ptr_), original, updated);
+        original = atomicCAS(&((*ptr_)[low_storage_unit_idx_]), original, updated);
 
       } while (updated != original);
     }
 #else
+
 
     StorageUnit update_low_bits  = ((*ptr_)[low_storage_unit_idx_] & kLowUpdateMask) | low_new_bits;
     StorageUnit update_high_bits = ((*ptr_)[high_storage_unit_idx_] & kHighUpdateMask) | high_new_bits;

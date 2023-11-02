@@ -41,13 +41,14 @@ namespace cute
 template <class T, size_t N>
 struct array
 {
-  using value_type = T;
+  using element_type = T;
+  using value_type = remove_cv_t<T>;
   using size_type = size_t;
   using difference_type = ptrdiff_t;
-  using reference = value_type&;
-  using const_reference = const value_type&;
-  using pointer = value_type*;
-  using const_pointer = const value_type*;
+  using reference = element_type&;
+  using const_reference = const element_type&;
+  using pointer = element_type*;
+  using const_pointer = const element_type*;
   using iterator = pointer;
   using const_iterator = const_pointer;
 
@@ -190,20 +191,21 @@ struct array
     }
   }
 
-  value_type __elems_[N > 0 ? N : 1];
+  element_type __elems_[N];
 };
 
 
 template <class T>
 struct array<T, 0>
 {
-  using value_type = T;
+  using element_type = T;
+  using value_type = remove_cv_t<T>;
   using size_type = size_t;
   using difference_type = ptrdiff_t;
-  using reference = value_type&;
-  using const_reference = const value_type&;
-  using pointer = value_type*;
-  using const_pointer = const value_type*;
+  using reference = element_type&;
+  using const_reference = const element_type&;
+  using pointer = element_type*;
+  using const_pointer = const element_type*;
   using const_iterator = const_pointer;
   using iterator = const_iterator;
 

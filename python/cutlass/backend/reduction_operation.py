@@ -36,21 +36,22 @@ from typing import Union
 from cuda import cuda, cudart
 import numpy as np
 
-from cutlass import (
+from cutlass_library import (
     DataTypeNames,
     DataTypeSize,
     DataTypeTag,
-    LayoutType
+    LayoutType,
+    SubstituteTemplate
 )
+
+import cutlass
 from cutlass.backend.c_types import MatrixCoord_, TensorRef2D_, get_reduction_params
 from cutlass.backend.frontend import NumpyFrontend, TorchFrontend
 from cutlass.backend.library import TensorDescription
+from cutlass.backend.memory_manager import DevicePtrWrapper
 from cutlass.backend.operation import ExecutableOperation, LaunchConfiguration
-from cutlass.backend.utils.software import CheckPackages, SubstituteTemplate
 from cutlass.shape import MatrixCoord
-
-if CheckPackages().check_torch():
-    import torch
+from cutlass.utils.datatypes import is_numpy_tensor, is_torch_tensor
 
 
 class ReductionOperation:
@@ -85,13 +86,13 @@ class ReductionArguments:
         # number of split-k partitions
         self.partitions = partitions
 
-        if isinstance(destination, np.ndarray):
+        if is_numpy_tensor(destination):
             self.host_D = destination
             self.destination_buffer = NumpyFrontend.argument(destination, True)
             self.source_buffer = NumpyFrontend.argument(source, False)
             self.ptr_destination = cuda.CUdeviceptr(self.destination_buffer.ptr)
             self.ptr_source = cuda.CUdeviceptr(self.source_buffer.ptr)
-        elif CheckPackages().check_torch() and isinstance(destination, torch.Tensor):
+        elif is_torch_tensor(destination):
             self.ptr_destination = TorchFrontend.argument(destination)
             self.ptr_source = TorchFrontend.argument(source)
         elif isinstance(destination, cuda.CUdeviceptr):
@@ -185,11 +186,22 @@ class ReductionArguments:
             if err != cuda.CUresult.CUDA_SUCCESS:
                 raise RuntimeError("CUDA Error %s" % str(err))
 
+        self.free()
+
     def free(self):
-        if hasattr(self, "destination_buffer"):
-            del self.destination_buffer
-        if hasattr(self, "source_buffer"):
-            del self.source_buffer
+        """
+        Frees allocated device-side memory
+        """
+        # Free any device memory allocated manually
+        if not cutlass.use_rmm:
+            for attr in ["destination_buffer", "source_buffer"]:
+                if hasattr(self, attr):
+                    buf = getattr(self, attr)
+                    if isinstance(buf, DevicePtrWrapper):
+                        err, = cudart.cudaFree(buf.ptr)
+                        if err != cudart.cudaError_t.cudaSuccess:
+                            raise RuntimeError(f"cudaFree failed with error {err}")
+                        del buf
 
 
 class ReductionRT(ExecutableOperation):

@@ -57,42 +57,7 @@ using namespace cute;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_tf32t_tf32n_f32n_align4_tensor_op_gmma_f32, 64x128x32) {
-  using LayoutA = cutlass::layout::RowMajor;
-  using LayoutB = cutlass::layout::ColumnMajor;
-  using LayoutC = cutlass::layout::ColumnMajor;
-
-  using CollectiveOp = typename cutlass::gemm::collective::CollectiveBuilder<
-      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-      tfloat32_t, LayoutA, 4,
-      tfloat32_t, LayoutB, 4,
-      float,
-      Shape<_64,_128,_32>, Shape<_1,_1,_1>,
-      cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::KernelMultistage
-    >::CollectiveOp;
-
-  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-      Shape<_64,_128,_32>, Shape<_1,_1,_1>,
-      cutlass::epilogue::collective::EpilogueTileAuto,
-      float, float,
-      float, LayoutC, 4,
-      float, LayoutC, 4,
-      cutlass::epilogue::NoSmemWarpSpecialized
-    >::CollectiveOp;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
-      CollectiveOp,
-      CollectiveEpilogue
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
-}
-
-TEST(SM90_Device_Gemm_tf32t_tf32n_f32n_align2_tensor_op_gmma_f32, 64x64x32) {
+TEST(SM90_Device_Gemm_tf32t_tf32n_f32n_align2_tensor_op_gmma_f32, 128x64x32) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -102,7 +67,7 @@ TEST(SM90_Device_Gemm_tf32t_tf32n_f32n_align2_tensor_op_gmma_f32, 64x64x32) {
       cutlass::tfloat32_t, LayoutA, 2,
       cutlass::tfloat32_t, LayoutB, 2,
       float,
-      Shape<_64,_64,_32>, Shape<_1,_1,_1>,
+      Shape<_128,_64,_32>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;

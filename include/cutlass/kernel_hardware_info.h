@@ -53,7 +53,7 @@ struct KernelHardwareInfo {
   // Data members
   //
   int device_id = 0;
-  int sm_count = 0;
+  int sm_count  = 0;
 
   //
   // Methods

@@ -34,7 +34,7 @@
 High-level class for tensor
 """
 
-from cutlass import LayoutType
+from cutlass_library import LayoutType
 
 from cutlass.backend.evt.ir.layout_algorithm import (
     Layout,

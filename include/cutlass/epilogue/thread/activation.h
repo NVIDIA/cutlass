@@ -171,8 +171,8 @@ struct ReLu<Array<T, N>> {
 template <typename T>
 struct Clamp {
   struct Arguments {
-    T lower_bound = cutlass::platform::numeric_limits<T>::min();
-    T upper_bound = cutlass::platform::numeric_limits<T>::max();
+    T lower_bound = CUTLASS_STL_NAMESPACE::numeric_limits<T>::min();
+    T upper_bound = CUTLASS_STL_NAMESPACE::numeric_limits<T>::max();
   };
 
   CUTLASS_HOST_DEVICE
@@ -615,12 +615,13 @@ struct dGELU<Array<T, N> > {
 template <typename T>
 struct dReLU {
   CUTLASS_HOST_DEVICE
-  T operator()(T const& d_t, bool d_relu) const {
+  T operator()(T d_t, bool d_relu) const {
     return d_relu ? d_t : T(0);
   }
 
+  template <typename U>
   CUTLASS_HOST_DEVICE
-  T operator()(T const& d_t, uint1b_t d_relu) const {
+  T operator()(T d_t, U d_relu) const {
     return operator()(d_t, static_cast<bool>(d_relu));
   }
 };
@@ -648,6 +649,20 @@ struct dReLU<Array<T, N>> {
     unpack_op(preds, d_relu);
 
     return operator()(d_t, preds);
+  }
+
+  template <typename U>
+  CUTLASS_HOST_DEVICE
+  Array<T, N> operator()(Array<T, N> const& d_t, Array<U, N> const& d_relu) const {
+    Array<T, N> y;
+    dReLU<T> relu_op;
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < N; ++i) {
+      y[i] = relu_op(d_t[i], d_relu[i]);
+    }
+
+    return y;
   }
 };
 

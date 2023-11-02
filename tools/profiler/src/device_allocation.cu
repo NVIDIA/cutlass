@@ -2005,7 +2005,6 @@ void DeviceAllocation::write_tensor_csv(
   case library::NumericTypeID::kFE5M2:
     write_tensor_csv_static_type<float_e5m2_t>(out, *this);
     break;
-
   case library::NumericTypeID::kF16:
     write_tensor_csv_static_type<half_t>(out, *this);
     break;

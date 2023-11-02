@@ -231,6 +231,7 @@ public :
     int warp_idx = canonical_warp_idx();
     int lane_predicate = cute::elect_one_sync();
     auto cluster_shape = ClusterShape{};
+
     if (warp_idx == 0 && lane_predicate == 1) {
       // Barrier FULL init
       for (int i = 0; i < Stages; ++i) {
@@ -244,6 +245,8 @@ public :
         empty_barrier_ptr_[i].init(multicast_consumer_arrival_count);
       }
     }
+    cutlass::arch::fence_barrier_init();
+
     // Logic to optimally schedule Empty Arrives
     // Goal : To divide SYNCS Empty Arrival duty equally amongst the Warp-Group (128 threads)
     dim3 block_id = cute::block_id_in_cluster();
@@ -279,8 +282,6 @@ public :
     // STEP 2: Find if this dst block-id needs an arrival for this problem
     is_signalling_thread_ &= dst_blockid_ < cluster_size;
     is_signalling_thread_ &= is_same_row_or_col(dst_blockid_, block_id, cluster_shape);
-
-    cutlass::arch::fence_barrier_init();
   }
 
   CUTLASS_DEVICE
@@ -897,6 +898,13 @@ public :
   CUTLASS_DEVICE
   void producer_commit(PipelineState state) {
     producer_commit(state.index());
+  }
+
+  template<class UserDefinedArriveOp>
+  CUTLASS_DEVICE
+  void producer_commit(PipelineState state, UserDefinedArriveOp&& user_defined_arrive_op) {
+    cute::forward<UserDefinedArriveOp>(user_defined_arrive_op)(producer_get_barrier(state.index()));
+    producer_commit(state);
   }
 
   // Prevents early exit of producer blocks in Cluster.

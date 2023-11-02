@@ -294,6 +294,8 @@ struct DefaultMmaTensorOp<
       Policy, PartitionsK, AccumulatorsInRowMajor>;
 };
 
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
 } // namespace warp
 } // namespace gemm
 } // namespace cutlass

@@ -58,7 +58,7 @@ using namespace cute;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_s8t_s8n_s8n_align8_tensor_op_gmma_s32, 64x128x128) {
+TEST(SM90_Device_Gemm_s8t_s8n_s8n_align8_tensor_op_gmma_s32, 128x128x128) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -68,14 +68,14 @@ TEST(SM90_Device_Gemm_s8t_s8n_s8n_align8_tensor_op_gmma_s32, 64x128x128) {
       int8_t, LayoutA, 8,
       int8_t, LayoutB, 8,
       int32_t,
-      Shape<_64,_128,_128>, Shape<_1,_1,_1>,
+      Shape<_128,_128,_128>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-      Shape<_64,_128,_128>, Shape<_1,_1,_1>,
+      Shape<_128,_128,_128>, Shape<_1,_1,_1>,
       cutlass::epilogue::collective::EpilogueTileAuto,
       int32_t, int32_t,
       int8_t, LayoutC, 8,
@@ -93,42 +93,7 @@ TEST(SM90_Device_Gemm_s8t_s8n_s8n_align8_tensor_op_gmma_s32, 64x128x128) {
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
 }
 
-TEST(SM90_Device_Gemm_s8t_s8n_s8n_align16_tensor_op_gmma_s32, 128x128x128) {
-  using LayoutA = cutlass::layout::RowMajor;
-  using LayoutB = cutlass::layout::ColumnMajor;
-  using LayoutC = cutlass::layout::ColumnMajor;
-
-  using CollectiveOp = typename cutlass::gemm::collective::CollectiveBuilder<
-      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-      int8_t, LayoutA, 16,
-      int8_t, LayoutB, 16,
-      int32_t,
-      Shape<_128,_128,_128>, Shape<_1,_1,_1>,
-      cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::KernelMultistage
-    >::CollectiveOp;
-
-  using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
-      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-      Shape<_128,_128,_128>, Shape<_1,_1,_1>,
-      cutlass::epilogue::collective::EpilogueTileAuto,
-      int32_t, int32_t,
-      int8_t, LayoutC, 8,
-      int8_t, LayoutC, 8,
-      cutlass::epilogue::NoSmemWarpSpecialized
-    >::CollectiveOp;
-
-  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
-      Shape<int,int,int,int>,
-      CollectiveOp,
-      CollectiveEpilogue
-  >;
-
-  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
-  EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
-}
-
-TEST(SM90_Device_Gemm_s8t_s8n_s8n_align4_tensor_op_gmma_s32, 128x64x128) {
+TEST(SM90_Device_Gemm_s8t_s8n_s8n_align4_tensor_op_gmma_s32, 128x128x128) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -138,14 +103,14 @@ TEST(SM90_Device_Gemm_s8t_s8n_s8n_align4_tensor_op_gmma_s32, 128x64x128) {
       int8_t, LayoutA, 4,
       int8_t, LayoutB, 4,
       int32_t,
-      Shape<_128,_64,_128>, Shape<_1,_1,_1>,
+      Shape<_128,_128,_128>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
       cutlass::gemm::collective::KernelScheduleAuto
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
-      Shape<_128,_64,_128>, Shape<_1,_1,_1>,
+      Shape<_128,_128,_128>, Shape<_1,_1,_1>,
       cutlass::epilogue::collective::EpilogueTileAuto,
       int32_t, int32_t,
       int8_t, LayoutC, 4,

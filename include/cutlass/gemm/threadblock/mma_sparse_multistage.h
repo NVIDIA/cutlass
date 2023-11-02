@@ -643,9 +643,9 @@ public:
         // we can start right away on mma instructions
         if (warp_mma_k + 1 == Base::kWarpGemmIterations)
           warp_mma.transform(warp_transformed_frag_A[(warp_mma_k + 1) % 2],
-                             warp_transformed_frag_B[(warp_mma_k + 1) % 2],
+                             warp_transformed_frag_B[(warp_mma_k + 1) % Detail::kBBufferSize],
                              warp_loaded_frag_A[(warp_mma_k + 1) % 2],
-                             warp_loaded_frag_B[(warp_mma_k + 1) % 2]);
+                             warp_loaded_frag_B[(warp_mma_k + 1) % Detail::kBBufferSize]);
       }
 
     }

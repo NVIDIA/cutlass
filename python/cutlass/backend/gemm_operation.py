@@ -35,10 +35,10 @@ import ctypes
 import enum
 
 from cuda import cuda, cudart
+from cutlass_library import SubstituteTemplate
 import numpy as np
-import rmm
 
-from cutlass import (
+from cutlass_library import (
     ComplexTransformTag,
     DataType,
     DataTypeNames,
@@ -96,11 +96,7 @@ from cutlass.backend.library import (
 from cutlass.backend.memory_manager import device_mem_alloc, todevice
 from cutlass.backend.operation import ExecutableOperation, LaunchConfiguration
 from cutlass.backend.type_hint import GemmOperation, Tensor
-from cutlass.backend.utils.software import (
-    CheckPackages,
-    SubstituteTemplate,
-    device_sm_count,
-)
+from cutlass.backend.utils.device import device_sm_count
 from cutlass.shape import GemmCoord, MatrixCoord
 
 
@@ -163,7 +159,7 @@ class GemmArguments2x(ArgumentBase):
     :type D: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
 
     :param gemm_mode: GEMM mode
-    :type gemm_mode: :class:`cutlass.GemmUniversalMode`
+    :type gemm_mode: :class:`cutlass_library.GemmUniversalMode`
 
     :param output_op: output operator, optional
     :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
@@ -387,7 +383,7 @@ class GemmArguments2xStreamK(GemmArguments2x):
     :type D: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
 
     :param gemm_mode: GEMM mode
-    :type gemm_mode: :class:`cutlass.GemmUniversalMode`
+    :type gemm_mode: :class:`cutlass_library.GemmUniversalMode`
 
     :param output_op: output operator, optional
     :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
@@ -426,9 +422,12 @@ class GemmArguments2xStreamK(GemmArguments2x):
 
     def initialize(self):
         # Get the host and device workspace
-        device_workspace_size = self.operation.rt_module.get_device_workspace_size(self)
+        device_workspace_size = self.operation.rt_module.get_device_workspace_size(
+            self,
+            device_sm_count(),
+            self.operation.rt_module.occupancy
+        )
 
-        device_workspace_size = 10 << 20
         if device_workspace_size > 0:
             self.workspace_buffer = device_mem_alloc(device_workspace_size)
             workspace_ptr = self.workspace_buffer.ptr
@@ -626,7 +625,7 @@ def GemmArguments(operation, problem_size, A, B, C, D, gemm_mode=GemmUniversalMo
     :type D: cuda.CUdeviceptr | numpy.ndarray | torch.Tensor | cupy.ndarray
 
     :param gemm_mode: GEMM mode
-    :type gemm_mode: :class:`cutlass.GemmUniversalMode`
+    :type gemm_mode: :class:`cutlass_library.GemmUniversalMode`
 
     :param output_op: output operator, optional
     :type output_op: :class:`cutlass.backend.LinearCombinationFunctorArguments`
@@ -1038,6 +1037,11 @@ extern "C" {
     typename GemmType::Params params(*args, device_sms, sm_occupancy);
     return params.get_grid_dims();
   }
+
+  uint64_t ${operation_name}_get_kernel_workspace_size(GemmType::Arguments* args, int device_sms, int sm_occupancy) {
+    typename GemmType::Params params(*args, device_sms, sm_occupancy);
+    return params.get_workspace_size();
+  }
 }
   """
 
@@ -1045,6 +1049,7 @@ extern "C" {
         super(GemmRTUniversalStreamK, self).__init__(operation)
         self.extra_funcs = {
             "get_grid_shape": GemmCoord_,
+            "get_kernel_workspace_size": ctypes.c_uint64,
         }
         self._occupancy = None
         self.argument_type, self.epilogue_type  = get_gemm_arguments_streamk(operation.epilogue_functor)
@@ -1061,6 +1066,9 @@ extern "C" {
                     "CUDA error on call to cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags: "
                     f"{cuda.cuGetErrorString(err)[1]}")
         return self._occupancy
+
+    def get_device_workspace_size(self, arguments: GemmArguments2xStreamK, device_sms: int, sm_occupancy: int):
+        return self.get_kernel_workspace_size(ctypes.byref(arguments.get_arguments()), device_sms, sm_occupancy)
 
 
 ################################################################################
@@ -1431,7 +1439,7 @@ ${operation_name}(${operation_name}${operation_suffix}::Params params) {
         problem_info_array = bytearray(problem_info.contents)
 
         # copy to device memory
-        return rmm.DeviceBuffer.to_device(problem_info_array).ptr
+        return todevice(problem_info_array).ptr
 
     def plan(self, arguments):
         return LaunchConfiguration(
@@ -1537,10 +1545,6 @@ class GemmOperationBase:
 
         return err
 
-    def free(self):
-        if hasattr(self, "workspace_buffer"):
-            del self.workspace_buffer
-
     def is_complex(self):
         complex_operators = [
             MathOperation.multiply_add_complex,
@@ -1627,7 +1631,7 @@ class GemmOperationBase:
             element_b=DataTypeNames[self.B.element],
             element_acc=DataTypeNames[self.tile_description.math_instruction.element_accumulator],
             element_c=DataTypeNames[self.C.element],
-            element_d=DataTypeNames[self.C.element],
+            element_d=DataTypeNames[self.epilogue_functor.element_output],
             core_name=self.core_name())
         return extended_name
 

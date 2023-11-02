@@ -484,6 +484,22 @@ void fence_view_async_shared() {
 #endif
 }
 
+// Arrive on completion of in-flight cp.async operations issued by the calling thread 
+CUTLASS_DEVICE
+void cpasync_barrier_arrive(uint64_t const* smem_ptr) {
+#if CUDA_BARRIER_ENABLED
+  uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
+  asm volatile(
+    "{\n\t"
+    "cp.async.mbarrier.arrive.shared.b64 [%0];\n\t"
+    "}"
+    :
+    : "r"(smem_addr));
+#elif defined(__CUDA_ARCH__)
+  asm volatile ("brkpt;\n" ::);
+#endif
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
