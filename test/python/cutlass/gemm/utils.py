@@ -30,9 +30,10 @@
 #
 #################################################################################################
 
-import cutlass
+from cutlass_library import SubstituteTemplate
 
-from cutlass import (
+import cutlass
+from cutlass_library import (
     DataTypeNames,
     EpilogueScheduleSuffixes,
     KernelScheduleSuffixes,
@@ -42,7 +43,6 @@ from cutlass import (
     ShortLayoutTypeNames
 )
 from cutlass.backend import library
-from cutlass.backend.utils.software import SubstituteTemplate
 
 from gemm_testbed import test_all_gemm
 
@@ -82,6 +82,7 @@ def get_name(
     stages,
     element_a,
     element_b,
+    element_c,
     arch,
     opclass,
     kernel_schedule=None,
@@ -102,6 +103,7 @@ def get_name(
     :type stages: int
     :param element_a: data type of operand A
     :param element_b: data type of operand B
+    :param element_c: data type of operand C
     :param arch: compute capability of kernel being generated
     :type arch: int
     :param opclass: class of operation being performed (e.g., SIMT, Tensor Core)
@@ -122,7 +124,7 @@ def get_name(
             "arch": str(arch),
             "eA": DataTypeNames[element_a],
             "eB": DataTypeNames[element_b],
-            "eC": DataTypeNames[element_output],
+            "eC": DataTypeNames[element_c],
             "lA": ShortLayoutTypeNames[layouts[0]],
             "lB": ShortLayoutTypeNames[layouts[1]],
             "lC": ShortLayoutTypeNames[layouts[2]],
@@ -161,7 +163,10 @@ def add_test_gemm(
     swizzle=None,
     kernel_schedule=None,
     epilogue_schedule=None,
-    compilation_modes=['nvcc', 'nvrtc']):
+    compilation_modes=['nvcc', 'nvrtc'],
+    element_A=None,
+    element_B=None,
+    element_C=None):
     """
     Create test-running functions with the given specification and set it as a method of ``cls``.
 
@@ -195,8 +200,25 @@ def add_test_gemm(
     :param epilogue_schedule: epilogue schedule to use
     :type epilogue_schedule: cutlass.EpilogueScheduleType
     :param compilation_modes: list of compilers to used in testing the kernel (options: 'nvrtc', 'nvcc')
-    :type compilation_modes: list
+    :type compilation_modes: list,
+    :param element_A: data type of operand A. If set, overrides ``element``
+    :type element_A: cutlass.DataType
+    :param element_B: data type of operand B. If set, overrides ``element``
+    :type element_B: cutlass.DataType
+    :param element_C: data type of operand C. If set, overrides ``element``
+    :type element_C: cutlass.DataType
     """
+
+    if element_A is None:
+        element_A = element
+    if element_B is None:
+        element_B = element
+    if element_C is None:
+        element_C = element
+    if element_output is None:
+        element_output = element
+    if element_accumulator is None:
+        element_accumulator = element
 
     for compilation_mode in compilation_modes:
         def run(self):
@@ -204,13 +226,12 @@ def add_test_gemm(
             Dynamically-generated function that constructs a GEMM operation and verifies it against
             multiple test cases.
             """
-            element_A = element
-            element_B = element
+
             layout_A, layout_B, layout_C = layouts
             alignment_A, alignment_B, alignment_C = alignments
 
             plan = cutlass.op.Gemm(element_A=element_A, element_B=element_B,
-                                element_C=element_output, element_D=element_output,
+                                element_C=element_C, element_D=element_output,
                                 layout_A=layout_A, layout_B=layout_B, layout_C=layout_C,
                                 element_accumulator=element_accumulator,
                                 kernel_cc=cc)
@@ -233,7 +254,7 @@ def add_test_gemm(
         name = get_name(
             layouts=layouts, alignments=alignments, element_output=element_output, element_accumulator=element_accumulator,
             element_epilogue=element_epilogue, cluster_shape=cluster_shape, threadblock_shape=threadblock_shape,
-            stages=stages, element_a=element, element_b=element, arch=cc, opclass=opclass,
+            stages=stages, element_a=element_A, element_b=element_B, element_c=element_C, arch=cc, opclass=opclass,
             kernel_schedule=kernel_schedule, epilogue_schedule=epilogue_schedule, suffix=f'_{compilation_mode}')
 
         setattr(cls, name, run)

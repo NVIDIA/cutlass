@@ -112,7 +112,7 @@ public:
   /// Example
   ///  int2:  kBitsStoredVec = 8; kElementsPerStoredVec = 4; kNumStoragePerStoredVec = 1 uint8_t;
   ///  int4:  kBitsStoredVec = 8; kElementsPerStoredVec = 2; kNumStoragePerStoredVec = 1 uint8_t;
-  static int const kBitsStoredVec        = (sizeof_bits<Element>::value < 8) ? cutlass::lcm(sizeof_bits<Element>::value, 8) : sizeof_bits<Element>::value; 
+  static int const kBitsStoredVec        = (sizeof_bits<Element>::value < 8) ? cutlass::lcm(static_cast<int>(sizeof_bits<Element>::value), 8) : sizeof_bits<Element>::value; 
   static int const kElementsPerStoredVec = kBitsStoredVec / sizeof_bits<Element>::value;
   static int const kNumStoragePerStoredVec = kBitsStoredVec / (sizeof(Element) * 8);
 
@@ -129,7 +129,8 @@ public:
   Layout layout_;
 
   /// Host-side memory allocation
-  std::vector<Element> host_;
+  /// avoid the std::vector<bool> specialization
+  std::vector<std::conditional_t<std::is_same_v<Element,bool>, uint8_t, Element>> host_;
 
   /// Device-side memory
   device_memory::allocation<Element> device_;
@@ -250,10 +251,10 @@ public:
   }
 
   /// Gets pointer to host data
-  Element * host_data() { return host_.data(); }
+  Element * host_data() { return reinterpret_cast<Element *>(host_.data()); }
 
   /// Gets pointer to host data with a pointer offset
-  Element * host_data_ptr_offset(LongIndex ptr_element_offset) { return &ReferenceFactory<Element>::get(host_.data(), ptr_element_offset); }
+  Element * host_data_ptr_offset(LongIndex ptr_element_offset) { return &ReferenceFactory<Element>::get(host_data(), ptr_element_offset); }
 
   /// Gets a reference to an element in host memory
   Reference host_data(LongIndex idx) {
@@ -261,10 +262,10 @@ public:
   }
 
   /// Gets pointer to host data
-  Element const * host_data() const { return host_.data(); }
+  Element const * host_data() const { return reinterpret_cast<Element const *>(host_.data()); }
 
   /// Gets pointer to host data with a pointer offset
-  Element const * host_data_ptr_offset(LongIndex ptr_element_offset) const { return &ReferenceFactory<Element>::get(host_.data(), ptr_element_offset); }
+  Element const * host_data_ptr_offset(LongIndex ptr_element_offset) const { return &ReferenceFactory<Element>::get(host_data(), ptr_element_offset); }
 
   /// Gets a constant reference to an element in host memory
   ConstReference host_data(LongIndex idx) const {

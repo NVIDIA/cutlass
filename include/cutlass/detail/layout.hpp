@@ -182,11 +182,11 @@ constexpr bool is_tma_copy_engine() {
     return false;
   }
   else {
-   if constexpr (   cute::is_base_of_v<cute::SM90_TMA_LOAD,                  GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,        GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL,           GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL_MULTICAST, GmemTiledCopy>
-                  || cute::is_base_of_v<cute::SM90_TMA_STORE,                 GmemTiledCopy>
+   if constexpr (   cute::is_base_of_v<cute::SM90_TMA_LOAD,                         GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_MULTICAST,              GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL,                 GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_LOAD_IM2COL_MULTICAST,       GmemTiledCopy>
+                  || cute::is_base_of_v<cute::SM90_TMA_STORE,                       GmemTiledCopy>
                   ) {
       return true;
     }
@@ -198,6 +198,7 @@ constexpr bool is_tma_copy_engine() {
 template <class GmemTiledCopy, class Element>
 constexpr int
 get_alignment_count_from_gmem_tiled_copy() {
+
   if constexpr (cute::is_void_v<GmemTiledCopy>) {
     return 1;
   }

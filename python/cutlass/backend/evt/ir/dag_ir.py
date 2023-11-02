@@ -36,7 +36,8 @@ DAG IR used by Python EVT
 
 import networkx as nx
 
-from cutlass import DataType
+from cutlass_library import DataType
+
 from cutlass.backend.evt.ir.node import NodeBase
 from cutlass.backend.utils import device_cc
 

@@ -1,5 +1,4 @@
-#################################################################################################
-#
+
 # Copyright (c) 2023 - 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
 #
@@ -27,12 +26,10 @@
 # CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-#################################################################################################
 
-FROM nvcr.io/nvidia/pytorch:23.03-py3
 
-RUN chmod ugo+rwx /home
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-ENV LIBRARY_PATH=/usr/local/cuda/lib64:$LIBRARY_PATH
-ENV CUDA_INSTALL_PATH=/usr/local/cuda
+
+cutlass_example_add_executable(
+  55_hopper_mixed_dtype_gemm
+  55_hopper_mixed_dtype_gemm.cu
+  )

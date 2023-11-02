@@ -37,7 +37,8 @@ Base & visitor classes of DAGIR Nodes
 import ctypes
 from re import sub
 
-from cutlass import LayoutType
+from cutlass_library import LayoutType
+
 from cutlass.backend.evt.ir.layout_algorithm import _list_to_tuple, _reverse_tuple
 from cutlass.backend.evt.ir.tensor import Tensor
 

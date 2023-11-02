@@ -44,6 +44,14 @@
 namespace cutlass {
 namespace epilogue {
 namespace threadblock {
+namespace detail {
+
+struct EVT2xBase { };
+
+template <class T>
+static constexpr bool is_2x_evt_v = platform::is_base_of<EVT2xBase, T>::value;
+
+} // namespace detail
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -67,7 +75,8 @@ class EpilogueWithVisitorCallbacks :
     typename DefaultEpilogue::Shape,
     DefaultEpilogue::kPartitionsK,
     typename DefaultEpilogue::WarpMmaOperator,
-    typename DefaultEpilogue::AccumulatorFragmentIterator>
+    typename DefaultEpilogue::AccumulatorFragmentIterator>,
+  public detail::EVT2xBase
    {
 
 public:

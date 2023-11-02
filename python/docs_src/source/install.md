@@ -9,28 +9,25 @@ Prior to installing the CUTLASS Python interface, one may optionally set the fol
 * `CUDA_INSTALL_PATH`: the path to the installation of CUDA
 
 If these environment variables are not set, the installation process will infer them to be the following:
-* `CUTLASS_PATH`: one directory level above the current directory (i.e., `$(pwd)/..`)
+* `CUTLASS_PATH`: either one directory level above the current directory (i.e., `$(pwd)/..`) if installed locally or in the `source` directory of the location in which `cutlass_library` was installed
 * `CUDA_INSTALL_PATH`: the directory holding `/bin/nvcc` for the first version of `nvcc` on `$PATH` (i.e., `which nvcc | awk -F'/bin/nvcc' '{print $1}'`)
 
 **NOTE:** The version of `cuda-python` installed must match the CUDA version in `CUDA_INSTALL_PATH`.
 
 ### Installing a developer-mode package
-The CUTLASS Python interface can currently be installed via:
+The CUTLASS Python interface can currently be installed by navigating to the root of the CUTLASS directory and performing
 ```bash
-python setup.py develop --user
+pip install .
 ```
-This will allow changes to the Python interface source to be reflected when using the Python interface.
 
-We plan to add support for installing via `python setup.py install` in a future release.
+If you would like to be able to make changes to CULASS Python interface and have them reflected when using the interface, perform:
+```bash
+pip install -e .
+```
 
 ## Docker
-To ensure that you have all of the necessary Python modules for running the examples using the
-CUTLASS Python interface, we recommend using one of the Docker images located in the docker directory.
+We recommend using the CUTLASS Python interface via an [NGC PyTorch Docker container](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch):
 
-For example, to build and launch a container that uses CUDA 12.1 via an NGC PyTorch container, run:
 ```bash
-docker build -t cutlass-cuda12.1:latest -f docker/Dockerfile-cuda12.1-pytorch .
-docker run --gpus all -it --rm cutlass-cuda12.1:latest
+docker run --gpus all -it --rm nvcr.io/nvidia/pytorch:23.08-py3
 ```
-
-The CUTLASS Python interface has been tested with CUDA 11.8, 12.0, and 12.1 on Python 3.8.10 and 3.9.7.

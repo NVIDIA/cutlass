@@ -155,7 +155,8 @@ struct MMA_Atom<MMA_Traits<Args...>>
 
     if constexpr (has_dereference<FrgTypeA>::value) {
       // If the intended FrgTypeA is a view (of the current tensor), forward the whole
-      static_assert(is_same<get_raw_type_t<ValTypeA>, typename remove_cvref_t<ATensor>::value_type>::value, "Expecting ValTypeA type");
+      static_assert(is_same<ValTypeA, typename remove_cvref_t<ATensor>::value_type>::value
+                      , "Expecting ValTypeA type");
       return make_tensor<FrgTypeA>(std::forward<ATensor>(atensor));
     } else {
       // Else, the intended FrgTypeA is a value type, construct a new tensor with a fragment layout
@@ -176,7 +177,8 @@ struct MMA_Atom<MMA_Traits<Args...>>
 
     if constexpr (has_dereference<FrgTypeB>::value) {
       // If the intended FrgTypeB is a view (of the current tensor), forward the whole
-      static_assert(is_same<ValTypeB, typename remove_cvref_t<BTensor>::value_type>::value, "Expecting ValTypeB type");
+      static_assert(is_same<ValTypeB, typename remove_cvref_t<BTensor>::value_type>::value
+                      , "Expecting ValTypeB type");
       return make_tensor<FrgTypeB>(std::forward<BTensor>(btensor));
     } else {
       // Else, the intended FrgTypeB is a value type, construct a new tensor with a fragment layout
@@ -223,6 +225,11 @@ struct TiledMMA : MMA_Atom
 
   // thr_idx -> (ThrV,ThrM,ThrN,ThrK)
   using TidLayout = decltype(right_inverse(ThrLayoutVMNK{}));
+
+  CUTE_HOST_DEVICE constexpr auto
+  get_thr_layout_vmnk() const {
+    return ThrLayoutVMNK{};
+  }
 
   // Tile a tensor or a layout from shape
   //   (M,N,...)
@@ -295,8 +302,8 @@ struct TiledMMA : MMA_Atom
   thrfrg_A(ATensor&& atensor)
   {
     CUTE_STATIC_ASSERT_V(rank(atensor) >= Int<2>{});
-    CUTE_STATIC_ASSERT_V(size<0>(atensor) % size<0>(TiledShape_MNK{}) == Int<0>{});
-    CUTE_STATIC_ASSERT_V(size<1>(atensor) % size<2>(TiledShape_MNK{}) == Int<0>{});
+    //CUTE_STATIC_ASSERT_V(size<0>(atensor) % size<0>(TiledShape_MNK{}) == Int<0>{});
+    //UTE_STATIC_ASSERT_V(size<1>(atensor) % size<2>(TiledShape_MNK{}) == Int<0>{});
 
     // Reorder the tensor for the TiledAtom
     auto t_tile = make_tile(left_inverse(get<0>(PermutationsMNK{})),
@@ -353,8 +360,8 @@ struct TiledMMA : MMA_Atom
   thrfrg_B(BTensor&& btensor)
   {
     CUTE_STATIC_ASSERT_V(rank(btensor) >= Int<2>{});
-    CUTE_STATIC_ASSERT_V(size<0>(btensor) % size<1>(TiledShape_MNK{}) == Int<0>{});
-    CUTE_STATIC_ASSERT_V(size<1>(btensor) % size<2>(TiledShape_MNK{}) == Int<0>{});
+    //CUTE_STATIC_ASSERT_V(size<0>(btensor) % size<1>(TiledShape_MNK{}) == Int<0>{});
+    //CUTE_STATIC_ASSERT_V(size<1>(btensor) % size<2>(TiledShape_MNK{}) == Int<0>{});
 
     // Reorder the tensor for the TiledAtom
     auto t_tile = make_tile(left_inverse(get<1>(PermutationsMNK{})),

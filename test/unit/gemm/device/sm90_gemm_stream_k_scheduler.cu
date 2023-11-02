@@ -62,10 +62,10 @@ run_scheduler(int* visit_counters, typename Scheduler::Params params, TileShape 
   Scheduler scheduler{params};
   auto work_tile_info = scheduler.get_current_work();
 
-  while (work_tile_info.is_valid_tile) {
+  while (work_tile_info.is_valid()) {
     // Increment counters to indicate coverage
     auto tile_idx = Scheduler::output_tile_index(params, work_tile_info);
-    auto offset = tile_idx * params.k_tiles_per_output_tile_ + work_tile_info.K_idx;
+    auto offset = tile_idx * params.divmod_tiles_per_output_tile_.divisor + work_tile_info.K_idx;
     for (auto i = 0; i < work_tile_info.k_tile_count; ++i) {
       // Use atomicAdd because the visit counters are shared by multiple thread blocks.
       // While having more than one block increment the same counter indicates failure,
@@ -108,7 +108,7 @@ test_scheduler(
 
   // Allocate counters indicating the number of times each k iteration of each output tile has been visited
   auto [blk_m, blk_n, blk_l] = Scheduler::get_tiled_cta_shape_mnl(problem_shape_mnkl, tile_shape, cluster_shape);
-  auto total_counters = blk_m * blk_n * blk_l * params.k_tiles_per_output_tile_;
+  auto total_counters = blk_m * blk_n * blk_l * params.divmod_tiles_per_output_tile_.divisor;
   cutlass::DeviceAllocation<int> visit_counters(total_counters);
 
   // Initialize counters to zero
@@ -181,8 +181,6 @@ test_scheduler(
 
   for (size_t i = 0; i < host_visit_counts.size(); ++i) {
     if (host_visit_counts[i] != 1) {
-  // for (int count : host_visit_counts) {
-    // if (count != 1) {
       std::cout << "Failed with problem size "
                 << size<0>(problem_shape_mnkl) << "x"
                 << size<1>(problem_shape_mnkl) << "x"
@@ -191,11 +189,12 @@ test_scheduler(
                 << " and grid size " << grid.x << "x"
                 << grid.y << "x" << grid.z
                 << " splits=" << params.splits_
-                << " k_iter=" << params.k_tiles_per_output_tile_
+                << " k_iter=" << params.divmod_tiles_per_output_tile_.divisor
                 << " big_units=" << params.big_units_
                 << " sk_tiles=" << params.sk_tiles_
                 << " sk_units=" << params.sk_units_
-                << " k_tiles_per_sk_unit=" << params.k_tiles_per_sk_unit_ << std::endl;
+                << " k_tiles_per_sk_unit=" << params.k_tiles_per_sk_unit_
+                << " units_per_problem=" << params.units_per_problem_ << std::endl;
       std::cout << "Error at idx: " << i << ". Got count " << host_visit_counts[i] << std::endl;
       return false;
     }

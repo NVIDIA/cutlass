@@ -130,6 +130,17 @@ copy_if(PrdTensor                    const& pred,
 // copy_if -- Predicated CopyAtom
 //
 
+namespace detail {
+
+// Trait that detects if atom's traits has a member function with(bool)
+template<typename, typename Enable = void>
+constexpr bool has_with_bool = false;
+ 
+template<typename T>
+constexpr bool has_with_bool<T, cute::void_t<decltype(declval<typename T::Traits>().with(declval<bool>()))>> = true;
+
+} // end namespace detail
+
 template <class... CopyArgs,
           class PredTensor,
           class SrcEngine, class SrcLayout,
@@ -150,8 +161,14 @@ copy_if(Copy_Atom<CopyArgs...>       const& copy_atom,
     auto dst_v = group_modes<1,R>(dst);
     CUTE_UNROLL
     for (int i = 0; i < size<1>(src_v); ++i) {
-      if (pred(i)) {
-        copy_atom.call(src_v(_,i), dst_v(_,i));
+      // If copy traits can be transformed with a predicate value, do it, otherwise branch here
+      if constexpr (detail::has_with_bool<Copy_Atom<CopyArgs...>>) {
+        copy_atom.with(pred(i)).call(src_v(_,i), dst_v(_,i));
+      }
+      else {
+        if (pred(i)) {
+          copy_atom.call(src_v(_,i), dst_v(_,i));
+        }
       }
     }
   }
@@ -169,15 +186,17 @@ void
 copy_vec(Tensor<SrcEngine, SrcLayout> const& src,
          Tensor<DstEngine, DstLayout>      & dst)
 {
-  using SrcType = typename SrcEngine::value_type;
-  using DstType = typename DstEngine::value_type;
+  using SrcType = typename SrcEngine::element_type;
+  using DstType = typename DstEngine::element_type;
   if constexpr (sizeof(SrcType) == sizeof(DstType) && sizeof(VecType) > sizeof(DstType))
   {
     /* @pre  is_aligned<N>(src.data()) &&
      *       is_aligned<N>(dst.data())
      */
-    auto src_v = recast<VecType const>(src);
-    auto dst_v = recast<VecType      >(dst);
+    using SrcVecType = conditional_t<is_volatile_v<SrcType>, VecType const volatile, VecType const>;
+    using DstVecType = conditional_t<is_volatile_v<DstType>, VecType       volatile, VecType      >;
+    auto src_v = recast<SrcVecType>(src);
+    auto dst_v = recast<DstVecType>(dst);
 
 #if 0
     if (thread0()) {

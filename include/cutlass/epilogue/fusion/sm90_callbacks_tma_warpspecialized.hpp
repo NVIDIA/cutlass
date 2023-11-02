@@ -117,7 +117,7 @@ template<
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90LinearCombination =
-  Sm90EVT<Sm90Compute<multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc)
+  Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc)
     Sm90ScalarBroadcast<ElementScalar>, // beta
     Sm90SrcFetch, // C
     Sm90EVT<Sm90Compute<multiplies, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc
@@ -143,9 +143,9 @@ struct FusionCallbacks<
     fusion::LinearCombination<ElementOutput, ElementCompute, ElementScalar, RoundStyle>,
     CtaTileShapeMNK,
     EpilogueTile
-> : Sm90LinearCombination<ElementOutput, ElementCompute, ElementScalar, RoundStyle> {
+> : Sm90LinearCombination<typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementScalar, RoundStyle> {
 
-  using Impl = Sm90LinearCombination<ElementOutput, ElementCompute, ElementScalar, RoundStyle>;
+  using Impl = Sm90LinearCombination<typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementScalar, RoundStyle>;
   using Operation = fusion::LinearCombination<ElementOutput, ElementCompute, ElementScalar, RoundStyle>;
 
   struct Arguments {
@@ -208,7 +208,7 @@ struct FusionCallbacks<
     EpilogueTile
 > : Sm90LinCombEltAct<ActivationFn, ElementOutput, ElementCompute, ElementScalar, RoundStyle> {
 
-  using Impl = Sm90LinCombEltAct<ActivationFn, ElementOutput, ElementCompute, ElementScalar, RoundStyle>;
+  using Impl = Sm90LinCombEltAct<ActivationFn, typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementScalar, RoundStyle>;
   using Operation = fusion::LinCombEltAct<ActivationFn, ElementOutput, ElementCompute, ElementScalar, RoundStyle>;
 
   struct Arguments {
@@ -255,10 +255,10 @@ template<
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90LinCombPerRowBias =
-  Sm90EVT<Sm90Compute<multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc + bias)
+  Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc + bias)
     Sm90ScalarBroadcast<ElementScalar>, // beta
     Sm90SrcFetch, // C
-    Sm90EVT<Sm90Compute<multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
+    Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
       Sm90ScalarBroadcast<ElementScalar>, // alpha
       Sm90AccFetch, // acc
       Sm90ColBroadcast<0, CtaTileShapeMNK, ElementBias, Stride<_1,_0,int>, AlignmentBias> // bias
@@ -541,10 +541,10 @@ template<
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90PerRowLinCombPerRowBias =
-  Sm90EVT<Sm90Compute<multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc + bias)
+  Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc + bias)
     Sm90ColBroadcast<0, CtaTileShapeMNK, ElementScalar, Stride<_1,_0,_0>, AlignmentScalar>, // beta
     Sm90SrcFetch, // C
-    Sm90EVT<Sm90Compute<multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
+    Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
       Sm90ColBroadcast<0, CtaTileShapeMNK, ElementScalar, Stride<_1,_0,_0>, AlignmentScalar>, // alpha
       Sm90AccFetch, // acc
       Sm90ColBroadcast<0, CtaTileShapeMNK, ElementBias, Stride<_1,_0,int>, AlignmentBias> // bias
@@ -669,10 +669,10 @@ template<
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90ScaledLinCombPerRowBias =
-  Sm90EVT<Sm90Compute<multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc + bias)
+  Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc + bias)
     Sm90ScalarBroadcast<ElementScalar, Stride<_0,_0,_0>, 2>, // scale_c * beta
     Sm90SrcFetch, // C
-    Sm90EVT<Sm90Compute<multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
+    Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
       Sm90ScalarBroadcast<ElementScalar, Stride<_0,_0,_0>, 3>, // scale_a * scale_b * alpha
       Sm90AccFetch, // acc
       Sm90ColBroadcast<0, CtaTileShapeMNK, ElementBias, Stride<_1,_0,int>, AlignmentBias> // bias
@@ -994,6 +994,229 @@ struct FusionCallbacks<
         };   // end unary op
 
       return args;
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  int Stages,
+  class StrideAux,
+  class SmemLayoutAtom,
+  class CopyOpS2R,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementAux = ElementOutput,
+  class ElementScalar = ElementCompute,
+  int AlignmentAux = 128 / sizeof_bits_v<ElementAux>,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using Sm90LinCombDeEltAct =
+  Sm90EVT<Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>, // activation(beta * C + (alpha * acc), aux)
+    Sm90LinearCombination<ElementCompute, ElementCompute, ElementScalar, RoundStyle>, // beta * C + (alpha * acc)
+    Sm90AuxLoad<Stages, EpilogueTile, ElementAux, StrideAux, SmemLayoutAtom, CopyOpS2R, AlignmentAux>, // aux
+  >;
+
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  class GmemLayoutTagAux,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementAux,
+  class ElementScalar,
+  int AlignmentAux,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  class SmemLayoutAtom,
+  class CopyOpS2R
+>
+struct FusionCallbacks<
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    fusion::LinCombDeEltAct<
+      GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
+      ElementAux, ElementScalar, AlignmentAux, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile,
+    SmemLayoutAtom,
+    CopyOpS2R
+> : Sm90LinCombDeEltAct<
+      CtaTileShapeMNK, EpilogueTile, StagesC, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpS2R, ActivationFn,
+      ElementOutput, ElementCompute, ElementAux, ElementScalar, AlignmentAux, RoundStyle
+    > {
+
+  using Impl =
+    Sm90LinCombDeEltAct<
+      CtaTileShapeMNK, EpilogueTile, StagesC, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpS2R, ActivationFn,
+      ElementOutput, ElementCompute, ElementAux, ElementScalar, AlignmentAux, RoundStyle
+    >;
+  using Operation =
+    fusion::LinCombDeEltAct<
+      GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
+      ElementAux, ElementScalar, AlignmentAux, RoundStyle
+    >;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
+
+    using StrideAux = cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>;
+    ElementAux const* aux_ptr = nullptr;
+    StrideAux dAux = {};
+
+    operator typename Impl::Arguments() const {
+      return
+        {    // binary op : activation(beta * C + (alpha * acc), aux)
+          {                  // ternary op : beta * C + (alpha * acc)
+            {{beta}, {beta_ptr}}, // leaf args : beta
+            {},                   // leaf args : C
+            {                     // binary op : alpha * acc
+              {{alpha}, {alpha_ptr}}, // leaf args : alpha
+              {},                     // leaf args : acc
+              {}                  // binary args : multiplies
+            },                    // end binary op
+            {}               // ternary args : multiply_add
+          },                 // end ternary op
+          {aux_ptr, ElementAux(0), dAux}, // leaf args : aux
+          activation // binary args : activation
+        };   // end binary op
+    }
+  };
+
+  // Ctor inheritance
+  using Impl::Impl;
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  int Stages,
+  class StrideAux,
+  class SmemLayoutAtom,
+  class CopyOpS2R,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementAux = ElementOutput,
+  class ElementBias = ElementOutput,
+  class ElementScalar = ElementCompute,
+  int AlignmentAux = 128 / sizeof_bits_v<ElementAux>,
+  int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
+  FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
+>
+using Sm90LinCombDeEltActDePerRowBias =
+  Sm90EVT<Sm90Compute<cutlass::epilogue::thread::Identity, ElementOutput, ElementCompute, RoundStyle>, // Identity for final conversion
+    Sm90EVT<Sm90ColReduction<plus, plus, 0, CtaTileShapeMNK,
+                             ElementBias, ElementCompute, RoundStyle, Stride<_1,_0,int>, AlignmentBias>,
+      Sm90LinCombDeEltAct<CtaTileShapeMNK, EpilogueTile, Stages, StrideAux, SmemLayoutAtom, CopyOpS2R, ActivationFn,
+                          ElementCompute, ElementCompute, ElementAux, ElementScalar, AlignmentAux, RoundStyle>
+    >
+  >;
+
+template <
+  int StagesC,
+  int StagesD,
+  int FragmentSize,
+  bool ReuseSmemC,
+  class GmemLayoutTagAux,
+  template <class> class ActivationFn,
+  class ElementOutput,
+  class ElementCompute,
+  class ElementAux,
+  class ElementBias,
+  class ElementScalar,
+  int AlignmentAux,
+  int AlignmentBias,
+  FloatRoundStyle RoundStyle,
+  class CtaTileShapeMNK,
+  class EpilogueTile,
+  class SmemLayoutAtom,
+  class CopyOpS2R
+>
+struct FusionCallbacks<
+    epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
+    fusion::LinCombDeEltActDePerRowBias<
+      GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
+      ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+    >,
+    CtaTileShapeMNK,
+    EpilogueTile,
+    SmemLayoutAtom,
+    CopyOpS2R
+> : Sm90LinCombDeEltActDePerRowBias<
+      CtaTileShapeMNK, EpilogueTile, StagesC, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpS2R, ActivationFn,
+      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+    > {
+
+  using Impl =
+    Sm90LinCombDeEltActDePerRowBias<
+      CtaTileShapeMNK, EpilogueTile, StagesC, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpS2R, ActivationFn,
+      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+    >;
+  using Operation =
+    fusion::LinCombDeEltActDePerRowBias<
+      GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
+      ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+    >;
+
+  struct Arguments {
+    ElementScalar alpha = ElementScalar(1);
+    ElementScalar beta = ElementScalar(0);
+    ElementScalar const* alpha_ptr = nullptr;
+    ElementScalar const* beta_ptr = nullptr;
+
+    using ActivationArguments = typename Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>::Arguments;
+    ActivationArguments activation = ActivationArguments();
+
+    using StrideAux = cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>;
+    ElementAux const* aux_ptr = nullptr;
+    StrideAux dAux = {};
+
+    using StrideBias = Stride<_1,_0,int>;
+    ElementBias* dbias_ptr = nullptr;
+    StrideBias dDbias = {};
+
+    operator typename Impl::Arguments() const {
+      return
+      {   // unary op : identity/convert
+        {    // unary op : reduce(activation(beta * C + (alpha * acc), aux))
+          {    // binary op : activation(beta * C + (alpha * acc), aux)
+            {                  // ternary op : beta * C + (alpha * acc)
+              {{beta}, {beta_ptr}}, // leaf args : beta
+              {},                   // leaf args : C
+              {                     // binary op : alpha * acc
+                {{alpha}, {alpha_ptr}}, // leaf args : alpha
+                {},                     // leaf args : acc
+                {}                  // binary args : multiplies
+              },                    // end binary op
+              {}               // ternary args : multiply_add
+            },                 // end ternary op
+            {aux_ptr, ElementAux(0), dAux}, // leaf args : aux
+            activation // binary args : activation
+          },   // end binary op
+          {dbias_ptr, ElementCompute(0), dDbias} // unary args : reduce
+        },   // end unary op
+        {} // unary args : identity/convert
+      };   // end unary op
     }
   };
 

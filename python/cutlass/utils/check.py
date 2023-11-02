@@ -36,26 +36,27 @@ Utility functions for checking constraints on kernels and calculating kernel att
 
 import ctypes
 
+from cutlass_library import DataTypeSize, OperationKind, SharedMemPerCC
+
 import cutlass
-from cutlass import DataTypeSize
 from cutlass.backend.library import TileDescription
 
 
-def calculate_smem_usage_per_stage(td: TileDescription, operation_kind: cutlass.OperationKind) -> int:
+def calculate_smem_usage_per_stage(td: TileDescription, operation_kind: OperationKind) -> int:
     """
     Returns the amount of shared memory in bytes consumed in a single stage of a kernel.
 
     :param td: tile description to compute shared memory of
     :type td: TileDescription
     :param operation_kind: identifier for the type of operation being performed
-    :type operation_kind: cutlass.OperationKind
+    :type operation_kind: cutlass_library.OperationKind
 
     :return: number of bytes of shared memory consumed by a single stage
     :rtype: int
     """
     m, n, k = td.threadblock_shape
 
-    if operation_kind == cutlass.OperationKind.Gemm:
+    if operation_kind == OperationKind.Gemm:
         stage_barrier_bytes = 32
         return (
             (DataTypeSize[td.math_instruction.element_a] * m * k // 8)
@@ -82,7 +83,8 @@ def valid_stage_count(
     kernel_cc: int,
     td: TileDescription,
     element_C: cutlass.DataType = None,
-    element_D: cutlass.DataType = None) -> tuple:
+    element_D: cutlass.DataType = None,
+    verbose: bool = True) -> tuple:
     """
     Checks whether a device with `cc` supports the number of stages within `tile_description`, both
     based on raw limits on the number of stages and based on shared memory capacity
@@ -97,6 +99,8 @@ def valid_stage_count(
     :type element_C: cutlass.DataType
     :param element_D: data type of operand D
     :type element_D: cutlass.DataType
+    :param verbose: whether to log warnings
+    :type verbose: bool
 
     :return: tuple with the first element indicating whether the provided tile description is
              valid for the provided device and the second element being an error message
@@ -107,7 +111,7 @@ def valid_stage_count(
             # Stage count of None or 0 for SM90 indicates that the CollectiveBuilder automatically
             # determines the stage count to use. Thus, all settings are valid in these scenarios.
             return (True, "")
-        else:
+        elif verbose:
             cutlass.logger.warning(
                 "Setting an explicit stage count for SM90 kernels currently may "
                 "result in compilation errors if the combination of tile shape, "
@@ -125,9 +129,9 @@ def valid_stage_count(
     # only catches cases in which the mainloop exceeds the device's shared memory capacity.
     # This is not a concern for CUTLASS 2.x kernels, for which the shared memory of the
     # mainloop and epilogue is shared.
-    smem_per_stage = calculate_smem_usage_per_stage(td, cutlass.OperationKind.Gemm)
+    smem_per_stage = calculate_smem_usage_per_stage(td, OperationKind.Gemm)
     smem_usage_mainloop = (smem_per_stage * td.stages)
-    smem_arch = cutlass.SharedMemPerCC[cc] << 10
+    smem_arch = SharedMemPerCC[cc] << 10
     if smem_usage_mainloop > smem_arch:
         return ( False,
             "Configuration uses too much shared memory. Consider reducing stage count or tile shape.\n"
@@ -214,7 +218,9 @@ def valid_schedule(
         return (False, "Kernel and epilogue schedules must either both be auto or neither be auto")
 
     if not tile_scheduler_default:
-        if (tile_scheduler == cutlass.TileSchedulerType.StreamK) and (kernel_schedule != cutlass.KernelScheduleType.TmaWarpSpecializedCooperative):
+        cooperative_kernels = [cutlass.KernelScheduleType.TmaWarpSpecializedCooperative, 
+                               cutlass.KernelScheduleType.CpAsyncWarpSpecializedCooperative]
+        if (tile_scheduler == cutlass.TileSchedulerType.StreamK) and (kernel_schedule not in cooperative_kernels):
             return (False, "Stream-K tile scheduler is currently only supported with the cooperative kernel schedule")
     return (True, "")
 

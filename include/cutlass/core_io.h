@@ -57,6 +57,7 @@
 #include "cutlass/conv/convolution.h"
 #include "cutlass/conv/conv2d_problem_size.h"
 #include "cutlass/conv/conv3d_problem_size.h"
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Output operator for CUDA built-in dim3 type

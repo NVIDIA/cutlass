@@ -585,11 +585,11 @@ Status GemmOperationProfiler::initialize_workspace(
       workspace_size = underlying_operation->get_device_workspace_size(&gemm_workspace_.configuration,
                                                             &gemm_workspace_.arguments);
       gemm_workspace_.device_workspace.reset(library::NumericTypeID::kU8, workspace_size);
+
       status = underlying_operation->initialize(
         &gemm_workspace_.configuration,
         gemm_workspace_.host_workspace.data(),
         gemm_workspace_.device_workspace.data());
-
       if (status != Status::kSuccess) {
         return status;
       }

@@ -114,7 +114,7 @@ void run_test_integer_range_all() {
   );
 
   destination.sync_host();
-  
+
   // Verify conversion
   bool passed = true;
   for (int i = 0; i < kN; ++i) {
@@ -124,7 +124,7 @@ void run_test_integer_range_all() {
     }
   }
   EXPECT_TRUE(passed) << " FastNumericArrayConverter failed";
-   
+
    // Print out results for the failed conversion.
    if (!passed) {
     for (int i = 0; i < kN; ++i) {

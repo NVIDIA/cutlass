@@ -39,12 +39,12 @@ import subprocess
 
 from cuda import cuda, cudart
 import numpy as np
-import torch
 
 from cutlass import CUTLASS_PATH
 from cutlass.backend.library import DataTypeSize
 from cutlass.op.op import OperationBase
 from cutlass.shape import GemmCoord
+from cutlass.utils.datatypes import is_numpy_tensor
 
 
 class GpuTimer:

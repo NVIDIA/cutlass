@@ -130,6 +130,8 @@ has_single_bit(T x) {
 }
 
 // Smallest number of bits needed to represent the given value
+//   For x == 0, this is 0
+//   For x != 0, this is 1 + floor(log2(x))
 // bit_width( 0b0000 ) = 0
 // bit_width( 0b0001 ) = 1
 // bit_width( 0b0010 ) = 2
@@ -203,7 +205,7 @@ CUTE_HOST_DEVICE constexpr
 T
 rotl(T x, int s) {
   constexpr int N = numeric_limits<T>::digits;
-  return s == 0 ? x : s > 0 ? (x << s) | (x >> (N - s)) : rotr(x, -s);
+  return static_cast<T>(s == 0 ? x : s > 0 ? (x << s) | (x >> (N - s)) : rotr(x, -s));
 }
 
 // Computes the result of circular bitwise right-rotation
@@ -212,7 +214,7 @@ CUTE_HOST_DEVICE constexpr
 T
 rotr(T x, int s) {
   constexpr int N = numeric_limits<T>::digits;
-  return s == 0 ? x : s > 0 ? (x >> s) | (x << (N - s)) : rotl(x, -s);
+  return static_cast<T>(s == 0 ? x : s > 0 ? (x >> s) | (x << (N - s)) : rotl(x, -s));
 }
 
 // Counts the number of consecutive 0 bits, starting from the most significant bit

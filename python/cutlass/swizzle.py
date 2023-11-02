@@ -34,7 +34,7 @@
 Registry of swizzling functions
 """
 
-from cutlass import SwizzlingFunctor
+from cutlass_library import SwizzlingFunctor
 
 
 IdentitySwizzle1 = SwizzlingFunctor.Identity1

@@ -146,7 +146,6 @@ void initialize_reduce_add_linear_combination_f32_f32_bf16(Manifest &manifest) {
   ));
 }
 
-
 void initialize_reduce_add_linear_combination_f32_f32_f32(Manifest &manifest) {
 
   using ElementWorkspace = float;

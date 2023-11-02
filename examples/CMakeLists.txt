@@ -135,6 +135,7 @@ foreach(EXAMPLE
   52_hopper_gather_scatter_fusion
   53_hopper_gemm_permute
   54_hopper_fp8_warp_specialized_gemm
+  55_hopper_mixed_dtype_gemm
   )
 
   add_subdirectory(${EXAMPLE})

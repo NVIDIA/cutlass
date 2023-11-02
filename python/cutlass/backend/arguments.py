@@ -36,16 +36,10 @@ from typing import Union
 from cuda import cuda, cudart
 import numpy as np
 
+import cutlass
 from cutlass.backend.frontend import CupyFrontend, NumpyFrontend, TorchFrontend
-from cutlass.backend.utils.software import CheckPackages
-
-torch_available = CheckPackages().check_torch()
-if torch_available:
-    import torch
-
-cupy_available = CheckPackages().check_cupy()
-if cupy_available:
-    import cupy as cp
+from cutlass.backend.memory_manager import DevicePtrWrapper
+from cutlass.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_tensor
 
 
 class ArgumentBase:
@@ -76,7 +70,7 @@ class ArgumentBase:
         self.ptr_A = self.tensor_to_ptr(A, "A")
         self.ptr_B = self.tensor_to_ptr(B, "B")
         self.ptr_C = self.tensor_to_ptr(C, "C")
-        self.ptr_D = self.tensor_to_ptr(D, "D", True)
+        self.ptr_D = self.tensor_to_ptr(D, "D", is_output=True)
         if C is not None:
             if not isinstance(C, cuda.CUdeviceptr):
                 self.tensor_c_numel = prod(C.shape)
@@ -88,18 +82,18 @@ class ArgumentBase:
         """
         if tensor is None:
             return cuda.CUdeviceptr(0)
-        if isinstance(tensor, np.ndarray):
+        if is_numpy_tensor(tensor):
             if is_output:
                 assert name
             self.buffers[name] = NumpyFrontend.argument(tensor, is_output)
             if is_output:
                 self.host_tensors[name] = tensor
             return self.buffers[name].ptr
-        elif torch_available and isinstance(tensor, torch.Tensor):
+        elif is_torch_tensor(tensor):
             return TorchFrontend.argument(tensor)
         elif isinstance(tensor, cuda.CUdeviceptr):
             return tensor
-        elif cupy_available and isinstance(tensor, cp.ndarray):
+        elif is_cupy_tensor(tensor):
             return CupyFrontend.argument(tensor)
         else:
             raise TypeError("Unsupported Frontend. Only support numpy and torch")
@@ -119,3 +113,23 @@ class ArgumentBase:
             )
             if err != cuda.CUresult.CUDA_SUCCESS:
                 raise RuntimeError("CUDA Error %s" % str(err))
+
+        self.free()
+
+    def free(self):
+        """
+        Frees allocated device-side memory
+        """
+        # Free any device memory allocated manually
+        if not cutlass.use_rmm:
+            for name, buf in self.buffers.items():
+                if isinstance(buf, DevicePtrWrapper):
+                    err, = cudart.cudaFree(buf.ptr)
+                    if err != cudart.cudaError_t.cudaSuccess:
+                        raise RuntimeError(f"cudaFree failed with error {err}")
+
+            if hasattr(self, "workspace_buffer") and isinstance(self.workspace_buffer, DevicePtrWrapper):
+                err, = cudart.cudaFree(self.workspace_buffer.ptr)
+                if err != cudart.cudaError_t.cudaSuccess:
+                    raise RuntimeError(f"cudaFree failed with error {err}")
+                del self.workspace_buffer

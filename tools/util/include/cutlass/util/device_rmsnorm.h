@@ -118,7 +118,7 @@ __global__ void rmsnorm_twoPassAlgo_e1(T* output,
 				       const T* input,
 				       const T* weight,
 				       const int m, const int n,
-				       float epsilon)
+                                       float epsilon)
 {
   const int m_idx = blockIdx.x;
   const int tid = threadIdx.x;

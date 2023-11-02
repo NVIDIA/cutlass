@@ -287,6 +287,10 @@ template <> struct OpcodeClassMap<arch::OpClassTensorOp> {
   static OpcodeClassID const kId = OpcodeClassID::kTensorOp;
 };
 
+template <> struct OpcodeClassMap<arch::OpClassSparseTensorOp> {
+  static OpcodeClassID const kId = OpcodeClassID::kSparseTensorOp;
+};
+
 template <> struct OpcodeClassMap<arch::OpClassWmmaTensorOp> {
   static OpcodeClassID const kId = OpcodeClassID::kWmmaTensorOp;
 };

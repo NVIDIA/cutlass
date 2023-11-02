@@ -35,12 +35,18 @@ Utilities for emitting Rank2K kernels
 """
 
 import enum
-import os.path
-import shutil
 import functools
 import operator
+import os.path
+import shutil
 
-from cutlass_library.library import *
+try:
+  import builtins
+  if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
+    raise ImportError("Disabling attempt to import cutlass_library")
+  from cutlass_library.library import *
+except ImportError:
+  from library import *
 
 
 ###################################################################################################
@@ -82,7 +88,7 @@ class Rank2KOperation:
   #
   def is_mixed_input(self):
     return self.A.element != self.B.element
-  
+
   #
   def is_planar_complex(self):
     return False
@@ -234,7 +240,7 @@ using Operation_${operation_name} =
 """
     self.rank_k_complex_template = """
 // Rank K operator ${operation_name}
-using Operation_${operation_name} = 
+using Operation_${operation_name} =
   typename cutlass::gemm::device::Rank2K<
     ${element_a}, ${layout_a},
     ${element_b}, ${layout_b},

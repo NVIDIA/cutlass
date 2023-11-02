@@ -33,7 +33,13 @@ cutlass_example_add_executable(
   ampere_gemm_universal_streamk.cu
   )
 
+# Deliberately test non-square sizes to ensure that internal transpose is
+# not triggered when using SM80 EVT
+set(TEST_COMMAND_00 --m=512 --n=768 --k=1152)
+
 cutlass_example_add_executable(
   47_ampere_gemm_universal_streamk_broadcast
   ampere_gemm_universal_streamk_broadcast.cu
+  TEST_COMMAND_OPTIONS
+  TEST_COMMAND_00
   )

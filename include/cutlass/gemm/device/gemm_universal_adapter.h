@@ -41,6 +41,7 @@
 #include "cutlass/device_kernel.h"
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/detail/layout.hpp"
+#include "cutlass/detail/mma.hpp"
 
 #if !defined(__CUDACC_RTC__)
 #include "cutlass/cluster_launch.hpp"
@@ -51,6 +52,7 @@
 #include "cutlass/gemm/device/gemm_universal_base.h"
 #include "cutlass/gemm/kernel/gemm_transpose_operands.h"
 #include "cutlass/gemm/threadblock/threadblock_swizzle.h"
+#include "cutlass/epilogue/threadblock/epilogue_with_visitor_callbacks.h"
 
 // 3.x
 #include "cutlass/gemm/kernel/gemm_universal.hpp"
@@ -111,10 +113,7 @@ public:
   // Legacy: Assume MultiplyAdd only since we do not use this tag type in 3.0
   using MathOperator = cutlass::arch::OpMultiplyAdd;
 
-  // All tensorop operations have atom shape's M >= 8
-  using OperatorClass = cute::conditional_t<
-        cute::size<0>(typename CollectiveMainloop::TiledMma::AtomShape_MNK{}) >= 8,
-        cutlass::arch::OpClassTensorOp, cutlass::arch::OpClassSimt>;
+  using OperatorClass = cutlass::detail::get_operator_class_t<typename CollectiveMainloop::TiledMma>;
 
   using ArchTag = typename GemmKernel::ArchTag;
 
@@ -398,6 +397,7 @@ public:
   using GemmKernel = GemmKernel_;
 
   static bool const kInternalTranspose =
+    !cutlass::epilogue::threadblock::detail::is_2x_evt_v<typename GemmKernel::Epilogue> &&  // 2.x EVT does not require internal transpose
     cute::is_same<typename GemmKernel::LayoutC, cutlass::layout::RowMajor>::value;
 
   using ThreadblockShape = typename GemmKernel::Mma::Shape;

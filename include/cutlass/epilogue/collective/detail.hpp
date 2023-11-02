@@ -87,7 +87,7 @@ CUTLASS_HOST_DEVICE
 auto get_epilogue_stride(Stride stride){
   if constexpr (cute::is_base_of_v<cutlass::gemm::EpilogueTransposed, EpilogueSchedule>) {
     return cute::make_stride(cute::get<1>(stride), cute::get<0>(stride), cute::get<2>(stride));
-  } 
+  }
   else {
     return stride;
   }

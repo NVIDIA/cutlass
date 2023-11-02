@@ -36,10 +36,9 @@ Collection of builtin functions used for host reference in EVT
 
 import numpy as np
 
-from cutlass.backend.utils.software import CheckPackages
+from cutlass.utils.datatypes import is_cupy_tensor, is_numpy_tensor, is_torch_available, is_torch_tensor
 
-torch_available = CheckPackages().check_torch()
-if torch_available:
+if is_torch_available():
     import torch
 
 
@@ -48,16 +47,16 @@ def multiply_add(x, y, z):
 
 
 def sum(x, dim):
-    if isinstance(x, np.ndarray):
+    if is_numpy_tensor(x):
         return x.sum(axis=tuple(dim))
-    elif torch_available and isinstance(x, torch.Tensor):
+    elif is_torch_tensor(x):
         return torch.sum(x, dim)
 
 
 def max(x, dim):
-    if isinstance(x, np.ndarray):
+    if is_numpy_tensor(x):
         return x.max(axis=tuple(dim))
-    elif torch_available and isinstance(x, torch.Tensor):
+    elif is_torch_tensor(x):
         return torch.amax(x, dim)
 
 
@@ -66,14 +65,14 @@ def max(x, dim):
 ##############################################################################
 
 def permute(x, indices: tuple):
-    if isinstance(x, np.ndarray):
+    if is_numpy_tensor(x):
         return np.transpose(x, axes=indices)
-    elif torch_available and isinstance(x, torch.Tensor):
+    elif is_torch_tensor(x):
         return x.permute(*indices)
 
 
 def reshape(x, new_shape: tuple):
-    if isinstance(x, np.ndarray):
+    if is_numpy_tensor(x):
         return np.reshape(x, newshape=new_shape)
-    elif torch_available and isinstance(x, torch.Tensor):
+    elif is_torch_tensor(x):
         return x.view(new_shape)

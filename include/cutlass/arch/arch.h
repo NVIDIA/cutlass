@@ -41,7 +41,7 @@
 namespace cutlass {
 namespace arch {
 
-#if defined(__NVCC__) || (defined(__clang__) && defined(__CUDA__))
+#if defined(__NVCC__) || defined(__CUDACC_RTC__) || (defined(__clang__) && defined(__CUDA__))
 
 /// Computes laneId within a warp
 CUTLASS_DEVICE

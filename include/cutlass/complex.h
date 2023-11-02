@@ -42,11 +42,9 @@
 
 #include "cutlass/cutlass.h"
 #include "cutlass/functional.h"
-#include "cutlass/half.h"
 #include "cutlass/real.h"
 
-#include "cutlass/bfloat16.h"
-#include "cutlass/tfloat32.h"
+#include "cutlass/numeric_types.h"
 
 #include "cutlass/fast_math.h"
 
@@ -489,6 +487,15 @@ CUTLASS_HOST_DEVICE uint1b_t conj(uint1b_t const& z) {
 CUTLASS_HOST_DEVICE tfloat32_t conj(tfloat32_t const& z) {
   return z;
 }
+
+CUTLASS_HOST_DEVICE float_e4m3_t conj(float_e4m3_t const& z) {
+  return z;
+}
+
+CUTLASS_HOST_DEVICE float_e5m2_t conj(float_e5m2_t const& z) {
+  return z;
+}
+
 
 /// Returns the complex conjugate
 template <typename T>

@@ -85,7 +85,7 @@ class GemmEquivalence:
         Tests the equivalence of various constructions of the Gemm interface when using CUTLASS data types
         and layouts for constructing the Gemm interface
         """
-        if not datatypes.numpy_available:
+        if not datatypes.is_numpy_available():
             return
 
         # Test when specifying all parameters
@@ -126,7 +126,7 @@ class GemmEquivalence:
         """
         Tests the equivalence of various constructions of the Gemm interface when using numpy as a frontend
         """
-        if not datatypes.numpy_available:
+        if not datatypes.is_numpy_available():
             return
 
         import numpy as np

@@ -33,308 +33,232 @@
 #include <cute/config.hpp>
 
 #include <cute/util/type_traits.hpp>
-#include <cute/numeric/integral_constant.hpp>
+#include <cute/numeric/int.hpp>        // sizeof_bits
 #include <cute/numeric/math.hpp>
+#include <cute/numeric/integral_constant.hpp>
 
+#include <cute/container/array_subbyte.hpp>
+
+#include <cute/pointer_base.hpp>
+#include <cute/pointer_swizzle.hpp>
 namespace cute
 {
 
 //
-// has_dereference to determine if a type is a pointer concept
+// recast_ptr<T> -- Create an iterator over values of type T.
+// For most types this will simply be T*, but certain types require more care.
+// Subbyte Types: uint2_t, uint4_t, etc
+//   Requires construction of a subbyte_iterator<T> in order to properly
+//   resolve each element in byte-addressed memory.
 //
 
-template <class T, class = void>
-struct has_dereference : false_type {
-};
-
-template <class T>
-struct has_dereference<T, void_t<decltype(*declval<T>())>> : true_type {
-};
-
-template <class T>
+template <class NewT>
 CUTE_HOST_DEVICE constexpr
-T*
-raw_pointer_cast(T* ptr) {
-  return ptr;
+auto
+recast_ptr(void* ptr)
+{
+  if constexpr (is_subbyte<NewT>::value) {
+    return subbyte_iterator<NewT>(ptr);
+  } else {
+    return reinterpret_cast<NewT*>(ptr);
+  }
+  CUTE_GCC_UNREACHABLE;
 }
 
-//
-// Extract the physical type from a logical elem type.
-// 
-template <class T>
-struct get_raw_type
-{
-    using type = T;
-};
-
-template <class T>
-using get_raw_type_t = typename get_raw_type<T>::type;
-
-
-//
-// Pointer categories
-//
-
-template <class T>
-struct is_gmem : false_type {};
-
-template <class T>
-struct is_smem : false_type {};
-
-// Anything that is not gmem or smem is rmem
-template <class T>
-struct is_rmem : bool_constant< not (is_gmem<T>::value || is_smem<T>::value)> {};
-
-//
-// A very simplified wrapper for pointers -- use for constructing tagged pointers
-//
-template <class T, class DerivedType>
-struct device_ptr
-{
-  using value_type = T;
-  
-  static const uint32_t ElementsPerStoredItem = sizeof(T) * 8 / sizeof_bits_v<T>;
-
-  CUTE_HOST_DEVICE constexpr
-  device_ptr(T* ptr) : ptr_(ptr) {}
-
-  CUTE_HOST_DEVICE constexpr
-  T* get() const { return ptr_; }
-
-  CUTE_HOST_DEVICE constexpr
-  T& operator*() const { return *ptr_; }
-
-  template <class Index>
-  CUTE_HOST_DEVICE constexpr
-  T& operator[](Index const& i) const { 
-    static_assert(sizeof_bits_v<T> >= 8, "Use subbyte_iterator to access the element");
-    return ptr_[i]; 
-  }
-
-  template <class Index>
-  CUTE_HOST_DEVICE constexpr
-  DerivedType operator+(Index const& i) const { return {ptr_ + i / ElementsPerStoredItem}; }
-
-  CUTE_HOST_DEVICE constexpr friend
-  ptrdiff_t operator-(device_ptr<T,DerivedType> const& a,
-                      device_ptr<T,DerivedType> const& b) {
-    return a.ptr_ - b.ptr_;
-  }
-
-  T* ptr_;
-};
-
-template <class T, class D>
+template <class NewT>
 CUTE_HOST_DEVICE constexpr
-T*
-raw_pointer_cast(device_ptr<T,D> ptr) {
-  return ptr.get();
+auto
+recast_ptr(void const* ptr)
+{
+  if constexpr (is_subbyte<NewT>::value) {
+    return subbyte_iterator<NewT const>(ptr);
+  } else {
+    return reinterpret_cast<NewT const*>(ptr);
+  }
+  CUTE_GCC_UNREACHABLE;
+}
+
+// Disambiguate nullptr
+template <class NewT>
+CUTE_HOST_DEVICE constexpr
+auto
+recast_ptr(decltype(nullptr)) {   // nullptr_t
+  return recast_ptr<NewT>(static_cast<NewT*>(nullptr));
 }
 
 //
 // gmem_ptr
 //
 
-template <class T>
-struct gmem_ptr : device_ptr<T, gmem_ptr<T>> {
-  using device_ptr<T, gmem_ptr<T>>::device_ptr;
+template <class P>
+struct gmem_ptr : iter_adaptor<P, gmem_ptr<P>> {
+  using iter_adaptor<P, gmem_ptr<P>>::iter_adaptor;
 };
 
-template <class T>
+template <class T, class = void>
+struct is_gmem : false_type {};
+template <class P>                     // Found the gmem
+struct is_gmem<gmem_ptr<P>> : true_type {};
+template <class P>                     // Recurse on ::iterator, if possible
+struct is_gmem<P, void_t<typename P::iterator>> : is_gmem<typename P::iterator> {};
+
+// Idempotent gmem tag on an iterator
+template <class Iterator>
 CUTE_HOST_DEVICE constexpr
-gmem_ptr<T>
-make_gmem_ptr(T* ptr) {
-  return {ptr};
+auto
+make_gmem_ptr(Iterator iter) {
+  if constexpr (is_gmem<Iterator>::value) {
+    return iter;
+  } else {
+    return gmem_ptr<Iterator>{iter};
+  }
+  CUTE_GCC_UNREACHABLE;
 }
 
+// Explicitly typed construction from a raw pointer
 template <class T>
 CUTE_HOST_DEVICE constexpr
-gmem_ptr<T>
+auto
 make_gmem_ptr(void* ptr) {
-  return {reinterpret_cast<T*>(ptr)};
+  return make_gmem_ptr(recast_ptr<T>(ptr));
 }
 
+// Explicitly typed construction from a raw pointer
 template <class T>
 CUTE_HOST_DEVICE constexpr
-gmem_ptr<T const>
+auto
 make_gmem_ptr(void const* ptr) {
-  return {reinterpret_cast<T const*>(ptr)};
+  return make_gmem_ptr(recast_ptr<T const>(ptr));
 }
 
-// nullptr_t overloads are needed because otherwise,
-// make_gmem_ptr<float>(nullptr) will be ambiguous,
-// as std::nullptr_t can be converted to any pointer
-// or pointer to member type.
+// nullptr_t overload for make_gmem_ptr<float>(nullptr) disambiguation
 template <class T>
 CUTE_HOST_DEVICE constexpr
-gmem_ptr<T>
+auto
 make_gmem_ptr(decltype(nullptr)) { // nullptr_t
-  return {static_cast<T*>(nullptr)};
+  return make_gmem_ptr(recast_ptr<T>(nullptr));
 }
 
-template <class T>
-struct is_gmem<gmem_ptr<T>> : true_type {};
+// The gmem tag is invariant over type-recast
+template <class NewT, class P>
+CUTE_HOST_DEVICE constexpr
+auto
+recast_ptr(gmem_ptr<P> const& ptr) {
+  return make_gmem_ptr(recast_ptr<NewT>(ptr.get()));
+}
 
 //
 // smem_ptr
 //
 
-template <class T>
-struct smem_ptr : device_ptr<T, smem_ptr<T>> {
-  using device_ptr<T, smem_ptr<T>>::device_ptr;
+template <class P>
+struct smem_ptr : iter_adaptor<P, smem_ptr<P>> {
+  using iter_adaptor<P, smem_ptr<P>>::iter_adaptor;
 };
 
-template <class T>
+template <class T, class = void>
+struct is_smem : false_type {};
+template <class P>                     // Found the smem
+struct is_smem<smem_ptr<P>> : true_type {};
+template <class P>                     // Recurse on ::iterator, if possible
+struct is_smem<P, void_t<typename P::iterator>> : is_smem<typename P::iterator> {};
+
+// Idempotent smem tag on an iterator
+template <class Iterator>
 CUTE_HOST_DEVICE constexpr
-smem_ptr<T>
-make_smem_ptr(T* ptr) {
-  return {ptr};
+auto
+make_smem_ptr(Iterator iter) {
+  if constexpr (is_smem<Iterator>::value) {
+    return iter;
+  } else {
+    return smem_ptr<Iterator>{iter};
+  }
+  CUTE_GCC_UNREACHABLE;
 }
 
+// Make a smem swizzle pointer, common operation
+template <class Iterator, class Swizzle>
+CUTE_HOST_DEVICE constexpr
+auto
+make_smem_ptr(Iterator ptr, Swizzle sw)
+{
+  return make_swizzle_ptr(make_smem_ptr(ptr), sw);
+}
+
+// Explicitly typed construction from a raw pointer
 template <class T>
 CUTE_HOST_DEVICE constexpr
-smem_ptr<T>
+auto
 make_smem_ptr(void* ptr) {
-  return {reinterpret_cast<T*>(ptr)};
+  return make_smem_ptr(recast_ptr<T>(ptr));
 }
 
+// Explicitly typed construction from a raw pointer
 template <class T>
 CUTE_HOST_DEVICE constexpr
-smem_ptr<T const>
+auto
 make_smem_ptr(void const* ptr) {
-  return {reinterpret_cast<T const*>(ptr)};
+  return make_smem_ptr(recast_ptr<T const>(ptr));
 }
 
-template <class T>
-struct is_smem<smem_ptr<T>> : true_type {};
+// The smem tag is invariant over type-recast
+template <class NewT, class P>
+CUTE_HOST_DEVICE constexpr
+auto
+recast_ptr(smem_ptr<P> const& ptr) {
+  return make_smem_ptr(recast_ptr<NewT>(ptr.get()));
+}
 
 //
 // rmem_ptr
 //
 
-template <class T>
-struct rmem_ptr : device_ptr<T, rmem_ptr<T>> {
-  using device_ptr<T, rmem_ptr<T>>::device_ptr;
+template <class P>
+struct rmem_ptr : iter_adaptor<P, rmem_ptr<P>> {
+  using iter_adaptor<P, rmem_ptr<P>>::iter_adaptor;
 };
 
-template <class T>
+// Anything that is not gmem or smem is rmem
+template <class T, class = void>
+struct is_rmem : bool_constant<not (is_gmem<T>::value || is_smem<T>::value)> {};
+template <class P>
+struct is_rmem<rmem_ptr<P>> : true_type {};
+
+// Idempotent rmem tag on an iterator
+template <class Iterator>
 CUTE_HOST_DEVICE constexpr
-rmem_ptr<T>
-make_rmem_ptr(T* ptr) {
-  return {ptr};
+auto
+make_rmem_ptr(Iterator iter) {
+  if constexpr (is_rmem<Iterator>::value) {
+    return iter;
+  } else {
+    return rmem_ptr<Iterator>{iter};
+  }
+  CUTE_GCC_UNREACHABLE;
 }
 
+// Explicitly typed construction from a raw pointer
 template <class T>
 CUTE_HOST_DEVICE constexpr
-rmem_ptr<T>
+auto
 make_rmem_ptr(void* ptr) {
-  return {reinterpret_cast<T*>(ptr)};
+  return make_rmem_ptr(recast_ptr<T>(ptr));
 }
 
+// Explicitly typed construction from a raw pointer
 template <class T>
 CUTE_HOST_DEVICE constexpr
-rmem_ptr<T const>
+auto
 make_rmem_ptr(void const* ptr) {
-  return {reinterpret_cast<T const*>(ptr)};
+  return make_rmem_ptr(recast_ptr<T const>(ptr));
 }
 
-template <class T>
-struct is_rmem<rmem_ptr<T>> : true_type {};
-
-//
-// counting iterator -- quick and dirty
-//
-
-struct counting
-{
-  using index_type = int;
-  using value_type = index_type;
-
-  CUTE_HOST_DEVICE constexpr
-  counting() : n_(0) {}
-  CUTE_HOST_DEVICE constexpr
-  counting(index_type const& n) : n_(n) {}
-
-  CUTE_HOST_DEVICE constexpr
-  index_type operator[](index_type const& i) const { return n_ + i; }
-
-  CUTE_HOST_DEVICE constexpr
-  index_type const& operator*() const { return n_; }
-
-  CUTE_HOST_DEVICE constexpr
-  counting operator+(index_type const& i) const { return {n_ + i}; }
-  CUTE_HOST_DEVICE constexpr
-  counting& operator++() { ++n_; return *this; }
-
-  CUTE_HOST_DEVICE constexpr
-  bool operator==(counting const& other) const { return n_ == other.n_; }
-  CUTE_HOST_DEVICE constexpr
-  bool operator!=(counting const& other) const { return n_ != other.n_; }
-
-  CUTE_HOST_DEVICE constexpr
-  bool operator< (counting const& other) const { return n_ <  other.n_; }
-
-  index_type n_;
-};
-
-//
-// recast
-//
-
-template <class NewT, class T>
+// The rmem tag is invariant over type-recast
+template <class NewT, class P>
 CUTE_HOST_DEVICE constexpr
 auto
-recast(T* ptr) {
-  return reinterpret_cast<NewT*>(ptr);
-}
-
-template <class NewT, class T>
-CUTE_HOST_DEVICE constexpr
-auto
-recast(T const* ptr) {
-  return reinterpret_cast<NewT const*>(ptr);
-}
-
-template <class NewT, class T>
-CUTE_HOST_DEVICE constexpr
-auto
-recast(gmem_ptr<T> const& ptr) {
-  return make_gmem_ptr(recast<NewT>(ptr.ptr_));
-}
-
-template <class NewT, class T>
-CUTE_HOST_DEVICE constexpr
-auto
-recast(gmem_ptr<T const> const& ptr) {
-  return make_gmem_ptr(recast<NewT const>(ptr.ptr_));
-}
-
-template <class NewT, class T>
-CUTE_HOST_DEVICE constexpr
-auto
-recast(smem_ptr<T> const& ptr) {
-  return make_smem_ptr(recast<NewT>(ptr.ptr_));
-}
-
-template <class NewT, class T>
-CUTE_HOST_DEVICE constexpr
-auto
-recast(smem_ptr<T const> const& ptr) {
-  return make_smem_ptr(recast<NewT const>(ptr.ptr_));
-}
-
-template <class NewT, class T>
-CUTE_HOST_DEVICE constexpr
-auto
-recast(rmem_ptr<T> const& ptr) {
-  return make_rmem_ptr(recast<NewT>(ptr.ptr_));
-}
-
-template <class NewT, class T>
-CUTE_HOST_DEVICE constexpr
-auto
-recast(rmem_ptr<T const> const& ptr) {
-  return make_rmem_ptr(recast<NewT const>(ptr.ptr_));
+recast_ptr(rmem_ptr<P> const& ptr) {
+  return make_rmem_ptr(recast_ptr<NewT>(ptr.get()));
 }
 
 //
@@ -342,46 +266,40 @@ recast(rmem_ptr<T const> const& ptr) {
 //
 
 template <class T>
-CUTE_HOST_DEVICE void print(T const* const ptr)
+CUTE_HOST_DEVICE void print(gmem_ptr<T> ptr)
 {
-  printf("raw_ptr_%db(%p)", int(sizeof_bits<T>::value), ptr);
+  printf("gmem_"); print(ptr.get());
 }
 
 template <class T>
-CUTE_HOST_DEVICE void print(gmem_ptr<T> const& ptr)
+CUTE_HOST_DEVICE void print(smem_ptr<T> ptr)
 {
-  printf("gmem_ptr_%db(%p)", int(sizeof_bits<T>::value), ptr.get());
+  printf("smem_"); print(ptr.get());
 }
 
 template <class T>
-CUTE_HOST_DEVICE void print(smem_ptr<T> const& ptr)
+CUTE_HOST_DEVICE void print(rmem_ptr<T> ptr)
 {
-  printf("smem_ptr_%db(%p)", int(sizeof_bits<T>::value), ptr.get());
-}
-
-template <class T>
-CUTE_HOST_DEVICE void print(rmem_ptr<T> const& ptr)
-{
-  printf("rmem_ptr_%db(%p)", int(sizeof_bits<T>::value), ptr.get());
+  printf("rmem_"); print(ptr.get());
 }
 
 #if !defined(__CUDACC_RTC__)
 template <class T>
-CUTE_HOST std::ostream& operator<<(std::ostream& os, gmem_ptr<T> const& ptr)
+CUTE_HOST std::ostream& operator<<(std::ostream& os, gmem_ptr<T> ptr)
 {
-  return os << "gmem_ptr_" << int(sizeof_bits<T>::value) << "b";
+  return os << "gmem_[" << int(sizeof_bits<iter_value_t<T>>::value) << "b]";
 }
 
 template <class T>
-CUTE_HOST std::ostream& operator<<(std::ostream& os, smem_ptr<T> const& ptr)
+CUTE_HOST std::ostream& operator<<(std::ostream& os, smem_ptr<T> ptr)
 {
-  return os << "smem_ptr_" << int(sizeof_bits<T>::value) << "b";
+  return os << "smem_[" << int(sizeof_bits<iter_value_t<T>>::value) << "b]";
 }
 
 template <class T>
-CUTE_HOST std::ostream& operator<<(std::ostream& os, rmem_ptr<T> const& ptr)
+CUTE_HOST std::ostream& operator<<(std::ostream& os, rmem_ptr<T> ptr)
 {
-  return os << "rmem_ptr_" << int(sizeof_bits<T>::value) << "b";
+  return os << "rmem_[" << int(sizeof_bits<iter_value_t<T>>::value) << "b]";
 }
 
 #endif // !defined(__CUDACC_RTC__)

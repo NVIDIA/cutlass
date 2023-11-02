@@ -60,7 +60,7 @@ using namespace cute;
 ///////////////////////////////////// TT //////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_f16t_f16t_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16t_f16t_f16n_align8_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -72,7 +72,7 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::KernelMultistage
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -95,7 +95,7 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
   EXPECT_TRUE(test::gemm::device::TestAll<Gemm>());
 }
 
-TEST(SM90_Device_Gemm_f16t_f16t_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16t_f16t_f16n_align4_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -107,7 +107,7 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::collective::KernelScheduleAuto
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -131,7 +131,7 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
 }
 
 
-TEST(SM90_Device_Gemm_f16t_f16t_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16t_f16t_f16n_align2_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::RowMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -143,7 +143,7 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::collective::KernelScheduleAuto
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -170,7 +170,7 @@ TEST(SM90_Device_Gemm_f16t_f16t_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
 ///////////////////////////////////// TN //////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_f16t_f16n_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16t_f16n_f16n_align8_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -182,7 +182,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::KernelMultistage
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -207,7 +207,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_f16t_f16n_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16t_f16n_f16n_align4_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -219,7 +219,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::collective::KernelScheduleAuto
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -244,7 +244,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_f16t_f16n_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16t_f16n_f16n_align2_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::RowMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -256,7 +256,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::collective::KernelScheduleAuto
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -283,7 +283,7 @@ TEST(SM90_Device_Gemm_f16t_f16n_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
 ///////////////////////////////////// NT //////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_f16n_f16t_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16n_f16t_f16n_align8_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::ColumnMajor;
   using LayoutB = cutlass::layout::RowMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -295,7 +295,7 @@ TEST(SM90_Device_Gemm_f16n_f16t_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::KernelMultistage
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -320,7 +320,7 @@ TEST(SM90_Device_Gemm_f16n_f16t_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_f16n_f16t_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16n_f16t_f16n_align4_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::ColumnMajor;
   using LayoutB = cutlass::layout::RowMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -332,7 +332,7 @@ TEST(SM90_Device_Gemm_f16n_f16t_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::collective::KernelScheduleAuto
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -357,7 +357,7 @@ TEST(SM90_Device_Gemm_f16n_f16t_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_f16n_f16t_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16n_f16t_f16n_align2_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::ColumnMajor;
   using LayoutB = cutlass::layout::RowMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -369,7 +369,7 @@ TEST(SM90_Device_Gemm_f16n_f16t_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::collective::KernelScheduleAuto
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -396,7 +396,7 @@ TEST(SM90_Device_Gemm_f16n_f16t_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
 ///////////////////////////////////// NN //////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_f16n_f16n_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16n_f16n_f16n_align8_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::ColumnMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -408,7 +408,7 @@ TEST(SM90_Device_Gemm_f16n_f16n_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::KernelMultistage
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -433,7 +433,7 @@ TEST(SM90_Device_Gemm_f16n_f16n_f16n_align8_tensor_op_gmma_f32, 64x128x64) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_f16n_f16n_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16n_f16n_f16n_align4_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::ColumnMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -445,7 +445,7 @@ TEST(SM90_Device_Gemm_f16n_f16n_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::collective::KernelScheduleAuto
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
@@ -470,7 +470,7 @@ TEST(SM90_Device_Gemm_f16n_f16n_f16n_align4_tensor_op_gmma_f32, 64x128x64) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-TEST(SM90_Device_Gemm_f16n_f16n_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
+TEST(SM90_Device_Gemm_f16n_f16n_f16n_align2_tensor_op_gmma_f32_warpspecialized, 64x128x64) {
   using LayoutA = cutlass::layout::ColumnMajor;
   using LayoutB = cutlass::layout::ColumnMajor;
   using LayoutC = cutlass::layout::ColumnMajor;
@@ -482,7 +482,7 @@ TEST(SM90_Device_Gemm_f16n_f16n_f16n_align2_tensor_op_gmma_f32, 64x128x64) {
       float,
       Shape<_64,_128,_64>, Shape<_1,_1,_1>,
       cutlass::gemm::collective::StageCountAuto,
-      cutlass::gemm::collective::KernelScheduleAuto
+      cutlass::gemm::KernelCpAsyncWarpSpecialized
     >::CollectiveOp;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<

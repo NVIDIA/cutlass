@@ -321,8 +321,8 @@ struct CollectiveMma<
 
     // Set the bytes transferred in this TMA transaction (may involve multiple issues)
     constexpr uint32_t TmaTransactionBytes = static_cast<uint32_t>(
-        (size<0>(sA) * size<1>(sA) * sizeof(InternalElementA)) +
-        (size<0>(sB) * size<1>(sB) * sizeof(InternalElementB)));
+        (size<0>(sA) * size<1>(sA) * sizeof_bits<InternalElementA>::value) / 8 +
+        (size<0>(sB) * size<1>(sB) * sizeof_bits<InternalElementB>::value) / 8);
 
 
     // Obtain warp index

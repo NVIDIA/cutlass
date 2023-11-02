@@ -17,7 +17,7 @@
 # contributors may be used to endorse or promote products derived from
 # this software without specific prior written permission.
 #
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 'AS IS'
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
 # DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
@@ -30,11 +30,45 @@
 #
 #################################################################################################
 
-FROM nvcr.io/nvidia/pytorch:22.11-py3
 
-RUN chmod ugo+rwx /home
-RUN pip uninstall -y rmm
-RUN pip install rmm-cu11 --extra-index-url=https://pypi.ngc.nvidia.com
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-ENV LIBRARY_PATH=/usr/local/cuda/lib64:$LIBRARY_PATH
-ENV CUDA_INSTALL_PATH=/usr/local/cuda
+import copy
+import os
+import setuptools
+from setuptools import setup
+from setuptools.command.build_ext import build_ext
+
+import setup_pycute
+import setup_library
+
+
+# Install cutlass_library package
+setup_library.perform_setup()
+
+
+# Install the PyCuTe package
+setup_pycute.perform_setup()
+
+
+setup(
+    name='cutlass',
+    version='3.3.0',
+    description='CUTLASS Pythonic Interface',
+    package_dir={'': '.'},
+    packages=[
+        'cutlass',
+        'cutlass.emit',
+        'cutlass.op',
+        'cutlass.utils',
+        'cutlass.backend',
+        'cutlass.backend.utils'
+        ],
+    setup_requires=['pybind11'],
+    install_requires=[
+        'bfloat16',
+        'cuda-python>=11.8.0',
+        'pybind11',
+        'scikit-build',
+        'treelib',
+        'pydot'
+        ]
+)

@@ -49,16 +49,18 @@
 #include "cutlass/util/reference/host/tensor_compare.h"
 #include "cutlass/util/reference/host/tensor_norm.h"
 #include "cutlass/util/reference/host/gett.hpp"
-
 #include "testbed_utils.h"
 
 #include "cutlass/kernel_hardware_info.hpp"
 #include "cutlass/layout/matrix.h"
 #include "cutlass/matrix_coord.h"
 #include "cutlass/gemm/gemm.h"
+#include "cutlass/fast_math.h"
+#include "cutlass/platform/platform.h"
 #include "cutlass/epilogue/fusion/operations.hpp"
 
 #include "cute/int_tuple.hpp"
+#include "cute/layout.hpp"
 
 namespace test {
 namespace gemm {
@@ -68,9 +70,9 @@ namespace device {
 
 namespace detail{
 
-// Helper classes that take default data type when 
+// Helper classes that take default data type when
 // the Gemm::EpilogueOutputOp does not have ElementCompute
-// and ElementScalar. 
+// and ElementScalar.
 // (e.g. when Sm90TreeVisitor is used as FusionCallbacks)
 template <typename Gemm, typename Default, typename = void>
 struct ElementComputeType {
@@ -138,6 +140,34 @@ private:
   int iterations_ = 20;
 };
 
+// The maxium swizzle size to use
+//
+// This class, like Splits above makes it harder to confuse
+// the order of arguments of the various run(...) functions in this file.
+class MaxSwizzleSize {
+public:
+  MaxSwizzleSize() = default;
+
+  template<class IntegralNotBool,
+    __CUTE_REQUIRES((std::is_integral_v<IntegralNotBool> &&
+      !std::is_same_v<IntegralNotBool, bool>)) >
+  explicit MaxSwizzleSize(IntegralNotBool max_swizzle_size) : max_swizzle_size_(max_swizzle_size) {}
+  explicit operator int() const { return max_swizzle_size_; }
+private:
+  int max_swizzle_size_ = 1;
+};
+
+template <typename T>
+auto make_iterator(T* ptr) {
+  using namespace cute;
+  if constexpr (is_subbyte_v<T>) {
+    return subbyte_iterator<T>(ptr);
+  }
+  else {
+    return ptr;
+  }
+}
+
 template <
   typename Gemm,
   template <class T> class ActivationFunctor_ = cutlass::epilogue::thread::Identity
@@ -160,6 +190,8 @@ struct TestbedImpl {
   using ElementCompute = typename ElementComputeType<Gemm, ElementAccumulator>::Type;
   using ElementScalar = typename ElementScalarType<Gemm, ElementCompute>::Type;
   using ActivationFunctor = ActivationFunctor_<ElementCompute>;
+
+  using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
 
   static_assert(rank(StrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
   static_assert(rank(StrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
@@ -190,6 +222,7 @@ struct TestbedImpl {
   using LayoutTagB = cutlass::detail::StrideToLayoutTagB_t<StrideB>;
   using LayoutTagC = cutlass::detail::StrideToLayoutTagA_t<StrideC>;
   using LayoutTagD = cutlass::detail::StrideToLayoutTagA_t<StrideD>;
+  using LayoutTagVector = cutlass::layout::PackedVectorLayout;
 
   /// Initialization
   StrideA stride_a;
@@ -323,10 +356,10 @@ struct TestbedImpl {
     // 2.x host tensor does not natively contain a batch stride or coord, so we spoof if by folding it into the outer mode
     auto a_coord = cutlass::make_Coord(M * L, K);
     auto c_coord = cutlass::make_Coord(M * L, N);
-    // Cutlass has Row/Col major refers to MxK times KxN matrix product, 
+    // Cutlass has Row/Col major refers to MxK times KxN matrix product,
     // so the HostTensorB should be treated as KxN in "coord"'s view
     auto b_coord = cutlass::make_Coord(K, N * L);
-    
+
 
     tensor_A.resize(a_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagA>::layout_factory(a_coord, stride_factor_A));
     tensor_B.resize(b_coord, cutlass::layout::Affine2Layout_Factory<LayoutTagB>::layout_factory(b_coord, stride_factor_B));
@@ -387,7 +420,7 @@ struct TestbedImpl {
       std::ofstream file(fname.str());
       file
         << "problem: " << ' ' << M << "x" << N << "x" << K << ", Batch count = " << L
-        << ", alpha: " << float(alpha) << ", beta: " << float(beta) << "\n\n";
+        << ", alpha: " << alpha << ", beta: " << beta << "\n\n";
 
       file
         << "A =\n" << tensor_A.host_view()
@@ -404,7 +437,7 @@ struct TestbedImpl {
   bool verify(
       ProblemShapeType problem_size,
       ElementScalar alpha,
-      ElementScalar beta) 
+      ElementScalar beta)
   {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     auto M = cute::size<0>(problem_shape_MNKL);
@@ -412,13 +445,13 @@ struct TestbedImpl {
     auto K = cute::size<2>(problem_shape_MNKL);
     auto L = cute::size<3>(problem_shape_MNKL);
 
-    auto A = cute::make_tensor(tensor_A.host_data(),
+    auto A = cute::make_tensor(detail::make_iterator(tensor_A.host_data()),
         cute::make_layout(cute::make_shape(M, K, L), stride_a));
-    auto B = cute::make_tensor(tensor_B.host_data(),
+    auto B = cute::make_tensor(detail::make_iterator(tensor_B.host_data()),
         cute::make_layout(cute::make_shape(N, K, L), stride_b));
-    auto C = cute::make_tensor(tensor_C.host_data(),
+    auto C = cute::make_tensor(detail::make_iterator(tensor_C.host_data()),
         cute::make_layout(cute::make_shape(M, N, L), stride_c));
-    auto D = cute::make_tensor(reference_D.host_data(),
+    auto D = cute::make_tensor(detail::make_iterator(reference_D.host_data()),
         cute::make_layout(cute::make_shape(M, N, L), stride_d));
     auto Bias = cute::make_tensor(static_cast<ElementCompute*>(nullptr),
         cute::make_layout(cute::make_shape(M, cute::_1{})));
@@ -451,7 +484,6 @@ struct TestbedImpl {
         };
 
     cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
-
     return compare_reference(problem_shape_MNKL, alpha, beta);
   }
 
@@ -529,8 +561,10 @@ struct TestbedImpl {
     ElementScalar alpha = ElementScalar(1),
     ElementScalar beta = ElementScalar(0),
     bool profiling = false,
-    detail::Iterations iterations = Iterations{},
-    detail::Splits splits = Splits{})
+    detail::Iterations iterations = detail::Iterations{},
+    RasterOrderOptions raster_order = RasterOrderOptions::Heuristic,
+    detail::MaxSwizzleSize max_swizzle = detail::MaxSwizzleSize{},
+    detail::Splits splits = detail::Splits{})
   {
     // Fail test if insufficient CUDA device
     if (!sufficient()) {
@@ -557,7 +591,10 @@ struct TestbedImpl {
 
     typename Gemm::GemmKernel::TileScheduler::Arguments scheduler_args;
     if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
-      scheduler_args = { static_cast<int>(splits) };
+      scheduler_args = { static_cast<int>(splits), static_cast<int>(max_swizzle), raster_order };
+    }
+    else {
+      scheduler_args = { static_cast<int>(max_swizzle), raster_order };
     }
 
     // DefaultEpilogue
@@ -613,7 +650,7 @@ struct TestbedImpl {
       //
       bool passed = this->verify(problem_size, alpha, beta);
       if (!passed) {
-        std::cout << "Error : Failed : with alpha: " << float(alpha) << ", beta: " << float(beta)
+        std::cout << "Error : Failed : with alpha: " << alpha << ", beta: " << beta
                   << "\n";
       }
 
@@ -648,6 +685,8 @@ struct Testbed3x {
   using LayoutTagC = typename TestBedImpl::LayoutTagC;
   using LayoutTagD = typename TestBedImpl::LayoutTagD;
 
+  using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+
   // Detail Implementation
   TestBedImpl impl_;
 
@@ -661,7 +700,7 @@ struct Testbed3x {
       uint64_t seed_ = TestBedImpl::kDefaultSeed)
       : impl_(init_A_, init_B_, init_C_, seed_) {}
 
-  Testbed3x(    
+  Testbed3x(
       typename LayoutTagA::Stride stride_factor_A_,
       typename LayoutTagB::Stride stride_factor_B_,
       typename LayoutTagC::Stride stride_factor_C_,
@@ -684,12 +723,14 @@ struct Testbed3x {
     typename TestBedImpl::ProblemShapeType problem_size,
     ElementScalar alpha = ElementScalar(1),
     ElementScalar beta = ElementScalar(0),
+    RasterOrderOptions raster_order = RasterOrderOptions::Heuristic,
+    detail::MaxSwizzleSize max_swizzle = detail::MaxSwizzleSize{},
     detail::Splits splits = detail::Splits{},
     bool profiling = false,
     detail::Iterations iterations = detail::Iterations{})
   {
     return impl_.run(
-        problem_size, alpha, beta, profiling, iterations, splits
+        problem_size, alpha, beta, profiling, iterations, raster_order, max_swizzle, splits
         );
   }
 };
@@ -722,12 +763,14 @@ struct Testbed3xFusionOperation {
   using StrideD  = typename Kernel::StrideD;
   using ProblemShapeType   = typename Kernel::ProblemShape;
   using ElementAccumulator = typename Kernel::ElementAccumulator;
-  
+
   //
   // FusionOperation derived types/queries
   //
   using FusionOp = typename Gemm::EpilogueOutputOp;
   static_assert(cute::is_base_of_v<cutlass::epilogue::fusion::FusionOperation, FusionOp>);
+
+  using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
 
   // fusion types are potentially void if the fusion is not supported
   // helper so we don't try to construct HostTensor with void type
@@ -744,11 +787,17 @@ struct Testbed3xFusionOperation {
                               cutlass::epilogue::thread::Identity<ElementCompute>>;
 
   static constexpr bool IsBiasEnabled        = FusionOp::IsPerRowBiasSupported;
+  static constexpr bool IsDeBiasEnabled      = FusionOp::IsDePerRowBiasSupported;
   static constexpr bool IsPerRowScaleEnabled = FusionOp::IsPerRowScaleSupported;
   static constexpr bool IsScaleFactorEnabled = FusionOp::IsScaleFactorSupported;
-  static constexpr bool IsAuxEnabled         = FusionOp::IsAuxOutSupported;
-  static constexpr bool IsAbsMaxEnabled      = FusionOp::IsAbsMaxSupported;
-
+  static constexpr bool IsAuxInEnabled       = FusionOp::IsAuxInSupported;
+  static constexpr bool IsAuxOutEnabled      = FusionOp::IsAuxOutSupported;
+  static constexpr bool IsAbsMaxEnabledD     = FusionOp::IsAbsMaxSupported &&
+                                                (cute::is_same_v<ElementD, cutlass::float_e4m3_t> ||
+                                                 cute::is_same_v<ElementD, cutlass::float_e5m2_t>);
+  static constexpr bool IsAbsMaxEnabledAux   = IsAuxOutEnabled && FusionOp::IsAbsMaxSupported &&
+                                                (cute::is_same_v<ElementAux, cutlass::float_e4m3_t> ||
+                                                 cute::is_same_v<ElementAux, cutlass::float_e5m2_t>);
   // Legacy support for deprecated bias-elementwise collective, will be removed next release
   using EpiloguePolicy = typename Epilogue::DispatchPolicy;
   static constexpr bool IsLegacy =
@@ -773,6 +822,7 @@ struct Testbed3xFusionOperation {
   cutlass::HostTensor<ElementAux , LayoutTagAux   > tensor_Aux;
   cutlass::gemm::TagToStrideC_t<   LayoutTagAux   > stride_Aux;
   // References
+  cutlass::HostTensor<ElementBias, LayoutTagVector> reference_dbias;
   cutlass::HostTensor<ElementAux , LayoutTagAux   > reference_Aux;
   cutlass::HostTensor<ElementAmax, LayoutTagScalar> reference_abs_max_Aux;
   cutlass::HostTensor<ElementAmax, LayoutTagScalar> reference_abs_max_D;
@@ -790,12 +840,6 @@ struct Testbed3xFusionOperation {
   cutlass::Distribution::Kind init_scale = cutlass::Distribution::Uniform;
   // Random distribution with which to initialize the bias vector
   cutlass::Distribution::Kind init_bias = cutlass::Distribution::Uniform;
-
-  // Factors used for calculating relative equality. These default
-  // values are borrowed from those used by default in the CUTLASS
-  // profiler for performing relative equality checks.
-  float epsilon = 0.05f;
-  float nonzero_floor = 1.0f / 256.0f;
 
   //
   // Methods
@@ -853,7 +897,7 @@ struct Testbed3xFusionOperation {
       else {
         beta.resize(col_vector_coord);
         EXPECT_TRUE(impl_.initialize_tensor(beta.host_view(), init_scale, impl_.seed + 2024));
-      } 
+      }
     }
     else {
       alpha.resize(scalar_coord, use_device_scalars);
@@ -885,13 +929,34 @@ struct Testbed3xFusionOperation {
       bias.sync_device();
     }
 
-    if constexpr (IsAbsMaxEnabled) {
-      abs_max_D.resize(scalar_coord);
-      abs_max_D.sync_device();
-      reference_abs_max_D.resize(scalar_coord);
+    if constexpr (IsDeBiasEnabled) {
+      bias.resize(col_vector_coord);
+      reference_dbias.resize(col_vector_coord);
+      cutlass::reference::host::TensorFill(bias.host_view(), ElementBias(0));
+      cutlass::reference::host::TensorFill(reference_dbias.host_view(), ElementBias(0));
+      bias.sync_device();
     }
 
-    if constexpr (IsAuxEnabled) {
+    if constexpr (IsAbsMaxEnabledD) {
+      abs_max_D.resize(scalar_coord);
+      // ensure in-place device reductions perform their own initialization
+      cutlass::reference::host::TensorFill(abs_max_D.host_view(),
+                                           CUTLASS_STL_NAMESPACE::numeric_limits<ElementAmax>::max());
+      abs_max_D.sync_device();
+      reference_abs_max_D.resize(scalar_coord);
+      cutlass::reference::host::TensorFill(reference_abs_max_D.host_view(), ElementAmax(0));
+    }
+
+    if constexpr (IsAuxInEnabled) {
+      auto aux_coord = cutlass::make_Coord(M * L, N);
+      auto aux_layout = cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(aux_coord, typename LayoutTagAux::Stride{});
+      tensor_Aux.resize(aux_coord, aux_layout);
+      EXPECT_TRUE(impl_.initialize_tensor(tensor_Aux.host_view(), impl_.init_C, impl_.seed + 2023));
+      tensor_Aux.sync_device();
+      stride_Aux = cutlass::make_cute_packed_stride(cutlass::gemm::TagToStrideC_t<LayoutTagAux>{}, cute::make_shape(M, N, L));
+    }
+
+    if constexpr (IsAuxOutEnabled) {
       auto aux_coord = cutlass::make_Coord(M * L, N);
       auto aux_layout = cutlass::layout::Affine2Layout_Factory<LayoutTagD>::layout_factory(aux_coord, typename LayoutTagAux::Stride{});
       tensor_Aux.resize(aux_coord, aux_layout);
@@ -905,10 +970,14 @@ struct Testbed3xFusionOperation {
         scale_Aux.sync_device();
       }
 
-      if constexpr (IsAbsMaxEnabled) {
+      if constexpr (IsAbsMaxEnabledAux) {
         abs_max_Aux.resize(scalar_coord);
+        // ensure in-place device reductions perform their own initialization
+        cutlass::reference::host::TensorFill(abs_max_Aux.host_view(),
+                                             CUTLASS_STL_NAMESPACE::numeric_limits<ElementAmax>::max());
         abs_max_Aux.sync_device();
         reference_abs_max_Aux.resize(scalar_coord);
+        cutlass::reference::host::TensorFill(reference_abs_max_Aux.host_view(), ElementAmax(0));
       }
     }
 
@@ -922,9 +991,16 @@ struct Testbed3xFusionOperation {
     cutlass::TensorView<Element, Layout> const& lhs,
     cutlass::TensorView<Element, Layout> const& rhs) const {
 
+    // Factors used for calculating relative equality. CUTLASS's relative-equality
+    // checks in include/cutlass/relatively_equal.h  are inspired by
+    // https://floating-point-gui.de/errors/comparison/. This reference suggests using
+    // the minimum normal value of a given type as the nonzero_floor.
+    Element epsilon(0.1f);
+    Element nonzero_floor(std::numeric_limits<Element>::min());
+
     if (check_relative_equality) {
       return cutlass::reference::host::TensorRelativelyEquals(
-        lhs, rhs, Element(epsilon), Element(nonzero_floor));
+        lhs, rhs, epsilon, nonzero_floor);
     }
     else {
       return cutlass::reference::host::TensorEquals(lhs, rhs);
@@ -933,6 +1009,7 @@ struct Testbed3xFusionOperation {
 
   /// Compares computed reference with device reference and outputs to a file if incorrect
   bool compare_reference(cute::Shape<int,int,int,int> problem_shape_MNKL) {
+
     auto [M, N, K, L] = problem_shape_MNKL;
     auto coord_0 = cutlass::make_Coord(0);
 
@@ -947,17 +1024,24 @@ struct Testbed3xFusionOperation {
     }
     bool passed = equality_check(impl_.reference_D.host_view(), impl_.tensor_D.host_view());
 
-    if constexpr (IsAbsMaxEnabled) {
+    if constexpr (IsAbsMaxEnabledD) {
       abs_max_D.sync_host();
       passed &= equality_check(reference_abs_max_D.host_view(), abs_max_D.host_view());
     }
 
-    if constexpr (IsAuxEnabled) {
+    if constexpr (IsDeBiasEnabled) {
+      bias.sync_host();
+      EXPECT_GT(cutlass::reference::host::TensorNorm(bias.host_view()), 0);
+      EXPECT_GT(cutlass::reference::host::TensorNorm(reference_dbias.host_view()), 0);
+      passed &= equality_check(reference_dbias.host_view(), bias.host_view());
+    }
+
+    if constexpr (IsAuxOutEnabled) {
       tensor_Aux.sync_host();
       EXPECT_GT(cutlass::reference::host::TensorNorm(tensor_Aux.host_view()), 0);
       EXPECT_GT(cutlass::reference::host::TensorNorm(reference_Aux.host_view()), 0);
       passed &= equality_check(reference_Aux.host_view(), tensor_Aux.host_view());
-      if constexpr (IsAbsMaxEnabled) {
+      if constexpr (IsAbsMaxEnabledAux) {
         abs_max_Aux.sync_host();
         passed &= equality_check(reference_abs_max_Aux.host_view(), abs_max_Aux.host_view());
       }
@@ -990,7 +1074,7 @@ struct Testbed3xFusionOperation {
       }
       file << "\n\n";
 
-      if constexpr (IsAbsMaxEnabled) {
+      if constexpr (IsAbsMaxEnabledD) {
         file << "scale_d: " << float(scale_D.at(coord_0));
         file << "\nReference abs_max_D :";
         file << " " << float(reference_abs_max_D.at(coord_0));
@@ -998,15 +1082,16 @@ struct Testbed3xFusionOperation {
         file << "\nComputed abs_max_D :";
         file << " " << float(abs_max_D.at(coord_0));
         file << "\n\n";
-        if constexpr (IsAuxEnabled) {
-          file << "scale_aux: " << float(scale_Aux.at(coord_0));
-          file << "\nReference abs_max_Aux :";
-          file << " " << float(reference_abs_max_Aux.at(coord_0));
+      }
 
-          file << "\nComputed abs_max_Aux :";
-          file << " " << float(abs_max_Aux.at(coord_0));     
-          file << "\n\n";
-        }
+      if constexpr (IsAbsMaxEnabledAux) {
+        file << "scale_aux: " << float(scale_Aux.at(coord_0));
+        file << "\nReference abs_max_Aux :";
+        file << " " << float(reference_abs_max_Aux.at(coord_0));
+
+        file << "\nComputed abs_max_Aux :";
+        file << " " << float(abs_max_Aux.at(coord_0));
+        file << "\n\n";
       }
 
       file
@@ -1018,7 +1103,16 @@ struct Testbed3xFusionOperation {
         file << "\n\nBias = \n" << bias.host_view();
       }
 
-      if constexpr (IsAuxEnabled) {
+      if constexpr (IsAuxInEnabled) {
+        file << "\n\nAux Input = \n" << tensor_Aux.host_view();
+      }
+
+      if constexpr (IsDeBiasEnabled) {
+        file << "\n\nReference dBias = \n" << reference_dbias.host_view();
+        file << "\n\nComputed dBias = \n" << bias.host_view();
+      }
+
+      if constexpr (IsAuxOutEnabled) {
         file
           << "\n\nReference Aux =\n" << reference_Aux.host_view()
           << "\n\nComputed Aux =\n" << tensor_Aux.host_view();
@@ -1041,21 +1135,21 @@ struct Testbed3xFusionOperation {
     auto L = cute::get<3>(problem_shape_MNKL);
     auto coord_0 = cutlass::make_Coord(0);
 
-    auto A = cute::make_tensor(impl_.tensor_A.host_data(),
+    auto A = cute::make_tensor(detail::make_iterator(impl_.tensor_A.host_data()),
         cute::make_layout(cute::make_shape(M, K, L), impl_.stride_a));
-    auto B = cute::make_tensor(impl_.tensor_B.host_data(),
+    auto B = cute::make_tensor(detail::make_iterator(impl_.tensor_B.host_data()),
         cute::make_layout(cute::make_shape(N, K, L), impl_.stride_b));
-    auto C = cute::make_tensor(impl_.tensor_C.host_data(),
+    auto C = cute::make_tensor(detail::make_iterator(impl_.tensor_C.host_data()),
         cute::make_layout(cute::make_shape(M, N, L), impl_.stride_c));
-    auto D = cute::make_tensor(impl_.reference_D.host_data(),
+    auto D = cute::make_tensor(detail::make_iterator(impl_.reference_D.host_data()),
         cute::make_layout(cute::make_shape(M, N, L), impl_.stride_d));
-    auto Bias = cute::make_tensor(bias.host_data(),
+    auto Bias = cute::make_tensor(detail::make_iterator(IsDeBiasEnabled ? reference_dbias.host_data() : bias.host_data()),
         cute::make_layout(cute::make_shape(M, cute::_1{})));
-    auto Aux = cute::make_tensor(reference_Aux.host_data(),
+    auto Aux = cute::make_tensor(detail::make_iterator(IsAuxInEnabled ? tensor_Aux.host_data() : reference_Aux.host_data()),
         cute::make_layout(cute::make_shape(M, N, L), stride_Aux));
-    auto Valpha = cute::make_tensor(alpha.host_data(),
+    auto Valpha = cute::make_tensor(detail::make_iterator(alpha.host_data()),
         cute::make_layout(cute::make_shape(M, cute::_1{})));
-    auto Vbeta = cute::make_tensor(beta.host_data(),
+    auto Vbeta = cute::make_tensor(detail::make_iterator(beta.host_data()),
         cute::make_layout(cute::make_shape(M, cute::_1{})));
 
     cutlass::reference::host::GettMainloopParams<ElementAccumulator, decltype(A), decltype(B)> mainloop_params{A, B};
@@ -1086,20 +1180,24 @@ struct Testbed3xFusionOperation {
       epilogue_params.scale_d = scale_D.at(coord_0);
     }
 
-    if constexpr (IsBiasEnabled) {
+    if constexpr (IsBiasEnabled or IsDeBiasEnabled) {
       epilogue_params.Bias = Bias;
     }
 
-    if constexpr (IsAbsMaxEnabled) {
+    if constexpr (IsAbsMaxEnabledD) {
       epilogue_params.abs_max_D = reference_abs_max_D.host_data();
     }
 
-    if constexpr (IsAuxEnabled) {
+    if constexpr (IsAuxInEnabled) {
+      epilogue_params.Aux = Aux;
+    }
+
+    if constexpr (IsAuxOutEnabled) {
       epilogue_params.Aux = Aux;
       if constexpr (IsScaleFactorEnabled) {
         epilogue_params.scale_aux = scale_Aux.at(coord_0);
       }
-      if constexpr (IsAbsMaxEnabled) {
+      if constexpr (IsAbsMaxEnabledAux) {
         epilogue_params.abs_max_Aux = reference_abs_max_Aux.host_data();
       }
     }
@@ -1121,6 +1219,8 @@ struct Testbed3xFusionOperation {
     ProblemShapeType problem_size,
     ElementScalar alpha_ = ElementScalar(1),
     ElementScalar beta_ = ElementScalar(0),
+    RasterOrderOptions raster_order = RasterOrderOptions::Heuristic,
+    detail::MaxSwizzleSize max_swizzle = detail::MaxSwizzleSize{},
     detail::Splits splits = detail::Splits{},
     bool profiling = false,
     detail::Iterations iterations = detail::Iterations{})
@@ -1136,6 +1236,8 @@ struct Testbed3xFusionOperation {
 
     typename Gemm::Arguments arguments;
     cutlass::KernelHardwareInfo hw_info;
+    cudaDeviceProp prop;
+    
     hw_info.device_id = 0;
     if (not profiling) {
       impl_.sm_count = min(impl_.MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
@@ -1145,6 +1247,8 @@ struct Testbed3xFusionOperation {
       impl_.sm_count = cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id);
       hw_info.sm_count = impl_.sm_count;
     }
+
+    cudaGetDeviceProperties(&prop, hw_info.device_id);
 
     /// Initializes data structures
     /// A/B/C/D Tensor
@@ -1172,7 +1276,7 @@ struct Testbed3xFusionOperation {
       hw_info,
       scheduler_args
     };
-
+    
     auto coord_0 = cutlass::make_Coord(0);
     if constexpr (IsLegacy) {
       arguments.epilogue.thread = {
@@ -1186,7 +1290,7 @@ struct Testbed3xFusionOperation {
     }
     else {
       auto &fusion_args = arguments.epilogue.thread;
-      
+
       fusion_args.alpha = alpha.at(coord_0);
       fusion_args.beta = beta.at(coord_0);
       fusion_args.alpha_ptr = alpha.device_data();
@@ -1207,6 +1311,10 @@ struct Testbed3xFusionOperation {
         fusion_args.bias_ptr = bias.device_data();
       }
 
+      if constexpr (IsDeBiasEnabled) {
+        fusion_args.dbias_ptr = bias.device_data();
+      }
+
       // example of how to set kernel activation arguments
       if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU_taylor<ElementCompute>>) {
         // see ActivationFunctor::Arguments in activation.h for definition
@@ -1214,18 +1322,23 @@ struct Testbed3xFusionOperation {
         fusion_args.activation.scale = ElementCompute(1);
       }
 
-      if constexpr (IsAbsMaxEnabled) {
+      if constexpr (IsAbsMaxEnabledD) {
         fusion_args.amax_D_ptr = abs_max_D.device_data();
       }
 
-      if constexpr (IsAuxEnabled) {
+      if constexpr (IsAuxInEnabled) {
+        fusion_args.aux_ptr = tensor_Aux.device_data();
+        fusion_args.dAux = stride_Aux;
+      }
+
+      if constexpr (IsAuxOutEnabled) {
         fusion_args.aux_ptr = tensor_Aux.device_data();
         fusion_args.dAux = stride_Aux;
         if constexpr (IsScaleFactorEnabled) {
           fusion_args.scale_aux = scale_Aux.at(coord_0);
           fusion_args.scale_aux_ptr = scale_Aux.device_data();
         }
-        if constexpr (IsAbsMaxEnabled) {
+        if constexpr (IsAbsMaxEnabledAux) {
           fusion_args.amax_aux_ptr = abs_max_Aux.device_data();
         }
       }
@@ -1277,6 +1390,7 @@ struct Testbed3xFusionOperation {
   }
 };
 
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
@@ -1311,29 +1425,39 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, Testbed testbed = {}) {
     problem_splits.push_back(Stages + 1);
   }
 
+  using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+  std::vector<RasterOrderOptions> raster_orders = {RasterOrderOptions::AlongM, RasterOrderOptions::AlongN};
+  std::vector<int> max_swizzle_sizes = {1, 4};
+
   bool passed = true;
 
   for (int m : problem_size_m) {
     for (int n : problem_size_n) {
       for (int k : problem_size_k) {
-        for (int splits : problem_splits) {
-          ProblemShapeType problem_size;
-          if constexpr (cute::rank(ProblemShapeType{}) == 4) {
-            problem_size = ProblemShapeType{m, n, k, /* l */ 1};
-          }
-          else {
-            problem_size = ProblemShapeType{m, n, k};
-          }
+        for (auto raster_order : raster_orders) {
+          for (int max_swizzle_size : max_swizzle_sizes) {
+            for (int splits : problem_splits) {
+              ProblemShapeType problem_size;
+              if constexpr (cute::rank(ProblemShapeType{}) == 4) {
+                problem_size = ProblemShapeType{m, n, k, /* l */ 1};
+              }
+              else {
+                problem_size = ProblemShapeType{m, n, k};
+              }
 
-          passed = testbed.run(
-            problem_size,
-            cutlass::from_real<ElementScalar>(alpha),
-            cutlass::from_real<ElementScalar>(beta),
-            detail::Splits(splits)
-          );
+              passed = testbed.run(
+                problem_size,
+                cutlass::from_real<ElementScalar>(alpha),
+                cutlass::from_real<ElementScalar>(beta),
+                raster_order,
+                detail::MaxSwizzleSize(max_swizzle_size),
+                detail::Splits(splits)
+              );
 
-          if (!passed) {
-            return false;
+              if (!passed) {
+                return false;
+              }
+            }
           }
         }
       }

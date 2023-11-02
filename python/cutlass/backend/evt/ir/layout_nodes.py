@@ -38,10 +38,10 @@ The layout Nodes change the layout of intermediate nodes in epilogue visitor gra
 
 from copy import deepcopy
 
+from cutlass_library import LayoutType
 from pycute import product, flatten
 
 import cutlass
-from cutlass import LayoutType
 from cutlass.backend.evt.ir.layout_algorithm import _list_to_tuple, _tuple_to_list
 from cutlass.backend.evt.ir.node import NodeBase
 from cutlass.backend.evt.ir.tensor import Tensor

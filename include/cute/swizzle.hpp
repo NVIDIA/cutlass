@@ -125,92 +125,6 @@ composition(Swizzle<B0,M0,S0>, Swizzle<B1,M1,S1>)
 }
 
 //
-// Inverse
-//
-
-template <int B, int M, int S>
-CUTE_HOST_DEVICE constexpr
-Swizzle<B,M,S>
-right_inverse(Swizzle<B,M,S> const& sw)
-{
-  return sw;
-}
-
-template <int B, int M, int S>
-CUTE_HOST_DEVICE constexpr
-Swizzle<B,M,S>
-left_inverse(Swizzle<B,M,S> const& sw)
-{
-  return sw;
-}
-
-// Kludge -- Probably want an OffsetFn<T> here instead
-template <class T, __CUTE_REQUIRES(is_integral<T>::value)>
-CUTE_HOST_DEVICE constexpr
-auto
-right_inverse(T const& t)
-{
-  return -t;
-}
-
-// Kludge -- Probably want an OffsetFn<T> here instead
-template <class T, __CUTE_REQUIRES(is_integral<T>::value)>
-CUTE_HOST_DEVICE constexpr
-auto
-left_inverse(T const& t)
-{
-  return -t;
-}
-
-//
-// Upcast and Downcast
-//
-
-template <int N, int B, int M, int S>
-CUTE_HOST_DEVICE constexpr
-auto
-upcast(Swizzle<B,M,S> const& swizzle)
-{
-  static_assert(has_single_bit(N), "N must be a power of two");
-  constexpr int log2_n = bit_width(uint32_t(N)) - 1;
-  constexpr int NewM   = M - log2_n;
-  if constexpr (NewM >= 0) {
-    return Swizzle<B,NewM,S>{};
-  } else {
-    return Swizzle<cute::max(B+NewM,0), 0, S>{};
-  }
-
-  CUTE_GCC_UNREACHABLE;
-}
-
-template <int N, int B, int M, int S>
-CUTE_HOST_DEVICE constexpr
-auto
-downcast(Swizzle<B,M,S> const& swizzle)
-{
-  static_assert(has_single_bit(N), "N must be a power of two");
-  constexpr int log2_n = bit_width(uint32_t(N)) - 1;
-  return Swizzle<B,(M + log2_n),S>{};
-}
-
-template <class OldType, class NewType,
-          int B, int M, int S>
-CUTE_HOST_DEVICE constexpr
-auto
-recast(Swizzle<B,M,S> const& swizzle)
-{
-  if constexpr (sizeof_bits<NewType>::value == sizeof_bits<OldType>::value) {
-    return swizzle;
-  } else if constexpr (sizeof_bits<NewType>::value > sizeof_bits<OldType>::value) {
-    static_assert(sizeof_bits<NewType>::value % sizeof_bits<OldType>::value == 0, "NewType must be a multiple of OldType");
-    return upcast<sizeof_bits<NewType>::value/sizeof_bits<OldType>::value>(swizzle);
-  } else if constexpr (sizeof_bits<NewType>::value < sizeof_bits<OldType>::value) {
-    static_assert(sizeof_bits<OldType>::value % sizeof_bits<NewType>::value == 0, "NewType must be a divisor of OldType");
-    return downcast<sizeof_bits<OldType>::value/sizeof_bits<NewType>::value>(swizzle);
-  }
-}
-
-//
 // Utility for slicing and swizzle "offsets"
 //
 
@@ -218,8 +132,8 @@ recast(Swizzle<B,M,S> const& swizzle)
 //   consumed and which bits are free. Furthermore, it is useful to know whether
 // each of these bits is known statically or dynamically.
 
-// MixedBits is an 32-bit unsigned integer class where some bits are known statically 
-//   and some bits are known dynamically. These sets of bits are disjoint and it is 
+// MixedBits is an 32-bit unsigned integer class where some bits are known statically
+//   and some bits are known dynamically. These sets of bits are disjoint and it is
 //   known statically which bits are known dynamically.
 
 // MixedBits can only be manipulated through bitwise operations
@@ -524,6 +438,12 @@ to_mixed_bits(Layout const& layout, Coord const& coord)
 // Display utilities
 //
 
+template <int B, int M, int S>
+CUTE_HOST_DEVICE void print(Swizzle<B,M,S> const&)
+{
+  printf("Sw<%d,%d,%d>", B, M, S);
+}
+
 template <uint32_t S, uint32_t F>
 CUTE_HOST_DEVICE void print(MixedBits<S,F> const& m)
 {
@@ -531,22 +451,16 @@ CUTE_HOST_DEVICE void print(MixedBits<S,F> const& m)
 }
 
 #if !defined(__CUDACC_RTC__)
+template <int B, int M, int S>
+CUTE_HOST std::ostream& operator<<(std::ostream& os, Swizzle<B,M,S> const&)
+{
+  return os << "Sw<" << B << "," << M << "," << S << ">";
+}
+
 template <uint32_t S, class D, uint32_t F>
 CUTE_HOST std::ostream& operator<<(std::ostream& os, MixedBits<S,F> const& m)
 {
   return os << "M_" << S << "|(" << m.dynamic_int_ << "&" << F << ")=" << uint32_t(m);
-}
-
-template <int B, int M, int S>
-CUTE_HOST_DEVICE void print(Swizzle<B,M,S> const&)
-{
-  print("S<%d,%d,%d>", B, M, S);
-}
-
-template <int B, int M, int S>
-CUTE_HOST std::ostream& operator<<(std::ostream& os, Swizzle<B,M,S> const&)
-{
-  return os << "S<" << B << "," << M << "," << S << ">";
 }
 #endif // !defined(__CUDACC_RTC__)
 
