@@ -416,7 +416,6 @@ TEST(SM90_CuTe_Hopper, Tma_Load_InternalType)
   test_tma_load<half_t, uint64_t>(gmem_layout, smem_layout);
   test_tma_load< float, uint64_t>(gmem_layout, smem_layout);
   test_tma_load<double, uint64_t>(gmem_layout, smem_layout);
-
   }
 
   // Complex<double> is 128bit, which the TMA has no concept of

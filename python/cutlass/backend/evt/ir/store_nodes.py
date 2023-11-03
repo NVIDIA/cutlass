@@ -36,7 +36,8 @@ Store node and implementations
 
 import ctypes
 
-from cutlass import DataType
+from cutlass_library import DataType
+
 from cutlass.backend.c_types import tuple_factory
 from cutlass.backend.epilogue import dtype2ctype, to_ctype_value
 from cutlass.backend.evt.ir.node import NodeBase, ImplBase, NoOpImpl

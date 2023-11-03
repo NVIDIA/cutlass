@@ -34,7 +34,7 @@
 Utilities for expressing shapes
 """
 
-from cutlass import (
+from cutlass_library import (
     ConvMode,
     ConvKind,
     LayoutType
@@ -64,7 +64,7 @@ class MatrixCoord:
         Returns the leading dimension for a matrix with layout ``layout`` and shape provided by the MatrixCoord.
 
         :param layout: layout of matrix
-        :type layout: cutlass.LayoutType
+        :type layout: cutlass_library.LayoutType
 
         :returns: leading dimension
         :rtype: int

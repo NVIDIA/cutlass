@@ -32,14 +32,15 @@
 
 import ctypes
 
+from cutlass_library import SubstituteTemplate
 import numpy as np
 from scipy.special import erf
 
-from cutlass import DataType, DataTypeTag
+from cutlass_library import DataType, DataTypeTag
 from cutlass.backend.c_types import MatrixCoord_
 from cutlass.backend.frontend import NumpyFrontend
 from cutlass.backend.library import ActivationOp, ActivationOpTag
-from cutlass.backend.utils.software import CheckPackages, SubstituteTemplate
+from cutlass.utils.datatypes import is_numpy_tensor, is_torch_available, is_torch_tensor
 
 dtype2ctype = {
     DataType.f16: ctypes.c_uint16,
@@ -49,8 +50,7 @@ dtype2ctype = {
     DataType.s32: ctypes.c_int32
 }
 
-torch_available = CheckPackages().check_torch()
-if torch_available:
+if is_torch_available():
     import torch
     import torch.nn.functional as F
 
@@ -59,11 +59,11 @@ def get_scalar(value):
     """
     Returns a scalar value from a container (e.g., np.ndarray)
     """
-    if isinstance(value, np.ndarray):
+    if is_numpy_tensor(value):
         if value.size != 1:
             raise Exception("Scalars used in epilogue must be of size 1")
         return value.reshape(-1)[0]
-    elif CheckPackages().check_torch() and isinstance(value, torch.Tensor):
+    elif is_torch_tensor(value):
         if value.size != 1:
             raise Exception("Scalars used in epilogue must be of size 1")
         return value.reshape(-1)[0]
@@ -353,9 +353,9 @@ class ActivationFunctor:
 class ActivationMeta(type):
     @classmethod
     def __call__(cls, x, *args):
-        if isinstance(x, np.ndarray):
+        if is_numpy_tensor(x):
             return cls.numpy(x, *args)
-        elif torch_available and isinstance(x, torch.Tensor):
+        elif is_torch_tensor(x):
             return cls.torch(x, *args)
         else:
             raise NotImplementedError("Unsupported tensor type")

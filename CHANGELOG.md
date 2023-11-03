@@ -1,5 +1,20 @@
 # NVIDIA CUTLASS Changelog
 
+## [3.3](https://github.com/NVIDIA/cutlass/releases/tag/v3.3) (2023-10-31)
+* [Mixed Precision Hopper GEMMs](/examples/55_hopper_mixed_dtype_gemm) support covering 16-bit x 8-bit input operand types.
+* [Mixed Precision Ampere GEMMs](https://github.com/NVIDIA/cutlass/commit/7d8317a63e0a978a8dbb3c1fb7af4dbe4f286616) with support for canonical layouts (TN) and {fp16, bf16} x {s8/u8}.
+* [Copy Async based Hopper GEMMs](/test/unit/gemm/device/sm90_gemm_bf16_bf16_bf16_alignx_tensor_op_f32_warpspecialized_cooperative.cu) - which support lower than 16B aligned input tensors.
+* Kernel schedules and Builder support for mixed precision and Copy Async GEMMs with < 16B aligned input tensors.  
+* Profiler support for lower-aligned Hopper GEMMs.
+* Performance Improvements to [Scatter-Gather Hopper Example](/examples/52_hopper_gather_scatter_fusion)
+* Sub-Byte type fixes and improvements
+* EVT Support for RELU with Aux bitmap tensor store (used in dRELU). See [SM90 EVT fusions](/include/cutlass/epilogue/fusion/sm90_visitor_compute_tma_warpspecialized.hpp) for details.
+* Fusion support for backprop fusions including drelu, dgelu, and dbias.
+* Support for void-C kernels and SM80 mixed-precision GEMMs in the CUTLASS Python interface
+
+## [3.2.2](https://github.com/NVIDIA/cutlass/releases/tag/v3.2.1) (2023-10-25)
+* Minor patch for issue/1138
+
 ## [3.2.1](https://github.com/NVIDIA/cutlass/releases/tag/v3.2.1) (2023-09-22)
 * Python support SM90 Epilogue Visitor Tree (EVT) on top of the C++ support released in 3.2.0.
 * SM80 EVT support in C++ and Python.

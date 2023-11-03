@@ -36,18 +36,31 @@ and building code
 """
 
 import enum
+import logging
 import os.path
 import shutil
 
-from cutlass_library.library import *
-from cutlass_library.gemm_operation import *
-from cutlass_library.rank_k_operation import *
-from cutlass_library.rank_2k_operation import *
-from cutlass_library.trmm_operation import *
-from cutlass_library.symm_operation import *
-from cutlass_library.conv2d_operation import *
-from cutlass_library.conv3d_operation import *
-import logging
+try:
+  import builtins
+  if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
+    raise ImportError("Disabling attempt to import cutlass_library")
+  from cutlass_library.library import *
+  from cutlass_library.gemm_operation import *
+  from cutlass_library.rank_k_operation import *
+  from cutlass_library.rank_2k_operation import *
+  from cutlass_library.trmm_operation import *
+  from cutlass_library.symm_operation import *
+  from cutlass_library.conv2d_operation import *
+  from cutlass_library.conv3d_operation import *
+except ImportError:
+  from library import *
+  from gemm_operation import *
+  from rank_k_operation import *
+  from rank_2k_operation import *
+  from trmm_operation import *
+  from symm_operation import *
+  from conv2d_operation import *
+  from conv3d_operation import *
 
 ###################################################################################################
 _LOGGER = logging.getLogger(__name__)
@@ -380,7 +393,6 @@ class Manifest:
 
       architectures = args.architectures.split(';') if len(args.architectures) else ['50',]
       architectures = [x if x != '90a' else '90' for x in architectures]
-
       self.compute_capabilities = [int(x) for x in architectures]
 
       if args.filter_by_cc in ['false', 'False', '0']:

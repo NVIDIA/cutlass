@@ -78,7 +78,7 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
     float,
     float
   >(manifest);
-  
+
   make_gemm_real_canonical_layouts<
     half_t,
     uint8_t,
@@ -151,4 +151,3 @@ void initialize_gemm_reference_operations_fp_mixed_input(Manifest &manifest) {
 } // namespace cutlass
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-

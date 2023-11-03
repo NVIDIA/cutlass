@@ -36,6 +36,7 @@
 #pragma once
 
 #include "cutlass/cutlass.h"
+#include "cutlass/workspace.h"
 
 #include "cute/tensor.hpp"
 #include "sm90_visitor_tma_warpspecialized.hpp"
@@ -122,6 +123,18 @@ struct Sm90AuxStore {
     return {tma_store_aux, is_nullptr};
   }
 
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+    return cutlass::Status::kSuccess;
+  }
+
   CUTLASS_HOST_DEVICE
   Sm90AuxStore() { }
 
@@ -143,18 +156,9 @@ struct Sm90AuxStore {
     return false;
   }
 
-  template <
-    class ProblemShapeMNKL,
-    class TileShapeMNK,
-    class TileCoordMNKL
-  >
+  template <class... Args>
   CUTLASS_DEVICE auto
-  get_producer_load_callbacks(
-      ProblemShapeMNKL problem_shape_mnkl,
-      TileShapeMNK tile_shape_mnk,
-      TileCoordMNKL tile_coord_mnkl,
-      EpilogueTile epi_tile,
-      int thread_idx) {
+  get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
     return EmptyProducerLoadCallbacks{};
   }
 
@@ -202,7 +206,7 @@ struct Sm90AuxStore {
     }
 
     CUTLASS_DEVICE void
-    step_next(int epi_m, int epi_n, int store_iteration, bool issue_smem_store) {
+    postvisit(int epi_m, int epi_n, int store_iteration, bool issue_smem_store) {
       if constexpr (EnableNullptr) {
         if (params_ptr->is_nullptr) {
           return;
@@ -219,7 +223,7 @@ struct Sm90AuxStore {
     }
 
     CUTLASS_DEVICE void
-    step_end(int epi_m, int epi_n, int store_iteration, bool issue_tma_store) {
+    step(int epi_m, int epi_n, int store_iteration, bool issue_tma_store) {
       if constexpr (EnableNullptr) {
         if (params_ptr->is_nullptr) {
           return;
@@ -236,40 +240,29 @@ struct Sm90AuxStore {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
-    class ProblemShapeMNKL,
-    class TileShapeMNK,
-    class TileCoordMNKL,
-    class TiledCopy,
-    class SrcTensor
+    class... Args
   >
   CUTLASS_DEVICE auto
-  get_consumer_store_callbacks(
-      ProblemShapeMNKL problem_shape_mnkl,
-      TileShapeMNK tile_shape_mnk,
-      TileCoordMNKL tile_coord_mnkl,
-      EpilogueTile epi_tile,
-      TiledCopy tiled_copy,
-      int thread_idx,
-      SrcTensor const& tCrC) {
+  get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
 
-    auto [M, N, K, L] = problem_shape_mnkl;
-    auto [m, n, k, l] = tile_coord_mnkl;
+    auto [M, N, K, L] = args.problem_shape_mnkl;
+    auto [m, n, k, l] = args.tile_coord_mnkl;
     Tensor mAux = params_ptr->tma_store_aux.get_tma_tensor(make_shape(M,N,L));                               // (M,N,L)
-    Tensor gAux = local_tile(mAux, take<0,2>(tile_shape_mnk), make_coord(m,n,l));                      // (CTA_M,CTA_N)
+    Tensor gAux = local_tile(mAux, take<0,2>(args.tile_shape_mnk), make_coord(m,n,l));                 // (CTA_M,CTA_N)
 
     Tensor tC_gAux = sm90_partition_for_epilogue<ReferenceSrc>(                        // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
-                      gAux, epi_tile, tiled_copy, thread_idx);
+                      gAux, args.epi_tile, args.tiled_copy, args.thread_idx);
     Tensor tC_rAux = make_tensor<Element>(take<0,3>(shape(tC_gAux)));                  // (CPY,CPY_M,CPY_N)
 
     Tensor sAux_epi = cute::as_position_independent_swizzle_tensor(
                         make_tensor(make_smem_ptr(smem_aux), SmemLayout{}));     // (EPI_TILE_M,EPI_TILE_N,PIPE)
-    Tensor gAux_epi = local_tile(gAux, epi_tile, _);                             // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
+    Tensor gAux_epi = flat_divide(gAux, args.epi_tile);                          // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
 
     auto tiled_r2s = conditional_return<ReferenceSrc>(
-      make_tiled_copy_S(Copy_Atom<CopyOpR2S,Element>{}, tiled_copy),
-      make_tiled_copy_D(Copy_Atom<CopyOpR2S,Element>{}, tiled_copy)
+      make_tiled_copy_S(Copy_Atom<CopyOpR2S,Element>{}, args.tiled_copy),
+      make_tiled_copy_D(Copy_Atom<CopyOpR2S,Element>{}, args.tiled_copy)
     );
-    auto tRS_sAux = tiled_r2s.get_slice(thread_idx).partition_D(sAux_epi);                    // (R2S,R2S_M,R2S_N,PIPE)
+    auto tRS_sAux = tiled_r2s.get_slice(args.thread_idx).partition_D(sAux_epi);               // (R2S,R2S_M,R2S_N,PIPE)
 
     ThrCopy thrblk_s2g = params_ptr->tma_store_aux.get_slice(_0{});
     Tensor bSG_sAux = thrblk_s2g.partition_S(sAux_epi);                                // (TMA,TMA_M,TMA_N,PIPE)
@@ -294,7 +287,7 @@ struct Sm90AuxStore {
 // Scalar reduction
 template <
   template <class> class RegReduceFn,
-  template <class> class AtomicReduceFn,
+  template <class> class GmemReduceFn,
   class ElementOutput,
   class ElementCompute,
   FloatRoundStyle RoundStyle,
@@ -302,10 +295,15 @@ template <
   bool EnableNullptr = true // Noop on nullptr params
 >
 struct Sm90ScalarReduction {
+private:
   static_assert(
     (cute::is_same_v<StrideMNL, Stride<_0,_0, _0>>) || // scalar reduction, e.g. tensor max element
     (cute::is_same_v<StrideMNL, Stride<_0,_0, _1>>) || // batched scalar reduction, e.g. per-batch max element
-    (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>));  
+    (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>));
+  static constexpr bool IsAtomic = is_atomic<GmemReduceFn<ElementCompute>>::value;
+  static_assert(IsAtomic, "non-atomic scalar reduction not supported yet");
+
+public: 
   struct SharedStorage { };
 
   struct Arguments {
@@ -320,6 +318,26 @@ struct Sm90ScalarReduction {
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     return args;
+  }
+
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+    if constexpr (IsAtomic) {
+      auto [M, N, K, L] = problem_shape;
+      Layout mScalar_layout = make_layout(make_shape(M,N,L), args.dScalar);
+      if (args.ptr_scalar != nullptr) {
+        return fill_workspace(args.ptr_scalar, ElementOutput(args.reduction_identity), cosize(mScalar_layout), stream);
+      }
+    }
+
+    return cutlass::Status::kSuccess;
   }
 
   CUTLASS_DEVICE bool
@@ -341,19 +359,9 @@ struct Sm90ScalarReduction {
 
   Params const params;
 
-  template <
-    class ProblemShapeMNKL,
-    class TileShapeMNK,
-    class TileCoordMNKL,
-    class EpilogueTile
-  >
+  template <class... Args>
   CUTLASS_DEVICE auto
-  get_producer_load_callbacks(
-      ProblemShapeMNKL problem_shape_mnkl,
-      TileShapeMNK tile_shape_mnk,
-      TileCoordMNKL tile_coord_mnkl,
-      EpilogueTile epi_tile,
-      int thread_idx) {
+  get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
     return EmptyProducerLoadCallbacks{};
   }
 
@@ -362,18 +370,18 @@ struct Sm90ScalarReduction {
     CUTLASS_DEVICE
     ConsumerStoreCallbacks(
         int l_coord,
-        CTensor&& tCcScalar,
+        CTensor tCcScalar,
         ResidueMN residue_mn,
         Params const& params)
       : scalar(params.reduction_identity),
         l_coord(l_coord),
-        tCcScalar(cute::forward<CTensor>(tCcScalar)),
+        tCcScalar(tCcScalar),
         residue_mn(residue_mn),
         params(params) {}
 
     ElementCompute scalar;
     int l_coord;
-    CTensor tCcScalar;
+    CTensor tCcScalar;                                                                 // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
     ResidueMN residue_mn;
     Params params;
 
@@ -393,10 +401,11 @@ struct Sm90ScalarReduction {
       ReduceInput reduce_input{};
 
       Array frg_I = convert_input(frg_input);
+      Tensor tCcScalar_mn = tCcScalar(_,_,_,epi_m,epi_n);
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
-        if (elem_less(tCcScalar(epi_v * FragmentSize + i), residue_mn)) {
+        if (elem_less(tCcScalar_mn(epi_v * FragmentSize + i), residue_mn)) {
           scalar = reduce_input(scalar, frg_I[i]);
         }
       }
@@ -413,7 +422,7 @@ struct Sm90ScalarReduction {
       }
 
       using ConvertI = NumericConverter<ElementOutput, ElementCompute, RoundStyle>;
-      using ReduceInput = AtomicReduceFn<ElementOutput>;
+      using ReduceInput = GmemReduceFn<ElementOutput>;
 
       ConvertI convert_I{};
       ReduceInput reduce_input{};
@@ -426,36 +435,12 @@ struct Sm90ScalarReduction {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
-    class ProblemShapeMNKL,
-    class TileShapeMNK,
-    class TileCoordMNKL,
-    class EpilogueTile,
-    class TiledCopy,
-    class SrcTensor
+    class... Args
   >
   CUTLASS_DEVICE auto
-  get_consumer_store_callbacks(
-      ProblemShapeMNKL problem_shape_mnkl,
-      TileShapeMNK tile_shape_mnk,
-      TileCoordMNKL tile_coord_mnkl,
-      EpilogueTile epi_tile,
-      TiledCopy tiled_copy,
-      int thread_idx,
-      SrcTensor const& tCrC) {
-
-    int l_coord = static_cast<int>(get<3>(tile_coord_mnkl));
-
-    // Compute tile residues and coordinate tensors for predication
-    auto [M, N, K, L] = problem_shape_mnkl;
-    auto [m, n, k, l] = tile_coord_mnkl;
-    auto residue_mn = make_coord(
-      M - static_cast<int>(m) * size<0>(tile_shape_mnk),
-      N - static_cast<int>(n) * size<1>(tile_shape_mnk)
-    );
-    Tensor cScalar = make_identity_tensor(take<0,2>(tile_shape_mnk));
-    Tensor tCcScalar = sm90_partition_for_epilogue<ReferenceSrc>(cScalar, epi_tile, tiled_copy, thread_idx);
-
-    return ConsumerStoreCallbacks(l_coord, cute::move(tCcScalar), residue_mn, params);
+  get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
+    return ConsumerStoreCallbacks<decltype(args.tCcD), decltype(args.residue_mn)>(
+      get<3>(args.tile_coord_mnkl), args.tCcD, args.residue_mn, params);
   }
 
 };
@@ -466,7 +451,7 @@ struct Sm90ScalarReduction {
 // Row vector reduction
 template <
   template <class> class RegReduceFn,
-  template <class> class AtomicReduceFn,
+  template <class> class GmemReduceFn,
   int Stages,
   class CtaTileShapeMNK,
   class ElementOutput,
@@ -477,12 +462,16 @@ template <
   bool EnableNullptr = true // Noop on nullptr params
 >
 struct Sm90RowReduction {
+private:
   static_assert(Stages == 0, "Smem usage not supported yet");
   static_assert(Alignment * sizeof_bits_v<ElementOutput> % 128 == 0, "sub-16B alignment not supported yet");
   static_assert(
     (cute::is_same_v<StrideMNL, Stride<_0,_1, _0>>) || // row vector reduction, e.g. per-col sum over all batches
     (cute::is_same_v<StrideMNL, Stride<_0,_1,int>>));  // batched row vector reduction, e.g. per-col sum per batch
+  static constexpr bool IsAtomic = is_atomic<GmemReduceFn<ElementCompute>>::value;
+  static_assert(IsAtomic, "non-atomic row reduction not supported yet");
 
+public:
   struct SharedStorage { };
 
   struct Arguments {
@@ -497,6 +486,26 @@ struct Sm90RowReduction {
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
     return args;
+  }
+
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+    if constexpr (IsAtomic) {
+      auto [M, N, K, L] = problem_shape;
+      Layout mRow_layout = make_layout(make_shape(M,N,L), args.dRow);
+      if (args.ptr_row != nullptr) {
+        return fill_workspace(args.ptr_row, ElementOutput(args.reduction_identity), cosize(mRow_layout), stream);
+      }
+    }
+
+    return cutlass::Status::kSuccess;
   }
 
   CUTLASS_DEVICE bool
@@ -518,19 +527,9 @@ struct Sm90RowReduction {
 
   Params params;
 
-  template <
-    class ProblemShapeMNKL,
-    class TileShapeMNK,
-    class TileCoordMNKL,
-    class EpilogueTile
-  >
+  template <class... Args>
   CUTLASS_DEVICE auto
-  get_producer_load_callbacks(
-      ProblemShapeMNKL problem_shape_mnkl,
-      TileShapeMNK tile_shape_mnk,
-      TileCoordMNKL tile_coord_mnkl,
-      EpilogueTile epi_tile,
-      int thread_idx) {
+  get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
     return EmptyProducerLoadCallbacks{};
   }
 
@@ -540,12 +539,12 @@ struct Sm90RowReduction {
     ConsumerStoreCallbacks(
         RTensor&& tCrRow,
         GTensor&& tCgRow,
-        CTensor&& tCcRow,
+        CTensor   tCcRow,
         ResidueMN residue_mn,
         Params const& params)
       : tCrRow(cute::forward<RTensor>(tCrRow)),
         tCgRow(cute::forward<GTensor>(tCgRow)),
-        tCcRow(cute::forward<CTensor>(tCcRow)),
+        tCcRow(tCcRow),
         residue_mn(residue_mn),
         params(params) {}
 
@@ -580,7 +579,7 @@ struct Sm90RowReduction {
 
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
-        if (elem_less(tCcRow_mn(i), residue_mn)) {
+        if (elem_less(tCcRow_mn(epi_v * FragmentSize + i), residue_mn)) {
           ElementCompute& tCrRow_vmn = tCrRow_mn(epi_v * FragmentSize + i);
           tCrRow_vmn = reduce_input(tCrRow_vmn, frg_I[i]);
         }
@@ -590,7 +589,7 @@ struct Sm90RowReduction {
     }
 
     CUTLASS_DEVICE void
-    step_end(int epi_m, int epi_n, int store_iteration, bool issue_tma_store) {
+    step(int epi_m, int epi_n, int store_iteration, bool issue_tma_store) {
       if constexpr (EnableNullptr) {
         if (params.ptr_row == nullptr) {
           return;
@@ -599,7 +598,7 @@ struct Sm90RowReduction {
 
       if (epi_m == size<3>(tCrRow)-1) { // assumes M-major subtile loop
         using ConvertI = NumericConverter<ElementOutput, ElementCompute, RoundStyle>;
-        using ReduceInput = AtomicReduceFn<ElementOutput>;
+        using ReduceInput = GmemReduceFn<ElementOutput>;
 
         ConvertI convert_I{};
         ReduceInput reduce_input{};
@@ -616,7 +615,7 @@ struct Sm90RowReduction {
         for (int i = 0; i < size(tCrRow_flt); ++i) {
           // partially OOB in M must still issue gmem reduction, so only consider residue_n
           // in case last epi tile in column is fully OOB in M and CTA tile is partially OOB in M
-          if (residue_n > get<1>(tCcRow_flt(i)) && 
+          if (residue_n > get<1>(tCcRow_flt(i)) &&
               // fully OOB in M does not need to issue gmem reduction, skip
               residue_m > 0) {
             reduce_input(&tCgRow_flt(i), convert_I(tCrRow_flt(i)));
@@ -632,41 +631,20 @@ struct Sm90RowReduction {
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
-    class ProblemShapeMNKL,
-    class TileShapeMNK,
-    class TileCoordMNKL,
-    class EpilogueTile,
-    class TiledCopy,
-    class SrcTensor
+    class... Args
   >
   CUTLASS_DEVICE auto
-  get_consumer_store_callbacks(
-      ProblemShapeMNKL problem_shape_mnkl,
-      TileShapeMNK tile_shape_mnk,
-      TileCoordMNKL tile_coord_mnkl,
-      EpilogueTile epi_tile,
-      TiledCopy tiled_copy,
-      int thread_idx,
-      SrcTensor const& tCrC) {
+  get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
 
-    auto [M, N, K, L] = problem_shape_mnkl;
+    auto [M, N, K, L] = args.problem_shape_mnkl;
     Tensor mRow = make_tensor(make_gmem_ptr(params.ptr_row), make_shape(M,N,L), params.dRow);
     Tensor tCgRow = sm90_partition_for_epilogue<ReferenceSrc>(                         // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
-      mRow, tile_shape_mnk, tile_coord_mnkl, epi_tile, tiled_copy, thread_idx);
+      mRow, args.tile_shape_mnk, args.tile_coord_mnkl, args.epi_tile, args.tiled_copy, args.thread_idx);
     Tensor tCrRow = make_tensor_like<ElementCompute>(tCgRow(_,_,_,_,_0{}));            // (CPY,CPY_M,CPY_N,EPI_M)
     fill(tCrRow, params.reduction_identity);
 
-    // Compute tile residues and coordinate tensors for predication
-    auto [m, n, k, l] = tile_coord_mnkl;
-    auto residue_mn = make_coord(
-      M - static_cast<int>(m) * size<0>(tile_shape_mnk),
-      N - static_cast<int>(n) * size<1>(tile_shape_mnk)
-    );
-    Tensor cRow = make_identity_tensor(take<0,2>(tile_shape_mnk));
-    Tensor tCcRow = sm90_partition_for_epilogue<ReferenceSrc>(cRow, epi_tile, tiled_copy, thread_idx);
-
-    return ConsumerStoreCallbacks<decltype(tCrRow),decltype(tCgRow),decltype(tCcRow),decltype(residue_mn)>(
-      cute::move(tCrRow), cute::move(tCgRow), cute::move(tCcRow), residue_mn, params);
+    return ConsumerStoreCallbacks<decltype(tCrRow),decltype(tCgRow),decltype(args.tCcD),decltype(args.residue_mn)>(
+      cute::move(tCrRow), cute::move(tCgRow), args.tCcD, args.residue_mn, params);
   }
 };
 
@@ -675,7 +653,7 @@ struct Sm90RowReduction {
 // Col vector reduction
 template <
   template <class> class RegReduceFn,
-  template <class> class AtomicReduceFn,
+  template <class> class GmemReduceFn,
   int Stages,
   class CtaTileShapeMNK,
   class ElementOutput,
@@ -683,29 +661,110 @@ template <
   FloatRoundStyle RoundStyle,
   class StrideMNL = Stride<_1,_0,_0>,
   int Alignment = 128 / sizeof_bits_v<ElementOutput>,
-  bool EnableNullptr = true // Noop on nullptr params
+  bool EnableNullptr = true, // Noop on nullptr params
+  // If this is false, ptr_col is assumed to point to a compact m-major (round_nearest(M,CTA_M), ceil_div(N,CTA_N), L)
+  // tensor of ElementCompute. It is the user's responsibility to reduce this to a (M, L) tensor of ElementOutput
+  bool FinalReduction = true
 >
 struct Sm90ColReduction {
+private:
   static_assert(Stages == 0, "Smem usage not supported yet");
   static_assert(Alignment * sizeof_bits_v<ElementOutput> % 128 == 0, "sub-16B alignment not supported yet");
   static_assert(
     (cute::is_same_v<StrideMNL, Stride<_1,_0, _0>>) || // col vector reduction, e.g. per-row sum over all batches
     (cute::is_same_v<StrideMNL, Stride<_1,_0,int>>));  // batched col vector reduction, e.g. per-row sum per batch
+  static constexpr bool IsAtomic = is_atomic<GmemReduceFn<ElementCompute>>::value;
+  static_assert(not (IsAtomic && not FinalReduction), "atomic reduction must be final");
 
+public:
   struct SharedStorage { };
 
   struct Arguments {
-    ElementOutput* ptr_col = nullptr;
+    void* ptr_col = nullptr; // ElementOutput* if FinalReduction, else ElementCompute*
     ElementCompute reduction_identity = 0;
     StrideMNL dCol = {};
   };
 
-  using Params = Arguments;
+  struct Params {
+    void* ptr_col = nullptr;
+    ElementCompute reduction_identity = 0;
+    StrideMNL dCol = {};
+    ElementCompute* reduction_buffer = nullptr;
+    int* tile_counters = nullptr;
+  };
 
   template <class ProblemShape>
   static constexpr Params
   to_underlying_arguments(ProblemShape const& problem_shape, Arguments const& args, void* workspace) {
-    return args;
+    ElementCompute* reduction_buffer;
+    int* tile_counters;
+    if constexpr (IsAtomic) {
+      reduction_buffer = nullptr;
+      tile_counters = nullptr;
+    }
+    else if constexpr (not FinalReduction) {
+      reduction_buffer = reinterpret_cast<ElementCompute*>(args.ptr_col);
+      tile_counters = nullptr;
+    }
+    else {
+      auto [M, N, K, L] = problem_shape;
+      auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
+      size_t tile_counters_offset = product(ceil_div(make_shape(M,N,L), make_shape(tile_M, tile_N))) * tile_M * sizeof(ElementCompute);
+      tile_counters_offset = round_nearest(tile_counters_offset, sizeof(int));
+
+      reduction_buffer = reinterpret_cast<ElementCompute*>(workspace);
+      tile_counters = reinterpret_cast<int*>(reinterpret_cast<uint8_t*>(workspace) + tile_counters_offset);
+    }
+
+    return {
+      args.ptr_col,
+      args.reduction_identity,
+      args.dCol,
+      reduction_buffer,
+      tile_counters
+    };
+  }
+
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    if constexpr (IsAtomic || not FinalReduction) {
+      return 0;
+    }
+
+    size_t workspace_size = 0;
+    auto [M, N, K, L] = problem_shape;
+    auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
+
+    // Increment by size of reduction buffer
+    workspace_size += product(ceil_div(make_shape(M,N,L), make_shape(tile_M, tile_N))) * tile_M * sizeof(ElementCompute);
+    // Align and increment by size of tile counters
+    workspace_size = round_nearest(workspace_size, sizeof(int));
+    workspace_size += cute::ceil_div(M, tile_M) * sizeof(int);
+
+    return workspace_size;
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+    if constexpr (IsAtomic) {
+      auto [M, N, K, L] = problem_shape;
+      Layout mCol_layout = make_layout(make_shape(M,N,L), args.dCol);
+      if (args.ptr_col != nullptr) {
+        return fill_workspace(args.ptr_col, ElementOutput(args.reduction_identity), cosize(mCol_layout), stream);
+      }
+      return Status::kSuccess;
+    }
+
+    auto [M, N, K, L] = problem_shape;
+    auto [tile_M, tile_N, tile_K] = CtaTileShapeMNK{};
+    size_t tile_counters_offset = product(ceil_div(make_shape(M,N,L), make_shape(tile_M, tile_N))) * tile_M * sizeof(ElementCompute);
+    tile_counters_offset = round_nearest(tile_counters_offset, sizeof(int));
+
+    int* tile_counters = reinterpret_cast<int*>(reinterpret_cast<uint8_t*>(workspace) + tile_counters_offset);
+    size_t tile_counters_size = cute::ceil_div(M, tile_M) * sizeof(int);
+    return zero_workspace(tile_counters, tile_counters_size, stream);
   }
 
   CUTLASS_DEVICE bool
@@ -727,53 +786,38 @@ struct Sm90ColReduction {
 
   Params params;
 
-  template <
-    class ProblemShapeMNKL,
-    class TileShapeMNK,
-    class TileCoordMNKL,
-    class EpilogueTile
-  >
+  template <class... Args>
   CUTLASS_DEVICE auto
-  get_producer_load_callbacks(
-      ProblemShapeMNKL problem_shape_mnkl,
-      TileShapeMNK tile_shape_mnk,
-      TileCoordMNKL tile_coord_mnkl,
-      EpilogueTile epi_tile,
-      int thread_idx) {
+  get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
     return EmptyProducerLoadCallbacks{};
   }
 
-  template<class RTensor, class GTensor, class CTensor, class ResidueMN>
+  template<class ArgsTuple>
   struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
     CUTLASS_DEVICE
-    ConsumerStoreCallbacks(
-        RTensor&& tCrCol,
-        GTensor&& tCgCol,
-        CTensor&& tCcCol,
-        ResidueMN residue_mn,
-        Params const& params)
-      : tCrCol(cute::forward<RTensor>(tCrCol)),
-        tCgCol(cute::forward<GTensor>(tCgCol)),
-        tCcCol(cute::forward<CTensor>(tCcCol)),
-        residue_mn(residue_mn),
+    ConsumerStoreCallbacks(ArgsTuple&& args_tuple, Params const& params)
+      : args_tuple(cute::forward<ArgsTuple>(args_tuple)),
         params(params) {}
 
-    RTensor tCrCol;                                                                    // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
-    GTensor tCgCol;                                                                    // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
-    CTensor tCcCol;                                                                    // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
-    ResidueMN residue_mn;
+    ArgsTuple args_tuple;
     Params const& params;
+    bool do_final_reduction = false;
 
     template <typename ElementAccumulator, typename ElementInput, int FragmentSize>
     CUTLASS_DEVICE auto
     visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n,
           Array<ElementInput, FragmentSize> const& frg_input) {
-
       if constexpr (EnableNullptr) {
         if (params.ptr_col == nullptr) {
           return frg_input;
         }
       }
+
+      auto& [ref_src, tCrCol, tCcCol, gCol_l, cCol, gBuf_nl, sBuf_layout,
+              lane_layout_MN, lane_mn, warp_layout_MN, warp_mn, 
+              tile_coord_mnkl, residue_mn, epi_tile, tiled_copy, thread_idx] = args_tuple;
+      Tensor tCrCol_mn = tCrCol(_,_,_,epi_m,epi_n);
+      Tensor tCcCol_mn = tCcCol(_,_,_,epi_m,epi_n);
 
       using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FragmentSize, RoundStyle>;
       using ReduceInput = RegReduceFn<ElementCompute>;
@@ -781,12 +825,9 @@ struct Sm90ColReduction {
       ReduceInput reduce_input{};
 
       Array frg_I = convert_input(frg_input);
-      Tensor tCrCol_mn = tCrCol(_,_,_,epi_m,epi_n);
-      Tensor tCcCol_mn = tCcCol(_,_,_,epi_m,epi_n);
-
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
-        if (elem_less(tCcCol_mn(i), residue_mn)) {
+        if (elem_less(tCcCol_mn(epi_v * FragmentSize + i), residue_mn)) {
           ElementCompute& tCrCol_vmn = tCrCol_mn(epi_v * FragmentSize + i);
           tCrCol_vmn = reduce_input(tCrCol_vmn, frg_I[i]);
         }
@@ -795,71 +836,283 @@ struct Sm90ColReduction {
       return frg_input;
     }
 
+    template <class STensor, class SyncFn>
     CUTLASS_DEVICE void
-    end() {
+    reduce(STensor&& smem_buffer, SyncFn const& sync_fn, int epi_m, int epi_n, bool is_last_iteration) {
+      if (not is_last_iteration) {
+        return;
+      }
+
+      auto& [ref_src, tCrCol, tCcCol, gCol_l, cCol, gBuf_nl, sBuf_layout, 
+              lane_layout_MN, lane_mn, warp_layout_MN, warp_mn, 
+              tile_coord_mnkl, residue_mn, epi_tile, tiled_copy, thread_idx] = args_tuple;
+      auto [m, n, k, l] = tile_coord_mnkl;
+      constexpr bool ReferenceSrc = decltype(ref_src)::value;
+
+      // Runtime nullptr is noop
       if constexpr (EnableNullptr) {
         if (params.ptr_col == nullptr) {
           return;
         }
       }
 
-      using ConvertI = NumericConverter<ElementOutput, ElementCompute, RoundStyle>;
-      using ReduceInput = AtomicReduceFn<ElementOutput>;
+      // fully OOB CTA in partially OOB cluster
+      if (not elem_less(cCol(_0{},_0{}), residue_mn)) {
+        return;
+      }
 
-      ConvertI convert_I{};
-      ReduceInput reduce_input{};
-
-      // Filter so we don't issue redunant copies over stride-0 modes
-      Tensor tCrCol_flt = filter_zeros(tCrCol);
-      Tensor tCgCol_flt = filter_zeros(tCgCol);
-      Tensor tCcCol_flt = make_tensor(tCcCol.data(), make_layout(tCgCol_flt.shape(), tCcCol.stride()));
-
+      //
+      // 1. Warp shuffle reduction
+      //
+      using FragmentShuffle = Array<ElementCompute, sizeof(uint64_t) / sizeof(ElementCompute)>;
+      using ReduceShuffle = RegReduceFn<FragmentShuffle>;
+      ReduceShuffle reduce_shuffle{};
+      Tensor tCrCol_frg = recast<FragmentShuffle>(filter(tCrCol));
       CUTLASS_PRAGMA_UNROLL
-      for (int i = 0; i < size(tCrCol_flt); ++i) {
-        if (elem_less(tCcCol_flt(i), residue_mn)) {
-          reduce_input(&tCgCol_flt(i), convert_I(tCrCol_flt(i)));
+      for (int reduction_cols = size<1>(lane_layout_MN) / 2; reduction_cols > 0; reduction_cols /= 2) {
+        CUTLASS_PRAGMA_UNROLL
+        for (int frg_idx = 0; frg_idx < size(tCrCol_frg); ++frg_idx) {
+          uint64_t frg_shfl = reinterpret_cast<uint64_t&>(tCrCol_frg(frg_idx));
+          frg_shfl = __shfl_down_sync(0xFFFFFFFF, frg_shfl, lane_layout_MN(_0{},reduction_cols));
+          tCrCol_frg(frg_idx) = reduce_shuffle(tCrCol_frg(frg_idx), reinterpret_cast<FragmentShuffle&>(frg_shfl));
         }
       }
+      bool is_reduced_lane = get<1>(lane_mn) == 0;
+
+      //
+      // 2. Atomic reduction
+      //
+      if constexpr (IsAtomic) {
+        // Filter so we don't issue redunant copies over stride-0 modes
+        Tensor tCrCol_flt = filter_zeros(tCrCol);
+        Tensor tCcCol_flt = make_tensor(tCcCol.data(), make_layout(tCrCol_flt.shape(), tCcCol.stride()));
+
+        Tensor tCgCol = sm90_partition_for_epilogue<ReferenceSrc>(gCol_l(_,_,l), epi_tile, tiled_copy, thread_idx);
+        Tensor tCgCol_flt = filter_zeros(tCgCol);
+
+        // NOTE: atomic reduction is performed in the output type
+        using ConvertOutput = NumericConverter<ElementOutput, ElementCompute, RoundStyle>;
+        using ReduceOutput = GmemReduceFn<ElementOutput>;
+        ConvertOutput convert_output{};
+        ReduceOutput reduce_output{};
+
+        if (is_reduced_lane) {
+          CUTLASS_PRAGMA_UNROLL
+          for (int i = 0; i < size(tCrCol_flt); ++i) {
+            if (elem_less(tCcCol_flt(i), residue_mn)) {
+              reduce_output(&tCgCol_flt(i), convert_output(tCrCol_flt(i)));
+            }
+          }
+        }
+        sync_fn();
+      }
+
+      //
+      // 2. One warp in N, skip threadblock smem reduction
+      //
+      else if constexpr (decltype(size<1>(warp_layout_MN))::value <= 1) {
+        // Dump warp reduction to gmem workspace
+        using ElementGmem = conditional_t<FinalReduction, ElementCompute volatile, ElementCompute>;
+        Tensor tCgBuf = sm90_partition_for_epilogue<ReferenceSrc>(gBuf_nl(_,_,n,l), epi_tile, tiled_copy, thread_idx);
+        if (is_reduced_lane) {
+          // Filter so we don't issue redunant copies over stride-0 modes
+          copy(filter(tCrCol), recast<ElementGmem>(filter(tCgBuf)));
+        }
+        sync_fn();
+      }
+
+      //
+      // 2. Multiple warps in N, do threadblock smem reduction
+      //
+      else {
+        Tensor sBuf = make_tensor(make_smem_ptr<ElementCompute>(raw_pointer_cast(smem_buffer.data())), sBuf_layout);
+        static_assert(decltype(cosize(sBuf.layout()))::value * sizeof(ElementCompute) <=
+                      decltype(cosize(smem_buffer.layout()))::value * sizeof(typename remove_cvref_t<STensor>::value_type),
+                      "smem reduction buffer not large enough, use a larger epilogue tile");
+
+        // Dump warp reduction to smem workspace
+        Tensor tCsBuf = sm90_partition_for_epilogue<ReferenceSrc>(sBuf(_,_,get<1>(warp_mn)), epi_tile, tiled_copy, thread_idx);
+        if (is_reduced_lane) {
+          // Filter so we don't issue redunant copies over stride-0 modes
+          copy(filter(tCrCol), filter(tCsBuf));
+        }
+        sync_fn();
+
+        constexpr int SmemFragSize = cute::max(1, sizeof(uint32_t) / sizeof(ElementCompute));
+        using FragmentSmem = Array<ElementCompute, SmemFragSize>;
+        using VectorSmem = uint_bit_t<sizeof_bits_v<FragmentSmem>>;
+        using ReduceSmem = GmemReduceFn<FragmentSmem>;
+        ReduceSmem reduce_smem{};
+
+        Tensor sBuf_frg = recast<FragmentSmem>(filter_zeros(sBuf));
+        Tensor sBuf_vec = recast<VectorSmem>(filter_zeros(sBuf));
+        constexpr int FragsPerCol = decltype(size<0>(sBuf_frg))::value;
+
+        // Do the threadblock smem reduction
+        CUTLASS_PRAGMA_UNROLL
+        for (int reduction_cols = size<1>(warp_layout_MN) / 2; reduction_cols > 1; reduction_cols /= 2) {
+          int FragsPerReduction = reduction_cols * FragsPerCol;
+          CUTLASS_PRAGMA_NO_UNROLL
+          for (int frg_idx = thread_idx; frg_idx < FragsPerReduction; frg_idx += size(tiled_copy)) {
+            FragmentSmem frg_smem = reduce_smem(sBuf_frg(frg_idx), sBuf_frg(frg_idx + FragsPerReduction));
+            sBuf_vec(frg_idx) = reinterpret_cast<VectorSmem&>(frg_smem);
+          }
+          sync_fn();
+        }
+
+        // Do final smem reduction and dump to gmem workspace
+        using VectorGmem = conditional_t<FinalReduction, VectorSmem volatile, VectorSmem>;
+        Tensor gBuf_vec = recast<VectorGmem>(filter(gBuf_nl(_,_,n,l)));
+        CUTLASS_PRAGMA_NO_UNROLL
+        for (int frg_idx = thread_idx; frg_idx < FragsPerCol; frg_idx += size(tiled_copy)) {
+          FragmentSmem frg_smem = reduce_smem(sBuf_frg(frg_idx), sBuf_frg(frg_idx + FragsPerCol));
+          gBuf_vec(frg_idx) = reinterpret_cast<VectorSmem&>(frg_smem);
+        }
+        sync_fn();
+      }
+
+      //
+      // 3. Increment atomic counters to signal final gmem reduction
+      //
+      if constexpr (not IsAtomic && FinalReduction) {
+        // Ensure gmem writes are visible to other threads before incrementing counter
+        __threadfence();
+        sync_fn();
+        // Collective thread 0 increments atomic tile counter and copies value to smem
+        int* prev_tile_count = reinterpret_cast<int*>(raw_pointer_cast(smem_buffer.data()));
+        if (thread_idx == 0) {
+          *prev_tile_count = atomicAdd(&params.tile_counters[m], 1);
+        }
+        sync_fn();
+        // Broadcast tile count to other threads in CTA and determine final reduction status
+        do_final_reduction = *prev_tile_count == size<2>(gBuf_nl) * size<3>(gBuf_nl) - 1;
+        sync_fn();
+      }
+    }
+
+    CUTLASS_DEVICE void
+    end() {
+      //
+      // 4. Do final gmem reduction if necessary
+      //
+      if constexpr (not IsAtomic && FinalReduction) {
+        if (not do_final_reduction) {
+          return;
+        }
+
+        auto& [ref_src, tCrCol, tCcCol, gCol_l, cCol, gBuf_nl, sBuf_layout, 
+                lane_layout_MN, lane_mn, warp_layout_MN, warp_mn, 
+                tile_coord_mnkl, residue_mn, epi_tile, tiled_copy, thread_idx] = args_tuple;
+
+        using ReduceOutput = GmemReduceFn<ElementCompute>;
+        using ConvertOutput = NumericConverter<ElementOutput, ElementCompute, RoundStyle>;
+        ReduceOutput reduce_output{};
+        ConvertOutput convert_output{};
+        
+        // Reduction over batches
+        if (size<2>(stride(gCol_l)) == 0) {
+          CUTLASS_PRAGMA_NO_UNROLL
+          for (int m = thread_idx; m < size<0>(gBuf_nl); m += size(tiled_copy)) {
+            Tensor tRgBuf_nl = gBuf_nl(m,_0{},_,_);
+            ElementCompute output = tRgBuf_nl(_0{});
+            CUTLASS_PRAGMA_NO_UNROLL
+            for (int nl = 1; nl < size(tRgBuf_nl); ++nl) {
+              output = reduce_output(output, tRgBuf_nl(nl));
+            }
+            if (elem_less(cCol(m,_0{}), residue_mn)) {
+              gCol_l(m,_0{},_0{}) = convert_output(output);
+            }
+          }
+        }
+        // No reduction over batches
+        else {
+          CUTLASS_PRAGMA_NO_UNROLL
+          for (int m = thread_idx; m < size<0>(gBuf_nl); m += size(tiled_copy)) {
+            bool do_store = elem_less(cCol(m,_0{}), residue_mn);
+            CUTLASS_PRAGMA_NO_UNROLL
+            for (int l = 0; l < size<3>(gBuf_nl); ++l) {
+              Tensor tRgBuf_n = gBuf_nl(m,_0{},_,l);
+              ElementCompute output = tRgBuf_n(_0{});
+              CUTLASS_PRAGMA_NO_UNROLL
+              for (int n = 1; n < size(tRgBuf_n); ++n) {
+                output = reduce_output(output, tRgBuf_n(n));
+              }
+              if (do_store) {
+                gCol_l(m,_0{},l) = convert_output(output);
+              }
+            }
+          }
+        }
+
+      }
+    }
+
+    CUTLASS_DEVICE bool
+    is_reduction_buffer_needed(int epi_m, int epi_n, bool is_last_iteration) const {
+      auto const& [ref_src, tCrCol, tCcCol, gCol_l, cCol, gBuf_nl, sBuf_layout, 
+                    lane_layout_MN, lane_mn, warp_layout_MN, warp_mn, 
+                    tile_coord_mnkl, residue_mn, epi_tile, tiled_copy, thread_idx] = args_tuple;
+
+      return (not IsAtomic &&                                  // atomic reduction doesn't use smem
+              is_last_iteration &&                             // smem reduction happens after epilogue loop
+              (decltype(size<1>(warp_layout_MN))::value > 1 || // smem reduction happens when multiple warps are in N
+               FinalReduction));                               // smem is used to broadcast tile counters for final reduction
     }
 
   };
 
   template <
     bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
-    class ProblemShapeMNKL,
-    class TileShapeMNK,
-    class TileCoordMNKL,
-    class EpilogueTile,
-    class TiledCopy,
-    class SrcTensor
+    class... Args
   >
   CUTLASS_DEVICE auto
-  get_consumer_store_callbacks(
-      ProblemShapeMNKL problem_shape_mnkl,
-      TileShapeMNK tile_shape_mnk,
-      TileCoordMNKL tile_coord_mnkl,
-      EpilogueTile epi_tile,
-      TiledCopy tiled_copy,
-      int thread_idx,
-      SrcTensor const& tCrC) {
+  get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
+    Layout ref_layout_MN = [&] () {
+      if constexpr (ReferenceSrc) { return get<0>(args.tiled_copy.get_layoutS_MN()); }
+      else                        { return get<0>(args.tiled_copy.get_layoutD_MN()); }
+    }();                                                                                         // tile_mn -> tv_idx
 
-    auto [M, N, K, L] = problem_shape_mnkl;
-    Tensor mCol = make_tensor(make_gmem_ptr(params.ptr_col), make_shape(M,N,L), params.dCol);
+    // Get the MN layout + coord of lanes to determine shuffle reduction iterations
+    using _W = Int<decltype(args.tiled_copy)::TiledNumThr::value / NumThreadsPerWarp>;
+    Layout tv2lane = Layout<Shape<Int<NumThreadsPerWarp>,_W,_1>,Stride<_1,_0,_0>>{};            //   tv_idx -> lane_idx
+    Layout ref2lane = composition(tv2lane, ref_layout_MN);                                      //  tile_mn -> lane_idx
+    Layout lane_layout_MN = make_layout(filter(get<0>(ref2lane)), filter(get<1>(ref2lane)));    //  lane_mn -> lane_idx
+    Layout inv_lane_layout_MN = right_inverse(lane_layout_MN);                                  // lane_idx -> lane_mn
+    int lane_idx = canonical_lane_idx();
+    auto lane_mn = idx2crd(inv_lane_layout_MN(lane_idx), shape(lane_layout_MN));
+
+    // Get the MN layout + coord of warps to determine smem reduction iterations
+    Layout tv2warp = Layout<Shape<Int<NumThreadsPerWarp>,_W,_1>,Stride<_0,_1,_0>>{};            //   tv_idx -> warp_idx
+    Layout ref2warp = composition(tv2warp, ref_layout_MN);                                      //  tile_mn -> warp_idx
+    Layout warp_layout_MN = make_layout(filter(get<0>(ref2warp)), filter(get<1>(ref2warp)));    //  warp_mn -> warp_idx
+    Layout inv_warp_layout_MN = right_inverse(warp_layout_MN);                                  // warp_idx -> warp_mn
+    int warp_idx = args.thread_idx / NumThreadsPerWarp;
+    auto warp_mn = idx2crd(inv_warp_layout_MN(warp_idx), shape(warp_layout_MN));
+
+    // Partition output gmem and register tensors
+    auto [tile_M, tile_N, tile_K] = args.tile_shape_mnk;
+    auto [M, N, K, L] = args.problem_shape_mnkl;
+    auto [m, n, k, l] = args.tile_coord_mnkl;
+    Tensor mCol = make_tensor(make_gmem_ptr<ElementOutput>(params.ptr_col), make_shape(M,N,L), params.dCol); // (M,N,L)
+    Tensor gCol_l = local_tile(mCol, take<0,2>(args.tile_shape_mnk), make_coord(m,n,_));             // (CTA_M,CTA_N,L)
     Tensor tCgCol = sm90_partition_for_epilogue<ReferenceSrc>(                         // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
-      mCol, tile_shape_mnk, tile_coord_mnkl, epi_tile, tiled_copy, thread_idx);
+                      gCol_l(_,_,l), args.epi_tile, args.tiled_copy, args.thread_idx);
     Tensor tCrCol = make_tensor_like<ElementCompute>(tCgCol);                          // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
     fill(tCrCol, params.reduction_identity);
 
-    // Compute tile residues and coordinate tensors for predication
-    auto [m, n, k, l] = tile_coord_mnkl;
-    auto residue_mn = make_coord(
-      M - static_cast<int>(m) * size<0>(tile_shape_mnk),
-      N - static_cast<int>(n) * size<1>(tile_shape_mnk)
-    );
-    Tensor cCol = make_identity_tensor(take<0,2>(tile_shape_mnk));
-    Tensor tCcCol = sm90_partition_for_epilogue<ReferenceSrc>(cCol, epi_tile, tiled_copy, thread_idx);
+    // Partition gmem+smem reduction buffer tensors
+    Layout gBuf_layout = make_layout(take<0,2>(args.tile_shape_mnk), make_stride(_1{}, _0{}));
+    Layout mBuf_layout = blocked_product(gBuf_layout, make_layout(ceil_div(make_shape(M,N,L), shape(gBuf_layout))));
+    Tensor mBuf = make_tensor(make_gmem_ptr(params.reduction_buffer), mBuf_layout);                // (ceil_M,ceil_N,L)
+    Tensor gBuf_nl = local_tile(mBuf, take<0,2>(args.tile_shape_mnk), make_coord(m,_,_));     // (CTA_M,CTA_N,REST_N,L)
+    Layout sBuf_layout = blocked_product(gBuf_layout,make_layout(make_shape(_1{},_1{},size<1>(warp_layout_MN)))); // (CTA_M,CTA_N,WARPS_N)
 
-    return ConsumerStoreCallbacks(cute::move(tCrCol), cute::move(tCgCol), cute::move(tCcCol), residue_mn, params);
+    return ConsumerStoreCallbacks(
+      make_tuple(bool_constant<ReferenceSrc>{}, cute::move(tCrCol), args.tCcD, gCol_l, args.cD, gBuf_nl, sBuf_layout,
+                  lane_layout_MN, lane_mn, warp_layout_MN, warp_mn, 
+                  args.tile_coord_mnkl, args.residue_mn, args.epi_tile, args.tiled_copy, args.thread_idx),
+      params
+    );
   }
 };
 

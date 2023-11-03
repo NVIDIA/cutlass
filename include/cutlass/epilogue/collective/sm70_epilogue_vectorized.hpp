@@ -52,7 +52,7 @@ namespace collective {
 /// Ways to generalize this:
 /// - CTA tile shape
 /// - vectorization requirements (GMEM)
-/// - vectoriz(able) transform() 
+/// - vectoriz(able) transform()
 ///
 template <
   class StrideC_,
@@ -120,7 +120,19 @@ public:
     return args;
   }
 
-  template<class ProblemShape>
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+    return cutlass::Status::kSuccess;
+  }
+
+  template <class ProblemShape>
   CUTLASS_HOST_DEVICE static bool
   can_implement(
       [[maybe_unused]] ProblemShape const& problem_shape,
@@ -200,8 +212,8 @@ public:
 
     // Tile gD and gC by the shape of SmemLayout first
     auto tile  = make_shape(size<0>(sC), size<1>(sC));
-    Tensor gCt = local_tile(gC, tile, _);                                              // (SMEM_M,SMEM_N,TILE_M,TILE_N)
-    Tensor gDt = local_tile(gD, tile, _);                                              // (SMEM_M,SMEM_N,TILE_M,TILE_N)
+    Tensor gCt = flat_divide(gC, tile);                                                // (SMEM_M,SMEM_N,TILE_M,TILE_N)
+    Tensor gDt = flat_divide(gD, tile);                                                // (SMEM_M,SMEM_N,TILE_M,TILE_N)
 
     // Partition sC, gC, and gD for the output
     auto tiled_s2r = TiledCopyS2R{};
@@ -216,7 +228,7 @@ public:
 
     // Repeat the D-partitioning for coordinates and predication
     Tensor cD   = make_identity_tensor(make_shape(size<0>(gD),size<1>(gD)));          // (BLK_M,BLK_N) -> (blk_m,blk_n)
-    Tensor cDt  = local_tile(cD, tile, _);                              //                (SMEM_M,SMEM_N,TILE_M,TILE_N)
+    Tensor cDt  = flat_divide(cD, tile);                                //                (SMEM_M,SMEM_N,TILE_M,TILE_N)
     Tensor tDcD = tD.partition_D(cDt);                                  // ((Atom,AtomNum),ATOM_M,ATOM_N,TILE_M,TILE_N)
 
     CUTE_STATIC_ASSERT(size<1>(tCaC) % size<3>(tDgC) == 0);  // TILE_M divides MMA_M
@@ -258,7 +270,7 @@ public:
           for (int pipe_n = 0; pipe_n < size<2>(tCsC); ++pipe_n) {
             int mma_m = step_m * size<1>(tCsC) + pipe_m;
             int mma_n = step_n * size<2>(tCsC) + pipe_n;
-            
+
             copy(tiled_r2s, tCaC(_,mma_m,mma_n), tCsC(_,pipe_m,pipe_n));
           }
         }
@@ -279,14 +291,14 @@ public:
           // source is needed
           Tensor tDgCmn = tDgC(_,_,_,step_m,step_n);
           CUTLASS_PRAGMA_UNROLL
-          for (int m = 0; m < size<1>(tDgDmn); ++m) 
+          for (int m = 0; m < size<1>(tDgDmn); ++m)
           {
             CUTLASS_PRAGMA_UNROLL
-            for (int n = 0; n < size<2>(tDgDmn); ++n) 
+            for (int n = 0; n < size<2>(tDgDmn); ++n)
             {
               // Predication
               if (get<0>(tDcDmn(0,m,n)) < get<0>(residue_mnk) &&
-                  get<1>(tDcDmn(0,m,n)) < get<1>(residue_mnk)) 
+                  get<1>(tDcDmn(0,m,n)) < get<1>(residue_mnk))
               {
                 // Step 5. Elementwise operation with conversion
                 CUTLASS_PRAGMA_UNROLL
@@ -309,14 +321,14 @@ public:
           }
 
           CUTLASS_PRAGMA_UNROLL
-          for (int m = 0; m < size<1>(tDgDmn); ++m) 
+          for (int m = 0; m < size<1>(tDgDmn); ++m)
           {
             CUTLASS_PRAGMA_UNROLL
-            for (int n = 0; n < size<2>(tDgDmn); ++n) 
+            for (int n = 0; n < size<2>(tDgDmn); ++n)
             {
               // Predication
               if (get<0>(tDcDmn(0,m,n)) < get<0>(residue_mnk) &&
-                  get<1>(tDcDmn(0,m,n)) < get<1>(residue_mnk)) 
+                  get<1>(tDcDmn(0,m,n)) < get<1>(residue_mnk))
               {
                 // Step 6. Copy to GMEM
                 copy(CopyAtomR2G{}, tDrD(_,m,n), tDgDmn(_,m,n));

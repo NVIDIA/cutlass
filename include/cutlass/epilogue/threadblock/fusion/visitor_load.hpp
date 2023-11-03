@@ -96,7 +96,7 @@ struct VisitorScalarBroadcast {
     (cute::is_same_v<StrideMNL, Stride<_0,_0,_0>>) || // scalar broadcast, e.g. alpha
     (cute::is_same_v<StrideMNL, Stride<_0,_0,_1>>) ||
     (cute::is_same_v<StrideMNL, Stride<_0,_0,int>>));  // batched scalar broadcast, e.g. per-batch alpha
-  
+
   struct SharedStorage { };
 
   struct Arguments {
@@ -132,12 +132,12 @@ struct VisitorScalarBroadcast {
     CUTLASS_DEVICE
     Callbacks(Element scalar)
       : scalar(scalar) {}
-    
+
     Element scalar;
 
     template <class ElementAccumulator, int FragmentSize>
     CUTLASS_DEVICE auto // returns an Array
-    visit(int iter_idx, int row_idx, int column_idx, int frg_idx, 
+    visit(int iter_idx, int row_idx, int column_idx, int frg_idx,
           Array<ElementAccumulator, FragmentSize> const& frg_acc) {
       Array<Element, FragmentSize> frg_scalar;
       frg_scalar.fill(scalar);
@@ -224,7 +224,7 @@ struct VisitorAuxLoad{
   // Global load type
   static int constexpr vec_bits = ThreadMap::kElementsPerAccess * sizeof_bits<Element>::value;
   using VecType = uint_bit_t<cute::min(128, vec_bits)>;
-  static int constexpr VecLength = sizeof(VecType) / sizeof(Element);  
+  static int constexpr VecLength = sizeof(VecType) / sizeof(Element);
 
   CUTLASS_HOST_DEVICE
   VisitorAuxLoad() { }
@@ -272,7 +272,7 @@ struct VisitorAuxLoad{
 
     template <class ElementAccumulator, int FragmentSize>
     CUTLASS_DEVICE auto // returns an Array
-    visit(int iter_idx, int row_idx, int column_idx, int frg_idx, 
+    visit(int iter_idx, int row_idx, int column_idx, int frg_idx,
           Array<ElementAccumulator, FragmentSize> const& frg_acc) {
       Tensor tC_rAux_frg = recast<Array<Element, FragmentSize>>(coalesce(tC_rAux(_,_,_,iter_idx%Stages)));
       return tC_rAux_frg(frg_idx);
@@ -285,9 +285,9 @@ struct VisitorAuxLoad{
     gemm::GemmCoord threadblock_tile_offset,
     int thread_idx,
     ProblemShape problem_shape
-  ) { 
+  ) {
     Tensor mAux = make_tensor(
-      make_gmem_ptr(params_ptr->ptr_aux), 
+      make_gmem_ptr(params_ptr->ptr_aux),
       problem_shape,
       params_ptr->dAux);   // (M,N,L)
     // VECTOR, FRAGMENT_COLUMN, FRAGMENT_ROW, ITERATION_ROW, ITERATION_GROUP, ITERATION_CLUSTER
@@ -299,14 +299,14 @@ struct VisitorAuxLoad{
 
     // Generate the pred tensor
     Tensor cAux = make_identity_tensor(mAux.shape());
-    Tensor tC_cAux = local_partition(
+    Tensor tC_cAux = outer_partition(
       group_modes<3,6>(ThreadMap::partition(cAux, thread_idx, threadblock_tile_offset)),
       Shape<Int<VecLength>>{},
       (_0{})
     );
 
     return Callbacks<
-      decltype(tC_gAux), decltype(tC_rAux), 
+      decltype(tC_gAux), decltype(tC_rAux),
       decltype(tC_cAux), ProblemShape>(
       cute::move(tC_gAux),
       cute::move(tC_rAux),
@@ -354,7 +354,7 @@ struct VisitorRowBroadcast {
   CUTLASS_HOST_DEVICE
   VisitorRowBroadcast(Params const& params, SharedStorage const& shared_storage)
     : params_ptr(&params) { }
-  
+
   Params const* params_ptr;
 
   template <class GTensor, class RTensor, class CTensor, class ProblemShape>
@@ -372,7 +372,7 @@ struct VisitorRowBroadcast {
       tC_cRow(cute::forward<CTensor>(tC_cRow)),
       n(get<1>(problem_shape)),
       params_ptr(params_ptr) { }
-    
+
     GTensor tC_gRow;
     RTensor tC_rRow;
     CTensor tC_cRow;
@@ -394,7 +394,7 @@ struct VisitorRowBroadcast {
 
     template <class ElementAccumulator, int FragmentSize>
     CUTLASS_DEVICE auto // returns an Array
-    visit(int iter_idx, int row_idx, int column_idx, int frg_idx, 
+    visit(int iter_idx, int row_idx, int column_idx, int frg_idx,
           Array<ElementAccumulator, FragmentSize> const& frg_acc) {
       Tensor rRow_frg = recast<Array<Element, FragmentSize>>(coalesce(tC_rRow));
       return rRow_frg(column_idx);
@@ -409,10 +409,10 @@ struct VisitorRowBroadcast {
     ProblemShape problem_shape
   ) {
     Tensor mRow = make_tensor(
-      make_gmem_ptr(params_ptr->ptr_row), 
+      make_gmem_ptr(params_ptr->ptr_row),
       problem_shape,
       params_ptr->dRow);
-    
+
     // VECTOR, FRAGMENT_COLUMN
     Tensor tC_gRow = recast<VecType>(
       ThreadMap::partition(mRow, thread_idx, threadblock_tile_offset)
@@ -421,14 +421,14 @@ struct VisitorRowBroadcast {
 
     // Generate the pred tensor
     Tensor cRow = make_identity_tensor(mRow.shape());
-    Tensor tC_cRow = local_partition(
+    Tensor tC_cRow = outer_partition(
       ThreadMap::partition(cRow, thread_idx, threadblock_tile_offset)(_,_,_0{},_0{},_0{},_0{}),
       Shape<Int<VecLength>>{},
       (_0{})
     );
-    
+
     return Callbacks<
-      decltype(tC_gRow), decltype(tC_rRow), 
+      decltype(tC_gRow), decltype(tC_rRow),
       decltype(tC_cRow), ProblemShape>(
       cute::move(tC_gRow),
       cute::move(tC_rRow),
@@ -472,7 +472,7 @@ struct VisitorColBroadcast {
   CUTLASS_HOST_DEVICE
   VisitorColBroadcast(Params const& params, SharedStorage const& shared_storage)
     : params_ptr(&params) { }
-  
+
   Params const* params_ptr;
 
   template <class GTensor, class RTensor, class CTensor, class ProblemShape>
@@ -490,7 +490,7 @@ struct VisitorColBroadcast {
       tC_cCol(cute::forward<CTensor>(tC_cCol)),
       m(get<0>(problem_shape)),
       params_ptr(params_ptr) { }
-    
+
     GTensor tC_gCol;
     RTensor tC_rCol;
     CTensor tC_cCol;
@@ -510,7 +510,7 @@ struct VisitorColBroadcast {
 
     template <class ElementAccumulator, int FragmentSize>
     CUTLASS_DEVICE auto // returns an Array
-    visit(int iter_idx, int row_idx, int column_idx, int frg_idx, 
+    visit(int iter_idx, int row_idx, int column_idx, int frg_idx,
           Array<ElementAccumulator, FragmentSize> const& frg_acc) {
       Array<Element, FragmentSize> frg_col;
       frg_col.fill(tC_rCol(row_idx,iter_idx));
@@ -529,7 +529,7 @@ struct VisitorColBroadcast {
       make_gmem_ptr(params_ptr->ptr_col),
       problem_shape,
       params_ptr->dCol);
-    
+
     // VECTOR, FRAGMENT_COLUMN, FRAGMENT_ROW, ITERATION_ROW, ITERATION_GROUP, ITERATION_CLUSTER
     Tensor tC_gCol = group_modes<1,4>(
       ThreadMap::partition(mCol, thread_idx, threadblock_tile_offset)(_0{},_0{},_,_,_,_));

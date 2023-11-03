@@ -135,6 +135,10 @@ add_test_simt(layouts=LayoutCombination.NTN, element_output=cutlass.DataType.f16
 add_test_simt(layouts=LayoutCombination.TTN, element_output=cutlass.DataType.f16, element_accumulator=cutlass.DataType.f32, threadblock_shape=[ 64,  64, 8])
 add_test_simt(layouts=LayoutCombination.NNT, element_output=cutlass.DataType.f16, element_accumulator=cutlass.DataType.f16, threadblock_shape=[128, 128, 8])
 
+# Tests with void-C kernels
+add_test_cluster_shape(layouts=LayoutCombination.NNT, alignments=[8, 8, 8], element_output=cutlass.DataType.f16,
+                       element_accumulator=cutlass.DataType.f32, threadblock_shape=[128, 128, 32], stages=None,
+                       cluster_shape=[2, 1, 1], element_C=cutlass.DataType.void)
 
 if __name__ == '__main__':
     unittest.main()

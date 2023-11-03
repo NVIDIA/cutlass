@@ -85,7 +85,7 @@ struct is_integral<integral_constant<T,v>> : true_type {};
 // is_static detects if an (abstract) value is defined completely by it's type (no members)
 
 template <class T>
-struct is_static : bool_constant<is_empty<T>::value> {};
+struct is_static : bool_constant<is_empty<remove_cvref_t<T>>::value> {};
 
 template <class T>
 constexpr bool is_static_v = is_static<T>::value;

@@ -42,6 +42,7 @@ namespace library {
 ///////////////////////////////////////////////////////////////////////////////////////////////
 //                             CUTLASS Reduction Instances                                   //
 ///////////////////////////////////////////////////////////////////////////////////////////////
+
 void initialize_reduce_add_linear_combination_f16_f16_f16(Manifest &manifest);
 void initialize_reduce_add_linear_combination_f32_f32_f16(Manifest &manifest);
 void initialize_reduce_add_linear_combination_f32_f32_bf16(Manifest &manifest);

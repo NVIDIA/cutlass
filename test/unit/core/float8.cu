@@ -48,11 +48,20 @@ TEST(float_e4m3_t, host_conversion) {
   for (int i = -8; i < 8; ++i) {
     float f = static_cast<float>(i);
 
+    cutlass::int4b_t s = static_cast<cutlass::int4b_t>(i);
+    FP8 w = static_cast<FP8>(s);
     FP8 x = static_cast<FP8>(i);
     FP8 y = static_cast<FP8>(f);
 
+    EXPECT_TRUE(static_cast<cutlass::int4b_t>(w) == s);
     EXPECT_TRUE(static_cast<int>(x) == i);
     EXPECT_TRUE(static_cast<float>(y) == f);
+
+    if (i >= 0) {
+      cutlass::uint4b_t u = static_cast<cutlass::uint4b_t>(i);
+      FP8 z = static_cast<FP8>(u);
+      EXPECT_TRUE(static_cast<unsigned>(z) == u);
+    }
   }
 
   // Try out default-ctor (zero initialization of primitive proxy type)
@@ -72,11 +81,20 @@ TEST(float_e5m2_t, host_conversion) {
   for (int i = -8; i < 8; ++i) {
     float f = static_cast<float>(i);
 
+    cutlass::int4b_t s = static_cast<cutlass::int4b_t>(i);
+    FP8 w = static_cast<FP8>(s);
     FP8 x = static_cast<FP8>(i);
     FP8 y = static_cast<FP8>(f);
 
+    EXPECT_TRUE(static_cast<cutlass::int4b_t>(w) == s);
     EXPECT_TRUE(static_cast<int>(x) == i);
     EXPECT_TRUE(static_cast<float>(y) == f);
+
+    if (i >= 0) {
+      cutlass::uint4b_t u = static_cast<cutlass::uint4b_t>(i);
+      FP8 z = static_cast<FP8>(u);
+      EXPECT_TRUE(static_cast<cutlass::uint4b_t>(z) == u);
+    }
   }
 
   // Try out default-ctor (zero initialization of primitive proxy type)

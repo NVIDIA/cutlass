@@ -37,9 +37,15 @@ from cuda import __version__, cuda
 from cutlass.backend.utils.device import device_cc
 
 _version_splits = [int(x) for x in __version__.split("rc")[0].split(".")]
-supports_cluster_launch = device_cc() >= 90 and (
-    _version_splits[0] > 11 or (_version_splits[0] == 11 and _version_splits[1] >= 8)
-)
+_supports_cluster_launch = None
+
+
+def supports_cluster_launch():
+    global _supports_cluster_launch
+    if _supports_cluster_launch is None:
+        major, minor = _version_splits[0], _version_splits[1]
+        _supports_cluster_launch = device_cc() >= 90 and (major > 11 or (major == 11 and minor >= 8))
+    return _supports_cluster_launch
 
 
 class LaunchConfiguration:
@@ -121,7 +127,7 @@ class ExecutableOperation:
         packed = (ctypes.c_void_p * 1)()
         packed[0] = ctypes.addressof(cArg)
 
-        if supports_cluster_launch:
+        if supports_cluster_launch():
             return self.run_with_clusters(launch_config, packed, stream)
         else:
             return self.run_without_clusters(launch_config, packed, stream)

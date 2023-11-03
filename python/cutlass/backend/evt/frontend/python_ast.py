@@ -38,8 +38,9 @@ import ast
 import inspect
 import textwrap
 
+from cutlass_library import DataType
+
 import cutlass
-from cutlass import DataType
 from cutlass.backend.evt.frontend.frontend_base import EVTFrontendBase
 from cutlass.backend.epilogue import relu
 from cutlass.backend.library import FunctionalOp

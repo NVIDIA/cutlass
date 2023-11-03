@@ -38,7 +38,13 @@ import enum
 import os.path
 import shutil
 
-from cutlass_library.library import *
+try:
+  import builtins
+  if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
+    raise ImportError("Disabling attempt to import cutlass_library")
+  from cutlass_library.library import *
+except ImportError:
+  from library import *
 
 ###################################################################################################
 
@@ -60,11 +66,11 @@ class Conv3dOperation:
     self.iterator_algorithm = iterator_algorithm
     self.stride_support = stride_support
     self.swizzling_functor = swizzling_functor
-  
+
   #
   def is_mixed_input(self):
     return self.A.element != self.B.element
-  
+
   #
   def core_name(self):
     ''' The basic operation kind is prefixed with a letter indicating the accumulation type. '''

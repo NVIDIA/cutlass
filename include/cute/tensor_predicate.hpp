@@ -60,4 +60,20 @@ struct TrivialPredTensor
   }
 };
 
+template <class Fn>
+struct FunctionPredTensor
+{
+  CUTE_HOST_DEVICE constexpr
+  FunctionPredTensor(Fn const& fn) : fn_(fn) {}
+
+  template <class... Coords>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  operator()(Coords const&... coords) const {
+    return fn_(coords...);
+  }
+
+  Fn const& fn_;
+};
+
 } // end namespace cute

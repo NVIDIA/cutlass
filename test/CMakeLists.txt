@@ -28,4 +28,8 @@
 
 if (CUTLASS_ENABLE_GTEST_UNIT_TESTS)
   add_subdirectory(unit)
+else()
+  # Always provide at least the phony test_unit target.
+  add_custom_target(test_unit)
 endif()
+

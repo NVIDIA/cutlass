@@ -43,7 +43,7 @@ namespace cutlass::test {
 template <class ElementType, class SmemLayout>
 struct SharedStorage
 {
-  cute::array_aligned<ElementType, cute::cosize_v<SmemLayout>> smem;
+  cute::ArrayEngine<ElementType, cute::cosize_v<SmemLayout>> smem;
   cute::uint64_t tma_load_mbar[1];
 };
 
@@ -62,26 +62,26 @@ tma_test_device_cute(T const* g_in, T* g_out,
   extern __shared__ char shared_memory[];
   using SharedStorage = SharedStorage<T, SmemLayout>;
   SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
+
   // Construct SMEM tensor
-  Tensor sA = make_tensor(make_smem_ptr(shared_storage.smem.data()), smem_layout);  // (CTA_TILE_M,CTA_TILE_N,...)
+  Tensor sA = make_tensor(make_smem_ptr(shared_storage.smem.begin()), smem_layout);  // (CTA_TILE_M,CTA_TILE_N,...)
   // Shared memory barriers use 64bits in SMEM for synchronization
   uint64_t* tma_load_mbar = shared_storage.tma_load_mbar;
 
   // TMA requires special handling of strides to deal with coord codomain mapping
   // Represent the full tensors -- get these from TMA
   Tensor mA = tma.get_tma_tensor(shape(gmem_layout));
-  Tensor mB = make_tensor(make_gmem_ptr(g_out), gmem_layout);
+  Tensor mB = make_tensor(make_gmem_ptr<T>(g_out), gmem_layout);
 
   constexpr int R = rank_v<CTA_Tiler>;
-  Tensor gA = local_tile(mA, cta_tiler, repeat<R>(_));               // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
-  Tensor gB = local_tile(mB, cta_tiler, repeat<R>(_));               // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
+  Tensor gA = flat_divide(mA, cta_tiler);               // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
+  Tensor gB = flat_divide(mB, cta_tiler);               // (CTA_TILE_M,CTA_TILE_N,...REST_M,REST_N,...)
 
   //
   // Prepare the TMA_LOAD
   //
 
   auto cta_tma = tma.get_slice(Int<0>{});                            // CTA slice
-
   Tensor tAgA_x = cta_tma.partition_S(gA);                           // (TMA,TMA_M,TMA_N,REST_M,REST_N)
   Tensor tAsA_x = cta_tma.partition_D(sA);                           // (TMA,TMA_M,TMA_N)
 
@@ -89,11 +89,13 @@ tma_test_device_cute(T const* g_in, T* g_out,
   if (thread0()) {
     print(tma);
     print("TILE  :  "); print(cta_tiler); print("\n");
-    print("  mA  :  "); print(  mA.data());   print(" o "); print(  mA.layout());   print("\n");
-    print("  gA  :  "); print(  gA.data());   print(" o "); print(  gA.layout());   print("\n");
-    print("tAgA_x:  "); print(tAgA_x.data()); print(" o "); print(tAgA_x.layout()); print("\n");
-    print("  sA  :  "); print(  sA.data());   print(" o "); print(  sA.layout());   print("\n");
-    print("tAsA_x:  "); print(tAsA_x.data()); print(" o "); print(tAsA_x.layout()); print("\n");
+    print("  mA  :  "); print(  mA);   print("\n");
+    print("  mB  :  "); print(  mB);   print("\n");
+    print("  gA  :  "); print(  gA);   print("\n");
+    print("  gB  :  "); print(  gB);   print("\n");
+    print("  sA  :  "); print(  sA);   print("\n");
+    print("tAgA_x:  "); print(tAgA_x); print("\n");
+    print("tAsA_x:  "); print(tAsA_x); print("\n");
   }
 #endif
 
@@ -111,9 +113,9 @@ tma_test_device_cute(T const* g_in, T* g_out,
 
 #if 0
   if (thread0()) {
-    print("tAgA  :  "); print(tAgA.data()); print(" o "); print(tAgA.layout()); print("\n");
-    print("tAsA  :  "); print(tAsA.data()); print(" o "); print(tAsA.layout()); print("\n");
-    print("tBgB  :  "); print(tBgB.data()); print(" o "); print(tBgB.layout()); print("\n");
+    print("tAgA  :  "); print(tAgA); print("\n");
+    print("tAsA  :  "); print(tAsA); print("\n");
+    print("tBgB  :  "); print(tBgB); print("\n");
   }
 #endif
 
@@ -121,7 +123,7 @@ tma_test_device_cute(T const* g_in, T* g_out,
   for (int stage = 0; stage < size<1>(tAgA); ++stage)
   {
     // Set the bytes transferred in this TMA transaction (may involve multiple issues)
-    constexpr int kTmaTransactionBytes = size(sA) * sizeof_bits_v<T> / 8;
+    constexpr int kTmaTransactionBytes = sizeof(ArrayEngine<T, size(sA)>);
 
     if (threadIdx.x == 0)
     {
@@ -146,9 +148,15 @@ tma_test_device_cute(T const* g_in, T* g_out,
     //  print_tensor(sA);
     //}
 
-    for (int i = threadIdx.x; i < size(sA); i += blockDim.x) {
-      tBgB(i,stage) = sA(i);
+    // for (int i = threadIdx.x; i < size(sA); i += blockDim.x) {
+    //   tBgB(i,stage) = sA(i);
+    // }
+
+    // Subbyte elements could cause race conditions, so be even more conservative
+    if (thread0()) {
+      copy(sA, tBgB(_,stage));
     }
+
     __syncthreads();
   }
 }
@@ -161,30 +169,38 @@ test_tma_load(CopyOp      const& copy_op,
               CTA_Tile    const& cta_tile)
 {
   using namespace cute;
-  thrust::host_vector<T> h_in(cosize(gmem_layout));
-  for (int i = 0; i < h_in.size(); ++i) { h_in[i] = T(i % 13); }
-  thrust::device_vector<T> d_in = h_in;
-  thrust::device_vector<T> d_out(h_in.size(), T(-1));
 
-  Tensor gA = make_tensor(d_in.data().get(), gmem_layout);
+  // Allocate and initialize host test data
+  size_t N = ceil_div(cosize(gmem_layout) * sizeof_bits<T>::value, 8);
+  thrust::host_vector<char> h_in(N);
+  Tensor hA_in  = make_tensor(recast_ptr<T>(h_in.data()), gmem_layout);
+  for (int i = 0; i < size(hA_in); ++i) { hA_in(i) = static_cast<T>(i % 13); }
+
+  // Allocate and initialize device test data
+  thrust::device_vector<char> d_in = h_in;
+  thrust::device_vector<char> d_out(h_in.size(), char(-1));
+
+  // Create TMA for this device Tensor
+  Tensor gA = make_tensor(make_gmem_ptr<T>(raw_pointer_cast(d_in.data())), gmem_layout);
   auto tma = make_tma_copy<TmaType>(copy_op, gA, smem_layout, cta_tile, Int<1>{});
   //print(tma);
 
+  // Launch
   int smem_size = int(sizeof(SharedStorage<T, decltype(smem_layout)>));
   tma_test_device_cute<<<1, 128, smem_size>>>(
-    thrust::raw_pointer_cast(d_in.data()),
-    thrust::raw_pointer_cast(d_out.data()),
+    reinterpret_cast<T const*>(raw_pointer_cast(d_in.data())),
+    reinterpret_cast<T*>      (raw_pointer_cast(d_out.data())),
     tma, cta_tile,
     gmem_layout,
     smem_layout);
 
-  thrust::host_vector<T> h_out = d_out;
+  // Copy results back to host
+  thrust::host_vector<char> h_out = d_out;
+  Tensor hA_out = make_tensor(recast_ptr<T>(h_out.data()), gmem_layout);
 
-  // Validate the results, and tolerate the first 3 errors:
-  Tensor hA_in  = make_tensor(h_in.data(),  gmem_layout);
-  Tensor hA_out = make_tensor(h_out.data(), gmem_layout);
+  // Validate the results. Print only the first 3 errors.
   int count = 3;
-  for (int i = 0; i < cute::size(gmem_layout) && count > 0; ++i) {
+  for (int i = 0; i < size(hA_out) && count > 0; ++i) {
     EXPECT_EQ(hA_in(i), hA_out(i));
     if (hA_in(i) != hA_out(i)) {
       --count;

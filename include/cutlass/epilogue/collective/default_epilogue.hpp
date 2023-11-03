@@ -111,6 +111,18 @@ public:
     return args;
   }
 
+  template <class ProblemShape>
+  static size_t
+  get_workspace_size(ProblemShape const& problem_shape, Arguments const& args) {
+    return 0;
+  }
+
+  template <class ProblemShape>
+  static cutlass::Status
+  initialize_workspace(ProblemShape const& problem_shape, Arguments const& args, void* workspace, cudaStream_t stream) {
+    return cutlass::Status::kSuccess;
+  }
+
   template<class ProblemShape>
   CUTLASS_HOST_DEVICE static bool
   can_implement(

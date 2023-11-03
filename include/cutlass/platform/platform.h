@@ -127,13 +127,14 @@
 #include <algorithm>   // Minimum/maximum operations
 #include <cstddef>     // nullptr_t
 #include <functional>  // Arithmetic operations
-#include <limits>      // float_round_style, float_denorm_style
 #include <utility>     // For methods on std::pair
+#include <limits>      // float_round_style, float_denorm_style
 #if (!defined(_MSC_VER) && (__cplusplus >= 201103L)) || (defined(_MSC_VER) && (_MS_VER >= 1500))
 #include <type_traits>  // For integral constants, conditional metaprogramming, and type traits
 #endif
 
-#include "cutlass/cutlass.h"
+#include <vector_types.h>
+#include <cutlass/cutlass.h>
 
 #endif
 
@@ -389,10 +390,14 @@ struct conditional<false, T, F> {
   typedef F type;
 };
 
+template <class...>
+using void_t = void;
+
 #else
 
 using std::enable_if;
 using std::conditional;
+using std::void_t;
 
 #endif
 

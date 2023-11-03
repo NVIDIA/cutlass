@@ -126,24 +126,18 @@ operator+(tuple<T...> const& t, ArithmeticTuple<U...> const& u) {
 
 template <auto t, class... U>
 CUTE_HOST_DEVICE constexpr
-auto
+ArithmeticTuple<U...> const&
 operator+(C<t>, ArithmeticTuple<U...> const& u) {
-  if constexpr (t == 0) {
-    return u;
-  } else {
-    static_assert(t == 0, "Artihmetic tuple op+ error!");
-  }
+  static_assert(t == 0, "Artihmetic tuple op+ error!");
+  return u;
 }
 
 template <class... T, auto u>
 CUTE_HOST_DEVICE constexpr
-auto
+ArithmeticTuple<T...> const&
 operator+(ArithmeticTuple<T...> const& t, C<u>) {
-  if constexpr (u == 0) {
-    return t;
-  } else {
-    static_assert(u == 0, "Artihmetic tuple op+ error!");
-  }
+  static_assert(u == 0, "Artihmetic tuple op+ error!");
+  return t;
 }
 
 //
@@ -153,30 +147,41 @@ operator+(ArithmeticTuple<T...> const& t, C<u>) {
 template <class ArithTuple>
 struct ArithmeticTupleIterator
 {
+  using value_type   = ArithTuple;
+  using element_type = ArithTuple;
+  using reference    = ArithTuple;
+
   ArithTuple coord_;
 
   CUTE_HOST_DEVICE constexpr
-  ArithmeticTupleIterator() : coord_() {}
-  CUTE_HOST_DEVICE constexpr
-  ArithmeticTupleIterator(ArithTuple const& coord) : coord_(coord) {}
+  ArithmeticTupleIterator(ArithTuple const& coord = {}) : coord_(coord) {}
 
   CUTE_HOST_DEVICE constexpr
   ArithTuple const& operator*() const { return coord_; }
 
   template <class Coord>
   CUTE_HOST_DEVICE constexpr
-  auto operator+(Coord const& c) const {
-    return ArithmeticTupleIterator<decltype(coord_ + c)>(coord_ + c);
-  }
+  auto operator[](Coord const& c) const { return *(*this + c); }
 
   template <class Coord>
   CUTE_HOST_DEVICE constexpr
-  auto operator[](Coord const& c) const { return *(*this + c); }
+  auto operator+(Coord const& c) const {
+    return ArithmeticTupleIterator<decltype(coord_ + c)>(coord_ + c);
+  }
 };
 
-template <class ArithTuple>
-CUTE_HOST_DEVICE void print(ArithmeticTupleIterator<ArithTuple> const& iter) {
-  printf("ArithTuple"); print(iter.coord_);
+template <class Tuple>
+CUTE_HOST_DEVICE constexpr
+auto
+make_inttuple_iter(Tuple const& t) {
+  return ArithmeticTupleIterator(as_arithmetic_tuple(t));
+}
+
+template <class T0, class T1, class... Ts>
+CUTE_HOST_DEVICE constexpr
+auto
+make_inttuple_iter(T0 const& t0, T1 const& t1, Ts const&... ts) {
+  return make_tuple_iter(cute::make_tuple(t0, t1, ts...));
 }
 
 //
@@ -211,7 +216,7 @@ struct is_integral<ScaledBasis<T,N>> : true_type {};
 // Get the scalar T out of a ScaledBasis
 template <class SB>
 CUTE_HOST_DEVICE constexpr auto
-basis_value(SB const& e) 
+basis_value(SB const& e)
 {
   if constexpr (is_scaled_basis<SB>::value) {
     return basis_value(e.value());
@@ -224,7 +229,7 @@ basis_value(SB const& e)
 // Apply the N... pack to another Tuple
 template <class SB, class Tuple>
 CUTE_HOST_DEVICE constexpr auto
-basis_get(SB const& e, Tuple const& t) 
+basis_get(SB const& e, Tuple const& t)
 {
   if constexpr (is_scaled_basis<SB>::value) {
     return basis_get(e.value(), get<SB::mode()>(t));
@@ -448,36 +453,44 @@ template <auto t, class U, int M>
 CUTE_HOST_DEVICE constexpr
 auto
 operator+(C<t>, ScaledBasis<U,M> const& u) {
-  if constexpr (t == 0) {
-    return u;
-  } else {
-    static_assert(t == 0, "ScaledBasis op+ error!");
-  }
+  static_assert(t == 0, "ScaledBasis op+ error!");
+  return u;
 }
 
 template <class T, int N, auto u>
 CUTE_HOST_DEVICE constexpr
 auto
 operator+(ScaledBasis<T,N> const& t, C<u>) {
-  if constexpr (u == 0) {
-    return t;
-  } else {
-    static_assert(u == 0, "ScaledBasis op+ error!");
-  }
+  static_assert(u == 0, "ScaledBasis op+ error!");
+  return t;
 }
 
 //
 // Display utilities
 //
 
+template <class ArithTuple>
+CUTE_HOST_DEVICE void print(ArithmeticTupleIterator<ArithTuple> const& iter)
+{
+  printf("ArithTuple"); print(iter.coord_);
+}
+
 template <class T, int N>
-CUTE_HOST_DEVICE void print(ScaledBasis<T,N> const& e) {
+CUTE_HOST_DEVICE void print(ScaledBasis<T,N> const& e)
+{
   print(e.value()); printf("@%d", N);
 }
 
 #if !defined(__CUDACC_RTC__)
+template <class ArithTuple>
+CUTE_HOST std::ostream& operator<<(std::ostream& os, ArithmeticTupleIterator<ArithTuple> const& iter)
+{
+  return os << "ArithTuple" << iter.coord_;
+}
+
 template <class T, int N>
-CUTE_HOST std::ostream& operator<<(std::ostream& os, ScaledBasis<T,N> const& e) {
+CUTE_HOST std::ostream& operator<<(std::ostream& os, ScaledBasis<T,N> const& e)
+{
   return os << e.value() << "@" << N;
 }
 #endif

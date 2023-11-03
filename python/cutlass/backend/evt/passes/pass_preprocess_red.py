@@ -42,7 +42,6 @@ from cutlass.backend.evt.ir import ComputeNode, StoreNode
 from cutlass.backend.evt.passes.pass_manager import EVTPassBase
 
 
-
 class PassPreprocessRed(EVTPassBase):
     """
     Preprocess red nodes

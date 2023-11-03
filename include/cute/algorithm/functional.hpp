@@ -171,6 +171,76 @@ CUTE_NAMED_BINARY_OP(min_fn, cute::min);
 #undef CUTE_NAMED_BINARY_OP
 
 /**********/
+/** Fold **/
+/**********/
+
+#define CUTE_FOLD_OP(NAME,OP)                                        \
+  struct NAME##_unary_rfold {                                        \
+    template <class... T>                                            \
+    CUTE_HOST_DEVICE constexpr                                       \
+    auto operator()(T&&... t) const {                                \
+      return (t OP ...);                                             \
+    }                                                                \
+  };                                                                 \
+  struct NAME##_unary_lfold {                                        \
+    template <class... T>                                            \
+    CUTE_HOST_DEVICE constexpr                                       \
+    auto operator()(T&&... t) const {                                \
+      return (... OP t);                                             \
+    }                                                                \
+  };                                                                 \
+  struct NAME##_binary_rfold {                                       \
+    template <class U, class... T>                                   \
+    CUTE_HOST_DEVICE constexpr                                       \
+    auto operator()(U&& u, T&&... t) const {                         \
+      return (t OP ... OP u);                                        \
+    }                                                                \
+  };                                                                 \
+  struct NAME##_binary_lfold {                                       \
+    template <class U, class... T>                                   \
+    CUTE_HOST_DEVICE constexpr                                       \
+    auto operator()(U&& u, T&&... t) const {                         \
+      return (u OP ... OP t);                                        \
+    }                                                                \
+  }
+
+CUTE_FOLD_OP(plus,                 +);
+CUTE_FOLD_OP(minus,                -);
+CUTE_FOLD_OP(multiplies,           *);
+CUTE_FOLD_OP(divides,              /);
+CUTE_FOLD_OP(modulus,              %);
+
+CUTE_FOLD_OP(plus_assign,         +=);
+CUTE_FOLD_OP(minus_assign,        -=);
+CUTE_FOLD_OP(multiplies_assign,   *=);
+CUTE_FOLD_OP(divides_assign,      /=);
+CUTE_FOLD_OP(modulus_assign,      %=);
+
+CUTE_FOLD_OP(bit_and,              &);
+CUTE_FOLD_OP(bit_or,               |);
+CUTE_FOLD_OP(bit_xor,              ^);
+CUTE_FOLD_OP(left_shift,          <<);
+CUTE_FOLD_OP(right_shift,         >>);
+
+CUTE_FOLD_OP(bit_and_assign,      &=);
+CUTE_FOLD_OP(bit_or_assign,       |=);
+CUTE_FOLD_OP(bit_xor_assign,      ^=);
+CUTE_FOLD_OP(left_shift_assign,  <<=);
+CUTE_FOLD_OP(right_shift_assign, >>=);
+
+CUTE_FOLD_OP(logical_and,         &&);
+CUTE_FOLD_OP(logical_or,          ||);
+
+CUTE_FOLD_OP(equal_to,            ==);
+CUTE_FOLD_OP(not_equal_to,        !=);
+CUTE_FOLD_OP(greater,              >);
+CUTE_FOLD_OP(less,                 <);
+CUTE_FOLD_OP(greater_equal,       >=);
+CUTE_FOLD_OP(less_equal,          <=);
+
+#undef CUTE_FOLD_OP
+
+/**********/
 /** Meta **/
 /**********/
 

@@ -30,11 +30,4 @@
 #
 ################################################################################
 
-from cutlass.backend.utils.datatypes import *
 from cutlass.backend.utils.device import check_cuda_errors, device_cc
-from cutlass.backend.utils.software import (
-    CheckPackages,
-    SubstituteTemplate,
-    device_sm_count,
-    get_memory_pool,
-)

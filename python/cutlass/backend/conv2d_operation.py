@@ -34,9 +34,10 @@ import ctypes
 from typing import Union
 
 from cuda import cuda
+from cutlass_library import SubstituteTemplate
 import numpy as np
 
-from cutlass import (
+from cutlass_library import (
     ConvKindNames,
     ConvKindTag,
     DataTypeNames,
@@ -71,12 +72,8 @@ from cutlass.backend.library import (
 )
 from cutlass.backend.memory_manager import device_mem_alloc
 from cutlass.backend.operation import ExecutableOperation, LaunchConfiguration
-from cutlass.backend.utils.datatypes import to_device_ptr
-from cutlass.backend.utils.software import CheckPackages, SubstituteTemplate
+from cutlass.backend.utils.device import to_device_ptr
 from cutlass.shape import GemmCoord
-
-if CheckPackages().check_torch():
-    import torch
 
 
 class Conv2dArguments(ArgumentBase):

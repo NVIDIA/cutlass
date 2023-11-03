@@ -296,7 +296,9 @@ freely with any mainloop. Each mainloop policy either prescribes a `Schedule` wi
 it needs to be run, or exposes a template API that lets the user pick a subset of the following schedules:
 
 ```c++
-struct KernelMultistage { };
+struct KernelCpAsyncWarpSpecialized { };
+struct KernelCpAsyncWarpSpecializedPingpong { };
+struct KernelCpAsyncWarpSpecializedCooperative { };
 struct KernelTma { };
 struct KernelTmaWarpSpecialized { };
 struct KernelTmaWarpSpecializedPingpong { };
@@ -305,7 +307,7 @@ struct KernelTmaWarpSpecializedCooperative { };
 
 - A single kernel schedule can support multiple mainloop implementations. For example,
 `KernelMultistage` can be composed with many different mainloop implementations across GPU
-architectures such as `MainloopSm70TwoStage`, `MainloopSm80CpAsyncUnpredicated`, `MainloopSm90CpAsyncGmma`, and many more.
+architectures such as `MainloopSm70TwoStage`, `MainloopSm80CpAsyncUnpredicated`, and many more.
 
 - A single mainloop can be composed with multiple
 possible kernel schedules. For example, the `MainloopSm90TmaGmmaWarpSpecialized` can be

@@ -36,6 +36,8 @@
 #include <cstdint>
 #endif
 
+#include <cutlass/integer_subbyte.h>
+
 #include <cute/config.hpp>
 #include <cute/util/type_traits.hpp>
 

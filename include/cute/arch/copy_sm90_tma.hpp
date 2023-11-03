@@ -785,7 +785,7 @@ tma_store_arrive() {
 #endif
 }
 
-// Wait on prior N (Count) TMA_STORE instructions to complete
+// Wait until at most Count committed TMA_STOREs are pending and all prior commits are complete
 template <int Count>
 CUTE_HOST_DEVICE static void
 tma_store_wait() {

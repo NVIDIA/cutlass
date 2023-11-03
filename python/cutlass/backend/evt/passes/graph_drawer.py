@@ -32,9 +32,9 @@
 
 import subprocess
 
+from cutlass_library import DataTypeTag
 import pydot
 
-from cutlass import DataTypeTag
 from cutlass.backend.evt.ir.dag_ir import DAGIR
 
 

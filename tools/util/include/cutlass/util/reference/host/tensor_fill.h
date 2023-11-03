@@ -566,7 +566,6 @@ struct RandomUniformFunc {
     // Random values are cast to integer after scaling by a power of two to facilitate error
     // testing
     Element result;
-    
     if (int_scale >= 0) {
       rnd = double(int64_t(rnd * double(1 << int_scale))) / double(1 << int_scale);
       result = static_cast<Element>(Real(rnd));
@@ -1253,15 +1252,15 @@ void TensorFillRandom(
     TensorFillRandomGaussian(
       view,
       seed,
-      static_cast<Real>(dist.gaussian.mean),
-      static_cast<Real>(dist.gaussian.stddev),
+      dist.gaussian.mean,
+      dist.gaussian.stddev,
       dist.int_scale);
   } else if (dist.kind == Distribution::Uniform) {
     TensorFillRandomUniform(
       view,
       seed,
-      static_cast<Real>(dist.uniform.max),
-      static_cast<Real>(dist.uniform.min),
+      dist.uniform.max,
+      dist.uniform.min,
       dist.int_scale);
   }
 }

@@ -51,6 +51,13 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS<S,D>>
 
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
+
+  // Construct a zfill variant with a given predicate value
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>>
+  with(bool pred) const {
+    return {pred};
+  }
 };
 
 template <class S, class D>
@@ -66,6 +73,95 @@ struct Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL<S,D>>
 
   // Reference map from (thr,val) to bit
   using RefLayout = SrcLayout;
+
+  // Construct a zfill variant with a given predicate value
+  CUTE_HOST_DEVICE constexpr
+  Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
+  with(bool pred) const {
+    return {pred};
+  }
+};
+
+template <class S, class D>
+struct Copy_Traits<SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>>
+{
+  // Logical thread id to thread idx (one-thread)
+  using ThrID = Layout<_1>;
+
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape<_1,Int<sizeof_bits<S>::value>>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape<_1,Int<sizeof_bits<D>::value>>>;
+
+  // Reference map from (thr,val) to bit
+  using RefLayout = SrcLayout;
+
+  // Predicate value that determines whether to load or zfill
+  bool pred = false;
+
+  // Overload copy_unpack for zfill variant to pass the predicate into the op
+  template <class TS, class SLayout,
+            class TD, class DLayout>
+  CUTE_HOST_DEVICE friend constexpr
+  void
+  copy_unpack(Copy_Traits        const& traits,
+              Tensor<TS,SLayout> const& src,
+              Tensor<TD,DLayout>      & dst)
+  {
+    static_assert(is_gmem<TS>::value, "Expected gmem source for cp.async.");
+    static_assert(is_smem<TD>::value, "Expected smem destination for cp.async.");
+
+    Tensor rS = recast<S>(src);
+    Tensor rD = recast<D>(dst);
+
+    CUTE_STATIC_ASSERT_V(size(rS) == Int<1>{},
+      "In CopyAtom, src layout doesn't vectorize into registers. This src layout is incompatible with this tiled copy.");
+    CUTE_STATIC_ASSERT_V(size(rD) == Int<1>{},
+      "In CopyAtom, dst layout doesn't vectorize into registers. This dst layout is incompatible with this tiled copy.");
+
+    SM80_CP_ASYNC_CACHEALWAYS_ZFILL<S,D>::copy(rS[0], rD[0], traits.pred);
+  }
+};
+
+template <class S, class D>
+struct Copy_Traits<SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>>
+{
+  // Logical thread id to thread idx (one-thread)
+  using ThrID = Layout<_1>;
+
+  // Map from (src-thr,src-val) to bit
+  using SrcLayout = Layout<Shape<_1,Int<sizeof_bits<S>::value>>>;
+  // Map from (dst-thr,dst-val) to bit
+  using DstLayout = Layout<Shape<_1,Int<sizeof_bits<D>::value>>>;
+
+  // Reference map from (thr,val) to bit
+  using RefLayout = SrcLayout;
+
+  // Predicate value that determines whether to load or zfill
+  bool pred = false;
+
+  // Overload copy_unpack for zfill variant to pass the predicate into the op
+  template <class TS, class SLayout,
+            class TD, class DLayout>
+  CUTE_HOST_DEVICE friend constexpr
+  void
+  copy_unpack(Copy_Traits        const& traits,
+              Tensor<TS,SLayout> const& src,
+              Tensor<TD,DLayout>      & dst)
+  {
+    static_assert(is_gmem<TS>::value, "Expected gmem source for cp.async.");
+    static_assert(is_smem<TD>::value, "Expected smem destination for cp.async.");
+
+    Tensor rS = recast<S>(src);
+    Tensor rD = recast<D>(dst);
+
+    CUTE_STATIC_ASSERT_V(size(rS) == Int<1>{},
+      "In CopyAtom, src layout doesn't vectorize into registers. This src layout is incompatible with this tiled copy.");
+    CUTE_STATIC_ASSERT_V(size(rD) == Int<1>{},
+      "In CopyAtom, dst layout doesn't vectorize into registers. This dst layout is incompatible with this tiled copy.");
+
+    SM80_CP_ASYNC_CACHEGLOBAL_ZFILL<S,D>::copy(rS[0], rD[0], traits.pred);
+  }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

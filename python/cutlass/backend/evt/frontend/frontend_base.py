@@ -36,7 +36,7 @@ Base class for Python EVT Frontend
 
 from typing import Union
 
-from cutlass import DataType
+from cutlass_library import DataType
 from cutlass.backend.evt.ir import (
     ComputeNode,
     DAGIR,

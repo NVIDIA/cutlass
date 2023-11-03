@@ -38,7 +38,13 @@ import enum
 import os.path
 import shutil
 
-from cutlass_library.library import *
+try:
+  import builtins
+  if hasattr(builtins, "CUTLASS_IGNORE_PACKAGE") and CUTLASS_IGNORE_PACKAGE == True:
+    raise ImportError("Disabling attempt to import cutlass_library")
+  from cutlass_library.library import *
+except ImportError:
+  from library import *
 
 ###################################################################################################
 
@@ -62,11 +68,6 @@ class Conv2dOperation:
     self.stride_support = stride_support
     self.swizzling_functor = swizzling_functor
     self.group_mode = group_mode
-
-  #
-  def is_mixed_input(self):
-    return self.A.element != self.B.element
-  
   #
   def is_complex(self):
     complex_operators = [
@@ -74,6 +75,10 @@ class Conv2dOperation:
       MathOperation.multiply_add_complex_gaussian
       ]
     return self.tile_description.math_instruction.math_operation in complex_operators
+
+  #
+  def is_mixed_input(self):
+    return self.A.element != self.B.element
 
   #
   def accumulator_type(self):
@@ -262,7 +267,7 @@ class EmitConv2dInstance:
           1,
           ${threadblock_output_shape_n},
           ${threadblock_output_shape_p},
-          ${threadblock_output_shape_q}>, 
+          ${threadblock_output_shape_q}>,
     ${stages},
     ${math_operator},
     ${iterator_algorithm},

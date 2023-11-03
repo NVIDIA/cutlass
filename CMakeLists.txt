@@ -40,7 +40,7 @@ endif()
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 set(IMPLICIT_CMAKE_CXX_STANDARD OFF CACHE BOOL "Do not explicitly specify -std=c++11 if set")
 
-project(CUTLASS VERSION 3.2.1 LANGUAGES CXX)
+project(CUTLASS VERSION 3.3.0 LANGUAGES CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
 if (CUDA_VERSION VERSION_LESS 11.3)
@@ -86,19 +86,6 @@ set(CUTLASS_TEST_LEVEL "0" CACHE STRING "Level of tests to compile.")
 # 0 - Sanity, 1 - Release-Quality, 2 - Exhaustive
 
 find_package(Python3 3.5 COMPONENTS Interpreter REQUIRED)
-
-# Install cutlass_library Python package
-execute_process(
-  WORKING_DIRECTORY ${CUTLASS_DIR}/python
-  COMMAND ${Python3_EXECUTABLE} ${CUTLASS_DIR}/python/setup_library.py develop --user
-  RESULT_VARIABLE cutlass_lib_GENERATOR_INSTALL_RESULT
-  OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/cutlass_library_installation.log
-  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/cutlass_library_installation.log
-)
-
-if(NOT cutlass_lib_GENERATOR_INSTALL_RESULT EQUAL 0)
-  message(FATAL_ERROR "Error installing cutlass_library package. See ${CMAKE_CURRENT_BINARY_DIR}/cutlass_library_installation.log")
-endif()
 
 ################################################################################
 set(CUTLASS_ENABLE_HEADERS_ONLY OFF CACHE BOOL "Enable only the header library")
@@ -829,6 +816,8 @@ function(cutlass_add_executable_tests NAME TARGET)
   set(TEST_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/ctest/${TEST_NAME})
   file(MAKE_DIRECTORY ${TEST_GEN_DIR})
 
+  set(TEST_SETS_SUPPORTED default)
+
   set(TEST_EXE_PATH $<TARGET_FILE:${TARGET}>)
   set(TEST_USE_EXTENDED_FORMAT ON)
   configure_file("${CUTLASS_CTEST_TEMPLATE_FILE}" "${TEST_GEN_DIR}/CTestTestfile.${TEST_NAME}.cmake" @ONLY)
@@ -883,7 +872,12 @@ if (CUTLASS_INSTALL_TESTS)
 
   file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/ctest")
 
-  file(WRITE "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "# Generated File\n")
+  file(WRITE "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "# Generated File\n\n")
+
+  file(APPEND "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "if (NOT DEFINED ENV{CUTLASS_TEST_SET})\n")
+  file(APPEND "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "  set(ENV{CUTLASS_TEST_SET} \"default\")\n")
+  file(APPEND "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "endif()\n\n")
+
   foreach(GENERATED_FILE ${CUTLASS_CTEST_GENERATED_FILES})
     file(APPEND "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "include(${GENERATED_FILE})\n")
   endforeach()
