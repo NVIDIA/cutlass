@@ -613,7 +613,7 @@ bool TestAllConv3d(
 
   // Sweep split-k-slice using serial reduction with non-unity alpha and non-zero beta for 
   // a single conv2d problem size. Convolution unit tests take a long time to run so only sweep parameters 
-  // which are abolutely neccessary to catch functional bugs. The below code does provide option to sweep 
+  // which are abolutely necessary to catch functional bugs. The below code does provide option to sweep 
   // alpha and beta for local testing, but only runs one value for alpha and beta.
   cutlass::conv::Conv3dProblemSize conv3d_split_k_test_size (
     {1, 8, 8, 8, 32},            // input size  (NDHWC)

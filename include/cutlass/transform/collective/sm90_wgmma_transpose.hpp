@@ -556,7 +556,7 @@ public:
     constexpr auto WarpThreadLayout           = make_layout(make_shape(Int<WarpThreadShapeN>{}, Int<WarpThreadShapeK>{}));
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////
     /// A warp group uses 8 steps to transpose the whole WarpgroupTileSize x WarpgroupTileSize.
-    ///  Divide a warp_group_tile into 8x8 warp_tiles to futher reduce the reg usage.
+    ///  Divide a warp_group_tile into 8x8 warp_tiles to further reduce the reg usage.
     ///  Step 0:                   Step 1:                   Step 2:                   Step 3:
     ///  W0 W1 W2 W3 -- -- -- --   -- -- -- -- -- -- -- --   -- -- -- -- -- -- -- --   -- -- -- -- -- -- -- --
     ///  W1 W0 -- -- -- -- -- --   -- -- W3 W2 -- -- -- --   -- -- -- -- -- -- -- --   -- -- -- -- -- -- -- --

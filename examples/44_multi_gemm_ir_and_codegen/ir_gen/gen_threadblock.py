@@ -957,13 +957,13 @@ public:\n\
         
     def gen_code(self):
 
-        tempalte_arg = []
+        template_arg = []
         for i in range(self.b2b_num):
-            tempalte_arg.append(("typename", helper.var_idx("Shape", i)))
+            template_arg.append(("typename", helper.var_idx("Shape", i)))
         for i in range(self.b2b_num):
-            tempalte_arg.append(("typename", helper.var_idx("Policy", i)))
+            template_arg.append(("typename", helper.var_idx("Policy", i)))
         for i in range(self.b2b_num):
-            tempalte_arg.append((int, helper.var_idx("Stage", i)))
+            template_arg.append((int, helper.var_idx("Stage", i)))
         
      
 
@@ -971,7 +971,7 @@ public:\n\
         code_body += self.gen_protected()
         code_body += self.gen_public_member()
 
-        class_code = gen_ir.gen_template_class("B2bMmaBase", tempalte_arg, code_body)
+        class_code = gen_ir.gen_template_class("B2bMmaBase", template_arg, code_body)
 
         code = self.gen_include_header() + gen_ir.gen_namespace("cutlass", gen_ir.gen_namespace("gemm", gen_ir.gen_namespace("threadblock", class_code)))
 
