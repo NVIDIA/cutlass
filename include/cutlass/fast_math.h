@@ -168,7 +168,7 @@ value_t abs_for_integer(value_t a) {
  */
 template <typename value_t>
 CUTLASS_HOST_DEVICE
-CUTLASS_CONSTEXPR_IF_CXX17
+CUTLASS_CONSTEXPR
 value_t gcd(value_t a, value_t b) {
   for (;;) {
     if (a == 0) return cutlass::abs_for_integer(b);
@@ -183,7 +183,7 @@ value_t gcd(value_t a, value_t b) {
  */
 template <typename value_t>
 CUTLASS_HOST_DEVICE
-CUTLASS_CONSTEXPR_IF_CXX17
+CUTLASS_CONSTEXPR
 value_t lcm(value_t a, value_t b) {
   value_t temp = gcd(a, b);
 
@@ -211,14 +211,14 @@ value_t lcm_cxx11(value_t a, value_t b) {
 }
 /// Returns the smallest value in the half-open range [a, a+b) that is a multiple of b
 CUTLASS_HOST_DEVICE
-CUTLASS_CONSTEXPR_IF_CXX17
+CUTLASS_CONSTEXPR
 int round_up(int a, int b) {
   return ((a + b - 1) / b) * b;
 }
 
 /// Returns the ceiling of (a / b)
 CUTLASS_HOST_DEVICE
-CUTLASS_CONSTEXPR_IF_CXX17
+CUTLASS_CONSTEXPR
 int ceil_div(int a, int b) {
   return (a + b - 1) / b;
 }
@@ -679,12 +679,12 @@ struct Max {
 };
 
 CUTLASS_HOST_DEVICE
-CUTLASS_CONSTEXPR_IF_CXX17 int const_min(int a, int b) {
+CUTLASS_CONSTEXPR int const_min(int a, int b) {
     return (b < a ? b : a);
 }
 
 CUTLASS_HOST_DEVICE
-CUTLASS_CONSTEXPR_IF_CXX17 int const_max(int a, int b) {
+CUTLASS_CONSTEXPR int const_max(int a, int b) {
     return (b > a ? b : a);
 }
 

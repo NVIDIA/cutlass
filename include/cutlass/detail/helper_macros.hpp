@@ -143,11 +143,11 @@ namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#define CUTLASS_CONSTEXPR constexpr
+
 #if (201700L <= __cplusplus)
-#define CUTLASS_CONSTEXPR_IF_CXX17 constexpr
 #define CUTLASS_CXX17_OR_LATER 1
 #else
-#define CUTLASS_CONSTEXPR_IF_CXX17
 #define CUTLASS_CXX17_OR_LATER 0
 #endif
 
