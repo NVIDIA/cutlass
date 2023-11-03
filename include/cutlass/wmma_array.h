@@ -47,7 +47,7 @@ namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Wmma array type (WmmaFragmentArray holds elements of of type nvcuda::wmma::fragment)
+/// Wmma array type (WmmaFragmentArray holds elements of type nvcuda::wmma::fragment)
 template <
   /// Element type
   typename T,

@@ -540,7 +540,7 @@ public:
         auto l_coord = idx2crd(work_tile_info.L_idx, shape<4>(gB_nkl));
         auto blk_coord = make_coord(m_coord, n_coord, _, l_coord);
 
-        // Allocate the the accumulators for the (M,N) blk_shape
+        // Allocate the accumulators for the (M,N) blk_shape
         Tensor accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape));               // (MMA,MMA_M,MMA_N)
 
         // Order two Math WG's MMA one after the other, helps hide Epilogue

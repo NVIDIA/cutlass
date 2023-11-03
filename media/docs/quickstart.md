@@ -56,7 +56,7 @@ You may explicitly exclude cuBLAS and cuDNN as dependencies with the following C
 
 ## Build and run the CUTLASS Profiler
 
-From the `build/` directory created above, compile the the CUTLASS Profiler.
+From the `build/` directory created above, compile the CUTLASS Profiler.
 ```bash
 $ make cutlass_profiler -j12
 ```

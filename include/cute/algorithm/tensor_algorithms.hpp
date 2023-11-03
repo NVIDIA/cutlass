@@ -123,7 +123,7 @@ transform(Tensor<EngineIn,LayoutIn>&& tensor_in, Tensor<EngineOut,LayoutOut>&& t
 
 // Similar to std::transform with a binary operation
 // Takes two tensors as input and one tensor as output. 
-// Applies the binary_op to tensor_in1 and and tensor_in2 and
+// Applies the binary_op to tensor_in1 and tensor_in2 and
 // assigns it to tensor_out
 template <class EngineIn1, class LayoutIn1,
           class EngineIn2, class LayoutIn2,

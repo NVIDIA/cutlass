@@ -444,7 +444,7 @@ class gen_kernel:
 
         self.gen_class_name = "B2bGemm"
         self.gen_kernel_name = gen_class_name + "Kernel"
-        self.tempalte_args = []
+        self.template_args = []
 
         self.cutlass_deps_root = cutlass_deps_root
         self.project_root = project_root
