@@ -271,8 +271,8 @@ struct alignas(1) float8_base {
             if( exp == (FP8_MAX_EXPONENT + 1) ) {
                 uint8_t mantissa_tmp = uint8_t(mantissa >> (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS));
                 if( mantissa_tmp < FP8_MANTISSA_MASK) {
-                    exp = uint8_t(exp + uint8_t(FP8_EXPONENT_BIAS));
-                    u = (exp << FP8_NUM_MANTISSA_BITS) | mantissa_tmp;
+                    uint8_t exp_u8 = uint8_t(exp + uint8_t(FP8_EXPONENT_BIAS));
+                    u = uint8_t(exp_u8 << FP8_NUM_MANTISSA_BITS) | mantissa_tmp;
                     may_be_nan =  (mantissa_tmp == (FP8_MANTISSA_MASK-1));
                 } else {
                     // satfinite
@@ -317,7 +317,7 @@ struct alignas(1) float8_base {
 
         uint8_t const &f8 = x;
         unsigned sign = (f8 >> (FP8_NUM_BITS - 1)) & 1;
-        int exp = (f8 >> FP8_NUM_MANTISSA_BITS) & FP8_EXPONENT_MASK;
+        unsigned exp = (f8 >> FP8_NUM_MANTISSA_BITS) & FP8_EXPONENT_MASK;
         unsigned mantissa = f8 & FP8_MANTISSA_MASK;
         unsigned f = (sign << (FP32_NUM_BITS-1));
 
@@ -328,7 +328,7 @@ struct alignas(1) float8_base {
             // normal
             exp += (FP32_EXPONENT_BIAS - FP8_EXPONENT_BIAS);
             f = f |
-                unsigned(exp << FP32_NUM_MANTISSA_BITS) |
+                (exp << FP32_NUM_MANTISSA_BITS) |
                 (mantissa << (FP32_NUM_MANTISSA_BITS-FP8_NUM_MANTISSA_BITS));
         } else if (exp == 0) {
             if (mantissa) {
