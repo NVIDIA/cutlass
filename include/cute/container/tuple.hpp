@@ -399,12 +399,13 @@ tuple_cat(T0 const& t0, T1 const& t1)
   if constexpr (is_static<T0>::value && is_static<T1>::value &&
 		is_tuple<T0>::value && is_tuple<T1>::value) {
     return typename detail::tuple_cat_static<T0, T1>::type{};
-  } else 
-  {
+  } else {
     return detail::tuple_cat(t0, t1,
                            make_index_sequence<tuple_size<T0>::value>{},
                            make_index_sequence<tuple_size<T1>::value>{});
   }
+
+  CUTE_GCC_UNREACHABLE;
 }
 
 template <class T0, class T1, class T2>
