@@ -216,8 +216,8 @@ struct alignas(1) float8_base {
 
         // Extract the bits in the FP32 type
         uint8_t sign = uint8_t((s >> 24 & 0x80));
-        int8_t exp = uint8_t(((s >> FP32_NUM_MANTISSA_BITS) & 0xff) - FP32_EXPONENT_BIAS);
-        int mantissa = s & 0x7fffff;
+        int exp = int((s >> FP32_NUM_MANTISSA_BITS) & 0xff) - FP32_EXPONENT_BIAS;
+        unsigned mantissa = s & 0x7fffff;
         uint8_t u = 0;
 
         uint8_t const kF8_NaN = 0x7f;
@@ -233,7 +233,7 @@ struct alignas(1) float8_base {
         }
 
         // Special handling
-        if ( exp == -128 ) {
+        if (exp == -128 ) {
             // int8 range is from -128 to 127
             // So 255(inf) - 127(bias) = 128 - will show up as -128
 
@@ -248,8 +248,8 @@ struct alignas(1) float8_base {
 
         if ( (exp >= FP8_MIN_EXPONENT) && (exp <= FP8_MAX_EXPONENT) ) {
             // normal fp32 to normal fp8
-            exp = uint8_t(exp + uint8_t(FP8_EXPONENT_BIAS));
-            u = uint8_t(((exp & FP8_EXPONENT_MASK) << FP8_NUM_MANTISSA_BITS));
+            uint8_t exp_u8 = uint8_t(exp + uint8_t(FP8_EXPONENT_BIAS));
+            u = uint8_t(((exp_u8 & FP8_EXPONENT_MASK) << FP8_NUM_MANTISSA_BITS));
             u = uint8_t(u | (mantissa >> (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)));
         } else if(exp < FP8_MIN_EXPONENT) {
             // normal single-precision to subnormal float8-precision representation
@@ -272,7 +272,7 @@ struct alignas(1) float8_base {
                 uint8_t mantissa_tmp = uint8_t(mantissa >> (FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS));
                 if( mantissa_tmp < FP8_MANTISSA_MASK) {
                     exp = uint8_t(exp + uint8_t(FP8_EXPONENT_BIAS));
-                    u = uint8_t(exp << FP8_NUM_MANTISSA_BITS) | mantissa_tmp;
+                    u = (exp << FP8_NUM_MANTISSA_BITS) | mantissa_tmp;
                     may_be_nan =  (mantissa_tmp == (FP8_MANTISSA_MASK-1));
                 } else {
                     // satfinite
@@ -316,9 +316,9 @@ struct alignas(1) float8_base {
         uint32_t constexpr kF32_NaN = 0x7fffffff;
 
         uint8_t const &f8 = x;
-        int sign = (f8 >> (FP8_NUM_BITS - 1)) & 1;
+        unsigned sign = (f8 >> (FP8_NUM_BITS - 1)) & 1;
         int exp = (f8 >> FP8_NUM_MANTISSA_BITS) & FP8_EXPONENT_MASK;
-        int mantissa = f8 & FP8_MANTISSA_MASK;
+        unsigned mantissa = f8 & FP8_MANTISSA_MASK;
         unsigned f = (sign << (FP32_NUM_BITS-1));
 
         if (IS_E4M3 && exp == 15 && mantissa == 0x7) {
@@ -328,7 +328,7 @@ struct alignas(1) float8_base {
             // normal
             exp += (FP32_EXPONENT_BIAS - FP8_EXPONENT_BIAS);
             f = f |
-                (exp << FP32_NUM_MANTISSA_BITS) |
+                unsigned(exp << FP32_NUM_MANTISSA_BITS) |
                 (mantissa << (FP32_NUM_MANTISSA_BITS-FP8_NUM_MANTISSA_BITS));
         } else if (exp == 0) {
             if (mantissa) {

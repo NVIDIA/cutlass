@@ -321,8 +321,8 @@ struct alignas(2) half_t {
     #endif
 
     uint16_t const &h = x.storage;
-    int sign = ((h >> 15) & 1);
-    int exp = ((h >> 10) & 0x1f);
+    unsigned sign = ((h >> 15) & 1);
+    unsigned exp = ((h >> 10) & 0x1f);
     int mantissa = (h & 0x3ff);
     unsigned f = 0;
 
