@@ -1,4 +1,4 @@
-[README](../README.md#documentation) > **CUTLASS 3.0: Building on Windows with Visual Studio**
+[README](/README.md#documentation) > **CUTLASS 3.0: Building on Windows with Visual Studio**
 
 # Building on Windows with Visual Studio
 

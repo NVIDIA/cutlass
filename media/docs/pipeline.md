@@ -174,7 +174,7 @@ Please note that this is a basic example.
 There are different versions possible,
 depending on what the producer and consumer threads are doing.
 Please refer to our [unit tests](/test/unit/pipeline)
-and the other [pipeline classes](/include/cutlass/pipeline.hpp)
+and the other [pipeline classes](/include/cutlass/pipeline/pipeline.hpp)
 for more details.
 
 # Copyright
