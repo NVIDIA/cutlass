@@ -33,3 +33,8 @@ cutlass_example_add_executable(
   ampere_sparse_tensorop_gemm.cu
   )
 
+cutlass_example_add_executable(
+  15_ampere_sparse_tensorop_gemm_with_visitor
+  ampere_sparse_tensorop_gemm_with_visitor.cu
+  )
+
