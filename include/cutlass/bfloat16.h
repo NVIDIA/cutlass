@@ -212,7 +212,7 @@ bool signbit(cutlass::bfloat16_t const& h) {
 
 CUTLASS_HOST_DEVICE
 cutlass::bfloat16_t abs(cutlass::bfloat16_t const& h) {
-  return cutlass::bfloat16_t::bitcast(h.raw() & 0x7fffffff);
+  return cutlass::bfloat16_t::bitcast(h.raw() & 0x7fff);
 }
 
 CUTLASS_HOST_DEVICE
