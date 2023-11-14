@@ -154,7 +154,15 @@ copy_if(Copy_Atom<CopyArgs...>       const& copy_atom,
 {
   static_assert(SrcLayout::rank == DstLayout::rank, "CopyAtom rank-mismatch.");
   if constexpr (SrcLayout::rank == 1) {   // Dispatch the copy
-    copy_atom.call(src, dst);
+    if constexpr (detail::has_with_bool<Copy_Atom<CopyArgs...>>) {
+      copy_atom.with(pred).call(src, dst);
+    } else if constexpr (is_same_v<PredTensor, TrivialPredTensor>) {
+      copy_atom.call(src, dst);
+    } else {
+      if (pred) {
+        copy_atom.call(src, dst);
+      }
+    }
   } else {                                // Loop over all but the first mode
     constexpr int R = SrcLayout::rank;
     auto src_v = group_modes<1,R>(src);
