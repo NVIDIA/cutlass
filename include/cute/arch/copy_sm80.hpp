@@ -86,7 +86,7 @@ struct SM80_CP_ASYNC_CACHEGLOBAL
 #if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED)
     TS const* gmem_ptr    = &gmem_src;
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_dst);
-    asm volatile("cp.async.cg.shared.global.L2::128BB [%0], [%1], %2;\n"
+    asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], %2;\n"
         :: "r"(smem_int_ptr),
            "l"(gmem_ptr),
            "n"(sizeof(TS)));
