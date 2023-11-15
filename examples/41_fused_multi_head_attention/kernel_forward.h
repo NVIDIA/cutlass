@@ -733,7 +733,7 @@ struct AttentionKernel {
 
       auto prologueV = [&](int blockN) {
         typename MM1::Mma::IteratorB iterator_V(
-            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_strideM)},
+            typename MM1::IteratorB::Params{typename MM1::LayoutB(p.v_strideM)},
             p.value_ptr + iter_key_start * p.v_strideM,
             {problem_size_1_k, problem_size_1_n},
             thread_id(),
@@ -997,7 +997,7 @@ struct AttentionKernel {
         }
 
         typename MM1::Mma::IteratorB iterator_V(
-            typename MM1::IteratorB::Params{MM1::LayoutB(p.v_strideM)},
+            typename MM1::IteratorB::Params{typename MM1::LayoutB(p.v_strideM)},
             p.value_ptr + iter_key_start * p.v_strideM,
             {problem_size_1_k, problem_size_1_n},
             thread_id(),
