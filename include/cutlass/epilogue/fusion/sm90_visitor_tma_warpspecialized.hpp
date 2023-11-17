@@ -538,10 +538,9 @@ struct Sm90TreeVisitor : Sm90VisitorImpl<ChildOps..., NodeOp> {
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    return ConsumerStoreCallbacks(
-      Sm90VisitorImpl<ChildOps..., NodeOp>::
-      get_consumer_store_callbacks<ReferenceSrc>(args)
-    );
+    auto callbacks_tuple = Sm90VisitorImpl<ChildOps..., NodeOp>::
+      template get_consumer_store_callbacks<ReferenceSrc>(args);
+    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
 
 };
@@ -590,10 +589,9 @@ struct Sm90SplitTreeVisitor : Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputT
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    return ConsumerStoreCallbacks(
-      Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputTree>::
-      get_consumer_store_callbacks<ReferenceSrc>(args)
-    );
+    auto callbacks_tuple = Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputTree>::
+      template get_consumer_store_callbacks<ReferenceSrc>(args);
+    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(callbacks_tuple);
   }
 
 };
@@ -669,10 +667,9 @@ struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    return ConsumerStoreCallbacks(
-      Sm90VisitorImpl<Ops...>::
-      get_consumer_store_callbacks<ReferenceSrc>(args)
-    );
+    auto callbacks_tuple = Sm90VisitorImpl<Ops...>::
+      template get_consumer_store_callbacks<ReferenceSrc>(args);
+    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(callbacks_tuple);
   }
 
 };

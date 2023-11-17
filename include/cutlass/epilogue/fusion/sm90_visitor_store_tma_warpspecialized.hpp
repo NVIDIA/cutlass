@@ -268,7 +268,7 @@ struct Sm90AuxStore {
     Tensor bSG_sAux = thrblk_s2g.partition_S(sAux_epi);                                // (TMA,TMA_M,TMA_N,PIPE)
     Tensor bSG_gAux = thrblk_s2g.partition_D(gAux_epi);                                // (TMA,TMA_M,TMA_N,EPI_M,EPI_N)
 
-    return ConsumerStoreCallbacks(
+    return ConsumerStoreCallbacks<decltype(tC_rAux), decltype(tiled_r2s), decltype(tRS_sAux), decltype(bSG_sAux), decltype(bSG_gAux)>(
             cute::move(tC_rAux),
             tiled_r2s,
             cute::move(tRS_sAux),

@@ -252,7 +252,7 @@ struct Sm90TreeVisitor<
     return bcast_op.scalar != 0 || added_op.is_C_load_needed();
   }
 
-  using Impl::Sm90VisitorImpl;
+  using typename Impl::Sm90VisitorImpl;
 
   template <class CallbacksImpl>
   struct ConsumerStoreCallbacks : CallbacksImpl {
@@ -301,10 +301,17 @@ struct Sm90TreeVisitor<
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    return ConsumerStoreCallbacks(
-      is_C_load_needed(),
-      Impl::get_consumer_store_callbacks<ReferenceSrc>(args)
-    );
+    auto callbacks_tuple = Impl::template get_consumer_store_callbacks<ReferenceSrc>(
+        problem_shape_mnkl,
+        tile_shape_mnk,
+        tile_coord_mnkl,
+        epi_tile,
+        tiled_copy,
+        thread_idx,
+        tCrC
+      );
+    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(
+        is_C_load_needed(), std::move(callbacks_tuple));
   }
 };
 
@@ -532,7 +539,7 @@ struct Sm90TreeVisitor<
       Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle>
     >;
 
-  using Impl::Sm90VisitorImpl;
+  using typename Impl::Sm90VisitorImpl;
 
   template <class CallbacksImpl>
   struct ConsumerStoreCallbacks : CallbacksImpl {

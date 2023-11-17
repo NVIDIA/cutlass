@@ -163,7 +163,7 @@ public:
   using EVTModule = HEVT<
   HostAuxStore<Gemm, true>,
   HEVT<
-    HostCompute<Gemm, cutlass::epilogue::fusion::detail::ScaleOutOp<ElementD>::Op>,  // activation(Z) * scaled_d
+    HostCompute<Gemm, cutlass::epilogue::fusion::detail::ScaleOutOp<ElementD>::template Op>,  // activation(Z) * scaled_d
     HEVT<
       HostCompute<Gemm, ActivationFn>, // activation(Z)
       HEVT<
@@ -178,7 +178,7 @@ public:
         >
       >
     >,
-    HostScalarBroadcast<Gemm, 1>, // scale_d
+    HostScalarBroadcast<Gemm, 1> // scale_d
   >
   >;
 };
@@ -216,7 +216,7 @@ public:
       >,
       // D = activation(Z) * scaled_d, amax_d = max(abs(elements in D))
       HEVT<
-        HostCompute<Gemm, cutlass::epilogue::fusion::detail::ScaleOutOp<ElementD>::Op>,
+        HostCompute<Gemm, cutlass::epilogue::fusion::detail::ScaleOutOp<ElementD>::template Op>,
         HEVT<
           HostScalarReduce<Gemm, amax, float>,
           HEVT<
@@ -230,7 +230,7 @@ public:
       HEVT<
         HostAuxStore<Gemm, false, ElementD, cutlass::layout::RowMajor>,
         HEVT<
-          HostCompute<Gemm, cutlass::epilogue::fusion::detail::ScaleOutOp<ElementD>::Op>,
+          HostCompute<Gemm, cutlass::epilogue::fusion::detail::ScaleOutOp<ElementD>::template Op>,
           HEVT<
             HostScalarReduce<Gemm, amax, float>,
             HostAccumulator<Gemm>

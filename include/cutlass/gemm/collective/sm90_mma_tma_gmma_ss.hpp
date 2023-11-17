@@ -288,7 +288,7 @@ struct CollectiveMma<
     // Prepare the TMA loads for A and B
     //
 
-    constexpr uint32_t cluster_shape_x = get<0>(DispatchPolicy::ClusterShape());
+    constexpr uint32_t cluster_shape_x = get<0>(ClusterShape());
     uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
 
     auto block_tma_a = tma_load_a.get_slice(cluster_local_block_id.y);

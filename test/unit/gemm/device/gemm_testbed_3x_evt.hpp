@@ -173,7 +173,7 @@ public:
   HostScalarBroadcast(){}
   template<typename ProblemShapeType, typename TestBedImpl>
   HostScalarBroadcast(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false)
-    :_scalar(ElementCompute(Value)), Base(check_relative_equality) {}
+    : Base(check_relative_equality), _scalar(ElementCompute(Value)) {}
   
   template <class ElementAccumulator>
   ElementCompute visit(
@@ -232,7 +232,7 @@ public:
   HostRowBroadcast(){}
   template<typename ProblemShapeType>
   HostRowBroadcast(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false)
-    :impl_(impl), Base(check_relative_equality) {
+    : Base(check_relative_equality), impl_(impl) {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     _N = cute::get<1>(problem_shape_MNKL);
     _bias.resize(cutlass::Coord<1>(_N));
@@ -300,7 +300,7 @@ public:
   HostColBroadcast(){}
   template<typename ProblemShapeType>
   HostColBroadcast(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false)
-    :impl_(impl), Base(check_relative_equality) {
+    : Base(check_relative_equality), impl_(impl) {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     _M = cute::get<0>(problem_shape_MNKL);
     _bias.resize(cutlass::Coord<1>(_M));
@@ -382,7 +382,7 @@ public:
   HostAuxLoad(){}
   template<typename ProblemShapeType>
   HostAuxLoad(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false)
-    :impl_(impl), Base(check_relative_equality){
+    : Base(check_relative_equality), impl_(impl){
     auto problem_shape_NMKL = cute::append<4>(problem_size, 1);
     auto [_M, _N, K, _L] = problem_shape_NMKL;
     auto aux_coord = cutlass::make_Coord(_M * _L, _N);
@@ -513,8 +513,8 @@ public:
   HostUnaryCompute(){}
   template <typename ProblemShapeType, typename TestBedImpl>
   HostUnaryCompute(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false):
-    _child_0(problem_size, impl, check_relative_equality),
-    Base(check_relative_equality) { }
+    Base(check_relative_equality),
+    _child_0(problem_size, impl, check_relative_equality) { }
 
   template <class ElementAccumulator>
   ElementCompute visit(
@@ -578,8 +578,8 @@ public:
   HostAuxStore(){}
   template <typename ProblemShapeType>
   HostAuxStore(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false):
-    impl_(impl),
-    Base(check_relative_equality) {
+    Base(check_relative_equality),
+    impl_(impl) {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     auto [_M, _N, K, _L] = problem_shape_MNKL;
     auto aux_coord = cutlass::make_Coord(_M * _L, _N);
@@ -677,8 +677,8 @@ public:
   HostRowReduce(){}
   template <typename ProblemShapeType>
   HostRowReduce(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false):
-    impl_(impl),
-    Base(check_relative_equality) {
+    Base(check_relative_equality),
+    impl_(impl) {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     _N = cute::get<1>(problem_shape_MNKL);
     _tensor_row_reduce.resize(cutlass::Coord<1>(_N));
@@ -764,8 +764,8 @@ public:
   HostColumnReduce(){}
   template <typename ProblemShapeType>
   HostColumnReduce(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false):
-    impl_(impl),
-    Base(check_relative_equality) {
+    Base(check_relative_equality),
+    impl_(impl) {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     _M = cute::get<0>(problem_shape_MNKL);
     _tensor_column_reduce.resize(cutlass::Coord<1>(_M));
@@ -850,8 +850,8 @@ public:
   HostScalarReduce(){}
   template <typename ProblemShapeType>
   HostScalarReduce(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false):
-    impl_(impl),
-    Base(check_relative_equality) {
+    Base(check_relative_equality),
+    impl_(impl) {
     auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     _tensor_scalar_reduce.resize(cutlass::Coord<1>(1));
     _reference_scalar_reduce.resize(cutlass::Coord<1>(1));
