@@ -554,7 +554,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_fragment_C(CTensor&& ctensor) const
   {
-    return make_fragment_C(partition_C(ctensor));
+    return TiledMMA::make_fragment_C(partition_C(ctensor));
   }
 
   template <class ATensor>
@@ -562,7 +562,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_fragment_A(ATensor&& atensor) const
   {
-    return make_fragment_A(partition_A(atensor));
+    return TiledMMA::make_fragment_A(partition_A(atensor));
   }
 
   template <class BTensor>
@@ -570,7 +570,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_fragment_B(BTensor&& btensor) const
   {
-    return make_fragment_B(partition_B(btensor));
+    return TiledMMA::make_fragment_B(partition_B(btensor));
   }
 };
 
