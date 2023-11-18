@@ -301,15 +301,7 @@ struct Sm90TreeVisitor<
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    auto callbacks_tuple = Impl::template get_consumer_store_callbacks<ReferenceSrc>(
-        problem_shape_mnkl,
-        tile_shape_mnk,
-        tile_coord_mnkl,
-        epi_tile,
-        tiled_copy,
-        thread_idx,
-        tCrC
-      );
+    auto callbacks_tuple = Impl::template get_consumer_store_callbacks<ReferenceSrc>(args);
     return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(
         is_C_load_needed(), std::move(callbacks_tuple));
   }
@@ -482,7 +474,8 @@ struct Sm90ReLUAuxStore {
                       gAux, args.epi_tile, args.tiled_copy, args.thread_idx);
     Tensor tC_rAux = make_tensor<cutlass::uint1b_t>(shape(tC_gAux));                   // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
 
-    return ConsumerStoreCallbacks(cute::move(tC_rAux), cute::move(tC_gAux), args.tCcD, args.residue_mn, params);
+    return ConsumerStoreCallbacks<decltype(tC_rAux), decltype(tC_gAux), decltype(args.tCcD), decltype(args.residue_mn)>(
+        cute::move(tC_rAux), cute::move(tC_gAux), args.tCcD, args.residue_mn, params);
   }
 };
 } // namespace detail
@@ -563,9 +556,8 @@ struct Sm90TreeVisitor<
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    return ConsumerStoreCallbacks(
-      Impl::get_consumer_store_callbacks<ReferenceSrc>(args)
-    );
+    auto callbacks_tuple = Impl::template get_consumer_store_callbacks<ReferenceSrc>(args);
+    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
 
 };
@@ -734,7 +726,8 @@ struct Sm90AuxLoad<
       }
     }
 
-    return ConsumerStoreCallbacks(cute::move(tC_rAux), cute::move(tC_gAux), args.residue_mn, params);
+    return ConsumerStoreCallbacks<decltype(tC_rAux), decltype(tC_gAux), decltype(args.residue_mn)>(
+        cute::move(tC_rAux), cute::move(tC_gAux), args.residue_mn, params);
   }
 };
 

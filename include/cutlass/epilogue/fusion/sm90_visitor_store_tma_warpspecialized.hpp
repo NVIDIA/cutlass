@@ -1107,12 +1107,11 @@ public:
     Tensor gBuf_nl = local_tile(mBuf, take<0,2>(args.tile_shape_mnk), make_coord(m,_,_));     // (CTA_M,CTA_N,REST_N,L)
     Layout sBuf_layout = blocked_product(gBuf_layout,make_layout(make_shape(_1{},_1{},size<1>(warp_layout_MN)))); // (CTA_M,CTA_N,WARPS_N)
 
-    return ConsumerStoreCallbacks(
-      make_tuple(bool_constant<ReferenceSrc>{}, cute::move(tCrCol), args.tCcD, gCol_l, args.cD, gBuf_nl, sBuf_layout,
-                  lane_layout_MN, lane_mn, warp_layout_MN, warp_mn, 
-                  args.tile_coord_mnkl, args.residue_mn, args.epi_tile, args.tiled_copy, args.thread_idx),
-      params
-    );
+    auto args_tuple = make_tuple(
+        bool_constant<ReferenceSrc>{}, cute::move(tCrCol), args.tCcD, gCol_l, args.cD, gBuf_nl, sBuf_layout,
+        lane_layout_MN, lane_mn, warp_layout_MN, warp_mn, 
+        args.tile_coord_mnkl, args.residue_mn, args.epi_tile, args.tiled_copy, args.thread_idx);
+    return ConsumerStoreCallbacks<decltype(args_tuple)>(std::move(args_tuple), params);
   }
 };
 

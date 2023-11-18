@@ -591,7 +591,7 @@ struct Sm90SplitTreeVisitor : Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputT
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     auto callbacks_tuple = Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputTree>::
       template get_consumer_store_callbacks<ReferenceSrc>(args);
-    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(callbacks_tuple);
+    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
 
 };
@@ -669,7 +669,7 @@ struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
     auto callbacks_tuple = Sm90VisitorImpl<Ops...>::
       template get_consumer_store_callbacks<ReferenceSrc>(args);
-    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(callbacks_tuple);
+    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
 
 };

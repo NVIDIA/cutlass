@@ -174,7 +174,7 @@ public:
           HostCompute<Gemm, cutlass::homogeneous_multiply_add>,
           HostScalarBroadcast<Gemm, 1, 3>, // scale_a * scale_b * alpha
           HostAccumulator<Gemm>,
-          HostColBroadcast<Gemm, ElementD>,
+          HostColBroadcast<Gemm, ElementD>
         >
       >
     >,
@@ -211,7 +211,7 @@ public:
           HostCompute<Gemm, cutlass::homogeneous_multiply_add>,
           HostScalarBroadcast<Gemm, 1, 3>, // scale_a * scale_b * alpha
           HostAccumulator<Gemm>,
-          HostColBroadcast<Gemm, ElementD>,
+          HostColBroadcast<Gemm, ElementD>
         >
       >,
       // D = activation(Z) * scaled_d, amax_d = max(abs(elements in D))
@@ -221,10 +221,10 @@ public:
           HostScalarReduce<Gemm, amax, float>,
           HEVT<
             HostCompute<Gemm, ActivationFn>, //activation(Z) * scaled_d
-            HostAccumulator<Gemm>, // Z
+            HostAccumulator<Gemm> // Z
           >
         >,
-        HostScalarBroadcast<Gemm, 1>, // scale_d
+        HostScalarBroadcast<Gemm, 1> // scale_d
       >,
       // Aux = Z * scale_aux, amax_aux = max(abs(elements in Aux))
       HEVT<
