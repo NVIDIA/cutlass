@@ -852,7 +852,6 @@ public:
   HostScalarReduce(ProblemShapeType problem_size, TestBedImpl impl, bool check_relative_equality=false):
     Base(check_relative_equality),
     impl_(impl) {
-    auto problem_shape_MNKL = cute::append<4>(problem_size, 1);
     _tensor_scalar_reduce.resize(cutlass::Coord<1>(1));
     _reference_scalar_reduce.resize(cutlass::Coord<1>(1));
     _reduce_buffer.resize(cutlass::Coord<1>(1));
@@ -1229,7 +1228,6 @@ public:
     auto N = cute::get<1>(problem_shape_MNKL);
     auto K = cute::get<2>(problem_shape_MNKL);
     auto L = cute::get<3>(problem_shape_MNKL);
-    auto coord_0 = cutlass::make_Coord(0);
 
     auto A = cute::make_tensor(impl_.tensor_A.host_data(),
       cute::make_layout(cute::make_shape(M, K, L), impl_.stride_a));
@@ -1307,7 +1305,7 @@ public:
     cutlass::KernelHardwareInfo hw_info;
     hw_info.device_id = 0;
     if (not profiling) {
-      impl_.sm_count = min(impl_.MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
+      impl_.sm_count = std::min(impl_.MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
       hw_info.sm_count = impl_.sm_count;
     }
     else {

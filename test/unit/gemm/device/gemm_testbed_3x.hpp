@@ -523,9 +523,6 @@ struct TestbedImpl {
     Gemm& gemm_op,
     typename Gemm::Arguments& arguments,
     cutlass::device_memory::allocation<uint8_t>& workspace) {
-    int M = cute::size<0>(problem_size);
-    int N = cute::size<1>(problem_size);
-    int K = cute::size<2>(problem_size);
     int L = 1;
     if constexpr(cute::rank(ProblemShapeType{}) == 4) {
       L = cute::size<3>(problem_size);
@@ -581,7 +578,7 @@ struct TestbedImpl {
     cutlass::KernelHardwareInfo hw_info;
     hw_info.device_id = 0;
     if (not profiling) {
-      this->sm_count = min(MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
+      this->sm_count = std::min(MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
       hw_info.sm_count = this->sm_count;
     }
     else {
@@ -1240,7 +1237,7 @@ struct Testbed3xFusionOperation {
     
     hw_info.device_id = 0;
     if (not profiling) {
-      impl_.sm_count = min(impl_.MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
+      impl_.sm_count = std::min(impl_.MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
       hw_info.sm_count = impl_.sm_count;
     }
     else {

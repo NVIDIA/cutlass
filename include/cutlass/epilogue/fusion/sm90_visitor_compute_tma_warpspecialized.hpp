@@ -237,6 +237,15 @@ struct Sm90TreeVisitor<
       Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>
     >;
 
+  CUTLASS_HOST_DEVICE
+  Sm90TreeVisitor() {}
+
+  CUTLASS_HOST_DEVICE
+  Sm90TreeVisitor(
+      typename Impl::Params const& params, 
+      typename Impl::SharedStorage const& shared_storage)
+    : Impl(params, shared_storage) {}
+
   CUTLASS_DEVICE bool
   is_producer_load_needed() const {
     auto const& bcast_op = get<0>(Impl::ops);
@@ -251,8 +260,6 @@ struct Sm90TreeVisitor<
     auto const& added_op = get<2>(Impl::ops);
     return bcast_op.scalar != 0 || added_op.is_C_load_needed();
   }
-
-  using typename Impl::Sm90VisitorImpl;
 
   template <class CallbacksImpl>
   struct ConsumerStoreCallbacks : CallbacksImpl {
@@ -532,7 +539,14 @@ struct Sm90TreeVisitor<
       Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle>
     >;
 
-  using typename Impl::Sm90VisitorImpl;
+  CUTLASS_HOST_DEVICE
+  Sm90TreeVisitor() {}
+
+  CUTLASS_HOST_DEVICE
+  Sm90TreeVisitor(
+      typename Impl::Params const& params, 
+      typename Impl::SharedStorage const& shared_storage)
+    : Impl(params, shared_storage) {}
 
   template <class CallbacksImpl>
   struct ConsumerStoreCallbacks : CallbacksImpl {

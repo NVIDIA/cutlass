@@ -272,8 +272,16 @@ struct Sm90VisitorImplBase {
 template <class... Ops>
 struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
 
-  using Sm90VisitorImplBase<Ops...>::Sm90VisitorImplBase;
-  using Sm90VisitorImplBase<Ops...>::ops;
+  using Impl = Sm90VisitorImplBase<Ops...>;
+
+  CUTLASS_HOST_DEVICE
+  Sm90VisitorImpl() {}
+
+  CUTLASS_HOST_DEVICE
+  Sm90VisitorImpl(Impl::Params const& params, Impl::SharedStorage const& shared_storage)
+    : Impl(params, shared_storage) {}
+
+  using Impl::ops;
 
   //
   // Queries for kernel runtime
@@ -506,7 +514,16 @@ using namespace detail;
 template <class NodeOp, class... ChildOps>
 struct Sm90TreeVisitor : Sm90VisitorImpl<ChildOps..., NodeOp> {
 
-  using Sm90VisitorImpl<ChildOps..., NodeOp>::Sm90VisitorImpl;
+  using Impl = Sm90VisitorImpl<ChildOps..., NodeOp>;
+
+  CUTLASS_HOST_DEVICE
+  Sm90TreeVisitor() {}
+
+  CUTLASS_HOST_DEVICE
+  Sm90TreeVisitor(
+      typename Impl::Params const& params, 
+      typename Impl::SharedStorage const& shared_storage)
+    : Impl(params, shared_storage) {}
 
   template<class CallbacksImpl>
   struct ConsumerStoreCallbacks : CallbacksImpl {
