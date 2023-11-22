@@ -285,13 +285,13 @@ public:
       params.mainloop
     );
 
-    constexpr int BLK_M_RANK = rank<0>(blk_shape);
+    constexpr int BLK_M_RANK = cute::rank<0>(blk_shape);
     bool m_oob = int(blockIdx.x) >= size<2>(gA_mkl);
     auto m_max_coord = unwrap(cute::transform(make_seq<BLK_M_RANK>{}, [&](auto i) {
         return  m_oob ? 0 : get<i>(M) - get<0,i>(blk_shape) * get<i>(m_coord);
       }));
 
-    constexpr int BLK_N_RANK = rank<1>(blk_shape);
+    constexpr int BLK_N_RANK = cute::rank<1>(blk_shape);
     bool n_oob = int(blockIdx.y) >= size<2>(gB_nkl);
     auto n_max_coord = unwrap(cute::transform(make_seq<BLK_N_RANK>{}, [&](auto i) {
         return  n_oob ? 0 : get<i>(N) - get<1,i>(blk_shape) * get<i>(n_coord);

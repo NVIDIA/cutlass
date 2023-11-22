@@ -204,12 +204,12 @@ public:
       int thread_idx,
       TensorStorage& shared_tensors)
   {
-    constexpr int BLK_M_RANK = rank<0>(tile_shape_MNK);
+    constexpr int BLK_M_RANK = cute::rank<0>(tile_shape_MNK);
     auto m_max_coord = unwrap(cute::transform(make_seq<BLK_M_RANK>{}, [&](auto i) {
         return get<0,i>(problem_shape_mnkl) - get<0,i>(tile_shape_MNK) * get<0,i>(tile_coord_mnkl);
       }));
 
-    constexpr int BLK_N_RANK = rank<1>(tile_shape_MNK);
+    constexpr int BLK_N_RANK = cute::rank<1>(tile_shape_MNK);
     auto n_max_coord = unwrap(cute::transform(make_seq<BLK_N_RANK>{}, [&](auto i) {
         return get<1,i>(problem_shape_mnkl) - get<1,i>(tile_shape_MNK) * get<1,i>(tile_coord_mnkl);
       }));
