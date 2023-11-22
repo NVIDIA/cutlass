@@ -193,8 +193,8 @@ struct TestbedImpl {
 
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
 
-  static_assert(rank(StrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
-  static_assert(rank(StrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
+  static_assert(cute::rank(StrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
+  static_assert(cute::rank(StrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
 
   static constexpr uint32_t mma_promotion_interval = 4;
 

@@ -667,7 +667,7 @@ struct Sm90AuxLoad<
 
     CUTLASS_DEVICE void
     begin() {
-      if constexpr (decltype(rank(tC_rAux))::value == 5) {
+      if constexpr (decltype(cute::rank(tC_rAux))::value == 5) {
         if constexpr (EnableNullptr) {
           if (params.ptr_aux == nullptr) {
             return;
@@ -682,7 +682,7 @@ struct Sm90AuxLoad<
 
     CUTLASS_DEVICE void
     previsit(int epi_m, int epi_n, int load_iteration, bool is_producer_load_needed) {
-      if constexpr (decltype(rank(tC_rAux))::value == 3) {
+      if constexpr (decltype(cute::rank(tC_rAux))::value == 3) {
         if constexpr (EnableNullptr) {
           if (params.ptr_aux == nullptr) {
             return;
@@ -699,7 +699,7 @@ struct Sm90AuxLoad<
     CUTLASS_DEVICE auto
     visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n) {
       using ElementRegister = typename remove_cvref_t<RTensor>::value_type;
-      if constexpr (decltype(rank(tC_rAux))::value == 3) {
+      if constexpr (decltype(cute::rank(tC_rAux))::value == 3) {
         return recast<Array<ElementRegister, FragmentSize>>(coalesce(tC_rAux))(epi_v);
       }
       else {

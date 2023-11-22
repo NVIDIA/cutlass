@@ -197,14 +197,14 @@ template<class ... Shapes>
 auto
 select_mode_shape(Shapes const & ... shapes) {
   auto permuted_shapes = filter_tuple(cute::make_tuple(shapes...), [](auto shape) {
-    if constexpr (rank(shape) > 1) {
+    if constexpr (cute::rank(shape) > 1) {
       return cute::make_tuple(shape);
     }
     else {
       return cute::make_tuple();
     }
   });
-  if constexpr (rank(permuted_shapes) == 0) {
+  if constexpr (cute::rank(permuted_shapes) == 0) {
     return get<0>(cute::make_tuple(shapes...));
   }
   else {
@@ -251,7 +251,7 @@ auto
 select_tile_shape(TileSize size, Shape const& shape)
 {
   static_assert(is_static<TileSize>::value, "Tile size must be static");
-  if constexpr (rank(Shape{}) == 0) {
+  if constexpr (cute::rank(Shape{}) == 0) {
     return cute::make_tuple(size);
   }
   else {

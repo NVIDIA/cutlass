@@ -431,11 +431,11 @@ void Gemm3x(
 {
   using namespace cute;
 
-  static_assert(rank(typename MainloopParams::LayoutA{}) == rank(typename MainloopParams::LayoutB{}));
-  static_assert(rank(typename EpilogueParams::LayoutC{}) == rank(typename EpilogueParams::LayoutD{}));
-  static_assert(rank(typename MainloopParams::LayoutA{}) == rank(typename EpilogueParams::LayoutC{}));
+  static_assert(cute::rank(typename MainloopParams::LayoutA{}) == cute::rank(typename MainloopParams::LayoutB{}));
+  static_assert(cute::rank(typename EpilogueParams::LayoutC{}) == cute::rank(typename EpilogueParams::LayoutD{}));
+  static_assert(cute::rank(typename MainloopParams::LayoutA{}) == cute::rank(typename EpilogueParams::LayoutC{}));
 
-  if constexpr (rank(typename MainloopParams::LayoutA{}) == 2) {
+  if constexpr (cute::rank(typename MainloopParams::LayoutA{}) == 2) {
     Layout layout_A = make_layout_rank3(mainloop_params.A);
     Layout layout_B = make_layout_rank3(mainloop_params.B);
     Layout layout_C = make_layout_rank3(epilogue_params.C);

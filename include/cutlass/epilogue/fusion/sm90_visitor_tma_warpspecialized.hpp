@@ -624,7 +624,7 @@ template<
 >
 struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
   static_assert(is_static_v<EdgeTuple>);
-  static_assert(rank(EdgeTuple{}) == sizeof...(Ops));
+  static_assert(cute::rank(EdgeTuple{}) == sizeof...(Ops));
   static_assert(sizeof...(Ops) > 1);
 
   using Sm90VisitorImpl<Ops...>::Sm90VisitorImpl;

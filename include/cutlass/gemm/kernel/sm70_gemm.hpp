@@ -60,7 +60,7 @@ public:
   //
   using ProblemShape = ProblemShape_;
 
-  static_assert(rank(ProblemShape{}) == 3 or rank(ProblemShape{}) == 4,
+  static_assert(cute::rank(ProblemShape{}) == 3 or cute::rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
 
   // Mainloop derived types
@@ -142,7 +142,7 @@ public:
   static bool
   can_implement(Arguments const& args) {
     return args.mode == GemmUniversalMode::kGemm or
-          (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
+          (args.mode == GemmUniversalMode::kBatched && cute::rank(ProblemShape{}) == 4);
   }
 
   static int
@@ -159,7 +159,7 @@ public:
   static dim3
   get_grid_shape(Params const& params) {
     int batch_count = 1;
-    if constexpr (rank(ProblemShape{}) == 4) {
+    if constexpr (cute::rank(ProblemShape{}) == 4) {
       batch_count = cute::size<3>(params.problem_shape);
     }
 
@@ -193,10 +193,10 @@ public:
     auto L = get<3>(problem_shape_MNKL);
 
     // Preconditions
-    static_assert(rank(StrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");
-    static_assert(rank(StrideB{}) == 3, "StrideB must be rank-3: [N, K, L]. If batch mode is not needed, set L stride to Int<0>.");
-    static_assert(rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
-    static_assert(rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(StrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(StrideB{}) == 3, "StrideB must be rank-3: [N, K, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
 
     // Get the appropriate blocks for this thread block -- potential for thread block locality
     int thread_idx = int(threadIdx.x);

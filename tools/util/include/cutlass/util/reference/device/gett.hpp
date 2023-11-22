@@ -126,7 +126,7 @@ gett(
     cudaStream_t stream = 0) {
   using namespace cute;
 
-  static_assert(rank(ProblemShapeMNKL{}) == 4);
+  static_assert(cute::rank(ProblemShapeMNKL{}) == 4);
   auto M = get<0>(problem_shape_mnkl);
   auto N = get<1>(problem_shape_mnkl);
   auto K = get<2>(problem_shape_mnkl);

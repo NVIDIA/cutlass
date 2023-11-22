@@ -113,11 +113,11 @@ struct CollectiveMma<
   using PipelineParams = typename MainloopPipeline::Params;
   using PipelineState  = typename cutlass::PipelineState<DispatchPolicy::Stages>;
 
-  static_assert(rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
+  static_assert(cute::rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
   static_assert((size<0>(TileShape{}) % size<0>(SmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(SmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
 
-  static_assert(rank(SmemLayoutAtomB{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
+  static_assert(cute::rank(SmemLayoutAtomB{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
   static_assert((size<1>(TileShape{}) % size<0>(SmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(SmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
 
@@ -271,10 +271,10 @@ struct CollectiveMma<
     using namespace cute;
 
     static_assert(is_rmem<FrgTensorC>::value, "C tensor must be rmem resident.");
-    static_assert(rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2.");
-    static_assert(rank(SmemLayoutAtomB{}) == 2, "SmemLayoutAtom must be rank 2.");
-    static_assert(rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
-    static_assert(rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
+    static_assert(cute::rank(SmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2.");
+    static_assert(cute::rank(SmemLayoutAtomB{}) == 2, "SmemLayoutAtom must be rank 2.");
+    static_assert(cute::rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
+    static_assert(cute::rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
     static_assert(cute::is_void_v<SmemCopyAtomA>,
       "SM90 GMMA mainloops cannot have a non-void copy atom for smem sourced instructions.");
     static_assert(cute::is_void_v<SmemCopyAtomB>,

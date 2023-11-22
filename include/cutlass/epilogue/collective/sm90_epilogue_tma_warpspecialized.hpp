@@ -113,12 +113,12 @@ public:
   using GmemTiledCopyD = SM90_TMA_STORE;
 
   static_assert(!is_layout<EpilogueTile>::value && is_tuple<EpilogueTile>::value, "EpilogueTile must be a cute::Tile or cute::Shape");
-  static_assert(rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
-  static_assert(rank(EpilogueTile{}) == 2, "EpilogueTile must be rank-2: [EPI_TILE_M, EPI_TILE_N]");
+  static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
+  static_assert(cute::rank(EpilogueTile{}) == 2, "EpilogueTile must be rank-2: [EPI_TILE_M, EPI_TILE_N]");
   static_assert(size<0>(CtaTileMNK{}) % size<0>(shape(EpilogueTile{})) == 0, "EPI_TILE_M must divide CTA_M");
   static_assert(size<1>(CtaTileMNK{}) % size<1>(shape(EpilogueTile{})) == 0, "EPI_TILE_N must divide CTA_N");
-  static_assert(rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]");
-  static_assert(rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]");
+  static_assert(cute::rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]");
+  static_assert(cute::rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]");
 
 private:
   using SmemElementC = cute::conditional_t<cute::is_void_v<ElementC>,ElementD,ElementC>; // prevents void ref breakages
@@ -456,11 +456,11 @@ public:
     using ElementCompute = cute::conditional_t<cute::is_void_v<ElementCompute_>,ElementAccumulator,ElementCompute_>;
 
     static_assert(is_rmem<AccEngine>::value, "Accumulator must be RF resident.");
-    static_assert(rank(AccLayout{}) == 3, "Accumulator must be MMA-partitioned: (MMA,MMA_M,MMA_N)");
-    static_assert(rank(ProblemShapeMNKL{}) == 4, "ProblemShapeMNKL must be rank 4");
+    static_assert(cute::rank(AccLayout{}) == 3, "Accumulator must be MMA-partitioned: (MMA,MMA_M,MMA_N)");
+    static_assert(cute::rank(ProblemShapeMNKL{}) == 4, "ProblemShapeMNKL must be rank 4");
     static_assert(is_static<TileShapeMNK>::value, "TileShapeMNK must be static");
-    static_assert(rank(TileShapeMNK{}) == 3, "TileShapeMNK must be rank 3");
-    static_assert(rank(TileCoordMNKL{}) == 4, "TileCoordMNKL must be rank 4");
+    static_assert(cute::rank(TileShapeMNK{}) == 3, "TileShapeMNK must be rank 3");
+    static_assert(cute::rank(TileCoordMNKL{}) == 4, "TileCoordMNKL must be rank 4");
 
     // Indexing variables
     auto [M, N, K, L] = problem_shape_mnkl;

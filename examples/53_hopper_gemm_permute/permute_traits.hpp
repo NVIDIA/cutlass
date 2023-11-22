@@ -78,7 +78,7 @@ reshape(Shape const& shape, TargetShape const& target_shape)
 template<class Permute, bool Transpose, class Shape, class Stride>
 constexpr auto 
 make_permute_layout(Layout<Shape,Stride> const& layout) {
-  static_assert(rank(Shape{}) == 3, "Only rank-3 layouts are supported");
+  static_assert(cute::rank(Shape{}) == 3, "Only rank-3 layouts are supported");
   if constexpr (Transpose) {
     // Deal with tensor B by transposing appropriately before and after computing the permute layout.
     // Its CuTe-canonical mode order is [N,K,L], while permute operations expect [row,col,batch]. 
@@ -135,7 +135,7 @@ using inverse_t = decltype(inverse(T{}));
 template<class Permute, bool Transpose, class Shape, class Stride>
 constexpr auto 
 make_original_layout(Layout<Shape,Stride> const& layout) {
-  static_assert(rank(Shape{}) == 3, "Only rank-3 layouts are supported");
+  static_assert(cute::rank(Shape{}) == 3, "Only rank-3 layouts are supported");
   if constexpr (Transpose) {
     // Deal with tensor B by transposing appropriately before and after computing the permute layout.
     // Its CuTe-canonical mode order is [N,K,L], while permute operations expect [row,col,batch]. 
