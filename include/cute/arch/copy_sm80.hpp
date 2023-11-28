@@ -35,7 +35,8 @@
 #include <cute/arch/copy.hpp>
 
 // Config
-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800))
+#if ((defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)) || \
+     (defined(__SYCL_CUDA_ARCH__) && (__SYCL_CUDA_ARCH__) >= 800))
 #  define CUTE_ARCH_CP_ASYNC_SM80_ENABLED
 #endif
 
@@ -56,7 +57,7 @@ struct SM80_CP_ASYNC_CACHEALWAYS
   copy(TS const& gmem_src,
        TD      & smem_dst)
   {
-#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED)
+#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED) && defined(SYCL_ENABLE_NVPTX)
     TS const* gmem_ptr    = &gmem_src;
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_dst);
     asm volatile("cp.async.ca.shared.global.L2::128B [%0], [%1], %2;\n"
@@ -83,7 +84,7 @@ struct SM80_CP_ASYNC_CACHEGLOBAL
   copy(TS const& gmem_src,
        TD      & smem_dst)
   {
-#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED)
+#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED) && defined(SYCL_ENABLE_NVPTX)
     TS const* gmem_ptr    = &gmem_src;
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_dst);
     asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], %2;\n"
@@ -111,7 +112,7 @@ struct SM80_CP_ASYNC_CACHEALWAYS_ZFILL
        TD      & smem_dst,
        bool      pred)
   {
-#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED)
+#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED) && defined(SYCL_ENABLE_NVPTX)
     TS const* gmem_ptr    = &gmem_src;
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_dst);
     int src_size = pred ? sizeof(TS) : 0;
@@ -141,7 +142,7 @@ struct SM80_CP_ASYNC_CACHEGLOBAL_ZFILL
        TD      & smem_dst,
        bool      pred)
   {
-#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED)
+#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED) && defined(SYCL_ENABLE_NVPTX)
     TS const* gmem_ptr    = &gmem_src;
     uint32_t smem_int_ptr = cast_smem_ptr_to_uint(&smem_dst);
     int src_size = pred ? sizeof(TS) : 0;
@@ -163,7 +164,7 @@ CUTE_HOST_DEVICE
 void
 cp_async_fence()
 {
-#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED)
+#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED) && defined(SYCL_ENABLE_NVPTX)
   asm volatile("cp.async.commit_group;\n" ::);
 #endif
 }
@@ -176,7 +177,7 @@ CUTE_HOST_DEVICE
 void
 cp_async_wait()
 {
-#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED)
+#if defined(CUTE_ARCH_CP_ASYNC_SM80_ENABLED) && defined(SYCL_ENABLE_NVPTX)
   if constexpr (N == 0) {
     asm volatile("cp.async.wait_all;\n" ::);
   } else {
