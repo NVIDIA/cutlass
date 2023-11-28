@@ -85,7 +85,15 @@ this = sys.modules[__name__]
 this.logger = logging.getLogger(__name__)
 
 # RMM is only supported for Python 3.9+
-this.use_rmm = (sys.version_info.major == 3 and sys.version_info.major > 8) or sys.version_info.major > 3
+if (sys.version_info.major == 3 and sys.version_info.major > 8) or sys.version_info.major > 3:
+    try:
+        import rmm
+        this.use_rmm = True
+    except ImportError:
+        this.use_rmm = False
+else:
+    this.use_rmm = False
+
 
 def set_log_level(level: int):
     """
@@ -134,9 +142,8 @@ def get_memory_pool():
     return this.memory_pool
 
 
-from cuda import cuda
+from cuda import cuda, cudart
 
-this._context = None
 this._device_id = None
 def initialize_cuda_context():
     if this._device_id is not None:
@@ -149,10 +156,10 @@ def initialize_cuda_context():
     device_id = os.getenv("CUTLASS_CUDA_DEVICE_ID")
     if device_id is None:
         if not this.use_rmm:
-            # We must manually call cuInit in the absence of RMM
-            err, = cuda.cuInit(0)
-            if err != cuda.CUresult.CUDA_SUCCESS:
-                raise Exception(f"cuInit failed with error {err}")
+            # Manually call cuInit() and create context by making a runtime API call
+            err, = cudart.cudaFree(0)
+            if err != cudart.cudaError_t.cudaSuccess:
+                raise RuntimeError(f"cudaFree failed with error {err}")
 
         err, device_count = cuda.cuDeviceGetCount()
         if err != cuda.CUresult.CUDA_SUCCESS:
@@ -162,16 +169,6 @@ def initialize_cuda_context():
         device_id = 0
 
     this._device_id = device_id
-
-    if not this.use_rmm and this._context is None:
-        # We must manually initialize the context in the absence of RMM
-        err, device = cuda.cuDeviceGet(this._device_id)
-        if err != cuda.CUresult.CUDA_SUCCESS:
-            raise Exception(f"cuDeviceGet failed with error {err}")
-
-        err, this._context = cuda.cuCtxCreate(0, device)
-        if err != cuda.CUresult.CUDA_SUCCESS:
-            raise Exception(f"cuCtxCreate failed with error {err}")
 
 
 def device_id() -> int:

@@ -1,5 +1,12 @@
 # Installation
 
+## Installing a stable release
+
+Stable releases of the CUTLASS Python interface are available via the `nvidia-cutlass` PyPI package. Any other packages with the name `cutlass` are not affiliated with NVIDIA CUTLASS.
+```bash
+pip install nvidia-cutlass
+```
+
 ## Installing from source
 
 Installing from source requires the latest CUDA Toolkit that matches the major.minor of CUDA Python installed.
