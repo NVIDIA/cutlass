@@ -53,7 +53,7 @@ IncludeTemplate = r"""#include "${include}"
 def compile_with_nvcc(cmd, source, error_file):
     succeed = True
     try:
-        subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
+        subprocess.check_output(cmd, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
         error_message = e.output.decode()
         with open(error_file, "w") as error_out:
@@ -82,20 +82,19 @@ class CompilationOptions:
         self.arch = arch
 
     def get_str(self):
-        options = ""
-
+        opts = []
         for flag in self.flags:
-            options += " " + flag
+            opts.append(flag)
 
         for incl in self.include_paths:
-            options += " --include-path=%s" % incl
+            opts.append(f"--include-path={incl}")
 
-        arch_flag = " -arch=sm_%d" % self.arch
+        arch_flag = f"-arch=sm_{self.arch}"
         if self.arch == 90:
             arch_flag += "a"
-        options += arch_flag
+        opts.append(arch_flag)
 
-        return options
+        return " ".join(opts)
 
     def get(self):
         options = []
@@ -104,9 +103,9 @@ class CompilationOptions:
             options.append(bytes(str.encode(flag)))
 
         for incl in self.include_paths:
-            options.append(bytes(str.encode("--include-path=%s" % incl)))
+            options.append(bytes(str.encode(f" --include-path={incl}")))
 
-        arch_flag = " -arch=sm_%d" % self.arch
+        arch_flag = f" -arch=sm_{self.arch}"
         if self.arch == 90:
             arch_flag += "a"
 
@@ -323,34 +322,35 @@ class ArtifactManager:
                 "tarfile": temp_cubin.name,
             }
             cmd = SubstituteTemplate(cmd_template, values)
-            compile_with_nvcc(cmd, source_buffer_device, "./cutlass_python_compilation_device_error.txt")
+            compile_with_nvcc(cmd.split(" "), source_buffer_device, "./cutlass_python_compilation_device_error.txt")
 
             # load the cubin image
             with open(temp_cubin.name, "rb") as file:
                 cubin_image = file.read()
 
-        # Set up the host-side library code
-        cmd_template = (
-            "echo '%s'|${cuda_install_path}/bin/nvcc -x cu -Xcompiler=\"-fpermissive -w -fPIC\" ${options}"
-            % source_buffer_host
-        )
-        cmd = SubstituteTemplate(
-            cmd_template,
-            {
-                "cuda_install_path": cuda_install_path(),
-                "options": host_compilation_options.get_str(),
-            },
-        )
-
         tempfile.tempdir = "./"
-        temp = tempfile.NamedTemporaryFile(
+        temp_src = tempfile.NamedTemporaryFile(
+            prefix="host_src", suffix=".cu", delete=True)
+
+        # Write the host source
+        with open(temp_src.name, "w") as outfile:
+            outfile.write(source_buffer_host)
+
+        temp_dst = tempfile.NamedTemporaryFile(
             prefix="host_func", suffix=".so", delete=True)
 
-        cmd += " - -shared -o %s -lcudart -lcuda" % temp.name
-        compile_with_nvcc(cmd, source_buffer_host, error_file="./cutlass_python_compilation_host_error.txt")
-        host_lib = ctypes.CDLL(temp.name)
+        # Set up host compilation arguments
+        cmd = []
+        cmd.append(f"{cuda_install_path()}/bin/nvcc")
+        cmd.extend(["-x", "cu", "-Xcompiler=-fpermissive", "-Xcompiler=-w", "-Xcompiler=-fPIC"])
+        cmd.extend(host_compilation_options.get_str().split(" "))
+        cmd.extend(["-shared", "-o", temp_dst.name, temp_src.name, "-lcudart", "-lcuda"])
 
-        return cubin_image, host_lib, temp
+        # Comile and load the library
+        compile_with_nvcc( cmd, source_buffer_host, error_file="./cutlass_python_compilation_host_error.txt")
+        host_lib = ctypes.CDLL(temp_dst.name)
+
+        return cubin_image, host_lib, temp_dst
 
     def add_module(self, operations, compile_options=None, bypass_cache=False):
         """
