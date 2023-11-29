@@ -217,7 +217,7 @@ struct alignas(1) float8_base {
         // Extract the bits in the FP32 type
         uint8_t sign = uint8_t((s >> 24 & 0x80));
         int32_t exp = int32_t((s >> FP32_NUM_MANTISSA_BITS) & 0xff) - FP32_EXPONENT_BIAS;
-        int mantissa = s & 0x7fffff;
+        uint32_t mantissa = s & 0x7fffff;
         uint8_t u = 0;
 
         uint8_t const kF8_NaN = 0x7f;
