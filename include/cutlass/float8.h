@@ -216,8 +216,8 @@ struct alignas(1) float8_base {
 
         // Extract the bits in the FP32 type
         uint8_t sign = uint8_t((s >> 24 & 0x80));
-        int exp = int((s >> FP32_NUM_MANTISSA_BITS) & 0xff) - FP32_EXPONENT_BIAS;
-        unsigned mantissa = s & 0x7fffff;
+        int32_t exp = int32_t((s >> FP32_NUM_MANTISSA_BITS) & 0xff) - FP32_EXPONENT_BIAS;
+        int mantissa = s & 0x7fffff;
         uint8_t u = 0;
 
         uint8_t const kF8_NaN = 0x7f;
@@ -316,9 +316,9 @@ struct alignas(1) float8_base {
         uint32_t constexpr kF32_NaN = 0x7fffffff;
 
         uint8_t const &f8 = x;
-        unsigned sign = (f8 >> (FP8_NUM_BITS - 1)) & 1;
-        unsigned exp = (f8 >> FP8_NUM_MANTISSA_BITS) & FP8_EXPONENT_MASK;
-        unsigned mantissa = f8 & FP8_MANTISSA_MASK;
+        uint32_t sign = (f8 >> (FP8_NUM_BITS - 1)) & 1;
+        uint32_t exp = (f8 >> FP8_NUM_MANTISSA_BITS) & FP8_EXPONENT_MASK;
+        uint32_t mantissa = f8 & FP8_MANTISSA_MASK;
         unsigned f = (sign << (FP32_NUM_BITS-1));
 
         if (IS_E4M3 && exp == 15 && mantissa == 0x7) {

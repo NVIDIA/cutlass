@@ -112,6 +112,7 @@ protected:
   CUTLASS_THREAD_LOCAL static int sm_occupancy_;
 
   /// Kernel dynamic shared memory allocation requirement
+  /// Update the kernel function's shared memory configuration for the current device
   static constexpr size_t smem_size_ = sizeof(typename GemmKernel::SharedStorage);
 
   /// Initialize static thread-local members for the thread's current device,
@@ -142,7 +143,6 @@ protected:
       CUTLASS_TRACE_HOST("  cudaDeviceGetAttribute() returned error " << cudaGetErrorString(cudart_result));
       return Status::kErrorInternal;
     }
-
 
     // If requires more than 48KB: configure for extended, dynamic shared memory
     if constexpr (smem_size_ >= (48 << 10))
@@ -375,7 +375,6 @@ public:
   }
 };
 
-
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// Static initializers
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -391,7 +390,6 @@ CUTLASS_THREAD_LOCAL int GemmUniversalBase<GemmKernel_>::device_sms_ = -1;
 /// Kernel SM occupancy (in thread blocks)
 template <typename GemmKernel_>
 CUTLASS_THREAD_LOCAL int GemmUniversalBase<GemmKernel_>::sm_occupancy_ = -1;
-
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
