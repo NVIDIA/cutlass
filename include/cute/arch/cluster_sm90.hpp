@@ -86,9 +86,9 @@ CUTE_DEVICE dim3 cluster_grid_dims()
 {
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   uint32_t x, y, z;
-  asm volatile("mov.u32 %0, %nclusterid.x;\n" : "=r"(x) : );
-  asm volatile("mov.u32 %0, %nclusterid.y;\n" : "=r"(y) : );
-  asm volatile("mov.u32 %0, %nclusterid.z;\n" : "=r"(z) : );
+  asm volatile("mov.u32 %0, %%nclusterid.x;\n" : "=r"(x) : );
+  asm volatile("mov.u32 %0, %%nclusterid.y;\n" : "=r"(y) : );
+  asm volatile("mov.u32 %0, %%nclusterid.z;\n" : "=r"(z) : );
   return {x, y, z};
 #elif defined(__CUDA_ARCH__)
   // MSVC requires protecting use of gridDim with __CUDA_ARCH__.
@@ -105,9 +105,9 @@ CUTE_DEVICE dim3 cluster_id_in_grid()
 {
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   uint32_t x, y, z;
-  asm volatile("mov.u32 %0, %clusterid.x;\n" : "=r"(x) : );
-  asm volatile("mov.u32 %0, %clusterid.y;\n" : "=r"(y) : );
-  asm volatile("mov.u32 %0, %clusterid.z;\n" : "=r"(z) : );
+  asm volatile("mov.u32 %0, %%clusterid.x;\n" : "=r"(x) : );
+  asm volatile("mov.u32 %0, %%clusterid.y;\n" : "=r"(y) : );
+  asm volatile("mov.u32 %0, %%clusterid.z;\n" : "=r"(z) : );
   return {x, y, z};
 #elif defined(__CUDA_ARCH__)
   // MSVC requires protecting use of blockIdx with __CUDA_ARCH__.
@@ -124,9 +124,9 @@ CUTE_DEVICE dim3 block_id_in_cluster()
 {
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   uint32_t x, y, z;
-  asm volatile("mov.u32 %0, %cluster_ctaid.x;\n" : "=r"(x) : );
-  asm volatile("mov.u32 %0, %cluster_ctaid.y;\n" : "=r"(y) : );
-  asm volatile("mov.u32 %0, %cluster_ctaid.z;\n" : "=r"(z) : );
+  asm volatile("mov.u32 %0, %%cluster_ctaid.x;\n" : "=r"(x) : );
+  asm volatile("mov.u32 %0, %%cluster_ctaid.y;\n" : "=r"(y) : );
+  asm volatile("mov.u32 %0, %%cluster_ctaid.z;\n" : "=r"(z) : );
   return {x, y, z};
 #else
   return {0,0,0};
@@ -138,9 +138,9 @@ CUTE_DEVICE dim3 cluster_shape()
 {
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   uint32_t x, y, z;
-  asm volatile("mov.u32 %0, %cluster_nctaid.x;\n" : "=r"(x) : );
-  asm volatile("mov.u32 %0, %cluster_nctaid.y;\n" : "=r"(y) : );
-  asm volatile("mov.u32 %0, %cluster_nctaid.z;\n" : "=r"(z) : );
+  asm volatile("mov.u32 %0, %%cluster_nctaid.x;\n" : "=r"(x) : );
+  asm volatile("mov.u32 %0, %%cluster_nctaid.y;\n" : "=r"(y) : );
+  asm volatile("mov.u32 %0, %%cluster_nctaid.z;\n" : "=r"(z) : );
   return {x, y, z};
 #else
   return {1,1,1};
@@ -152,7 +152,7 @@ CUTLASS_DEVICE uint32_t block_rank_in_cluster()
 {
 #if defined(CUTE_ARCH_CLUSTER_SM90_ENABLED)
   uint32_t rank;
-  asm volatile("mov.u32 %0, %cluster_ctarank;\n" : "=r"(rank) :);
+  asm volatile("mov.u32 %0, %%cluster_ctarank;\n" : "=r"(rank) :);
   return rank;
 #else
   return 0;
