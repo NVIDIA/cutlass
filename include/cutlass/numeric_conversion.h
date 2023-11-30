@@ -364,7 +364,7 @@ struct NumericConverter<half_t, float, FloatRoundStyle::round_toward_zero> {
     // software implementation rounds toward nearest even
     unsigned const& s = reinterpret_cast<unsigned const &>(flt);
     uint16_t sign = uint16_t((s >> 16) & 0x8000);
-    int16_t exp = uint16_t(((s >> 23) & 0xff) - 127);
+    int32_t exp = int32_t((s >> 23) & 0xff) - 127;
     int mantissa = s & 0x7fffff;
     uint16_t u = 0;
 
@@ -386,8 +386,7 @@ struct NumericConverter<half_t, float, FloatRoundStyle::round_toward_zero> {
 
     if (exp >= -14) {
       // normal fp32 to normal fp16
-      exp = uint16_t(exp + uint16_t(15));
-      u = uint16_t(((exp & 0x1f) << 10));
+      u = uint16_t((uint32_t(exp + 15) & 0x1f) << 10);
       u = uint16_t(u | (mantissa >> 13));
     } else {
       // normal single-precision to subnormal half_t-precision representation
