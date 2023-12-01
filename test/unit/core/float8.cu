@@ -42,8 +42,6 @@
 TEST(float_e4m3_t, host_conversion) {
   using FP8 = cutlass::float_e4m3_t;
   using Base = typename FP8::Base;
-  const float max_abs_normal_val = 448.0f; // 0.1111.110
-  const float min_abs_subnormal_val = 0.001953125f; // 0.0000.001 
 
   for (int i = -8; i < 8; ++i) {
     float f = static_cast<float>(i);
@@ -75,8 +73,6 @@ TEST(float_e4m3_t, host_conversion) {
 TEST(float_e5m2_t, host_conversion) {
   using FP8 = cutlass::float_e5m2_t;
   using Base = typename FP8::Base;
-  const float max_abs_normal_val = 57344.0f; // 0.11110.11
-  const float min_abs_subnormal_val = 0.0000152588f; // 0.00000.01 
 
   for (int i = -8; i < 8; ++i) {
     float f = static_cast<float>(i);
