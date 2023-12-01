@@ -267,13 +267,12 @@ public:
   static void arrive(ValueType const* smem_ptr) {
 #if CUDA_BARRIER_ENABLED
     uint32_t smem_addr = cute::cast_smem_ptr_to_uint(smem_ptr);
-    uint64_t state = 0;
     asm volatile(
         "{\n\t"
-        "mbarrier.arrive.shared.b64 %1, [%0];\n\t"
+        "mbarrier.arrive.shared.b64 _, [%0];\n\t"
         "}"
         :
-        : "r"(smem_addr), "l"(state));
+        : "r"(smem_addr));
 #elif defined(__CUDA_ARCH__)
     asm volatile ("brkpt;\n" ::);
 #endif
