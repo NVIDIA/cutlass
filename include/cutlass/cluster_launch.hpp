@@ -35,7 +35,6 @@
 
 #pragma once
 
-#include <cstdio>
 #include <cuda_runtime_api.h>
 #include "cutlass/cutlass.h"
 #include "cutlass/trace.h"
@@ -43,6 +42,7 @@
 #if defined(__CUDACC_RTC__)
 #include <cuda/std/type_traits>
 #else
+#include <cstdio>
 #include <type_traits>
 #endif
 
