@@ -1184,11 +1184,10 @@ left_inverse(Underscore const& _)
 //
 
 /* Return a layout that points to the maximum number of contiguous elements
- * that logically correspond in the layouts of @a a and @a b. This is,
- * the elements that could reasonably be "vectorized" in the layouts.
+ * that logically correspond in the layouts of @a a and @a b.
  *
  * @returns Layout R
- * @post For all 0 <= i < size(R), a(R(i)) == i && b(R(i)) == i
+ * @post For all 0 <= i < size(R), a(R(i)) == i and b(R(i)) == i
  */
 template <class ShapeA, class StrideA,
           class ShapeB, class StrideB>
@@ -1200,8 +1199,7 @@ max_common_layout(Layout<ShapeA,StrideA> const& a,
   Layout inv_b  = right_inverse(b);
   Layout common = coalesce(composition(a, inv_b));
 
-  // NOTE: If one of the layouts is dynamic, we can't prove alignment+vectorization is valid
-  // We assume dynamic shapes/strides obey alignment requirements (i.e. are large and multiples of the vector)
+  // Keep only the static identity component of the common layout
   if constexpr (is_static<decltype(shape<0>(common))>::value &&
                 is_constant<1, decltype(stride<0>(common))>::value) {
     // Truncate to the size of the contiguous vector (static stride-1 mode)
@@ -1212,11 +1210,11 @@ max_common_layout(Layout<ShapeA,StrideA> const& a,
 }
 
 /* Return Int<N> such that N is the maximum number of contiguous elements
- * that logically correspond in the layouts of @a a and @a b. This is,
- * the number of elements that could reasonably be "vectorized" in the layouts.
+ * that logically correspond in the layouts of @a a and @a b.
  *
  * @returns Int<N> with N >= 1
- * @post For all 0 <= n < N, a(b[n]) == n  (NOTE: Problems with negative strides/coords in this post-condition)
+ * @post For all 0 <= n < N, a(b.get_1d_coord(n)) == n
+ *       (NOTE: Problems with negative strides/coords in this post-condition)
  */
 template <class ShapeA, class StrideA,
           class ShapeB, class StrideB>
@@ -1227,8 +1225,7 @@ max_common_vector(Layout<ShapeA,StrideA> const& a,
 {
   Layout common = coalesce(composition(a, right_inverse(b)));
 
-  // NOTE: If one of the layouts is dynamic, we can't prove alignment+vectorization is valid
-  // We assume dynamic shapes/strides obey alignment requirements (i.e. are large and multiples of the vector)
+  // Keep only the static identity component of the common layout
   if constexpr (is_static<decltype(shape<0>(common))>::value &&
                 is_constant<1, decltype(stride<0>(common))>::value) {
     // Truncate to the size of the contiguous vector (static stride-1 mode)

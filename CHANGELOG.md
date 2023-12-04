@@ -10,7 +10,7 @@
 * Sub-Byte type fixes and improvements.
 * EVT Support for RELU with Aux bitmap tensor store (used in dRELU). See [SM90 EVT fusions](/include/cutlass/epilogue/fusion/sm90_visitor_compute_tma_warpspecialized.hpp) for details.
 * Fusion support for backprop fusions including drelu, dgelu, and dbias.
-* Support for void-C kernels and SM80 mixed-input GEMMs in the CUTLASS Python interface.
+* Support for void-C kernels and SM80 mixed-input GEMMs in the CUTLASS Python interface
 
 ## [3.2.2](https://github.com/NVIDIA/cutlass/releases/tag/v3.2.1) (2023-10-25)
 * Minor patch for issue/1138

@@ -181,9 +181,8 @@ void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Ma
 """
     self.configuration_prototype_template = "void initialize_${configuration_name}(Manifest &manifest);\n"
     self.configuration_template = "  initialize_${configuration_name}(manifest);\n"
-    self.subclass_prototype_template = "void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Manifest &manifest);\n"
     self.subclass_call_template = "  initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(manifest);\n"
-
+    self.subclass_prototype_template = "void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Manifest &manifest);\n"
     self.epilogue_template ="""}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -251,7 +250,6 @@ void initialize_all_sm${min_cc}_${subclass_name}_${operation_name}_operations(Ma
 
   #
   def __exit__(self, exception_type, exception_value, traceback):
-
     for subclass_name, subclass_file in sorted(self.subclass_files.items()):
       subclass_cfg = {
         'min_cc': str(self.min_cc),

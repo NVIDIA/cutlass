@@ -50,8 +50,8 @@ CUTLASS 3.3.0 is an update to CUTLASS adding:
 - New [Copy Async based Hopper GEMMs](/test/unit/gemm/device/sm90_gemm_bf16_bf16_bf16_alignx_tensor_op_f32_warpspecialized_cooperative.cu) - which support lower than 16B aligned input tensors (across s8/fp8/fp16/bf16/tf32 types) with optimal performance. As a part of this, new kernel schedules, and Copy Ops [SM80\_CP\_ASYNC\_CACHE\_\*](/include/cute/arch/copy_sm80.hpp) were also added.
 - EVT Support for RELU with Aux bitmap tensor store (used in dRELU). See [SM90 EVT fusions](/include/cutlass/epilogue/fusion/sm90_visitor_compute_tma_warpspecialized.hpp) for details.
 - Various subbyte enhancements like tagged device ptrs, support for vectorized copy, various operators to treat subbyte iterators as pointers, and full-fledged CuTe Tensor support.
-- Support for Clang as a host compiler.
-- Support for void-C kernels and SM80 mixed-input GEMMs in the CUTLASS Python interface.
+- Support for Clang as a host compiler. 
+- Support for void-C kernels and SM80 mixed-input GEMMs in the CUTLASS Python interface
 
 Minimum requirements:
 

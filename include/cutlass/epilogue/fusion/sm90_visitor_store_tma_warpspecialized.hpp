@@ -915,8 +915,9 @@ public:
         using ElementGmem = conditional_t<FinalReduction, ElementCompute volatile, ElementCompute>;
         Tensor tCgBuf = sm90_partition_for_epilogue<ReferenceSrc>(gBuf_nl(_,_,n,l), epi_tile, tiled_copy, thread_idx);
         if (is_reduced_lane) {
-          // Filter so we don't issue redunant copies over stride-0 modes
-          copy(filter(tCrCol), recast<ElementGmem>(filter(tCgBuf)));
+          // Filter so we don't issue redundant copies over stride-0 modes
+          // (only works if 0-strides are in same location, which is by construction)
+          copy_aligned(filter(tCrCol), recast<ElementGmem>(filter(tCgBuf)));
         }
         sync_fn();
       }
@@ -934,7 +935,8 @@ public:
         Tensor tCsBuf = sm90_partition_for_epilogue<ReferenceSrc>(sBuf(_,_,get<1>(warp_mn)), epi_tile, tiled_copy, thread_idx);
         if (is_reduced_lane) {
           // Filter so we don't issue redunant copies over stride-0 modes
-          copy(filter(tCrCol), filter(tCsBuf));
+          // (only works if 0-strides are in same location, which is by construction)
+          copy_aligned(filter(tCrCol), filter(tCsBuf));
         }
         sync_fn();
 

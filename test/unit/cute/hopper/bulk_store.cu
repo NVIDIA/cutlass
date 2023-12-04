@@ -51,11 +51,11 @@ struct SharedStorage {
 
 #if CUDA_12_0_SM90_FEATURES_SUPPORTED
 template <class T, class GmemLayout, class SmemLayout>
-__global__ void 
-bulk_copy_test_device_cute(T const* g_in, 
-                           T      * g_out, 
-                           GmemLayout gmem_layout, 
-                           SmemLayout smem_layout) 
+__global__ void
+bulk_copy_test_device_cute(T const* g_in,
+                           T      * g_out,
+                           GmemLayout gmem_layout,
+                           SmemLayout smem_layout)
 {
   // Use Shared Storage structure to allocate and distribute aligned SMEM addresses
   extern __shared__ char shared_memory[];
@@ -93,9 +93,9 @@ bulk_copy_test_device_cute(T const* g_in,
 
   Tensor gA_out = make_tensor(make_gmem_ptr(g_out), gmem_layout);
 
-  auto atom = Copy_Atom<Copy_Traits<SM90_BULK_COPY_AUTO>, uint8_t>{};
+  auto blkcp = Copy_Traits<SM90_BULK_COPY_AUTO>{};
 
-  copy(atom, sA, gA_out);
+  copy(blkcp, sA, gA_out);
   // Bulk Copy store requires the same sync as TMA store.
   tma_store_arrive();
   tma_store_wait<0>();
@@ -103,11 +103,11 @@ bulk_copy_test_device_cute(T const* g_in,
 
 template <class T, class GLayout, class SLayout>
 void run_and_validate(GLayout gmem_layout,
-                      SLayout smem_layout) 
+                      SLayout smem_layout)
 {
   thrust::host_vector<T> h_in(cosize(gmem_layout));
-  for (int32_t i = 0; i < h_in.size(); ++i) { 
-    h_in[i] = T(i); 
+  for (int32_t i = 0; i < h_in.size(); ++i) {
+    h_in[i] = T(i);
   }
 
   thrust::device_vector<T> d_in = h_in;
@@ -130,9 +130,8 @@ void run_and_validate(GLayout gmem_layout,
 
 // }  // namespace
 
-TEST(SM90_CuTe_BLKCP, ColMajor) 
+TEST(SM90_CuTe_BLKCP, ColMajor)
 {
-  
   auto smem_layout = make_layout(Shape<_32,_32>{}, GenColMajor{});
   auto gmem_layout = smem_layout;
   run_and_validate<    int8_t>(gmem_layout, smem_layout);
@@ -140,9 +139,8 @@ TEST(SM90_CuTe_BLKCP, ColMajor)
   run_and_validate<tfloat32_t>(gmem_layout, smem_layout);
 }
 
-TEST(SM90_CuTe_BLKCP, RowMajor) 
+TEST(SM90_CuTe_BLKCP, RowMajor)
 {
-  
   auto smem_layout = make_layout(Shape<_32,_32>{}, GenRowMajor{});
   auto gmem_layout = smem_layout;
   run_and_validate<    int8_t>(gmem_layout, smem_layout);
@@ -150,9 +148,8 @@ TEST(SM90_CuTe_BLKCP, RowMajor)
   run_and_validate<tfloat32_t>(gmem_layout, smem_layout);
 }
 
-TEST(SM90_CuTe_BLKCP, NonCompact) 
+TEST(SM90_CuTe_BLKCP, NonCompact)
 {
-  
   {
   auto smem_layout = make_layout(Shape<_32,_32>{}, Stride<_1,Int<48>>{});
   auto gmem_layout = smem_layout;
