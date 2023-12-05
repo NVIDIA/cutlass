@@ -641,8 +641,9 @@ struct Sm90RowBroadcast {
 
       if (epi_m == 0) { // Assumes M-major subtile loop
         // Filter so we don't issue redundant copies over stride-0 modes
+        // (only works if 0-strides are in same location, which is by construction)
         int bcast_pipe_index = (load_iteration / EpiTiles) % Stages;
-        copy(filter(tCsRow(_,_,_,epi_m,epi_n,bcast_pipe_index)), filter(tCrRow));
+        copy_aligned(filter(tCsRow(_,_,_,epi_m,epi_n,bcast_pipe_index)), filter(tCrRow));
       }
     }
 
@@ -774,7 +775,8 @@ struct Sm90ColBroadcast {
       }
 
       // Filter so we don't issue redundant copies over stride-0 modes
-      copy(filter(tCgCol), filter(tCrCol));
+      // (only works if 0-strides are in same location, which is by construction)
+      copy_aligned(filter(tCgCol), filter(tCrCol));
     }
 
     template <typename ElementAccumulator, int FragmentSize>

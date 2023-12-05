@@ -438,7 +438,7 @@ struct Sm90ReLUAuxStore {
         using VecType = uint_bit_t<V>;
         Tensor tC_rAux_vec = recast<VecType>(tC_rAux);
         Tensor tC_gAux_vec = recast<VecType>(tC_gAux);
-        Tensor tC_cAux_vec = tC_cAux.compose(make_layout(Int<size(tC_rAux_vec)>{}, Int<V>{}));
+        Tensor tC_cAux_vec = tC_cAux.compose(make_layout(Int<size(tC_rAux_vec)>{}, Int<V>{})); // only works if vector is logically sequential
         auto predicate_fn = [&] (auto&&... coords) { return elem_less(tC_cAux_vec(coords...), residue_mn); };
         copy_if(FunctionPredTensor(predicate_fn), tC_rAux_vec, tC_gAux_vec);
       }
@@ -662,7 +662,7 @@ struct Sm90AuxLoad<
         }
 
         if (elem_less(repeat_like(residue_mn, _0{}), residue_mn)) { // (partially) in-bounds CTA tile
-          copy(tC_gAux, tC_rAux);
+          copy_aligned(tC_gAux, tC_rAux);
         }
       }
     }
@@ -677,7 +677,7 @@ struct Sm90AuxLoad<
         }
 
         if (elem_less(repeat_like(residue_mn, _0{}), residue_mn)) {
-          copy(tC_gAux(_,_,_,epi_m,epi_n), tC_rAux);
+          copy_aligned(tC_gAux(_,_,_,epi_m,epi_n), tC_rAux);
         }
       }
     }

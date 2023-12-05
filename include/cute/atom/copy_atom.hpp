@@ -353,7 +353,7 @@ struct ThrCopy
   template <class STensor>
   CUTE_HOST_DEVICE
   auto
-  partition_S(STensor&& stensor) {
+  partition_S(STensor&& stensor) const {
     //static_assert(sizeof(typename remove_cvref_t<STensor>::value_type) == sizeof(typename TiledCopy::ValType),
     //              "Expected ValType for tiling SrcTensor.");
     auto thr_tensor = make_tensor(std::forward<STensor>(stensor).data(), TiledCopy::tidfrg_S(stensor.layout()));
@@ -363,7 +363,7 @@ struct ThrCopy
   template <class DTensor>
   CUTE_HOST_DEVICE
   auto
-  partition_D(DTensor&& dtensor) {
+  partition_D(DTensor&& dtensor) const {
     //static_assert(sizeof(typename remove_cvref_t<DTensor>::value_type) == sizeof(typename TiledCopy::ValType),
     //              "Expected ValType for tiling DstTensor.");
     auto thr_tensor = make_tensor(std::forward<DTensor>(dtensor).data(), TiledCopy::tidfrg_D(dtensor.layout()));
@@ -479,10 +479,10 @@ make_tiled_copy_C_atom(Copy_Atom<Args...> const& copy_atom,
   return make_tiled_copy_impl(copy_atom, layout_tv, tiler);
 }
 
-/** Produce a TiledCopy from logical thread and values layouts. 
- * The thread and value layouts map coordinates to thr_idx and val_idx. 
+/** Produce a TiledCopy from logical thread and values layouts.
+ * The thread and value layouts map coordinates to thr_idx and val_idx.
  *    The product of these layouts is taken to produce the TV layout and the Tiler.
- * Useful when threads and values need very specific mappings onto coordinates 
+ * Useful when threads and values need very specific mappings onto coordinates
  *    in the target tensors.
  */
 template <class... Args,
@@ -510,16 +510,16 @@ make_tiled_copy(Copy_Atom<Args...> const& copy_atom,
   return make_tiled_copy_impl(copy_atom, layout_tv, product_each(shape(layout_mn)));
 }
 
-/** Produce a TiledCopy from thread and value offset maps. 
+/** Produce a TiledCopy from thread and value offset maps.
  * The TV Layout maps threads and values to the codomain of the data_layout.
- * It is verified that the intended codomain is valid within data_layout. 
+ * It is verified that the intended codomain is valid within data_layout.
  * Useful when threads and values don't care about owning specific coordinates, but
  *   care more about the vector-width and offsets between them.
  */
 template <class... Args, class AtomTVLayout, class DataLayout>
 CUTE_HOST_DEVICE constexpr
 auto
-make_cotiled_copy(Copy_Atom<Args...> const& copy_atom, 
+make_cotiled_copy(Copy_Atom<Args...> const& copy_atom,
                   AtomTVLayout const& atom_tv_layout,   // atom (thr,val) -> data addr
                   DataLayout   const& data_layout)      // coord          -> data addr    The target layout
 {

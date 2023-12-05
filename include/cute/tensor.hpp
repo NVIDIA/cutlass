@@ -674,7 +674,7 @@ recast(Tensor&& tensor)
 // max_common_vector
 //
 
-/* Return Int<N> such that N is the maximum number of continguous elements
+/* Return Int<N> such that N is the maximum number of contiguous elements
  * that logically correspond in the tensors of @a a and @a b. This is,
  * the number of elements that could reasonably be vectorized into a single load/store.
  *
@@ -682,6 +682,9 @@ recast(Tensor&& tensor)
  *
  * A return value of Int<0> indicates that no such conclusion can be made and no
  * vectorization should be attempted.
+ *
+ * Note that the return value does NOT include alignment concerns such as the pointer value and
+ * the divisbility of dynamic strides.
  */
 template <class SrcEngine, class SrcLayout,
           class DstEngine, class DstLayout>
@@ -708,6 +711,46 @@ max_common_vector(Tensor<SrcEngine,SrcLayout> const& a,
     return max_common_vector(a.layout(), b.layout());
   } else {
     return Int<0>{};
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+/* Return a layout that points to the maximum number of contiguous elements
+ * that logically correspond in the tensors of @a a and @a b. This is,
+ * the elements that could reasonably be "vectorized" into a single load/store.
+ *
+ * @returns Layout R such that composition(a.layout(), R) and composition(b.layout(), R)
+ *          are both identity Layouts.
+ *
+ * Note that the returned layout does NOT include alignment concerns such as the pointer value and
+ * the divisbility of dynamic strides.
+ */
+template <class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE constexpr
+auto
+max_common_layout(Tensor<SrcEngine,SrcLayout> const& a,
+                  Tensor<DstEngine,DstLayout> const& b)
+{
+  using SrcType = typename Tensor<SrcEngine,SrcLayout>::value_type;
+  using DstType = typename Tensor<DstEngine,DstLayout>::value_type;
+  using SrcRef  = typename Tensor<SrcEngine,SrcLayout>::reference;
+  using DstRef  = typename Tensor<SrcEngine,SrcLayout>::reference;
+
+  // Determine if vectorization candidates at all
+  if constexpr (// Should be the same value_types, else the copy is also performing a cast
+                sizeof_bits_v<SrcType> == sizeof_bits_v<DstType> &&
+                // The types should be trivially copyable so that vectorization is valid
+                is_trivially_copyable<SrcType>::value &&
+                is_trivially_copyable<DstType>::value &&
+                // Should be load/storing real data, rather than implicit iterators or such
+                is_reference<SrcRef>::value &&
+                is_reference<DstRef>::value)
+  {
+    return max_common_layout(a.layout(), b.layout());
+  } else {
+    return Layout<_1,_0>{};
   }
 
   CUTE_GCC_UNREACHABLE;

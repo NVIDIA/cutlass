@@ -19,7 +19,6 @@ dependencies = [
   "networkx",
   "numpy",
   "pydot",
-  "rmm-cu12 ; python_version>='3.9'",
   "scipy",
   "treelib"
 ]

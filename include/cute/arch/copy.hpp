@@ -33,7 +33,7 @@
 #include <cute/config.hpp>
 
 #include <cute/arch/util.hpp>
-#include <cute/numeric/uint128.hpp>
+#include <cute/numeric/int.hpp>
 
 namespace cute
 {
@@ -48,7 +48,7 @@ struct UniversalCopy
   using SRegisters = S[1];
   using DRegisters = D[1];
 
-  template<class S_, class D_>
+  template <class S_, class D_>
   CUTE_HOST_DEVICE static constexpr void
   copy(S_ const& src,
        D_      & dst)
@@ -57,25 +57,36 @@ struct UniversalCopy
   }
 
   // Accept mutable temporaries
-  template<class S_, class D_>
+  template <class S_, class D_>
   CUTE_HOST_DEVICE static constexpr void
   copy(S_ const& src,
        D_     && dst)
   {
-    copy(src, dst);
+    UniversalCopy<S,D>::copy(src, dst);
   }
 };
 
 //
-// Placeholder for the copy algorithm's default, auto-vectorizing behavior
+// Placeholder for the copy algorithm's stronger auto-vectorizing behavior
+//   that assumes alignment of dynamic layouts up to MaxVecBits
 //
 
-struct DefaultCopy
+template <int MaxVecBits = 128>
+struct AutoVectorizingCopyWithAssumedAlignment
+     : UniversalCopy<uint_bit_t<MaxVecBits>>
 {
-  using SRegisters = uint128_t[1];
-  using DRegisters = uint128_t[1];
+  static_assert(MaxVecBits == 8 || MaxVecBits == 16 || MaxVecBits == 32 || MaxVecBits == 64 || MaxVecBits == 128,
+                "Expected MaxVecBits to be 8 or 16 or 32 or 64 or 128 for alignment and performance.");
 };
 
-using AutoVectorizingCopy = DefaultCopy;
+//
+// Placeholder for the copy algorithm's default auto-vectorizing behavior
+//   that does not assume alignment of dynamic layouts
+//
+
+using AutoVectorizingCopy = AutoVectorizingCopyWithAssumedAlignment<8>;
+
+// Alias
+using DefaultCopy = AutoVectorizingCopy;
 
 } // end namespace cute
