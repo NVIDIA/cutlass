@@ -32,6 +32,8 @@
 
 #include <cute/config.hpp>
 
+#include <cute/container/alignment.hpp>
+
 #include <cute/tensor.hpp>
 #include <cute/tensor_predicate.hpp>
 
@@ -44,30 +46,14 @@ namespace cute
 // Accept mutable temporaries
 //
 
-template <class PrdTensor,
-          class SrcEngine, class SrcLayout,
+template <class SrcEngine, class SrcLayout,
           class DstEngine, class DstLayout>
 CUTE_HOST_DEVICE
 void
-copy_if(PrdTensor                    const& pred,
-        Tensor<SrcEngine, SrcLayout> const& src,
-        Tensor<DstEngine, DstLayout>     && dst)
+copy(Tensor<SrcEngine, SrcLayout> const& src,
+     Tensor<DstEngine, DstLayout>     && dst)
 {
-  return copy_if(pred, src, dst);
-}
-
-template <class... CopyArgs,
-          class PrdTensor,
-          class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
-CUTE_HOST_DEVICE
-void
-copy_if(Copy_Atom<CopyArgs...>       const& copy_atom,
-        PrdTensor                    const& pred,
-        Tensor<SrcEngine, SrcLayout> const& src,
-        Tensor<DstEngine, DstLayout>     && dst)
-{
-  return copy_if(copy_atom, pred, src, dst);
+  return copy(src, dst);
 }
 
 template <class VecType,
@@ -85,22 +71,48 @@ template <class SrcEngine, class SrcLayout,
           class DstEngine, class DstLayout>
 CUTE_HOST_DEVICE
 void
-copy(Tensor<SrcEngine, SrcLayout> const& src,
-     Tensor<DstEngine, DstLayout>     && dst)
+copy_aligned(Tensor<SrcEngine, SrcLayout> const& src,
+             Tensor<DstEngine, DstLayout>     && dst)
 {
-  return copy(src, dst);
+  return copy_aligned(src, dst);
 }
 
-template <class... CopyArgs,
+template <class PrdTensor,
           class SrcEngine, class SrcLayout,
           class DstEngine, class DstLayout>
 CUTE_HOST_DEVICE
 void
-copy(Copy_Atom<CopyArgs...>       const& copy_atom,
+copy_if(PrdTensor                    const& pred,
+        Tensor<SrcEngine, SrcLayout> const& src,
+        Tensor<DstEngine, DstLayout>     && dst)
+{
+  return copy_if(pred, src, dst);
+}
+
+template <class CopyPolicy,
+          class PrdTensor,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy_if(CopyPolicy                   const& copy_policy,
+        PrdTensor                    const& pred,
+        Tensor<SrcEngine, SrcLayout> const& src,
+        Tensor<DstEngine, DstLayout>     && dst)
+{
+  return copy_if(copy_policy, pred, src, dst);
+}
+
+template <class CopyPolicy,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(CopyPolicy                   const& copy_policy,
      Tensor<SrcEngine, SrcLayout> const& src,
      Tensor<DstEngine, DstLayout>     && dst)
 {
-  return copy(copy_atom, src, dst);
+  return copy(copy_policy, src, dst);
 }
 
 //
@@ -135,7 +147,7 @@ namespace detail {
 // Trait that detects if atom's traits has a member function with(bool)
 template<typename, typename Enable = void>
 constexpr bool has_with_bool = false;
- 
+
 template<typename T>
 constexpr bool has_with_bool<T, cute::void_t<decltype(declval<typename T::Traits>().with(declval<bool>()))>> = true;
 
@@ -157,15 +169,14 @@ copy_if(Copy_Atom<CopyArgs...>       const& copy_atom,
     copy_atom.call(src, dst);
   } else {                                // Loop over all but the first mode
     constexpr int R = SrcLayout::rank;
-    auto src_v = group_modes<1,R>(src);
-    auto dst_v = group_modes<1,R>(dst);
+    Tensor src_v = group_modes<1,R>(src);
+    Tensor dst_v = group_modes<1,R>(dst);
     CUTE_UNROLL
     for (int i = 0; i < size<1>(src_v); ++i) {
       // If copy traits can be transformed with a predicate value, do it, otherwise branch here
       if constexpr (detail::has_with_bool<Copy_Atom<CopyArgs...>>) {
         copy_atom.with(pred(i)).call(src_v(_,i), dst_v(_,i));
-      }
-      else {
+      } else {
         if (pred(i)) {
           copy_atom.call(src_v(_,i), dst_v(_,i));
         }
@@ -186,23 +197,24 @@ void
 copy_vec(Tensor<SrcEngine, SrcLayout> const& src,
          Tensor<DstEngine, DstLayout>      & dst)
 {
+  static_assert(sizeof_bits_v<VecType> >= 8 && sizeof_bits_v<VecType> % 8 == 0,
+                "Expected a vectorization type of at least a byte.");
   using SrcType = typename SrcEngine::element_type;
   using DstType = typename DstEngine::element_type;
-  if constexpr (sizeof(SrcType) == sizeof(DstType) && sizeof(VecType) > sizeof(DstType))
+  if constexpr (sizeof_bits_v<SrcType> == sizeof_bits_v<DstType> &&
+                sizeof_bits_v<VecType>  > sizeof_bits_v<DstType>)
   {
-    /* @pre  is_aligned<N>(src.data()) &&
-     *       is_aligned<N>(dst.data())
-     */
+    // Preserve volatility of Src/Dst types.
     using SrcVecType = conditional_t<is_volatile_v<SrcType>, VecType const volatile, VecType const>;
     using DstVecType = conditional_t<is_volatile_v<DstType>, VecType       volatile, VecType      >;
-    auto src_v = recast<SrcVecType>(src);
-    auto dst_v = recast<DstVecType>(dst);
+    Tensor src_v = recast<SrcVecType>(src);
+    Tensor dst_v = recast<DstVecType>(dst);
 
 #if 0
     if (thread0()) {
-      print("copy_vec -- vectorizing copy from %3db to %3db\n", int(8*sizeof(SrcType)), int(8*sizeof(VecType)));
-      print("   "); print(layout(src)); print(" => "); print(layout(src_v)); print("\n");
-      print("   "); print(layout(dst)); print(" => "); print(layout(dst_v)); print("\n");
+      print("copy_vec<%db> -- vectorizing copy:\n", int(sizeof_bits_v<VecType>));
+      print("   "); print(src); print(" => "); print(src_v); print("\n");
+      print("   "); print(dst); print(" => "); print(dst_v); print("\n");
     }
 #endif
 
@@ -210,43 +222,13 @@ copy_vec(Tensor<SrcEngine, SrcLayout> const& src,
   } else {
 #if 0
   if (thread0()) {
-    print("copy_vec -- not vectorizing, copy with %3db and %3db\n", int(8*sizeof(SrcType)), int(8*sizeof(DstType)));
-    print("   "); print(layout(src)); print("\n");
-    print("   "); print(layout(dst)); print("\n");
+    print("copy_vec<%db> -- NOT vectorizing copy:\n", int(sizeof_bits_v<VecType>));
+    print("   "); print(src); print("\n");
+    print("   "); print(dst); print("\n");
   }
 #endif
 
     return copy_if(TrivialPredTensor{}, src, dst);
-  }
-}
-
-//
-// copy -- auto-vectorizing copy
-//
-
-template <class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
-CUTE_HOST_DEVICE
-void
-copy(Tensor<SrcEngine, SrcLayout> const& src,
-     Tensor<DstEngine, DstLayout>      & dst)
-{
-  constexpr int N = decltype(max_common_vector(src, dst))::value;
-
-#if 0
-  if (thread0()) {
-    print("copy -- found a max_common_vector of %d\n", N);
-    print("   "); print(src.data()); print(" o "); print(layout(src)); print("\n");
-    print("   "); print(dst.data()); print(" o "); print(layout(dst)); print("\n");
-  }
-#endif
-
-  if constexpr (N <= 1) {
-    return copy_if(TrivialPredTensor{}, src, dst);
-  } else {
-    constexpr int vec_bits = N * sizeof_bits<typename SrcEngine::value_type>::value;
-    using VecType = uint_bit_t<cute::min(128, vec_bits)>;
-    return copy_vec<VecType>(src, dst);
   }
 }
 
@@ -266,23 +248,135 @@ copy(Copy_Atom<CopyArgs...>       const& copy_atom,
   return copy_if(copy_atom, TrivialPredTensor{}, src, dst);
 }
 
-template <class... CopyArgs,
-          class SrcEngine, class SrcLayout,
-          class DstEngine, class DstLayout>
-CUTE_HOST_DEVICE
-void
-copy(Copy_Atom<DefaultCopy, CopyArgs...> const&,
-     Tensor<SrcEngine, SrcLayout>        const& src,
-     Tensor<DstEngine, DstLayout>             & dst)
-{
-  return copy(src, dst);
-}
-
 //////////////////////////////////////////
 // Special Auto-Vectorizing Overloads
 //////////////////////////////////////////
 
+// Specialization for AutoVectorizingCopyAssumedAlignment<MaxVecBits>
+template <int MaxVecBits, class... Args,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(AutoVectorizingCopyWithAssumedAlignment<MaxVecBits> const&,
+     Tensor<SrcEngine, SrcLayout>                        const& src,
+     Tensor<DstEngine, DstLayout>                             & dst)
+{
+  constexpr int vec_elem = decltype(max_common_vector(src, dst))::value;
+
+  constexpr int src_bits = sizeof_bits<typename SrcEngine::value_type>::value;
+  // When layouts are static,  accept vec_bits up to 128
+  // When layouts are dynamic, accept vec_bits up to MaxVecBits
+  constexpr int vec_bits = (is_static<SrcLayout>::value && is_static<DstLayout>::value) ?
+                            cute::min(vec_elem * src_bits, 128) :
+                            cute::min(vec_elem * src_bits, MaxVecBits);
+
+#if 0
+  if (thread0()) {
+    print("copy -- found max_common_vector of %d elems and vectorization to %d bits\n", vec_elem, vec_bits);
+    print("   "); print(src); print("\n");
+    print("   "); print(dst); print("\n");
+  }
+#endif
+
+  if constexpr (vec_elem > 1 && vec_bits >= 8) {
+    return copy_vec<uint_bit_t<vec_bits>>(src, dst);
+  } else {
+    return copy_if(TrivialPredTensor{}, src, dst);
+  }
+}
+
+// Auto-vectorizing copy for static layouts
+template <class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(Tensor<SrcEngine, SrcLayout> const& src,
+     Tensor<DstEngine, DstLayout>      & dst)
+{
+  return copy(AutoVectorizingCopy{}, src, dst);
+}
+
+// Auto-vectorizing copy with assumed alignment of dynamic layout strides up to 128bit.
+template <class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy_aligned(Tensor<SrcEngine, SrcLayout> const& src,
+             Tensor<DstEngine, DstLayout>      & dst)
+{
+  return copy(AutoVectorizingCopyWithAssumedAlignment<128>{}, src, dst);
+}
+
+// Specializaton for Atom AutoVectorizingCopy
+template <class... Args,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(Copy_Atom<AutoVectorizingCopy, Args...> const&,
+     Tensor<SrcEngine, SrcLayout>            const& src,
+     Tensor<DstEngine, DstLayout>                 & dst)
+{
+  return copy(AutoVectorizingCopy{}, src, dst);
+}
+
+// Specializaton for Atom AutoVectorizingCopyAssumedAlignment
+template <int MaxVecBits, class... Args,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(Copy_Atom<AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>, Args...> const&,
+     Tensor<SrcEngine, SrcLayout>                                            const& src,
+     Tensor<DstEngine, DstLayout>                                                 & dst)
+{
+  return copy(AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>{}, src, dst);
+}
+
 #if defined(CUTE_COPY_ATOM_TMA_SM90_ENABLED)
+template <class... CT_Args,
+          class SrcEngine, class SrcLayout,
+          class DstEngine, class DstLayout>
+CUTE_HOST_DEVICE
+void
+copy(Copy_Traits<SM90_BULK_COPY_AUTO, CT_Args...> const& atom,  // Copy_Traits may or may not have the memory barrier in it already
+     Tensor<SrcEngine, SrcLayout>                 const& src,
+     Tensor<DstEngine, DstLayout>                      & dst)
+{
+  using SrcType = typename SrcEngine::value_type;
+  using DstType = typename DstEngine::value_type;
+  static_assert(sizeof_bits<SrcType>::value == sizeof_bits<DstType>::value);
+  static_assert((is_gmem<SrcEngine>::value && is_smem<DstEngine>::value) ||
+                (is_smem<SrcEngine>::value && is_gmem<DstEngine>::value),
+                "Bulk Copy only supports gmem -> smem or smem -> gmem movement.");
+  // G2S or S2G dispatch
+  using BULK_COPY_OP = conditional_t<is_gmem<SrcEngine>::value,
+                                     SM90_BULK_COPY_G2S,
+                                     SM90_BULK_COPY_S2G>;
+
+  // Find the common subtensor of src and dst
+  auto tiler = max_common_layout(src, dst);
+  constexpr int vec_elem = decltype(size(tiler))::value;
+  constexpr int vec_bits = vec_elem * sizeof_bits_v<SrcType>;
+  static_assert(vec_bits >= 128, "Expected at least 128-bits for BLKCP");
+
+  // Construct a new concrete Atom of the vector size
+  using BulkAtom = Copy_Atom<Copy_Traits<BULK_COPY_OP, Int<vec_bits>, CT_Args...>, SrcType>;
+  auto bulk_atom = apply(atom.opargs_, [](auto const&... args) { return BulkAtom{args...}; });
+
+#if 0
+  if (thread0()) {
+    print("copy blkcp -- found a max_common_layout of "); print(tiler); print("\n");
+    print("   "); print(src); print("\n");
+    print("   "); print(dst); print("\n");
+  }
+#endif
+
+  return copy(bulk_atom, logical_divide(src, tiler), logical_divide(dst, tiler));
+}
+
+// Backwards-compat. Throw out any extra Copy_Atom args.
 template <class... CT_Args, class... CA_Args,
           class SrcEngine, class SrcLayout,
           class DstEngine, class DstLayout>
@@ -292,36 +386,7 @@ copy(Copy_Atom<Copy_Traits<SM90_BULK_COPY_AUTO, CT_Args...>, CA_Args...> const& 
      Tensor<SrcEngine, SrcLayout>                const& src,
      Tensor<DstEngine, DstLayout>                     & dst)
 {
-  using SrcType = typename SrcEngine::value_type;
-  using DstType = typename DstEngine::value_type;
-  static_assert(sizeof_bits<SrcType>::value == sizeof_bits<DstType>::value);
-  static_assert((is_gmem<SrcEngine>::value && is_smem<DstEngine>::value) ||
-                (is_smem<SrcEngine>::value && is_gmem<DstEngine>::value),
-                "Bulk Copy only supports gmem -> smem or smem -> gmem movement.");
-  // Do BulkCopy dispatch
-  using BULK_COPY_OP = conditional_t<is_gmem<SrcEngine>::value,
-                                          SM90_BULK_COPY_G2S,
-                                          SM90_BULK_COPY_S2G>;
-
-  constexpr int N = decltype(max_common_vector(src, dst))::value;
-
-  // Construct a new concrete Atom of the vector size
-  using N_BITS    = Int<N*sizeof_bits<SrcType>::value>;
-  using COPY_ATOM = Copy_Atom<Copy_Traits<BULK_COPY_OP, N_BITS, CT_Args...>, SrcType>;
-  auto bulk_atom = apply(atom.opargs_, [&](auto const&... args) { return COPY_ATOM{args...}; });
-
-  // Tile the src and dst to the Atom
-  auto tiler = right_inverse(dst.layout()).compose(Int<N>{});
-
-#if 0
-  if (thread0()) {
-    print("copy -- found a max_common_vector of %d\n", N);
-    print("   "); print(src.data()); print(" o "); print(layout(src)); print("\n");
-    print("   "); print(dst.data()); print(" o "); print(layout(dst)); print("\n");
-  }
-#endif
-
-  return copy(bulk_atom, logical_divide(src, tiler), logical_divide(dst, tiler));
+  return copy(static_cast<Copy_Traits<SM90_BULK_COPY_AUTO, CT_Args...> const&>(atom), src, dst);
 }
 #endif // #if defined(CUTE_COPY_ATOM_TMA_SM90_ENABLED)
 

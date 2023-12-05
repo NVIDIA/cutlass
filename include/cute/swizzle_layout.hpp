@@ -452,6 +452,30 @@ recast_layout(Swizzle<B,M,S> const& swizzle)
 template <int B, int M, int S, class Offset, class LayoutB, class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
+max_common_layout(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& a,
+                  Layout<Shape,Stride> const& b)
+{
+  auto common = max_common_layout(a.layout_b(), b);
+  auto base = Int<(1 << M)>{};
+  if constexpr (base < size(common)) {
+    return common.compose(base);       // Truncate common to size base
+  } else {
+    return common;
+  }
+}
+
+template <class Shape, class Stride, int B, int M, int S, class Offset, class LayoutB>
+CUTE_HOST_DEVICE constexpr
+auto
+max_common_layout(Layout<Shape,Stride> const& a,
+                  ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& b)
+{
+  return max_common_layout(b, a);
+}
+
+template <int B, int M, int S, class Offset, class LayoutB, class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
 max_common_vector(ComposedLayout<Swizzle<B,M,S>,Offset,LayoutB> const& a,
                   Layout<Shape,Stride> const& b)
 {

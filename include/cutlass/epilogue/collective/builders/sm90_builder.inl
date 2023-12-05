@@ -154,7 +154,7 @@ sm90_get_smem_store_op_for_accumulator() {
   }
   else {
     // auto-vectorizing store
-    return DefaultCopy{};
+    return AutoVectorizingCopyWithAssumedAlignment{};
   }
 }
 
@@ -175,7 +175,7 @@ sm90_get_smem_load_op_for_source() {
   }
   else {
     // auto-vectorizing load
-    return DefaultCopy{};
+    return AutoVectorizingCopyWithAssumedAlignment{};
   }
 }
 

@@ -59,7 +59,7 @@ namespace cute
 template <class CopyOperation, class... CopyOpArgs>
 struct Copy_Traits
 {
-  static_assert(sizeof(CopyOperation) == 0, "Copy_Traits not implemented for this Copy_Operation.");
+  static_assert(dependent_false<CopyOperation>, "Copy_Traits not implemented for this CopyOperation.");
 };
 
 template <class S, class D>
@@ -77,8 +77,8 @@ struct Copy_Traits<UniversalCopy<S,D>>
   using RefLayout = SrcLayout;
 };
 
-template <>
-struct Copy_Traits<DefaultCopy>
+template <int MaxVecBits>
+struct Copy_Traits<AutoVectorizingCopyWithAssumedAlignment<MaxVecBits>>
 {
   // Logical thread id to thread idx (one-thread)
   using ThrID = Layout<_1>;
@@ -108,23 +108,24 @@ copy_explode(PtrS&& s, int_sequence<Is...>,
 } // end namespace detail
 
 //
-// Generic copy_unpack for any Copy_Traits
+// Generic copy_unpack for common argument-based Copy_Traits
 //
-template <class Operation, class... Args,
-          class TS, class SLayout,
-          class TD, class DLayout>
+
+template <class CopyOp, class... Args,
+          class SEngine, class SLayout,
+          class DEngine, class DLayout>
 CUTE_HOST_DEVICE constexpr
 void
-copy_unpack(Copy_Traits<Operation, Args...> const&,
-            Tensor<TS,SLayout> const& src,
-            Tensor<TD,DLayout>      & dst)
+copy_unpack(Copy_Traits<CopyOp,Args...> const&,
+            Tensor<SEngine,SLayout>     const& src,
+            Tensor<DEngine,DLayout>          & dst)
 {
   // Specializations can generalize on these checks
-  //static_assert(is_smem<TS>::value, "Expected smem for this Copy_Traits<Operation>");
-  //static_assert(is_rmem<TD>::value, "Expected rmem for this Copy_Traits<Operation>");
+  //static_assert(is_smem<TS>::value, "Expected smem for this Copy_Traits<CopyOp>");
+  //static_assert(is_rmem<TD>::value, "Expected rmem for this Copy_Traits<CopyOp>");
 
-  using RegistersSrc = typename Operation::SRegisters;
-  using RegistersDst = typename Operation::DRegisters;
+  using RegistersSrc = typename CopyOp::SRegisters;
+  using RegistersDst = typename CopyOp::DRegisters;
   using RegTypeSrc   = typename remove_extent<RegistersSrc>::type;
   using RegTypeDst   = typename remove_extent<RegistersDst>::type;
   constexpr int RegNumSrc = extent<RegistersSrc>::value;
@@ -134,26 +135,26 @@ copy_unpack(Copy_Traits<Operation, Args...> const&,
   Tensor rD = recast<RegTypeDst>(dst);
 
   CUTE_STATIC_ASSERT_V(size(rS) == Int<RegNumSrc>{},
-    "In CopyAtom, src layout doesn't vectorize into registers. This src layout is incompatible with this tiled copy.");
+    "Copy_Traits: src failed to vectorize into registers. Layout is incompatible with this CopyOp.");
   CUTE_STATIC_ASSERT_V(size(rD) == Int<RegNumDst>{},
-    "In CopyAtom, dst layout doesn't vectorize into registers. This dst layout is incompatible with this tiled copy.");
+    "Copy_Traits: dst failed to vectorize into registers. Layout is incompatible with this CopyOp.");
 
-  detail::copy_explode<Operation>(rS, make_int_sequence<RegNumSrc>{},
-                                  rD, make_int_sequence<RegNumDst>{});
+  detail::copy_explode<CopyOp>(rS, make_int_sequence<RegNumSrc>{},
+                               rD, make_int_sequence<RegNumDst>{});
 }
 
 //
 // Accept mutable temporaries
 //
 
-template <class Operation, class... Args,
-          class TS, class SLayout,
-          class TD, class DLayout>
+template <class CopyOp, class... Args,
+          class SEngine, class SLayout,
+          class DEngine, class DLayout>
 CUTE_HOST_DEVICE constexpr
 void
-copy_unpack(Copy_Traits<Operation, Args...> const& traits,
-            Tensor<TS,SLayout> const&  src,
-            Tensor<TD,DLayout>      && dst)
+copy_unpack(Copy_Traits<CopyOp,Args...> const& traits,
+            Tensor<SEngine,SLayout>     const& src,
+            Tensor<DEngine,DLayout>         && dst)
 {
   copy_unpack(traits, src, dst);
 }
