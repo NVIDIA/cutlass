@@ -88,6 +88,10 @@ template <
     typename LayoutB,
     /// Access granularity of B matrix in units of elements
     int kAlignmentB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Layout type for C and D matrix operands
+    typename LayoutC,
     /// Element type for internal accumulation
     typename ElementAccumulator,
     /// Operator class tag
@@ -129,6 +133,10 @@ template <
     typename LayoutB,
     /// Access granularity of A matrix in units of elements
     int kAlignmentB,
+    /// Element type for C and D matrix operands
+    typename ElementC,
+    /// Layout type for C and D matrix operands
+    typename LayoutC,
     /// Element type for internal accumulation
     typename ElementAccumulator,
     /// Threadblock-level tile size (concept: GemmShape)
@@ -148,7 +156,7 @@ template <
     /// Number of stages used in the pipelined epilogue
     int EpilogueStages>
 struct DefaultSparseGemmWithVisitor<ElementA, LayoutA, kAlignmentA, ElementB, LayoutB, kAlignmentB,
-                   ElementAccumulator, arch::OpClassTensorOp,
+                   ElementC, LayoutC, ElementAccumulator, arch::OpClassTensorOp,
                    arch::Sm80, ThreadblockShape, WarpShape, InstructionShape,
                    FusionCallbacks, ThreadblockSwizzle, Stages, Operator,
                    EpilogueStages> {
@@ -159,38 +167,27 @@ struct DefaultSparseGemmWithVisitor<ElementA, LayoutA, kAlignmentA, ElementB, La
       ThreadblockShape, WarpShape, InstructionShape, Stages,
       Operator>::ThreadblockMma;
 
-  static constexpr bool SplitKSerial = false;
-
-  using ElementC = ElementAccumulator;
-  using LayoutC = LayoutA;
   static constexpr int kAlignmentC = 128 / sizeof_bits<ElementC>::value;;
   using ElementEpilogue = ElementAccumulator;
 
-  using GemmBase = typename DefaultSparseGemm<
-      ElementA, LayoutA, kAlignmentA, 
-      ElementB, LayoutB, kAlignmentB,
-      ElementC, LayoutC, ElementAccumulator,
-      arch::OpClassTensorOp,
-      arch::Sm80,
-      ThreadblockShape,
-      WarpShape,
-      InstructionShape,
-      epilogue::thread::LinearCombination<
+  static const int kPartitionsK = ThreadblockShape::kK / WarpShape::kK;
+  using EpilogueOutputOp =
+      typename epilogue::thread::LinearCombination<
           ElementC, kAlignmentC,
-          ElementAccumulator, ElementEpilogue>,
-      ThreadblockSwizzle,
-      Stages,
-      SplitKSerial,
-      Operator>::GemmKernel;
+          ElementAccumulator, ElementEpilogue>;
+  using BaseEpilogue =
+      typename cutlass::epilogue::threadblock::DefaultEpilogueTensorOp<
+          ThreadblockShape, typename Mma::Operator, kPartitionsK,
+          EpilogueOutputOp, EpilogueOutputOp::kCount>::Epilogue;
 
   // Define epilogue
   using Epilogue = cutlass::epilogue::threadblock::EpilogueWithVisitorCallbacks<
-      typename GemmBase::Epilogue,
+      BaseEpilogue,
       FusionCallbacks,
       EpilogueStages>;
 
   /// Define the kernel-level GEMM operator.
-  using GemmKernel = kernel::SparseGemmWithVisitor<Mma, Epilogue, ThreadblockSwizzle>;
+  using GemmKernel = kernel::SparseGemmWithEpilogueVisitor<Mma, Epilogue, ThreadblockSwizzle>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

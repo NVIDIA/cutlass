@@ -142,10 +142,15 @@ using EVTOutput = cutlass::epilogue::threadblock::Sm80EVT<
     Output,
     EVTApplyBias>;
 
+// Use element type in EVT with the smallest bitwidth as ElementC.
+using ElementC = ElementComputeEpilogue;
+using LayoutC = LayoutOutput;
+
 using Gemm =
     typename cutlass::gemm::device::SparseGemmWithVisitor<
       ElementInputA, LayoutInputA,
       ElementInputB, LayoutInputB,
+      ElementC, LayoutC,
       ElementAccumulator,
       MMAOp,
       SmArch,

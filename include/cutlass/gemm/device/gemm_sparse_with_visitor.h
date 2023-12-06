@@ -45,6 +45,8 @@
 #include "cutlass/gemm/kernel/default_gemm_sparse_with_visitor.h"
 #include "cutlass/gemm/device/default_gemm_configuration.h"
 
+#include "cutlass/epilogue/threadblock/fusion/visitor_2x.hpp"
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -64,30 +66,50 @@ template <
     typename ElementB_,
     /// Layout type for B matrix operand
     typename LayoutB_,
+    /// Element type for C and D matrix operands
+    typename ElementC_,
+    /// Layout type for C and D matrix operands
+    typename LayoutC_,
     /// Element type for internal accumulation
-    typename ElementAccumulator_,
+    typename ElementAccumulator_ = ElementC_,
     /// Operator class tag
-    typename OperatorClass_,
+    typename OperatorClass_ = arch::OpClassSimt,
     /// Tag indicating architecture to tune for
-    typename ArchTag_,
+    typename ArchTag_ = arch::Sm70,
     /// Threadblock-level tile size (concept: GemmShape)
-    typename ThreadblockShape_,
+    typename ThreadblockShape_ = typename DefaultGemmConfiguration<
+        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
+        ElementAccumulator_>::ThreadblockShape,
     /// Warp-level tile size (concept: GemmShape)
-    typename WarpShape_,
+    typename WarpShape_ = typename DefaultGemmConfiguration<
+        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
+        ElementAccumulator_>::WarpShape,
     /// Instruction-level tile size (concept: GemmShape)
-    typename InstructionShape_,
+    typename InstructionShape_ = typename DefaultGemmConfiguration<
+        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
+        ElementAccumulator_>::InstructionShape,
     /// Epilogue output operator
-    typename FusionCallbacks_,
+    typename FusionCallbacks_ =
+        typename cutlass::epilogue::threadblock::detail::EmptyCallbacks,
     /// Threadblock-level swizzling operator
-    typename ThreadblockSwizzle_,
+    typename ThreadblockSwizzle_ =
+        typename threadblock::GemmIdentityThreadblockSwizzle<>,
     /// Number of stages used in the pipelined mainloop
-    int Stages,
+    int Stages =
+        DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
+                                 ElementC_, ElementAccumulator_>::kStages,
     /// Access granularity of A matrix in units of elements
-    int AlignmentA,
+    int AlignmentA =
+        DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
+                                 ElementC_, ElementAccumulator_>::kAlignmentA,
     /// Access granularity of B matrix in units of elements
-    int AlignmentB,
+    int AlignmentB =
+        DefaultGemmConfiguration<OperatorClass_, ArchTag_, ElementA_, ElementB_,
+                                 ElementC_, ElementAccumulator_>::kAlignmentB,
     /// Operation performed by GEMM
-    typename Operator_,
+    typename Operator_ = typename DefaultGemmConfiguration<
+        OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
+        ElementAccumulator_>::Operator,
     /// Number of stages used in the pipelined epilogue
     int EpilogueStages = 1>
 class SparseGemmWithVisitor {
@@ -99,6 +121,8 @@ class SparseGemmWithVisitor {
   using ElementB = ElementB_;
   using LayoutB = LayoutB_;
   using TensorRefB = TensorRef<ElementB const, LayoutB>;
+  using ElementC = ElementC_;
+  using LayoutC = LayoutC_;
   using ElementAccumulator = ElementAccumulator_;
   using OperatorClass = OperatorClass_;
   using ArchTag = ArchTag_;
@@ -121,6 +145,8 @@ class SparseGemmWithVisitor {
     ElementB,
     LayoutB,
     kAlignmentB,
+    ElementC,
+    LayoutC,
     ElementAccumulator,
     OperatorClass,
     ArchTag,
@@ -203,6 +229,8 @@ public:
       args.problem_size,
       args.ref_A.non_const_ref(),
       args.ref_B.non_const_ref(),
+      cutlass::TensorRef<ElementC, LayoutC>(), // It only matters that it's empty.
+      cutlass::TensorRef<ElementC, LayoutC>(), // Same as above.
       args.ref_E.non_const_ref()
     );
 

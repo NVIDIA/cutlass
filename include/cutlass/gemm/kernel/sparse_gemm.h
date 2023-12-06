@@ -37,6 +37,7 @@
 #include "cutlass/cutlass.h"
 
 #include "cutlass/gemm/gemm.h"
+#include "cutlass/gemm/kernel/params_sparse_base.h"
 #include "cutlass/matrix_coord.h"
 #include "cutlass/semaphore.h"
 
@@ -74,66 +75,58 @@ struct SparseGemm {
   using WarpCount = typename Mma::WarpCount;
   static int const kThreadCount = 32 * WarpCount::kCount;
 
+  using ParamsA = typename Mma::IteratorA::Params;
+  using TensorRefA = typename Mma::IteratorA::TensorRef;
+  using ParamsB = typename Mma::IteratorB::Params;
+  using TensorRefB = typename Mma::IteratorB::TensorRef;
+  using ParamsE = typename Mma::IteratorE::Params;
+  using TensorRefE = typename Mma::IteratorE::TensorRef;
+
   /// Parameters structure
-  struct Params {
-    cutlass::gemm::GemmCoord problem_size;
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int swizzle_log_tile;
-    typename Mma::IteratorA::Params params_A;
-    typename Mma::IteratorA::TensorRef ref_A;
-    typename Mma::IteratorB::Params params_B;
-    typename Mma::IteratorB::TensorRef ref_B;
+  struct Params : public SparseParamsBase<
+      ThreadblockSwizzle, ParamsA, TensorRefA, ParamsB, TensorRefB,
+      ParamsE, TensorRefE> {
+
+    using Base = SparseParamsBase<
+        ThreadblockSwizzle, ParamsA, TensorRefA, ParamsB, TensorRefB,
+        ParamsE, TensorRefE>;
+
+    //
+    // Data members
+    //
     typename Epilogue::OutputTileIterator::Params params_C;
     typename Epilogue::OutputTileIterator::TensorRef ref_C;
     typename Epilogue::OutputTileIterator::Params params_D;
     typename Epilogue::OutputTileIterator::TensorRef ref_D;
-    typename Mma::IteratorE::Params params_E;
-    typename Mma::IteratorE::TensorRef ref_E;
     typename OutputOp::Params output_op;
     int *semaphore;
-    int gemm_k_iterations;
-    int gemm_k_size;
 
     //
     // Methods
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): swizzle_log_tile(0), semaphore(0), gemm_k_iterations(0), gemm_k_size(0) { }
+    Params() { }
 
     CUTLASS_HOST_DEVICE
     Params(
       cutlass::gemm::GemmCoord const & problem_size,
       cutlass::gemm::GemmCoord const & grid_tiled_shape,
-      typename Mma::IteratorA::TensorRef ref_A,
-      typename Mma::IteratorB::TensorRef ref_B,
+      TensorRefA ref_A,
+      TensorRefB ref_B,
       typename Epilogue::OutputTileIterator::TensorRef ref_C,
       typename Epilogue::OutputTileIterator::TensorRef ref_D,
-      typename Mma::IteratorE::TensorRef ref_E,
+      TensorRefE ref_E,
       typename OutputOp::Params output_op = typename OutputOp::Params(),
       int *workspace = nullptr
     ):
-      problem_size(problem_size),
-      grid_tiled_shape(grid_tiled_shape),
-      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
-      params_A(ref_A.layout()),
-      ref_A(ref_A),
-      params_B(ref_B.layout()),
-      ref_B(ref_B),
+      Base(problem_size, grid_tiled_shape, ref_A, ref_B, ref_E, Mma::Shape::kK),
       params_C(ref_C.layout()),
       ref_C(ref_C),
       params_D(ref_D.layout()),
       ref_D(ref_D),
-      params_E(ref_E.layout()),
-      ref_E(ref_E),
-      output_op(output_op) {
-
-      int total_gemm_k_iterations = (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
-      int gemm_k_iterations = (total_gemm_k_iterations + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
-      
-      gemm_k_size = gemm_k_iterations * Mma::Shape::kK;
-
-    semaphore = workspace;
+      output_op(output_op),
+      semaphore(workspace) {
     }
   };
 

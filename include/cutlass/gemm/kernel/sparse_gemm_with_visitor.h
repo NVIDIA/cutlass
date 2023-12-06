@@ -36,8 +36,8 @@
 
 #include "cutlass/cutlass.h"
 
-#include "cutlass/gemm/gemm.h"
-#include "cutlass/matrix_coord.h"
+#include "cutlass/gemm/kernel/sparse_gemm.h"
+#include "cutlass/gemm/kernel/params_sparse_base.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -47,41 +47,47 @@ namespace kernel {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Sparse Gemm that compute the epilogue visitor functor
 template <
-  typename Mma,                  ///! Threadblock-scoped matrix multiply-accumulate 
-  typename Epilogue,             ///! Epilogue
-  typename ThreadblockSwizzle    ///! Threadblock swizzling function
+  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
+  typename Epilogue_,             ///! Epilogue
+  typename ThreadblockSwizzle_    ///! Threadblock swizzling function
 >
-struct SparseGemmWithVisitor {
+struct SparseGemmWithEpilogueVisitor : public SparseGemm<Mma_, Epilogue_, ThreadblockSwizzle_, false>  {
+
+  using Base = SparseGemm<Mma_, Epilogue_, ThreadblockSwizzle_, false>;
+
+  using Mma = Mma_;
+  using Epilogue = Epilogue_;
+  using ThreadblockSwizzle = ThreadblockSwizzle_;
 
   using FusionCallbacks = typename Epilogue::FusionCallbacks;
 
-  static int const kSparse = Mma::kSparse;
-  static int const kMetaSizeInBits = Mma::kMetaSizeInBits;
-  static int const kMaxID2 = Mma::kMaxID2;
-  static int const kElementsPerElementE = Mma::kElementsPerElementE;
+  using ParamsA = typename Mma::IteratorA::Params;
+  using TensorRefA = typename Mma::IteratorA::TensorRef;
+  using ParamsB = typename Mma::IteratorB::Params;
+  using TensorRefB = typename Mma::IteratorB::TensorRef;
+  using ParamsE = typename Mma::IteratorE::Params;
+  using TensorRefE = typename Mma::IteratorE::TensorRef;
 
-  using ElementE = typename Mma::ElementE;
-  using LayoutE = typename Mma::LayoutE;
-
-  /// Warp count (concept: GemmShape)
-  using WarpCount = typename Mma::WarpCount;
-  static int const kThreadCount = 32 * WarpCount::kCount;
+  static int const kSparse = Base::kSparse;
+  static int const kElementsPerElementE = Base::kElementsPerElementE;
+  using SharedStorage = typename Base::SharedStorage;
 
   /// Parameters structure
-  struct Params {
-    cutlass::gemm::GemmCoord problem_size;
-    cutlass::gemm::GemmCoord grid_tiled_shape;
-    int swizzle_log_tile;
-    typename Mma::IteratorA::Params params_A;
-    typename Mma::IteratorA::TensorRef ref_A;
-    typename Mma::IteratorB::Params params_B;
-    typename Mma::IteratorB::TensorRef ref_B;
-    typename Mma::IteratorE::Params params_E;
-    typename Mma::IteratorE::TensorRef ref_E;
+  struct Params : public SparseParamsBase<
+      ThreadblockSwizzle, ParamsA, TensorRefA, ParamsB, TensorRefB,
+      ParamsE, TensorRefE> {
+
+    using Base = SparseParamsBase<
+        ThreadblockSwizzle, ParamsA, TensorRefA, ParamsB, TensorRefB,
+        ParamsE, TensorRefE>;
+
+    //
+    // Data members
+    //
+
     typename FusionCallbacks::Params output_op;
-    int gemm_k_iterations;
-    int gemm_k_size;
     cute::Shape<int32_t,int32_t,int32_t> problem_shape;
 
     //
@@ -89,7 +95,7 @@ struct SparseGemmWithVisitor {
     //
 
     CUTLASS_HOST_DEVICE
-    Params(): swizzle_log_tile(0), gemm_k_iterations(0), gemm_k_size(0) { }
+    Params() { }
 
     CUTLASS_HOST_DEVICE
     Params(
@@ -100,29 +106,10 @@ struct SparseGemmWithVisitor {
       typename Mma::IteratorE::TensorRef ref_E,
       typename FusionCallbacks::Arguments output_op = typename FusionCallbacks::Arguments()
     ):
-      problem_size(problem_size),
-      grid_tiled_shape(grid_tiled_shape),
-      swizzle_log_tile(ThreadblockSwizzle().get_log_tile(grid_tiled_shape)),
-      params_A(ref_A.layout()),
-      ref_A(ref_A),
-      params_B(ref_B.layout()),
-      ref_B(ref_B),
-      params_E(ref_E.layout()),
-      ref_E(ref_E),
+      Base(problem_size, grid_tiled_shape, ref_A, ref_B, ref_E, Mma::Shape::kK),
       output_op(FusionCallbacks::to_underlying_arguments(problem_size, output_op, nullptr /*workspace*/)),
       problem_shape(problem_size.m(), problem_size.n(), 1) {
-
-      int total_gemm_k_iterations = (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
-      int gemm_k_iterations = (total_gemm_k_iterations + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
-      
-      gemm_k_size = gemm_k_iterations * Mma::Shape::kK;
     }
-  };
-
-  /// Shared memory storage structure
-  union SharedStorage {
-    typename Mma::SharedStorage main_loop;
-    typename Epilogue::SharedStorage epilogue;
   };
 
   //
@@ -130,55 +117,7 @@ struct SparseGemmWithVisitor {
   //
 
   CUTLASS_HOST_DEVICE
-  SparseGemmWithVisitor() { } 
-
-  /// Determines whether kernel satisfies alignment
-  static Status can_implement(
-      cutlass::gemm::GemmCoord const & problem_size,
-      typename Mma::IteratorA::TensorRef ref_A,
-      typename Mma::IteratorB::TensorRef ref_B,
-      typename Mma::IteratorE::TensorRef ref_E) {
-
-    static int const kAlignmentA = Mma::IteratorA::AccessType::kElements;
-    static int const kAlignmentB = Mma::IteratorB::AccessType::kElements;
-    static int const kAlignmentE = Mma::IteratorE::AccessType::kElements;
-
-    if (!TensorRef_aligned(ref_A, kAlignmentA)) {
-      return Status::kErrorMisalignedOperand;
-    }
-
-    if (!TensorRef_aligned(ref_B, kAlignmentB)) {
-      return Status::kErrorMisalignedOperand;
-    }
-
-    if (!TensorRef_aligned(ref_E, kAlignmentE)) {
-      return Status::kErrorMisalignedOperand;
-    }
-
-    if ((problem_size.m() % kAlignmentA) || ((problem_size.k() / kSparse) % kAlignmentA) ||
-      (problem_size.n() % kAlignmentB) || (problem_size.k() % kAlignmentB) ||
-      (problem_size.m() % kAlignmentE) || ((problem_size.k() / kSparse) % kAlignmentE)) {
-
-      return Status::kErrorMisalignedOperand;
-    }
-
-    // The k dimension has to be the multiple of the Threadblock k because out
-    // of bound meta data would be initialized to 0 by acync.zfill but 0 is not
-    // a valid meta data.
-    if (problem_size.k() % Mma::Shape::kK) {
-      return Status::kErrorMisalignedOperand;
-    }
-
-    // M dimension has to be multiple of 32 (sparse float) or 16 (sparse int) 
-    // because of the row reordering of operand E
-    static int const kAlignmentM = (sizeof(ElementE) == 2) ? 32 : 16;
-
-    if (problem_size.m() % kAlignmentM) {
-      return Status::kErrorMisalignedOperand;
-    }
-
-    return Status::kSuccess;
-  }
+  SparseGemmWithEpilogueVisitor() { }
 
   /// Executes one GEMM
   CUTLASS_DEVICE
