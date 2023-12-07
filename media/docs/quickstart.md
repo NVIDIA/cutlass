@@ -33,7 +33,7 @@ executing the following CMake command in an empty `build/` directory.
 $ cmake .. -DCUTLASS_NVCC_ARCHS=90a -DCUTLASS_ENABLE_TESTS=OFF -DCUTLASS_UNITY_BUILD_ENABLED=ON
 ```
 
-This reduces overall compilation time by excluding unit tests and enabling the unit build.
+This reduces overall compilation time by excluding unit tests and enabling the unity build.
 
 You may reduce build times by compiling only certain operations by setting the `CUTLASS_LIBRARY_OPERATIONS` flag as shown below,
 executed from an empty `build/` directory. This only compiles 2-D convolution kernels.
