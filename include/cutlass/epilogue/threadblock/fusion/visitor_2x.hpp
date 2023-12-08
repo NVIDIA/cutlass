@@ -232,7 +232,7 @@ template<
 >
 struct TopologicalVisitor2x : VisitorImpl2x<Ops...> {
   static_assert(is_static_v<EdgeTuple>);
-  static_assert(rank(EdgeTuple{}) == sizeof...(Ops));
+  static_assert(cute::rank(EdgeTuple{}) == sizeof...(Ops));
   static_assert(sizeof...(Ops) > 1);
 
   using VisitorImpl2x<Ops...>::VisitorImpl2x;

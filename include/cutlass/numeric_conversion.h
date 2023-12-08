@@ -192,7 +192,7 @@ struct NumericConverter<int8_t, float, FloatRoundStyle::round_to_nearest> {
     return static_cast<result_type>(intermediate);
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   result_type operator()(source_type const &s) const {
     return convert(s);
   }

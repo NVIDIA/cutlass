@@ -80,7 +80,7 @@ public:
   // Type Aliases
   //
   using ProblemShape = ProblemShape_;
-  static_assert(rank(ProblemShape{}) == 3 or rank(ProblemShape{}) == 4,
+  static_assert(cute::rank(ProblemShape{}) == 3 or cute::rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
 
   // Mainloop derived types
@@ -169,7 +169,7 @@ public:
   bool
   can_implement(Arguments const& args) {
     bool implementable = (args.mode == GemmUniversalMode::kGemm) or
-        (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
+        (args.mode == GemmUniversalMode::kBatched && cute::rank(ProblemShape{}) == 4);
     if (!implementable) {
       CUTLASS_TRACE_HOST("  CAN IMPLEMENT: Arguments or Problem Shape don't meet the requirements.\n");
       return implementable;
@@ -219,10 +219,10 @@ public:
     #endif
 
     // Preconditions
-    static_assert(rank(StrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");
-    static_assert(rank(StrideB{}) == 3, "StrideB must be rank-3: [N, K, L]. If batch mode is not needed, set L stride to Int<0>.");
-    static_assert(rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
-    static_assert(rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(StrideA{}) == 3, "StrideA must be rank-3: [M, K, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(StrideB{}) == 3, "StrideB must be rank-3: [N, K, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
+    static_assert(cute::rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]. If batch mode is not needed, set L stride to Int<0>.");
 
     int thread_idx = int(threadIdx.x);
     int warp_idx   = canonical_warp_idx_sync();
@@ -285,13 +285,13 @@ public:
       params.mainloop
     );
 
-    constexpr int BLK_M_RANK = rank<0>(blk_shape);
+    constexpr int BLK_M_RANK = cute::rank<0>(blk_shape);
     bool m_oob = int(blockIdx.x) >= size<2>(gA_mkl);
     auto m_max_coord = unwrap(cute::transform(make_seq<BLK_M_RANK>{}, [&](auto i) {
         return  m_oob ? 0 : get<i>(M) - get<0,i>(blk_shape) * get<i>(m_coord);
       }));
 
-    constexpr int BLK_N_RANK = rank<1>(blk_shape);
+    constexpr int BLK_N_RANK = cute::rank<1>(blk_shape);
     bool n_oob = int(blockIdx.y) >= size<2>(gB_nkl);
     auto n_max_coord = unwrap(cute::transform(make_seq<BLK_N_RANK>{}, [&](auto i) {
         return  n_oob ? 0 : get<i>(N) - get<1,i>(blk_shape) * get<i>(n_coord);

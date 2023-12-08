@@ -280,7 +280,8 @@ struct Sm90AuxLoad {
     Tensor bGS_gAux = thrblk_g2s.partition_S(gAux_epi);                                // (TMA,TMA_M,TMA_N,EPI_M,EPI_N)
     Tensor bGS_sAux = thrblk_g2s.partition_D(sAux_epi);                                // (TMA,TMA_M,TMA_N,PIPE)
 
-    return ProducerLoadCallbacks(cute::move(bGS_gAux), cute::move(bGS_sAux), params_ptr);
+    return ProducerLoadCallbacks<decltype(bGS_gAux), decltype(bGS_sAux)>(
+      cute::move(bGS_gAux), cute::move(bGS_sAux), params_ptr);
   }
 
   template <class RTensor, class TiledS2R, class STensorS2R>
@@ -344,7 +345,8 @@ struct Sm90AuxLoad {
     auto tSR_sAux = tiled_s2r.get_slice(args.thread_idx).partition_S(sAux_epi);               // (S2R,S2R_M,S2R_N,PIPE)
 
 
-    return ConsumerStoreCallbacks(cute::move(tC_rAux), tiled_s2r, cute::move(tSR_sAux), params_ptr);
+    return ConsumerStoreCallbacks<decltype(tC_rAux), decltype(tiled_s2r), decltype(tSR_sAux)>(
+        cute::move(tC_rAux), tiled_s2r, cute::move(tSR_sAux), params_ptr);
   }
 };
 

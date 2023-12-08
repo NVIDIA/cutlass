@@ -35,6 +35,7 @@
 
 #pragma once
 
+#include <cstdio>
 #include <cuda_runtime_api.h>
 #include "cutlass/cutlass.h"
 #include "cutlass/trace.h"

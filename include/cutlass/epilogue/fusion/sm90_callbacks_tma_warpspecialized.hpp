@@ -695,7 +695,7 @@ template<
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90ScaledLinCombPerRowBiasEltAct =
-  Sm90EVT<Sm90Compute<detail::ScaleOutOp<ElementOutput>::Op, ElementOutput, ElementCompute, RoundStyle>, // activation(Z) * scale_d
+  Sm90EVT<Sm90Compute<detail::ScaleOutOp<ElementOutput>::template Op, ElementOutput, ElementCompute, RoundStyle>, // activation(Z) * scale_d
     Sm90EVT<Sm90Compute<ActivationFn, ElementCompute, ElementCompute, RoundStyle>, // activation(Z)
       // Z = scale_a * scale_b * alpha * acc + beta * scale_c * C + per-row bias
       Sm90ScaledLinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle>
@@ -829,7 +829,7 @@ using Sm90ScaledLinCombPerRowBiasEltActAmaxAux =
     // Z = scale_a * scale_b * alpha * acc + scale_c * beta * C + per-row bias
     Sm90ScaledLinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle>,
     // D = activation(Z) * scale_d, amax_d = max(abs(elements in D))
-    Sm90EVT<Sm90Compute<detail::ScaleOutOp<ElementOutput>::Op, ElementOutput, ElementCompute, RoundStyle>, // activation(Z) * scale_d
+    Sm90EVT<Sm90Compute<detail::ScaleOutOp<ElementOutput>::template Op, ElementOutput, ElementCompute, RoundStyle>, // activation(Z) * scale_d
       Sm90EVT<Sm90ScalarReduction<detail::amax, atomic_maximum, ElementAmax, ElementCompute, RoundStyle>, // amax_d
         Sm90EVT<Sm90Compute<ActivationFn, ElementCompute, ElementCompute, RoundStyle>, // activation(Z)
           Sm90SplitTreeFetch // Z
@@ -839,7 +839,7 @@ using Sm90ScaledLinCombPerRowBiasEltActAmaxAux =
     >,
     // Aux = Z * scale_aux, amax_aux = max(abs(elements in Aux))
     Sm90EVT<Sm90AuxStore<StagesD, EpilogueTile, ElementAux, RoundStyle, StrideAux, SmemLayoutAtom, CopyOpR2S, AlignmentAux>, // store(Aux)
-      Sm90EVT<Sm90Compute<detail::ScaleOutOp<ElementAux>::Op, ElementCompute, ElementCompute, RoundStyle>, // Z * scale_aux
+      Sm90EVT<Sm90Compute<detail::ScaleOutOp<ElementAux>::template Op, ElementCompute, ElementCompute, RoundStyle>, // Z * scale_aux
         Sm90EVT<Sm90ScalarReduction<detail::amax, atomic_maximum, ElementAmax, ElementCompute, RoundStyle>, // amax_aux
           Sm90SplitTreeFetch // Z
         >,
@@ -1021,7 +1021,7 @@ template<
 using Sm90LinCombDeEltAct =
   Sm90EVT<Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>, // activation(beta * C + (alpha * acc), aux)
     Sm90LinearCombination<ElementCompute, ElementCompute, ElementScalar, RoundStyle>, // beta * C + (alpha * acc)
-    Sm90AuxLoad<Stages, EpilogueTile, ElementAux, StrideAux, SmemLayoutAtom, CopyOpS2R, AlignmentAux>, // aux
+    Sm90AuxLoad<Stages, EpilogueTile, ElementAux, StrideAux, SmemLayoutAtom, CopyOpS2R, AlignmentAux> // aux
   >;
 
 template <

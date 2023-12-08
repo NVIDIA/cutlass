@@ -186,15 +186,15 @@ main(int argc, char const* argv[]) {
   using ElementEpilogue = float;
 
   // The following constexpr values set the max number of modes in each MNKL mode
-  constexpr int MaxRank_M = rank(RowModeStridesA{}); // Max row modes
-  constexpr int MaxRank_N = rank(ColModeStridesB{}); // Max column modes
-  constexpr int MaxRank_K = rank(RedModeStridesA{}); // Max contraction modes
-  constexpr int MaxRank_L = rank(BatModeStridesA{}); // Max batch modes
-  static_assert(rank(RowModeStridesA{}) == rank(RowModeStridesC{}));
-  static_assert(rank(ColModeStridesB{}) == rank(RowModeStridesC{}));
-  static_assert(rank(RedModeStridesA{}) == rank(RedModeStridesB{}));
-  static_assert(rank(BatModeStridesA{}) == rank(BatModeStridesC{}));
-  static_assert(rank(BatModeStridesB{}) == rank(BatModeStridesC{}));
+  constexpr int MaxRank_M = cute::rank(RowModeStridesA{}); // Max row modes
+  constexpr int MaxRank_N = cute::rank(ColModeStridesB{}); // Max column modes
+  constexpr int MaxRank_K = cute::rank(RedModeStridesA{}); // Max contraction modes
+  constexpr int MaxRank_L = cute::rank(BatModeStridesA{}); // Max batch modes
+  static_assert(cute::rank(RowModeStridesA{}) == cute::rank(RowModeStridesC{}));
+  static_assert(cute::rank(ColModeStridesB{}) == cute::rank(RowModeStridesC{}));
+  static_assert(cute::rank(RedModeStridesA{}) == cute::rank(RedModeStridesB{}));
+  static_assert(cute::rank(BatModeStridesA{}) == cute::rank(BatModeStridesC{}));
+  static_assert(cute::rank(BatModeStridesB{}) == cute::rank(BatModeStridesC{}));
 
   // Parse command line to get modes, extents, and strides
   cutlass::GettCommandLine cmd;
