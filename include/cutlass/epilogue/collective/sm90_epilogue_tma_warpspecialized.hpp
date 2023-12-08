@@ -113,12 +113,12 @@ public:
   using GmemTiledCopyD = SM90_TMA_STORE;
 
   static_assert(!is_layout<EpilogueTile>::value && is_tuple<EpilogueTile>::value, "EpilogueTile must be a cute::Tile or cute::Shape");
-  static_assert(rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
-  static_assert(rank(EpilogueTile{}) == 2, "EpilogueTile must be rank-2: [EPI_TILE_M, EPI_TILE_N]");
+  static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
+  static_assert(cute::rank(EpilogueTile{}) == 2, "EpilogueTile must be rank-2: [EPI_TILE_M, EPI_TILE_N]");
   static_assert(size<0>(CtaTileMNK{}) % size<0>(shape(EpilogueTile{})) == 0, "EPI_TILE_M must divide CTA_M");
   static_assert(size<1>(CtaTileMNK{}) % size<1>(shape(EpilogueTile{})) == 0, "EPI_TILE_N must divide CTA_N");
-  static_assert(rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]");
-  static_assert(rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]");
+  static_assert(cute::rank(StrideC{}) == 3, "StrideC must be rank-3: [M, N, L]");
+  static_assert(cute::rank(StrideD{}) == 3, "StrideD must be rank-3: [M, N, L]");
 
 private:
   using SmemElementC = cute::conditional_t<cute::is_void_v<ElementC>,ElementD,ElementC>; // prevents void ref breakages
@@ -340,10 +340,10 @@ public:
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord_mnkl;
 
     // Tile residue
-    auto m_max_coord = unwrap(cute::transform(make_seq<rank<0>(tile_shape_MNK)>{}, [&](auto i) {
+    auto m_max_coord = unwrap(cute::transform(make_seq<cute::rank<0>(tile_shape_MNK)>{}, [&](auto i) {
       return get<0,i>(problem_shape_mnkl) - get<0,i>(tile_shape_MNK) * get<0,i>(tile_coord_mnkl);
     }));
-    auto n_max_coord = unwrap(cute::transform(make_seq<rank<1>(tile_shape_MNK)>{}, [&](auto i) {
+    auto n_max_coord = unwrap(cute::transform(make_seq<cute::rank<1>(tile_shape_MNK)>{}, [&](auto i) {
       return get<1,i>(problem_shape_mnkl) - get<1,i>(tile_shape_MNK) * get<1,i>(tile_coord_mnkl);
     }));
     auto residue_mn = make_coord(m_max_coord, n_max_coord);
@@ -456,11 +456,11 @@ public:
     using ElementCompute = cute::conditional_t<cute::is_void_v<ElementCompute_>,ElementAccumulator,ElementCompute_>;
 
     static_assert(is_rmem<AccEngine>::value, "Accumulator must be RF resident.");
-    static_assert(rank(AccLayout{}) == 3, "Accumulator must be MMA-partitioned: (MMA,MMA_M,MMA_N)");
-    static_assert(rank(ProblemShapeMNKL{}) == 4, "ProblemShapeMNKL must be rank 4");
+    static_assert(cute::rank(AccLayout{}) == 3, "Accumulator must be MMA-partitioned: (MMA,MMA_M,MMA_N)");
+    static_assert(cute::rank(ProblemShapeMNKL{}) == 4, "ProblemShapeMNKL must be rank 4");
     static_assert(is_static<TileShapeMNK>::value, "TileShapeMNK must be static");
-    static_assert(rank(TileShapeMNK{}) == 3, "TileShapeMNK must be rank 3");
-    static_assert(rank(TileCoordMNKL{}) == 4, "TileCoordMNKL must be rank 4");
+    static_assert(cute::rank(TileShapeMNK{}) == 3, "TileShapeMNK must be rank 3");
+    static_assert(cute::rank(TileCoordMNKL{}) == 4, "TileCoordMNKL must be rank 4");
 
     // Indexing variables
     auto [M, N, K, L] = problem_shape_mnkl;
@@ -530,11 +530,11 @@ public:
     Tensor bSG_gD = thrblk_s2g.partition_D(gD_epi);                                    // (S2G,S2G_M,S2G_N,EPI_M,EPI_N)
 
     // Coordinate tensors and residue for tile quantization
-    auto m_max_coord = unwrap(cute::transform(make_seq<rank<0>(CtaTileMNK{})>{}, [&](auto i) {
+    auto m_max_coord = unwrap(cute::transform(make_seq<cute::rank<0>(CtaTileMNK{})>{}, [&](auto i) {
       auto c_m = get<0,i>(problem_shape_mnkl) - get<0,i>(CtaTileMNK{}) * get<0,i>(tile_coord_mnkl);
       return cute::max(0, c_m);
     }));
-    auto n_max_coord = unwrap(cute::transform(make_seq<rank<1>(CtaTileMNK{})>{}, [&](auto i) {
+    auto n_max_coord = unwrap(cute::transform(make_seq<cute::rank<1>(CtaTileMNK{})>{}, [&](auto i) {
       auto c_n = get<1,i>(problem_shape_mnkl) - get<1,i>(CtaTileMNK{}) * get<1,i>(tile_coord_mnkl);
       return cute::max(0, c_n);
     }));
@@ -559,7 +559,7 @@ public:
                       tRS_cD,
                       tRS_rC
                     };
-    auto cst_callbacks = fusion_callbacks.get_consumer_store_callbacks<RefSrc>(cst_args);
+    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
     bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 

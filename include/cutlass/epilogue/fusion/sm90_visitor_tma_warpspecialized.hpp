@@ -272,8 +272,18 @@ struct Sm90VisitorImplBase {
 template <class... Ops>
 struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
 
-  using Sm90VisitorImplBase<Ops...>::Sm90VisitorImplBase;
-  using Sm90VisitorImplBase<Ops...>::ops;
+  using Impl = Sm90VisitorImplBase<Ops...>;
+  using Params = typename Impl::Params;
+  using SharedStorage = typename Impl::SharedStorage;
+
+  CUTLASS_HOST_DEVICE
+  Sm90VisitorImpl() {}
+
+  CUTLASS_HOST_DEVICE
+  Sm90VisitorImpl(Params const& params, SharedStorage const& shared_storage)
+    : Impl(params, shared_storage) {}
+
+  using Impl::ops;
 
   //
   // Queries for kernel runtime
@@ -506,7 +516,18 @@ using namespace detail;
 template <class NodeOp, class... ChildOps>
 struct Sm90TreeVisitor : Sm90VisitorImpl<ChildOps..., NodeOp> {
 
-  using Sm90VisitorImpl<ChildOps..., NodeOp>::Sm90VisitorImpl;
+  using Impl = Sm90VisitorImpl<ChildOps..., NodeOp>;
+  using Params = typename Impl::Params;
+  using SharedStorage = typename Impl::SharedStorage;
+
+  CUTLASS_HOST_DEVICE
+  Sm90TreeVisitor() {}
+
+  CUTLASS_HOST_DEVICE
+  Sm90TreeVisitor(
+      Params const& params,
+      SharedStorage const& shared_storage)
+    : Impl(params, shared_storage) {}
 
   template<class CallbacksImpl>
   struct ConsumerStoreCallbacks : CallbacksImpl {
@@ -538,10 +559,9 @@ struct Sm90TreeVisitor : Sm90VisitorImpl<ChildOps..., NodeOp> {
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    return ConsumerStoreCallbacks(
-      Sm90VisitorImpl<ChildOps..., NodeOp>::
-      get_consumer_store_callbacks<ReferenceSrc>(args)
-    );
+    auto callbacks_tuple = Sm90VisitorImpl<ChildOps..., NodeOp>::
+      template get_consumer_store_callbacks<ReferenceSrc>(args);
+    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
 
 };
@@ -590,10 +610,9 @@ struct Sm90SplitTreeVisitor : Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputT
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    return ConsumerStoreCallbacks(
-      Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputTree>::
-      get_consumer_store_callbacks<ReferenceSrc>(args)
-    );
+    auto callbacks_tuple = Sm90VisitorImpl<InputTree, AuxOutTrees..., OutputTree>::
+      template get_consumer_store_callbacks<ReferenceSrc>(args);
+    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
 
 };
@@ -609,7 +628,7 @@ template<
 >
 struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
   static_assert(is_static_v<EdgeTuple>);
-  static_assert(rank(EdgeTuple{}) == sizeof...(Ops));
+  static_assert(cute::rank(EdgeTuple{}) == sizeof...(Ops));
   static_assert(sizeof...(Ops) > 1);
 
   using Sm90VisitorImpl<Ops...>::Sm90VisitorImpl;
@@ -669,10 +688,9 @@ struct Sm90TopologicalVisitor : Sm90VisitorImpl<Ops...> {
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    return ConsumerStoreCallbacks(
-      Sm90VisitorImpl<Ops...>::
-      get_consumer_store_callbacks<ReferenceSrc>(args)
-    );
+    auto callbacks_tuple = Sm90VisitorImpl<Ops...>::
+      template get_consumer_store_callbacks<ReferenceSrc>(args);
+    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
   }
 
 };

@@ -595,7 +595,7 @@ CollectiveBuilder<
                       cute::is_base_of_v<TmaWarpSpecializedCooperativeElementwiseBase, Schedule> >> {
 private:
   using FusionOp =
-    fusion::LinCombEltAct<Schedule::ActivationFunctor, ElementD, ElementCompute, ElementCompute, Schedule::Round>;
+    fusion::LinCombEltAct<Schedule::template ActivationFunctor, ElementD, ElementCompute, ElementCompute, Schedule::Round>;
   using ImplSchedule =
     cute::conditional_t<cute::is_base_of_v<TmaWarpSpecializedElementwiseBase, Schedule>,
       TmaWarpSpecialized, TmaWarpSpecializedCooperative>;
@@ -676,7 +676,7 @@ private:
   using SmemCopyOpAux = decltype(detail::sm90_get_smem_store_op_for_accumulator<
     GmemStrideTypeAux, typename Schedule::ElementT>());
   using FusionOperationAux = fusion::LinCombPerRowBiasEltActAux<
-    GmemLayoutTagD, Schedule::ActivationFunctor, ElementD, ElementCompute,
+    GmemLayoutTagD, Schedule::template ActivationFunctor, ElementD, ElementCompute,
     typename Schedule::ElementT, typename Schedule::ElementBias, ElementCompute
   >;
   using FusionCallbacksAux = fusion::FusionCallbacks<
@@ -684,7 +684,7 @@ private:
   >;
 
   using FusionOperationNoAux = fusion::LinCombPerRowBiasEltAct<
-    Schedule::ActivationFunctor, ElementD, ElementCompute,
+    Schedule::template ActivationFunctor, ElementD, ElementCompute,
     typename Schedule::ElementBias, ElementCompute
   >;
   using FusionCallbacksNoAux = fusion::FusionCallbacks<

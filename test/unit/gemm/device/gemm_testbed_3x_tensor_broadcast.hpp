@@ -158,7 +158,6 @@ struct Testbed3xTensorBroadcast {
       bool use_bias)
   {
     auto [M, N, K, L] = problem_shape_MNKL;
-    auto coord_0 = cutlass::make_Coord(0);
 
     impl_.tensor_D.sync_host();
     EXPECT_GT(cutlass::reference::host::TensorNorm(impl_.tensor_A.host_view()), 0);
@@ -218,7 +217,6 @@ struct Testbed3xTensorBroadcast {
     auto N = cute::get<1>(problem_shape_MNKL);
     auto K = cute::get<2>(problem_shape_MNKL);
     auto L = cute::get<3>(problem_shape_MNKL);
-    auto coord_0 = cutlass::make_Coord(0);
 
     auto A = cute::make_tensor(impl_.tensor_A.host_data(),
         cute::make_layout(cute::make_shape(M, K, L), impl_.stride_a));
@@ -338,7 +336,7 @@ struct Testbed3xTensorBroadcast {
     cutlass::KernelHardwareInfo hw_info;
     hw_info.device_id = 0;
     if (not profiling) {
-      impl_.sm_count = min(impl_.MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
+      impl_.sm_count = std::min(impl_.MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
       hw_info.sm_count = impl_.sm_count;
     }
     else {

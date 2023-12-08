@@ -183,11 +183,11 @@ public:
 
   using PipelineParams = typename MainloopPipeline::Params;
 
-  static_assert(rank(InternalSmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
+  static_assert(cute::rank(InternalSmemLayoutAtomA{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
   static_assert((size<0>(TileShape{}) % size<0>(InternalSmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(InternalSmemLayoutAtomA{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
 
-  static_assert(rank(InternalSmemLayoutAtomB{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
+  static_assert(cute::rank(InternalSmemLayoutAtomB{}) == 2, "SmemLayoutAtom must be rank 2 (M/N, K)");
   static_assert((size<1>(TileShape{}) % size<0>(InternalSmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(InternalSmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
 
@@ -443,7 +443,7 @@ public:
       // Prepare the TMA loads for A and B
       //
       
-      constexpr uint32_t cluster_shape_x = get<0>(DispatchPolicy::ClusterShape());
+      constexpr uint32_t cluster_shape_x = get<0>(ClusterShape());
       uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
 
       Tensor gA_mkl = get<0>(tiled_tensors);
@@ -541,10 +541,10 @@ public:
       Params const& mainloop_params) {
     using namespace cute;
     static_assert(is_rmem<FrgTensorC>::value, "C tensor must be rmem resident.");
-    static_assert(rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
-    static_assert(rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
-    static_assert(rank(InternalSmemLayoutAtomA{}) == 2, "InternalSmemLayoutAtomA must be rank 2.");
-    static_assert(rank(InternalSmemLayoutAtomB{}) == 2, "InternalSmemLayoutAtomB must be rank 2.");
+    static_assert(cute::rank(SmemLayoutA{}) == 3, "Smem layout must be rank 3.");
+    static_assert(cute::rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
+    static_assert(cute::rank(InternalSmemLayoutAtomA{}) == 2, "InternalSmemLayoutAtomA must be rank 2.");
+    static_assert(cute::rank(InternalSmemLayoutAtomB{}) == 2, "InternalSmemLayoutAtomB must be rank 2.");
     static_assert(!cute::is_void_v<InternalSmemCopyAtomA>,
       "SM90 GMMA mainloops must specify a non-void copy atom for RF sourced instructions.");
     static_assert(cute::is_void_v<InternalSmemCopyAtomB>,
