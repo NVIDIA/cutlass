@@ -237,13 +237,16 @@ struct Sm90TreeVisitor<
       Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>
     >;
 
+  using Params = typename Impl::Params;
+  using SharedStorage = typename Impl::SharedStorage;
+
   CUTLASS_HOST_DEVICE
   Sm90TreeVisitor() {}
 
   CUTLASS_HOST_DEVICE
   Sm90TreeVisitor(
-      typename Impl::Params const& params, 
-      typename Impl::SharedStorage const& shared_storage)
+      Params const& params,
+      SharedStorage const& shared_storage)
     : Impl(params, shared_storage) {}
 
   CUTLASS_DEVICE bool
@@ -539,13 +542,16 @@ struct Sm90TreeVisitor<
       Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle>
     >;
 
+  using Params = typename Impl::Params;
+  using SharedStorage = typename Impl::SharedStorage;
+
   CUTLASS_HOST_DEVICE
   Sm90TreeVisitor() {}
 
   CUTLASS_HOST_DEVICE
   Sm90TreeVisitor(
-      typename Impl::Params const& params, 
-      typename Impl::SharedStorage const& shared_storage)
+      Params const& params,
+      SharedStorage const& shared_storage)
     : Impl(params, shared_storage) {}
 
   template <class CallbacksImpl>

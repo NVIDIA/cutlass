@@ -273,12 +273,14 @@ template <class... Ops>
 struct Sm90VisitorImpl : Sm90VisitorImplBase<Ops...> {
 
   using Impl = Sm90VisitorImplBase<Ops...>;
+  using Params = typename Impl::Params;
+  using SharedStorage = typename Impl::SharedStorage;
 
   CUTLASS_HOST_DEVICE
   Sm90VisitorImpl() {}
 
   CUTLASS_HOST_DEVICE
-  Sm90VisitorImpl(Impl::Params const& params, Impl::SharedStorage const& shared_storage)
+  Sm90VisitorImpl(Params const& params, SharedStorage const& shared_storage)
     : Impl(params, shared_storage) {}
 
   using Impl::ops;
@@ -515,14 +517,16 @@ template <class NodeOp, class... ChildOps>
 struct Sm90TreeVisitor : Sm90VisitorImpl<ChildOps..., NodeOp> {
 
   using Impl = Sm90VisitorImpl<ChildOps..., NodeOp>;
+  using Params = typename Impl::Params;
+  using SharedStorage = typename Impl::SharedStorage;
 
   CUTLASS_HOST_DEVICE
   Sm90TreeVisitor() {}
 
   CUTLASS_HOST_DEVICE
   Sm90TreeVisitor(
-      typename Impl::Params const& params, 
-      typename Impl::SharedStorage const& shared_storage)
+      Params const& params,
+      SharedStorage const& shared_storage)
     : Impl(params, shared_storage) {}
 
   template<class CallbacksImpl>
