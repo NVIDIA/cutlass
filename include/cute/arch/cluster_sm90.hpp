@@ -181,11 +181,11 @@ CUTE_HOST_DEVICE uint32_t elect_one_sync()
   uint32_t laneid = 0;
   asm volatile(
     "{\n"
-    ".reg .b32 %rx;\n"
-    ".reg .pred %px;\n"
-    "     elect.sync %rx|%px, %2;\n"
+    ".reg .b32 %%rx;\n"
+    ".reg .pred %%px;\n"
+    "     elect.sync %%rx|%%px, %2;\n"
     "@%%px mov.s32 %1, 1;\n"
-    "     mov.s32 %0, %rx;\n"
+    "     mov.s32 %0, %%rx;\n"
     "}\n"
     : "+r"(laneid), "+r"(pred)
     : "r"(0xFFFFFFFF));
@@ -211,11 +211,11 @@ elect_one_leader_sync()
   uint32_t laneid = 0;
   asm volatile(
     "{\n"
-    ".reg .b32 %rx;\n"
-    ".reg .pred %px;\n"
-    "     elect.sync %rx|%px, %2;\n"
+    ".reg .b32 %%rx;\n"
+    ".reg .pred %%px;\n"
+    "     elect.sync %%rx|%%px, %2;\n"
     "@%%px mov.s32 %1, 1;\n"
-    "     mov.s32 %0, %rx;\n"
+    "     mov.s32 %0, %%rx;\n"
     "}\n"
     : "+r"(laneid), "+r"(pred)
     : "r"(0xFFFFFFFF));
