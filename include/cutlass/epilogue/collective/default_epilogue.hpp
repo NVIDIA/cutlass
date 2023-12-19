@@ -50,12 +50,15 @@ namespace collective {
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Applies an element wise operation to all elements within the fragment
-/// and writes them out to destination storage.
+/// and writes them out to destination storage. C and D storage can have
+/// optional dynamic offsets (offsets stored in a device memory).
 template <
   class StrideC_,
   class StrideD_,
   class ThreadEpilogueOp_,
-  class EpilogueSchedule_
+  class EpilogueSchedule_,
+  unsigned DynamicOffsetC_ = 0,
+  unsigned DynamicOffsetD_ = 0
 >
 class DefaultEpilogue {
 public:
@@ -86,6 +89,15 @@ public:
 
   struct SharedStorage { };
 
+  template<unsigned N>
+  struct DynamicOffset {
+    cute::array<int32_t const*, N> offset{};
+    cute::array<int32_t, N> stride{};
+  };
+
+  using DynamicOffsetC = DynamicOffset<DynamicOffsetC_>;
+  using DynamicOffsetD = DynamicOffset<DynamicOffsetD_>;
+
   // Host side epilogue arguments
   struct Arguments {
     typename ThreadEpilogueOp::Params thread{};
@@ -93,6 +105,8 @@ public:
     StrideC dC{};
     ElementD* ptr_D = nullptr;
     StrideD dD{};
+    DynamicOffsetC offsetC{};
+    DynamicOffsetC offsetD{};
   };
 
   // Device side epilogue params
@@ -176,9 +190,22 @@ public:
     auto stride_c = detail::get_epilogue_stride<EpilogueSchedule>(params.dC);
     auto stride_d = detail::get_epilogue_stride<EpilogueSchedule>(params.dD);
 
+    ElementC const* ptr_C = params.ptr_C;
+    ElementD* ptr_D = params.ptr_D;
+
+    // Apply dynamic offsets to base pointers.
+    for (unsigned i = 0; i < DynamicOffsetC_; ++i) {
+      if (params.offsetC.offset[i])
+        ptr_C += *params.offsetC.offset[i] * params.offsetC.stride[i];
+    }
+    for (unsigned i = 0; i < DynamicOffsetD_; ++i) {
+      if (params.offsetD.offset[i])
+        ptr_D += *params.offsetD.offset[i] * params.offsetD.stride[i];
+    }
+
     // Represent the full output tensor
-    Tensor mC_mnl = make_tensor(make_gmem_ptr(params.ptr_C), make_shape(M,N,L), stride_c);                 // (m,n,l)
-    Tensor mD_mnl = make_tensor(make_gmem_ptr(params.ptr_D), make_shape(M,N,L), stride_d);                 // (m,n,l)
+    Tensor mC_mnl = make_tensor(make_gmem_ptr(ptr_C), make_shape(M,N,L), stride_c);            // (m,n,l)
+    Tensor mD_mnl = make_tensor(make_gmem_ptr(ptr_D), make_shape(M,N,L), stride_d);            // (m,n,l)
     Tensor gC_mnl = local_tile(mC_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
     Tensor gD_mnl = local_tile(mD_mnl, blk_shape_MNK, make_coord(_,_,_), Step<_1,_1, X>{});    // (BLK_M,BLK_N,m,n,l)
 
