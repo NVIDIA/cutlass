@@ -103,7 +103,7 @@ public:
   static constexpr bool IsUnaryOpEnabled = ThreadEpilogueOp::IsUnaryOpEnabled;
 
   static constexpr bool PerColumnBias = PerColumnBias_;
-  using BiasStride = typename std::conditional<PerColumnBias, Stride<_0, _1, _0>, Stride<_1, _0, _0>>::type;
+  using BiasStride = typename cute::conditional_t<PerColumnBias, Stride<_0, _1, _0>, Stride<_1, _0, _0>>;
 
   struct SharedStorage { };
 

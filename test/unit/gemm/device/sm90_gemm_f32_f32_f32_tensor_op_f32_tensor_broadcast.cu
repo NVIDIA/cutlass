@@ -97,6 +97,54 @@ TEST(SM90_Device_Gemm_f32t_f32n_f32n_tensor_op_gmma_f32_tensor_broadcast, 64x128
   EXPECT_TRUE(test::gemm::device::TestAllTensorBroadcast<Gemm>());
 }
 
+TEST(SM90_Device_Gemm_f32t_f32n_f32n_tensor_op_gmma_f32_tensor_broadcast, 64x128x32_1x2x1_ActReLU_Bin0Mul_Bin1Plus_UnaryHardSwish_PerColBias) {
+  using LayoutA = cutlass::layout::RowMajor;
+  using LayoutB = cutlass::layout::ColumnMajor;
+  using LayoutC = cutlass::layout::ColumnMajor;
+
+  using ElementOutput = float;
+  using ElementAccumulator = ElementOutput;
+  using ElementCompute = ElementOutput;
+  using ElementBias = ElementOutput;
+
+  using CollectiveOp = typename cutlass::gemm::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      float, LayoutA, 4,
+      float, LayoutB, 4,
+      float,
+      Shape<_64,_128,_128>, Shape<_1,_2,_1>,
+      cutlass::gemm::collective::StageCountAuto,
+      cutlass::gemm::collective::KernelScheduleAuto
+    >::CollectiveOp;
+
+  using EpilogueOp = cutlass::epilogue::collective::detail::Sm90TmaWarpSpecializedAdapter<
+    cutlass::epilogue::collective::EpilogueTensorBroadcast<
+      cutlass::gemm::TagToStrideC_t<LayoutC>,
+      cutlass::gemm::TagToStrideC_t<LayoutC>,
+      cutlass::epilogue::thread::LinearCombinationTensorBroadcast<
+        ElementOutput, ElementAccumulator, ElementCompute, ElementBias,
+        cutlass::epilogue::thread::ReLu,
+        cutlass::multiplies,
+        cutlass::plus,
+        cutlass::epilogue::thread::HardSwish
+        >,
+      cutlass::gemm::EpilogueDefault,
+      /* PerColBias = */ true>>;
+
+  EXPECT_TRUE(EpilogueOp::IsBinaryOp0Enabled);
+  EXPECT_TRUE(EpilogueOp::IsBinaryOp1Enabled);
+  EXPECT_TRUE(EpilogueOp::IsUnaryOpEnabled);
+
+  using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>,
+      CollectiveOp,
+      EpilogueOp
+  >;
+
+  using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+  EXPECT_TRUE(test::gemm::device::TestAllTensorBroadcast<Gemm>());
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
