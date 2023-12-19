@@ -207,7 +207,7 @@ struct array<T, 0>
   using pointer = element_type*;
   using const_pointer = const element_type*;
   using const_iterator = const_pointer;
-  using iterator = const_iterator;
+  using iterator = pointer;
 
   CUTE_HOST_DEVICE constexpr
   reference operator[](size_type pos)
