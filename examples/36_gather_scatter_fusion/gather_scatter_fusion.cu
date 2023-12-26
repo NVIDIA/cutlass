@@ -174,7 +174,7 @@ struct Options {
   double gflops(double runtime_s) const {
 
     // Number of real-valued multiply-adds
-    int64_t fmas = problem_size.m() * index_size * problem_size.k();
+    int64_t fmas = int64_t(index_size) * problem_size.n() * problem_size.k();
     
     // Two flops per multiply-add
     return 2.0 * double(fmas) / double(1.0e9) / runtime_s;
