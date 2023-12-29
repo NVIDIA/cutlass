@@ -170,7 +170,8 @@ public:
       [[maybe_unused]] TileCoordMNKL tile_coord_mnkl,
       [[maybe_unused]] TiledMma tiled_mma,
       [[maybe_unused]] int thread_idx,
-      [[maybe_unused]] TensorStorage& shared_tensors)
+      [[maybe_unused]] TensorStorage& shared_tensors,
+      [[maybe_unused]] int subtile_idx=-1)
   {
     return load_pipe_producer_state;
   }
@@ -202,7 +203,8 @@ public:
       cute::Tensor<AccEngine,AccLayout> accumulators,
       TiledMma tiled_mma,
       int thread_idx,
-      TensorStorage& shared_tensors)
+      TensorStorage& shared_tensors,
+      int subtile_index = -1)
   {
     constexpr int BLK_M_RANK = cute::rank<0>(tile_shape_MNK);
     auto m_max_coord = unwrap(cute::transform(make_seq<BLK_M_RANK>{}, [&](auto i) {

@@ -38,19 +38,41 @@
     using INT8 tensor cores.
 
     The narrower type always passes through the register file. Therefore, in cases where the narrower type is operand B, the collective will implicitly swap 
-    A and B in the main loop. Consequently, it is essential to consider this when constructing the epilogue, as illustrated in this example.
+    A and B in the main loop. However, implicit swaps do not support TMA epilogues. Consequently, it is essential to consider this when constructing the epilogue, 
+    as illustrated in this example.
+
+    Note that in this example, we explicitly swap A and B in order to use TMA epilogues. We do this since TMA epilogues are more performant on problem sizes of interest.
+
+    It is expected that the scale's K dimension be scale_k = ceil_div(problem_k, group_size). 
+    
+    Scales are always expected to be MN major. This means the fastest changing dimension must be M if A is scaled or N if B is scaled.
+    
+    If A is being scaled, the scales should have shape [M, scale_k],  while if B is scaled, it must have shape [N, scale_k].
+
+    The implementation only supports "group-wise" scales. However, we can make it work for per-column scales by setting the groups size
+    equal to the gemm problem K.
 
     Limitations:
       1) Only supported combinations are 16-bit x {8-bit, 4-bit, 2-bit} and {8-bit} x {4-bit, 2-bit}.
       2) The narrow type must always be in K-major format.
-      3) When dealing with 8-bit x {4-bit, 2-bit}, both inputs must be in K-major format.
-      4) Currently, TMA epilogues cannot be used when the narrow type is the B operand. This limitation arises because the implementation always swaps the 
-         operands to ensure the narrow type passes through the register file, and TMA epilogues do not currently support swap + transpose operations. 
-         We plan to address this limitation in the future.
+      3) The scales and zeros must be MN major. That means if A is scaled, it must be column major, but if B is scaled it must be row major.
+      4) The scales and the zeros must have the same layout and groupsize.
+      5) When dealing with 8-bit x {4-bit, 2-bit}, both inputs must be in K-major format.
+      6) Currently, TMA epilogues cannot be used when the narrow type is the B operand. This limitation arises because the implementation always swaps the 
+         operands to ensure that the narrow type passes through the register file, and TMA epilogues do not currently support implicit swap + transpose operations. 
+         We plan to address this limitation in the future. However, we address this in the example by explicitly swapping and transposing the operands.
 
     Examples:
+      
+      Runs the mixed input batched gemm (with batch size 2), converting B to the type of A (mode 0)
+      $ ./examples/55_hopper_mixed_dtype_gemm/55_hopper_mixed_dtype_gemm --m=2048 --n=2048 --k=2048 --l=2 --mode=0
 
-      $ ./examples/55_hopper_mixed_dtype_gemm/55_hopper_mixed_dtype_gemm --m=2048 --n=2048 --k=2048 --l=2
+      Runs the mixed input gemm, and applies a scaling factor to B before mma (mode 1). Applies a vector of scales to the entire
+      matrix (group size is the same as the gemm k dimension).
+      $ ./examples/55_hopper_mixed_dtype_gemm/55_hopper_mixed_dtype_gemm --m=4096 --n=5120 --k=8192 --g=8192 --mode=1
+
+      Runs the mixed input gemm, and applies a scaling factor and adds a zero-point to B before mma (mode 2). Uses a group size of 128.
+      $ ./examples/55_hopper_mixed_dtype_gemm/55_hopper_mixed_dtype_gemm --m=2048 --n=5120 --k=8192 --g=128 --mode=2
 */
 
 #include <iostream>
@@ -79,20 +101,28 @@
 #include "cutlass/util/reference/host/gett.hpp"
 
 #include "helper.h"
-#include "unfused_weight_dequantize.h"
+#include "unfused_weight_dequantize.hpp"
 
 using namespace cute;
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
+// This is just an example, so we use a regular enum so we can compare directly to the command-line int.
+enum GemmMode {
+  ConvertOnly,
+  ScaleOnly,
+  ScaleWithZeroPoint
+};
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 /// GEMM kernel configurations
 /////////////////////////////////////////////////////////////////////////////////////////////////
-using MmaType = cutlass::half_t;
-using QuantType = int8_t;
+using MmaType = cutlass::float_e4m3_t;
+using QuantType = cutlass::int4b_t;
+constexpr int TileShapeK = 128 * 8 / sizeof_bits<MmaType>::value;
 
 // A matrix configuration
-using         ElementA    = MmaType;                                // Element type for A matrix operand
+using         ElementA    = MmaType;                                        // Element type for A matrix operand
 using         LayoutA     = cutlass::layout::RowMajor;                      // Layout type for A matrix operand
 constexpr int AlignmentA  = 128 / cutlass::sizeof_bits<ElementA>::value;    // Memory access granularity/alignment of A matrix in units of elements (up to 16 bytes)
 
@@ -100,6 +130,14 @@ constexpr int AlignmentA  = 128 / cutlass::sizeof_bits<ElementA>::value;    // M
 using         ElementB    = QuantType;                                      // Element type for B matrix operand
 using         LayoutB     = cutlass::layout::ColumnMajor;                   // Layout type for B matrix operand
 constexpr int AlignmentB  = 128 / cutlass::sizeof_bits<ElementB>::value;    // Memory access granularity/alignment of B matrix in units of elements (up to 16 bytes)
+
+// This example manually swaps and transposes, so keep transpose of input layouts
+using LayoutA_Transpose = typename cutlass::layout::LayoutTranspose<LayoutA>::type;
+using LayoutB_Transpose = typename cutlass::layout::LayoutTranspose<LayoutB>::type;
+
+using ElementZero = cutlass::half_t;
+using ElementScale = cutlass::half_t;
+using LayoutScale = cutlass::layout::RowMajor;
 
 // C/D matrix configuration
 using         ElementC    = cutlass::half_t;                                // Element type for C and D matrix operands
@@ -109,51 +147,107 @@ constexpr int AlignmentC  = 128 / cutlass::sizeof_bits<ElementC>::value;    // M
 // D matrix configuration
 using         ElementD    = ElementC;
 using         LayoutD     = LayoutC;
+constexpr int AlignmentD  = 128 / cutlass::sizeof_bits<ElementD>::value;
 
 // Core kernel configurations
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
 using ElementCompute      = float;                                          // Element type for epilogue computation
 using ArchTag             = cutlass::arch::Sm90;                            // Tag indicating the minimum SM that supports the intended feature
 using OperatorClass       = cutlass::arch::OpClassTensorOp;                 // Operator class tag
-using TileShape           = Shape<_128,_256,_64>;                           // Threadblock-level tile size
+using TileShape           = Shape<_128,_256,cute::Int<TileShapeK>>;         // Threadblock-level tile size
 using ClusterShape        = Shape<_2,_1,_1>;                                // Shape of the threadblocks in a cluster
-using StageCountType = cutlass::gemm::collective::StageCountAuto;           // Stage count maximized based on the tile size
-using KernelSchedule = cutlass::gemm::collective::KernelScheduleAuto;       // Kernel to launch based on the default setting in the Collective Builder 
-
-
-using CollectiveMainloop = typename cutlass::gemm::collective::CollectiveBuilder<
-    ArchTag, OperatorClass,
-    ElementA, LayoutA, AlignmentA,
-    ElementB, LayoutB, AlignmentB,
-    ElementAccumulator,
-    TileShape, ClusterShape,
-    cutlass::gemm::collective::StageCountAuto,
-    cutlass::gemm::collective::KernelScheduleAuto
-  >::CollectiveOp;
+using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecializedCooperativeMixedInput;  // Kernel to launch based on the default setting in the Collective Builder 
+using EpilogueSchedule    = cutlass::epilogue::TmaWarpSpecializedCooperative;
+using EpilogueTileType    = cutlass::epilogue::collective::EpilogueTileAuto;
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
     TileShape, ClusterShape,
-    cutlass::epilogue::collective::EpilogueTileAuto,
+    EpilogueTileType,
     ElementAccumulator, ElementAccumulator,
-    // Lie here about layout of C and D since we do swap and transpose trick
+    // Transpose layout of D here since we use explicit swap + transpose
+    // the void type for C tells the builder to allocate 0 smem for the C matrix.
+    // We can enable this if beta == 0 by changing ElementC to void below.
     ElementC, typename cutlass::layout::LayoutTranspose<LayoutC>::type, AlignmentC,
-    ElementC, typename cutlass::layout::LayoutTranspose<LayoutC>::type, AlignmentC,
-    cutlass::epilogue::NoSmemWarpSpecialized // This is the only epi supporting the required swap + transpose.
+    ElementD, typename cutlass::layout::LayoutTranspose<LayoutD>::type, AlignmentD,
+    EpilogueSchedule // This is the only epi supporting the required swap + transpose.
   >::CollectiveOp;
 
-using GemmKernel = cutlass::gemm::kernel::GemmUniversal<
+// ============================================================ MIXED INPUT NO SCALES ============================================================================
+// The collective will infer that the narrow type should be upcasted to the wide type.
+// We swap A and B operands to the builder here
+using CollectiveMainloopConvertOnly = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    ElementB, LayoutB_Transpose, AlignmentB,
+    ElementA, LayoutA_Transpose, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))
+    >,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelConvertOnly = cutlass::gemm::kernel::GemmUniversal<
     Shape<int,int,int,int>, // Indicates ProblemShape
-    CollectiveMainloop,
+    CollectiveMainloopConvertOnly,
     CollectiveEpilogue
 >;
 
-using Gemm = cutlass::gemm::device::GemmUniversalAdapter<GemmKernel>;
+using GemmConvertOnly = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelConvertOnly>;
 
-using StrideA = typename Gemm::GemmKernel::StrideA;
-using StrideB = typename Gemm::GemmKernel::StrideB;
-using StrideC = typename Gemm::GemmKernel::StrideC;
-using StrideD = typename Gemm::GemmKernel::StrideD;
+// =========================================================== MIXED INPUT WITH SCALES ===========================================================================
+// The Scale information must get paired with the operand that will be scaled. In this example, B is scaled so we make a tuple of B's information and the scale information.
+using CollectiveMainloopScaleOnly = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    cute::tuple<ElementB, ElementScale>, LayoutB_Transpose, AlignmentB,
+    ElementA, LayoutA_Transpose, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))
+    >,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelScaleOnly = cutlass::gemm::kernel::GemmUniversal<
+    Shape<int,int,int,int>, // Indicates ProblemShape
+    CollectiveMainloopScaleOnly,
+    CollectiveEpilogue
+>;
+
+using GemmScaleOnly = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleOnly>;
+
+// =========================================================== MIXED INPUT WITH SCALES AND ZEROS ==================================================================
+// We specify scale + zero elements to indicate that we require both. Scales and biases have the same format.
+using CollectiveMainloopScaleWithZeroPoint = typename cutlass::gemm::collective::CollectiveBuilder<
+    ArchTag, OperatorClass,
+    cute::tuple<ElementB, ElementScale, ElementZero>, LayoutB_Transpose, AlignmentB,
+    ElementA, LayoutA_Transpose, AlignmentA,
+    ElementAccumulator,
+    TileShape, ClusterShape,
+    cutlass::gemm::collective::StageCountAutoCarveout<
+      static_cast<int>(sizeof(typename CollectiveEpilogue::SharedStorage))
+    >,
+    KernelSchedule
+  >::CollectiveOp;
+
+using GemmKernelScaleWithZeroPoint = cutlass::gemm::kernel::GemmUniversal<
+    Shape<int,int,int,int>, // Indicates ProblemShape
+    CollectiveMainloopScaleWithZeroPoint,
+    CollectiveEpilogue
+>;
+
+using GemmScaleWithZeroPoint = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelScaleWithZeroPoint>;
+// =================================================================================================================================================================
+
+using StrideA = cutlass::detail::TagToStrideA_t<LayoutA>;
+using StrideB = cutlass::detail::TagToStrideB_t<LayoutB>;
+using StrideC = typename GemmKernelScaleWithZeroPoint::StrideC;
+using StrideD = typename GemmKernelScaleWithZeroPoint::StrideD;
+
+using StrideC_ref = cutlass::detail::TagToStrideC_t<LayoutC>;
+using StrideD_ref = cutlass::detail::TagToStrideC_t<LayoutD>;
 
 //
 // Data members
@@ -163,20 +257,25 @@ using StrideD = typename Gemm::GemmKernel::StrideD;
 StrideA stride_A;
 StrideB stride_B;
 StrideC stride_C;
+StrideC_ref stride_C_ref;
 StrideD stride_D;
+StrideD_ref stride_D_ref;
 uint64_t seed;
 
-// Initialization functions don't handle sub-byte types so we use uint8 to initialize and a separate
-// kernel to pack the data if it is necessary.
-using InitializationType = cute::conditional_t<cute::sizeof_bits_v<QuantType> < 8, uint8_t, QuantType>;
+// Scale and Zero share a stride since the layout and shapes must be the same.
+using StrideS = typename CollectiveMainloopScaleWithZeroPoint::StrideScale;
+using StrideS_ref = cutlass::detail::TagToStrideB_t<LayoutScale>;
+StrideS stride_S;
+StrideS_ref stride_S_ref;
 
-cutlass::HostTensor<typename Gemm::ElementA, LayoutA> tensor_A;
-cutlass::HostTensor<InitializationType, LayoutB> tensor_B_init;
-cutlass::HostTensor<typename Gemm::ElementB, LayoutB> tensor_B;
-cutlass::HostTensor<typename Gemm::ElementA, LayoutB> tensor_B_dq;
-cutlass::HostTensor<typename Gemm::ElementC, LayoutC> tensor_C;
-cutlass::HostTensor<typename Gemm::EpilogueOutputOp::ElementOutput, LayoutD> tensor_D;
-cutlass::HostTensor<typename Gemm::EpilogueOutputOp::ElementOutput, LayoutD> tensor_ref_D;
+cutlass::HostTensor<MmaType, LayoutA> tensor_A;
+cutlass::HostTensor<QuantType, LayoutB> tensor_B;
+cutlass::HostTensor<MmaType, LayoutB> tensor_B_dq;
+cutlass::HostTensor<ElementScale, LayoutScale> tensor_scale;
+cutlass::HostTensor<ElementZero, LayoutScale> tensor_zero;
+cutlass::HostTensor<ElementC, LayoutC> tensor_C;
+cutlass::HostTensor<typename GemmScaleWithZeroPoint::EpilogueOutputOp::ElementOutput, LayoutD> tensor_D;
+cutlass::HostTensor<typename GemmScaleWithZeroPoint::EpilogueOutputOp::ElementOutput, LayoutD> tensor_ref_D;
 
 #endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
@@ -192,7 +291,9 @@ struct Options {
   float alpha = 1.0f;
   float beta = 0.0f;
   int iterations = 1000;
+  int mode = 2;
   int m = 5120, n = 4096, k = 4096;
+  int g = 128;
   int l = 1;
 
   // Parses the command line
@@ -208,6 +309,8 @@ struct Options {
     cmd.get_cmd_line_argument("n", n);
     cmd.get_cmd_line_argument("k", k);
     cmd.get_cmd_line_argument("l", l);
+    cmd.get_cmd_line_argument("g", g);
+    cmd.get_cmd_line_argument("mode", mode);
     cmd.get_cmd_line_argument("alpha", alpha, 1.f);
     cmd.get_cmd_line_argument("beta", beta, 0.f);
     cmd.get_cmd_line_argument("iterations", iterations);
@@ -224,13 +327,15 @@ struct Options {
       << "  --n=<int>                   Sets the N extent of the GEMM\n"
       << "  --k=<int>                   Sets the K extent of the GEMM\n"
       << "  --l=<int>                   The number of independent gemm problems with mnk shape\n"
+      << "  --g=<int>                   The size of each group for the scales and zeros. To broadcast a vector of scales or zeros, set the group size to K.\n"
+      << "  --mode=<int>                The mode to run the gemm. 0 does (A @ B), 1 means A @ (scale * B), 2 means A @ (scale * B + zero-point).\n"
       << "  --alpha=<f32>               Epilogue scalar alpha\n"
       << "  --beta=<f32>                Epilogue scalar beta\n\n"
       << "  --iterations=<int>          Number of profiling iterations to perform.\n\n";
 
     out
       << "\n\nExamples:\n\n"
-      << "$ " << "55_hopper_warp_specialized_gemm" << " --m=1024 --n=512 --k=1024 --l=10 --alpha=2 --beta=0.707 \n\n";
+      << "$ " << "55_hopper_warp_specialized_gemm" << " --m=1024 --n=512 --k=1024 -g 0 --l=10 --alpha=2 --mode=2 --beta=0.707 \n\n";
 
     return out;
   }
@@ -289,114 +394,146 @@ bool initialize_tensor(
     scope_min = -8;
   }
   cutlass::reference::host::TensorFillRandomUniform(
-    view, seed, scope_max, scope_min, 0);
+    view, seed, scope_max, scope_min);
 
   return true;
 }
 
-template <class QuantElement, typename Element, typename Layout>
+template <typename Element, typename Layout>
 bool initialize_quant_tensor(
   cutlass::TensorView<Element, Layout> view,
   uint64_t seed=2023) {
   
-  Element scope_max, scope_min;
-  constexpr int bits_input = cute::sizeof_bits_v<QuantElement>;
-  static_assert(bits_input <= 8, "Quantization type can be at most 8 bits");
-
-  if constexpr (bits_input == 8) {
-    // Directly init 1-byte types
-    static_assert(cute::is_same_v<QuantElement, Element>, "Init type should equal quant type for 1 byte types");
-    scope_max = std::numeric_limits<QuantElement>::max();
-    scope_min = std::numeric_limits<QuantElement>::min();
-  } else {
-    static_assert(cute::is_same_v<uint8_t, Element>, "Init type should be uint8_t for sub-byte types");
-    scope_max = (1 << bits_input);
-    scope_min = 0;
-  }
+  float scope_min = float(cutlass::platform::numeric_limits<Element>::lowest());
+  float scope_max = float(cutlass::platform::numeric_limits<Element>::max());
 
   cutlass::reference::host::TensorFillRandomUniform(
-    view, seed, scope_max, scope_min, 0);
+    view, seed, scope_max, scope_min);
 
   return true;
 }
 
 template <class Element, class Layout>
-bool initialize_with_one(
-  cutlass::TensorView<Element, Layout> view) {
-  cutlass::reference::host::TensorFill(view, Element(1.0f));
+bool initialize_scale(
+  cutlass::TensorView<Element, Layout> view, 
+  const Options &options) {
+  
+  if (options.mode == GemmMode::ConvertOnly) {
+    // No scales, so just initialize with 1 so we can use the same kernel to dequantize the data.
+    cutlass::reference::host::TensorFill(view, Element(1.0f));
+  } 
+  else {
+    float elt_max_f = float(cutlass::platform::numeric_limits<QuantType>::max());
+    const float max_dequant_val = 4.f;
+    const float min_dequant_val = 0.5f;
+
+    float scope_max(max_dequant_val / elt_max_f);
+    float scope_min(min_dequant_val / elt_max_f);
+
+    cutlass::reference::host::TensorFillRandomUniform(
+      view, seed, scope_max, scope_min);
+  }
   return true;
 }
 
-template <class ElementDst, class ElementSrc, class Layout, class L>
-void prepare_packed_data(cutlass::HostTensor<ElementDst, Layout> view_dst_data,
-                         cutlass::HostTensor<ElementSrc, Layout> view_src_data,
-                         const L& cute_layout) {
-  if constexpr (cute::is_same_v<ElementSrc, ElementDst>) {
-    view_dst_data.copy_in_device_to_device(view_src_data.device_data());
-  } 
-  else {
-    pack_data(view_dst_data.device_data(), view_src_data.device_data(), cute_layout);
+template <class Element, class Layout>
+bool initialize_zero(
+  cutlass::TensorView<Element, Layout> view,
+  const Options &options) {
+  
+  if (options.mode == GemmMode::ScaleWithZeroPoint) {
+    cutlass::reference::host::TensorFillRandomUniform(
+      view, seed, 2.0f, -2.0f);
+  } else {
+    // No bias, so just initialize with 1 so we can use the same kernel to dequantize the data.
+    cutlass::reference::host::TensorFill(view, Element(0.0f));
   }
+  return true;
 }
 
 /// Initialize operands to be used in the GEMM and reference GEMM
 void initialize(const Options &options) {
 
   auto shape_b = cute::make_shape(options.n, options.k, options.l);
+  const int scale_k = (options.k + options.g - 1) / options.g;
   stride_A = cutlass::make_cute_packed_stride(StrideA{}, cute::make_shape(options.m, options.k, options.l));
   stride_B = cutlass::make_cute_packed_stride(StrideB{}, shape_b);
+  // Reverse stride here due to swap and transpose
   stride_C = cutlass::make_cute_packed_stride(StrideC{}, cute::make_shape(options.n, options.m, options.l));
+  stride_C_ref = cutlass::make_cute_packed_stride(StrideC_ref{}, cute::make_shape(options.m, options.n, options.l));
+  // Reverse stride here due to swap and transpose
   stride_D = cutlass::make_cute_packed_stride(StrideD{}, cute::make_shape(options.n, options.m, options.l));
+  stride_D_ref = cutlass::make_cute_packed_stride(StrideD_ref{}, cute::make_shape(options.m, options.n, options.l));
 
   auto a_coord = cutlass::make_Coord(options.m * options.l, options.k);
   auto b_coord = cutlass::make_Coord(options.k, options.n * options.l);
   auto c_coord = cutlass::make_Coord(options.m * options.l, options.n);
 
   tensor_A.resize(a_coord);
-  tensor_B_init.resize(b_coord);
   tensor_B.resize(b_coord);
   tensor_B_dq.resize(b_coord);
   tensor_C.resize(c_coord);
   tensor_D.resize(c_coord);
   tensor_ref_D.resize(c_coord);
 
-  // We need scales since the "dequantize" kernels expects them. We just set them to 1 so the values get converted
-  // to the mma type.
-  cutlass::HostTensor<MmaType, cutlass::layout::RowMajor> tensor_scale;
-  tensor_scale.resize({1 * options.l, options.n});
+  tensor_scale.resize({scale_k * options.l, options.n});
+  tensor_zero.resize({scale_k * options.l, options.n});
 
   initialize_tensor(tensor_A.host_view(), seed + 2022);
-  initialize_quant_tensor<QuantType>(tensor_B_init.host_view(), seed + 2021);
+  initialize_quant_tensor(tensor_B.host_view(), seed + 2021);
   initialize_tensor(tensor_C.host_view(), seed + 2020);
-  initialize_with_one(tensor_scale.host_view());
+  initialize_scale(tensor_scale.host_view(), options);
+  initialize_zero(tensor_zero.host_view(), options);
 
   tensor_A.sync_device();
-  tensor_B_init.sync_device();
+  tensor_B.sync_device();
   tensor_C.sync_device();
   tensor_scale.sync_device();
+  tensor_zero.sync_device();
 
   auto layout_B = make_layout(shape_b, stride_B);
-  prepare_packed_data(tensor_B, tensor_B_init, layout_B);
 
-  auto shape_scale = cute::make_shape(options.n, 1, options.l);
-  auto layout_scale = make_layout(shape_scale);
-  dequantize_weight(tensor_B_dq.device_data(), tensor_B.device_data(), layout_B, tensor_scale.device_data(), layout_scale);
+  auto shape_scale_zero = cute::make_shape(options.n, scale_k, options.l);
+  stride_S = cutlass::make_cute_packed_stride(StrideS{}, cute::make_shape(options.n, scale_k, options.l));
+  stride_S_ref = cutlass::make_cute_packed_stride(StrideS_ref{}, cute::make_shape(options.n, scale_k, options.l));
+  auto layout_scale_zero = make_layout(shape_scale_zero, stride_S_ref);
 
-  tensor_B.sync_host();
+  dequantize_weight(tensor_B_dq.device_data(), tensor_B.device_data(), layout_B, tensor_scale.device_data(), tensor_zero.device_data(), layout_scale_zero, options.g);
   tensor_B_dq.sync_host();
 }
 
 /// Populates a Gemm::Arguments structure from the given commandline options
-typename Gemm::Arguments args_from_options(const Options &options)
+template <typename Args>
+Args args_from_options(const Options &options)
 {
-  typename Gemm::Arguments arguments{
-    cutlass::gemm::GemmUniversalMode::kGemm,
-    {options.m, options.n, options.k, options.l},
-    {tensor_A.device_data(), stride_A, tensor_B.device_data(), stride_B},
-    {{options.alpha, options.beta}, tensor_C.device_data(), stride_C, tensor_D.device_data(), stride_D}
-  };
-
-  return arguments;
+// Swap the A and B tensors, as well as problem shapes here.
+  if (options.mode == GemmMode::ConvertOnly) {
+    return Args {
+      cutlass::gemm::GemmUniversalMode::kGemm,
+      {options.n, options.m, options.k, options.l},
+      {tensor_B.device_data(), stride_B, tensor_A.device_data(), stride_A},
+      {{options.alpha, options.beta}, tensor_C.device_data(), stride_C, tensor_D.device_data(), stride_D}
+    };
+  } 
+  else if (options.mode == GemmMode::ScaleOnly) {
+    return Args {
+      cutlass::gemm::GemmUniversalMode::kGemm,
+      {options.n, options.m, options.k, options.l},
+      {tensor_B.device_data(), stride_B, tensor_A.device_data(), stride_A, tensor_scale.device_data(), stride_S, options.g},
+      {{options.alpha, options.beta}, tensor_C.device_data(), stride_C, tensor_D.device_data(), stride_D}
+    };
+  } 
+  else if (options.mode == GemmMode::ScaleWithZeroPoint) {
+    return Args {
+      cutlass::gemm::GemmUniversalMode::kGemm,
+      {options.n, options.m, options.k, options.l},
+      {tensor_B.device_data(), stride_B, tensor_A.device_data(), stride_A, tensor_scale.device_data(), stride_S, options.g, tensor_zero.device_data()},
+      {{options.alpha, options.beta}, tensor_C.device_data(), stride_C, tensor_D.device_data(), stride_D}
+    };
+  } else {
+    std::cerr << "Invalid mode " << options.mode << ". Must be 0, 1 or 2." << std::endl;
+    exit(-1);
+  }
 }
 
 bool verify(const Options &options) {
@@ -404,44 +541,64 @@ bool verify(const Options &options) {
   // Compute reference output
   //
 
-  // Create instantiation for device reference gemm kernel
-  auto A = cute::make_tensor(tensor_A.host_data(),
-      cute::make_layout(cute::make_shape(options.m, options.k, options.l), stride_A));
-  auto B = cute::make_tensor(tensor_B_dq.host_data(),
-      cute::make_layout(cute::make_shape(options.n, options.k, options.l), stride_B));
-  auto C = cute::make_tensor(tensor_C.host_data(),
-      cute::make_layout(cute::make_shape(options.m, options.n, options.l), stride_C));
-  auto D = cute::make_tensor(tensor_ref_D.host_data(),
-      cute::make_layout(cute::make_shape(options.m, options.n, options.l), stride_D));
+  // In this example, we use the GPU default kernels as a reference (unfused scale)
+  // This is to avoid numerical differences from different accumulation order.
 
-  using unused_t = decltype(D);
+  // Again, due to numerical differences, we must use fast acc here when the mma type is
+  // FP8 as the fused implementation only supports fast acc at the moment.
+  constexpr bool IsFP8Input = cute::is_same_v<MmaType, cutlass::float_e4m3_t> || cute::is_same_v<MmaType, cutlass::float_e5m2_t>;
+  using FP8Sched = cute::conditional_t<size<0>(TileShape{}) == 64, cutlass::gemm::KernelTmaWarpSpecializedPingpongFP8FastAccum, cutlass::gemm::KernelTmaWarpSpecializedCooperativeFP8FastAccum>;
+  using ScheduleRef = cute::conditional_t<IsFP8Input, FP8Sched, cutlass::gemm::collective::KernelScheduleAuto>;
 
-  cutlass::reference::host::GettMainloopParams<ElementAccumulator, decltype(A), decltype(B)> mainloop_params{A, B};
-
-  cutlass::reference::host::GettEpilogueParams<
-      typename Gemm::EpilogueOutputOp::ElementScalar,
-      typename Gemm::EpilogueOutputOp::ElementScalar,
+  using CollectiveMainloopRef = typename cutlass::gemm::collective::CollectiveBuilder<
+      ArchTag, OperatorClass,
+      MmaType, LayoutA, AlignmentA,
+      MmaType, LayoutB, AlignmentB,
       ElementAccumulator,
-      ElementCompute,
-      decltype(C),
-      decltype(D),
-      unused_t, // bias
-      unused_t, // aux
-      unused_t, // valpha
-      unused_t  // vbeta
-  > epilogue_params;
+      TileShape, ClusterShape,
+      cutlass::gemm::collective::StageCountAuto,
+      ScheduleRef
+    >::CollectiveOp;
 
-  epilogue_params.C = C;
-  epilogue_params.D = D;
-  epilogue_params.alpha = options.alpha;
-  epilogue_params.beta = options.beta;
+  using CollectiveEpilogueRef = typename cutlass::epilogue::collective::CollectiveBuilder<
+      cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,
+      TileShape, ClusterShape,
+      cutlass::epilogue::collective::EpilogueTileAuto,
+      ElementAccumulator, ElementAccumulator,
+      ElementC, LayoutC, AlignmentC,
+      ElementD, LayoutD, AlignmentD,
+      cutlass::epilogue::NoSmemWarpSpecialized
+    >::CollectiveOp;
 
-  // get reference result
-  cutlass::reference::host::Gemm3x(mainloop_params, epilogue_params);
+  using GemmKernelRef = cutlass::gemm::kernel::GemmUniversal<
+      Shape<int,int,int,int>, // Indicates ProblemShape
+      CollectiveMainloopRef,
+      CollectiveEpilogueRef
+  >;
+
+  using GemmRef = cutlass::gemm::device::GemmUniversalAdapter<GemmKernelRef>;
+
+  typename GemmRef::Arguments arguments{
+    cutlass::gemm::GemmUniversalMode::kGemm,
+    {options.m, options.n, options.k, options.l},
+    {tensor_A.device_data(), stride_A, tensor_B_dq.device_data(), stride_B},
+    {{options.alpha, options.beta}, tensor_C.device_data(), stride_C_ref, tensor_ref_D.device_data(), stride_D_ref}
+  };
+
+  // Run the gemm where the scaling is performed outside of the kernel.
+  GemmRef gemm_ref;
+  size_t workspace_size = GemmRef::get_workspace_size(arguments);
+  cutlass::device_memory::allocation<uint8_t> workspace(workspace_size);
+  CUTLASS_CHECK(gemm_ref.can_implement(arguments));
+  CUTLASS_CHECK(gemm_ref.initialize(arguments, workspace.get()));
+  CUTLASS_CHECK(gemm_ref.run());
 
   // compare_reference
   tensor_D.sync_host();
-  bool passed = cutlass::reference::host::TensorEquals(tensor_ref_D.host_view(), tensor_D.host_view());
+  tensor_ref_D.sync_host();
+  const ElementD epsilon(1e-2f);
+  const ElementD non_zero_floor(1e-4f);
+  bool passed = cutlass::reference::host::TensorRelativelyEquals(tensor_ref_D.host_view(), tensor_D.host_view(), epsilon, non_zero_floor);
   return passed;
 }
 
@@ -455,7 +612,7 @@ int run(Options &options)
   Gemm gemm;
 
   // Create a structure of gemm kernel arguments suitable for invoking an instance of Gemm
-  auto arguments = args_from_options(options);
+  auto arguments = args_from_options<typename Gemm::Arguments>(options);
 
   // Using the arguments, query for extra workspace required for matrix multiplication computation
   size_t workspace_size = Gemm::get_workspace_size(arguments);
@@ -549,7 +706,26 @@ int main(int argc, char const **args) {
   //
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
-  run<Gemm>(options);
+  if (options.mode == GemmMode::ConvertOnly) {
+    std::cout << "Running in no scale mode." << std::endl;
+    run<GemmConvertOnly>(options);
+  }
+  else if (options.mode == GemmMode::ScaleOnly) {
+    if (options.g == options.k) {
+      std::cout << "Running in per-column scale mode." << std::endl;
+    } else {
+      std::cout << "Running in group scale mode." << std::endl;
+    }
+    run<GemmScaleOnly>(options);
+  }
+  else if (options.mode == GemmMode::ScaleWithZeroPoint) {
+    if (options.g == options.k) {
+      std::cout << "Running in per-column scale and zero mode." << std::endl;
+    } else {
+      std::cout << "Running in group scale and zero mode." << std::endl;
+    }
+    run<GemmScaleWithZeroPoint>(options);
+  }
 #endif
 
   return 0;

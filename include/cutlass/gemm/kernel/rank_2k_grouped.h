@@ -217,6 +217,8 @@ public:
     // Only used by device-level operator
     GemmCoord *host_problem_sizes;
 
+    bool allow_early_exit;
+
     //
     // Methods
     //
@@ -235,7 +237,8 @@ public:
       ldb(nullptr),
       ldc(nullptr),
       ldd(nullptr),
-      host_problem_sizes(nullptr)
+      host_problem_sizes(nullptr),
+      allow_early_exit(false)
     {
 
     }
@@ -256,7 +259,8 @@ public:
       typename LayoutB::Stride::LongIndex *ldb,
       typename LayoutC::Stride::LongIndex *ldc,
       typename LayoutC::Stride::LongIndex *ldd,
-      GemmCoord *host_problem_sizes=nullptr
+      GemmCoord *host_problem_sizes=nullptr,
+      bool allow_early_exit=false
     ):
       mode(mode),
       problem_sizes(problem_sizes),
@@ -271,7 +275,8 @@ public:
       ldb(ldb),
       ldc(ldc),
       ldd(ldd),
-      host_problem_sizes(host_problem_sizes)
+      host_problem_sizes(host_problem_sizes),
+      allow_early_exit(allow_early_exit)
     {
 
     }
@@ -303,6 +308,7 @@ public:
     typename LayoutC::Stride::LongIndex *ldc;
     typename LayoutC::Stride::LongIndex *ldd;
 
+    bool allow_early_exit;
 
     //
     // Methods
@@ -318,7 +324,8 @@ public:
       lda(nullptr),
       ldb(nullptr),
       ldc(nullptr),
-      ldd(nullptr)
+      ldd(nullptr),
+      allow_early_exit(false)
     { }
 
     CUTLASS_HOST_DEVICE
@@ -333,7 +340,8 @@ public:
       lda(args.lda),
       ldb(args.ldb),
       ldc(args.ldc),
-      ldd(args.ldd)
+      ldd(args.ldd),
+      allow_early_exit(args.allow_early_exit)
     {
 
     }
@@ -387,6 +395,12 @@ public:
   /// Executes one GEMM
   CUTLASS_DEVICE
   void operator()(Params const &params, SharedStorage &shared_storage) {
+
+    // Early exit following LAPACK's definition
+    if (params.allow_early_exit &&
+        (params.output_op.alpha == ElementC(0)) && (params.output_op.beta == ElementC(1))) {
+      return;
+    }
 
     //
     // Problem visitor.

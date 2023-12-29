@@ -85,6 +85,7 @@ public:
   using CopyAtomR2G  = CopyAtomR2G_;
 
   static const int kOutputAlignment = ThreadEpilogueOp::kCount;
+
   using AlignmentType = typename cute::uint_bit<sizeof_bits<ElementOutput>::value * kOutputAlignment>::type;
 
   static_assert(cute::rank(StrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
@@ -179,7 +180,7 @@ public:
 
     // synchronizing function for smem reads/writes
 #if CUDA_BARRIER_ENABLED
-    auto synchronize = [] () { cutlass::arch::NamedBarrier::sync(typename TiledCopyS2R::TiledNumThr{}, 0); };
+    auto synchronize = [] () { cutlass::arch::NamedBarrier::sync(typename TiledCopyS2R::TiledNumThr{}, cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 #else
     auto synchronize = [] () { __syncthreads(); };
 #endif

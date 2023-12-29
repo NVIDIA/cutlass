@@ -58,6 +58,7 @@
 #include "cutlass/fast_math.h"
 #include "cutlass/platform/platform.h"
 #include "cutlass/epilogue/fusion/operations.hpp"
+#include "cutlass/gemm/kernel/tile_scheduler_params.h"
 
 #include "cute/int_tuple.hpp"
 #include "cute/layout.hpp"
@@ -192,6 +193,7 @@ struct TestbedImpl {
   using ActivationFunctor = ActivationFunctor_<ElementCompute>;
 
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
 
   static_assert(cute::rank(StrideC{}) == 3, "StrideCD must be rank-3: [M, N, L]");
   static_assert(cute::rank(StrideD{}) == 3, "StrideCD must be rank-3: [M, N, L]");
@@ -248,6 +250,10 @@ struct TestbedImpl {
 
   // Used to force multi-wave tests for persistent kernel schedules
   constexpr static int MaxSmCount = 16;
+
+  cutlass::ComplexTransform TransformA = Gemm::kTransformA;
+  cutlass::ComplexTransform TransformB = Gemm::kTransformB;
+
   //
   // Methods
   //
@@ -462,7 +468,7 @@ struct TestbedImpl {
     auto Vbeta = cute::make_tensor(static_cast<ElementCompute*>(nullptr),
         cute::make_layout(cute::make_shape(M, cute::_1{})));
 
-    cutlass::reference::host::GettMainloopParams<ElementAccumulator, decltype(A), decltype(B)> mainloop_params{A, B};
+    cutlass::reference::host::GettMainloopParams<ElementAccumulator, decltype(A), decltype(B)> mainloop_params{A, B, TransformA, TransformB};
 
     cutlass::reference::host::GettEpilogueParams<
         ElementScalar,
@@ -523,6 +529,9 @@ struct TestbedImpl {
     Gemm& gemm_op,
     typename Gemm::Arguments& arguments,
     cutlass::device_memory::allocation<uint8_t>& workspace) {
+    int M = cute::size<0>(problem_size);
+    int N = cute::size<1>(problem_size);
+    int K = cute::size<2>(problem_size);
     int L = 1;
     if constexpr(cute::rank(ProblemShapeType{}) == 4) {
       L = cute::size<3>(problem_size);
@@ -561,7 +570,8 @@ struct TestbedImpl {
     detail::Iterations iterations = detail::Iterations{},
     RasterOrderOptions raster_order = RasterOrderOptions::Heuristic,
     detail::MaxSwizzleSize max_swizzle = detail::MaxSwizzleSize{},
-    detail::Splits splits = detail::Splits{})
+    detail::Splits splits = detail::Splits{},
+    DecompositionMode decomposition_mode = DecompositionMode::Heuristic)
   {
     // Fail test if insufficient CUDA device
     if (!sufficient()) {
@@ -586,14 +596,6 @@ struct TestbedImpl {
       hw_info.sm_count = this->sm_count;
     }
 
-    typename Gemm::GemmKernel::TileScheduler::Arguments scheduler_args;
-    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
-      scheduler_args = { static_cast<int>(splits), static_cast<int>(max_swizzle), raster_order };
-    }
-    else {
-      scheduler_args = { static_cast<int>(max_swizzle), raster_order };
-    }
-
     // DefaultEpilogue
     auto arguments = typename Gemm::Arguments {
       cutlass::gemm::GemmUniversalMode::kGemm,
@@ -606,9 +608,19 @@ struct TestbedImpl {
         {alpha, beta},
         tensor_C.device_data(), stride_c, tensor_D.device_data(), stride_d
       },
-      hw_info,
-      scheduler_args
+      hw_info
     };
+
+    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
+      arguments.scheduler.splits = static_cast<int>(splits);
+      arguments.scheduler.max_swizzle_size = static_cast<int>(max_swizzle);
+      arguments.scheduler.raster_order = raster_order;
+      arguments.scheduler.decomposition_mode = decomposition_mode;
+
+    } else {
+      arguments.scheduler.max_swizzle_size = static_cast<int>(max_swizzle);
+      arguments.scheduler.raster_order = raster_order;
+    }
 
     Gemm gemm_op;
 
@@ -683,6 +695,7 @@ struct Testbed3x {
   using LayoutTagD = typename TestBedImpl::LayoutTagD;
 
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
 
   // Detail Implementation
   TestBedImpl impl_;
@@ -723,11 +736,12 @@ struct Testbed3x {
     RasterOrderOptions raster_order = RasterOrderOptions::Heuristic,
     detail::MaxSwizzleSize max_swizzle = detail::MaxSwizzleSize{},
     detail::Splits splits = detail::Splits{},
+    DecompositionMode decomposition_mode = DecompositionMode::Heuristic,
     bool profiling = false,
     detail::Iterations iterations = detail::Iterations{})
   {
     return impl_.run(
-        problem_size, alpha, beta, profiling, iterations, raster_order, max_swizzle, splits
+        problem_size, alpha, beta, profiling, iterations, raster_order, max_swizzle, splits, decomposition_mode
         );
   }
 };
@@ -768,6 +782,7 @@ struct Testbed3xFusionOperation {
   static_assert(cute::is_base_of_v<cutlass::epilogue::fusion::FusionOperation, FusionOp>);
 
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
 
   // fusion types are potentially void if the fusion is not supported
   // helper so we don't try to construct HostTensor with void type
@@ -818,6 +833,7 @@ struct Testbed3xFusionOperation {
   cutlass::HostTensor<ElementAmax, LayoutTagScalar> abs_max_D;
   cutlass::HostTensor<ElementAux , LayoutTagAux   > tensor_Aux;
   cutlass::gemm::TagToStrideC_t<   LayoutTagAux   > stride_Aux;
+
   // References
   cutlass::HostTensor<ElementBias, LayoutTagVector> reference_dbias;
   cutlass::HostTensor<ElementAux , LayoutTagAux   > reference_Aux;
@@ -977,7 +993,6 @@ struct Testbed3xFusionOperation {
         cutlass::reference::host::TensorFill(reference_abs_max_Aux.host_view(), ElementAmax(0));
       }
     }
-
   }
 
   template <
@@ -1219,6 +1234,7 @@ struct Testbed3xFusionOperation {
     RasterOrderOptions raster_order = RasterOrderOptions::Heuristic,
     detail::MaxSwizzleSize max_swizzle = detail::MaxSwizzleSize{},
     detail::Splits splits = detail::Splits{},
+    DecompositionMode decomposition_mode = DecompositionMode::Heuristic,
     bool profiling = false,
     detail::Iterations iterations = detail::Iterations{})
   {
@@ -1234,7 +1250,7 @@ struct Testbed3xFusionOperation {
     typename Gemm::Arguments arguments;
     cutlass::KernelHardwareInfo hw_info;
     cudaDeviceProp prop;
-    
+
     hw_info.device_id = 0;
     if (not profiling) {
       impl_.sm_count = std::min(impl_.MaxSmCount, cutlass::KernelHardwareInfo::query_device_multiprocessor_count(hw_info.device_id));
@@ -1251,11 +1267,6 @@ struct Testbed3xFusionOperation {
     /// A/B/C/D Tensor
     initialize(problem_size, alpha_, beta_);
 
-    typename Gemm::GemmKernel::TileScheduler::Arguments scheduler_args;
-    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
-      scheduler_args = { static_cast<int>(splits) };
-    }
-
     arguments = typename Gemm::Arguments{
       cutlass::gemm::GemmUniversalMode::kGemm,
       problem_size,
@@ -1270,10 +1281,19 @@ struct Testbed3xFusionOperation {
         impl_.tensor_D.device_data(),
         impl_.stride_d
       }, // Epilogue arguments end
-      hw_info,
-      scheduler_args
+      hw_info
     };
-    
+
+    if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
+      arguments.scheduler.splits = static_cast<int>(splits);
+      arguments.scheduler.max_swizzle_size = static_cast<int>(max_swizzle);
+      arguments.scheduler.raster_order = raster_order;
+      arguments.scheduler.decomposition_mode = decomposition_mode;
+    } else {
+      arguments.scheduler.max_swizzle_size = static_cast<int>(max_swizzle);
+      arguments.scheduler.raster_order = raster_order;
+    }
+
     auto coord_0 = cutlass::make_Coord(0);
     if constexpr (IsLegacy) {
       arguments.epilogue.thread = {
@@ -1313,10 +1333,16 @@ struct Testbed3xFusionOperation {
       }
 
       // example of how to set kernel activation arguments
+      // see ActivationFunctor::Arguments in activation.h for definition
+      // if Arguments doesn't exist then fusion_args.activation is empty
       if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::ScaledGELU_taylor<ElementCompute>>) {
-        // see ActivationFunctor::Arguments in activation.h for definition
-        // if Arguments doesn't exist then fusion_args.activation is empty
         fusion_args.activation.scale = ElementCompute(1);
+      }
+
+      // Treat Clamp as ReLU
+      if constexpr (cute::is_same_v<ActivationFunctor, cutlass::epilogue::thread::Clamp<ElementCompute>>) {
+        fusion_args.activation.lower_bound = 0;
+        fusion_args.activation.upper_bound = std::numeric_limits<ElementCompute>::max();
       }
 
       if constexpr (IsAbsMaxEnabledD) {
@@ -1381,7 +1407,6 @@ struct Testbed3xFusionOperation {
         std::cout << "Error : Failed : with alpha: " << float(alpha_) << ", beta: " << float(beta_)
                   << "\n";
       }
-
       return passed;
     }
   }
@@ -1413,13 +1438,21 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, Testbed testbed = {}) {
 
   std::vector<int> problem_size_k = {max_alignment, TileShapeK * (Stages + 1) - max_alignment};
 
+  using DecompositionMode = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::DecompositionMode;
+  std::vector<DecompositionMode> decomposition_modes = {DecompositionMode::Heuristic};
   std::vector<int> problem_splits = {1};
-  if constexpr (std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>) {
+  static constexpr bool UsesStreamKScheduler = std::is_same_v<typename Gemm::GemmKernel::TileSchedulerTag, cutlass::gemm::StreamKScheduler>;
+  if constexpr (UsesStreamKScheduler) {
     problem_splits.push_back(2);
     problem_splits.push_back(3);
 
-    // As many splits as there are maximum k tiles
-    problem_splits.push_back(Stages + 1);
+    decomposition_modes.push_back(DecompositionMode::DataParallel);
+    decomposition_modes.push_back(DecompositionMode::SplitK);
+    decomposition_modes.push_back(DecompositionMode::StreamK);
+
+    // Use larger K sizes for stream-K tests
+    static constexpr int min_tiles_per_sk_unit = cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90StreamKParams::min_iters_per_sk_unit_;
+    problem_size_k = {TileShapeK * min_tiles_per_sk_unit, TileShapeK * 3 * min_tiles_per_sk_unit - max_alignment};
   }
 
   using RasterOrderOptions = typename cutlass::gemm::kernel::detail::PersistentTileSchedulerSm90::RasterOrderOptions;
@@ -1433,33 +1466,53 @@ bool TestAll(double alpha = 1.0, double beta = 0.0, Testbed testbed = {}) {
       for (int k : problem_size_k) {
         for (auto raster_order : raster_orders) {
           for (int max_swizzle_size : max_swizzle_sizes) {
-            for (int splits : problem_splits) {
-              ProblemShapeType problem_size;
-              if constexpr (cute::rank(ProblemShapeType{}) == 4) {
-                problem_size = ProblemShapeType{m, n, k, /* l */ 1};
-              }
-              else {
-                problem_size = ProblemShapeType{m, n, k};
-              }
+            for (DecompositionMode decomp_mode : decomposition_modes) {
 
-              passed = testbed.run(
-                problem_size,
-                cutlass::from_real<ElementScalar>(alpha),
-                cutlass::from_real<ElementScalar>(beta),
-                raster_order,
-                detail::MaxSwizzleSize(max_swizzle_size),
-                detail::Splits(splits)
-              );
+              std::vector<int> problem_splits = {1};
+              if (UsesStreamKScheduler && (decomp_mode == DecompositionMode::Heuristic || decomp_mode == DecompositionMode::SplitK)) {
+                auto max_splits = (k + TileShapeK - 1) / TileShapeK;
+                if (max_splits > 2) {
+                  problem_splits.push_back(2);
+                }
+                if (max_splits > 3) {
+                  problem_splits.push_back(3);
+                }
 
-              if (!passed) {
-                return false;
+                problem_splits.push_back(max_splits);
+
+                // Test the case in which we ask for more splits than there are K tiles in the GEMM. In this
+                // case, split-K will fall back to a splitting factor of `max_splits`.
+                problem_splits.push_back(max_splits + 1);
               }
-            }
-          }
-        }
-      }
-    }
-  }
+              for (int splits : problem_splits) {
+                ProblemShapeType problem_size;
+                if constexpr (cute::rank(ProblemShapeType{}) == 4) {
+                  problem_size = ProblemShapeType{m, n, k, /* l */ 1};
+                }
+                else {
+                  problem_size = ProblemShapeType{m, n, k};
+                }
+
+                passed = testbed.run(
+                  problem_size,
+                  cutlass::from_real<ElementScalar>(alpha),
+                  cutlass::from_real<ElementScalar>(beta),
+                  raster_order,
+                  detail::MaxSwizzleSize(max_swizzle_size),
+                  detail::Splits(splits),
+                  decomp_mode
+                );
+
+                if (!passed) {
+                  return false;
+                }
+              } // splits
+            } // decomposition_mode
+          } // max_swizzle_size
+        } // raster_order
+      } // k
+    } // n
+  } // m
 
   // if we do support batched GEMM, just run one test on it to save on test time
   if constexpr (cute::rank(ProblemShapeType{}) == 4) {

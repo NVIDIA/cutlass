@@ -46,8 +46,11 @@ from utils import LayoutCombination, add_test_gemm
 
 cutlass.set_log_level(logging.WARNING)
 cc = 90
+dtype = cutlass.DataType.f64
+
 
 @unittest.skipIf(device_cc() < cc, 'Device compute capability is insufficient for SM90 tests.')
+@unittest.skipIf(cutlass.utils.datatypes.torch_type(dtype) is None, f'Version of torch installed does not contain a datatype match for {dtype}')
 class GemmF64Sm90(unittest.TestCase):
     """
     Wrapper class to which tests will be added dynamically in __main__
@@ -56,8 +59,7 @@ class GemmF64Sm90(unittest.TestCase):
 
 
 add_test_specialized = partial(add_test_gemm, cls=GemmF64Sm90, alignments=[1, 1, 1], cluster_shape=[1, 1, 1],
-                               element=cutlass.DataType.f64, element_output=cutlass.DataType.f64,
-                               element_accumulator=cutlass.DataType.f64, compilation_modes=['nvcc'])
+                               element=dtype, element_output=dtype, element_accumulator=dtype, compilation_modes=['nvcc'])
 
 add_test_specialized(opclass=cutlass.OpcodeClass.TensorOp, layouts=LayoutCombination.NNT, threadblock_shape=[128, 128, 32], stages=3)
 add_test_specialized(opclass=cutlass.OpcodeClass.TensorOp, layouts=LayoutCombination.TNN, threadblock_shape=[128, 128, 32], stages=3)

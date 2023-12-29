@@ -34,7 +34,8 @@ import ctypes
 
 from cutlass_library import (
     DataType,
-    KernelScheduleType
+    KernelScheduleType,
+    TileSchedulerType
 )
 from cutlass.backend.library import DataTypeSizeBytes
 
@@ -99,6 +100,7 @@ class StrideBatched_(ctypes.Structure):
     ]
 
 
+
 class GenericMainloopArguments3x_(ctypes.Structure):
     """
     Structure representing the superset of possible mainloop arguments.
@@ -113,6 +115,45 @@ class GenericMainloopArguments3x_(ctypes.Structure):
         ("stride_B", StrideBatched_),
         ("mma_promotion_interval", ctypes.c_int)
     ]
+
+
+class _PersistentTileSchedulerArguments(ctypes.Structure):
+    _fields_ = [
+        ("max_swizzle_size", ctypes.c_int),
+        ("raster_order_option", ctypes.c_int),
+    ]
+
+
+class _PersistentTileSchedulerStreamKArguments(ctypes.Structure):
+    _fields_ = [
+        ("splits", ctypes.c_int),
+        ("max_swizzle_size", ctypes.c_int),
+        ("raster_order_option", ctypes.c_int),
+        ("reduction_mode", ctypes.c_int),
+        ("decomposition_mode", ctypes.c_int),
+    ]
+
+
+def get_tile_scheduler_arguments_3x(
+    tile_scheduler: TileSchedulerType,
+    splits: int = 1):
+    max_swizzle_size = 1
+    raster_order_option = 0 # Heuristic
+    if tile_scheduler == TileSchedulerType.Persistent:
+        return _PersistentTileSchedulerArguments(
+            max_swizzle_size,
+            raster_order_option,
+        )
+    elif tile_scheduler == TileSchedulerType.StreamK:
+        reduction_mode = 0 # Deterministic
+        decomposition_mode = 0 # Heuristic
+        return _PersistentTileSchedulerStreamKArguments(
+            splits,
+            max_swizzle_size,
+            raster_order_option,
+            reduction_mode,
+            decomposition_mode,
+        )
 
 
 def get_mainloop_arguments_3x(
@@ -172,7 +213,7 @@ def get_mainloop_arguments_3x(
     return _MainloopArgumentsTma
 
 
-def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor):
+def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor, scheduler_args):
     _EpilogueOutputOpParams = epilogue_functor.epilogue_type
     if hasattr(epilogue_functor, "visitor"):
         class _EpilogueArguments(ctypes.Structure):
@@ -187,7 +228,6 @@ def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor):
                 self.arg_C = epilogue_functor.arg_c_type(ptr_c)
                 self.arg_D = epilogue_functor.arg_d_type(ptr_d)
     else:
-
         class _EpilogueArguments(ctypes.Structure):
             _fields_ = [
                 ("epilogue", _EpilogueOutputOpParams),
@@ -210,7 +250,7 @@ def get_gemm_arguments_3x(mainloop_arguments, epilogue_functor):
             ("mainloop", mainloop_arguments),
             ("epilogue", _EpilogueArguments),
             ("hw_info", _HardwareInfo),
-            ("splits", ctypes.c_int)
+            ("scheduler", type(scheduler_args)),
         ]
 
     return _GemmArguments, _EpilogueArguments, _EpilogueOutputOpParams, _HardwareInfo

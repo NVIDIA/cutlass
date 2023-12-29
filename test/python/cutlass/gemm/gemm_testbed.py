@@ -128,13 +128,22 @@ class GemmUniversalLauncher:
     def uniform_init(self, shape, dtype, layout):
         size = prod(shape)
         if dtype.is_floating_point:
-            data = torch.ceil(torch.empty(size=(size,), dtype=dtype, device="cuda").uniform_(self.rand_min - 0.5, self.rand_max - 0.5))
+            # Initialize data in FP32 and call convert to the data type we desire.
+            # This is a workaround for the following error that occurs when attempting to
+            # call uniform_ on a tensor with torch.float8_e4m3fn data:
+            # RuntimeError: "check_uniform_bounds" not implemented for 'Float8_e4m3fn'
+            data = torch.ceil(
+                torch.empty(size=(size,), dtype=torch.float32, device="cuda").uniform_(
+                    self.rand_min - 0.5, self.rand_max - 0.5)
+                ).to(dtype)
         else:
             # PyTorch does not currently support integer-typed matrix multiplications on GPU.
             # Fall back to CPU for integer type references.
             data = torch.empty(size=(size,), dtype=dtype, device="cpu").random_(self.rand_min, self.rand_max + 1)
 
-        if dtype == torch.float64 or dtype == torch.float32:
+        is_fp8 = dtype == getattr(torch, "float8_e4m3fn", -1) or dtype == dtype == getattr(torch, "float8_e5m2", -1)
+
+        if dtype == torch.float64 or dtype == torch.float32 or is_fp8:
             data = data.to("cpu")
 
         data_ref = data.reshape(shape)
@@ -145,6 +154,12 @@ class GemmUniversalLauncher:
             data_cutlass = data_ref.transpose(-1, -2).contiguous()
 
         data_cutlass = data_cutlass.to("cuda")
+
+        # As of this writing, few operations in PyTorch are supported with FP8 data.
+        # Thus, we perform computation in FP32 for FP8 reference checks.
+        if is_fp8:
+            data_ref = data_ref.to(torch.float32)
+
         return data_cutlass, data_ref
 
     def reference(self, problem_size, tensor_A, tensor_B, tensor_C, alpha, beta):

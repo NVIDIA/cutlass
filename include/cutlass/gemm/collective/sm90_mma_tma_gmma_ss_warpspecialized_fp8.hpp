@@ -108,9 +108,7 @@ struct CollectiveMma<
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
 
-  using MainloopPipeline = cutlass::PipelineTmaAsync<
-                             DispatchPolicy::Stages,
-                             typename DispatchPolicy::ClusterShape>;
+  using MainloopPipeline = cutlass::PipelineTmaAsync<DispatchPolicy::Stages>;
   using PipelineState = cutlass::PipelineState<DispatchPolicy::Stages>;
 
   using PipelineParams = typename MainloopPipeline::Params;
@@ -261,14 +259,12 @@ struct CollectiveMma<
 
   /// Set up the data needed by this collective for load and mma.
   /// Returns a tuple of tensors. The collective and the kernel layer have the contract
-  /// that the tuple must contain at least two elements, with the first two elements being:
+  /// Returned tuple must contain at least two elements, with the first two elements being:
   /// gA_mkl - The tma tensor, A after a local tile so it has shape  (BLK_M,BLK_K,m,k,l)
   /// gB_nkl - The tma tensor, B after a local tile so it has shape  (BLK_N,BLK_K,n,k,l)
-  /// The rest of the tensors can be specified as needed by this collective.
-  template <class ProblemShape_MNKL,
-            class TileShapeMNK>
+  template <class ProblemShape_MNKL>
   CUTLASS_DEVICE auto
-  tile_input_tensors(ProblemShape_MNKL const& problem_shape_MNKL, Params const& mainloop_params, TileShapeMNK const& tileshape_mnk) {
+  load_init(ProblemShape_MNKL const& problem_shape_MNKL, Params const& mainloop_params) const {
     using X = Underscore;
     // Separate out problem shape for convenience
     auto [M,N,K,L] = problem_shape_MNKL;
@@ -279,8 +275,8 @@ struct CollectiveMma<
     Tensor mB_nkl = mainloop_params.tma_load_b.get_tma_tensor(make_shape(N,K,L));                            // (n,k,l)
 
     // Make tiled views, defer the slice
-    Tensor gA_mkl = local_tile(mA_mkl, tileshape_mnk, make_coord(_,_,_), Step<_1, X,_1>{});          // (BLK_M,BLK_K,m,k,l)
-    Tensor gB_nkl = local_tile(mB_nkl, tileshape_mnk, make_coord(_,_,_), Step< X,_1,_1>{});          // (BLK_N,BLK_K,n,k,l)
+    Tensor gA_mkl = local_tile(mA_mkl, TileShape{}, make_coord(_,_,_), Step<_1, X,_1>{});        // (BLK_M,BLK_K,m,k,l)
+    Tensor gB_nkl = local_tile(mB_nkl, TileShape{}, make_coord(_,_,_), Step< X,_1,_1>{});        // (BLK_N,BLK_K,n,k,l)
 
     return cute::make_tuple(gA_mkl, gB_nkl);
   }
@@ -296,7 +292,7 @@ struct CollectiveMma<
       Params const& mainloop_params,
       MainloopPipeline pipeline,
       PipelineState smem_pipe_write,
-      cute::tuple<TensorA, TensorB> const& tiled_tensors,
+      cute::tuple<TensorA, TensorB> const& load_inputs,
       BlockCoord const& blk_coord,
       KTileIterator k_tile_iter, int k_tile_count,
       int thread_idx,
@@ -320,8 +316,8 @@ struct CollectiveMma<
       constexpr uint32_t cluster_shape_x = get<0>(ClusterShape());
       uint2 cluster_local_block_id = {block_rank_in_cluster % cluster_shape_x, block_rank_in_cluster / cluster_shape_x};
 
-      Tensor gA_mkl = get<0>(tiled_tensors);
-      Tensor gB_nkl = get<1>(tiled_tensors);
+      Tensor gA_mkl = get<0>(load_inputs);
+      Tensor gB_nkl = get<1>(load_inputs);
 
       auto block_tma_a = mainloop_params.tma_load_a.get_slice(cluster_local_block_id.y);
       auto block_tma_b = mainloop_params.tma_load_b.get_slice(cluster_local_block_id.x);

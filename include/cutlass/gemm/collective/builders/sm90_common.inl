@@ -31,6 +31,7 @@
 #pragma once
 
 #include "cutlass/detail/layout.hpp"
+#include "cutlass/detail/collective.hpp"
 
 #include "cute/atom/mma_traits_sm90_gmma.hpp"
 #include "cute/atom/copy_traits_sm90_tma.hpp"
@@ -322,13 +323,21 @@ is_input_fp8() {
           (cute::is_same_v<ElementB, float_e4m3_t> || cute::is_same_v<ElementB, float_e5m2_t>));
 }
 
-template <class ElementA, class LayoutA, class ElementB, class LayoutB>
+// We need to handle the tuples in this function since it is used in SFINAE dispatch in the CollectiveBuilder.
+// At that point, it is not guaranteed that the tuples have been split out into the required parts.
+template <class MaybeTupleElementA, class LayoutA, class MaybeTupleElementB, class LayoutB>
 constexpr bool
 is_use_rmem_A() {
+
+  using ElementA = detail::deduce_mixed_width_dtype_t<0, MaybeTupleElementA>;
+  using ElementB = detail::deduce_mixed_width_dtype_t<0, MaybeTupleElementB>;
+
+  constexpr bool IsABDifferentWidth = cute::sizeof_bits_v<ElementA> != cute::sizeof_bits_v<ElementB>;
+  constexpr bool HasScales = cute::is_tuple<MaybeTupleElementA>::value ^ cute::is_tuple<MaybeTupleElementB>::value;
   constexpr bool IsInputSizeTwoBytes = is_input_size_two_bytes<ElementA, ElementB>();
   constexpr bool IsLayoutAkBk = cutlass::gemm::detail::is_k_major_A<LayoutA>() &&
                                 cutlass::gemm::detail::is_k_major_B<LayoutB>();
-  constexpr bool IsUseRmemA = !IsInputSizeTwoBytes && !IsLayoutAkBk;
+  constexpr bool IsUseRmemA = (!IsInputSizeTwoBytes && !IsLayoutAkBk) || IsABDifferentWidth || HasScales;
   return IsUseRmemA;
 }
 

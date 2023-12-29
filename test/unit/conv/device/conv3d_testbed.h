@@ -55,7 +55,7 @@
 #include "conv3d_problems.h"
 #include "cutlass/core_io.h"
 
-#include "cache_testbed_output.h"
+#include "../cache_testbed_output.h"
 
 namespace test {
 namespace conv {

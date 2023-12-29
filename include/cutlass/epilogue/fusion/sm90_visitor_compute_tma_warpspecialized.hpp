@@ -215,16 +215,17 @@ template <
   class StrideScalar,
   int ScalarCount,
   template <class> class ScalarReduceFn,
+  class ElementSource,
   class InputAddOp // Z
 >
 struct Sm90TreeVisitor<
   Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>,
   Sm90ScalarBroadcast<ElementScalar, StrideScalar, ScalarCount, ScalarReduceFn>,
-  Sm90SrcFetch,
+  Sm90SrcFetch<ElementSource>,
   InputAddOp
 > : Sm90VisitorImpl<
       Sm90ScalarBroadcast<ElementScalar, StrideScalar, ScalarCount, ScalarReduceFn>,
-      Sm90SrcFetch,
+      Sm90SrcFetch<ElementSource>,
       InputAddOp,
       Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>
     >
@@ -232,11 +233,10 @@ struct Sm90TreeVisitor<
   using Impl =
     Sm90VisitorImpl<
       Sm90ScalarBroadcast<ElementScalar, StrideScalar, ScalarCount, ScalarReduceFn>,
-      Sm90SrcFetch,
+      Sm90SrcFetch<ElementSource>,
       InputAddOp,
       Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>
     >;
-
   using Params = typename Impl::Params;
   using SharedStorage = typename Impl::SharedStorage;
 
@@ -260,8 +260,9 @@ struct Sm90TreeVisitor<
   CUTLASS_DEVICE bool
   is_C_load_needed() const {
     auto const& bcast_op = get<0>(Impl::ops);
+    auto const& src_op = get<1>(Impl::ops);
     auto const& added_op = get<2>(Impl::ops);
-    return bcast_op.scalar != 0 || added_op.is_C_load_needed();
+    return (bcast_op.scalar != 0 && src_op.is_C_load_needed()) || added_op.is_C_load_needed();
   }
 
   template <class CallbacksImpl>
@@ -320,17 +321,9 @@ struct Sm90TreeVisitor<
 // ReLU with aux bit tensor dReLU/dZ
 // Aux(i) = Z(i) >= 0 ? 1 : 0
 namespace detail {
-template <
-  class ElementOutput,
-  class ElementCompute,
-  FloatRoundStyle RoundStyle,
-  class StrideMNL,
-  int Alignment,
-  bool EnableNullptr
->
-struct Sm90ReLUAuxStore {
-  static_assert(Alignment % 128 == 0, "sub-16B alignment not supported yet");
-
+// Placeholder node so we can retain standard EVT structure
+template <class StrideMNL>
+struct Sm90ReLUAuxStore : Sm90VisitorImpl<> {
   struct SharedStorage {};
 
   struct Arguments {
@@ -362,41 +355,90 @@ struct Sm90ReLUAuxStore {
   Sm90ReLUAuxStore() { }
 
   CUTLASS_HOST_DEVICE
-  Sm90ReLUAuxStore(Params const& params, SharedStorage const& shared_storage)
-      : params(params) { }
+  Sm90ReLUAuxStore(Params const& params, SharedStorage const& shared_storage) { }
+};
+} // namespace detail
 
-  Params const params;
+// Specialization on the generic compute+aux EVT
+template <
+  // Compute node
+  template <class> class Activation,
+  class ElementOutput,
+  class ElementCompute,
+  FloatRoundStyle RoundStyle,
+  // Aux node
+  int Stages,
+  class EpilogueTile,
+  class StrideMNL,
+  class SmemLayoutAtom,
+  class CopyOpR2S,
+  int Alignment,
+  bool EnableNullptr,
+  // Input node
+  class InputOp
+>
+struct Sm90TreeVisitor<
+  Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle,
+              enable_if_t<is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ReLu<ElementCompute>> ||
+                          is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>>  >>,
+  Sm90TreeVisitor<
+    Sm90AuxStore<
+      Stages,
+      EpilogueTile,
+      cutlass::uint1b_t,
+      RoundStyle,
+      StrideMNL,
+      SmemLayoutAtom,
+      CopyOpR2S,
+      Alignment,
+      EnableNullptr
+    >,
+    InputOp
+  >
+> : Sm90VisitorImpl<
+      Sm90VisitorImpl<
+        InputOp,
+        detail::Sm90ReLUAuxStore<StrideMNL>
+      >,
+      Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle>
+    >
+{
+  using Impl =
+    Sm90VisitorImpl<
+      Sm90VisitorImpl<
+        InputOp,
+        detail::Sm90ReLUAuxStore<StrideMNL>
+      >,
+      Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle>
+    >;
+  using Params = typename Impl::Params;
+  using SharedStorage = typename Impl::SharedStorage;
 
-  CUTLASS_DEVICE bool
-  is_producer_load_needed() const {
-    return false;
-  }
+  CUTLASS_HOST_DEVICE
+  Sm90TreeVisitor() {}
 
-  CUTLASS_DEVICE bool
-  is_C_load_needed() const {
-    return false;
-  }
+  CUTLASS_HOST_DEVICE
+  Sm90TreeVisitor(Params const& params_, SharedStorage const& shared_storage)
+    : params(params_), Impl(params_, shared_storage) {}
 
-  template <class... Args>
-  CUTLASS_DEVICE auto
-  get_producer_load_callbacks(ProducerLoadArgs<Args...> const& args) {
-    return EmptyProducerLoadCallbacks{};
-  }
+  Params const& params;
 
-  template <class RTensor, class GTensor, class CTensor, class ResidueMN>
-  struct ConsumerStoreCallbacks : EmptyConsumerStoreCallbacks {
+  template <class RTensor, class GTensor, class CTensor, class ResidueMN, class CallbacksImpl>
+  struct ConsumerStoreCallbacks : CallbacksImpl {
     CUTLASS_DEVICE
     ConsumerStoreCallbacks(
         RTensor&& tC_rAux,
         GTensor&& tC_gAux,
         CTensor tC_cAux,
         ResidueMN residue_mn,
-        Params const& params)
+        Params const& params,
+        CallbacksImpl&& impl)
       : tC_rAux(cute::forward<RTensor>(tC_rAux)),
         tC_gAux(cute::forward<GTensor>(tC_gAux)),
         tC_cAux(tC_cAux),
         residue_mn(residue_mn),
-        params(params) {}
+        params(params),
+        CallbacksImpl(cute::forward<CallbacksImpl>(impl)) {}
 
     RTensor tC_rAux;                                                                   // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
     GTensor tC_gAux;                                                                   // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
@@ -404,13 +446,23 @@ struct Sm90ReLUAuxStore {
     ResidueMN residue_mn;
     Params const& params;
 
-    template <typename ElementAccumulator, typename ElementInput, int FragmentSize>
-    CUTLASS_DEVICE auto
-    visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n,
-          Array<ElementInput, FragmentSize> const& frg_input) {
+    template <typename ElementAccumulator, int FragmentSize>
+    CUTLASS_DEVICE Array<ElementOutput, FragmentSize>
+    visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n) {
+      // Unpack callbacks + params
+      auto& [callbacks_input_aux, callbacks_compute] = CallbacksImpl::callbacks_tuple;
+      auto& [callbacks_input, callbacks_aux] = callbacks_input_aux.callbacks_tuple;
+      auto const& [params_input_aux, params_compute] = params;
+      auto const& [params_input, params_aux] = params_input_aux;
+
+      // Visit the input node
+      Array frg_input = callbacks_input.visit(frg_acc, epi_v, epi_m, epi_n);
+
+      // Compute activation + aux
+      using ElementInput = typename decltype(frg_input)::Element;
       using ConvertInput = NumericArrayConverter<ElementCompute, ElementInput, FragmentSize, RoundStyle>;
       using ConvertAux = PackPredicates<FragmentSize>;
-      using ComputeOutput = cutlass::epilogue::thread::ReLu<ElementCompute>;
+      using ComputeOutput = Activation<ElementCompute>;
       using ConvertOutput = NumericArrayConverter<ElementOutput, ElementCompute, FragmentSize, RoundStyle>;
       ConvertInput convert_input{};
       ComputeOutput relu{};
@@ -422,7 +474,12 @@ struct Sm90ReLUAuxStore {
       CUTLASS_PRAGMA_UNROLL
       for (int i = 0; i < FragmentSize; ++i) {
         ElementCompute pre_relu = frg_compute[i];
-        frg_compute[i] = relu(frg_compute[i]);
+        if constexpr (is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::Clamp<ElementCompute>>) {
+          frg_compute[i] = relu(frg_compute[i], params_compute);
+        }
+        else {
+          frg_compute[i] = relu(frg_compute[i]);
+        }
         frg_aux[i] = frg_compute[i] == pre_relu;
       }
 
@@ -435,8 +492,18 @@ struct Sm90ReLUAuxStore {
 
     CUTLASS_DEVICE void
     end() {
+      // Unpack callbacks + params
+      auto& [callbacks_input_aux, callbacks_compute] = CallbacksImpl::callbacks_tuple;
+      auto& [callbacks_input, callbacks_aux] = callbacks_input_aux.callbacks_tuple;
+      auto const& [params_input_aux, params_compute] = params;
+      auto const& [params_input, params_aux] = params_input_aux;
+
+      // Visit the input node
+      callbacks_input.end();
+
+      // Nullptr is no-op
       if constexpr (EnableNullptr) {
-        if (params.ptr_aux == nullptr) {
+        if (params_aux.ptr_aux == nullptr) {
           return;
         }
       }
@@ -473,113 +540,24 @@ struct Sm90ReLUAuxStore {
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
+    // Unpack params
+    auto const& [params_input_aux, params_compute] = params;
+    auto const& [params_input, params_aux] = params_input_aux;
 
     auto [M, N, K, L] = args.problem_shape_mnkl;
     auto [m, n, k, l] = args.tile_coord_mnkl;
-    gmem_ptr ptr_aux = make_gmem_ptr(subbyte_iterator<cutlass::uint1b_t>(params.ptr_aux));
-    Tensor mAux = make_tensor(ptr_aux, make_layout(make_shape(M,N,L), params.dAux));                         // (M,N,L)
+    gmem_ptr ptr_aux = make_gmem_ptr(subbyte_iterator<cutlass::uint1b_t>(params_aux.ptr_aux));
+    Tensor mAux = make_tensor(ptr_aux, make_layout(make_shape(M,N,L), params_aux.dAux));                     // (M,N,L)
     Tensor gAux = local_tile(mAux, take<0,2>(args.tile_shape_mnk), make_coord(m,n,l));                 // (CTA_M,CTA_N)
 
     Tensor tC_gAux = sm90_partition_for_epilogue<ReferenceSrc>(                        // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
                       gAux, args.epi_tile, args.tiled_copy, args.thread_idx);
     Tensor tC_rAux = make_tensor<cutlass::uint1b_t>(shape(tC_gAux));                   // (CPY,CPY_M,CPY_N,EPI_M,EPI_N)
 
-    return ConsumerStoreCallbacks<decltype(tC_rAux), decltype(tC_gAux), decltype(args.tCcD), decltype(args.residue_mn)>(
-        cute::move(tC_rAux), cute::move(tC_gAux), args.tCcD, args.residue_mn, params);
+    auto callbacks_impl = Impl::template get_consumer_store_callbacks<ReferenceSrc>(args);
+    return ConsumerStoreCallbacks<decltype(tC_rAux), decltype(tC_gAux), decltype(args.tCcD), decltype(args.residue_mn), decltype(callbacks_impl)>(
+        cute::move(tC_rAux), cute::move(tC_gAux), args.tCcD, args.residue_mn, params, cute::move(callbacks_impl));
   }
-};
-} // namespace detail
-
-// Specialization on the generic compute+aux EVT
-template <
-  // Compute node
-  template <class> class Activation,
-  class ElementOutput,
-  class ElementCompute,
-  FloatRoundStyle RoundStyle,
-  // Aux node
-  int Stages,
-  class EpilogueTile,
-  class StrideMNL,
-  class SmemLayoutAtom,
-  class CopyOpR2S,
-  int Alignment,
-  bool EnableNullptr,
-  // Input node
-  class InputOp
->
-struct Sm90TreeVisitor<
-  Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle,
-              enable_if_t<is_same_v<Activation<ElementCompute>, cutlass::epilogue::thread::ReLu<ElementCompute>>, void>>,
-  Sm90TreeVisitor<
-    Sm90AuxStore<
-      Stages,
-      EpilogueTile,
-      cutlass::uint1b_t,
-      RoundStyle,
-      StrideMNL,
-      SmemLayoutAtom,
-      CopyOpR2S,
-      Alignment,
-      EnableNullptr
-    >,
-    InputOp
-  >
-> : Sm90VisitorImpl<
-      Sm90VisitorImpl<
-        InputOp,
-        detail::Sm90ReLUAuxStore<ElementOutput, ElementCompute, RoundStyle, StrideMNL, Alignment, EnableNullptr>
-      >,
-      Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle>
-    >
-{
-  using Impl =
-    Sm90VisitorImpl<
-      Sm90VisitorImpl<
-        InputOp,
-        detail::Sm90ReLUAuxStore<ElementOutput, ElementCompute, RoundStyle, StrideMNL, Alignment, EnableNullptr>
-      >,
-      Sm90Compute<Activation, ElementOutput, ElementCompute, RoundStyle>
-    >;
-
-  using Params = typename Impl::Params;
-  using SharedStorage = typename Impl::SharedStorage;
-
-  CUTLASS_HOST_DEVICE
-  Sm90TreeVisitor() {}
-
-  CUTLASS_HOST_DEVICE
-  Sm90TreeVisitor(
-      Params const& params,
-      SharedStorage const& shared_storage)
-    : Impl(params, shared_storage) {}
-
-  template <class CallbacksImpl>
-  struct ConsumerStoreCallbacks : CallbacksImpl {
-    CUTLASS_DEVICE
-    ConsumerStoreCallbacks(CallbacksImpl&& impl)
-      : CallbacksImpl(cute::forward<CallbacksImpl>(impl)) { }
-
-    template <typename ElementAccumulator, int FragmentSize>
-    CUTLASS_DEVICE Array<ElementOutput, FragmentSize>
-    visit(Array<ElementAccumulator, FragmentSize> const& frg_acc, int epi_v, int epi_m, int epi_n) {
-      auto& [callbacks_input, callbacks_relu_aux] = get<0>(CallbacksImpl::callbacks_tuple).callbacks_tuple;
-
-      Array frg_input = callbacks_input.visit(frg_acc, epi_v, epi_m, epi_n);
-      return callbacks_relu_aux.visit(frg_acc, epi_v, epi_m, epi_n, frg_input);
-    }
-  };
-
-  template <
-    bool ReferenceSrc, // do register tensors reference the src or dst layout of the tiled copy
-    class... Args
-  >
-  CUTLASS_DEVICE auto
-  get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-    auto callbacks_tuple = Impl::template get_consumer_store_callbacks<ReferenceSrc>(args);
-    return ConsumerStoreCallbacks<decltype(callbacks_tuple)>(std::move(callbacks_tuple));
-  }
-
 };
 
 // Aux load for uint1b_t

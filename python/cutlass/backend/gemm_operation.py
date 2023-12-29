@@ -82,7 +82,8 @@ from cutlass.backend.c_types import (
     get_gemm_arguments_3x,
     get_gemm_arguments_streamk,
     get_gemm_grouped_arguments,
-    get_mainloop_arguments_3x
+    get_mainloop_arguments_3x,
+    get_tile_scheduler_arguments_3x,
 )
 from cutlass.backend.library import (
     ApiVersion,
@@ -554,6 +555,7 @@ class GemmArguments3x(GemmArguments2x):
             mainloop,
             epilogue,
             hw_info,
+            self.operation.rt_module.scheduler_args
         )
         return self.arguments
 
@@ -1163,7 +1165,9 @@ extern "C" {
             operation.A.alignment,
             operation.B.alignment
         )
-        self.argument_type, self.epilogue_args, self.epilogue_type, self.hw_info = get_gemm_arguments_3x(self.mainloop_args, operation.epilogue_functor)
+        self.scheduler_args = get_tile_scheduler_arguments_3x(operation.tile_description.tile_scheduler)
+        self.argument_type, self.epilogue_args, self.epilogue_type, self.hw_info = get_gemm_arguments_3x(
+            self.mainloop_args, operation.epilogue_functor, self.scheduler_args)
 
     def get_device_workspace_size(self, arguments: GemmArguments3x):
         return self.get_kernel_workspace_size(ctypes.byref(arguments.get_arguments()))

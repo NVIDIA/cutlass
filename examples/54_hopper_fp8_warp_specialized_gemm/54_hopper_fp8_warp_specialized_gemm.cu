@@ -109,9 +109,11 @@ using         ElementD    = ElementC;
 using         LayoutD     = LayoutC;
 constexpr int AlignmentD  = AlignmentC;
 
-// Auxiliary matrix configuration
+// Auxiliary matrix configuration and other fusion types
 using         ElementAux   = ElementC;
 using         LayoutAux    = LayoutC;
+using         ElementAmax  = float;
+using         ElementBias  = float;
 
 // Core kernel configurations
 using ElementAccumulator  = float;                                          // Element type for internal accumulation
@@ -124,7 +126,7 @@ using KernelSchedule      = cutlass::gemm::KernelTmaWarpSpecialized;
 using EpilogueSchedule    = cutlass::epilogue::TmaWarpSpecialized;
 using EpilogueTileType    = cutlass::epilogue::collective::EpilogueTileAuto;
 using FusionOperation     = cutlass::epilogue::fusion::ScaledLinCombPerRowBiasEltActAmaxAux<
-    LayoutAux, cutlass::epilogue::thread::ReLU, ElementD, ElementCompute, ElementAux>;
+    LayoutAux, cutlass::epilogue::thread::ReLU, ElementD, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementC>;
 
 using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
     ArchTag, OperatorClass,

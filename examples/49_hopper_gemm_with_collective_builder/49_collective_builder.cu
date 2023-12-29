@@ -291,7 +291,7 @@ struct ExampleRunner {
   using CustomEVT =  // alpha * acc + beta * C
     cutlass::epilogue::fusion::Sm90EVT<cutlass::epilogue::fusion::Sm90Compute<cutlass::homogeneous_multiply_add, ElementD, ElementCompute, RoundStyle>, // beta * C + (alpha * acc)
       cutlass::epilogue::fusion::Sm90ScalarBroadcast<ElementScalar>, // beta
-      cutlass::epilogue::fusion::Sm90SrcFetch, // C
+      cutlass::epilogue::fusion::Sm90SrcFetch<ElementC>, // C
       cutlass::epilogue::fusion::Sm90EVT<cutlass::epilogue::fusion::Sm90Compute<cutlass::multiplies, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc
         cutlass::epilogue::fusion::Sm90ScalarBroadcast<ElementScalar>, // alpha
         cutlass::epilogue::fusion::Sm90AccFetch // acc
@@ -302,7 +302,7 @@ struct ExampleRunner {
   // Users can select one of these operations by passing one of the tags defined in include/cutlass/epilogue/fusion/operations.hpp
   // to the CollectiveBuilder. This frees the user from having to compute additional parameters such as stage counts and copy atoms/layouts.
   // These tags also provide additional metadata that can be queried at compile time.
-  using DefaultOperation = cutlass::epilogue::fusion::LinearCombination<ElementD, ElementCompute, ElementScalar, RoundStyle>;
+  using DefaultOperation = cutlass::epilogue::fusion::LinearCombination<ElementD, ElementCompute, ElementC, ElementScalar, RoundStyle>;
 
   using CollectiveEpilogue = typename cutlass::epilogue::collective::CollectiveBuilder<
       cutlass::arch::Sm90, cutlass::arch::OpClassTensorOp,

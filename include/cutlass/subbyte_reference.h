@@ -394,7 +394,13 @@ public:
   /// Unpacks an element from memory
   CUTLASS_HOST_DEVICE
   Element get() const {
-    Storage item = Storage((*ptr_ >> (offset_ * sizeof_bits<Element>::value)) & kMask);
+    uint8_t const* byte_ptr = reinterpret_cast<uint8_t const*>(ptr_);
+    // Convert offset in elements to offset in bytes
+    constexpr int elements_per_byte = cutlass::sizeof_bits<uint8_t>::value / cutlass::sizeof_bits<Element>::value;
+    byte_ptr += offset_ / elements_per_byte;
+    // Offset of element within a byte
+    int byte_offset = offset_ % elements_per_byte;
+    uint8_t item = uint8_t((*byte_ptr >> (byte_offset * cutlass::sizeof_bits<Element>::value)) & kMask);
     return reinterpret_cast<Element const &>(item);
   }
 
@@ -607,6 +613,7 @@ public:
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+template<typename T> using _war = T;
 template <
   typename Element_,              /// CUTLASS numeric element type.
   typename Storage_               /// Underlying basic storage type.
@@ -647,7 +654,7 @@ private:
   StorageUnit const kMask = (StorageUnit(1) << sizeof_bits<Element>::value) - StorageUnit(1);
 
   /// Pointer to array containing element
-  StorageVecPointer ptr_;
+  _war<StorageVecPointer> ptr_;
 
   /// Offset (in units of elements) from pointer.
   ///
@@ -979,6 +986,7 @@ public:
   }
 };
 
+template<typename T> using _war = T;
 template <
   typename Element_,              /// CUTLASS numeric element type.
   typename Storage_               /// Underlying storage type. Must be able to hold an integer 
@@ -1019,7 +1027,7 @@ private:
   StorageUnit const kMask = (StorageUnit(1) << sizeof_bits<Element>::value) - StorageUnit(1);
 
   /// Pointer to array containing element
-  StorageVecPointer ptr_;
+  _war<StorageVecPointer> ptr_;
 
   /// Offset (in units of elements) from pointer.
   ///
@@ -1276,6 +1284,10 @@ struct ReferenceFactory;
 
 template <typename Element>
 struct ReferenceFactory<Element, false> {
+
+  ///! Number of elements per storage vector
+  static int const kElementsPerVector = 1;
+
   CUTLASS_HOST_DEVICE
   static Element &get(Element *ptr, int64_t offset) {
     return ptr[offset];
@@ -1285,10 +1297,25 @@ struct ReferenceFactory<Element, false> {
   static Element const &get(Element const *ptr, int64_t offset) {
     return ptr[offset];
   }
+
+  CUTLASS_HOST_DEVICE
+  static Element *add_pointer_offset(Element *ptr, int64_t offset) {
+    return ptr + offset;
+  }
+
+  CUTLASS_HOST_DEVICE
+  static Element const *add_pointer_offset(Element const *ptr, int64_t offset) {
+    return ptr + offset;
+  }
 };
 
 template <typename Element>
 struct ReferenceFactory<Element, true> {
+
+  //
+  // Static methods
+  //
+
   CUTLASS_HOST_DEVICE
   static SubbyteReference<Element> get(Element *ptr, int64_t offset) {
     return SubbyteReference<Element>(ptr, offset);
@@ -1298,6 +1325,22 @@ struct ReferenceFactory<Element, true> {
   static ConstSubbyteReference<Element> get(Element const *ptr,
                                              int64_t offset) {
     return ConstSubbyteReference<Element>(ptr, offset);
+  }
+
+  /// Helper to add an offset in number of elements, assuming this offset is divisible
+  /// by the vector size.
+  CUTLASS_HOST_DEVICE
+  static Element *add_pointer_offset(Element *ptr, int64_t offset_in_elements) {
+
+    return ptr + offset_in_elements * sizeof_bits<Element>::value / sizeof(Element) / 8;
+  }
+
+  /// Helper to add an offset in number of elements, assuming this offset is divisible
+  /// by the vector size.
+  CUTLASS_HOST_DEVICE
+  static Element const *add_pointer_offset(Element const *ptr, int64_t offset_in_elements) {
+
+    return ptr + offset_in_elements * sizeof_bits<Element>::value / sizeof(Element) / 8;
   }
 };
 

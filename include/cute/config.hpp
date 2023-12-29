@@ -47,7 +47,7 @@
 #endif
 
 #if !defined(__CUDACC_RTC__) && !defined(__clang__) && \
-    (defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA))
+  (defined(__CUDA_ARCH__) || defined(_NVHPC_CUDA))
 #  define CUTE_UNROLL    #pragma unroll
 #  define CUTE_NO_UNROLL #pragma unroll 1
 #elif defined(__CUDACC_RTC__) || defined(__clang__)
@@ -119,6 +119,8 @@
 #else
 #include <cassert>
 #endif
+
+#define CUTE_STATIC_V(x)            decltype(x)::value
 
 #define CUTE_STATIC_ASSERT          static_assert
 #define CUTE_STATIC_ASSERT_V(x,...) static_assert(decltype(x)::value, ##__VA_ARGS__)

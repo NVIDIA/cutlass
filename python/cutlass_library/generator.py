@@ -192,14 +192,14 @@ def CreateGemmUniversal3xOperator(
     C = TensorDescription(data_type["c_type"], layout[2][0], layout[2][1])
     D = TensorDescription(data_type["d_type"], layout[2][0], layout[2][1])
 
-    extra_args = {}
+    gemm_op_extra_args = {}
     gemm_kind = GemmKind.Universal3x
     element_compute = data_type.get("epi_type", data_type["acc_type"])
 
     operation = GemmOperation(
         gemm_kind, tile_description.minimum_compute_capability,
         tile_description, A, B, C, element_compute, epilogue_functor, swizzling_functor, D,
-        kernel_schedule, epilogue_schedule, tile_scheduler, extra_args)
+        kernel_schedule, epilogue_schedule, tile_scheduler, **gemm_op_extra_args)
 
     manifest.append(operation)
     operations.append(operation)

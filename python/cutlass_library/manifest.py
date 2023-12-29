@@ -429,7 +429,7 @@ class Manifest:
         self.kernel_filter_list = []
     else:
         self.kernel_filter_list = self.get_kernel_filters(args.kernel_filter_file)
-        _LOGGER.info("Using {filter_count} kernel filters from {filter_file}".format(
+        _LOGGER.debug("Using {filter_count} kernel filters from {filter_file}".format(
             filter_count = len(self.kernel_filter_list),
             filter_file = args.kernel_filter_file))
 

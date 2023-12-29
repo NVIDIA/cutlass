@@ -5,7 +5,7 @@
 Although CUTLASS 3.0 restructures the GEMM hierarchy and introduces new types for the
 threadblock layer and below, we intend the entire source code to be usable in user applications.
 We expect users to be able to `#include` any source file from CUTLASS 3.0, whether
-they implement the 2.x or the 3.x API, without breaking user builds. This means that a single 
+they implement the 2.x or the 3.x API, without breaking user builds. This means that a single
 translation unit should be able to contain any valid kernel regardless of its API version. The
 sections below discuss how `device` and `kernel` layer type names are made compatible across the
 two API versions, and what the users can expect out of the `threadblock` layer API going forward.
@@ -126,7 +126,7 @@ a 2.x mainloop with a 3.0 collective epilogue.
 CUTLASS 3.x implements various embodiments of `kernel::GemmUniversal`.
 Each kernel layer schedule is specialized
 for a GEMM scheduling algorithm and GPU architecture.
-Specializations of `kernel::GemmUniversal` for 3.0 APIs live in 
+Specializations of `kernel::GemmUniversal` for 3.0 APIs live in
 any of various `gemm_*.hpp` files in the directory
 [include/cutlass/gemm/kernel/](../../include/cutlass/gemm/kernel/).
 The specialization to which to dispatch is decided through the dispatch policy's `Schedule` type.
@@ -155,7 +155,7 @@ All CUTLASS 3 `kernel::GemmUniversal` specializations expose the following (stat
 static bool
 can_implement(Arguments const& args);
 
-// Returns a dim3 representing the threadblock shape. 
+// Returns a dim3 representing the threadblock shape.
 static dim3
 get_block_shape();
 
@@ -172,7 +172,7 @@ the 3.x API or 2.x API:
 // include/cutlass/gemm/gemm.h
 
 namespace cutlass:gemm::detail {
-  
+
 // The following metafunction is used to detect whether a
 // `kernel::Gemm` or `kernel::GemmUniversal` implements the CUTLASS 3.x API,
 // by checking whether the problem shape type is aliased within.
@@ -193,7 +193,7 @@ from that of CUTLASS 2.x.  With that also comes the introduction of the
 of the 2.x `cutlass::gemm::threadblock` layer. Going forward,
 CUTLASS 3.x will discontinue new developments in the following namespaces.
 
-* `cutlass::*::threadblock::*` 
+* `cutlass::*::threadblock::*`
 * `cutlass::*::warp::*`
 * `cutlass::gemm::thread::*`
 * `cutlass::arch::*` (except `barrier.h`)
@@ -274,7 +274,7 @@ that live in the header file
 [`cutlass/layout/matrix.h`](/include/cutlass/layout/matrix.h).
 The interpretation of these layouts in GEMM
 depends on whether they are applied
-to the input matrix A or B. For the matrix A, "column major" means 
+to the input matrix A or B. For the matrix A, "column major" means
 that mode corresponding to M extent has stride 1,
 and "row major" means that mode corresponding to K extent has stride 1.
 This is the usual computer science definition
@@ -332,7 +332,7 @@ and K mode as the 1st mode of the stride.
 ### Conversions between 2.x tags and 3.0 types
 
 Starting with CUTLASS 3.0, all layouts are described using
-`cute::Shape` and `cute::Stride` which compose into a `cute::Layout<Shape, Stride>`. 
+`cute::Shape` and `cute::Stride` which compose into a `cute::Layout<Shape, Stride>`.
 In CUTLASS 2.x, various layout tags such as `cutlass::layout::RowMajor` are used to specialize
 template implementations. These tag types only encode information about the tensor strides,
 as 2.x layouts did not incorporate any concept of tensor shape in the layout tags themselves.
@@ -415,18 +415,18 @@ Here is an excerpt.
   static int const kThreadCount = GemmKernel::MaxThreadsPerBlock;
 
   // Warp shape is not a primary API type in 3.x,
-  // but we can best approximate it by inspecting the TiledMma::TiledShape_MNK.
+  // but we can best approximate it by inspecting the TiledMma
   // For this, we make the assumption that we always have 4 warps along M,
   // and the rest along N, with none along K.  We also always round up
   // the warp count to 4 if the tiled mma is smaller than 128 threads.
-  static constexpr int WarpsInMma = std::max(4, cute::size(typename GemmKernel::TiledMma{}) / 32);
+  static constexpr int WarpsInMma = std::max(4, CUTE_STATIC_V(cute::size(typename GemmKernel::TiledMma{})) / 32);
   static constexpr int WarpsInMmaM = 4;
   static constexpr int WarpsInMmaN = cute::ceil_div(WarpsInMma, WarpsInMmaM);
   using WarpCount = cutlass::gemm::GemmShape<WarpsInMmaM, WarpsInMmaN, 1>;
   using WarpShape = cutlass::gemm::GemmShape<
-      cute::size<0>(typename CollectiveMainloop::TiledMma::TiledShape_MNK{}) / WarpsInMmaM,
-      cute::size<1>(typename CollectiveMainloop::TiledMma::TiledShape_MNK{}) / WarpsInMmaN,
-      cute::size<2>(typename CollectiveMainloop::TiledMma::TiledShape_MNK{})>;
+      CUTE_STATIC_V(cute::tile_size<0>(typename CollectiveMainloop::TiledMma{})) / WarpsInMmaM,
+      CUTE_STATIC_V(cute::tile_size<1>(typename CollectiveMainloop::TiledMma{})) / WarpsInMmaN,
+      CUTE_STATIC_V(cute::tile_size<2>(typename CollectiveMainloop::TiledMma{}))>;
 
   // Inspect TiledCopy for A and B to compute the alignment size
   static int constexpr kAlignmentA = gemm::detail::get_alignment_count_from_gmem_tiled_copy<
@@ -435,7 +435,7 @@ Here is an excerpt.
       typename CollectiveMainloop::GmemTiledCopyB, ElementB>();
 ```
 
-CUTLASS's library and profiler use these reflective interfaces to 
+CUTLASS's library and profiler use these reflective interfaces to
 obtain the kernel's configuration parameters. Users can use these to approximate the CUTLASS 2.x types
 for 3.0 API kernels.  However, the reflective interfaces cannot always match the types exactly,
 as the mappings are not always bijective.

@@ -28,17 +28,17 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  **************************************************************************************************/
-/*! 
+/*!
   \file
 
   \brief CUTLASS Library is an object-oriented approach to managing operations implemented by CUTLASS.
 
   Generally,
-    
+
     description   - compile-time constant parameters used to instantiate an operation
 
-    configuration - runtime parameters with computationally expensive initialization 
-    
+    configuration - runtime parameters with computationally expensive initialization
+
     arguments     - runtime parameters that may be passed to an initialized operation with low
                     computational overhead
 */
@@ -87,26 +87,26 @@ public:
   virtual OperationDescription const & description() const = 0;
 
   virtual Status can_implement(
-    void const *configuration, 
+    void const *configuration,
     void const *arguments) const = 0;
-  
+
   virtual uint64_t get_host_workspace_size(
     void const *configuration) const = 0;
-  
+
   virtual uint64_t get_device_workspace_size(
     void const *configuration,
     void const *arguments = nullptr) const = 0;
-  
+
   virtual Status initialize(
-    void const *configuration, 
-    void *host_workspace, 
-    void *device_workspace = nullptr, 
+    void const *configuration,
+    void *host_workspace,
+    void *device_workspace = nullptr,
     cudaStream_t stream = nullptr) const = 0;
 
   virtual Status run(
     void const *arguments,
-    void *host_workspace, 
-    void *device_workspace = nullptr, 
+    void *host_workspace,
+    void *device_workspace = nullptr,
     cudaStream_t stream = nullptr) const = 0;
 
 };
@@ -217,7 +217,7 @@ using GemmBatchedArguments = GemmArguments;
 struct GemmArrayConfiguration {
 
   gemm::GemmCoord problem_size;
-  
+
   /// Leading dimension of A matrix
   int64_t lda;
 
@@ -241,7 +241,7 @@ struct GemmArrayArguments {
   void * const *D;
   void const *alpha;
   void const *beta;
-  ScalarPointerMode pointer_mode;  
+  ScalarPointerMode pointer_mode;
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -264,7 +264,7 @@ struct GemmUniversalConfiguration {
 };
 
 struct GemmUniversalArguments {
-  // NOTE: these are replicated for 3.0 interfaces 
+  // NOTE: these are replicated for 3.0 interfaces
   gemm::GemmCoord problem_size;
   int batch_count;
 
@@ -645,8 +645,8 @@ struct SymmArguments {
 struct Conv2dConfiguration {
 
   conv::SplitKMode split_k_mode;
-  
-  /// Conv2d problem size 
+
+  /// Conv2d problem size
   //  contains strictly conv2d size (N,H,W,C,K,R,S,P,Q,padding,stride,dilation,mode)
   //  also includes (split_k_slices, groups)
   conv::Conv2dProblemSize problem_size;
@@ -669,8 +669,8 @@ struct Conv2dConfiguration {
 struct Conv3dConfiguration {
 
   conv::SplitKMode split_k_mode;
-  
-  /// Conv2d problem size 
+
+  /// Conv2d problem size
   //  contains strictly conv2d size (N,D,H,W,C,K,T,R,S,Z,P,Q,padding,stride,dilation,mode)
   //  also includes (split_k_slices, groups)
   conv::Conv3dProblemSize problem_size;
@@ -688,7 +688,7 @@ struct Conv3dConfiguration {
   layout::TensorNDHWC layout_output;
 
   //
-  // Methods 
+  // Methods
   //
 
   // Mapping functions (A,B,C -> activation,filter,output)
@@ -734,7 +734,7 @@ struct ConvArguments {
 
   /// pointer to reordered matrix B
   void const *reordered_B;
-  
+
   /// pointer to implicit gemm matrix C
   void const *C;
 
@@ -770,7 +770,7 @@ struct ReductionConfiguration {
   int64_t partition_stride;
 
   /// leading dimension of 'w'orkspace operand
-  int64_t ldw; 
+  int64_t ldw;
 
   /// leading dimension of 's'ource operand
   int64_t lds;

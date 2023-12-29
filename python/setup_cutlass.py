@@ -51,7 +51,7 @@ setup_pycute.perform_setup()
 
 setup(
     name='cutlass',
-    version='3.3.0',
+    version='3.4.0',
     description='CUTLASS Pythonic Interface',
     package_dir={'': '.'},
     packages=[

@@ -466,6 +466,13 @@ EpilogueScheduleSuffixes = {
   EpilogueScheduleType.TmaWarpSpecializedCooperative: '_epi_tma',
 }
 
+class EpilogueFunctor3x(enum.Enum):
+  LinearCombination = enum_auto()
+#
+EpilogueFunctor3xTag = {
+  EpilogueFunctor3x.LinearCombination: 'cutlass::epilogue::fusion::LinearCombination',
+}
+
 class TileSchedulerType(enum.Enum):
   Default = enum_auto()
   Persistent = enum_auto()

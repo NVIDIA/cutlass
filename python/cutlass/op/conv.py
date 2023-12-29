@@ -293,7 +293,7 @@ class Conv2d(OperationBase):
 
         self.possible_op_classes = self.options.supporting_opclasses(
             self._element_a, self._element_b, self._element_accumulator,
-            self._layout_a, self._layout_b
+            self._layout_a, self._layout_b, self._math_operation
         )
 
         if cutlass.OpcodeClass.TensorOp in self.possible_op_classes:
@@ -301,8 +301,13 @@ class Conv2d(OperationBase):
         elif cutlass.OpcodeClass.Simt in self.possible_op_classes:
             self.opclass = cutlass.OpcodeClass.Simt
         else:
+            if self._math_operation is not None:
+                math_op_str = f' and math operation {self._math_operation}'
+            else:
+                math_op_str = ''
+
             raise Exception(f'No kernel configuration found for supported data type and layout '
-                            f'combination {datatype_comb}x{layout_comb}')
+                            f'combination {datatype_comb}x{layout_comb}{math_op_str}')
 
         if reset_epilogue:
             self._reset_epilogue_functor_activation(epilogue.identity)
@@ -345,7 +350,7 @@ class Conv2d(OperationBase):
             return
         if isinstance(td, dict):
             if self._tile_description is None:
-                op = self.possible_operations.default_operation()
+                op = self.possible_operations.default_operation(self._math_operation)
                 self._tile_description = datatypes.td_from_profiler_op(op)
             if "cluster_shape" in td.keys():
                 if td["cluster_shape"] != [1, 1, 1]:
@@ -397,6 +402,11 @@ class Conv2d(OperationBase):
         description_str = []
         for op in self.possible_operations.all_operations:
             td = datatypes.td_from_profiler_op(op)
+
+            if self._math_operation is not None:
+                if td.math_instruction.math_operation != self._math_operation:
+                    continue
+
             if str(td) not in description_str:
                 description_str.append(str(td))
                 descriptions.append(td)
@@ -569,7 +579,7 @@ class Conv2d(OperationBase):
             if self.tile_description is not None:
                 tile_description = self.tile_description
             else:
-                op = self.possible_operations.operations(alignment_A, alignment_B, alignment_C)[0]
+                op = self.possible_operations.operations(alignment_A, alignment_B, alignment_C, self._math_operation)[0]
                 tile_description = datatypes.td_from_profiler_op(op)
         else:
             valid, err_str = self._valid_tile_description(tile_description)

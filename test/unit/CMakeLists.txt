@@ -65,10 +65,10 @@ function(cutlass_test_unit_add_executable NAME)
 
   set(options WITHOUT_CUDA)
   set(oneValueArgs)
-  set(multiValueArgs)
+  set(multiValueArgs TEST_SETS_SUPPORTED EXTRA_INCLUDE_DIRS)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-  cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS})
+  cutlass_add_executable(${NAME} ${__UNPARSED_ARGUMENTS} BATCH_SOURCES OFF)
 
   target_compile_definitions(${NAME} PUBLIC CUTLASS_TARGET_NAME="${NAME}")
 
@@ -76,6 +76,7 @@ function(cutlass_test_unit_add_executable NAME)
     ${NAME}
     PRIVATE
     ${CUTLASS_UNIT_TEST_COMMON_DIR}
+    ${__EXTRA_INCLUDE_DIRS}
   )
   if (__WITHOUT_CUDA)
     # Avoid CUDA dependencies for host-only unit tests that provide the
@@ -110,12 +111,12 @@ function(cutlass_test_unit_add_executable NAME)
 
   cutlass_add_executable_tests(
     ${NAME_STEM} ${NAME}
+    TEST_SETS_SUPPORTED ${__TEST_SETS_SUPPORTED}
     TEST_COMMAND_OPTIONS CUTLASS_TEST_UNIT_TEST_COMMAND_OPTIONS
     ${RESULT_CACHE_FILE_ARGS}
     )
 
 endfunction()
-
 add_custom_target(cutlass_test_unit)
 add_custom_target(test_unit)
 

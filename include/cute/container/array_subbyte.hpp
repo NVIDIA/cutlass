@@ -91,7 +91,7 @@ private:
   // Flag for fast branching on straddled elements
   static constexpr bool is_storage_unaligned = ((sizeof_bits_v<storage_type> % sizeof_bits_v<element_type>) != 0);
 
-  friend class subbyte_iterator<T>;
+  friend struct subbyte_iterator<T>;
 
   // Pointer to storage element
   storage_type* ptr_ = nullptr;
@@ -208,7 +208,7 @@ struct subbyte_iterator
 
 private:
 
-  template <class, class> friend class swizzle_ptr;
+  template <class, class> friend struct swizzle_ptr;
 
   // Pointer to storage element
   storage_type* ptr_ = nullptr;

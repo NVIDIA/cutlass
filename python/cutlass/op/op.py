@@ -36,7 +36,13 @@ Base operation used for defining high-level CUTLASS operations (e.g., GEMM, Conv
 
 from bisect import bisect_left
 
-from cutlass_library import DataType, DataTypeSize, OperationKind, SharedMemPerCC
+from cutlass_library import (
+    DataType,
+    DataTypeSize,
+    MathOperation,
+    OperationKind,
+    SharedMemPerCC
+)
 
 import cutlass
 from cutlass import get_option_registry
@@ -67,6 +73,7 @@ class OperationBase:
         self.specified_kernel_cc = kernel_cc is not None
         self.current_cc = kernel_cc if kernel_cc is not None else self._find_closest_cc(self.cc)
         self.tile_description = None
+        self._math_operation = None
 
         self.options = get_option_registry().options_for_cc(self.current_cc, operation_kind)
 
@@ -197,14 +204,10 @@ class OperationBase:
         self._verify_type_and_layout(tensor, ref_dtype, ref_layout, name)
         return tensor
 
-    #
-    # Opcode Related
-    #
-
     @property
     def opclass(self) -> cutlass.OpcodeClass:
         """
-        Returns the opcode class currently in use by the GEMM
+        Returns the opcode class currently in use
 
         :return: opcode class currently in use
         :rtype: cutlass.OpcodeClass
@@ -226,15 +229,41 @@ class OperationBase:
         # Changing the op class also changes the possible operations available. Reset these.
         self.possible_operations = self.options.operations(
             self.op_class, self._element_a, self._element_b,
-            self._element_accumulator, self._layout_a, self._layout_b)
+            self._element_accumulator, self._layout_a, self._layout_b, self._math_operation)
 
         # Changing the op class changes the elements per access in the epilogue. Reset this.
         if self.epilogue_functor is not None:
             self.epilogue_functor = self._reset_epilogue_functor_alignment(self._elements_per_access(), self.epilogue_functor)
 
-    #
-    # Epilogue
-    #
+    @property
+    def math_operation(self) -> cutlass.MathOperation:
+        """
+        Returns the math operation currently in use
+
+        :return: math operation currently in use
+        :rtype: cutlass.MathOperation
+        """
+        return self._math_operation
+
+    @math_operation.setter
+    def math_operation(self, mo: cutlass.MathOperation):
+        if isinstance(mo, str):
+            mo = datatypes.getattr_enum(cutlass.MathOperation, mo)
+
+        if not self.specified_kernel_cc:
+            if self.current_cc == 90:
+                # CUTLASS 3.0 kernels do not use different math operations. If one is specified, we
+                # revert to using a CUTLASS 2.x kernel by using SM80-tagged kernels.
+                cutlass.logger.warning("Reverting to using SM80-tagged kernel. Opclass may change.")
+                self._reset_options(80)
+                self._reset_operations(reset_epilogue=False)
+        elif self.current_cc == 90:
+            raise Exception("CUTLASS 3.0 kernels do not use different math operations. "
+                "To use 2.x kernels with a specific math operation, do not set the `kernel_cc`"
+                "parameter when constructing the plan.")
+
+        self._math_operation = mo
+        self._reset_operations()
 
     def _elements_per_access(self):
         if self.op_class == cutlass.OpcodeClass.Simt:
@@ -262,7 +291,7 @@ class OperationBase:
                     raise Exception("CUTLASS 2.x kernels require element C to be the same as element D")
                 self._reset_options(80)
                 self._reset_operations(reset_epilogue=False)
-            elif (self.cc == 90 and self.current_cc != 90 and activation == identity):
+            elif (self.cc == 90 and self.current_cc != 90 and activation == identity and self._math_operation is None):
                 # SM80 fallback kernels are currently used. Since an identity activation is requested,
                 # we can switch back to using SM90 kernels.
                 self._reset_options(90)
@@ -272,7 +301,7 @@ class OperationBase:
                 raise Exception("Epilogues with elementwise fusion are not currently supported "
                                 "in the Python interface for 3.x kernels. To use 2.x kernels "
                                 "with fused elementwise epilogues, do not set the `kernel_cc` "
-                                "parameter when constructing the Gemm object.")
+                                "parameter when constructing the plan.")
 
         return get_activation_epilogue(
             activation,
@@ -364,6 +393,7 @@ class OperationBase:
             # The shared memory is only a concern for sm90 epilogue
             # In sm80, the epilogue and mainloop share the shared memory
             return
+
         datatype_comb = self.possible_operations.datatype_comb
         layout_comb = self.possible_operations.layout_comb
         new_possible_operations = KernelsForDataType(datatype_comb, layout_comb)

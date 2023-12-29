@@ -46,6 +46,8 @@ namespace cutlass::epilogue {
 //////////////////////////////////////////////////////////////////////////////
 
 struct NoSmemWarpSpecialized {};
+struct NoSmemWarpSpecializedArray {};
+struct NoSmemWarpSpecializedGroup {};
 struct TmaWarpSpecialized {};
 struct TmaWarpSpecializedCooperative {};
 // DEPRECATED schedules, will be removed in next release

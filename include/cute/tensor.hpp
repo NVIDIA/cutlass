@@ -990,13 +990,10 @@ CUTE_HOST_DEVICE void print_tensor(Tensor<Engine,Layout> const& tensor)
 {
   print(tensor); print(":\n");
 
-  auto format = get_format(tensor(0));
-  using type = typename decltype(format)::type;
-
   if constexpr (Layout::rank == 1)
   {
     for (int m = 0; m < size(tensor); ++m) {
-      printf(format.format, format.digits, type(tensor(m)));
+      pretty_print(tensor(m));
       printf("\n");
     }
   } else
@@ -1004,7 +1001,7 @@ CUTE_HOST_DEVICE void print_tensor(Tensor<Engine,Layout> const& tensor)
   {
     for (int m = 0; m < size<0>(tensor); ++m) {
       for (int n = 0; n < size<1>(tensor); ++n) {
-        printf(format.format, format.digits, type(tensor(m,n)));
+        pretty_print(tensor(m,n));
       }
       printf("\n");
     }
@@ -1013,7 +1010,7 @@ CUTE_HOST_DEVICE void print_tensor(Tensor<Engine,Layout> const& tensor)
   {
     print_tensor(tensor(_,_,0));
     for (int k = 1; k < size<2>(tensor); ++k) {
-      for (int i = 0; i < format.digits*size<1>(tensor); ++i) { print("-"); } print("\n");
+      for (int i = 0; i < 5*size<1>(tensor); ++i) { print("-"); } print("\n");
       print_tensor(tensor(_,_,k));
     }
   } else
@@ -1021,7 +1018,7 @@ CUTE_HOST_DEVICE void print_tensor(Tensor<Engine,Layout> const& tensor)
   {
     print_tensor(tensor(_,_,_,0));
     for (int p = 1; p < size<3>(tensor); ++p) {
-      for (int i = 0; i < format.digits*size<1>(tensor); ++i) { print("="); } print("\n");
+      for (int i = 0; i < 5*size<1>(tensor); ++i) { print("="); } print("\n");
       print_tensor(tensor(_,_,_,p));
     }
   }

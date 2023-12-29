@@ -775,6 +775,104 @@ struct SM90_TMA_STORE
   }
 };
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// TMA_STORE im2col: Initiates a TMA copy, in im2col mode, from shared memory to global memory
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct SM90_TMA_STORE_IM2COL_3D
+{
+  CUTE_HOST_DEVICE static void
+  copy(void const* const desc_ptr,
+       void const* const smem_ptr,
+       int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_n)
+  {
+#if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+    uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
+    uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
+    asm volatile (
+      "cp.async.bulk.tensor.3d.global.shared::cta.im2col_no_offs.bulk_group"
+      " [%0, {%2, %3, %4}], [%1];"
+      :
+      : "l"(gmem_int_desc), "r"(smem_int_ptr),
+        "r"(coord_c), "r"(coord_w), "r"(coord_n)
+      : "memory");
+#else
+    CUTE_RUNTIME_ASSERT("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
+  }
+};
+
+struct SM90_TMA_STORE_IM2COL_4D
+{
+  CUTE_HOST_DEVICE static void
+  copy(void const* const desc_ptr,
+       void const* const smem_ptr,
+       int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_h, int32_t const& coord_n)
+  {
+#if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+    uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
+    uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
+    asm volatile (
+      "cp.async.bulk.tensor.4d.global.shared::cta.im2col_no_offs.bulk_group"
+      " [%0, {%2, %3, %4, %5}], [%1];"
+      :
+      : "l"(gmem_int_desc), "r"(smem_int_ptr),
+        "r"(coord_c), "r"(coord_w), "r"(coord_h), "r"(coord_n)
+      : "memory");
+#else
+    CUTE_RUNTIME_ASSERT("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
+  }
+};
+
+struct SM90_TMA_STORE_IM2COL_5D
+{
+  CUTE_HOST_DEVICE static void
+  copy(void const* const desc_ptr,
+       void const* const smem_ptr,
+       int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_h, int32_t const& coord_d, int32_t const& coord_n)
+  {
+#if defined(CUTE_ARCH_TMA_SM90_ENABLED)
+    uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
+    uint32_t smem_int_ptr  = cast_smem_ptr_to_uint(smem_ptr);
+    asm volatile (
+      "cp.async.bulk.tensor.5d.global.shared::cta.im2col_no_offs.bulk_group"
+      " [%0, {%2, %3, %4, %5, %6}], [%1];"
+      :
+      : "l"(gmem_int_desc), "r"(smem_int_ptr),
+        "r"(coord_c), "r"(coord_w), "r"(coord_h), "r"(coord_d), "r"(coord_n)
+      : "memory");
+#else
+    CUTE_RUNTIME_ASSERT("Trying to use tma without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
+  }
+};
+
+struct SM90_TMA_STORE_IM2COL
+{
+  CUTE_HOST_DEVICE static void
+  copy(void const* const desc_ptr,
+       void const* const smem_ptr,
+       int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_n)
+  {
+    return SM90_TMA_STORE_IM2COL_3D::copy(desc_ptr, smem_ptr, coord_c, coord_w, coord_n);
+  }
+  CUTE_HOST_DEVICE static void
+  copy(void const* const desc_ptr,
+       void const* const smem_ptr,
+       int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_h, int32_t const& coord_n)
+  {
+    return SM90_TMA_STORE_IM2COL_4D::copy(desc_ptr, smem_ptr, coord_c, coord_w, coord_h, coord_n);
+  }
+  CUTE_HOST_DEVICE static void
+  copy(void const* const desc_ptr,
+       void const* const smem_ptr,
+       int32_t const& coord_c, int32_t const& coord_w, int32_t const& coord_h, int32_t const& coord_d, int32_t const& coord_n)
+  {
+    return SM90_TMA_STORE_IM2COL_5D::copy(desc_ptr, smem_ptr, coord_c, coord_w, coord_h, coord_d, coord_n);
+  }
+};
+
 // Indicate arrival of warp issuing TMA_STORE
 CUTE_HOST_DEVICE static void
 tma_store_arrive() {

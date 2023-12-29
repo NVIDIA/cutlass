@@ -90,7 +90,11 @@ public:
   Status release();
 
   /// Appends an operation and takes ownership
-  void append(Operation *operation_ptr);
+  void append(Operation *operation_ptr) {\
+    // This function is inline s.t. it is present in generated libraries
+    // without having to compile or link in manifest.cpp
+    operations_.emplace_back(operation_ptr);
+  }
 
   /// Returns an iterator to the first operation
   OperationVector const &operations() const;

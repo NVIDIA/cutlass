@@ -85,16 +85,17 @@ using Sm90SplitTreeFetch = Sm90AccFetch;
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 // returns C
+template <class Element>
 struct Sm90SrcFetch : Sm90VisitorImpl<> {
 
   CUTLASS_DEVICE bool
   is_producer_load_needed() const {
-    return true;
+    return is_C_load_needed();
   }
 
   CUTLASS_DEVICE bool
   is_C_load_needed() const {
-    return true;
+    return not is_void_v<Element>;
   }
 
   using Sm90VisitorImpl<>::Sm90VisitorImpl;
@@ -105,7 +106,6 @@ struct Sm90SrcFetch : Sm90VisitorImpl<> {
     ConsumerStoreCallbacks(SrcTensor const& tCrC)
       : tCrC(tCrC) {}
 
-    // make this a pointer if we need default ctor for generic tuple of visitors
     SrcTensor const& tCrC;                                                                         // (CPY,CPY_M,CPY_N)
 
     template <typename ElementAccumulator, int FragmentSize>
@@ -122,7 +122,7 @@ struct Sm90SrcFetch : Sm90VisitorImpl<> {
   >
   CUTLASS_DEVICE auto
   get_consumer_store_callbacks(ConsumerStoreArgs<Args...> const& args) {
-
+    // register type may differ from logical type so we can't assert matching types here
     return ConsumerStoreCallbacks(args.tCrC);
   }
 };
@@ -343,7 +343,6 @@ struct Sm90AuxLoad {
     Tensor sAux_epi = cute::as_position_independent_swizzle_tensor(
                         make_tensor(make_smem_ptr(smem_aux), SmemLayout{}));            // (EPI_TILE_M,EPI_TILE_N,PIPE)
     auto tSR_sAux = tiled_s2r.get_slice(args.thread_idx).partition_S(sAux_epi);               // (S2R,S2R_M,S2R_N,PIPE)
-
 
     return ConsumerStoreCallbacks<decltype(tC_rAux), decltype(tiled_s2r), decltype(tSR_sAux)>(
         cute::move(tC_rAux), tiled_s2r, cute::move(tSR_sAux), params_ptr);
