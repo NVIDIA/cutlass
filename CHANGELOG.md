@@ -1,5 +1,5 @@
 # NVIDIA CUTLASS Changelog
-## [3.4](https://github.com/NVIDIA/cutlass/releases/tag/v3.4) (2023-12-27)
+## [3.4](https://github.com/NVIDIA/cutlass/releases/tag/v3.4) (2023-12-29)
 * Expanded [Mixed-input Hopper GEMMs](/examples/55_hopper_mixed_dtype_gemm) support covering {16-bit, 8-bit} x {8-bit, 4-bit} input types with fast numerical converters and group scaling factors.
 * Performance improvements to [Mixed-input Hopper GEMMs](/examples/55_hopper_mixed_dtype_gemm)
 * Beta release of [Pointer-Array Batched GEMMs](/examples/56_hopper_ptr_array_batched_gemm) now available on Hopper GPUs utilizing TMA and WGMMA (requires CUDA 12.3 or above).
