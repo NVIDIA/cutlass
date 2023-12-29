@@ -101,7 +101,7 @@ class Layout(LayoutBase):
 
   # cosize(layout)   Size of the codomain
   def cosize(self):
-    return tuple_max(tuple((1, elem_scale(self.shape, self.stride))))
+    return self(self.size() - 1) + 1
 
   # print and str
   def __str__(self):

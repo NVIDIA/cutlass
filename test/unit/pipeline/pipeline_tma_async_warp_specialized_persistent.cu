@@ -62,16 +62,16 @@ using namespace cutlass;
 
 //////////////////// KERNEL /////////////////////////
 
-template <uint32_t Stages, typename ClusterShape, typename PingPongBarrier>
+template <uint32_t Stages, typename PingPongBarrier>
 struct SharedStorage
 {
-  typename cutlass::PipelineTmaAsync<Stages, ClusterShape>::SharedStorage pipeline_storage;
+  typename cutlass::PipelineTmaAsync<Stages>::SharedStorage pipeline_storage;
   typename PingPongBarrier::SharedStorage pingpong_storage;
 };
 
 template <typename ClusterShape, uint32_t Stages>
 struct CollectiveSimulation {
-  using MainloopPipeline = typename cutlass::PipelineTmaAsync<Stages, ClusterShape>;
+  using MainloopPipeline = typename cutlass::PipelineTmaAsync<Stages>;
   using PipelineState = typename cutlass::PipelineState<Stages>;
 
   CUTLASS_DEVICE
@@ -198,7 +198,7 @@ __global__ static
 void pipeline_device(KernelParams params)
 {
   extern __shared__ char shared_memory[];
-  using MainloopPipeline = typename cutlass::PipelineTmaAsync<Stages, ClusterShape>;
+  using MainloopPipeline = typename cutlass::PipelineTmaAsync<Stages>;
   using PipelineState = typename cutlass::PipelineState<Stages>;
 
   /* One for Mainloop and one for Epilogue */
@@ -206,7 +206,7 @@ void pipeline_device(KernelParams params)
   constexpr int MathWarpGroupCountPersistent = 2;
   using PingPongBarrier = typename cutlass::OrderedSequenceBarrier<StagesPerMathWarpGroup, MathWarpGroupCountPersistent>;
 
-  using SharedStorage = SharedStorage<Stages, ClusterShape, PingPongBarrier>;
+  using SharedStorage = SharedStorage<Stages, PingPongBarrier>;
   SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(shared_memory);
 
   [[maybe_unused]] auto cta_layout = Layout<ClusterShape>{};            // (m,n) -> cta_id
@@ -232,7 +232,7 @@ void pipeline_device(KernelParams params)
   pipeline_params.is_leader = warp_group_thread_idx == 0;
   pipeline_params.num_consumers = NumThreadsPerWarpGroup;
 
-  MainloopPipeline pipeline(shared_storage.pipeline_storage, pipeline_params);
+  MainloopPipeline pipeline(shared_storage.pipeline_storage, pipeline_params, cluster_shape);
   PipelineState tile_start_state_pipe;
 
   int tiles_per_cluster = params.tiles_per_cluster;
@@ -343,7 +343,7 @@ struct PipelineTest {
     for (int iter = 0; iter < iterations; ++iter) {
       constexpr int StagesPerMathWarpGroup = 2;
       constexpr int MathWarpGroupCountPersistent = 2;
-      int smem_size = int(sizeof(SharedStorage<Stages, decltype(cluster_shape), 
+      int smem_size = int(sizeof(SharedStorage<Stages,
                           typename cutlass::OrderedSequenceBarrier<StagesPerMathWarpGroup, MathWarpGroupCountPersistent>>));
 
       result = cudaFuncSetAttribute(

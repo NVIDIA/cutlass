@@ -67,11 +67,12 @@ public:
   /// Problem structure obtained from problem space
   struct GemmProblem {
 
-    cutlass::library::GemmUniversalMode mode; 
+    cutlass::library::GemmUniversalMode mode;
 
     int64_t m;
     int64_t n;
     int64_t k;
+    
     int64_t lda;
     int64_t ldb;
     int64_t ldc;
@@ -93,9 +94,16 @@ public:
     // Methods
     //
 
-    GemmProblem(): 
+    GemmProblem():
       mode(library::GemmUniversalMode::kGemm),
-      m(16), n(16), k(16), lda(0), ldb(0), ldc(0), split_k_slices(1), batch_count(1),
+      m(16), 
+      n(16), 
+      k(16),
+      lda(0), 
+      ldb(0), 
+      ldc(0), 
+      split_k_slices(1), 
+      batch_count(1),
       raster_order(cutlass::library::RasterOrder::kHeuristic){ }
 
     /// Parses the problem
@@ -117,7 +125,7 @@ public:
       ProblemSpace const &problem_space);
   };
 
-  /// Workspace used 
+  /// Workspace used
   struct GemmWorkspace {
 
     DeviceAllocation *A;
@@ -150,7 +158,7 @@ public:
     // Methods
     //
 
-    GemmWorkspace(): 
+    GemmWorkspace():
       A(nullptr), B(nullptr), C(nullptr), Computed(nullptr), Reference(nullptr), problem_count(1) { }
   };
 
@@ -163,7 +171,7 @@ protected:
   /// GEMM problem obtained from problem space
   GemmProblem problem_;
 
-  /// Device memory allocations 
+  /// Device memory allocations
   GemmWorkspace gemm_workspace_;
 
   /// CUTLASS parallel reduction operation to follow this* gemm operation
@@ -190,8 +198,8 @@ public:
 
   /// Extracts the problem dimensions
   virtual Status initialize_configuration(
-    Options const &options, 
-    PerformanceReport &report, 
+    Options const &options,
+    PerformanceReport &report,
     DeviceContext &device_context,
     library::Operation const *operation,
     ProblemSpace const &problem_space,
@@ -199,8 +207,8 @@ public:
 
   /// Initializes workspace
   virtual Status initialize_workspace(
-    Options const &options, 
-    PerformanceReport &report, 
+    Options const &options,
+    PerformanceReport &report,
     DeviceContext &device_context,
     library::Operation const *operation,
     ProblemSpace const &problem_space,
@@ -208,7 +216,7 @@ public:
 
   /// Verifies CUTLASS against references
   virtual bool verify_cutlass(
-    Options const &options,  
+    Options const &options,
     PerformanceReport &report,
     DeviceContext &device_context,
     library::Operation const *operation,
@@ -217,8 +225,8 @@ public:
 
   /// Measures performance results
   virtual bool profile(
-    Options const &options, 
-    PerformanceReport &report, 
+    Options const &options,
+    PerformanceReport &report,
     DeviceContext &device_context,
     library::Operation const *operation,
     ProblemSpace const &problem_space,
@@ -229,13 +237,13 @@ protected:
   /// Initializes the performance result
   void initialize_result_(
     PerformanceResult &result,
-    Options const &options,  
+    Options const &options,
     library::GemmDescription const &operation_desc,
     ProblemSpace const &problem_space);
 
   /// Verifies CUTLASS against references
   bool verify_with_cublas_(
-    Options const &options,  
+    Options const &options,
     PerformanceReport &report,
     DeviceContext &device_context,
     library::Operation const *operation,
@@ -244,7 +252,7 @@ protected:
 
   /// Verifies CUTLASS against host and device references
   bool verify_with_reference_(
-    Options const &options,  
+    Options const &options,
     PerformanceReport &report,
     DeviceContext &device_context,
     library::Operation const *operation,

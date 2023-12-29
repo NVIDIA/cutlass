@@ -136,6 +136,8 @@ function(cutlass_add_cutlass_library)
       EXPORT_NAME ${__EXPORT_NAME}
       ""
       )
+
+    target_compile_features(${__NAME} INTERFACE cxx_std_17)
     
     set_target_properties(
       ${__NAME}
@@ -159,6 +161,8 @@ function(cutlass_add_cutlass_library)
       EXPORT_NAME ${__EXPORT_NAME}_static
       ""
       )
+
+    target_compile_features(${__NAME}_static INTERFACE cxx_std_17)
     
     if (WIN32)
       set(STATIC_OUTPUT_NAME ${__OUTPUT_NAME}.static)
@@ -196,8 +200,8 @@ function(cutlass_add_cutlass_library)
       # to the main cutlass library so users automatically get the necessary link
       # commands to pull in all kernels by default.
     
-      target_link_libraries(${DEFAULT_NAME} INTERFACE ${__NAME})
-      target_link_libraries(${DEFAULT_NAME}_static INTERFACE ${__NAME}_static)
+      target_link_libraries(${DEFAULT_NAME} PUBLIC ${__NAME})
+      target_link_libraries(${DEFAULT_NAME}_static PUBLIC ${__NAME}_static)
     
     endif()
 
@@ -246,6 +250,7 @@ cutlass_add_cutlass_library(
 
 # For backward compatibility with the old name
 add_library(cutlass_lib ALIAS cutlass_library)
+add_library(cutlass_lib_static ALIAS cutlass_library_static)
 
 ################################################################################
 

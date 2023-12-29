@@ -114,6 +114,9 @@ struct MmaGeneric {
 
   static bool const kMultipleOf2 = ((Shape::kM % 2 == 0) && (Shape::kN % 2 == 0));
 
+  static bool const kAllFp32 = platform::is_same<ElementA, float>::value &&
+      platform::is_same<ElementB, float>::value &&
+      platform::is_same<ElementC, float>::value;
   //
   // Methods
   //
@@ -144,11 +147,7 @@ struct MmaGeneric {
     CUTLASS_PRAGMA_UNROLL
     for (int k = 0; k < Shape::kK; ++k) {
       #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 860)
-      if (kMultipleOf2 &&
-        platform::is_same<ElementA, float>::value &&
-        platform::is_same<ElementB, float>::value &&
-        platform::is_same<ElementC, float>::value) {
-
+      if (kMultipleOf2 && kAllFp32) {
         //2x2 zigzag - m and n loops to increment by 2. Inner loop to process 4 multiply-adds in a 2x2 tile.
         CUTLASS_PRAGMA_UNROLL
         for (int n = 0; n < Shape::kN; n+=2) {
@@ -157,7 +156,7 @@ struct MmaGeneric {
           for (int m = 0; m < Shape::kM; m+=2) {
   
             int m_serpentine = (n % 4) ? (Shape::kM - 2 - m) : m;
-  
+
             //top-left element in 2x2 tile
             {
               MatrixCoord mn(m_serpentine, n);

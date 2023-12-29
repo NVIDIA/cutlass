@@ -56,9 +56,9 @@
 #include "cutlass/cutlass.h"
 
 /// Optionally enable GCC's built-in type
-#if (defined(__x86_64) || defined (__aarch64__)) && !defined(__CUDA_ARCH__) && defined(__GNUC__)
+#if (defined(__x86_64) || defined (__aarch64__)) && !(defined(__CUDA_ARCH__) && ((__CUDACC_VER_MAJOR__ <= 10) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ <= 4)))) && defined(__GNUC__)
 #define CUTLASS_UINT128_NATIVE
-#elif defined(_MSC_VER) && defined(_M_AMD64) && !defined(__CUDA_ARCH__)
+#elif defined(_MSC_VER) && defined(_M_AMD64) && !(defined(__CUDA_ARCH__) && ((__CUDACC_VER_MAJOR__ <= 10) || ((__CUDACC_VER_MAJOR__ == 11) && (__CUDACC_VER_MINOR__ <= 4))))
 #define CUTLASS_INT128_ARITHMETIC
 #include <intrin.h>
 #if _MSC_VER >= 1920

@@ -174,7 +174,7 @@ class GroupedGemm(Gemm):
         tensor_C = TensorDescription(self._element_c, self._layout_c, alignment_C)
 
         if tile_description is None:
-            op = self.possible_operations.operations(alignment_A, alignment_B, alignment_C)[0]
+            op = self.possible_operations.operations(alignment_A, alignment_B, alignment_C, self._math_operation)[0]
             tile_description = datatypes.td_from_profiler_op(op)
         else:
             valid, err_str = self._valid_tile_description(tile_description)

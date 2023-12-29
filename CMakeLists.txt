@@ -40,7 +40,7 @@ endif()
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 set(IMPLICIT_CMAKE_CXX_STANDARD OFF CACHE BOOL "Do not explicitly specify -std=c++11 if set")
 
-project(CUTLASS VERSION 3.3.0 LANGUAGES CXX)
+project(CUTLASS VERSION 3.4.0 LANGUAGES CXX)
 include(${CMAKE_CURRENT_SOURCE_DIR}/CUDA.cmake)
 
 if (CUDA_VERSION VERSION_LESS 11.3)
@@ -681,6 +681,12 @@ endif()
 
 ################################################################################
 
+set(CUTLASS_DEFAULT_ACTIVE_TEST_SETS "default" CACHE STRING "Default
+  activated test sets. In `make test` mode, this string determines the
+  active set of tests. In `ctest` mode, this value can be overriden
+  with CUTLASS_TEST_SETS environment variable when running the ctest
+  executable.")
+
 set(CUTLASS_CTEST_TEMPLATE_FILE ${CMAKE_CURRENT_LIST_DIR}/cmake/CTestTestfile.configure.cmake)
 set(CUTLASS_CTEST_GENERATED_FILES "" CACHE INTERNAL "")
 
@@ -701,11 +707,12 @@ function(cutlass_add_executable_tests NAME TARGET)
 #   generating the full variable name to be referenced.
 # RESULT_CACHE_FILE: A file to be installed alongside the test executable with pre-computed
 #   test results to speed up test runtime.
+# TEST_SETS_SUPPORTED: A list of test set names these tests support. 
 # 
 
   set(options DISABLE_EXECUTABLE_INSTALL_RULE)
   set(oneValueArgs DISABLE_TESTS RESULT_CACHE_FILE TEST_COMMAND_OPTIONS_PREFIX)
-  set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS)
+  set(multiValueArgs DEPENDS DEPENDEES TEST_COMMAND_OPTIONS TEST_SETS_SUPPORTED)
   cmake_parse_arguments(_ "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
   if (NOT DEFINED __DISABLE_TESTS)
@@ -714,6 +721,12 @@ function(cutlass_add_executable_tests NAME TARGET)
 
   set(TEST_EXE $<TARGET_FILE_NAME:${TARGET}>)
   set(TEST_EXE_WORKING_DIRECTORY ./${CMAKE_INSTALL_BINDIR})
+
+  if (NOT DEFINED __TEST_SETS_SUPPORTED)
+    set(__TEST_SETS_SUPPORTED ${CUTLASS_DEFAULT_ACTIVE_TEST_SETS})
+  endif()
+
+  set(TEST_SETS_SUPPORTED ${__TEST_SETS_SUPPORTED})
 
   if (__RESULT_CACHE_FILE)
 
@@ -816,8 +829,6 @@ function(cutlass_add_executable_tests NAME TARGET)
   set(TEST_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/ctest/${TEST_NAME})
   file(MAKE_DIRECTORY ${TEST_GEN_DIR})
 
-  set(TEST_SETS_SUPPORTED default)
-
   set(TEST_EXE_PATH $<TARGET_FILE:${TARGET}>)
   set(TEST_USE_EXTENDED_FORMAT ON)
   configure_file("${CUTLASS_CTEST_TEMPLATE_FILE}" "${TEST_GEN_DIR}/CTestTestfile.${TEST_NAME}.cmake" @ONLY)
@@ -873,9 +884,9 @@ if (CUTLASS_INSTALL_TESTS)
   file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/ctest")
 
   file(WRITE "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "# Generated File\n\n")
-
-  file(APPEND "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "if (NOT DEFINED ENV{CUTLASS_TEST_SET})\n")
-  file(APPEND "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "  set(ENV{CUTLASS_TEST_SET} \"default\")\n")
+  file(APPEND "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "cmake_policy(SET CMP0057 NEW) # Allow IN_LIST for if()\n\n")
+  file(APPEND "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "if (NOT DEFINED ENV{CUTLASS_TEST_SETS})\n")
+  file(APPEND "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "  set(ENV{CUTLASS_TEST_SETS} ${CUTLASS_DEFAULT_ACTIVE_TEST_SETS})\n")
   file(APPEND "${CMAKE_BINARY_DIR}/ctest/CTestTestfile.cmake" "endif()\n\n")
 
   foreach(GENERATED_FILE ${CUTLASS_CTEST_GENERATED_FILES})
@@ -897,9 +908,15 @@ write_basic_package_version_file(
   ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfigVersion.cmake 
   COMPATIBILITY AnyNewerVersion)
 
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NvidiaCutlassConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfig.cmake  
+  @ONLY
+  )
+
 install(
   FILES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NvidiaCutlassConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfig.cmake  
     ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfigVersion.cmake 
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass/
   )

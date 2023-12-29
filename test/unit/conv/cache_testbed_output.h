@@ -48,15 +48,15 @@
 #include "cutlass/core_io.h"
 #include "cutlass/util/tensor_view_io.h"
 
+#include "thrust/universal_vector.h"
+
 #ifndef CUTLASS_TEST_ENABLE_CACHED_RESULTS
 #define CUTLASS_TEST_ENABLE_CACHED_RESULTS false
 #endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-namespace test {
-namespace conv {
-namespace device {
+namespace test::conv::device {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -325,7 +325,6 @@ inline std::ostream &EncodeProblemSize(
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
-
 template <typename Element>
 inline std::string ElementTypeName() {
   return std::string(typeid(Element).name());
@@ -452,6 +451,12 @@ inline std::string TensorTypeName() {
   return ss.str();
 }
 
+template <typename Element>
+inline std::string TensorTypeName() {
+  std::stringstream ss;
+  ss << ElementTypeName<Element>();
+  return ss.str();
+}
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// Hash function on a byte array
@@ -511,6 +516,16 @@ uint32_t TensorHash(
   return hash(view.data(), view.capacity() * cutlass::sizeof_bits<Element>::value / 8, crc);
 }
 
+template <typename Element>
+uint32_t TensorHash(
+  thrust::universal_vector<Element>& tensor,
+  CRC32 const &hash = CRC32(), 
+  uint32_t crc = uint32_t()
+) {
+
+  return hash(tensor.data().get(), tensor.size() * cutlass::sizeof_bits<Element>::value / 8, crc);
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
@@ -533,6 +548,23 @@ inline std::ostream &EncodeTypes(
   return out;
 }
 
+template <
+  typename ElementA,
+  typename ElementB,
+  typename ElementC,
+  typename ElementD
+>
+inline std::ostream &EncodeTypes(
+  std::ostream &out
+) {
+  
+  out << TensorTypeName<ElementA>() << "_" 
+      << TensorTypeName<ElementB>() << "_" 
+      << TensorTypeName<ElementC>() << "_"
+      << ElementTypeName<ElementD>();
+
+  return out;
+}
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <
@@ -790,8 +822,6 @@ inline CachedTestKey CreateCachedConv3dTestKey(
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-} // namespace device
-} // nammespace conv
-} // namespace test
+} // namespace test::conv::device
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

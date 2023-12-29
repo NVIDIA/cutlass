@@ -1,4 +1,12 @@
 # NVIDIA CUTLASS Changelog
+## [3.4](https://github.com/NVIDIA/cutlass/releases/tag/v3.4) (2023-12-27)
+* Expanded [Mixed-input Hopper GEMMs](/examples/55_hopper_mixed_dtype_gemm) support covering {16-bit, 8-bit} x {8-bit, 4-bit} input types with fast numerical converters and group scaling factors.
+* Performance improvements to [Mixed-input Hopper GEMMs](/examples/55_hopper_mixed_dtype_gemm)
+* Beta release of [Pointer-Array Batched GEMMs](/examples/56_hopper_ptr_array_batched_gemm) now available on Hopper GPUs utilizing TMA and WGMMA (requires CUDA 12.3 or above).
+* Beta release of [Group-GEMM](/examples/57_hopper_grouped_gemm) utilizing TMA and WGMMA (requires CUDA 12.3 or above).
+* NamedBarriers usability improvement and list of [ReservedNamedBarriers](/include/cutlass/arch/barrier.h) has been officially released.
+* Improved [CuTe TMA Tensor](/media/docs/cute/0z_tma_tensors.md) documentation.
+
 
 ## [3.3](https://github.com/NVIDIA/cutlass/releases/tag/v3.3) (2023-10-31)
 * [Mixed-input Hopper GEMMs](/examples/55_hopper_mixed_dtype_gemm) support covering 16-bit x 8-bit input operand types.

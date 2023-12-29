@@ -109,8 +109,8 @@ public:
   using CopyOpR2S = CopyOpR2S_;
 
   using ThreadEpilogueOp = typename epilogue::fusion::FusionCallbacksTraits<FusionCallbacks>::Operation;
-  using GmemTiledCopyC = SM90_TMA_LOAD;
-  using GmemTiledCopyD = SM90_TMA_STORE;
+  using GmemTiledCopyC = CopyOpG2S;
+  using GmemTiledCopyD = CopyOpS2G;
 
   static_assert(!is_layout<EpilogueTile>::value && is_tuple<EpilogueTile>::value, "EpilogueTile must be a cute::Tile or cute::Shape");
   static_assert(cute::rank(CtaTileMNK{}) == 3, "CtaTileMNK must be rank-3: [CTA_M, CTA_N, CTA_K]");
@@ -198,12 +198,12 @@ public:
   struct Params {
     using TMA_C = decltype(make_tma_copy(
         CopyOpG2S{},
-        make_tensor(static_cast<SmemElementC const*>(nullptr),
+        make_tensor(make_gmem_ptr(static_cast<SmemElementC const*>(nullptr)),
             repeat_like(StrideC{}, int32_t(0)), StrideC{}),
         SmemLayoutC{}(_,_,0)));
     using TMA_D = decltype(make_tma_copy(
         CopyOpS2G{},
-        make_tensor(static_cast<ElementD const*>(nullptr),
+        make_tensor(make_gmem_ptr(static_cast<ElementD const*>(nullptr)),
             repeat_like(StrideD{}, int32_t(0)), StrideD{}),
         SmemLayoutD{}(_,_,0)));
 
@@ -225,14 +225,20 @@ public:
     // Optionally append 1s until problem shape is rank-4 in case its is only rank-3 (MNK)
     auto problem_shape_MNKL = append<4>(problem_shape, 1);
     auto [M, N, K, L] = problem_shape_MNKL;
+    auto M_C =
+        size(M)
+      ;
+    auto M_D =
+        size(M)
+      ;
 
     typename Params::TMA_C tma_load_c;
     if constexpr (not cute::is_void_v<ElementC>) {
-      Tensor tensor_c = make_tensor(args.ptr_C, make_layout(make_shape(M,N,L), args.dC));
+      Tensor tensor_c = make_tensor(make_gmem_ptr(args.ptr_C), make_layout(make_shape(M_C,N,L), args.dC));
       tma_load_c = make_tma_copy(CopyOpG2S{}, tensor_c, SmemLayoutC{}(_,_,0));
     }
 
-    Tensor tensor_d = make_tensor(args.ptr_D, make_layout(make_shape(M,N,L), args.dD));
+    Tensor tensor_d = make_tensor(make_gmem_ptr(args.ptr_D), make_layout(make_shape(M_D,N,L), args.dD));
     typename Params::TMA_D tma_store_d = make_tma_copy(
         CopyOpS2G{},
         tensor_d,
@@ -332,25 +338,31 @@ public:
       TileCoordMNKL tile_coord_mnkl,
       TiledMma tiled_mma,
       int thread_idx,
-      TensorStorage& shared_tensors) {
+      TensorStorage& shared_tensors,
+      int subtile_idx=-1) {
     using namespace cute;
 
     // Indexing variables
     auto [M, N, K, L] = problem_shape_mnkl;
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord_mnkl;
 
+    auto coord_shape =
+        make_coord(m_coord, n_coord, l_coord)
+      ;
+
     // Tile residue
-    auto m_max_coord = unwrap(cute::transform(make_seq<cute::rank<0>(tile_shape_MNK)>{}, [&](auto i) {
+    auto m_max_coord = unwrap(cute::transform(make_seq<rank<0>(tile_shape_MNK)>{}, [&](auto i) {
       return get<0,i>(problem_shape_mnkl) - get<0,i>(tile_shape_MNK) * get<0,i>(tile_coord_mnkl);
     }));
-    auto n_max_coord = unwrap(cute::transform(make_seq<cute::rank<1>(tile_shape_MNK)>{}, [&](auto i) {
+    auto n_max_coord = unwrap(cute::transform(make_seq<rank<1>(tile_shape_MNK)>{}, [&](auto i) {
       return get<1,i>(problem_shape_mnkl) - get<1,i>(tile_shape_MNK) * get<1,i>(tile_coord_mnkl);
     }));
     auto residue_mn = make_coord(m_max_coord, n_max_coord);
 
     // Represent the full source tensor, slice to get the tile this CTA is currently responsible for
-    Tensor mC = params.tma_load_c.get_tma_tensor(make_shape(M,N,L));                                   //       (M,N,L)
-    Tensor gC = local_tile(mC, take<0,2>(CtaTileMNK{}), make_coord(m_coord,n_coord,l_coord));          // (CTA_M,CTA_N)
+    Tensor mC_mn = params.tma_load_c.get_tma_tensor(make_shape(M,N,L));                                //       (M,N,L)
+    Tensor mC = coalesce(mC_mn, take<0,2>(CtaTileMNK{}));
+    Tensor gC = local_tile(mC, take<0,2>(CtaTileMNK{}), coord_shape);                                  // (CTA_M,CTA_N)
 
     // Apply epilogue subtile, get matching smem tensor
     SmemElementC* ptr_sC = reinterpret_cast<SmemElementC*>(shared_tensors.smem_D.data());
@@ -391,6 +403,9 @@ public:
     for (int epi_n = 0; epi_n < size<3>(gC_epi); ++epi_n) {
       CUTLASS_PRAGMA_UNROLL
       for (int epi_m = 0; epi_m < size<2>(gC_epi); ++epi_m) {
+        if (subtile_idx != -1 && (epi_n * static_cast<int>(size<2>(gC_epi)) + epi_m) != subtile_idx) {
+          continue;
+        }
         // Acquire the lock for this stage
         constexpr uint16_t mcast_mask = 0;
         uint64_t* tma_barrier = load_pipeline.producer_get_barrier(load_pipe_producer_state);
@@ -449,31 +464,36 @@ public:
       cute::Tensor<AccEngine,AccLayout> accumulators,
       TiledMma tiled_mma,
       int thread_idx,
-      TensorStorage& shared_tensors) {
+      TensorStorage& shared_tensors,
+      int subtile_idx=-1) {
     using namespace cute;
     using ElementAccumulator = typename AccEngine::value_type;
     using ElementCompute_ = typename epilogue::fusion::FusionCallbacksTraits<FusionCallbacks>::ElementCompute;
     using ElementCompute = cute::conditional_t<cute::is_void_v<ElementCompute_>,ElementAccumulator,ElementCompute_>;
 
     static_assert(is_rmem<AccEngine>::value, "Accumulator must be RF resident.");
-    static_assert(cute::rank(AccLayout{}) == 3, "Accumulator must be MMA-partitioned: (MMA,MMA_M,MMA_N)");
-    static_assert(cute::rank(ProblemShapeMNKL{}) == 4, "ProblemShapeMNKL must be rank 4");
+    static_assert(rank(AccLayout{}) == 3, "Accumulator must be MMA-partitioned: (MMA,MMA_M,MMA_N)");
+    static_assert(rank(ProblemShapeMNKL{}) == 4, "ProblemShapeMNKL must be rank 4");
     static_assert(is_static<TileShapeMNK>::value, "TileShapeMNK must be static");
-    static_assert(cute::rank(TileShapeMNK{}) == 3, "TileShapeMNK must be rank 3");
-    static_assert(cute::rank(TileCoordMNKL{}) == 4, "TileCoordMNKL must be rank 4");
+    static_assert(rank(TileShapeMNK{}) == 3, "TileShapeMNK must be rank 3");
+    static_assert(rank(TileCoordMNKL{}) == 4, "TileCoordMNKL must be rank 4");
 
     // Indexing variables
     auto [M, N, K, L] = problem_shape_mnkl;
     auto [m_coord, n_coord, k_coord, l_coord] = tile_coord_mnkl;
-    auto mma_tile_m = size<0>(typename TiledMma::TiledShape_MNK{});
-    auto mma_tile_n = size<1>(typename TiledMma::TiledShape_MNK{});
+    auto mma_tile_m = tile_size<0>(tiled_mma);
+    auto mma_tile_n = tile_size<1>(tiled_mma);
     auto epi_tile_m = size<0>(EpilogueTile{});
     auto epi_tile_n = size<1>(EpilogueTile{});
 
+    auto coord_shape =
+        make_coord(m_coord, n_coord, l_coord)
+      ;
 
     // Represent the full output tensor, slice to get the tile this CTA is responsible for
-    Tensor mD = params.tma_store_d.get_tma_tensor(make_shape(M,N,L));                                  //       (M,N,L)
-    Tensor gD = local_tile(mD, take<0,2>(CtaTileMNK{}), make_coord(m_coord,n_coord,l_coord));          // (CTA_M,CTA_N)
+    Tensor mD_mn = params.tma_store_d.get_tma_tensor(make_shape(M,N,L));                               //       (M,N,L)
+    Tensor mD = coalesce(mD_mn, take<0,2>(CtaTileMNK{}));
+    Tensor gD = local_tile(mD, take<0,2>(CtaTileMNK{}), coord_shape);                                  // (CTA_M,CTA_N)
 
     // Apply epilogue subtiling
     Tensor gD_epi = flat_divide(gD, EpilogueTile{});                             // (EPI_TILE_M,EPI_TILE_N,EPI_M,EPI_N)
@@ -530,11 +550,11 @@ public:
     Tensor bSG_gD = thrblk_s2g.partition_D(gD_epi);                                    // (S2G,S2G_M,S2G_N,EPI_M,EPI_N)
 
     // Coordinate tensors and residue for tile quantization
-    auto m_max_coord = unwrap(cute::transform(make_seq<cute::rank<0>(CtaTileMNK{})>{}, [&](auto i) {
+    auto m_max_coord = unwrap(cute::transform(make_seq<rank<0>(CtaTileMNK{})>{}, [&](auto i) {
       auto c_m = get<0,i>(problem_shape_mnkl) - get<0,i>(CtaTileMNK{}) * get<0,i>(tile_coord_mnkl);
       return cute::max(0, c_m);
     }));
-    auto n_max_coord = unwrap(cute::transform(make_seq<cute::rank<1>(CtaTileMNK{})>{}, [&](auto i) {
+    auto n_max_coord = unwrap(cute::transform(make_seq<rank<1>(CtaTileMNK{})>{}, [&](auto i) {
       auto c_n = get<1,i>(problem_shape_mnkl) - get<1,i>(CtaTileMNK{}) * get<1,i>(tile_coord_mnkl);
       return cute::max(0, c_n);
     }));
@@ -559,13 +579,13 @@ public:
                       tRS_cD,
                       tRS_rC
                     };
-    auto cst_callbacks = fusion_callbacks.template get_consumer_store_callbacks<RefSrc>(cst_args);
+    auto cst_callbacks = fusion_callbacks.get_consumer_store_callbacks<RefSrc>(cst_args);
     bool is_producer_load_needed = fusion_callbacks.is_producer_load_needed();
     bool is_C_load_needed = is_source_supported && fusion_callbacks.is_C_load_needed();
 
     // Thread synchronizer for previously issued waits or fences
     // to ensure visibility of smem reads/writes to threads or TMA unit
-    auto synchronize = [&] () { cutlass::arch::NamedBarrier::sync(size(TiledMma{}), 0); };
+    auto synchronize = [&] () { cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::EpilogueBarrier); };
 
     // Predication for TMA store (one warp issues TMA store)
     bool issue_tma_store = (thread_idx / NumThreadsPerWarp) == 0;
@@ -594,9 +614,12 @@ public:
       for (int epi_m = 0; epi_m < size<2>(gD_epi); ++epi_m) {
         bool is_last_iteration = epi_m == size<2>(gD_epi)-1 && epi_n == size<3>(gD_epi)-1;
 
+        if (subtile_idx != -1 && (epi_n * static_cast<int>(size<2>(gD_epi)) + epi_m) != subtile_idx) {
+          continue;
+        }
         // The current tile in accumulator
         int mma_m = epi_m;
-        int mma_n = (epi_n * epi_tile_n) / mma_tile_n;
+        int mma_n = (epi_n * size<1>(EpilogueTile{})) / mma_tile_n;
         Tensor tRS_rAcc_frg_mn = tRS_rAcc_frg(_,mma_m,mma_n);
 
         if (is_producer_load_needed) {

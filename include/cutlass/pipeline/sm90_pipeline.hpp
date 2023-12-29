@@ -48,7 +48,8 @@ using namespace cute;
 
 enum class BarrierStatus : uint32_t {
   WaitAgain = 0u,
-  WaitDone  = 1u
+  WaitDone  = 1u,
+  WaitOnly = 2u
 };
 
 class ArrivalToken {
@@ -80,6 +81,16 @@ private:
   CUTLASS_HOST_DEVICE
   friend bool operator==(const BarrierStatus& left, const ArrivalToken& right) {
     return left == right.get();
+  }
+
+  CUTLASS_HOST_DEVICE
+  friend bool operator!=(const ArrivalToken& left, const BarrierStatus& right) {
+    return left.get() != right;
+  }
+
+  CUTLASS_HOST_DEVICE
+  friend bool operator!=(const BarrierStatus& left, const ArrivalToken& right) {
+    return left != right.get();
   }
 };
 
@@ -188,13 +199,9 @@ PipelineState<Pipeline::Stages> make_producer_start_state() {
 // Assumptions : Constructor is visible Cluster-wide (as it needs a Cluster-Sync)
 // We have exactly one thread elected in the Producer as the "leader"
 // Currently, it is optional to elect a leader for the Consumers
-template <
-  int Stages_,
-  class ClusterShape_
->
+template <int Stages_>
 class PipelineTmaAsync {
 public :
-  using ClusterShape = ClusterShape_;
   using FullBarrier = cutlass::arch::ClusterTransactionBarrier;
   using EmptyBarrier = cutlass::arch::ClusterBarrier;
   using ProducerBarrierType = FullBarrier::ValueType;
@@ -222,15 +229,15 @@ public :
   };
 
   // Constructor
+  template<typename ClusterShape>
   CUTLASS_DEVICE
-  PipelineTmaAsync(SharedStorage& storage, Params params)
+  PipelineTmaAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape)
       : params_(params)
       , full_barrier_ptr_(&storage.full_barrier_[0])
       , empty_barrier_ptr_(&storage.empty_barrier_[0]) {
 
     int warp_idx = canonical_warp_idx();
     int lane_predicate = cute::elect_one_sync();
-    auto cluster_shape = ClusterShape{};
 
     if (warp_idx == 0 && lane_predicate == 1) {
       // Barrier FULL init
@@ -283,7 +290,8 @@ public :
     is_signalling_thread_ &= dst_blockid_ < cluster_size;
     is_signalling_thread_ &= is_same_row_or_col(dst_blockid_, block_id, cluster_shape);
   }
-
+  
+  template <typename ClusterShape>
   CUTLASS_DEVICE
   bool is_same_row_or_col(int dst_block_id, dim3 block_id, ClusterShape cluster_shape) {
     return (((dst_block_id % cute::size<0>(cluster_shape)) == block_id.x) ||
@@ -332,7 +340,7 @@ public :
   CUTLASS_DEVICE
   void producer_tail(PipelineState state) {
     for (int count = 0; count < Stages; ++count) {
-      producer_acquire(state);  
+      producer_acquire(state, {BarrierStatus::WaitOnly});  
       ++state;
     }
   }
@@ -388,8 +396,11 @@ private :
 
   CUTLASS_DEVICE
   void producer_acquire(uint32_t stage, uint32_t phase, ProducerToken barrier_token) {
-    if (barrier_token == BarrierStatus::WaitAgain) {
+    if (barrier_token != BarrierStatus::WaitDone) {
       empty_barrier_ptr_[stage].wait(phase);
+    }
+    if (barrier_token == BarrierStatus::WaitOnly) {
+      return;
     }
 
     if (params_.is_leader) {
@@ -417,7 +428,7 @@ private :
         full_barrier_ptr_[stage].complete_transaction(bytes);
 
         // STEP 2 : Commit to other blocks in our cluster
-        auto cluster_shape = ClusterShape{};
+        auto cluster_shape = cute::cluster_shape();
         Layout block_layout_in_cluster = make_layout(cluster_shape);
         dim3 local_block_id = cute::block_id_in_cluster();
 

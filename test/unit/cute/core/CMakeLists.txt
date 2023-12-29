@@ -42,10 +42,12 @@ cutlass_test_unit_add_executable(
   inverse_right.cpp
   logical_divide.cpp
   logical_product.cpp
+  math.cpp  
   mixedbits.cpp
   nullspace.cpp
   pointer.cpp
   reverse.cpp
   transform.cpp
   tuple.cpp
+  int_tuple.cpp
 )

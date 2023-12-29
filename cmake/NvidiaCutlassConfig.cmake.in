@@ -7,6 +7,3 @@ if(TARGET nvidia::cutlass::CUTLASS)
 endif()
 
 include("${NvidiaCutlass_CMAKE_DIR}/NvidiaCutlassTargets.cmake")
-
-# For backward compatibility with the old name
-add_library(cutlass_lib ALIAS cutlass_library)

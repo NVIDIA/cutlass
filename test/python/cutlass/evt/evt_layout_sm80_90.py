@@ -46,8 +46,8 @@ from utils.evt_testbed import EVTTestBed, EVTTestCaseBase
 cutlass.set_log_level(logging.WARNING)
 
 
-@unittest.skipIf(device_cc() not in [80, 90], "This unittest is for Sm80 and Sm90 only")
-class TestEVTLayoutSM90(EVTTestCaseBase):
+@unittest.skipIf(device_cc() not in [80, 86, 89, 90], "This unittest is only supported on CC [80, 86, 89, 90]")
+class TestEVTLayout(EVTTestCaseBase):
 
     def test_permute_1(self):
         """
@@ -74,7 +74,7 @@ class TestEVTLayoutSM90(EVTTestCaseBase):
             result_keys = ["D", "F"]
             launcher.verify((m, n, k), input_keys, result_keys, l)
 
-    @unittest.skipIf(device_cc() == 80, "This unittest is for cc = Sm90 only")
+    @unittest.skipIf(device_cc() != 90, "This unittest is for cc = Sm90 only")
     def test_permute_2(self):
         """
         Returning a tensor with shape [m, n]
@@ -99,7 +99,7 @@ class TestEVTLayoutSM90(EVTTestCaseBase):
             result_keys = ["D", "F"]
             launcher.verify((m, n, k), input_keys, result_keys, l)
 
-    @unittest.skipIf(device_cc() == 80, "This unittest is for cc = Sm90 only")
+    @unittest.skipIf(device_cc() != 90, "This unittest is for cc = Sm90 only")
     def test_permute_3(self):
         """
         Returning a tensor with shape [m, n]

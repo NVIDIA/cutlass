@@ -46,8 +46,11 @@ from utils import LayoutCombination, add_test_gemm
 
 cutlass.set_log_level(logging.WARNING)
 cc = 80
+dtype = cutlass.DataType.s8
+
 
 @unittest.skipIf(device_cc() < cc, 'Device compute capability is insufficient for SM80 tests.')
+@unittest.skipIf(cutlass.utils.datatypes.torch_type(dtype) is None, f'Version of torch installed does not contain a datatype match for {dtype}')
 class GemmS8Sm80(unittest.TestCase):
     """
     Wrapper class to which tests will be added dynamically in __main__
@@ -56,6 +59,7 @@ class GemmS8Sm80(unittest.TestCase):
 
 
 @unittest.skipIf(device_cc() < cc, 'Device compute capability is insufficient for SM80 tests.')
+@unittest.skipIf(cutlass.utils.datatypes.torch_type(dtype) is None, f'Version of torch installed does not contain a datatype match for {dtype}')
 class GemmS8Sm80StreamK(unittest.TestCase):
     """
     Wrapper class to which tests will be added dynamically in __main__
@@ -63,7 +67,7 @@ class GemmS8Sm80StreamK(unittest.TestCase):
     pass
 
 
-add_test_specialized = partial(add_test_gemm, element=cutlass.DataType.s8, cc=cc, cluster_shape=[1, 1, 1])
+add_test_specialized = partial(add_test_gemm, element=dtype, cc=cc, cluster_shape=[1, 1, 1])
 
 # Tests using TensorOp
 add_test_tensorop = partial(add_test_specialized, opclass=cutlass.OpcodeClass.TensorOp)

@@ -327,10 +327,32 @@ ceil_div(IntTupleA const& a, IntTupleB const& b)
 {
   if constexpr (is_tuple<IntTupleA>::value && is_tuple<IntTupleB>::value) {
     static_assert(tuple_size<IntTupleA>::value >= tuple_size<IntTupleB>::value, "Mismatched ranks");
-    constexpr int R = tuple_size<IntTupleA>::value;        // Missing ranks in TupleB are implictly 1
+    constexpr int R = tuple_size<IntTupleA>::value;        // Missing ranks in TupleB are implicitly 1
     return transform(a, append<R>(b,Int<1>{}), [](auto const& x, auto const& y) { return ceil_div(x,y); });
   } else {
     return (a + b - Int<1>{}) / b;
+  }
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+//
+// round_up
+//   Round @a a up to the nearest multiple of @a b.
+//   For negative numbers, rounds away from zero.
+//
+
+template <class IntTupleA, class IntTupleB>
+CUTE_HOST_DEVICE constexpr
+auto
+round_up(IntTupleA const& a, IntTupleB const& b)
+{
+  if constexpr (is_tuple<IntTupleA>::value && is_tuple<IntTupleB>::value) {
+    static_assert(tuple_size<IntTupleA>::value >= tuple_size<IntTupleB>::value, "Mismatched ranks");
+    constexpr int R = tuple_size<IntTupleA>::value;        // Missing ranks in TupleB are implicitly 1
+    return transform(a, append<R>(b,Int<1>{}), [](auto const& x, auto const& y) { return round_up(x,y); });
+  } else {
+    return ((a + b - Int<1>{}) / b) * b;
   }
 
   CUTE_GCC_UNREACHABLE;
@@ -429,6 +451,7 @@ template <class A, class B>
 using is_congruent = decltype(congruent(declval<A>(), declval<B>()));
 
 /** Test if two IntTuple have the similar profiles up to Shape A (hierarchical rank division)
+ * weakly_congruent is a partial order on A and B: A <= B
  */
 template <class IntTupleA, class IntTupleB>
 CUTE_HOST_DEVICE constexpr
@@ -458,7 +481,7 @@ using is_weakly_congruent = decltype(weakly_congruent(declval<A>(), declval<B>()
 
 /** Test if Shape B is compatible with Shape A:
  * Any coordinate into A can also be used as a coordinate into B
- * A <= B is a partially ordered set of factored shapes
+ * compatible is a partial order on A and B: A <= B
  */
 template <class IntTupleA, class IntTupleB>
 CUTE_HOST_DEVICE constexpr
@@ -487,7 +510,8 @@ template <class A, class B>
 using is_compatible = decltype(compatible(declval<A>(), declval<B>()));
 
 /** Test if Shape B is weakly compatible with Shape A:
- * Shape B divides Shape A at some level of refinement
+ * Shape B is a multiple of a shape that is compatible with Shape A
+ * weakly_compatible is a partial order on A and B: A <= B
  */
 template <class IntTupleA, class IntTupleB>
 CUTE_HOST_DEVICE constexpr
@@ -502,7 +526,7 @@ weakly_compatible(IntTupleA const& a, IntTupleB const& b)
                                    [](auto const&... z) { return (true_type{} && ... && z); });
     }
   } else if constexpr (is_integral<IntTupleA>::value) {
-    return a % size(b) == Int<0>{};
+    return size(b) % a == Int<0>{};
   } else if constexpr (is_integral<IntTupleB>::value) {
     return false_type{};
   } else {

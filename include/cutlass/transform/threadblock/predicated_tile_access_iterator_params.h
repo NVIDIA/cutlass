@@ -71,7 +71,6 @@ struct PredicatedTileAccessIteratorDesc {
   // Methods
   //
 
-  CUTLASS_HOST_DEVICE
   PredicatedTileAccessIteratorDesc() = default;
 
   CUTLASS_HOST_DEVICE
@@ -279,7 +278,6 @@ struct PredicatedTileAccessIteratorParams {
     return initialize(LongIndex(stride), desc);
   }
 
-  CUTLASS_HOST_DEVICE
   PredicatedTileAccessIteratorParams() = default;
 
   CUTLASS_HOST_DEVICE

@@ -1493,7 +1493,6 @@ bool DeviceAllocation::block_compare_equal(
       reinterpret_cast<float_e5m2_t const *>(ptr_A),
       reinterpret_cast<float_e5m2_t const *>(ptr_B), 
       capacity);
-
   case library::NumericTypeID::kF16:
     return reference::device::BlockCompareEqual<half_t>(
       reinterpret_cast<half_t const *>(ptr_A), 
@@ -1633,7 +1632,7 @@ bool DeviceAllocation::block_compare_equal(
       capacity);
 
   default:
-    throw std::runtime_error("Unsupported numeric type");
+    throw std::runtime_error(std::string("Unsupported numeric type: ") + to_string(numeric_type));
   }
 }
 
@@ -1662,7 +1661,6 @@ bool DeviceAllocation::block_compare_relatively_equal(
       capacity, 
       static_cast<float_e5m2_t>(epsilon), 
       static_cast<float_e5m2_t>(nonzero_floor));
-
   case library::NumericTypeID::kF16:
     return reference::device::BlockCompareRelativelyEqual<half_t>(
       reinterpret_cast<half_t const *>(ptr_A), 
@@ -2089,8 +2087,12 @@ void DeviceAllocation::write_tensor_csv(
     write_tensor_csv_static_type<cutlass::complex<double> >(out, *this);
     break;
 
+  case library::NumericTypeID::kVoid:
+    // Not dump anything as it is a empty tensor.
+    break;
+
   default:
-    throw std::runtime_error("Unsupported numeric type");
+    throw std::runtime_error(std::string("Unsupported numeric type: ") + to_string(this->type()) ) ;
   }
 }
 
@@ -2168,7 +2170,6 @@ void DeviceAllocation::fill(double val = 0.0) {
   case library::NumericTypeID::kFE5M2:
     tensor_fill<float_e5m2_t>(*this, static_cast<float_e5m2_t>(val));
     break;
-
   case library::NumericTypeID::kF16:
     tensor_fill<half_t>(*this, static_cast<half_t>(val));
     break;
@@ -2254,7 +2255,7 @@ void DeviceAllocation::fill(double val = 0.0) {
     break;
 
   default:
-    throw std::runtime_error("Unsupported numeric type");
+    throw std::runtime_error(std::string("Unsupported numeric type: ") + to_string(this->type()));
   }
 }
 

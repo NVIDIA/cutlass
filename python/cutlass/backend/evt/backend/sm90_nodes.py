@@ -87,7 +87,7 @@ class Sm90LoadSrcImpl(LoadSrcImpl):
         self._type_decl = f"""
 using ElementC = {DataTypeTag[self.element]};
 using StrideC = {self.stride_mnl};
-using {self.name_camel} = cutlass::epilogue::fusion::Sm90SrcFetch;
+using {self.name_camel} = cutlass::epilogue::fusion::Sm90SrcFetch<{DataTypeTag[self.element]}>;
 """
         return self._type_decl
 

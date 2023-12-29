@@ -42,7 +42,7 @@
 #include "cutlass/complex.h"
 #include "cutlass/semaphore.h"
 #include "cutlass/gemm/kernel/params_universal_base.h"
-
+#include "cutlass/subbyte_reference.h"
 #include "cutlass/trace.h"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -676,7 +676,9 @@ public:
       }
       ptr_D += threadblock_tile_offset.k() * params.batch_stride_D;
       if (ptr_Tensor) {
-        ptr_Tensor += threadblock_tile_offset.k() * params.batch_stride_Tensor;
+        ptr_Tensor = ReferenceFactory<typename Epilogue::ElementTensor>::add_pointer_offset(
+          ptr_Tensor,
+          threadblock_tile_offset.k() * params.batch_stride_Tensor);
       }
       if (ptr_Vector) {
         ptr_Vector += threadblock_tile_offset.k() * params.batch_stride_Vector;
@@ -1387,7 +1389,9 @@ public:
       ptr_C += threadblock_tile_offset.k() * params.batch_stride_C;
       ptr_D += threadblock_tile_offset.k() * params.batch_stride_D;
       if (ptr_Tensor) {
-        ptr_Tensor += threadblock_tile_offset.k() * params.batch_stride_Tensor;
+        ptr_Tensor = ReferenceFactory<typename Epilogue::ElementTensor>::add_pointer_offset(
+          ptr_Tensor,
+          threadblock_tile_offset.k() * params.batch_stride_Tensor);
       }
       if (ptr_Vector) {
         ptr_Vector += threadblock_tile_offset.k() * params.batch_stride_Vector;

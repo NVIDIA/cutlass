@@ -62,7 +62,7 @@ template <
   class GmemLayoutTagD,
   int AlignmentD,
   class Schedule,
-  class FusionOpOrCallbacks = cutlass::epilogue::fusion::LinearCombination<ElementD,ElementCompute>,
+  class FusionOpOrCallbacks = cutlass::epilogue::fusion::LinearCombination<ElementD,ElementCompute,ElementC,ElementCompute>,
   class Enable = void
 >
 struct CollectiveBuilder {

@@ -32,7 +32,7 @@
 /*! \file
     \brief CUTLASS Library handle.
 */
-#include <iostream> 
+#include <iostream>
 #include <stdexcept>
 #include <cstdint>
 
@@ -47,14 +47,14 @@ namespace library {
 
 /// Constructor
 Handle::Handle(
-  cudaStream_t stream, 
+  cudaStream_t stream,
   size_t workspace_size
 ):
-  provider_(Provider::kCUTLASS), 
-  stream_(stream), 
-  workspace_(nullptr), 
-  workspace_size_(0), 
-  scalar_pointer_mode_(ScalarPointerMode::kHost), 
+  provider_(Provider::kCUTLASS),
+  stream_(stream),
+  workspace_(nullptr),
+  workspace_size_(0),
+  scalar_pointer_mode_(ScalarPointerMode::kHost),
   last_operation_(nullptr) {
 
   int device_idx = -1;
@@ -94,7 +94,7 @@ Handle::Handle(Handle && handle) {
   workspace_ = handle.workspace_;
   stream_ = handle.stream_;
   scalar_pointer_mode_ = handle.scalar_pointer_mode_;
-  
+
   handle.workspace_ = nullptr;
   handle.workspace_size_ = 0;
 }
@@ -156,14 +156,14 @@ void Handle::set_workspace_size(size_t bytes) {
     if (workspace_) {
       cudaFree(workspace_);
     }
-      
+
     workspace_ = nullptr;
     workspace_size_ = bytes;
 
     if (workspace_size_) {
-  
+
       cudaError_t error = cudaMalloc((void **)&workspace_, workspace_size_);
-  
+
       if (error != cudaSuccess) {
         throw std::runtime_error("Failed to allocate workspace");
       }
@@ -239,7 +239,7 @@ static int gemm_problem_alignment(
   };
 
   for (; max_alignment_in_bytes > 0; max_alignment_in_bytes /= 2) {
-    
+
     bool satisfied = true;
 
     // Can pointers satisfy this?
@@ -260,7 +260,7 @@ static int gemm_problem_alignment(
     int max_element_alignment = 0;
 
     for (NumericTypeID type_id : elements) {
-      int element_alignment = max_alignment_in_bytes * 8 / library::sizeof_bits(type_id); 
+      int element_alignment = max_alignment_in_bytes * 8 / library::sizeof_bits(type_id);
       max_element_alignment = std::max(max_element_alignment, element_alignment);
     }
 
@@ -286,7 +286,7 @@ static int gemm_problem_alignment(
 
 /// Find the best kernel in descending order of preference.
 static Operation const * find_gemm_operation(
-  GemmOperationFunctionalMap::const_iterator operators_it, 
+  GemmOperationFunctionalMap::const_iterator operators_it,
   GemmPreferenceKey const preference_key) {
 
   auto cc_it = operators_it->second.upper_bound(preference_key);
@@ -363,7 +363,7 @@ Status Handle::gemm(
   void * ptr_D,                             /// Pointer to D matrix
   int64_t ldd                               /// Leading dimension of D matrix
 ) {
-  
+
   //
   // Find the operation
   //
@@ -390,7 +390,7 @@ Status Handle::gemm(
   if (operators_it == Singleton::get().operation_table.gemm_operations.end()) {
     return cutlass::Status::kErrorNotSupported;
   }
-  
+
   if (operators_it->second.empty()) {
     return cutlass::Status::kErrorNotSupported;
   }
@@ -403,7 +403,7 @@ Status Handle::gemm(
   int const kMaximumAlignmentSize = 16;
 
   int alignment = gemm_problem_alignment(
-    M, N, K, 
+    M, N, K,
     element_A, ptr_A, lda, 0,
     element_B, ptr_B, ldb, 0,
     element_C, ptr_C, ldc, 0,
@@ -491,7 +491,6 @@ Status Handle::gemm_universal(
   int M,                                    /// GEMM M dimension
   int N,                                    /// GEMM N dimension
   int K,                                    /// GEMM K dimension
-
   NumericTypeID element_compute,            /// Data type of internal accumulation
 
   NumericTypeID element_scalar,             /// Data type of alpha/beta scalars
@@ -529,7 +528,7 @@ Status Handle::gemm_universal(
   int64_t batch_stride_C,                   /// Batch stride of C operand
   int64_t batch_stride_D                    /// Batch stride of D operand
 ) {
-  
+
   //
   // Find the operation
   //
@@ -556,7 +555,7 @@ Status Handle::gemm_universal(
   if (operators_it == Singleton::get().operation_table.gemm_operations.end()) {
     return cutlass::Status::kErrorNotSupported;
   }
-  
+
   if (operators_it->second.empty()) {
     return cutlass::Status::kErrorNotSupported;
   }
@@ -576,14 +575,14 @@ Status Handle::gemm_universal(
   // Ignore alignment of pointers to pointers. We can't check this from the host,
   // as each batch index has its own pointer in device memory.
   if (mode == GemmUniversalMode::kArray) {
-    ptr_A_check = nullptr; 
-    ptr_B_check = nullptr; 
-    ptr_C_check = nullptr; 
-    ptr_D_check = nullptr; 
+    ptr_A_check = nullptr;
+    ptr_B_check = nullptr;
+    ptr_C_check = nullptr;
+    ptr_D_check = nullptr;
   }
 
   int alignment = gemm_problem_alignment(
-    M, N, K, 
+    M, N, K,
     element_A, ptr_A_check, lda, 0,
     element_B, ptr_B_check, ldb, 0,
     element_C, ptr_C_check, ldc, 0,
@@ -758,7 +757,7 @@ Status Handle::gemm_planar_complex(
   if (operators_it == Singleton::get().operation_table.gemm_operations.end()) {
     return cutlass::Status::kErrorNotSupported;
   }
-  
+
   if (operators_it->second.empty()) {
     return cutlass::Status::kErrorNotSupported;
   }
@@ -772,14 +771,14 @@ Status Handle::gemm_planar_complex(
 
   int alignment = std::max(
     gemm_problem_alignment(
-      M, N, K, 
+      M, N, K,
       element_A, ptr_A_real, lda_real, batch_stride_A_real,
       element_B, ptr_B_real, ldb_real, batch_stride_B_real,
       element_C, ptr_C_real, ldc_real, batch_stride_C_real,
       ptr_D_real, ldd_real, batch_stride_D_real, kMaximumAlignmentSize
     ),
     gemm_problem_alignment(
-      M, N, K, 
+      M, N, K,
       element_A, ptr_A_imag, lda_imag, batch_stride_A_imag,
       element_B, ptr_B_imag, ldb_imag, batch_stride_B_imag,
       element_C, ptr_C_imag, ldc_imag, batch_stride_C_imag,
@@ -928,7 +927,7 @@ Status Handle::gemm_planar_complex_array(
   int64_t ldd_real,                             /// Leading dimension of real part of D matrix
   int64_t ldd_imag                              /// Leading dimension of imaginary part of D matrix
 ) {
-  
+
   //
   // Find the operation
   //
@@ -955,7 +954,7 @@ Status Handle::gemm_planar_complex_array(
   if (operators_it == Singleton::get().operation_table.gemm_operations.end()) {
     return cutlass::Status::kErrorNotSupported;
   }
-  
+
   if (operators_it->second.empty()) {
     return cutlass::Status::kErrorNotSupported;
   }
@@ -969,14 +968,14 @@ Status Handle::gemm_planar_complex_array(
 
   int alignment = std::max(
     gemm_problem_alignment(
-      expected_M, expected_N, expected_K, 
+      expected_M, expected_N, expected_K,
       element_A, nullptr, lda_real, 0,
       element_B, nullptr, ldb_real, 0,
       element_C, nullptr, ldc_real, 0,
       nullptr, ldd_real, 0, kMaximumAlignmentSize
     ),
     gemm_problem_alignment(
-      expected_M, expected_N, expected_K, 
+      expected_M, expected_N, expected_K,
       element_A, nullptr, lda_imag, 0,
       element_B, nullptr, ldb_imag, 0,
       element_C, nullptr, ldc_imag, 0,
@@ -1066,7 +1065,7 @@ Status Handle::gemm_planar_complex_array(
 /// Finds conv operation instances with Conv::ElementC = Reduction::ElementWorkspace
 Operation const* find_conv_operation_for_parallel_reduction(Operation const *operation) {
 
-  ConvDescription const &conv_desc = 
+  ConvDescription const &conv_desc =
     static_cast<ConvDescription const &>(operation->description());
 
   // if the curren conv operation accumulator and output data type match return operation
@@ -1077,19 +1076,19 @@ Operation const* find_conv_operation_for_parallel_reduction(Operation const *ope
   // find conv operation to match conv output and reduction workspace data type
   ConvFunctionalKey key(
     library::Provider::kCUTLASS,
-    conv_desc.conv_kind,        
+    conv_desc.conv_kind,
     conv_desc.A.element,
     conv_desc.A.layout,
     conv_desc.B.element,
     conv_desc.B.layout,
     conv_desc.tile_description.math_instruction.element_accumulator,
     conv_desc.C.layout,
-    conv_desc.tile_description.math_instruction.element_accumulator, 
+    conv_desc.tile_description.math_instruction.element_accumulator,
     conv_desc.element_epilogue);
 
   // conv operation table for conv2d or conv3d
-  auto conv_operations = (conv_desc.kind == OperationKind::kConv2d) ? 
-                          Singleton::get().operation_table.conv2d_operations : 
+  auto conv_operations = (conv_desc.kind == OperationKind::kConv2d) ?
+                          Singleton::get().operation_table.conv2d_operations :
                           Singleton::get().operation_table.conv3d_operations;
 
   // find ConvFunctionalKey in convolution operation table
@@ -1098,18 +1097,18 @@ Operation const* find_conv_operation_for_parallel_reduction(Operation const *ope
   if (operators_it == conv_operations.end()) {
     return nullptr;
   }
-  
+
   if (operators_it->second.empty()) {
     return nullptr;
   }
 
   // conv operation for same compute capability and iterator algorithm
   ConvPreferenceKey preference_key(
-    conv_desc.tile_description.minimum_compute_capability, 
+    conv_desc.tile_description.minimum_compute_capability,
     conv_desc.iterator_algorithm);
 
   auto it = operators_it->second.find(preference_key);
-  
+
   if(it == operators_it->second.end()) {
     return nullptr;
   }
@@ -1129,7 +1128,7 @@ Operation const* find_conv_operation_for_parallel_reduction(Operation const *ope
 /// Finds gemm operation instances with Gemm::ElementC = Reduction::ElementWorkspace
 Operation const* find_gemm_operation_for_parallel_reduction(Operation const *operation) {
 
-  GemmDescription const &gemm_desc = 
+  GemmDescription const &gemm_desc =
     static_cast<GemmDescription const &>(operation->description());
 
   // if the curren gemm operation accumulator and output data type match return operation
@@ -1174,7 +1173,7 @@ Operation const* find_gemm_operation_for_parallel_reduction(Operation const *ope
     gemm_desc.B.alignment);
 
   GemmPreferenceKey preference_key(
-    gemm_desc.tile_description.minimum_compute_capability, 
+    gemm_desc.tile_description.minimum_compute_capability,
     alignment);
 
   auto it = operators_it->second.find(preference_key);

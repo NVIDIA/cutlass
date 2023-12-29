@@ -92,9 +92,9 @@ public:
 
     ElementCompute alpha;                  ///< scales accumulators
     ElementCompute beta;                   ///< scales source tensor
-    ElementCompute threshold;              ///< minimum value that is output 
     ElementCompute const *alpha_ptr;       ///< pointer to accumulator scalar - if not null, loads it from memory
     ElementCompute const *beta_ptr;        ///< pointer to source scalar - if not null, loads it from memory
+    ElementCompute threshold;              ///< minimum value that is output
     //
     // Methods
     //

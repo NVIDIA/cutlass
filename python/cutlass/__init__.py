@@ -75,6 +75,7 @@ from cutlass_library import (
     DataType,
     EpilogueScheduleType,
     KernelScheduleType,
+    MathOperation,
     LayoutType,
     OpcodeClass,
     TileDescription,
@@ -120,7 +121,7 @@ def get_option_registry():
         this._option_registry = OptionRegistry(device_cc())
     return this._option_registry
 
-this.__version__ = '3.3.0'
+this.__version__ = '3.4.0'
 
 from cutlass.backend import create_memory_pool
 from cutlass.emit.pytorch import pytorch

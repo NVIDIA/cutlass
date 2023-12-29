@@ -97,7 +97,7 @@ template <class T, class U,
           __CUTE_REQUIRES(is_std_integral<T>::value &&
                           is_std_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
-auto
+cute::common_type_t<T, U>
 gcd(T t, U u) {
   while (true) {
     if (t == 0) { return u; }
@@ -112,7 +112,7 @@ template <class T, class U,
           __CUTE_REQUIRES(is_std_integral<T>::value &&
                           is_std_integral<U>::value)>
 CUTE_HOST_DEVICE constexpr
-auto
+cute::common_type_t<T, U>
 lcm(T const& t, U const& u) {
   return (t / gcd(t,u)) * u;
 }

@@ -31,12 +31,12 @@
 #pragma once
 
 #include <cute/config.hpp>
-#include <cute/arch/mma.hpp>
 
-#include <cute/tensor.hpp>
+#include <cute/arch/mma.hpp>
 
 #include <cute/atom/mma_traits.hpp>
 
+#include <cute/tensor.hpp>
 #include <cute/util/type_traits.hpp>
 
 namespace cute {
@@ -196,39 +196,37 @@ struct MMA_Atom<MMA_Traits<Args...>>
 template <class TiledMMA, class ThrCoord>
 struct ThrMMA;
 
+// @tparam MMA_Atom The MMA_Atom to use in the TiledMMA
+// @tparam AtomLayoutMNK The MNK-tiling of the Atom to be performed.
+// @tparam PermuationsMNK Permutations to apply to each MNK-mode before tiling for the Atom.
 template <class MMA_Atom,
-          class AtomLayoutMNK   = Layout<Shape<_1,_1,_1>>,
-          class ValLayoutMNK    = Layout<Shape<_1,_1,_1>>,
-          class PermutationsMNK = Tile<Underscore,Underscore,Underscore>>
+          class AtomLayoutMNK,
+          class PermutationMNK = Tile<Underscore,Underscore,Underscore>>
 struct TiledMMA : MMA_Atom
 {
-  static_assert(rank_v<AtomLayoutMNK>   == 3, "TiledMMA requires rank-3 AtomLayoutMNK");
-  static_assert(rank_v<ValLayoutMNK>    == 3, "TiledMMA requires rank-3 ValLayoutMNK");
-  static_assert(rank_v<PermutationsMNK> == 3, "TiledMMA requires rank-3 PermutationsMNK");
-
+  using Atom           = MMA_Atom;
   using AtomShape_MNK  = typename MMA_Atom::Shape_MNK;
-
+  using AtomThrID      = typename MMA_Atom::ThrID;
   using AtomLayoutC_TV = typename MMA_Atom::LayoutC_TV;
   using AtomLayoutA_TV = typename MMA_Atom::LayoutA_TV;
   using AtomLayoutB_TV = typename MMA_Atom::LayoutB_TV;
 
-  // ThrV -> thread_idx
-  using AtomThrID      = typename MMA_Atom::ThrID;
+  static_assert(   rank_v<AtomLayoutMNK>  == 3,   "TiledMMA requires rank-3 AtomLayoutMNK");
+  static_assert(   rank_v<PermutationMNK> == 3,   "TiledMMA requires rank-3 PermutationMNK");
+  static_assert(  is_tile<PermutationMNK>::value, "TiledMMA requires independent permutations of MNK.");
+  static_assert(is_static<PermutationMNK>::value, "TiledMMA requires static permutations of MNK.");
 
-  // (M,N,K)
-  using TiledShape_MNK = decltype(make_shape(size<0>(AtomShape_MNK{})*size<0>(AtomLayoutMNK{})*size<0>(ValLayoutMNK{}),
-                                             size<1>(AtomShape_MNK{})*size<1>(AtomLayoutMNK{})*size<1>(ValLayoutMNK{}),
-                                             size<2>(AtomShape_MNK{})*size<2>(AtomLayoutMNK{})*size<2>(ValLayoutMNK{})));
-
-  // thrid = (ThrV,ThrM,ThrN,ThrK) -> thr_idx
   using ThrLayoutVMNK = decltype(tiled_product(AtomThrID{}, AtomLayoutMNK{}));
+  ThrLayoutVMNK thr_layout_vmnk_;
 
-  // thr_idx -> (ThrV,ThrM,ThrN,ThrK)
-  using TidLayout = decltype(right_inverse(ThrLayoutVMNK{}));
+  CUTE_HOST_DEVICE constexpr
+  TiledMMA(MMA_Atom const& mma_atom = {}, AtomLayoutMNK const& thr_layout_mnk = {})
+    : MMA_Atom(mma_atom),
+      thr_layout_vmnk_(tiled_product(AtomThrID{}, thr_layout_mnk)) {}
 
   CUTE_HOST_DEVICE constexpr auto
   get_thr_layout_vmnk() const {
-    return ThrLayoutVMNK{};
+    return thr_layout_vmnk_;
   }
 
   // Tile a tensor or a layout from shape
@@ -243,17 +241,17 @@ struct TiledMMA : MMA_Atom
   //   RestM: The values tiled in M.
   //   RestN: The values tiled in N.
   template <class CTensor>
-  CUTE_HOST_DEVICE constexpr static
+  CUTE_HOST_DEVICE constexpr
   auto
-  thrfrg_C(CTensor&& ctensor)
+  thrfrg_C(CTensor&& ctensor) const
   {
     CUTE_STATIC_ASSERT_V(rank(ctensor) >= Int<2>{});
-    CUTE_STATIC_ASSERT_V(size<0>(ctensor) % size<0>(TiledShape_MNK{}) == Int<0>{});
-    CUTE_STATIC_ASSERT_V(size<1>(ctensor) % size<1>(TiledShape_MNK{}) == Int<0>{});
+    //CUTE_STATIC_ASSERT_V(size<0>(ctensor) % size<0>(TiledShape_MNK{}) == Int<0>{});
+    //CUTE_STATIC_ASSERT_V(size<1>(ctensor) % size<1>(TiledShape_MNK{}) == Int<0>{});
 
     // Reorder the tensor for the TiledAtom
-    auto t_tile = make_tile(left_inverse(get<0>(PermutationsMNK{})),
-                            left_inverse(get<1>(PermutationsMNK{})));
+    auto t_tile = make_tile(get<0>(PermutationMNK{}),
+                            get<1>(PermutationMNK{}));
     auto t_tensor = logical_divide(ctensor, t_tile);                 // (PermM,PermN)
 
     // Tile the tensor for the Atom
@@ -266,23 +264,11 @@ struct TiledMMA : MMA_Atom
 
     // Tile the tensor for the C-threads
     auto thr_tile = make_tile(_,
-                              make_tile(make_layout(size<1>(ThrLayoutVMNK{})),
-                                        make_layout(size<2>(ThrLayoutVMNK{}))));
+                              make_tile(make_layout(size<1>(thr_layout_vmnk_)),
+                                        make_layout(size<2>(thr_layout_vmnk_))));
     auto thr_tensor = zipped_divide(tv_tensor, thr_tile);            // ((ThrV,(ThrM,ThrN)),(FrgV,(RestM,RestN)))
 
     return thr_tensor;
-  }
-
-  // Tile from (M,N,...)
-  //        to (thr_idx,(FrgV,(RestM,RestN,...)))
-  template <class CTensor>
-  CUTE_HOST_DEVICE constexpr static
-  auto
-  tidfrg_C(CTensor&& ctensor)
-  {
-    // Don't need a ctile composition because ThrK is last mode in TidLayout
-
-    return thrfrg_C(ctensor).compose(TidLayout{}, _);
   }
 
   // Tile a tensor or a layout from shape
@@ -297,17 +283,17 @@ struct TiledMMA : MMA_Atom
   //   RestM: The values tiled in M.
   //   RestK: The values tiled in K.
   template <class ATensor>
-  CUTE_HOST_DEVICE constexpr static
+  CUTE_HOST_DEVICE constexpr
   auto
-  thrfrg_A(ATensor&& atensor)
+  thrfrg_A(ATensor&& atensor) const
   {
     CUTE_STATIC_ASSERT_V(rank(atensor) >= Int<2>{});
     //CUTE_STATIC_ASSERT_V(size<0>(atensor) % size<0>(TiledShape_MNK{}) == Int<0>{});
-    //UTE_STATIC_ASSERT_V(size<1>(atensor) % size<2>(TiledShape_MNK{}) == Int<0>{});
+    //CUTE_STATIC_ASSERT_V(size<1>(atensor) % size<2>(TiledShape_MNK{}) == Int<0>{});
 
     // Reorder the tensor for the TiledAtom
-    auto t_tile = make_tile(left_inverse(get<0>(PermutationsMNK{})),
-                            left_inverse(get<2>(PermutationsMNK{})));
+    auto t_tile = make_tile(get<0>(PermutationMNK{}),
+                            get<2>(PermutationMNK{}));
     auto t_tensor = logical_divide(atensor, t_tile);                 // (PermM,PermK)
 
     // Tile the tensor for the Atom
@@ -320,27 +306,11 @@ struct TiledMMA : MMA_Atom
 
     // Tile the tensor for the Thread
     auto thr_tile = make_tile(_,
-                              make_tile(make_layout(size<1>(ThrLayoutVMNK{})),
-                                        make_layout(size<3>(ThrLayoutVMNK{}))));
+                              make_tile(make_layout(size<1>(thr_layout_vmnk_)),
+                                        make_layout(size<3>(thr_layout_vmnk_))));
     auto thr_tensor = zipped_divide(tv_tensor, thr_tile);            // ((ThrV,(ThrM,ThrK)),(FrgV,(RestM,RestK)))
 
     return thr_tensor;
-  }
-
-  // Tile from (M,K,...)
-  //        to (thr_idx,(FrgV,(RestM,RestK,...)))
-  template <class ATensor>
-  CUTE_HOST_DEVICE constexpr static
-  auto
-  tidfrg_A(ATensor&& atensor)
-  {
-    auto atile = make_tile(_,
-                           make_tile(make_layout(make_shape (size<1>(ThrLayoutVMNK{}), size<2>(ThrLayoutVMNK{})),
-                                                 make_stride(               Int<1>{} ,                Int<0>{} )),
-                                     _));
-    // (ThrV,(ThrM,ThrK)) -> (ThrV,(ThrM,ThrN,ThrK))
-
-    return thrfrg_A(atensor).compose(atile, _).compose(TidLayout{}, _);
   }
 
   // Tile a tensor or a layout from shape
@@ -355,17 +325,17 @@ struct TiledMMA : MMA_Atom
   //   RestN: The values tiled in N.
   //   RestK: The values tiled in K.
   template <class BTensor>
-  CUTE_HOST_DEVICE constexpr static
+  CUTE_HOST_DEVICE constexpr
   auto
-  thrfrg_B(BTensor&& btensor)
+  thrfrg_B(BTensor&& btensor) const
   {
     CUTE_STATIC_ASSERT_V(rank(btensor) >= Int<2>{});
     //CUTE_STATIC_ASSERT_V(size<0>(btensor) % size<1>(TiledShape_MNK{}) == Int<0>{});
     //CUTE_STATIC_ASSERT_V(size<1>(btensor) % size<2>(TiledShape_MNK{}) == Int<0>{});
 
     // Reorder the tensor for the TiledAtom
-    auto t_tile = make_tile(left_inverse(get<1>(PermutationsMNK{})),
-                            left_inverse(get<2>(PermutationsMNK{})));
+    auto t_tile = make_tile(get<1>(PermutationMNK{}),
+                            get<2>(PermutationMNK{}));
     auto t_tensor = logical_divide(btensor, t_tile);                 // (PermN,PermK)
 
     // Tile the tensor for the Atom
@@ -378,44 +348,28 @@ struct TiledMMA : MMA_Atom
 
     // Tile the tensor for the Thread
     auto thr_tile = make_tile(_,
-                              make_tile(make_layout(size<2>(ThrLayoutVMNK{})),
-                                        make_layout(size<3>(ThrLayoutVMNK{}))));
+                              make_tile(make_layout(size<2>(thr_layout_vmnk_)),
+                                        make_layout(size<3>(thr_layout_vmnk_))));
     auto thr_tensor = zipped_divide(tv_tensor, thr_tile);            // ((ThrV,(ThrN,ThrK)),(FrgV,(RestN,RestK)))
 
     return thr_tensor;
   }
 
-  // Tile from (N,K,...)
-  //        to (thr_idx,(FrgV,(RestN,RestK,...)))
-  template <class BTensor>
-  CUTE_HOST_DEVICE constexpr static
+  template <class ThrIdx,
+            __CUTE_REQUIRES(is_integral<ThrIdx>::value)>
+  CUTE_HOST_DEVICE constexpr
   auto
-  tidfrg_B(BTensor&& btensor)
+  get_slice(ThrIdx const& thr_idx) const
   {
-    auto btile = make_tile(_,
-                           make_tile(make_layout(make_shape (size<1>(ThrLayoutVMNK{}), size<2>(ThrLayoutVMNK{})),
-                                                 make_stride(               Int<0>{} ,                Int<1>{} )),
-                                     _));
-    // (ThrV,(ThrN,ThrK)) -> (ThrV,(ThrM,ThrN,ThrK))
-
-    return thrfrg_B(btensor).compose(btile, _).compose(TidLayout{}, _);
+    auto thr_vmnk = thr_layout_vmnk_.get_flat_coord(thr_idx);
+    return ThrMMA<TiledMMA, decltype(thr_vmnk)>{*this, thr_vmnk};
   }
 
   template <class ThrIdx,
             __CUTE_REQUIRES(is_integral<ThrIdx>::value)>
-  CUTE_HOST_DEVICE static constexpr
+  CUTE_HOST_DEVICE constexpr
   auto
-  get_slice(ThrIdx const& thr_idx)
-  {
-    auto thr_vmnk = ThrLayoutVMNK{}.get_flat_coord(thr_idx);
-    return ThrMMA<TiledMMA, decltype(thr_vmnk)>(thr_vmnk);
-  }
-
-  template <class ThrIdx,
-            __CUTE_REQUIRES(is_integral<ThrIdx>::value)>
-  CUTE_HOST_DEVICE static constexpr
-  auto
-  get_thread_slice(ThrIdx const& thr_idx)
+  get_thread_slice(ThrIdx const& thr_idx) const
   {
     return get_slice(thr_idx);
   }
@@ -424,104 +378,144 @@ struct TiledMMA : MMA_Atom
   // Utility for printing and visualization
   //
 
-  CUTE_HOST_DEVICE constexpr static
+  // The size of the MNK-mode
+  template <int I>
+  CUTE_HOST_DEVICE constexpr
   auto
-  get_layoutC_MN()
+  tile_size_mnk() const {
+    static_assert(0 <= I && I < 3);
+    auto core_size = size<I>(AtomShape_MNK{}) * size<I+1>(get_thr_layout_vmnk());
+    [[maybe_unused]] auto perm_size = size<I>(PermutationMNK{});
+    if constexpr (is_underscore<decltype(perm_size)>::value) {
+      return core_size;
+    } else {
+      return cute::max(core_size, perm_size);
+    }
+  }
+
+  CUTE_HOST_DEVICE constexpr
+  auto
+  get_layoutC_MN() const
   {
     // (M,N) -> (M,N)
-    auto ref_C = make_layout(make_shape(size<0>(TiledShape_MNK{}), size<1>(TiledShape_MNK{})));
+    auto ref_C = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<1>()));
     // (cthrid,val) -> (M,N)
     auto layoutC_TV = thrfrg_C(ref_C);
     // (M,N) -> (cthrid,frg)
     auto layoutC_MN = right_inverse(layoutC_TV).with_shape(shape(ref_C));
 
     // cthrid = (v,m,n) -> thr_idx
-    auto thrID_C = ThrLayoutVMNK{}(_,_,_,Int<0>{});
+    auto thrID_C = thr_layout_vmnk_(_,_,_,Int<0>{});
 
     return cute::make_tuple(layoutC_MN, thrID_C);
   }
 
-  CUTE_HOST_DEVICE constexpr static
+  CUTE_HOST_DEVICE constexpr
   auto
-  get_layoutC_TV()
+  get_layoutC_TV() const
   {
     // (M,N) -> (M,N)
-    auto ref_C = make_layout(make_shape(size<0>(TiledShape_MNK{}), size<1>(TiledShape_MNK{})));
+    auto ref_C = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<1>()));
+    // (cthrid,val) -> (M,N)
+    auto layoutC_TV = thrfrg_C(ref_C);
 
-    return tidfrg_C(ref_C);
+    // thr_idx -> (ThrV,ThrM,ThrN,ThrK)
+    auto thridx_2_thrid = right_inverse(thr_layout_vmnk_);
+
+    // (thr_idx,val) -> (M,N)
+    return layoutC_TV.compose(thridx_2_thrid, _);
   }
 
-  CUTE_HOST_DEVICE constexpr static
+  CUTE_HOST_DEVICE constexpr
   auto
-  get_layoutA_MK()
+  get_layoutA_MK() const
   {
     // (M,K) -> (M,K)
-    auto ref_A = make_layout(make_shape(size<0>(TiledShape_MNK{}), size<2>(TiledShape_MNK{})));
+    auto ref_A = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<2>()));
     // (athrid,val) -> (M,K)
     auto layoutA_TV = thrfrg_A(ref_A);
     // (M,K) -> (athrid,frg)
     auto layoutA_MK = right_inverse(layoutA_TV).with_shape(shape(ref_A));
 
     // athrid = (v,m,k) -> thr_idx
-    auto thrID_A = ThrLayoutVMNK{}(_,_,Int<0>{},_);
+    auto thrID_A = thr_layout_vmnk_(_,_,Int<0>{},_);
 
     return cute::make_tuple(layoutA_MK, thrID_A);
   }
 
-  CUTE_HOST_DEVICE constexpr static
+  CUTE_HOST_DEVICE constexpr
   auto
-  get_layoutA_TV()
+  get_layoutA_TV() const
   {
     // (M,K) -> (M,K)
-    auto ref_A = make_layout(make_shape(size<0>(TiledShape_MNK{}), size<2>(TiledShape_MNK{})));
+    auto ref_A = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<2>()));
+    // (athrid,val) -> (M,K)
+    auto layoutA_TV = thrfrg_A(ref_A);
 
-    return tidfrg_A(ref_A);
+    // (ThrV,(ThrM,ThrK)) -> (ThrV,(ThrM,ThrN,ThrK))
+    auto atile = make_tile(_,
+                           make_tile(make_layout(make_shape (size<1>(thr_layout_vmnk_), size<2>(thr_layout_vmnk_)),
+                                                 make_stride(               Int<1>{} ,                Int<0>{} )),
+                                     _));
+
+    // thr_idx -> (ThrV,ThrM,ThrN,ThrK)
+    auto thridx_2_thrid = right_inverse(thr_layout_vmnk_);
+
+    // (thr_idx,val) -> (M,K)
+    return thrfrg_A(ref_A).compose(atile, _).compose(thridx_2_thrid, _);
   }
 
-  CUTE_HOST_DEVICE constexpr static
+  CUTE_HOST_DEVICE constexpr
   auto
-  get_layoutB_NK()
+  get_layoutB_NK() const
   {
     // (N,K) -> (N,K)
-    auto ref_B = make_layout(make_shape(size<1>(TiledShape_MNK{}), size<2>(TiledShape_MNK{})));
+    auto ref_B = make_layout(make_shape(tile_size_mnk<1>(), tile_size_mnk<2>()));
     // (bthrid,val) -> (N,K)
     auto layoutB_TV = thrfrg_B(ref_B);
     // (N,K) -> (bthrid,frg)
     auto layoutB_NK = right_inverse(layoutB_TV).with_shape(shape(ref_B));
 
     // bthrid = (v,n,k) -> thr_idx
-    auto thrID_B = ThrLayoutVMNK{}(_,Int<0>{},_,_);
+    auto thrID_B = thr_layout_vmnk_(_,Int<0>{},_,_);
 
     return cute::make_tuple(layoutB_NK, thrID_B);
   }
 
-  CUTE_HOST_DEVICE constexpr static
+  CUTE_HOST_DEVICE constexpr
   auto
-  get_layoutB_TV()
+  get_layoutB_TV() const
   {
     // (N,K) -> (N,K)
-    auto ref_B = make_layout(make_shape(size<1>(TiledShape_MNK{}), size<2>(TiledShape_MNK{})));
+    auto ref_B = make_layout(make_shape(tile_size_mnk<1>(), tile_size_mnk<2>()));
+    // (bthrid,val) -> (N,K)
+    auto layoutB_TV = thrfrg_B(ref_B);
 
-    return tidfrg_B(ref_B);
+    // (ThrV,(ThrM,ThrK)) -> (ThrV,(ThrM,ThrN,ThrK))
+    auto btile = make_tile(_,
+                           make_tile(make_layout(make_shape (size<1>(thr_layout_vmnk_), size<2>(thr_layout_vmnk_)),
+                                                 make_stride(               Int<0>{} ,                Int<1>{} )),
+                                     _));
+
+    // thr_idx -> (ThrV,ThrM,ThrN,ThrK)
+    auto thridx_2_thrid = right_inverse(thr_layout_vmnk_);
+
+    // (thr_idx,val) -> (N,K)
+    return thrfrg_B(ref_B).compose(btile, _).compose(thridx_2_thrid, _);
   }
 };
 
 template <class TiledMMA, class ThrVMNK>
 struct ThrMMA : TiledMMA
 {
-  // Use ThrVMNK and thrfrg rather than thr_idx and tidfrg
-  // to support swizzled threads partitioning dynamic layouts
   ThrVMNK thr_vmnk_;
-
-  CUTE_HOST_DEVICE constexpr
-  ThrMMA(ThrVMNK const& thr_vmnk) : thr_vmnk_(thr_vmnk) {}
 
   template <class CTensor>
   CUTE_HOST_DEVICE constexpr
   auto
   partition_C(CTensor&& ctensor) const
   {
-    auto thr_tensor = make_tensor(std::forward<CTensor>(ctensor).data(), TiledMMA::thrfrg_C(ctensor.layout()));
+    auto thr_tensor = make_tensor(std::forward<CTensor>(ctensor).data(), this->thrfrg_C(ctensor.layout()));
 
     auto thr_vmn = make_coord(get<0>(thr_vmnk_), make_coord(get<1>(thr_vmnk_), get<2>(thr_vmnk_)));
     return thr_tensor(thr_vmn, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -532,7 +526,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_A(ATensor&& atensor) const
   {
-    auto thr_tensor = make_tensor(std::forward<ATensor>(atensor).data(), TiledMMA::thrfrg_A(atensor.layout()));
+    auto thr_tensor = make_tensor(std::forward<ATensor>(atensor).data(), this->thrfrg_A(atensor.layout()));
 
     auto thr_vmk = make_coord(get<0>(thr_vmnk_), make_coord(get<1>(thr_vmnk_), get<3>(thr_vmnk_)));
     return thr_tensor(thr_vmk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -543,7 +537,7 @@ struct ThrMMA : TiledMMA
   auto
   partition_B(BTensor&& btensor) const
   {
-    auto thr_tensor = make_tensor(std::forward<BTensor>(btensor).data(), TiledMMA::thrfrg_B(btensor.layout()));
+    auto thr_tensor = make_tensor(std::forward<BTensor>(btensor).data(), this->thrfrg_B(btensor.layout()));
 
     auto thr_vnk = make_coord(get<0>(thr_vmnk_), make_coord(get<2>(thr_vmnk_), get<3>(thr_vmnk_)));
     return thr_tensor(thr_vnk, make_coord(_, repeat<rank<1,1>(thr_tensor)>(_)));
@@ -580,38 +574,32 @@ struct ThrMMA : TiledMMA
 
 template <class MMA_Op,
           class MMAThrLayout = Layout<Shape<_1,_1,_1>>,
-          class MMAValLayout = Layout<Shape<_1,_1,_1>>,
           class Permutations = Tile<Underscore,Underscore,Underscore>>
 CUTE_HOST_DEVICE constexpr
 auto
-make_tiled_mma(MMA_Atom<MMA_Op> const&,
+make_tiled_mma(MMA_Atom<MMA_Op> const& mma_atom,
                MMAThrLayout     const& thr_layout   = {},
-               MMAValLayout     const& val_layout   = {},
                Permutations     const& permutations = {})
 {
   auto thr_layout_mnk  = append<3>(thr_layout, Layout<_1,_0>{});
-  auto val_layout_mnk  = append<3>(val_layout, Layout<_1,_0>{});
   auto permutation_mnk = append<3>(permutations, _);
 
   return TiledMMA<MMA_Atom<MMA_Op>,
                   decltype(thr_layout_mnk),
-                  decltype(val_layout_mnk),
-                  decltype(permutation_mnk)>{};
+                  decltype(permutation_mnk)>{mma_atom, thr_layout_mnk};
 }
 
 template <class MMA_Op,
           class MMAThrLayout = Layout<Shape<_1,_1,_1>>,
-          class MMAValLayout = Layout<Shape<_1,_1,_1>>,
           class Permutations = Tile<Underscore,Underscore,Underscore>>
 CUTE_HOST_DEVICE constexpr
 auto
 make_tiled_mma(MMA_Op       const&,
                MMAThrLayout const& thr_layout   = {},
-               MMAValLayout const& val_layout   = {},
                Permutations const& permutations = {})
 {
   // Attempt to wrap in an MMA_Atom<> and forward
-  return make_tiled_mma(MMA_Atom<MMA_Op>{}, thr_layout, val_layout, permutations);
+  return make_tiled_mma(MMA_Atom<MMA_Op>{}, thr_layout, permutations);
 }
 
 //
@@ -680,28 +668,38 @@ partition_shape_B(TiledMMA<Args...> const& mma, Shape_NK const& shape_NK)
 // Size
 //
 
-template <int... I, class... Args>
+template <int I, class... Args>
 CUTE_HOST_DEVICE constexpr
 auto
 tile_size(TiledMMA<Args...> const& mma)
 {
-  return size<I...>(typename TiledMMA<Args...>::TiledShape_MNK{});
+  return mma.template tile_size_mnk<I>();
 }
 
-template <int... I, class... Args>
+template <class... Args>
 CUTE_HOST_DEVICE constexpr
 auto
 tile_shape(TiledMMA<Args...> const& mma)
 {
-  return shape<I...>(typename TiledMMA<Args...>::TiledShape_MNK{});
+  return make_shape(tile_size<0>(mma), tile_size<1>(mma), tile_size<2>(mma));
 }
 
+// Deprecate?
 template <int... I, class... Args>
 CUTE_HOST_DEVICE constexpr
 auto
 size(TiledMMA<Args...> const& mma)
 {
-  return size<I...>(typename TiledMMA<Args...>::ThrLayoutVMNK{});
+  return size<I...>(mma.get_thr_layout_vmnk());
+}
+
+// Alias
+template <int... I, class... Args>
+CUTE_HOST_DEVICE constexpr
+auto
+thr_size(TiledMMA<Args...> const& mma)
+{
+  return size<I...>(mma.get_thr_layout_vmnk());
 }
 
 //
@@ -715,33 +713,31 @@ print(MMA_Atom<MMA_Traits<Args...>> const&)
 {
   using Atom = MMA_Atom<MMA_Traits<Args...>>;
   print("MMA_Atom\n");
-  print("  ThrID:         "); print(typename Atom::ThrID{});      print("\n");
-  print("  LayoutA_TV:    "); print(typename Atom::LayoutA_TV{}); print("\n");
-  print("  LayoutB_TV:    "); print(typename Atom::LayoutB_TV{}); print("\n");
-  print("  LayoutC_TV:    "); print(typename Atom::LayoutC_TV{}); print("\n");
+  print("  ThrID:      "); print(typename Atom::ThrID{});      print("\n");
+  print("  LayoutA_TV: "); print(typename Atom::LayoutA_TV{}); print("\n");
+  print("  LayoutB_TV: "); print(typename Atom::LayoutB_TV{}); print("\n");
+  print("  LayoutC_TV: "); print(typename Atom::LayoutC_TV{}); print("\n");
 }
 
-template <class Atom, class TiledThr, class TiledVal, class TiledPerm>
+template <class Atom, class TiledThr, class TiledPerm>
 CUTE_HOST_DEVICE
 void
-print(TiledMMA<Atom, TiledThr, TiledVal, TiledPerm> const& mma)
+print(TiledMMA<Atom, TiledThr, TiledPerm> const& mma)
 {
-  using MMA = TiledMMA<Atom, TiledThr, TiledVal, TiledPerm>;
   print("TiledMMA\n");
-  print("  TiledThr:  "); print(TiledThr{});  print("\n");
-  print("  TiledVal:  "); print(TiledVal{});  print("\n");
-  print("  TiledPerm: "); print(TiledPerm{}); print("\n");
-  print("  TiledShape_MNK: "); print(typename MMA::TiledShape_MNK{}); print("\n");
-  print("  ThrLayoutVMNK:  "); print(typename MMA::ThrLayoutVMNK{});  print("\n");
+  print("  ThrLayoutVMNK:  "); print(mma.get_thr_layout_vmnk());  print("\n");
+  print("  PermutationMNK: "); print(TiledPerm{}); print("\n");
   print(static_cast<Atom const&>(mma));
 }
 
 template <class TiledMMA, class ThrVMNK>
 CUTE_HOST_DEVICE
 void
-print(ThrMMA<TiledMMA, ThrVMNK> const&)
+print(ThrMMA<TiledMMA, ThrVMNK> const& thr_mma)
 {
-  print(TiledMMA{});
+  print("ThrMMA\n");
+  print("  Thr VMNK: "); print(thr_mma.thr_vmnk_); print("\n");
+  print(static_cast<TiledMMA>(thr_mma));
 }
 
 template <class... Args>
@@ -764,18 +760,6 @@ print_latex(TiledMMA<Args...> const& mma)
   print_latex_mma(layoutC_MN, thrID_C,
                   layoutA_MK, thrID_A,
                   layoutB_NK, thrID_B);
-}
-
-// EXPERIMENTAL -- Doesn't work with Swizzled Thr TileMMAs...
-template <class... Args>
-CUTE_HOST_DEVICE
-auto
-print_latex_2(TiledMMA<Args...> const& mma)
-{
-  print_latex_mma(typename TiledMMA<Args...>::TiledShape_MNK{},
-                  mma.get_layoutC_TV(),
-                  mma.get_layoutA_TV(),
-                  mma.get_layoutB_TV());
 }
 
 // MNK MMA Layout to console printer -- 8-value color coded by thread
@@ -937,122 +921,6 @@ print_latex_mma(LayoutC const& C, ThrIDC const& TC,  // (m,n) -> (tid,vid)  and 
   }
   for (int k = 0, n = -1; k < size<1>(B); ++k) {
     printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", k-1-size<1>(B), n, k);
-  }
-
-  // Footer
-  printf(latex_footer);
-}
-
-// ThrVal MMA Layout to Latex TIKZ -- 8-value color coded by thread
-template <class Shape_MNK,
-          class LayoutC, class LayoutA, class LayoutB>
-CUTE_HOST_DEVICE
-void
-print_latex_mma(Shape_MNK const& shape_mnk,
-                LayoutC   const& C,  // (thr_idx,vid) -> (m,n)
-                LayoutA   const& A,  // (thr_idx,vid) -> (m,k)
-                LayoutB   const& B)  // (thr_idx,vid) -> (n,k)
-{
-  CUTE_STATIC_ASSERT_V(rank(C) == Int<2>{});
-  CUTE_STATIC_ASSERT_V(rank(A) == Int<2>{});
-  CUTE_STATIC_ASSERT_V(rank(B) == Int<2>{});
-
-  char const* latex_header =
-      "\\documentclass{standalone}\n"
-      "\\usepackage{tikz}\n"
-      "\\usetikzlibrary{external}\n"
-      "\\tikzexternalize\n"
-      "\\begin{document}\n"
-      "\\begin{tikzpicture}[x={(0cm,-1cm)},y={(1cm,0cm)},box/.style={rectangle,draw=black,thick,minimum size=1cm,anchor=center}]\n\n";
-  char const* latex_footer =
-      "\\end{tikzpicture}\n"
-      "\\end{document}\n";
-
-  char const* color_map[8] = {"{rgb,255:red,175;green,175;blue,255}",
-                              "{rgb,255:red,175;green,255;blue,175}",
-                              "{rgb,255:red,255;green,255;blue,175}",
-                              "{rgb,255:red,255;green,175;blue,175}",
-                              "{rgb,255:red,210;green,210;blue,255}",
-                              "{rgb,255:red,210;green,255;blue,210}",
-                              "{rgb,255:red,255;green,255;blue,210}",
-                              "{rgb,255:red,255;green,210;blue,210}"};
-
-  // Header
-  printf("%% Shape_MNK: "); print(shape_mnk); printf("\n");
-  printf("%% LayoutC  : "); print(C);         printf("\n");
-  printf("%% LayoutA  : "); print(A);         printf("\n");
-  printf("%% LayoutB  : "); print(B);         printf("\n\n");
-
-  printf(latex_header);
-
-  auto M = size<0>(shape_mnk);
-  auto N = size<1>(shape_mnk);
-  auto K = size<2>(shape_mnk);
-
-  // C starting at 0,0
-  bool c_filled[M][N] = {};
-  for (int t = 0; t < size<0>(C); ++t) {
-    for (int v = 0; v < size<1>(C); ++v) {
-      int m = C(t,v) % M;
-      int n = C(t,v) / M;
-
-      if (not c_filled[m][n]) {
-        printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
-               color_map[t % 8],
-               m, n,
-               t, v);
-        c_filled[m][n] = true;
-      }
-    }
-  }
-
-  // A starting at 0,-size<1>(A)-1
-  bool a_filled[M][K] = {};
-  for (int t = 0; t < size<0>(A); ++t) {
-    for (int v = 0; v < size<1>(A); ++v) {
-      int m = A(t,v) % M;
-      int k = A(t,v) / M;
-
-      if (not a_filled[m][k]) {
-        printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
-               color_map[t % 8],
-               m, k - 1 - K,
-               t, v);
-        a_filled[m][k] = true;
-      }
-    }
-  }
-
-  // B starting at -size<1>(B)-1,0
-  bool b_filled[N][K] = {};
-  for (int t = 0; t < size<0>(B); ++t) {
-    for (int v = 0; v < size<1>(B); ++v) {
-      int n = B(t,v) % N;
-      int k = B(t,v) / N;
-
-      if (not b_filled[n][k]) {
-        printf("\\node[box,fill=%s] at (%d,%d) {\\shortstack{T%d \\\\ V%d}};\n",
-               color_map[t % 8],
-               k - 1 - K, n,
-               t, v);
-        b_filled[n][k] = true;
-      }
-    }
-  }
-
-  // A labels
-  for (int m = 0, k = -1; m < M; ++m) {
-    printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", m, k - 1 - K, m);
-  }
-  for (int k = 0, m = -1; k < K; ++k) {
-    printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", m, k - 1 - K, k);
-  }
-  // B labels
-  for (int n = 0, k = -1; n < N; ++n) {
-    printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", k - 1 - K, n, n);
-  }
-  for (int k = 0, n = -1; k < K; ++k) {
-    printf("\\node at (%d,%d) {\\Large{\\texttt{%d}}};\n", k - 1 - K, n, k);
   }
 
   // Footer

@@ -32,6 +32,17 @@
     \file
     \brief Boost-like numeric conversion operator for CUTLASS numeric types
 */
+
+/*
+  Note:  CUTLASS 3x increases the host compiler requirements to C++17. However, certain
+         existing integrations of CUTLASS require C++11 host compilers.
+
+         Until this requirement can be lifted, certain headers with this annotation are required
+         to be remain consistent with C++11 syntax.
+
+         C++11 compatibility is enforced by this unit test: `cutlass_test_unit_core_cpp11`.
+*/
+
 #pragma once
 
 #if !defined(__CUDACC_RTC__)
@@ -2482,6 +2493,1071 @@ struct NumericArrayConverter<uint4b_t, int, N, Round> {
 
 #endif  // Conditional guards to enable partial specialization for packed integers
 
+namespace detail {
+
+  /*
+      A helper class that can vectorize a numeric converter with implementation for several vector widths.
+
+      The vector widths must be giving in decreasing order or width, and must be a power of 2.
+
+      The vector converters must produce identical results to the scalar converters for consistency.
+    */
+  class VectorizedConverter {
+  private:
+    // Base case to handle remainder elements as scalars.
+    template <int Offset, size_t ParentWidth, typename ArrayConverter>
+    CUTLASS_DEVICE
+    static void convert_helper(
+      typename ArrayConverter::result_type& result, 
+      typename ArrayConverter::source_type const& source) {
+
+      using ElementRes = typename ArrayConverter::result_type::Element;
+      using ElementSrc = typename ArrayConverter::source_type::Element;
+      // If no more converters, handle the remaining elements as scalars.
+      constexpr int total_elements = ArrayConverter::result_type::kElements;
+      constexpr int remainder = total_elements - Offset;
+      static_assert(remainder == (total_elements % ParentWidth), "Unexpected remainder.");
+
+      typename ArrayConverter::ScalarConverter scalar_converter;
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = Offset; i < ArrayConverter::result_type::kElements; ++i) {
+        result[i] = scalar_converter(ElementSrc(source[i]));
+      }
+    }
+
+    template <int Offset, size_t ParentWidth, typename ArrayConverter, typename ResultVectorArray, typename SourceVectorArray, typename... OtherVectorArrays>
+    CUTLASS_DEVICE
+    static void convert_helper(typename ArrayConverter::result_type& result, typename ArrayConverter::source_type const& source) {
+      static_assert(sizeof...(OtherVectorArrays) % 2 == 0, "Vector converters must come in {dst, src} pairs");
+      static_assert(ResultVectorArray::kElements == SourceVectorArray::kElements, "Vector converters must have the same vector width");
+      static_assert(cutlass::platform::is_same<typename ArrayConverter::result_type::Element, typename ResultVectorArray::Element>::value, 
+        "ResultVectorArray must have the same type ArrayConverter::result_type");
+      static_assert(cutlass::platform::is_same<typename ArrayConverter::source_type::Element, typename SourceVectorArray::Element>::value, 
+        "SourceVectorArray must have the same type ArrayConverter::result_type");
+      static_assert(Offset >= 0 && Offset <= ArrayConverter::result_type::kElements, "Offset must be between 0 and N");
+
+      static_assert(ParentWidth == 0 || ParentWidth > ResultVectorArray::kElements, "Vector arrays must be given in decreasing order of width");
+      
+      constexpr int vector_width = ResultVectorArray::kElements;
+      static_assert(ispow2(vector_width), "Vector width must be a power of 2");
+
+      using ElementRes = typename ArrayConverter::result_type::Element;
+      using ElementSrc = typename ArrayConverter::source_type::Element;
+
+      constexpr int vector_bits_res = vector_width * cutlass::sizeof_bits<ElementRes>::value;
+      constexpr int vector_bits_src = vector_width * cutlass::sizeof_bits<ElementSrc>::value;
+
+      static_assert(vector_bits_res % 8 == 0, "Result vector type must be byte addressed.");
+      static_assert(vector_bits_src % 8 == 0, "Source vector type must be byte addressed.");
+
+      constexpr int vector_offset = Offset / vector_width;
+      ResultVectorArray* packed_result_vec = reinterpret_cast<ResultVectorArray*>(&result) + vector_offset;
+      SourceVectorArray const* packed_source_vec = reinterpret_cast<SourceVectorArray const*>(&source) + vector_offset;
+
+      // Convert the remaining elements as vectors.
+      constexpr int total_elements = ArrayConverter::result_type::kElements;
+      constexpr int groups_of_vec = (total_elements - Offset) / vector_width;
+      CUTLASS_PRAGMA_UNROLL
+      for (int i = 0; i < groups_of_vec; ++i) {
+        packed_result_vec[i] = ArrayConverter::template packed_convert<ResultVectorArray, SourceVectorArray>(packed_source_vec[i]);
+      }
+
+      constexpr int new_offset = Offset + vector_width * groups_of_vec;
+      // Recurse to handle other vector converters, or the scalar base case.
+      convert_helper<new_offset, ResultVectorArray::kElements, ArrayConverter, OtherVectorArrays...>(result, source);
+    }
+
+  public:
+    /*
+        A method to convert vectors of elements using the packed_convert method of the converter. 
+        
+        Converters using this class must implement packed convert and support 1 or more vector conversions.
+      */
+    template <typename ArrayConverter, typename ResultVectorArray, typename SourceVectorArray, typename... OtherVectorArrays>
+    CUTLASS_DEVICE
+    static void convert(typename ArrayConverter::result_type& result, typename ArrayConverter::source_type const& source) {
+      convert_helper<0, 0, ArrayConverter, ResultVectorArray, SourceVectorArray, OtherVectorArrays...>(result, source);
+    }
+  };
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Partial specialization for Array<cutlass::float_e4m3_t, N> <= Array<cutlass::int4b_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<cutlass::float_e4m3_t, cutlass::int4b_t, N, Round> {
+  using result_type = Array<cutlass::float_e4m3_t, N>;
+  using source_type = Array<cutlass::int4b_t, N>;
+
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_8 = Array<cutlass::float_e4m3_t, 8>;
+  using result_type_packed_4 = Array<cutlass::float_e4m3_t, 4>;
+  using source_type_packed_8 = Array<cutlass::int4b_t, 8>;
+  using source_type_packed_4 = Array<cutlass::int4b_t, 4>;
+
+  using ScalarConverter = NumericConverter<cutlass::float_e4m3_t, cutlass::int4b_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_8 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  // The core converter uses a lookup table to converts i4 -> e4m3.
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_8>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_8>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 4 or 8 to use private convert dispatch.");
+
+    // Hold FP8 outputs in reg. We need 1 reg for every 4 outputs.
+    cutlass::AlignedArray<uint32_t, PackedResultType::kElements / 4, sizeof(PackedResultType)> r;
+
+    // View the input as reg
+    uint32_t reg = to_reg(source);
+
+    // Determines if to get from the signed or unsigned candidates
+    uint32_t sign = (reg & 0x88888888) >> 1;
+
+    // Ignore sign bit when indexing into LUT
+    uint32_t lut_idx = (reg & 0x77777777);
+
+    // Signed is OR'd with 0x32103210 to find the correct value in the LUT
+    const uint32_t final_prmt_base = 0x32103210;
+
+    // [0, 1, 2, 3] encoded as FP8
+    static constexpr uint32_t POS_E4M3s_REG1 = 0x44403800;
+    // [4, 5, 6, 7] encoded as FP8
+    static constexpr uint32_t POS_E4M3s_REG2 = 0x4E4C4A48;
+    // [-1, -2, -3, -4] encoded as FP8
+    static constexpr uint32_t NEG_E4M3s_REG1 = 0xCACCCED0;
+    // [-5, -6, -7, -7] encoded as FP8
+    static constexpr uint32_t NEG_E4M3s_REG2 = 0xB8C0C4C8;
+
+
+    const int iters = PackedSrcType::kElements / 4;
+    #pragma unroll
+    for (int ii = 0; ii < iters; ++ii, lut_idx >>=16, sign >>=16) {
+      uint32_t final_prmt_idx = final_prmt_base | sign;
+
+      // This uses a look up table to convert packed int4s to packed fp8s, using the int4 value
+      // as the index to prmt. 
+      // It first select both the positive and negative candidates, then uses the sign bit to
+      // select the correct candidate.
+      asm volatile(
+          "{\n"
+          "  .reg .b32 pos_f8s, neg_f8s;\n"
+          "  prmt.b32 pos_f8s, %1, %2, %5;\n"
+          "  prmt.b32 neg_f8s, %3, %4, %5;\n"
+          "  prmt.b32 %0, pos_f8s, neg_f8s, %6;\n"
+          "}\n"
+          : "=r"(r[ii])
+          : "n"(POS_E4M3s_REG1), "n"(POS_E4M3s_REG2), "n"(NEG_E4M3s_REG1), "n"(NEG_E4M3s_REG2),
+            "r"(lut_idx), "r"(final_prmt_idx));
+    }
+    return reinterpret_cast<PackedResultType&>(r);
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType, 
+                                         result_type_packed_8, source_type_packed_8, 
+                                         result_type_packed_4, source_type_packed_4>(result, source);
+
+    return result;
+  }
+
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float, N> <= Array<cutlass::int4b_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<float, cutlass::int4b_t, N, Round> {
+  using result_type = Array<float, N>;
+  using source_type = Array<cutlass::int4b_t, N>;
+
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_8 = Array<float, 8>;
+  using result_type_packed_4 = Array<float, 4>;
+  using result_type_packed_2 = Array<float, 2>;
+  using source_type_packed_8 = Array<cutlass::int4b_t, 8>;
+  using source_type_packed_4 = Array<cutlass::int4b_t, 4>;
+  using source_type_packed_2 = Array<cutlass::int4b_t, 2>;
+
+  using ScalarConverter = NumericConverter<float, cutlass::int4b_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_2 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint8_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_8 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  template <int offset, int elements_to_convert, typename PackedResultType>
+  CUTLASS_DEVICE
+  static void packed_convert_vec(PackedResultType& result, uint32_t src_reg) {
+    static_assert(offset == 0 || offset == 4, "Invalid offset");
+    // Selects one of the bottom int4s and constructs:
+    // 8388608 + (x + 8)
+    // 8388608 + 16 * (x + 8)
+    // 8388608 + 256 * (x + 8)
+    // 8388608 + 4096 * (x + 8)
+    uint32_t const and_masks[4] = {0x0000000F, 0x000000F0, 0x00000F00, 0x0000F000};
+    uint32_t const xor_masks[4] = {0x4B000008, 0x4B000080, 0x4B000800, 0x4B008000};
+
+    float const scales[4] = {1.f, 1.f / 16.f, 1.f / 256.f, 1.f / 4096.f};
+    float const offsets[4] = {-8388616.f, -524296.f, -32776.f, -2056.f};
+
+    static constexpr uint32_t immLut = (0xf0 & 0xcc) ^ 0xaa;
+
+    uint32_t* result_as_int = reinterpret_cast<uint32_t*>(&result);
+
+    // For each operand, computes:
+    // r[i] = (r[i] & and_mask) ^ xor_mask
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < elements_to_convert; ++ii) {
+      asm volatile(
+          "{\n"
+          "  lop3.b32 %0, %1, %2, %3, %4;\n"
+          "}\n"
+          : "=r"(result_as_int[offset + ii])
+          : "r"(src_reg), "r"(and_masks[ii]), "r"(xor_masks[ii]), "n"(immLut));
+
+      result[offset + ii] = __fmaf_rn(result[offset + ii], scales[ii], offsets[ii]);
+    }
+  }
+
+  // The core converter uses bit tricks to construct a known FP16 number, then does a
+  // subtraction in FP16 for the final result.
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_8>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_8>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 1, 2, 4 or 8 to use private convert dispatch.");
+    
+    // Hold output FP16s in reg. We need 1 reg for every 2 elements
+    PackedResultType r;
+
+    // View the input as reg
+    uint32_t src_reg = to_reg(source);
+    constexpr int total_elements = PackedResultType::kElements == 8 ? 4 : PackedResultType::kElements;
+    packed_convert_vec<0, total_elements>(r, src_reg);
+
+
+    if (PackedResultType::kElements == 8) {
+      uint32_t src_reg_shifted = src_reg >> 16;
+      packed_convert_vec<4, 4>(r, src_reg_shifted);
+    }
+    return r;
+  }
+
+  friend class detail::VectorizedConverter; 
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType, 
+                                         result_type_packed_8, source_type_packed_8, 
+                                         result_type_packed_4, source_type_packed_4, 
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float, N> <= Array<int8_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<float, int8_t, N, Round> {
+  using result_type = Array<float, N>;
+  using source_type = Array<int8_t, N>;
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_4 = Array<float, 4>;
+  using result_type_packed_2 = Array<float, 2>;
+  using source_type_packed_4 = Array<int8_t, 4>;
+  using source_type_packed_2 = Array<int8_t, 2>;
+
+  using ScalarConverter = NumericConverter<float, int8_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_2 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 2 or 4 to use private convert dispatch.");
+    
+    PackedResultType r;
+    // View the input as reg
+    uint32_t src_reg = to_reg(source);
+    static constexpr int fp32_base = 0x4B400000;
+    uint32_t const prmt_indices[4] = {0x8880, 0x9991, 0xAAA2, 0xBBB3};
+
+    int* result_as_int = reinterpret_cast<int*>(&r);
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < PackedResultType::kElements; ++ii) {
+      asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(result_as_int[ii]) : "r"(src_reg), "r"(prmt_indices[ii]));
+    }
+
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < PackedResultType::kElements; ++ii)
+    {
+      result_as_int[ii] += fp32_base;
+      r[ii] -= reinterpret_cast<const float&>(fp32_base);
+    }
+
+    return r;
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType, 
+                                         result_type_packed_4, source_type_packed_4, 
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<float, N> <= Array<uint8_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<float, uint8_t, N, Round> {
+  using result_type = Array<float, N>;
+  using source_type = Array<uint8_t, N>;
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_4 = Array<float, 4>;
+  using result_type_packed_2 = Array<float, 2>;
+  using source_type_packed_4 = Array<uint8_t, 4>;
+  using source_type_packed_2 = Array<uint8_t, 2>;
+
+  using ScalarConverter = NumericConverter<float, uint8_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_2 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 2 or 4 to use private convert dispatch.");
+    
+    PackedResultType r;
+    // View the input as reg
+    uint32_t src_reg = to_reg(source);
+
+    // __byte_perm simulates the add.u32 0x4B000000 to every u8 element of u8x4 source and stores 
+    // the result in r (without introducing extra cvt.u32.u8 instruction)
+    uint32_t const prmt_indices[4] = {0x7650, 0x7651, 0x7652, 0x7653};
+    uint32_t* result_as_int = reinterpret_cast<uint32_t*>(&r);
+    for (int ii = 0; ii < PackedResultType::kElements; ++ii) {
+      result_as_int[ii] = __byte_perm(src_reg, 0x4B000000, prmt_indices[ii]);
+      // Subtract the magic number 0x4B000000 from tmp in floating-point arithmetic to obtain final result
+      r[ii] -= 8388608.f;
+    }
+
+    return r;
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType, 
+                                         result_type_packed_4, source_type_packed_4, 
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Partial specialization for Array<cutlass::half_t, N> <= Array<cutlass::int4b_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<cutlass::half_t, cutlass::int4b_t, N, Round> {
+  using result_type = Array<cutlass::half_t, N>;
+  using source_type = Array<cutlass::int4b_t, N>;
+
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_8 = Array<cutlass::half_t, 8>;
+  using result_type_packed_4 = Array<cutlass::half_t, 4>;
+  using result_type_packed_2 = Array<cutlass::half_t, 2>;
+  using source_type_packed_8 = Array<cutlass::int4b_t, 8>;
+  using source_type_packed_4 = Array<cutlass::int4b_t, 4>;
+  using source_type_packed_2 = Array<cutlass::int4b_t, 2>;
+
+  using ScalarConverter = NumericConverter<cutlass::half_t, cutlass::int4b_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_2 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint8_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_8 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  // The core converter uses bit tricks to construct a known FP16 number, then does a
+  // subtraction in FP16 for the final result.
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_8>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_8>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 2, 4 or 8 to use private convert dispatch.");
+    
+    // Hold output FP16s in reg. We need 1 reg for every 2 elements
+    using RegArray = cutlass::AlignedArray<uint32_t, PackedResultType::kElements / 2, sizeof(PackedResultType)>;
+    RegArray r; 
+
+    // View the input as reg
+    uint32_t src_reg = to_reg(source);
+
+    // Below constructs the following temporary:
+    // fp16s_01 = {0x00, i4_01, 0x00, i4_01}
+    // fp16s_23 = {0x00, i4_23, 0x00, i4_23}
+    // fp16s_45 = {0x00, i4_45, 0x00, i4_45}
+    // fp16s_67 = {0x00, i4_67, 0x00, i4_67}
+    // We use inline asm instead of __byte_perm intrinsic since we don't want the documented (& 0x7) on the index. NVCC
+    // might be able to optimize it out since the index is a constexpr, but we choose to be safe about it here.
+    uint32_t prmt_indices[4] = {0x4040, 0x4141, 0x4242, 0x4343};
+    static_assert(RegArray::kElements <= 4, "Too many inputs for F16 -> I4 vector converter");
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      asm volatile(
+          "{\n"
+          "  prmt.b32 %0, %1, %2, %3;\n"
+          "}\n"
+          : "=r"(r[ii])
+          : "r"(src_reg), "n"(0), "r"(prmt_indices[ii]));     
+    }
+
+    // The below XOR does the following:
+    // 1) Sets the exponent bits of the FP16 to the correct value for the FP16 magic_num. We will be constructing
+    //    1024 + x + 8 OR 1024 + 16 * (x + 8), then using hfma to subtract 1032 from that
+    // 2) Adds 8 to the int4 value that we will process in the FP16 (for uint4, we can simply avoid this step)
+    // The AND does the following:
+    // 1) Clear the set bits for the int4 we will ignore.
+    // We use lop3 so that we can use 1 instruction for AND and XOR.
+    static constexpr uint32_t xor_mask = 0x64806408;
+    static constexpr uint32_t and_mask = 0xFFF0FF0F;
+    static constexpr uint32_t immLut = (0xf0 & 0xcc) ^ 0xaa;
+
+    // For each operand, computes:
+    // r[i] = (r[i] & and_mask) ^ xor_mask
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      asm volatile(
+          "{\n"
+          "  lop3.b32 %0, %0, %1, %2, %3;\n"
+          "}\n"
+          : "+r"(r[ii])
+          : "n"(and_mask), "n"(xor_mask), "n"(immLut));     
+    }
+
+    // We will issue 2 hfmas that do the following:
+    // For the high FP16:
+    //  Divide by 16 {packed as a operand} to get:
+    //    64 + (x + 8)
+    //    x + 72
+    //  Subtract 72 {packed as c operand} to get x
+    // For the low FP16:
+    //    1024 + (x + 8)
+    //    x + 1032
+    // So, we subtract 1032 {packed as c operand} to get x
+
+    // {-72, -1032}
+    static constexpr uint32_t hfma_bias_rep = 0xD480E408;
+    // {1 / 16, 1}
+    static constexpr uint32_t hfma_scale_rep = 0x2C003C00;
+
+    const half2& hfma_bias = reinterpret_cast<const half2&>(hfma_bias_rep);
+    const half2& hfma_scale = reinterpret_cast<const half2&>(hfma_scale_rep);
+    // Scale and subtract the FP16s to get the original int4 number as FP16.
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
+      fp16x2_val = __hfma2(hfma_scale, fp16x2_val, hfma_bias);
+    }
+    return reinterpret_cast<PackedResultType&>(r);
+  }
+
+  friend class detail::VectorizedConverter; 
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType, 
+                                         result_type_packed_8, source_type_packed_8, 
+                                         result_type_packed_4, source_type_packed_4, 
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<cutlass::half_t, N> <= Array<int8_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<cutlass::half_t, int8_t, N, Round> {
+  using result_type = Array<cutlass::half_t, N>;
+  using source_type = Array<int8_t, N>;
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_4 = Array<cutlass::half_t, 4>;
+  using result_type_packed_2 = Array<cutlass::half_t, 2>;
+  using source_type_packed_4 = Array<int8_t, 4>;
+  using source_type_packed_2 = Array<int8_t, 2>;
+
+  using ScalarConverter = NumericConverter<cutlass::half_t, int8_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_2 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  // The core converter uses bit tricks to construct a known FP16 number, then does a
+  // subtraction in FP16 for the final result.
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 2 or 4 to use private convert dispatch.");
+    
+    // Hold output FP16s in reg. We need 1 reg for every 2 elements
+    using RegArray = cutlass::AlignedArray<uint32_t, PackedResultType::kElements / 2, sizeof(PackedResultType)>;
+    RegArray r; 
+
+    #if 0 // Scalar conversion (Please keep this code for reference for vectorized version below)
+    auto result = reinterpret_cast<PackedResultType&>(r);
+    CUTLASS_PRAGMA_UNROLL
+    for (int i = 0; i < PackedResultType::kElements; ++i) {
+      int16_t tmp = source[i] + 26112 /* 0x6600 */;
+      result[i] = reinterpret_cast<cutlass::half_t const &>(tmp) - 1536.0_hf;
+    }
+    #endif
+
+    // View the input as reg
+    uint32_t src_reg = to_reg(source);
+    uint32_t const prmt_indices[2] = {0x9180, 0xB3A2};
+
+    // Pack s8x2 (s8[1], s8[0]) -> s16x2 (sext.s8[1], sext.s8[0])
+    // (See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-prmt)
+    // The inline ptx below uses `msb=0` and `msb=1` from the above link to sign-extend the sign bit in 0, 1, 2, 3 bytes of s8x4
+    // into result_ptr[0] and result_ptr[1]'s 08-15 and 24-31 bits, respectively.
+    // Note that `__byte_perm(source_ptr[0], source_ptr[0], 0x9180);` won't achieve the same result and doesn't sign-extend the sign bit.
+    // Thus, we use inline ptx `prmt.b32` instruction for the desired sign extend from s8x2 to s16x2.
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(r[ii]) : "r"(src_reg), "r"(prmt_indices[ii]));
+    }
+
+    // In the absense of add.s16x2 instruction, use bit-wise operation to execute signed addition with magic numbers to achieve
+    // the same result as add.s16x2 instruction.
+    // (See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3)
+    // For a logical operation F(a, b, c) the value of kImmLut can be computed by applying the same operation to 
+    // three predefined constant values as follows:
+    //                                        ta = 0xF0;
+    //                                        tb = 0xCC;
+    //                                        tc = 0xAA;
+    //                                   kImmLut = F(ta, tb, tc);
+    // If we want F = ((a & b) ^ c) then set kImmLut = (0xF0 & 0xCC) ^ 0xAA 
+    static constexpr uint32_t kImmLut = (0xF0 & 0xCC) ^ 0xAA; 
+
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      // The bit-wise operation executed below is `r[ii] = (r[ii] & 0x03FF03FF) ^ 0x66006600;`
+      asm volatile("lop3.b32 %0, %1, %2, %3, %4;\n" : 
+                                "=r"(r[ii]) : "r"(r[ii]), "n"(0x03FF03FF), "n"(0x66006600), "n"(kImmLut));
+    }
+
+    static constexpr uint32_t bias_rep = 0x66006600;
+    const half2& bias = reinterpret_cast<const half2&>(bias_rep);
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
+      fp16x2_val = __hsub2(fp16x2_val, bias);
+    }
+    return reinterpret_cast<PackedResultType&>(r);
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType, 
+                                         result_type_packed_4, source_type_packed_4, 
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<cutlass::half_t, N> <= Array<uint8_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<cutlass::half_t, uint8_t, N, Round> {
+  using result_type = Array<cutlass::half_t, N>;
+  using source_type = Array<uint8_t, N>;
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_4 = Array<cutlass::half_t, 4>;
+  using result_type_packed_2 = Array<cutlass::half_t, 2>;
+  using source_type_packed_4 = Array<uint8_t, 4>;
+  using source_type_packed_2 = Array<uint8_t, 2>;
+
+  using ScalarConverter = NumericConverter<cutlass::half_t, uint8_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_2 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 2 or 4 to use private convert dispatch.");
+    
+    // Hold output FP16s in reg. We need 1 reg for every 2 elements
+    using RegArray = cutlass::AlignedArray<uint32_t, PackedResultType::kElements / 2, sizeof(PackedResultType)>;
+    RegArray r; 
+  
+    // View the input as reg
+    uint32_t src_reg = to_reg(source);
+    uint32_t const prmt_indices[2] = {0x5150, 0x5352};
+    static constexpr uint32_t start_byte_for_fp16 = 0x64646464;
+
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      asm volatile("prmt.b32 %0,%1,%2,%3;\n" : "=r"(r[ii]) : "r"(src_reg), "n"(start_byte_for_fp16), "r"(prmt_indices[ii]));
+    }
+
+    static constexpr uint32_t bias_rep = 0x64006400;
+    const half2& bias = reinterpret_cast<const half2&>(bias_rep);
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      half2& fp16x2_val = reinterpret_cast<__half2&>(r[ii]);
+      fp16x2_val = __hsub2(fp16x2_val, bias);
+    }
+
+    return reinterpret_cast<PackedResultType&>(r);
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType, 
+                                         result_type_packed_4, source_type_packed_4, 
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+/////////////////////////////////////////////////////////////////////////////////////////////////
+/// Partial specialization for Array<cutlass::bfloat16_t, N> <= Array<cutlass::int4b_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<cutlass::bfloat16_t, cutlass::int4b_t, N, Round> {
+  using result_type = Array<cutlass::bfloat16_t, N>;
+  using source_type = Array<cutlass::int4b_t, N>;
+
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_8 = Array<cutlass::bfloat16_t, 8>;
+  using result_type_packed_4 = Array<cutlass::bfloat16_t, 4>;
+  using result_type_packed_2 = Array<cutlass::bfloat16_t, 2>;
+  using source_type_packed_8 = Array<cutlass::int4b_t, 8>;
+  using source_type_packed_4 = Array<cutlass::int4b_t, 4>;
+  using source_type_packed_2 = Array<cutlass::int4b_t, 2>;
+
+  using ScalarConverter = NumericConverter<cutlass::bfloat16_t, cutlass::int4b_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_2 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint8_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_8 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  // The core converter uses bit tricks to construct a known FP16 number, then does a
+  // subtraction in FP16 for the final result.
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_8>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_8>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 2, 4 or 8 to use private convert dispatch.");
+    
+    // Hold output FP16s in reg. We need 1 reg for every 2 elements
+    using RegArray = cutlass::AlignedArray<uint32_t, PackedResultType::kElements / 2, sizeof(PackedResultType)>;
+    RegArray r; 
+
+    // View the input as reg
+    uint32_t src_reg = to_reg(source);
+    uint32_t src_reg_shifted = src_reg >> 4;
+
+    // Below constructs the following temporary:
+    uint32_t const prmt_indices[4] = {0xF4F0, 0xF5F1, 0xF6F2, 0xF7F3};
+    static_assert(RegArray::kElements <= 4, "Too many inputs for BF16 -> I4 vector converter");
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      asm volatile(
+          "{\n"
+          "  prmt.b32 %0, %1, %2, %3;\n"
+          "}\n"
+          : "=r"(r[ii])
+          : "r"(src_reg), "r"(src_reg_shifted), "r"(prmt_indices[ii]));     
+    }
+
+    // The below XOR does the following:
+    // 1) Sets the exponent bits of the FP16 to the correct value for the FP16 magic_num. We will be constructing
+    //    128 + (x + 8) and subtracting 136 to get x
+    static constexpr uint32_t xor_mask = 0x43084308;
+    static constexpr uint32_t and_mask = 0x000F000F;
+    static constexpr uint32_t immLut = (0xf0 & 0xcc) ^ 0xaa;
+
+    // For each operand, computes:
+    // r[i] = (r[i] & and_mask) ^ xor_mask
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      asm volatile(
+          "{\n"
+          "  lop3.b32 %0, %0, %1, %2, %3;\n"
+          "}\n"
+          : "+r"(r[ii])
+          : "n"(and_mask), "n"(xor_mask), "n"(immLut));     
+    }
+
+    // We will issue 2 bfmas that do the following:
+    // high BF16:
+    // hi_bf16 - 136, lo_bf16 - 136
+
+    // This is the BF16 {136, 136} represented as an integer.
+    static constexpr uint32_t bias_rep = 0x43084308;
+    const __nv_bfloat162& bias = reinterpret_cast<const __nv_bfloat162&>(bias_rep);
+    
+    CUTLASS_PRAGMA_UNROLL
+    for (int ii = 0; ii < RegArray::kElements; ++ii) {
+      __nv_bfloat162& bf16x2_val = reinterpret_cast<__nv_bfloat162&>(r[ii]);
+      bf16x2_val = __hsub2(bf16x2_val, bias);
+    }
+
+    return reinterpret_cast<PackedResultType&>(r);
+  }
+
+  friend class detail::VectorizedConverter; 
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType, 
+                                         result_type_packed_8, source_type_packed_8, 
+                                         result_type_packed_4, source_type_packed_4, 
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<cutlass::bfloat16_t, N> <= Array<int8_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<cutlass::bfloat16_t, int8_t, N, Round> {
+  using result_type = Array<cutlass::bfloat16_t, N>;
+  using source_type = Array<int8_t, N>;
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_4 = Array<cutlass::bfloat16_t, 4>;
+  using result_type_packed_2 = Array<cutlass::bfloat16_t, 2>;
+  using source_type_packed_4 = Array<int8_t, 4>;
+  using source_type_packed_2 = Array<int8_t, 2>;
+
+  using ScalarConverter = NumericConverter<cutlass::bfloat16_t, int8_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_2 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 2 or 4 to use private convert dispatch.");
+    
+    NumericArrayConverter<float, int8_t, PackedResultType::kElements, Round> convert_int8_to_f32;
+    Array<float, PackedResultType::kElements> tmp = convert_int8_to_f32(source);
+    NumericArrayConverter<cutlass::bfloat16_t, float, PackedResultType::kElements, Round> convert_f32_to_bf16;
+    return convert_f32_to_bf16(tmp);
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType, 
+                                         result_type_packed_4, source_type_packed_4, 
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+/// Partial specialization for Array<cutlass::bfloat16_t, N> <= Array<uint8_t, N>
+template <FloatRoundStyle Round, int N>
+struct NumericArrayConverter<cutlass::bfloat16_t, uint8_t, N, Round> {
+  using result_type = Array<cutlass::bfloat16_t, N>;
+  using source_type = Array<uint8_t, N>;
+  static FloatRoundStyle const round_style = Round;
+
+private:
+  using result_type_packed_4 = Array<cutlass::bfloat16_t, 4>;
+  using result_type_packed_2 = Array<cutlass::bfloat16_t, 2>;
+  using source_type_packed_4 = Array<uint8_t, 4>;
+  using source_type_packed_2 = Array<uint8_t, 2>;
+
+  using ScalarConverter = NumericConverter<cutlass::bfloat16_t, uint8_t, Round>;
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_2 const& source) {
+    return static_cast<uint32_t>(
+      reinterpret_cast<const uint16_t&>(source));
+  }
+
+  CUTLASS_DEVICE
+  static uint32_t to_reg(source_type_packed_4 const& source) {
+    return reinterpret_cast<const uint32_t&>(source);
+  }
+
+  template <typename PackedResultType, typename PackedSrcType>
+  CUTLASS_DEVICE
+  static PackedResultType packed_convert(PackedSrcType const &source) {
+
+    static_assert((platform::is_same<PackedSrcType, source_type_packed_2>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_2>::value) ||
+                  (platform::is_same<PackedSrcType, source_type_packed_4>::value &&
+                   platform::is_same<PackedResultType, result_type_packed_4>::value),
+                  "Invalid PackedSrcType/PackedResultType must be 2 or 4 to use private convert dispatch.");
+    
+    NumericArrayConverter<float, uint8_t, PackedResultType::kElements, Round> convert_uint8_to_f32;
+    Array<float, PackedResultType::kElements> tmp = convert_uint8_to_f32(source);
+    NumericArrayConverter<cutlass::bfloat16_t, float, PackedResultType::kElements, Round> convert_f32_to_bf16_;
+    return convert_f32_to_bf16_(tmp);
+  }
+
+  friend class detail::VectorizedConverter;
+
+public:
+  CUTLASS_DEVICE
+  static result_type convert(source_type const &source) {
+    result_type result;
+    using ConverterType = NumericArrayConverter<typename result_type::Element, typename source_type::Element, N, Round>;
+    detail::VectorizedConverter::convert<ConverterType, 
+                                         result_type_packed_4, source_type_packed_4, 
+                                         result_type_packed_2, source_type_packed_2>(result, source);
+
+    return result;
+  }
+
+  CUTLASS_DEVICE
+  result_type operator()(source_type const &s) const { 
+    return convert(s);
+  }
+};
+
+#endif // defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 800)
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// FastNumericArrayConverter only works when the source is within center range.
@@ -2507,12 +3583,10 @@ struct FastNumericArrayConverter {
 };
 
 /// Partial specialization for Array<float> <= Array<int>
-template <typename T, int N, FloatRoundStyle Round>
-struct FastNumericArrayConverter<float, T, N, Round, 
-    typename platform::enable_if<platform::numeric_limits<T>::is_integer>
-> {
+template <int N, FloatRoundStyle Round>
+struct FastNumericArrayConverter<float, int, N, Round> {
   using result_type = Array<float, N>;
-  using source_type = Array<T, N>;
+  using source_type = Array<int, N>;
   static FloatRoundStyle const round_style = Round;
 
   CUTLASS_DEVICE
@@ -2590,223 +3664,6 @@ struct FastNumericArrayConverter<int8_t, float, N, Round> {
 
   CUTLASS_DEVICE
   result_type operator()(source_type const &s) const { return convert(s); }
-};
-
-/// Partial specialization for Array<cutlass::half_t, 4> <= Array<int8_t, 4>
-template <FloatRoundStyle Round>
-struct FastNumericArrayConverter<cutlass::half_t, int8_t, 4, Round> {
-  using result_type = Array<cutlass::half_t, 4>;
-  using source_type = Array<int8_t, 4>;
-  static FloatRoundStyle const round_style = Round;
-
-
-  CUTLASS_DEVICE
-  static result_type convert(source_type const &source) {
-    result_type result;
-
-    #if 0 // Scalar conversion (Please keep this code for reference for vectorized version below)
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 4; ++i) {
-      int16_t tmp = source[i] + 26112 /* 0x6600 */;
-      result[i] = reinterpret_cast<cutlass::half_t const &>(tmp) - 1536.0_hf;
-    }
-    #endif
-
-    // Vectorized s8->f16 conversion using packed instructions
-    uint32_t const* source_ptr = reinterpret_cast<uint32_t const*>(&source);
-    uint32_t* result_ptr = reinterpret_cast<uint32_t*>(&result);
-
-    // Pack s8x2 (s8[1], s8[0]) -> s16x2 (sext.s8[1], sext.s8[0])
-    // (See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-prmt)
-    // The inline ptx below uses `msb=0` and `msb=1` from the above link to sign extend the sign-bit in 0, 1, 2, 3 bytes of s8x4
-    // into result_ptr[0] and result_ptr[1]'s 08-15 and 24-31 bits, respectively.
-    // Note that `__byte_perm(source_ptr[0], source_ptr[0], 0x9180);` won't acheive the same and doesn't sign extend the sign-bit.
-    // Thus, we use inline ptx `prmt.b32` instruction for the desired sign extend from s8x2 to s16x2.
-    asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(result_ptr[0]) : "r"(source_ptr[0]), "n"(0x9180));
-    asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(result_ptr[1]) : "r"(source_ptr[0]), "n"(0xB3A2));
-
-    // In the absense of add.s16x2 instruction, use bit-wise operation to execute signed addition with magic numbers to achieve
-    // the same result as add.s16x2 instruction.
-    // (See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3)
-    // For a logical operation F(a, b, c) the value of kImmLut can be computed by applying the same operation to 
-    // three predefined constant values as follows:
-    //                                        ta = 0xF0;
-    //                                        tb = 0xCC;
-    //                                        tc = 0xAA;
-    //                                   kImmLut = F(ta, tb, tc);
-    // If we want F = ((a & b) ^ c) then set kImmLut = (0xF0 & 0xCC) ^ 0xAA 
-    static constexpr uint32_t kImmLut = (0xF0 & 0xCC) ^ 0xAA; 
-
-    // The bit-wise operation executed below is `result_ptr[0] = (result_ptr[0] & 0x03FF03FF) ^ 0x66006600;`
-    asm volatile("lop3.b32 %0, %1, %2, %3, %4;\n" : 
-                              "=r"(result_ptr[0]) : "r"(result_ptr[0]), "n"(0x03FF03FF), "n"(0x66006600), "n"(kImmLut));
-    // The bit-wise operation executed below is `result_ptr[1] = (result_ptr[1] & 0x03FF03FF) ^ 0x66006600;`
-    asm volatile("lop3.b32 %0, %1, %2, %3, %4;\n" : 
-                              "=r"(result_ptr[1]) : "r"(result_ptr[1]), "n"(0x03FF03FF), "n"(0x66006600), "n"(kImmLut));
-
-    // Packed sub.f16x2 with magic number to obtain final converted result
-    asm volatile("sub.f16x2 %0, %1, %2;\n" : "=r"(result_ptr[0]) : "r"(result_ptr[0]), "r"(0x66006600));
-    asm volatile("sub.f16x2 %0, %1, %2;\n" : "=r"(result_ptr[1]) : "r"(result_ptr[1]), "r"(0x66006600));
-
-    return result;
-  }
-
-  CUTLASS_DEVICE
-  result_type operator()(source_type const &s) const { 
-    return convert(s);
-  }
-};
-
-/// Partial specialization for Array<cutlass::half_t, 4> <= Array<uint8_t, 4>
-template <FloatRoundStyle Round>
-struct FastNumericArrayConverter<cutlass::half_t, uint8_t, 4, Round> {
-  using result_type = Array<cutlass::half_t, 4>;
-  using source_type = Array<uint8_t, 4>;
-  static FloatRoundStyle const round_style = Round;
-
-  CUTLASS_DEVICE
-  static result_type convert(source_type const &source) {
-    result_type result;
-
-    uint32_t const* source_ptr = reinterpret_cast<uint32_t const*>(&source);
-    uint32_t* result_ptr = reinterpret_cast<uint32_t*>(&result);
-
-    result_ptr[0] = __byte_perm(source_ptr[0], 0x0, 0x4140);
-    result_ptr[1] = __byte_perm(source_ptr[0], 0x0, 0x4342);
-
-    asm volatile("add.u32 %0, %1, %2;\n" : "=r"(result_ptr[0]) : "r"(result_ptr[0]), "r"(0x66006600));
-    asm volatile("add.u32 %0, %1, %2;\n" : "=r"(result_ptr[1]) : "r"(result_ptr[1]), "r"(0x66006600));
-
-    asm volatile("sub.f16x2 %0, %1, %2;\n" : "=r"(result_ptr[0]) : "r"(result_ptr[0]), "r"(0x66006600));
-    asm volatile("sub.f16x2 %0, %1, %2;\n" : "=r"(result_ptr[1]) : "r"(result_ptr[1]), "r"(0x66006600));
-
-    return result;
-  }
-
-  CUTLASS_DEVICE
-  result_type operator()(source_type const &s) const { 
-    return convert(s);
-  }
-};
-
-/// Partial specialization for Array<cutlass::bfloat16_t, 4> <= Array<uint8_t, 4>
-template <FloatRoundStyle Round>
-struct FastNumericArrayConverter<cutlass::bfloat16_t, uint8_t, 4, Round> {
-  using result_type = Array<cutlass::bfloat16_t, 4>;
-  using source_type = Array<uint8_t, 4>;
-  static FloatRoundStyle const round_style = Round;
-
-  CUTLASS_DEVICE
-  static result_type convert(source_type const &source) {
-    result_type result;
-    Array<float, 4> tmp;
-
-    uint32_t const* source_ptr = reinterpret_cast<uint32_t const*>(&source);
-    uint32_t* tmp_ptr = reinterpret_cast<uint32_t*>(&tmp);
-
-    // __byte_perm simulates the add.u32 0x4B000000 to every u8 element of u8x4 source and stores 
-    // the result in tmp (without introducing extra cvt.u32.u8 instruction)
-    tmp_ptr[0] = __byte_perm(source_ptr[0], 0x4B000000, 0x7650);
-    tmp_ptr[1] = __byte_perm(source_ptr[0], 0x4B000000, 0x7651);
-    tmp_ptr[2] = __byte_perm(source_ptr[0], 0x4B000000, 0x7652);
-    tmp_ptr[3] = __byte_perm(source_ptr[0], 0x4B000000, 0x7653);
-
-    // Subtract the magic number 0x4B000000 from tmp in floating-point arithmetic to obtain final result
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < 4; ++i) {
-      tmp[i] = reinterpret_cast<float const &>(tmp_ptr[i]) - 8388608.f;
-    }
-
-    // on 3456x4096x8192 runs at 158 TFLOP/s
-    // Convert f32x2 to bf16x2 using `cvt.rn.b16x2.f32` instruction
-    NumericArrayConverter<cutlass::bfloat16_t, float, 4, Round> convert_f32_to_bf16;
-    result = convert_f32_to_bf16(tmp);
-
-    return result;
-  }
-
-  CUTLASS_DEVICE
-  result_type operator()(source_type const &s) const { 
-    return convert(s);
-  }
-};
-
-/// Partial specialization for Array<cutlass::bfloat16_t, 4> <= Array<int8_t, 4>
-template <FloatRoundStyle Round>
-struct FastNumericArrayConverter<cutlass::bfloat16_t, int8_t, 4, Round> {
-  using result_type = Array<cutlass::bfloat16_t, 4>;
-  using source_type = Array<int8_t, 4>;
-
-  using intermediate_float_type = Array<float, 4>;
-  using intermediate_int32_type = Array<int32_t, 4>;
-  static FloatRoundStyle const round_style = Round;
-
-  CUTLASS_DEVICE
-  static result_type convert(source_type const &source) {
-    result_type result;
-    intermediate_float_type tmp;
-
-    uint32_t const* source_ptr = reinterpret_cast<uint32_t const*>(&source);
-    uint32_t* tmp_ptr = reinterpret_cast<uint32_t*>(&tmp);
-
-    // s8x4 (s[3], s[2], s8[1], s8[0]) -> s16x4 (sext.s8[3], sext.s8[2], sext.s8[1], sext.s8[0])
-    // (See https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-prmt)
-    // The inline ptx below uses `msb=0` and `msb=1` from the above link to sext the sign-bit in 0, 1, 2, 3 bytes of s8x4
-    // sext without unpacking each s8 out of s8x4 into a separate register a.ka. without using shifts (SHFL).
-    asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(tmp_ptr[0]) : "r"(source_ptr[0]), "n"(0x8880));
-    asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(tmp_ptr[1]) : "r"(source_ptr[0]), "n"(0x9991));
-    asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(tmp_ptr[2]) : "r"(source_ptr[0]), "n"(0xAAA2));
-    asm volatile("prmt.b32 %0,%1,%1,%2;\n" : "=r"(tmp_ptr[3]) : "r"(source_ptr[0]), "n"(0xBBB3));
-
-    // Convert s32x4 to f32x4 using fast numeric array converter
-    FastNumericArrayConverter<float, int32_t, 4, Round> convert_s32_to_f32_;
-    tmp = convert_s32_to_f32_(reinterpret_cast<intermediate_int32_type const &>(tmp[0]));
-
-    // Convert f32x2 to bf16x2 using `cvt.rn.b16x2.f32` instruction
-    NumericArrayConverter<cutlass::bfloat16_t, float, 4, Round> convert_f32_to_bf16_;
-    result = convert_f32_to_bf16_(tmp);
-
-    return result;
-  }
-
-  CUTLASS_DEVICE
-  result_type operator()(source_type const &s) const { 
-    return convert(s);
-  }
-};
-
-/// Partial specialization for FastNumericArrayConverter to vectorize over 4 elements.
-/// source `S` as 8b integers (S8 or U8) -> destination `T` as 16b floating-point (F16 or BF16)
-template <typename T, typename S, int N, FloatRoundStyle Round>
-struct FastNumericArrayConverter<T, S, N, Round,
-    typename platform::enable_if<(platform::is_same<T, half_t>::value || platform::is_same<T, bfloat16_t>::value) && 
-                            (platform::is_same<S, int8_t>::value || platform::is_same<S, uint8_t>::value)>::type> {
-  static_assert(!(N % 4), "N must be multiple of 4.");
-
-  using result_type = Array<T, N>;
-  using source_type = Array<S, N>;
-  static FloatRoundStyle const round_style = Round;
-
-  CUTLASS_DEVICE
-  static result_type convert(source_type const &source) {
-    FastNumericArrayConverter<T, S, 4, Round> convert_vector_;
-    result_type result;
-
-    Array<T, 4> *result_ptr =
-        reinterpret_cast<Array<T, 4> *>(&result);
-    Array<S, 4> const *source_ptr =
-        reinterpret_cast<Array<S, 4> const *>(&source);
-
-    CUTLASS_PRAGMA_UNROLL
-    for (int i = 0; i < N / 4; ++i) {
-      result_ptr[i] = convert_vector_(source_ptr[i]);
-    }
-    return result;
-  }
-
-  CUTLASS_DEVICE
-  result_type operator()(source_type const &s) const { return convert(s); }
-
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

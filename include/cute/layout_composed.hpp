@@ -477,6 +477,16 @@ template <class A, class O, class B,
           class Tile>
 CUTE_HOST_DEVICE constexpr
 auto
+flat_divide(ComposedLayout<A,O,B> const& a,
+            Tile                  const& b)
+{
+  return composition(a.layout_a(), a.offset(), flat_divide(a.layout_b(), b));
+}
+
+template <class A, class O, class B,
+          class Tile>
+CUTE_HOST_DEVICE constexpr
+auto
 logical_product(ComposedLayout<A,O,B> const& a,
                 Tile                  const& b)
 {

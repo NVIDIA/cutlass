@@ -60,7 +60,7 @@ public:
   //
   using ProblemShape = ProblemShape_;
 
-  static_assert(cute::rank(ProblemShape{}) == 3 or cute::rank(ProblemShape{}) == 4,
+  static_assert(rank(ProblemShape{}) == 3 or rank(ProblemShape{}) == 4,
     "ProblemShape{} should be <M,N,K> or <M,N,K,L>");
 
   // Mainloop derived types
@@ -101,7 +101,7 @@ public:
       sizeof(typename CollectiveMainloop::SharedStorage),
       sizeof(typename CollectiveEpilogue::SharedStorage)));
 
-  static constexpr uint32_t MaxThreadsPerBlock = cute::size(TiledMma{});
+  static constexpr uint32_t MaxThreadsPerBlock = CUTE_STATIC_V(cute::size(TiledMma{}));
   static constexpr uint32_t MinBlocksPerMultiprocessor = 1;
 
   // Device side arguments
@@ -141,8 +141,9 @@ public:
 
   static bool
   can_implement(Arguments const& args) {
-    return args.mode == GemmUniversalMode::kGemm or
-          (args.mode == GemmUniversalMode::kBatched && cute::rank(ProblemShape{}) == 4);
+    bool mode_implementable = args.mode == GemmUniversalMode::kGemm or
+          (args.mode == GemmUniversalMode::kBatched && rank(ProblemShape{}) == 4);
+    return mode_implementable && TileScheduler::can_implement(args.scheduler);
   }
 
   static int

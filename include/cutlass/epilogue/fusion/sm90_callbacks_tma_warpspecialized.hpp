@@ -113,13 +113,14 @@ struct FusionCallbacks<
 template<
   class ElementOutput,
   class ElementCompute,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90LinearCombination =
   Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc)
     Sm90ScalarBroadcast<ElementScalar>, // beta
-    Sm90SrcFetch, // C
+    Sm90SrcFetch<ElementSource>, // C
     Sm90EVT<Sm90Compute<multiplies, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc
       Sm90ScalarBroadcast<ElementScalar>, // alpha
       Sm90AccFetch // acc
@@ -133,6 +134,7 @@ template <
   bool ReuseSmemC,
   class ElementOutput,
   class ElementCompute,
+  class ElementSource,
   class ElementScalar,
   FloatRoundStyle RoundStyle,
   class CtaTileShapeMNK,
@@ -140,13 +142,13 @@ template <
 >
 struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
-    fusion::LinearCombination<ElementOutput, ElementCompute, ElementScalar, RoundStyle>,
+    fusion::LinearCombination<ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>,
     CtaTileShapeMNK,
     EpilogueTile
-> : Sm90LinearCombination<typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementScalar, RoundStyle> {
+> : Sm90LinearCombination<typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementSource, ElementScalar, RoundStyle> {
 
-  using Impl = Sm90LinearCombination<typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementScalar, RoundStyle>;
-  using Operation = fusion::LinearCombination<ElementOutput, ElementCompute, ElementScalar, RoundStyle>;
+  using Impl = Sm90LinearCombination<typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
+  using Operation = fusion::LinearCombination<ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
 
   struct Arguments {
     ElementScalar alpha = ElementScalar(1);
@@ -180,12 +182,13 @@ template<
   template <class> class ActivationFn,
   class ElementOutput,
   class ElementCompute,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90LinCombEltAct =
   Sm90EVT<Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>, // activation(beta * C + (alpha * acc))
-    Sm90LinearCombination<ElementCompute, ElementCompute, ElementScalar, RoundStyle> // beta * C + (alpha * acc)
+    Sm90LinearCombination<ElementCompute, ElementCompute, ElementSource, ElementScalar, RoundStyle> // beta * C + (alpha * acc)
   >;
 
 template <
@@ -196,6 +199,7 @@ template <
   template <class> class ActivationFn,
   class ElementOutput,
   class ElementCompute,
+  class ElementSource,
   class ElementScalar,
   FloatRoundStyle RoundStyle,
   class CtaTileShapeMNK,
@@ -203,13 +207,13 @@ template <
 >
 struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
-    fusion::LinCombEltAct<ActivationFn, ElementOutput, ElementCompute, ElementScalar, RoundStyle>,
+    fusion::LinCombEltAct<ActivationFn, ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>,
     CtaTileShapeMNK,
     EpilogueTile
-> : Sm90LinCombEltAct<ActivationFn, ElementOutput, ElementCompute, ElementScalar, RoundStyle> {
+> : Sm90LinCombEltAct<ActivationFn, ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle> {
 
-  using Impl = Sm90LinCombEltAct<ActivationFn, typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementScalar, RoundStyle>;
-  using Operation = fusion::LinCombEltAct<ActivationFn, ElementOutput, ElementCompute, ElementScalar, RoundStyle>;
+  using Impl = Sm90LinCombEltAct<ActivationFn, typename cutlass::detail::get_unpacked_element_type<ElementOutput>::type, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
+  using Operation = fusion::LinCombEltAct<ActivationFn, ElementOutput, ElementCompute, ElementSource, ElementScalar, RoundStyle>;
 
   struct Arguments {
     ElementScalar alpha = ElementScalar(1);
@@ -250,6 +254,7 @@ template<
   class ElementOutput,
   class ElementCompute,
   class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
@@ -257,7 +262,7 @@ template<
 using Sm90LinCombPerRowBias =
   Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc + bias)
     Sm90ScalarBroadcast<ElementScalar>, // beta
-    Sm90SrcFetch, // C
+    Sm90SrcFetch<ElementSource>, // C
     Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
       Sm90ScalarBroadcast<ElementScalar>, // alpha
       Sm90AccFetch, // acc
@@ -273,6 +278,7 @@ template <
   class ElementOutput,
   class ElementCompute,
   class ElementBias,
+  class ElementSource,
   class ElementScalar,
   int AlignmentBias,
   FloatRoundStyle RoundStyle,
@@ -281,15 +287,15 @@ template <
 >
 struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
-    fusion::LinCombPerRowBias<ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle>,
+    fusion::LinCombPerRowBias<ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle>,
     CtaTileShapeMNK,
     EpilogueTile
 > : Sm90LinCombPerRowBias<
-      CtaTileShapeMNK, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle> {
+      CtaTileShapeMNK, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle> {
   using Impl = Sm90LinCombPerRowBias<
-    CtaTileShapeMNK, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle>;
+    CtaTileShapeMNK, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle>;
   using Operation = fusion::LinCombPerRowBias<
-    ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle>;
+    ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle>;
 
   struct Arguments {
     ElementScalar alpha = ElementScalar(1);
@@ -330,13 +336,14 @@ template<
   class ElementOutput,
   class ElementCompute,
   class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90LinCombPerRowBiasEltAct =
   Sm90EVT<Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>,
-    Sm90LinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle>
+    Sm90LinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle>
   >;
 
 template <
@@ -348,6 +355,7 @@ template <
   class ElementOutput,
   class ElementCompute,
   class ElementBias,
+  class ElementSource,
   class ElementScalar,
   int AlignmentBias,
   FloatRoundStyle RoundStyle,
@@ -357,21 +365,21 @@ template <
 struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
     fusion::LinCombPerRowBiasEltAct<
-      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle
+      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
     >,
     CtaTileShapeMNK,
     EpilogueTile
 > : Sm90LinCombPerRowBiasEltAct<
-      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle
+      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
     > {
 
   using Impl =
     Sm90LinCombPerRowBiasEltAct<
-      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle
+      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
     >;
   using Operation =
     fusion::LinCombPerRowBiasEltAct<
-      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle
+      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
     >;
 
   struct Arguments {
@@ -426,6 +434,7 @@ template<
   class ElementCompute,
   class ElementAux = ElementOutput,
   class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   int AlignmentAux = 128 / sizeof_bits_v<ElementAux>,
   int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
@@ -434,7 +443,7 @@ template<
 using Sm90LinCombPerRowBiasEltActAux =
   Sm90EVT<Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>,
     Sm90EVT<Sm90AuxStore<Stages, EpilogueTile, ElementAux, RoundStyle, StrideAux, SmemLayoutAtom, CopyOpR2S, AlignmentAux>,
-      Sm90LinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle>
+      Sm90LinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle>
     >
   >;
 
@@ -449,6 +458,7 @@ template <
   class ElementCompute,
   class ElementAux,
   class ElementBias,
+  class ElementSource,
   class ElementScalar,
   int AlignmentAux,
   int AlignmentBias,
@@ -462,7 +472,7 @@ struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
     fusion::LinCombPerRowBiasEltActAux<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
-      ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementAux, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >,
     CtaTileShapeMNK,
     EpilogueTile,
@@ -470,18 +480,18 @@ struct FusionCallbacks<
     CopyOpR2S
 > : Sm90LinCombPerRowBiasEltActAux<
       CtaTileShapeMNK, EpilogueTile, StagesD, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpR2S, ActivationFn,
-      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     > {
 
   using Impl =
     Sm90LinCombPerRowBiasEltActAux<
       CtaTileShapeMNK, EpilogueTile, StagesD, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpR2S, ActivationFn,
-      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >;
   using Operation =
     fusion::LinCombPerRowBiasEltActAux<
       GmemLayoutTagAux, ActivationFn,
-      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >;
 
   struct Arguments {
@@ -535,6 +545,7 @@ template<
   class ElementOutput,
   class ElementCompute,
   class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
   int AlignmentScalar = 128 / sizeof_bits_v<ElementScalar>,
@@ -543,7 +554,7 @@ template<
 using Sm90PerRowLinCombPerRowBias =
   Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc + bias)
     Sm90ColBroadcast<0, CtaTileShapeMNK, ElementScalar, Stride<_1,_0,_0>, AlignmentScalar>, // beta
-    Sm90SrcFetch, // C
+    Sm90SrcFetch<ElementSource>, // C
     Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
       Sm90ColBroadcast<0, CtaTileShapeMNK, ElementScalar, Stride<_1,_0,_0>, AlignmentScalar>, // alpha
       Sm90AccFetch, // acc
@@ -558,6 +569,7 @@ template<
   class ElementOutput,
   class ElementCompute,
   class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
   int AlignmentScalar = 128 / sizeof_bits_v<ElementScalar>,
@@ -566,7 +578,7 @@ template<
 using Sm90PerRowLinCombPerRowBiasEltAct =
   Sm90EVT<Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>,
     Sm90PerRowLinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute,
-                                ElementBias, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle>
+                                ElementBias, ElementSource, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle>
   >;
 
 template <
@@ -578,6 +590,7 @@ template <
   class ElementOutput,
   class ElementCompute,
   class ElementBias,
+  class ElementSource,
   class ElementScalar,
   int AlignmentBias,
   int AlignmentScalar,
@@ -588,21 +601,21 @@ template <
 struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
     fusion::PerRowLinCombPerRowBiasEltAct<
-      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
+      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
     >,
     CtaTileShapeMNK,
     EpilogueTile
 > : Sm90PerRowLinCombPerRowBiasEltAct<
-      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
+      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
     > {
 
   using Impl =
     Sm90PerRowLinCombPerRowBiasEltAct<
-      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
+      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
     >;
   using Operation =
     fusion::PerRowLinCombPerRowBiasEltAct<
-      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
+      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, AlignmentScalar, RoundStyle
     >;
 
   struct Arguments {
@@ -664,6 +677,7 @@ template<
   class ElementOutput,
   class ElementCompute,
   class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
@@ -671,7 +685,7 @@ template<
 using Sm90ScaledLinCombPerRowBias =
   Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementOutput, ElementCompute, RoundStyle>, // beta * C + (alpha * acc + bias)
     Sm90ScalarBroadcast<ElementScalar, Stride<_0,_0,_0>, 2>, // scale_c * beta
-    Sm90SrcFetch, // C
+    Sm90SrcFetch<ElementSource>, // C
     Sm90EVT<Sm90Compute<homogeneous_multiply_add, ElementCompute, ElementCompute, RoundStyle>, // alpha * acc + bias
       Sm90ScalarBroadcast<ElementScalar, Stride<_0,_0,_0>, 3>, // scale_a * scale_b * alpha
       Sm90AccFetch, // acc
@@ -690,6 +704,7 @@ template<
   class ElementOutput,
   class ElementCompute,
   class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
@@ -698,7 +713,7 @@ using Sm90ScaledLinCombPerRowBiasEltAct =
   Sm90EVT<Sm90Compute<detail::ScaleOutOp<ElementOutput>::template Op, ElementOutput, ElementCompute, RoundStyle>, // activation(Z) * scale_d
     Sm90EVT<Sm90Compute<ActivationFn, ElementCompute, ElementCompute, RoundStyle>, // activation(Z)
       // Z = scale_a * scale_b * alpha * acc + beta * scale_c * C + per-row bias
-      Sm90ScaledLinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle>
+      Sm90ScaledLinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle>
     >,
     Sm90ScalarBroadcast<ElementScalar> // scale_d
   >;
@@ -712,6 +727,7 @@ template <
   class ElementOutput,
   class ElementCompute,
   class ElementBias,
+  class ElementSource,
   class ElementScalar,
   int AlignmentBias,
   FloatRoundStyle RoundStyle,
@@ -721,21 +737,21 @@ template <
 struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
     fusion::ScaledLinCombPerRowBiasEltAct<
-      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle
+      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
     >,
     CtaTileShapeMNK,
     EpilogueTile
 > : Sm90ScaledLinCombPerRowBiasEltAct<
-      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle
+      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
     > {
 
   using Impl =
     Sm90ScaledLinCombPerRowBiasEltAct<
-      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle
+      CtaTileShapeMNK, ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
     >;
   using Operation =
     fusion::ScaledLinCombPerRowBiasEltAct<
-      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle
+      ActivationFn, ElementOutput, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle
     >;
 
   struct Arguments {
@@ -819,6 +835,7 @@ template<
   class ElementAux = ElementOutput,
   class ElementAmax = ElementCompute,
   class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   int AlignmentAux = 128 / sizeof_bits_v<ElementAux>,
   int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
@@ -827,7 +844,7 @@ template<
 using Sm90ScaledLinCombPerRowBiasEltActAmaxAux =
   Sm90SplitTreeVisitor<
     // Z = scale_a * scale_b * alpha * acc + scale_c * beta * C + per-row bias
-    Sm90ScaledLinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementScalar, AlignmentBias, RoundStyle>,
+    Sm90ScaledLinCombPerRowBias<CtaTileShapeMNK, ElementCompute, ElementCompute, ElementBias, ElementSource, ElementScalar, AlignmentBias, RoundStyle>,
     // D = activation(Z) * scale_d, amax_d = max(abs(elements in D))
     Sm90EVT<Sm90Compute<detail::ScaleOutOp<ElementOutput>::template Op, ElementOutput, ElementCompute, RoundStyle>, // activation(Z) * scale_d
       Sm90EVT<Sm90ScalarReduction<detail::amax, atomic_maximum, ElementAmax, ElementCompute, RoundStyle>, // amax_d
@@ -860,6 +877,7 @@ template <
   class ElementAux,
   class ElementAmax,
   class ElementBias,
+  class ElementSource,
   class ElementScalar,
   int AlignmentAux,
   int AlignmentBias,
@@ -873,7 +891,7 @@ struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
     fusion::ScaledLinCombPerRowBiasEltActAmaxAux<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
-      ElementAux, ElementAmax, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementAux, ElementAmax, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >,
     CtaTileShapeMNK,
     EpilogueTile,
@@ -882,19 +900,19 @@ struct FusionCallbacks<
 > : Sm90ScaledLinCombPerRowBiasEltActAmaxAux<
       CtaTileShapeMNK, EpilogueTile, StagesD, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>,
       SmemLayoutAtom, CopyOpR2S, ActivationFn,
-      ElementOutput, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementOutput, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     > {
 
   using Impl =
     Sm90ScaledLinCombPerRowBiasEltActAmaxAux<
       CtaTileShapeMNK, EpilogueTile, StagesD, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>,
       SmemLayoutAtom, CopyOpR2S, ActivationFn,
-      ElementOutput, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementOutput, ElementCompute, ElementAux, ElementAmax, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >;
   using Operation =
     fusion::ScaledLinCombPerRowBiasEltActAmaxAux<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
-      ElementAux, ElementAmax, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementAux, ElementAmax, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >;
 
   struct Arguments {
@@ -1014,13 +1032,14 @@ template<
   class ElementOutput,
   class ElementCompute,
   class ElementAux = ElementOutput,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   int AlignmentAux = 128 / sizeof_bits_v<ElementAux>,
   FloatRoundStyle RoundStyle = FloatRoundStyle::round_to_nearest
 >
 using Sm90LinCombDeEltAct =
   Sm90EVT<Sm90Compute<ActivationFn, ElementOutput, ElementCompute, RoundStyle>, // activation(beta * C + (alpha * acc), aux)
-    Sm90LinearCombination<ElementCompute, ElementCompute, ElementScalar, RoundStyle>, // beta * C + (alpha * acc)
+    Sm90LinearCombination<ElementCompute, ElementCompute, ElementSource, ElementScalar, RoundStyle>, // beta * C + (alpha * acc)
     Sm90AuxLoad<Stages, EpilogueTile, ElementAux, StrideAux, SmemLayoutAtom, CopyOpS2R, AlignmentAux> // aux
   >;
 
@@ -1034,6 +1053,7 @@ template <
   class ElementOutput,
   class ElementCompute,
   class ElementAux,
+  class ElementSource,
   class ElementScalar,
   int AlignmentAux,
   FloatRoundStyle RoundStyle,
@@ -1046,7 +1066,7 @@ struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
     fusion::LinCombDeEltAct<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
-      ElementAux, ElementScalar, AlignmentAux, RoundStyle
+      ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
     >,
     CtaTileShapeMNK,
     EpilogueTile,
@@ -1054,18 +1074,18 @@ struct FusionCallbacks<
     CopyOpS2R
 > : Sm90LinCombDeEltAct<
       CtaTileShapeMNK, EpilogueTile, StagesC, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpS2R, ActivationFn,
-      ElementOutput, ElementCompute, ElementAux, ElementScalar, AlignmentAux, RoundStyle
+      ElementOutput, ElementCompute, ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
     > {
 
   using Impl =
     Sm90LinCombDeEltAct<
       CtaTileShapeMNK, EpilogueTile, StagesC, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpS2R, ActivationFn,
-      ElementOutput, ElementCompute, ElementAux, ElementScalar, AlignmentAux, RoundStyle
+      ElementOutput, ElementCompute, ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
     >;
   using Operation =
     fusion::LinCombDeEltAct<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
-      ElementAux, ElementScalar, AlignmentAux, RoundStyle
+      ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle
     >;
 
   struct Arguments {
@@ -1118,6 +1138,7 @@ template<
   class ElementCompute,
   class ElementAux = ElementOutput,
   class ElementBias = ElementOutput,
+  class ElementSource = ElementOutput,
   class ElementScalar = ElementCompute,
   int AlignmentAux = 128 / sizeof_bits_v<ElementAux>,
   int AlignmentBias = 128 / sizeof_bits_v<ElementBias>,
@@ -1128,7 +1149,7 @@ using Sm90LinCombDeEltActDePerRowBias =
     Sm90EVT<Sm90ColReduction<plus, plus, 0, CtaTileShapeMNK,
                              ElementBias, ElementCompute, RoundStyle, Stride<_1,_0,int>, AlignmentBias>,
       Sm90LinCombDeEltAct<CtaTileShapeMNK, EpilogueTile, Stages, StrideAux, SmemLayoutAtom, CopyOpS2R, ActivationFn,
-                          ElementCompute, ElementCompute, ElementAux, ElementScalar, AlignmentAux, RoundStyle>
+                          ElementCompute, ElementCompute, ElementAux, ElementSource, ElementScalar, AlignmentAux, RoundStyle>
     >
   >;
 
@@ -1143,6 +1164,7 @@ template <
   class ElementCompute,
   class ElementAux,
   class ElementBias,
+  class ElementSource,
   class ElementScalar,
   int AlignmentAux,
   int AlignmentBias,
@@ -1156,7 +1178,7 @@ struct FusionCallbacks<
     epilogue::Sm90TmaWarpSpecialized<StagesC, StagesD, FragmentSize, ReuseSmemC>,
     fusion::LinCombDeEltActDePerRowBias<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
-      ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementAux, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >,
     CtaTileShapeMNK,
     EpilogueTile,
@@ -1164,18 +1186,18 @@ struct FusionCallbacks<
     CopyOpS2R
 > : Sm90LinCombDeEltActDePerRowBias<
       CtaTileShapeMNK, EpilogueTile, StagesC, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpS2R, ActivationFn,
-      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     > {
 
   using Impl =
     Sm90LinCombDeEltActDePerRowBias<
       CtaTileShapeMNK, EpilogueTile, StagesC, cutlass::gemm::TagToStrideC_t<GmemLayoutTagAux>, SmemLayoutAtom, CopyOpS2R, ActivationFn,
-      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementOutput, ElementCompute, ElementAux, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >;
   using Operation =
     fusion::LinCombDeEltActDePerRowBias<
       GmemLayoutTagAux, ActivationFn, ElementOutput, ElementCompute,
-      ElementAux, ElementBias, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
+      ElementAux, ElementBias, ElementSource, ElementScalar, AlignmentAux, AlignmentBias, RoundStyle
     >;
 
   struct Arguments {

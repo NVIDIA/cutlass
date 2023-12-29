@@ -109,6 +109,8 @@
 namespace example
 {
 
+#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
+
 struct Options {
 
   bool help;
@@ -724,6 +726,7 @@ private:
     return true;
   }
 };
+#endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
 } // namespace example
 
@@ -749,7 +752,7 @@ int main(int argc, char const **argv)
   if (notSupported) {
     return EXIT_SUCCESS; // Do not fail CI checks on unsupported systems
   }
-
+#if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
   example::Options options;
   options.parse(argc, argv);
 
@@ -970,6 +973,6 @@ int main(int argc, char const **argv)
     result &= runner.run(options);
   }
 #endif
-
   return result ? EXIT_SUCCESS : EXIT_FAILURE;
+#endif // defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 }

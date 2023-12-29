@@ -42,6 +42,7 @@
 
 #include <cute/container/alignment.hpp>
 #include <cute/container/bit_field.hpp>
+#include <cute/container/array.hpp>
 #include <cute/numeric/int.hpp>   // to_Format<[u]intX>
 #include <cute/numeric/half.hpp>  // to_Format<half_t>
 
@@ -197,6 +198,141 @@ prefetch_tma_descriptor(TmaDescriptor const* desc_ptr)
     : "memory");
 #else
   CUTE_RUNTIME_ASSERT("Trying to use TMA Descriptor Prefetch without CUTE_ARCH_TMA_SM90_ENABLED.");
+#endif
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Perform a TensorMap modification (by each field)
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Replace tensor pointer directly in GMEM
+CUTE_HOST_DEVICE
+void
+tma_descriptor_replace_addr_in_global_mem(TmaDescriptor const* desc_ptr, 
+                                          void const* const new_tensor_ptr)
+{
+#if defined(CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED)
+  uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
+  uint64_t const new_desc_addr = reinterpret_cast<uint64_t>(new_tensor_ptr);
+  asm volatile (
+    "tensormap.replace.tile.global_address.global.b1024.b64 [%0], %1;"
+    :: "l"(gmem_int_desc), "l"(new_desc_addr));
+#else
+  CUTE_RUNTIME_ASSERT("Using TMA Descriptor modification without CUTE_ARCH_TMA_SM90_ENABLED and CUDA 12.3");
+#endif
+}
+
+// Replace tensor pointer by bringing the tensormap from GMEM into the shared memory
+CUTE_HOST_DEVICE
+void
+tma_descriptor_replace_addr_in_shared_mem(TmaDescriptor& smem_desc, 
+                                          void const* const new_tensor_ptr)
+{
+#if defined(CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED)
+  uint32_t smem_int_desc = cast_smem_ptr_to_uint(&smem_desc);
+  uint64_t const new_desc_addr = reinterpret_cast<uint64_t>(new_tensor_ptr);
+  uint64_t const smem_int64_desc = 0;
+  asm volatile (
+    "cvt.u64.u32 %0, %1;"
+    :: "l"(smem_int64_desc), "r"(smem_int_desc));
+  asm volatile (
+    "tensormap.replace.tile.global_address.shared::cta.b1024.b64 [%0], %1;"
+    :: "l"(smem_int64_desc), "l"(new_desc_addr));
+#else
+  CUTE_RUNTIME_ASSERT("Using TMA Descriptor modification without CUTE_ARCH_TMA_SM90_ENABLED and CUDA 12.3");
+#endif
+}
+
+// Replace tensor dims and strides for GEMMs by bringing the tensormap from GMEM into the shared memory
+CUTE_HOST_DEVICE
+void
+tma_descriptor_replace_dims_strides_in_shared_mem(TmaDescriptor                 & smem_desc,
+                                                  cute::array<uint32_t, 3> const& prob_shape,
+                                                  cute::array<uint64_t, 3> const& prob_stride)
+{
+#if defined(CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED)
+  uint32_t smem_int_desc = cast_smem_ptr_to_uint(&smem_desc);
+  uint64_t const smem_int64_desc = 0;
+  asm volatile (
+    "cvt.u64.u32 %0, %1;"
+    :: "l"(smem_int64_desc), "r"(smem_int_desc));
+    asm volatile (
+      "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [%0], 0, %1;"
+      :: "l"(smem_int64_desc), "r"(prob_shape[0]));
+    asm volatile (
+      "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [%0], 1, %1;"
+      :: "l"(smem_int64_desc), "r"(prob_shape[1]));
+    asm volatile (
+      "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [%0], 2, %1;"
+      :: "l"(smem_int64_desc), "r"(prob_shape[2]));
+    // Strides must be a multiple of 16. Also, stride for the intermost dimension is implicitly 1 
+    asm volatile (
+      "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [%0], 0, %1;"
+      :: "l"(smem_int64_desc), "l"(prob_stride[1] >> 4));
+    asm volatile (
+      "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [%0], 1, %1;"
+      :: "l"(smem_int64_desc), "l"(prob_stride[2] >> 4));
+#else
+  CUTE_RUNTIME_ASSERT("Using TMA Descriptor modification without CUTE_ARCH_TMA_SM90_ENABLED and CUDA 12.3");
+#endif
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Perform a fused copy and fence operation (needed when modifying tensormap in shared memory)
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+CUTE_HOST_DEVICE
+void
+tma_descriptor_cp_fence_release(TmaDescriptor const* gmem_desc_ptr, TmaDescriptor& smem_desc)
+{
+#if defined(CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED)
+  uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(gmem_desc_ptr);
+  uint32_t smem_int_desc = cast_smem_ptr_to_uint(&smem_desc);
+  asm volatile (
+    "tensormap.cp_fenceproxy.global.shared::cta.tensormap::generic.release.gpu.sync.aligned [%0], [%1], 128;"
+    :: "l"(gmem_int_desc), "r"(smem_int_desc));
+#else
+  CUTE_RUNTIME_ASSERT("Using TMA Descriptor modification without CUTE_ARCH_TMA_SM90_ENABLED and CUDA 12.3");
+#endif
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Perform a release fence operation (needed when modifying tensormap directly in GMEM)
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+CUTE_HOST_DEVICE
+void
+tma_descriptor_fence_release()
+{
+#if defined(CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED)
+  asm volatile ("fence.proxy.tensormap::generic.release.gpu;");
+#else
+  CUTE_RUNTIME_ASSERT("Using TMA Descriptor modification without CUTE_ARCH_TMA_SM90_ENABLED and CUDA 12.3");
+#endif
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/// Perform a acquire fence operation
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+CUTE_HOST_DEVICE
+void
+tma_descriptor_fence_acquire(TmaDescriptor const* desc_ptr)
+{
+#if defined(CUTE_ARCH_DEVICE_MODIFIABLE_TMA_SM90_ENABLED)
+  uint64_t gmem_int_desc = reinterpret_cast<uint64_t>(desc_ptr);
+  asm volatile (
+    "fence.proxy.tensormap::generic.acquire.gpu [%0], 128;"
+    :
+    : "l"(gmem_int_desc)
+    : "memory");
+  asm volatile (
+    "cvta.global.u64 %0, %0;"
+    :
+    : "l"(gmem_int_desc), "l"(gmem_int_desc)
+    : "memory");
+#else
+  CUTE_RUNTIME_ASSERT("Using TMA Descriptor modification without CUTE_ARCH_TMA_SM90_ENABLED and CUDA 12.3");
 #endif
 }
 

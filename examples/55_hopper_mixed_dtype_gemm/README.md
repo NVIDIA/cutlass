@@ -9,17 +9,14 @@ This first version only supports mixed type GEMMs using TMA.
 
 ## Performance
 
-While the example offers a harness for straightforward benchmarking, this initial implementation isn't optimized for performance in the majority of scenarios. We expect this implementation to be performant for `{fp16, bf16} x int8` for problems that are compute bound.
+While the example offers a harness for straightforward benchmarking, this initial implementation isn't optimized for performance in the majority of scenarios. We expect this implementation to be performant for `{fp16, bf16} x {int8, int4}` and `{fp8} x {int4}` for problems that are compute bound. Additionally, we expect good performance for `fp16, bf16` or `fp32` scales and zero-points. For best performance, it is ideal to have the scales and zero-points be the same type.
 
 We are currently optimizing the following cases:
 1. Memory bound cases for all types
-1. Compute bound cases for `{16-bit, 8-bit} x {4-bit, 2-bit}`
-
-As a result, we do not suggest using this example as a benchmarking reference until all of our optimizations are complete (this will be clearly stated in this README in a future release).
 
 ## Limitations
 
-* The type that needs to be converted must go through the register file. This means that the collective will swap and transpose whenever the type with fewer bits is the B operand. The user must be aware of when these swaps happen to control the layout of the epilogue as shown in the example. Note that TMA epilogues currently do not support swap + transpose, so non-tma epilogues must be used in this case. We plan to relax this limitation in a future release.
+* The type that needs to be converted must go through the register file. This means that the collective will swap and transpose whenever the type with fewer bits is the B operand. The user must be aware of when these swaps happen. Note that TMA epilogues currently do not support *implicit* swap + transpose, so non-tma epilogues must be used in this case. We plan to relax this limitation in a future release.
 
 * The layout of the narrow type must be K-major. This means the following:
   * Narrow type is the A operand: Must be Row-Major
@@ -29,8 +26,12 @@ As a result, we do not suggest using this example as a benchmarking reference un
 
 * TMA requires an alignment of 128 bits. As a result, for a type with `B` bits, `B x TILE_K` must be a multiple of 128 bits.
 
+* The type of the scale and zero-point type must be two bytes or more.
+
+* The group size must be equal to gemm-k size (indicating a broadcast), or it must be a multiple of the threadblock-k size.
+
 ## Upcoming features
 
-* Support for applying scales after conversion, but before issuing tensor core math (input scale fusion) is planned for v3.4.
+* Optimizations for memory bound cases.
 
-* Many optimizations for SOL performance.
+* Optimizations for scale and zero-point loading when the group size is not equal to the threadblock-k size.

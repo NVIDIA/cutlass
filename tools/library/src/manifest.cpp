@@ -77,11 +77,6 @@ Status Manifest::release() {
   return Status::kSuccess;
 }
 
-/// Appends an operation and takes ownership
-void Manifest::append(Operation *operation_ptr) {
-  operations_.emplace_back(operation_ptr);
-}
-
 /// Returns an iterator to the first operation
 OperationVector const & Manifest::operations() const {
   return operations_;

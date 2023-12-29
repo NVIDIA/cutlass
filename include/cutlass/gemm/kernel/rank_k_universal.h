@@ -125,6 +125,8 @@ public:
     typename LayoutC::Stride::Index ldc;
     typename LayoutC::Stride::Index ldd;
 
+    bool allow_early_exit;
+
     //
     // Methods
     //
@@ -132,7 +134,8 @@ public:
     Arguments(): 
       mode(GemmUniversalMode::kGemm), 
       batch_count(1), 
-      ptr_A(nullptr), ptr_C(nullptr), ptr_D(nullptr) { }
+      ptr_A(nullptr), ptr_C(nullptr), ptr_D(nullptr),
+      allow_early_exit(false) { }
 
     /// constructs an arguments structure
     Arguments(
@@ -148,7 +151,8 @@ public:
       int64_t batch_stride_D,
       typename LayoutA::Stride::Index lda,
       typename LayoutC::Stride::Index ldc,
-      typename LayoutC::Stride::Index ldd
+      typename LayoutC::Stride::Index ldd,
+      bool allow_early_exit = false
     ):
       mode(mode), 
       problem_size(problem_size), 
@@ -156,7 +160,8 @@ public:
       epilogue(epilogue), 
       ptr_A(ptr_A), ptr_C(ptr_C), ptr_D(ptr_D), 
       batch_stride_A(batch_stride_A), batch_stride_C(batch_stride_C), batch_stride_D(batch_stride_D), 
-      lda(lda), ldb(ldb), ldc(ldc), ldd(ldd) {
+      lda(lda), ldb(ldb), ldc(ldc), ldd(ldd),
+      allow_early_exit(allow_early_exit) {
 
       }
 
@@ -196,6 +201,8 @@ public:
 
     int *semaphore;
 
+    bool allow_early_exit;
+
     //
     // Methods
     //
@@ -218,7 +225,8 @@ public:
       batch_stride_B(0),
       batch_stride_C(0),
       batch_stride_D(0),
-      semaphore(nullptr) { }
+      semaphore(nullptr),
+      allow_early_exit(false) { }
 
     CUTLASS_HOST_DEVICE
     Params(
@@ -246,7 +254,8 @@ public:
       batch_stride_B(args.batch_stride_A),
       batch_stride_C(args.batch_stride_C),
       batch_stride_D(args.batch_stride_D),
-      semaphore(static_cast<int *>(workspace)) {
+      semaphore(static_cast<int *>(workspace)),
+      allow_early_exit(args.allow_early_exit) {
     }
 
     CUTLASS_HOST_DEVICE
@@ -312,6 +321,12 @@ public:
 
     cutlass::gemm::GemmCoord threadblock_tile_offset =
         threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
+
+    // Early exit following LAPACK's definition
+    if (params.allow_early_exit &&
+        (params.output_op.alpha == ElementC(0)) && (params.output_op.beta == ElementC(1))) {
+      return;
+    }
 
     // Early exit if CTA is out of range
     if (params.grid_tiled_shape.m() <= threadblock_tile_offset.m() ||

@@ -103,14 +103,14 @@ public:
   using SmemLayoutB = SmemLayoutB_;
   using SmemLayoutAtomB = SmemLayoutAtomB_;
   using ElementB = ElementB_;
-  
-  constexpr CUTLASS_HOST_DEVICE 
+
+  constexpr CUTLASS_HOST_DEVICE
   NoTranspositionOperandB(
-      int, 
-      int, 
-      TiledMma, 
-      SmemLayoutB, 
-      SmemLayoutAtomB, 
+      int,
+      int,
+      TiledMma,
+      SmemLayoutB,
+      SmemLayoutAtomB,
       ElementB) { }
 
   template <
@@ -148,12 +148,12 @@ public:
   
   constexpr CUTLASS_HOST_DEVICE 
   UniversalTranspositionOperandB(
-      int warp_idx_, 
-      int warp_group_thread_idx_, 
-      TiledMma, 
-      SmemLayoutB, 
-      SmemLayoutAtomB, 
-      ElementB) 
+      int warp_idx_,
+      int warp_group_thread_idx_,
+      TiledMma,
+      SmemLayoutB,
+      SmemLayoutAtomB,
+      ElementB)
       : warp_idx(warp_idx_)
       , warp_group_thread_idx(warp_group_thread_idx_) { }
 
@@ -168,9 +168,9 @@ public:
         return;
       }
 
-      constexpr int NumMathWarpGroup = size(TiledMma{}) / NumThreadsPerWarpGroup;
-      static_assert(NumMathWarpGroup == 1 || 
-                    (!detail::use_universal_transposition<SmemLayoutAtomB, ElementB>() && NumMathWarpGroup == 2), 
+      constexpr int NumMathWarpGroup = CUTE_STATIC_V(size(TiledMma{})) / NumThreadsPerWarpGroup;
+      static_assert(NumMathWarpGroup == 1 ||
+                    (!detail::use_universal_transposition<SmemLayoutAtomB, ElementB>() && NumMathWarpGroup == 2),
                     "Wrong math warp group number for TransposeB");
       constexpr int WarpgroupTileSize = size<1>(SmemLayoutB{});  // A warp group tile would process entire Smem K.
 
@@ -234,14 +234,14 @@ public:
     if (step == 0) {
       // SMEM fence to make sure B is transposed before math
       cutlass::arch::fence_view_async_shared();
-      cutlass::arch::NamedBarrier::sync(size(TiledMma{}), 1);
+      cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::TransposeBarrier);
     }
   }
 
   CUTLASS_DEVICE void synchronize() {
     // SMEM fence to make sure B is transposed before math
     cutlass::arch::fence_view_async_shared();
-    cutlass::arch::NamedBarrier::sync(size(TiledMma{}), 1);
+    cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::TransposeBarrier);
   }
 
   template <
@@ -251,7 +251,7 @@ public:
     TensorSmemB const& sB,
     TensorTransposedSmemB const& gmma_sB,
     int read_stage) {
-    
+
     this->operator()(sB, gmma_sB, read_stage, 0);
     synchronize();
 
@@ -267,7 +267,7 @@ template<
   class SmemLayoutB_,
   class SmemLayoutAtomB_,
   class ElementB_>
-class AsyncTranspositionOperandB {                   
+class AsyncTranspositionOperandB {
 public:
 
   using TiledMma = TiledMma_;
@@ -276,9 +276,9 @@ public:
   using ElementB = ElementB_;
   
   static constexpr int Steps             = 2;
-  static constexpr int NumMathWarpGroup  = size(TiledMma{}) / NumThreadsPerWarpGroup;
+  static constexpr int NumMathWarpGroup  = CUTE_STATIC_V(size(TiledMma{})) / NumThreadsPerWarpGroup;
   static constexpr int StepsPerWarpGroup = Steps / NumMathWarpGroup;
-  static_assert(NumMathWarpGroup <= 2, 
+  static_assert(NumMathWarpGroup <= 2,
                     "Wrong math warp group number for TransposeB");
   static constexpr int WarpgroupTileSize = size<1>(SmemLayoutB{});  // A warp group tile would process entire Smem K.
   static constexpr int NumWarpsPerWarpGroup = NumThreadsPerWarpGroup / NumThreadsPerWarp;
@@ -303,23 +303,23 @@ public:
     "Copy size must evenly divide SMEM tile.");
   static constexpr int WarpgroupTileNum = size<0>(SmemLayoutB{}) / WarpgroupTileSize;
 
-  static_assert(size<2>(typename TiledMma::AtomShape_MNK{}) <= WarpThreadShapeK, 
+  static_assert(size<2>(typename TiledMma::AtomShape_MNK{}) <= WarpThreadShapeK,
       "Need to be able to transpose first k-block in the first step");
 
-  constexpr CUTLASS_HOST_DEVICE 
+  constexpr CUTLASS_HOST_DEVICE
   AsyncTranspositionOperandB(
-      int warp_idx_, 
-      int warp_group_thread_idx_, 
-      TiledMma, 
-      SmemLayoutB, 
-      SmemLayoutAtomB, 
-      ElementB) 
+      int warp_idx_,
+      int warp_group_thread_idx_,
+      TiledMma,
+      SmemLayoutB,
+      SmemLayoutAtomB,
+      ElementB)
       : warp_idx(warp_idx_)
       , warp_group_thread_idx(warp_group_thread_idx_)
       , warp_idx_in_warp_group(warp_idx_ % NumWarpsPerWarpGroup)
-      , current_warp_tile_n_coord_LUT((WarpTileNCoordLUT >> ((warp_idx_ 
+      , current_warp_tile_n_coord_LUT((WarpTileNCoordLUT >> ((warp_idx_
             % NumWarpsPerWarpGroup) * NumBitsPerWarp)) & MaskPerWarp)
-      , current_warp_tile_k_coord_LUT((WarpTileKCoordLUT >> ((warp_idx_ 
+      , current_warp_tile_k_coord_LUT((WarpTileKCoordLUT >> ((warp_idx_
             % NumWarpsPerWarpGroup) * NumBitsPerWarp)) & MaskPerWarp) { }
 
   template <
@@ -328,12 +328,12 @@ public:
   CUTLASS_DEVICE void operator()(
       TensorSmemB const& sB,
       TensorTransposedSmemB const& gmma_sB,
-      int read_stage, int current_step) 
+      int read_stage, int current_step)
   {
       if (current_step >= StepsPerWarpGroup) {
         return;
       }
-      
+
       static constexpr auto WarpThreadLayout           = make_layout(make_shape(Int<WarpThreadShapeN>{}, Int<WarpThreadShapeK>{}));
       //////////////////////////////////////////////////////////////////////////////////////////////////////////////
       /// A warp group uses 2 steps to transpose the whole WarpgroupTileSize x WarpgroupTileSize.
@@ -384,11 +384,11 @@ public:
       };
 
       [[maybe_unused]] int step = current_step * NumMathWarpGroup;
-      if constexpr (NumMathWarpGroup == 2) { 
-        // For 2 math warpgroup, warp idx4~7 is 1st warp group and 8~9 is 2nd, so decide if 2nd warpgroup need warp idx divide 8. 
+      if constexpr (NumMathWarpGroup == 2) {
+        // For 2 math warpgroup, warp idx4~7 is 1st warp group and 8~9 is 2nd, so decide if 2nd warpgroup need warp idx divide 8.
         step += warp_idx / (NumWarpsPerWarpGroup * 2);
       }
-      
+
       int tmp_warp_tile_n_coord_LUT = current_warp_tile_n_coord_LUT >> (NumBitsPerStep * current_step);
       int tmp_warp_tile_k_coord_LUT = current_warp_tile_k_coord_LUT >> (NumBitsPerStep * current_step);
 
@@ -396,7 +396,7 @@ public:
         tmp_warp_tile_n_coord_LUT >>= NumBitsPerStep * (warp_idx / (NumWarpsPerWarpGroup * 2));
         tmp_warp_tile_k_coord_LUT >>= NumBitsPerStep * (warp_idx / (NumWarpsPerWarpGroup * 2));
       }
-      
+
       // decoding the warp tile coord.
       int warp_tile0_n, warp_tile0_k;
       if constexpr (StepsPerWarpGroup <= NumStepsEncoded) {
@@ -412,7 +412,7 @@ public:
 
       CUTLASS_PRAGMA_UNROLL
       for (int warp_group_tile = 0; warp_group_tile < WarpgroupTileNum; ++warp_group_tile) {
-        
+
         static_assert(TilesPerWarp == 2);
 
         // [warp_tile][n/k]
@@ -427,7 +427,7 @@ public:
           Tensor tCsB = sB_thr_copy.partition_S(
             flatten(s_tile(_, make_coord(warp_tile_coord[warp_tile][0], warp_tile_coord[warp_tile][1])))
           ); // (CPY, CPY_N, CPY_K)
-          
+
           copy(sB_tiled_copy, tCsB, transpose_fragments[warp_tile]);
         }
 
@@ -442,20 +442,20 @@ public:
           copy(sB_tiled_copy, transpose_fragments[warp_tile], tCsB_transposed);
         }
 
-      } // loop warp_group_tile 
+      } // loop warp_group_tile
   }
 
   CUTLASS_DEVICE void synchronize(int step) {
     if (step < StepsPerWarpGroup) {
       // SMEM fence to make sure B is transposed before math
       cutlass::arch::fence_view_async_shared();
-      cutlass::arch::NamedBarrier::sync(size(TiledMma{}), 1);
+      cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::TransposeBarrier);
     }
   }
 
   CUTLASS_DEVICE void synchronize() {
     cutlass::arch::fence_view_async_shared();
-    cutlass::arch::NamedBarrier::sync(size(TiledMma{}), 1);
+    cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::TransposeBarrier);
   }
 
   template <
@@ -465,7 +465,7 @@ public:
     TensorSmemB const& sB,
     TensorTransposedSmemB const& gmma_sB,
     int read_stage) {
-    
+
     CUTLASS_PRAGMA_UNROLL
     for(int i = 0; i < StepsPerWarpGroup; ++i) {
       this->operator()(sB, gmma_sB, read_stage, i);
@@ -486,7 +486,7 @@ template<
   class SmemLayoutB_,
   class SmemLayoutAtomB_,
   class ElementB_>
-class AsyncTranspositionOperandB_1BElementB {                   
+class AsyncTranspositionOperandB_1BElementB {
 public:
 
   static_assert(sizeof(ElementB_) == 1);
@@ -495,11 +495,11 @@ public:
   using SmemLayoutB = SmemLayoutB_;
   using SmemLayoutAtomB = SmemLayoutAtomB_;
   using ElementB = ElementB_;
-  
+
   static constexpr int Steps             = 8;
-  static constexpr int NumMathWarpGroup  = size(TiledMma{}) / NumThreadsPerWarpGroup;
+  static constexpr int NumMathWarpGroup  = CUTE_STATIC_V(size(TiledMma{})) / NumThreadsPerWarpGroup;
   static constexpr int StepsPerWarpGroup = Steps / NumMathWarpGroup;
-  static_assert(NumMathWarpGroup <= 2, 
+  static_assert(NumMathWarpGroup <= 2,
                     "Wrong math warp group number for TransposeB");
   static constexpr int WarpgroupTileSize = size<1>(SmemLayoutB{});  // A warp group tile would process entire Smem K.
   static constexpr int NumWarpsPerWarpGroup = NumThreadsPerWarpGroup / NumThreadsPerWarp;
@@ -524,21 +524,20 @@ public:
     "Copy size must evenly divide SMEM tile.");
   static constexpr int WarpgroupTileNum = size<0>(SmemLayoutB{}) / WarpgroupTileSize;
 
-
-  constexpr CUTLASS_HOST_DEVICE 
+  constexpr CUTLASS_HOST_DEVICE
   AsyncTranspositionOperandB_1BElementB(
-      int warp_idx_, 
-      int warp_group_thread_idx_, 
-      TiledMma, 
-      SmemLayoutB, 
-      SmemLayoutAtomB, 
-      ElementB) 
+      int warp_idx_,
+      int warp_group_thread_idx_,
+      TiledMma,
+      SmemLayoutB,
+      SmemLayoutAtomB,
+      ElementB)
       : warp_idx(warp_idx_)
       , warp_group_thread_idx(warp_group_thread_idx_)
       , warp_idx_in_warp_group(warp_idx_ % NumWarpsPerWarpGroup)
-      , current_warp_tile_n_coord_LUT((WarpTileNCoordLUT >> ((warp_idx_ 
+      , current_warp_tile_n_coord_LUT((WarpTileNCoordLUT >> ((warp_idx_
             % NumWarpsPerWarpGroup) * NumBitsPerWarp)) & MaskPerWarp)
-      , current_warp_tile_k_coord_LUT((WarpTileKCoordLUT >> ((warp_idx_ 
+      , current_warp_tile_k_coord_LUT((WarpTileKCoordLUT >> ((warp_idx_
             % NumWarpsPerWarpGroup) * NumBitsPerWarp)) & MaskPerWarp) { }
 
   template <
@@ -547,7 +546,7 @@ public:
   CUTLASS_DEVICE void operator()(
       TensorSmemB const& sB,
       TensorTransposedSmemB const& gmma_sB,
-      int read_stage, int current_step) 
+      int read_stage, int current_step)
   {
     if (current_step > 0) {
       return;
@@ -628,7 +627,7 @@ public:
 
       CUTLASS_PRAGMA_NO_UNROLL
       for (int step_per_warp_group = 0; step_per_warp_group < StepsPerWarpGroup; ++step_per_warp_group) {
-        // For 2 math warpgroup, warp idx4~7 is 1st warp group and 8~9 is 2nd, so decide if 2nd warpgroup need warp idx divide 8. 
+        // For 2 math warpgroup, warp idx4~7 is 1st warp group and 8~9 is 2nd, so decide if 2nd warpgroup need warp idx divide 8.
         int step = step_per_warp_group * NumMathWarpGroup + warp_idx / (NumWarpsPerWarpGroup * 2);
         // decoding the warp tile coord.
         int warp_tile0_n = step < NumStepsEncoded ? (tmp_warp_tile_n_coord_LUT & MaskPerStep) : 4 + warp_idx_in_warp_group;
@@ -653,7 +652,7 @@ public:
           Tensor tCsB = sB_thr_copy.partition_S(
             flatten(s_tile(_, make_coord(warp_tile_coord[warp_tile][0], warp_tile_coord[warp_tile][1])))
           ); // (CPY, CPY_N, CPY_K)
-          
+
           copy(sB_tiled_copy, tCsB, transpose_fragments[warp_tile]);
         }
 
@@ -675,13 +674,13 @@ public:
     if (step == 0) {
       // SMEM fence to make sure B is transposed before math
       cutlass::arch::fence_view_async_shared();
-      cutlass::arch::NamedBarrier::sync(size(TiledMma{}), 1);
+      cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::TransposeBarrier);
     }
   }
 
   CUTLASS_DEVICE void synchronize() {
     cutlass::arch::fence_view_async_shared();
-    cutlass::arch::NamedBarrier::sync(size(TiledMma{}), 1);
+    cutlass::arch::NamedBarrier::sync(size(TiledMma{}), cutlass::arch::ReservedNamedBarriers::TransposeBarrier);
   }
 
   template <
@@ -711,35 +710,35 @@ template<
   class ElementB,
   bool TransposeB
 >
-constexpr CUTLASS_HOST_DEVICE 
-auto 
+constexpr CUTLASS_HOST_DEVICE
+auto
 make_transpose_operand_b(
-    int warp_idx, 
-    int warp_group_thread_idx, 
-    TiledMma, 
-    SmemLayoutB, 
-    SmemLayoutAtomB, 
+    int warp_idx,
+    int warp_group_thread_idx,
+    TiledMma,
+    SmemLayoutB,
+    SmemLayoutAtomB,
     ElementB,
     cute::bool_constant<TransposeB>)
 {
   if constexpr (!TransposeB) {
     return NoTranspositionOperandB(
-        warp_idx, warp_group_thread_idx, TiledMma{}, 
+        warp_idx, warp_group_thread_idx, TiledMma{},
         SmemLayoutB{}, SmemLayoutAtomB{}, ElementB{});
   }
   else if constexpr (use_universal_transposition<SmemLayoutAtomB, ElementB>()) {
     return UniversalTranspositionOperandB(
-        warp_idx, warp_group_thread_idx, TiledMma{}, 
+        warp_idx, warp_group_thread_idx, TiledMma{},
         SmemLayoutB{}, SmemLayoutAtomB{}, ElementB{});
   }
   else if constexpr (sizeof(ElementB) == 1) {
     return AsyncTranspositionOperandB_1BElementB(
-        warp_idx, warp_group_thread_idx, TiledMma{}, 
+        warp_idx, warp_group_thread_idx, TiledMma{},
         SmemLayoutB{}, SmemLayoutAtomB{}, ElementB{});
   }
   else {
     return AsyncTranspositionOperandB(
-        warp_idx, warp_group_thread_idx, TiledMma{}, 
+        warp_idx, warp_group_thread_idx, TiledMma{},
         SmemLayoutB{}, SmemLayoutAtomB{}, ElementB{});
   }
 }

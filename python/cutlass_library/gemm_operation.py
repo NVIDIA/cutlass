@@ -61,7 +61,8 @@ class GemmOperation:
   def __init__(self, gemm_kind, arch, tile_description, A, B, C, element_epilogue, \
       epilogue_functor = EpilogueFunctor.LinearCombination, swizzling_functor = SwizzlingFunctor.Identity8, D = None,
       kernel_schedule = KernelScheduleType.ScheduleAuto, epilogue_schedule = EpilogueScheduleType.ScheduleAuto,
-      tile_scheduler = TileSchedulerType.Default, extra_args = None):
+      tile_scheduler = TileSchedulerType.Default
+    ):
 
     kinds_3x = {
       GemmKind.Universal3x,
@@ -88,6 +89,10 @@ class GemmOperation:
     self.epilogue_schedule = epilogue_schedule
     self.element_epilogue = element_epilogue
     self.epilogue_functor = epilogue_functor
+
+    if self.is_3x and epilogue_functor == EpilogueFunctor.LinearCombination:
+      self.epilogue_functor = EpilogueFunctor3x.LinearCombination
+
     self.swizzling_functor = swizzling_functor
     self.tile_scheduler = tile_scheduler
 
@@ -709,9 +714,9 @@ class EmitGemmUniversal3xInstance:
     ]
     self.builtin_epilogue_functor_template = """
     ${epilogue_functor}<
+      ${element_d},
+      ${element_epilogue},
       ${element_c},
-      ${epilogue_vector_length},
-      ${element_accumulator},
       ${element_epilogue}
     >
 """
@@ -726,7 +731,8 @@ using ${operation_name}_epilogue =
     ${element_accumulator}, ${element_epilogue},
     ${element_c}, ${layout_c}, ${align_c},
     ${element_d}, ${layout_d}, ${align_d},
-    ${epilogue_schedule}
+    ${epilogue_schedule},
+    ${epilogue_functor}
   >::CollectiveOp;
 
 using ${operation_name}_mainloop =
@@ -757,9 +763,11 @@ struct ${operation_name} :
   def instance_template(self):
     return """
 ${compile_guard_start}
-  using GemmKernel = cutlass::gemm::device::GemmUniversalAdapter<${operation_name}>;
-  manifest.append(
-    new ${gemm_kind}<GemmKernel>("${operation_name}"));
+  {
+    using GemmKernel = cutlass::gemm::device::GemmUniversalAdapter<${operation_name}>;
+    manifest.append(
+      new ${gemm_kind}<GemmKernel>("${operation_name}"));
+  }
 ${compile_guard_end}
 """
 
@@ -788,14 +796,16 @@ ${compile_guard_end}
     # Support built-in epilogue functors or user-defined functions
     if isinstance(operation.epilogue_functor, enum.Enum):
       values = {
-        'epilogue_vector_length': str(epilogue_vector_length),
         'element_epilogue': str(DataTypeTag[operation.element_epilogue]),
-        'epilogue_functor': EpilogueFunctorTag[operation.epilogue_functor],
+        'epilogue_functor': EpilogueFunctor3xTag[operation.epilogue_functor],
       }
       epilogue_functor = SubstituteTemplate(self.builtin_epilogue_functor_template, values)
     else:
       epilogue_functor = self.epilogue_functor.emit_declaration()
     #
+    element_a = DataTypeTag[operation.A.element]
+    element_b = DataTypeTag[operation.B.element]
+    epilogue_schedule_type = EpilogueScheduleTag[operation.epilogue_schedule]
     element_a = DataTypeTag[operation.A.element]
     element_b = DataTypeTag[operation.B.element]
     epilogue_schedule_type = EpilogueScheduleTag[operation.epilogue_schedule]

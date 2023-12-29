@@ -306,7 +306,7 @@ struct Options {
 
   /// Prints the usage statement.
   std::ostream &print_usage(std::ostream &out) const {
-    out << "41_depthwise_gemm_fprop example\n\n"
+    out << "46_depthwise_gemm_fprop example\n\n"
         << "  This example uses Ampere's Tensor Core operators on F16 data types to compute\n"
         << "  forward convolution on tensors of layout NHWC.\n\n"
         << "Options:\n\n"
@@ -554,7 +554,7 @@ Result profile_convolution(Options const &options) {
   if (options.save_workspace) {
     std::stringstream ss;
 
-    ss << "45_depthwise_simt_conv2dfprop" << options.input_size.n() << "x" << options.input_size.h()
+    ss << "46_depthwise_simt_conv2dfprop" << options.input_size.n() << "x" << options.input_size.h()
        << "x" << options.input_size.w() << "x" << options.input_size.c() << "_"
        << options.filter_size.n() << "x" << options.filter_size.h() << "x"
        << options.filter_size.w() << "x" << options.filter_size.c() << ".dat";

@@ -181,7 +181,7 @@ public:
     device_.reset();
     host_.clear();
 
-    count = count / kElementsPerStoredVec * kNumStoragePerStoredVec;
+    count = (count + kElementsPerStoredVec - 1) / kElementsPerStoredVec * kNumStoragePerStoredVec;
     host_.resize(count);
 
     // Allocate memory
